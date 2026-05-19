@@ -114,6 +114,7 @@ function findLeadingBotMentionRange(
     (a, b) => b.length - a.length,
   );
   if (names.length === 0) return null;
+  const lowerValue = value.toLowerCase();
 
   let pos = 0;
   while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
@@ -125,13 +126,21 @@ function findLeadingBotMentionRange(
   while (value[pos] === "@") {
     const name = names.find((candidate) => {
       const mention = `@${candidate}`;
-      if (!value.startsWith(mention, pos)) return false;
+      if (!lowerValue.startsWith(mention.toLowerCase(), pos)) return false;
       const nextChar = value[pos + mention.length];
       return !nextChar || !MENTION_NAME_BOUNDARY_RE.test(nextChar);
     });
-    if (!name) break;
-    pos += name.length + 1;
-    consumed = true;
+    if (name) {
+      pos += name.length + 1;
+      consumed = true;
+    } else if (consumed) {
+      pos += 1;
+      while (pos < value.length && MENTION_NAME_BOUNDARY_RE.test(value[pos])) {
+        pos += 1;
+      }
+    } else {
+      break;
+    }
     while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
       pos += 1;
     }
