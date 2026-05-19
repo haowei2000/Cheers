@@ -57,7 +57,7 @@ openclaw plugins install /tmp/agentnexus.tgz
 
 ```bash
 curl -L -o /tmp/openclaw-channel-agentnexus.tgz \
-  "http://localhost:8000/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz"
+  "http://localhost:8000/release/openclaw-channel-agentnexus.tgz"
 openclaw plugins install /tmp/openclaw-channel-agentnexus.tgz
 ```
 
