@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import toast from "react-hot-toast";
@@ -59,6 +60,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenFilePreview?: (file: FileInfo) => void;
   onOpenPersonalFileMain?: (file: FileInfo) => void;
+  onUploadPersonalFiles?: (files: File[]) => void | Promise<void>;
   fileLibraryRefreshKey?: number;
   onPreloadChannel?: (channelId: string) => void;
   onOpenMessage?: (channelId: string, msgId: string) => void;
@@ -70,6 +72,7 @@ type PersonalAddDialogState = {
   projectId: string;
   projectTitle: string;
 } | null;
+type PersonalSectionKey = "dms" | "files" | "projects";
 type PersonalFileItem = FileInfo & {
   channel_id?: string | null;
   channel_label?: string | null;
@@ -115,6 +118,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenFilePreview,
   onOpenPersonalFileMain,
+  onUploadPersonalFiles,
   fileLibraryRefreshKey = 0,
   onPreloadChannel,
   onOpenMessage,
@@ -213,6 +217,15 @@ export function Sidebar({
   const [channelTaskDraftTitle, setChannelTaskDraftTitle] = useState("");
   const [personalFiles, setPersonalFiles] = useState<PersonalFileItem[]>([]);
   const [personalFilesLoading, setPersonalFilesLoading] = useState(false);
+  const [collapsedPersonalSections, setCollapsedPersonalSections] = useState<
+    Record<PersonalSectionKey, boolean>
+  >({
+    dms: false,
+    files: false,
+    projects: false,
+  });
+  const [channelsCollapsed, setChannelsCollapsed] = useState(false);
+  const personalUploadInputRef = useRef<HTMLInputElement>(null);
 
   const dmWorkspaceId = useMemo(
     () => selectedWorkspaceId || workspaces[0]?.workspace_id || "",
@@ -221,6 +234,16 @@ export function Sidebar({
 
   const resetSearch = () => {
     searchPickerRef.current?.clear();
+  };
+
+  const personalSectionExpanded = (key: PersonalSectionKey) =>
+    !collapsedPersonalSections[key];
+
+  const togglePersonalSection = (key: PersonalSectionKey) => {
+    setCollapsedPersonalSections((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
   };
 
   const visiblePersonalDms = useMemo(
@@ -237,6 +260,16 @@ export function Sidebar({
         (dm) => dm.counterparty.member_type !== "bot",
       ),
     [visiblePersonalDms],
+  );
+
+  const visibleChannels = useMemo(
+    () =>
+      channels.filter(
+        (channel) =>
+          (!selectedWorkspaceId || channel.workspace_id === selectedWorkspaceId) &&
+          channel.project_task_type !== "channel",
+      ),
+    [channels, selectedWorkspaceId],
   );
 
   const projectGroups = useMemo(() => {
@@ -308,6 +341,27 @@ export function Sidebar({
     const count =
       projectGroups.find((group) => group.projectId === projectId)?.tasks.length ?? 0;
     return `Task ${count + 1}`;
+  };
+
+  const handlePersonalUploadClick = () => {
+    if (!selectedId) {
+      toast.error("Select a DM or task before uploading files");
+      return;
+    }
+    personalUploadInputRef.current?.click();
+  };
+
+  const handlePersonalUploadInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    if (!onUploadPersonalFiles) {
+      toast.error("File upload is not available");
+      return;
+    }
+    void Promise.resolve(onUploadPersonalFiles(files)).catch(() => {
+      toast.error("Failed to upload files");
+    });
   };
 
   useEffect(() => {
@@ -860,34 +914,45 @@ export function Sidebar({
       </div>
 
       {/* Channels + Direct sections share a single scroller */}
-      <div className="overflow-auto flex-1">
+      <div className="an-rail-scroll">
       {!isPersonalWorkspace && (
         <>
       <div className="an-rail-section-h">
         <span>Channels</span>
+        <span className="an-rail-count">{visibleChannels.length}</span>
         <button
           type="button"
-          onClick={() => {
-            if (!selectedWorkspaceId) {
-              toast.error("Select a workspace first");
-              return;
-            }
-            onOpenCreateChannel();
-          }}
-          className="an-add"
-          title="Create channel"
+          className="an-rail-section-toggle"
+          title={channelsCollapsed ? "Expand" : "Collapse"}
+          aria-label={channelsCollapsed ? "Expand Channels" : "Collapse Channels"}
+          aria-expanded={!channelsCollapsed}
+          onClick={() => setChannelsCollapsed((collapsed) => !collapsed)}
         >
-          +
+          <AppIcon name={channelsCollapsed ? "chevronRight" : "chevronDown"} />
         </button>
       </div>
+      {!channelsCollapsed && (
       <ul className="px-2 py-1">
-        {channels
-          .filter(
-            (c) =>
-              (!selectedWorkspaceId || c.workspace_id === selectedWorkspaceId) &&
-              c.project_task_type !== "channel",
-          )
-          .map((c) => {
+        <li>
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedWorkspaceId) {
+                toast.error("Select a workspace first");
+                return;
+              }
+              onOpenCreateChannel();
+            }}
+            className="an-rail-row an-rail-action-row w-full"
+            title="Create channel"
+          >
+            <span className="an-sigil">
+              <AppIcon name="plus" />
+            </span>
+            <span className="an-name">New Item</span>
+          </button>
+        </li>
+        {visibleChannels.map((c) => {
             const isActive = selectedId === c.channel_id;
             const ws = !selectedWorkspaceId && c.workspace_id
               ? workspaces.find((w) => w.workspace_id === c.workspace_id)
@@ -953,6 +1018,7 @@ export function Sidebar({
             );
           })}
       </ul>
+      )}
         </>
       )}
 
@@ -964,29 +1030,33 @@ export function Sidebar({
         <span>DMs</span>
         <button
           type="button"
-          className="an-add"
-          title="Search usersStart DM"
-          onClick={() => {
-            openPersonalAddDialog("dm");
-          }}
+          className="an-rail-section-toggle an-rail-section-toggle-solo"
+          title={personalSectionExpanded("dms") ? "Collapse" : "Expand"}
+          aria-label={personalSectionExpanded("dms") ? "Collapse DMs" : "Expand DMs"}
+          aria-expanded={personalSectionExpanded("dms")}
+          onClick={() => togglePersonalSection("dms")}
         >
-          +
+          <AppIcon name={personalSectionExpanded("dms") ? "chevronDown" : "chevronRight"} />
         </button>
       </div>
-      {directDms.length === 0 && (
-        <div
-          style={{
-            fontSize: 11,
-            color: "var(--fg-3)",
-            padding: "0 12px 6px",
-          }}
-        >
-          No DMs yet · click + to start one
-        </div>
-      )}
-      {directDms.length > 0 && (
-        <>
+      {personalSectionExpanded("dms") && (
           <ul className="px-2 py-1 pb-2">
+            <li>
+              <button
+                type="button"
+                className="an-rail-row an-rail-action-row w-full"
+                title="Start DM"
+                onClick={() => openPersonalAddDialog("dm")}
+              >
+                <span className="an-sigil">
+                  <AppIcon name="messageCircle" />
+                </span>
+                <span className="an-name">New Item</span>
+              </button>
+            </li>
+            {directDms.length === 0 && (
+              <li className="an-rail-empty">No DMs yet</li>
+            )}
             {directDms.map((d) => {
                 const isActive = selectedId === d.channel_id;
                 const cp = d.counterparty;
@@ -1074,7 +1144,6 @@ export function Sidebar({
                 );
               })}
           </ul>
-        </>
       )}
 
       <div className="an-rail-section-h">
@@ -1082,8 +1151,32 @@ export function Sidebar({
         <span className="an-rail-count">
           {personalFilesLoading ? "..." : personalFiles.length}
         </span>
+        <button
+          type="button"
+          className="an-rail-section-toggle"
+          title={personalSectionExpanded("files") ? "Collapse" : "Expand"}
+          aria-label={personalSectionExpanded("files") ? "Collapse Files" : "Expand Files"}
+          aria-expanded={personalSectionExpanded("files")}
+          onClick={() => togglePersonalSection("files")}
+        >
+          <AppIcon name={personalSectionExpanded("files") ? "chevronDown" : "chevronRight"} />
+        </button>
       </div>
+      {personalSectionExpanded("files") && (
       <ul className="px-2 py-1 pb-2">
+        <li>
+          <button
+            type="button"
+            className="an-rail-row an-rail-action-row w-full"
+            title="Upload File"
+            onClick={handlePersonalUploadClick}
+          >
+            <span className="an-sigil">
+              <AppIcon name="upload" />
+            </span>
+            <span className="an-name">Upload File</span>
+          </button>
+        </li>
         {personalFiles.length === 0 && (
           <li className="an-rail-empty">
             {personalFilesLoading ? "Loading files..." : "No files"}
@@ -1131,21 +1224,38 @@ export function Sidebar({
           </li>
         ))}
       </ul>
+      )}
 
       <div className="an-rail-section-h">
         <span>Project</span>
         <button
           type="button"
-          className="an-add"
-          title="Create project and choose a bot"
-          onClick={() => openPersonalAddDialog("project")}
+          className="an-rail-section-toggle an-rail-section-toggle-solo"
+          title={personalSectionExpanded("projects") ? "Collapse" : "Expand"}
+          aria-label={personalSectionExpanded("projects") ? "Collapse Project" : "Expand Project"}
+          aria-expanded={personalSectionExpanded("projects")}
+          onClick={() => togglePersonalSection("projects")}
         >
-          +
+          <AppIcon name={personalSectionExpanded("projects") ? "chevronDown" : "chevronRight"} />
         </button>
       </div>
+      {personalSectionExpanded("projects") && (
       <ul className="px-2 py-1 pb-2">
+        <li>
+          <button
+            type="button"
+            className="an-rail-row an-rail-action-row w-full"
+            title="Create project"
+            onClick={() => openPersonalAddDialog("project")}
+          >
+            <span className="an-sigil">
+              <AppIcon name="folder" />
+            </span>
+            <span className="an-name">New Item</span>
+          </button>
+        </li>
         {projectGroups.length === 0 && (
-          <li className="an-rail-empty">No projects yet · click + to choose a bot and create one</li>
+          <li className="an-rail-empty">No projects yet</li>
         )}
         {projectGroups.map((project) => (
           <li key={project.projectId} className="an-project-group">
@@ -1156,17 +1266,21 @@ export function Sidebar({
                 </span>
                 <span className="an-name">{project.projectTitle}</span>
               </div>
-              <button
-                type="button"
-                className="an-project-add"
-                title={`Add a task to ${project.projectTitle}`}
-                aria-label={`Add a task to ${project.projectTitle}`}
-                onClick={() => openPersonalAddDialog("projectChat", project)}
-              >
-                <AppIcon name="plus" />
-              </button>
             </div>
             <ul className="an-project-chats">
+              <li>
+                <button
+                  type="button"
+                  className="an-rail-row an-rail-action-row an-project-chat-row w-full"
+                  title="Create task"
+                  onClick={() => openPersonalAddDialog("projectChat", project)}
+                >
+                  <span className="an-sigil">
+                    <AppIcon name="task" />
+                  </span>
+                  <span className="an-name">New Item</span>
+                </button>
+              </li>
               {project.tasks.map((task) => {
                 const channelId = task.kind === "dm" ? task.dm.channel_id : task.channel.channel_id;
                 const isActive = selectedId === channelId;
@@ -1267,10 +1381,20 @@ export function Sidebar({
           </li>
         ))}
       </ul>
+      )}
         </>
       )}
 
       </div>
+
+      <input
+        ref={personalUploadInputRef}
+        type="file"
+        multiple
+        className="sr-only"
+        tabIndex={-1}
+        onChange={handlePersonalUploadInput}
+      />
 
       {/* Account footer: avatar with presence, display name, and settings. */}
       <div className="an-rail-foot">
