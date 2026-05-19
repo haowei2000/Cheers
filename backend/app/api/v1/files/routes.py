@@ -294,6 +294,19 @@ async def list_file_library(
     ])
 
 
+@router.delete("/{file_id}", response_model=APIResponse[dict])
+async def delete_file_from_library(
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Remove a file from the current user's file library."""
+    from app.services.file_service import FileService
+
+    result = await FileService(session).delete_from_library(file_id, current_user)
+    return APIResponse.ok(result)
+
+
 @router.get("/{file_id}/status", response_model=APIResponse[dict])
 async def file_status(
     file_id: str,

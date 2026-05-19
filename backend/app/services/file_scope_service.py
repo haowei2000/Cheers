@@ -18,6 +18,7 @@ from app.db.models import (
     FileRecord,
     FileScopeLink,
     User,
+    Workspace,
     WorkspaceMembership,
 )
 from app.services.file_retention import active_file_filter
@@ -28,6 +29,7 @@ SCOPE_WORKSPACE = "workspace"
 SCOPE_CHANNEL = "channel"
 SCOPE_DM = "dm"
 SCOPE_TASK = "task"
+SCOPE_PERSONAL_HIDDEN = "personal_hidden"
 CHANNEL_SCOPES = {SCOPE_CHANNEL, SCOPE_DM}
 
 
@@ -296,79 +298,47 @@ class FileScopeService:
 
     async def list_library_for_user(self, current_user: User) -> list[LibraryFile]:
         channel = aliased(Channel)
-        membership = aliased(ChannelMembership)
-        workspace_membership = aliased(WorkspaceMembership)
-        task = aliased(AgentTask)
-        task_channel = aliased(Channel)
-        task_membership = aliased(ChannelMembership)
+        workspace = aliased(Workspace)
+        hidden_link = aliased(FileScopeLink)
+        hidden_for_user = (
+            select(hidden_link.link_id)
+            .where(
+                hidden_link.file_id == FileRecord.file_id,
+                hidden_link.scope_type == SCOPE_PERSONAL_HIDDEN,
+                hidden_link.scope_id == current_user.user_id,
+            )
+            .exists()
+            .correlate(FileRecord)
+        )
         rows = (
             await self.session.execute(
-                select(FileRecord, FileScopeLink, channel, task_channel)
-                .outerjoin(FileScopeLink, FileScopeLink.file_id == FileRecord.file_id)
+                select(FileRecord, FileScopeLink, channel)
+                .join(
+                    FileScopeLink,
+                    and_(
+                        FileScopeLink.file_id == FileRecord.file_id,
+                        FileScopeLink.scope_type == SCOPE_PERSONAL,
+                        FileScopeLink.scope_id == current_user.user_id,
+                    ),
+                )
+                .join(workspace, workspace.workspace_id == FileRecord.workspace_id)
                 .outerjoin(
                     channel,
                     and_(
-                        FileScopeLink.scope_id == channel.channel_id,
-                        FileScopeLink.scope_type.in_((SCOPE_CHANNEL, SCOPE_DM)),
-                    ),
-                )
-                .outerjoin(
-                    membership,
-                    and_(
-                        membership.channel_id == channel.channel_id,
-                        membership.member_id == current_user.user_id,
-                        membership.member_type == "user",
-                    ),
-                )
-                .outerjoin(
-                    workspace_membership,
-                    and_(
-                        FileScopeLink.scope_type == SCOPE_WORKSPACE,
-                        or_(
-                            FileScopeLink.scope_id == workspace_membership.workspace_id,
-                            FileScopeLink.workspace_id == workspace_membership.workspace_id,
-                        ),
-                        workspace_membership.user_id == current_user.user_id,
-                    ),
-                )
-                .outerjoin(
-                    task,
-                    and_(
-                        FileScopeLink.scope_type == SCOPE_TASK,
-                        FileScopeLink.scope_id == task.task_id,
-                    ),
-                )
-                .outerjoin(task_channel, task_channel.channel_id == task.channel_id)
-                .outerjoin(
-                    task_membership,
-                    and_(
-                        task_membership.channel_id == task.channel_id,
-                        task_membership.member_id == current_user.user_id,
-                        task_membership.member_type == "user",
+                        channel.channel_id == FileRecord.channel_id,
+                        channel.workspace_id == workspace.workspace_id,
                     ),
                 )
                 .where(
                     active_file_filter(),
-                    or_(
-                        FileRecord.uploader_id == current_user.user_id,
-                        and_(
-                            FileScopeLink.scope_type == SCOPE_PERSONAL,
-                            FileScopeLink.scope_id == current_user.user_id,
-                        ),
-                        membership.member_id.is_not(None),
-                        workspace_membership.user_id.is_not(None),
-                        task_membership.member_id.is_not(None),
-                    ),
+                    workspace.kind == "personal",
+                    ~hidden_for_user,
                 )
                 .order_by(desc(FileRecord.created_at))
             )
         ).all()
         files: dict[str, LibraryFile] = {}
-        for record, link, linked_channel, linked_task_channel in rows:
-            current = files.get(record.file_id)
-            if current and current.channel_id:
-                continue
-            display_channel = linked_channel or linked_task_channel
+        for record, link, display_channel in rows:
             files[record.file_id] = LibraryFile(
                 record=record,
                 scope_type=link.scope_type if link else None,

@@ -377,11 +377,25 @@ async def _link_files_to_channel(
     current_user: User,
 ) -> list[str]:
     linked_ids: list[str] = []
+    target_channel = await session.get(Channel, target_channel_id)
+    if target_channel is None:
+        raise NotFoundError("channel not found")
     from app.services.file_scope_service import FileScopeService
+    from app.services.file_service import FileService
 
+    file_service = FileService(session)
     scope_service = FileScopeService(session)
+    target_is_personal = await file_service._channel_is_personal_space(target_channel)
     for rec in records:
         await scope_service.require_user_access(rec, current_user)
+        if target_is_personal:
+            clone = await file_service.clone_to_personal_channel(
+                rec,
+                target_channel=target_channel,
+                owner=current_user,
+            )
+            linked_ids.append(clone.file_id)
+            continue
         await scope_service.link_files_to_channel(
             file_ids=[rec.file_id],
             channel_id=target_channel_id,
