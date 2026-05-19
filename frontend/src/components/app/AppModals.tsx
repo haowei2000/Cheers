@@ -44,6 +44,8 @@ interface AppModalsProps {
   onCloseSettings: () => void;
   isDark: boolean;
   setTheme: (theme: "light" | "dark") => void;
+  beginnerMode: boolean;
+  setBeginnerMode: (enabled: boolean) => void;
   authToken: string | null;
   onProfileUpdated: (data: {
     display_name: string;
@@ -114,6 +116,8 @@ export function AppModals({
   onCloseSettings,
   isDark,
   setTheme,
+  beginnerMode,
+  setBeginnerMode,
   authToken,
   onProfileUpdated,
   onOpenDM,
@@ -192,6 +196,8 @@ export function AppModals({
             onClose={onCloseSettings}
             isDark={isDark}
             setTheme={setTheme}
+            beginnerMode={beginnerMode}
+            setBeginnerMode={setBeginnerMode}
             authToken={authToken}
             currentUser={currentUser}
             onProfileUpdated={onProfileUpdated}

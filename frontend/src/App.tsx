@@ -27,6 +27,7 @@ import { apiFetch } from "./api";
 import { parseHelperPayload } from "./lib/helper";
 import { API, API_DOCS_URL, USER_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
+import { getStoredBeginnerMode, setStoredBeginnerMode } from "./lib/experience";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
   buildChatPath,
@@ -124,6 +125,11 @@ export default function App() {
   }, []);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [beginnerMode, setBeginnerModeState] = useState(() => getStoredBeginnerMode());
+  const setBeginnerMode = useCallback((enabled: boolean) => {
+    setBeginnerModeState(enabled);
+    setStoredBeginnerMode(enabled);
+  }, []);
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
   // mirrored to URL query. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
@@ -1277,6 +1283,8 @@ export default function App() {
         onCloseSettings={() => setSettingsOpen(false)}
         isDark={isDark}
         setTheme={setTheme}
+        beginnerMode={beginnerMode}
+        setBeginnerMode={setBeginnerMode}
         authToken={authToken}
         onProfileUpdated={(data) => {
           if (!currentUser) return;
@@ -1365,6 +1373,7 @@ export default function App() {
             onLeftResize={onLeftResize}
             currentUser={currentUser}
             authToken={authToken}
+            beginnerMode={beginnerMode}
             onLoginClick={() => setLoginModalOpen(true)}
             workspaces={workspaces}
             setWorkspaces={setWorkspaces}
