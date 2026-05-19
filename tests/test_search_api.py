@@ -82,6 +82,67 @@ async def test_add_friend_context_returns_only_non_friend_users(db_session: Asyn
 
 
 @pytest.mark.asyncio
+async def test_dm_start_context_returns_only_authorized_people_and_bots(db_session: AsyncSession) -> None:
+    alice = _user("sr-dm-alice", "sr_dm_alice")
+    friend = _user("sr-dm-friend", "sr_dm_friend")
+    blocked = _user("sr-dm-blocked", "sr_dm_blocked")
+    stranger = _user("sr-dm-stranger", "sr_dm_stranger")
+    owned_bot = BotAccount(
+        bot_id="sr-dm-owned-bot",
+        username="sr_dm_owned_bot",
+        created_by=alice.user_id,
+        scope="private",
+    )
+    friend_bot = BotAccount(
+        bot_id="sr-dm-friend-bot",
+        username="sr_dm_friend_bot",
+        created_by=friend.user_id,
+        scope="friend",
+    )
+    everyone_bot = BotAccount(
+        bot_id="sr-dm-everyone-bot",
+        username="sr_dm_everyone_bot",
+        created_by=stranger.user_id,
+        scope="everyone",
+    )
+    hidden_bot = BotAccount(
+        bot_id="sr-dm-hidden-bot",
+        username="sr_dm_hidden_bot",
+        created_by=stranger.user_id,
+        scope="private",
+    )
+    db_session.add_all([
+        alice,
+        friend,
+        blocked,
+        stranger,
+        Friendship(user_id=alice.user_id, friend_id=friend.user_id, status="accepted"),
+        Friendship(user_id=alice.user_id, friend_id=blocked.user_id, status="blocked"),
+        owned_bot,
+        friend_bot,
+        everyone_bot,
+        hidden_bot,
+    ])
+    await db_session.flush()
+
+    resp = await _request_as(
+        db_session,
+        alice,
+        "GET",
+        "/api/v1/search?q=sr_dm&context=dm_start&types=users,bots&limit=20",
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert [u["user_id"] for u in data["users"]] == [friend.user_id]
+    assert {b["bot_id"] for b in data["bots"]} == {
+        owned_bot.bot_id,
+        friend_bot.bot_id,
+        everyone_bot.bot_id,
+    }
+
+
+@pytest.mark.asyncio
 async def test_workspace_invite_context_excludes_workspace_members(db_session: AsyncSession) -> None:
     owner = _user("sr-ws-owner", "sr_ws_owner")
     member = _user("sr-ws-member", "sr_ws_candidate_member")
@@ -116,13 +177,46 @@ async def test_workspace_invite_context_excludes_workspace_members(db_session: A
 
 
 @pytest.mark.asyncio
+async def test_workspace_invite_context_requires_workspace_manager(db_session: AsyncSession) -> None:
+    owner = _user("sr-ws-auth-owner", "sr_ws_auth_owner")
+    member = _user("sr-ws-auth-member", "sr_ws_auth_member")
+    candidate = _user("sr-ws-auth-candidate", "sr_ws_auth_candidate")
+    ws = Workspace(workspace_id="sr-ws-auth", name="Search Workspace Auth")
+    db_session.add_all([
+        owner,
+        member,
+        candidate,
+        ws,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=owner.user_id, role="owner"),
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=member.user_id, role="member"),
+    ])
+    await db_session.flush()
+
+    resp = await _request_as(
+        db_session,
+        member,
+        "GET",
+        f"/api/v1/search?q=sr_ws_auth_candidate&context=workspace_invite&workspace_id={ws.workspace_id}",
+    )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_channel_contexts_exclude_existing_members_and_keep_bot_scope(db_session: AsyncSession) -> None:
     owner = _user("sr-ch-owner", "sr_ch_owner")
     stranger = _user("sr-ch-stranger", "sr_ch_stranger")
     existing_user = _user("sr-ch-member", "sr_channel_pick_member")
     outsider = _user("sr-ch-outsider", "sr_channel_pick_outsider")
     ws = Workspace(workspace_id="sr-ch-ws", name="Search Channel Workspace")
-    ch = Channel(channel_id="sr-ch", workspace_id=ws.workspace_id, name="search-channel", type="public")
+    ch = Channel(
+        channel_id="sr-ch",
+        workspace_id=ws.workspace_id,
+        name="search-channel",
+        type="public",
+        allow_member_invites=True,
+        allow_bot_adds=True,
+    )
     existing_bot = BotAccount(
         bot_id="sr-bot-existing",
         username="sr_channel_bot_existing",
@@ -149,6 +243,8 @@ async def test_channel_contexts_exclude_existing_members_and_keep_bot_scope(db_s
         ws,
         ch,
         WorkspaceMembership(workspace_id=ws.workspace_id, user_id=stranger.user_id),
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=existing_user.user_id),
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=outsider.user_id),
         ChannelMembership(channel_id=ch.channel_id, member_id=stranger.user_id, member_type="user"),
         ChannelMembership(channel_id=ch.channel_id, member_id=existing_user.user_id, member_type="user"),
         ChannelMembership(channel_id=ch.channel_id, member_id=existing_bot.bot_id, member_type="bot"),
@@ -175,6 +271,62 @@ async def test_channel_contexts_exclude_existing_members_and_keep_bot_scope(db_s
     assert [u["user_id"] for u in user_resp.json()["data"]["users"]] == [outsider.user_id]
     bot_ids = {b["bot_id"] for b in bot_resp.json()["data"]["bots"]}
     assert bot_ids == {everyone_bot.bot_id}
+
+
+@pytest.mark.asyncio
+async def test_channel_invite_context_respects_invite_permissions(db_session: AsyncSession) -> None:
+    owner = _user("sr-ch-auth-owner", "sr_ch_auth_owner")
+    caller = _user("sr-ch-auth-caller", "sr_ch_auth_caller")
+    candidate = _user("sr-ch-auth-candidate", "sr_ch_auth_candidate")
+    ws = Workspace(workspace_id="sr-ch-auth-ws", name="Search Channel Auth Workspace")
+    ch = Channel(
+        channel_id="sr-ch-auth",
+        workspace_id=ws.workspace_id,
+        name="auth-channel",
+        type="public",
+        allow_member_invites=False,
+        allow_bot_adds=False,
+    )
+    bot = BotAccount(
+        bot_id="sr-ch-auth-bot",
+        username="sr_ch_auth_candidate_bot",
+        created_by=owner.user_id,
+        scope="everyone",
+    )
+    db_session.add_all([
+        owner,
+        caller,
+        candidate,
+        ws,
+        ch,
+        bot,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=caller.user_id),
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=candidate.user_id),
+        ChannelMembership(channel_id=ch.channel_id, member_id=caller.user_id, member_type="user"),
+    ])
+    await db_session.flush()
+
+    bot_resp = await _request_as(
+        db_session,
+        caller,
+        "GET",
+        f"/api/v1/search?q=sr_ch_auth_candidate&context=channel_invite_bot&channel_id={ch.channel_id}",
+    )
+    assert bot_resp.status_code == 403
+
+    ch.allow_member_invites = True
+    await db_session.flush()
+    mixed_resp = await _request_as(
+        db_session,
+        caller,
+        "GET",
+        f"/api/v1/search?q=sr_ch_auth_candidate&context=channel_invite&channel_id={ch.channel_id}&limit=20",
+    )
+
+    assert mixed_resp.status_code == 200
+    data = mixed_resp.json()["data"]
+    assert [u["user_id"] for u in data["users"]] == [candidate.user_id]
+    assert data["bots"] == []
 
 
 @pytest.mark.asyncio
@@ -421,7 +573,14 @@ async def test_channel_invite_context_returns_users_and_bots(db_session: AsyncSe
     caller = _user("sr-mixed-caller", "sr_mixed_caller")
     candidate = _user("sr-mixed-candidate", "sr_mixed_candidate")
     ws = Workspace(workspace_id="sr-mixed-ws", name="Mixed Invite Workspace")
-    ch = Channel(channel_id="sr-mixed-ch", workspace_id=ws.workspace_id, name="mixed-channel", type="public")
+    ch = Channel(
+        channel_id="sr-mixed-ch",
+        workspace_id=ws.workspace_id,
+        name="mixed-channel",
+        type="public",
+        allow_member_invites=True,
+        allow_bot_adds=True,
+    )
     bot = BotAccount(
         bot_id="sr-mixed-bot",
         username="sr_mixed_candidate_bot",
@@ -436,6 +595,7 @@ async def test_channel_invite_context_returns_users_and_bots(db_session: AsyncSe
         ch,
         bot,
         WorkspaceMembership(workspace_id=ws.workspace_id, user_id=caller.user_id),
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=candidate.user_id),
         ChannelMembership(channel_id=ch.channel_id, member_id=caller.user_id, member_type="user"),
     ])
     await db_session.flush()

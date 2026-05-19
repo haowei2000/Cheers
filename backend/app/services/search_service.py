@@ -97,6 +97,7 @@ _VALID_TYPES: set[str] = {
     "tasks",
     "messages",
 }
+_CHANNEL_ADMIN_ROLES = {"owner", "admin"}
 
 
 class SearchService:
@@ -142,7 +143,7 @@ class SearchService:
             )
 
         if context == "workspace_invite":
-            await self._require_workspace(workspace_id, current_user)
+            await self._require_workspace_manager(workspace_id, current_user)
             selected = self._selected_types(requested_types, {"users"})
             return SearchResults(
                 q=q,
@@ -189,8 +190,15 @@ class SearchService:
             )
 
         if context == "channel_invite":
-            await self._require_channel(channel_id, current_user)
+            channel = await self._require_channel(channel_id, current_user)
             selected = self._selected_types(requested_types, {"users", "bots"})
+            selected = await self._permitted_channel_invite_types(
+                channel,
+                current_user=current_user,
+                selected=selected,
+            )
+            if not selected:
+                raise ForbiddenError("当前频道没有邀请成员或添加 Bot 的权限")
             return SearchResults(
                 q=q,
                 context=context,
@@ -199,7 +207,9 @@ class SearchService:
                         q,
                         current_user=current_user,
                         limit=limit,
+                        workspace_id=channel.workspace_id,
                         channel_id=channel_id,
+                        only_workspace_members=True,
                         exclude_channel_members=True,
                     )
                     if "users" in selected
@@ -219,7 +229,12 @@ class SearchService:
             )
 
         if context == "channel_invite_user":
-            await self._require_channel(channel_id, current_user)
+            channel = await self._require_channel(channel_id, current_user)
+            await self._require_channel_invite_permission(
+                channel,
+                current_user=current_user,
+                member_type="user",
+            )
             selected = self._selected_types(requested_types, {"users"})
             return SearchResults(
                 q=q,
@@ -229,7 +244,9 @@ class SearchService:
                         q,
                         current_user=current_user,
                         limit=limit,
+                        workspace_id=channel.workspace_id,
                         channel_id=channel_id,
+                        only_workspace_members=True,
                         exclude_channel_members=True,
                     )
                     if "users" in selected
@@ -238,7 +255,12 @@ class SearchService:
             )
 
         if context == "channel_invite_bot":
-            await self._require_channel(channel_id, current_user)
+            channel = await self._require_channel(channel_id, current_user)
+            await self._require_channel_invite_permission(
+                channel,
+                current_user=current_user,
+                member_type="bot",
+            )
             selected = self._selected_types(requested_types, {"bots"})
             return SearchResults(
                 q=q,
@@ -274,12 +296,20 @@ class SearchService:
             )
 
         if context == "dm_start":
+            if workspace_id:
+                await self._require_workspace(workspace_id, current_user)
             selected = self._selected_types(requested_types, {"users", "bots"})
             return SearchResults(
                 q=q,
                 context=context,
                 users=(
-                    await self._search_users(q, current_user=current_user, limit=limit)
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        only_friend_ids=not is_admin(current_user),
+                        exclude_blocked_ids=True,
+                    )
                     if "users" in selected
                     else []
                 ),
@@ -450,11 +480,26 @@ class SearchService:
         if not membership:
             raise ForbiddenError("您不是该工作空间的成员")
 
-    async def _require_channel(self, channel_id: str | None, current_user: User) -> None:
-        if not channel_id:
-            raise BadRequestError("channel_id 必填")
+    async def _require_workspace_manager(self, workspace_id: str | None, current_user: User) -> None:
+        if not workspace_id:
+            raise BadRequestError("workspace_id 必填")
         if is_admin(current_user):
             return
+        membership = await self.session.get(
+            WorkspaceMembership,
+            {"workspace_id": workspace_id, "user_id": current_user.user_id},
+        )
+        if not membership or membership.role not in ("owner", "admin"):
+            raise ForbiddenError("没有权限执行此操作（需要工作空间所有者或管理员权限）")
+
+    async def _require_channel(self, channel_id: str | None, current_user: User) -> Channel:
+        if not channel_id:
+            raise BadRequestError("channel_id 必填")
+        channel = await self.session.get(Channel, channel_id)
+        if not channel:
+            raise BadRequestError("channel_id 无效")
+        if is_admin(current_user):
+            return channel
         membership = await self.session.get(
             ChannelMembership,
             {
@@ -464,6 +509,82 @@ class SearchService:
         )
         if not membership or membership.member_type != "user":
             raise ForbiddenError("您不是该频道的成员")
+        return channel
+
+    async def _permitted_channel_invite_types(
+        self,
+        channel: Channel,
+        *,
+        current_user: User,
+        selected: set[str],
+    ) -> set[str]:
+        can_invite_users, can_add_bots = await self._channel_invite_capabilities(
+            channel,
+            current_user=current_user,
+        )
+        permitted: set[str] = set()
+        if "users" in selected and can_invite_users:
+            permitted.add("users")
+        if "bots" in selected and can_add_bots:
+            permitted.add("bots")
+        return permitted
+
+    async def _require_channel_invite_permission(
+        self,
+        channel: Channel,
+        *,
+        current_user: User,
+        member_type: str,
+    ) -> None:
+        can_invite_users, can_add_bots = await self._channel_invite_capabilities(
+            channel,
+            current_user=current_user,
+        )
+        if member_type == "user" and can_invite_users:
+            return
+        if member_type == "bot" and can_add_bots:
+            return
+        if member_type == "user":
+            raise ForbiddenError("当前频道仅管理员可以邀请成员")
+        raise ForbiddenError("当前频道仅管理员可以添加 Bot")
+
+    async def _channel_invite_capabilities(
+        self,
+        channel: Channel,
+        *,
+        current_user: User,
+    ) -> tuple[bool, bool]:
+        if channel.type == "dm":
+            return False, False
+        if is_admin(current_user):
+            return True, True
+
+        membership = await self.session.get(
+            ChannelMembership,
+            {
+                "channel_id": channel.channel_id,
+                "member_id": current_user.user_id,
+            },
+        )
+        is_member = bool(membership and membership.member_type == "user")
+        channel_admin = bool(
+            is_member and (membership.role or "member") in _CHANNEL_ADMIN_ROLES
+        )
+        workspace_membership = await self.session.get(
+            WorkspaceMembership,
+            {
+                "workspace_id": channel.workspace_id,
+                "user_id": current_user.user_id,
+            },
+        )
+        workspace_admin = bool(
+            workspace_membership and workspace_membership.role in ("owner", "admin")
+        )
+        can_manage = channel_admin or workspace_admin
+        return (
+            can_manage or bool(channel.allow_member_invites and is_member),
+            can_manage or bool(channel.allow_bot_adds and is_member),
+        )
 
     def _pattern(self, q: str) -> str:
         return f"%{q}%"
@@ -540,12 +661,25 @@ class SearchService:
         exclude_workspace_members: bool = False,
         only_workspace_members: bool = False,
         exclude_channel_members: bool = False,
+        only_friend_ids: bool = False,
+        exclude_blocked_ids: bool = False,
     ) -> list[SearchUserHit]:
         stmt = select(User).where(
             User.user_id != current_user.user_id,
             User.is_deleted == False,  # noqa: E712
             self._matches_id_or_text(q, User.user_id, User.username, User.display_name),
         )
+
+        if only_friend_ids:
+            friend_ids = await self._accepted_friend_ids(current_user.user_id)
+            if not friend_ids:
+                return []
+            stmt = stmt.where(User.user_id.in_(friend_ids))
+
+        if exclude_blocked_ids:
+            blocked_ids = await self._blocked_user_ids(current_user.user_id)
+            if blocked_ids:
+                stmt = stmt.where(User.user_id.notin_(blocked_ids))
 
         if exclude_friend_ids:
             friend_ids = await self._accepted_friend_ids(current_user.user_id)
@@ -970,6 +1104,22 @@ class SearchService:
             select(Friendship).where(
                 or_(Friendship.user_id == user_id, Friendship.friend_id == user_id),
                 Friendship.status == "accepted",
+            )
+        )
+        ids: set[str] = set()
+        for friendship in result.scalars().all():
+            ids.add(
+                friendship.friend_id
+                if friendship.user_id == user_id
+                else friendship.user_id
+            )
+        return ids
+
+    async def _blocked_user_ids(self, user_id: str) -> set[str]:
+        result = await self.session.execute(
+            select(Friendship).where(
+                or_(Friendship.user_id == user_id, Friendship.friend_id == user_id),
+                Friendship.status == "blocked",
             )
         )
         ids: set[str] = set()

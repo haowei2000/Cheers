@@ -237,8 +237,8 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       return [
         { type: "workspace" as const, items: results.workspaces.map((item) => ({ type: "workspace" as const, item })) },
         { type: "channel" as const, items: results.channels.map((item) => ({ type: "channel" as const, item })) },
-        { type: "user" as const, items: results.users.map((item) => ({ type: "user" as const, item })) },
         { type: "bot" as const, items: results.bots.map((item) => ({ type: "bot" as const, item })) },
+        { type: "user" as const, items: results.users.map((item) => ({ type: "user" as const, item })) },
         { type: "file" as const, items: results.files.map((item) => ({ type: "file" as const, item })) },
         { type: "todo" as const, items: results.todos.map((item) => ({ type: "todo" as const, item })) },
         { type: "task" as const, items: results.tasks.map((item) => ({ type: "task" as const, item })) },
