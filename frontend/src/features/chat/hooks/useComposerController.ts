@@ -7,6 +7,10 @@ import type { Message } from "../../../types";
 
 type MsgKind = MessageComposerKind;
 
+type ResetComposerAfterSendOptions = {
+  nextInput?: string;
+};
+
 export function useComposerController() {
   const [msgKind, setMsgKind] = useState<MsgKind>("normal");
   const [composerTitle, setComposerTitle] = useState("");
@@ -40,12 +44,15 @@ export function useComposerController() {
     });
   }, []);
 
-  const resetComposerAfterSend = useCallback(() => {
-    setComposerInput("");
-    setMsgKind("normal");
-    setComposerTitle("");
-    setReplyingTo(null);
-  }, [setComposerInput]);
+  const resetComposerAfterSend = useCallback(
+    (options?: ResetComposerAfterSendOptions) => {
+      setComposerInput(options?.nextInput ?? "");
+      setMsgKind("normal");
+      setComposerTitle("");
+      setReplyingTo(null);
+    },
+    [setComposerInput],
+  );
 
   return {
     input,
