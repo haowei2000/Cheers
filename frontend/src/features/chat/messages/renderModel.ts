@@ -351,6 +351,8 @@ export function createMessageViewModel({
           "",
         )
         .trim()
+    : clarify
+    ? text
     : text || effectiveContent;
   const displayContent =
     message.sender_type === "bot"
