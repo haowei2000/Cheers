@@ -55,6 +55,11 @@ interface BridgeBinaryFile {
   dataB64: string;
 }
 
+type AgentNexusAttachment = AttachmentInfo & {
+  is_image?: string | boolean | null;
+  image_b64?: string | null;
+};
+
 interface BridgeUploadedFile {
   file_id: string;
   filename: string;
@@ -606,8 +611,12 @@ function deriveHttpBase(wsUrl: string): string {
   }
 }
 
-function isImageAttachment(attachment: AttachmentInfo): boolean {
-  return String(attachment.content_type || "").toLowerCase().startsWith("image/");
+function isImageAttachment(attachment: AgentNexusAttachment): boolean {
+  return (
+    String(attachment.content_type || "").toLowerCase().startsWith("image/")
+    || attachment.is_image === true
+    || String(attachment.is_image || "").toLowerCase() === "true"
+  );
 }
 
 function isPermissionMode(value: unknown): value is PermissionMode {
@@ -813,7 +822,7 @@ function formatProviderError(err: unknown): string {
   return `ACP provider error: ${detail}`;
 }
 
-function attachmentUri(attachment: AttachmentInfo): string {
+function attachmentUri(attachment: AgentNexusAttachment): string {
   const id = attachment.file_id || "unknown";
   const name = attachment.filename ? `/${encodeURIComponent(attachment.filename)}` : "";
   return `agentnexus://file/${encodeURIComponent(id)}${name}`;
@@ -828,7 +837,15 @@ async function fetchBridgeJson(
     headers: { Authorization: `Bearer ${botToken}` },
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = (await response.text()).slice(0, 240);
+    } catch {
+      detail = "";
+    }
+    throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+  }
   const body = await response.json() as { data?: unknown };
   return body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
 }
@@ -836,7 +853,7 @@ async function fetchBridgeJson(
 async function fetchBridgeTextFile(
   httpBase: string,
   botToken: string,
-  attachment: AttachmentInfo,
+  attachment: AgentNexusAttachment,
 ): Promise<BridgeTextFile | null> {
   if (!httpBase || !attachment.file_id) return null;
   const url = `${httpBase}/api/v1/agent-bridge/files/${encodeURIComponent(attachment.file_id)}/content`;
@@ -855,7 +872,7 @@ async function fetchBridgeTextFile(
 async function fetchBridgeBinaryFile(
   httpBase: string,
   botToken: string,
-  attachment: AttachmentInfo,
+  attachment: AgentNexusAttachment,
 ): Promise<BridgeBinaryFile | null> {
   if (!httpBase || !attachment.file_id) return null;
   const url = `${httpBase}/api/v1/agent-bridge/files/${encodeURIComponent(attachment.file_id)}/binary`;
@@ -866,6 +883,20 @@ async function fetchBridgeBinaryFile(
     contentType: typeof data.content_type === "string" ? data.content_type : attachment.content_type || "application/octet-stream",
     sizeBytes: typeof data.size_bytes === "number" ? data.size_bytes : attachment.size_bytes ?? undefined,
     dataB64: data.data_b64,
+  };
+}
+
+function inlineImageFromAttachment(attachment: AgentNexusAttachment): BridgeBinaryFile | null {
+  const raw = typeof attachment.image_b64 === "string" ? attachment.image_b64.trim() : "";
+  if (!raw) return null;
+  const dataUrlMatch = /^data:([^;,]+)?;base64,(.*)$/s.exec(raw);
+  const dataB64 = dataUrlMatch ? dataUrlMatch[2] : raw;
+  if (!dataB64) return null;
+  return {
+    filename: attachment.filename || attachment.file_id || "image",
+    contentType: dataUrlMatch?.[1] || attachment.content_type || "application/octet-stream",
+    sizeBytes: attachment.size_bytes ?? undefined,
+    dataB64,
   };
 }
 
@@ -935,7 +966,7 @@ function attachmentSummaryLine(attachment: AttachmentInfo): string {
 }
 
 async function attachmentToPromptBlocks(
-  attachment: AttachmentInfo,
+  attachment: AgentNexusAttachment,
   options: PromptBuildOptions,
 ): Promise<ContentBlock[]> {
   const blocks: ContentBlock[] = [];
@@ -943,6 +974,16 @@ async function attachmentToPromptBlocks(
 
   if (isImageAttachment(attachment)) {
     if (options.supportsImages) {
+      const inlineImage = inlineImageFromAttachment(attachment);
+      if (inlineImage?.dataB64) {
+        blocks.push({
+          type: "image",
+          mimeType: inlineImage.contentType,
+          data: inlineImage.dataB64,
+          uri: attachmentUri(attachment),
+        });
+        return blocks;
+      }
       try {
         const image = await fetchBridgeBinaryFile(options.httpBase, options.botToken, attachment);
         if (image?.dataB64) {
@@ -954,6 +995,7 @@ async function attachmentToPromptBlocks(
           });
           return blocks;
         }
+        options.logger.warn("acp attachment image hydration returned no data file_id=%s", attachment.file_id);
       } catch (err) {
         options.logger.warn("acp attachment image hydration failed file_id=%s: %s", attachment.file_id, String(err));
       }

@@ -987,4 +987,53 @@ describe("ConnectorRuntime", () => {
     expect(streamed).toContain("[image:image/png:");
     await runtime.stop();
   });
+
+  it("hydrates AgentNexus inline image attachments without a binary fetch", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const imageB64 = Buffer.from("inline-png-bytes").toString("base64");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-inline-image",
+      channel_id: "C1",
+      seq: 5,
+      placeholder_msg_id: "ph-inline-image",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "please inspect inline image" },
+      attachments: [
+        {
+          file_id: "inline-img-1",
+          filename: "inline.png",
+          content_type: "image/png",
+          size_bytes: 16,
+          is_image: "true",
+          image_b64: imageB64,
+        },
+      ],
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    const streamed = bridge.receivedDeltas.map((d) => d.delta).join("");
+    expect(streamed).toContain(`[image:image/png:${imageB64.length}]`);
+    await runtime.stop();
+  });
 });

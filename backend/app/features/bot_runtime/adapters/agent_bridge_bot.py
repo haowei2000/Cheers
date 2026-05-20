@@ -18,13 +18,20 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.agent_bridge_bot")
 
 def _sanitize_attachment(a: dict) -> dict:
     """Sanitize attachment."""
-    return {
+    attachment = {
         "file_id": a.get("file_id"),
         "filename": a.get("filename") or a.get("original_filename"),
         "content_type": a.get("content_type"),
         "size_bytes": a.get("size_bytes"),
         "summary": a.get("summary"),
     }
+    is_image = a.get("is_image")
+    if isinstance(is_image, (str, bool)):
+        attachment["is_image"] = is_image
+    image_b64 = a.get("image_b64")
+    if isinstance(image_b64, str) and image_b64:
+        attachment["image_b64"] = image_b64
+    return attachment
 
 
 class AgentBridgeBotAdapter(BotAdapter):
