@@ -382,6 +382,51 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("times out a stalled ACP prompt and reports the stream error", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_HANG_PROMPT: "1" },
+            requestTimeoutMs: 1000,
+            promptTimeoutMs: 50,
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-stalled",
+      channel_id: "C1",
+      seq: 15,
+      placeholder_msg_id: "ph-stalled",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "stall this prompt" },
+    });
+
+    await waitFor(() => bridge.receivedErrors.length === 1);
+    expect(bridge.receivedErrors[0]).toMatchObject({
+      type: "error",
+      msg_id: "ph-stalled",
+    });
+    expect(String(bridge.receivedErrors[0].message)).toContain("ACP request timed out after 50ms: session/prompt");
+    expect(bridge.receivedTraces.some((t) => t.phase === "prompt_timeout" && t.status === "failed")).toBe(true);
+    await runtime.stop();
+  });
+
   it("loads a persisted ACP session when the agent supports session/load", async () => {
     const statePath = path.join(tmp, "state.json");
     await writeFile(

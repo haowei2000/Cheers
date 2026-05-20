@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { BotSession, type AttachmentInfo, type ConfigUpdateInbound, type InboundMessage } from "@haowei0520/bridge-client";
 
-import { JsonRpcError } from "./acp-jsonrpc.js";
+import { JsonRpcError, JsonRpcRequestTimeoutError } from "./acp-jsonrpc.js";
 import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";
 import type {
@@ -1171,24 +1171,43 @@ export class AcpBridgeAccount {
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      const userMessage = formatProviderError(err);
-      this.bridge.trace({
-        msg_id: msgId,
-        task_id: message.event.task_id,
-        channel_id: message.channelId,
-        run_id: acpSessionId,
-        session_key: providerSessionKey,
-        stream: "acp",
-        seq: ++ctx.traceSeq,
-        phase: "prompt_failed",
-        status: "error",
-        title: "ACP prompt failed",
-        message: userMessage,
-        data: {
-          error: detail,
-          error_kind: providerErrorKind(err) || undefined,
-        },
-      });
+      let userMessage = formatProviderError(err);
+      if (err instanceof JsonRpcRequestTimeoutError && err.method === "session/prompt") {
+        this.agent.cancel(acpSessionId);
+        userMessage = detail;
+        this.bridge.trace({
+          msg_id: msgId,
+          task_id: message.event.task_id,
+          channel_id: message.channelId,
+          run_id: acpSessionId,
+          session_key: providerSessionKey,
+          stream: "acp",
+          seq: ++ctx.traceSeq,
+          phase: "prompt_timeout",
+          status: "failed",
+          title: "ACP prompt timed out",
+          message: detail,
+          data: { timeoutMs: err.timeoutMs },
+        });
+      } else {
+        this.bridge.trace({
+          msg_id: msgId,
+          task_id: message.event.task_id,
+          channel_id: message.channelId,
+          run_id: acpSessionId,
+          session_key: providerSessionKey,
+          stream: "acp",
+          seq: ++ctx.traceSeq,
+          phase: "prompt_failed",
+          status: "error",
+          title: "ACP prompt failed",
+          message: userMessage,
+          data: {
+            error: detail,
+            error_kind: providerErrorKind(err) || undefined,
+          },
+        });
+      }
       if (message.event.placeholder_msg_id) {
         const prefix = ctx.sentDelta && ctx.text.trim() ? "\n\n" : "";
         const visibleError = `${prefix}${userMessage}`;

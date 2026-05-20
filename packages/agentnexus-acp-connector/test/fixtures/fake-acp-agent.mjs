@@ -14,6 +14,7 @@ const returnFileReferences = process.env.FAKE_ACP_RETURN_FILE_REFERENCES === "1"
 const returnOptions = process.env.FAKE_ACP_OPTIONS === "1";
 const promptErrorKind = process.env.FAKE_ACP_PROMPT_ERROR_KIND || "";
 const promptErrorMessage = process.env.FAKE_ACP_PROMPT_ERROR_MESSAGE || "";
+const hangPrompt = process.env.FAKE_ACP_HANG_PROMPT === "1";
 const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS || "0");
 const promptDelayIfIncludes = process.env.FAKE_ACP_PROMPT_DELAY_IF_INCLUDES || "";
 
@@ -117,6 +118,7 @@ async function handle(frame) {
   }
   if (method === "session/prompt") {
     const promptText = textOf(params.prompt);
+    if (hangPrompt) return;
     if (promptDelayMs > 0 && (!promptDelayIfIncludes || promptText.includes(promptDelayIfIncludes))) {
       await sleep(promptDelayMs);
     }
