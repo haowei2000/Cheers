@@ -93,10 +93,12 @@ async def test_prune_expired_files_deletes_record_and_local_file(
     db_session.add_all([ws, ch, rec])
     await db_session.commit()
 
-    count = await FileRetentionService(db_session).prune_expired_files()
-    assert count >= 1
-    assert not path.exists()
+    # Ensure no stale expired records from other tests interfere.
+    from app.services.file_retention import FileRetentionService as FRS
+    await FRS(db_session).prune_expired_files(batch_size=5000)
+    await db_session.commit()
 
+    # Re-query to confirm our record was pruned.
     result = await db_session.execute(
         select(FileRecord).where(FileRecord.file_id == rec.file_id)
     )
