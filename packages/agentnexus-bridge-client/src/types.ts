@@ -30,6 +30,7 @@ export interface ConnectorControlSettings {
   promptTimeoutMs?: number;
   cwd?: string;
   model?: string;
+  configOptions?: Record<string, string>;
 }
 
 export interface ConnectorControlConfig {

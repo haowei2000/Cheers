@@ -224,17 +224,83 @@ describe("ConnectorRuntime", () => {
         { id: "code", name: "Code" },
       ],
     });
-    expect(options.configOptions).toEqual([
+    expect(options.configOptions).toMatchObject([
       {
         id: "model",
         name: "Model",
-        currentValueId: "fake-small",
-        values: [
-          { id: "fake-small", name: "Fake Small" },
-          { id: "fake-large", name: "Fake Large" },
+        type: "select",
+        category: "model",
+        currentValue: "fake-small",
+        options: [
+          { value: "fake-small", name: "Fake Small" },
+          { value: "fake-large", name: "Fake Large" },
         ],
       },
     ]);
+    await runtime.stop();
+  });
+
+  it("applies ACP session config option values pushed from AgentNexus", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_OPTIONS: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushConfigUpdate({
+      revision: 9,
+      settings: {
+        configOptions: { model: "fake-large" },
+      },
+    });
+
+    await waitFor(() => bridge.receivedConfigStatuses.length === 1);
+    expect(bridge.receivedConfigStatuses[0]).toMatchObject({
+      type: "config_status",
+      revision: 9,
+      ok: true,
+      applied: ["configOptions"],
+      rejected: [],
+    });
+
+    bridge.pushMessage({
+      task_id: "task-set-options",
+      channel_id: "C1",
+      seq: 10,
+      placeholder_msg_id: "ph-set-options",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "use configured model" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    expect(bridge.receivedDeltas.map((d) => d.delta).join("")).toContain("config: model=fake-large");
+    expect(bridge.receivedConfigOptions.some((frame) => {
+      const options = frame.options as Record<string, unknown> | undefined;
+      const configOptions = options?.configOptions;
+      return Array.isArray(configOptions) && configOptions.some((option) => (
+        typeof option === "object" &&
+        option !== null &&
+        (option as Record<string, unknown>).id === "model" &&
+        (option as Record<string, unknown>).currentValue === "fake-large"
+      ));
+    })).toBe(true);
     await runtime.stop();
   });
 
@@ -379,6 +445,51 @@ describe("ConnectorRuntime", () => {
     expect(String(bridge.receivedErrors[0].message)).toContain("Claude usage limit reached");
     expect(String(bridge.receivedErrors[0].message)).toContain("resets 1:30pm");
     expect(bridge.receivedTraces.some((t) => t.phase === "prompt_failed" && t.status === "error")).toBe(true);
+    await runtime.stop();
+  });
+
+  it("times out a stalled ACP prompt and reports the stream error", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_HANG_PROMPT: "1" },
+            requestTimeoutMs: 1000,
+            promptTimeoutMs: 50,
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-stalled",
+      channel_id: "C1",
+      seq: 15,
+      placeholder_msg_id: "ph-stalled",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "stall this prompt" },
+    });
+
+    await waitFor(() => bridge.receivedErrors.length === 1);
+    expect(bridge.receivedErrors[0]).toMatchObject({
+      type: "error",
+      msg_id: "ph-stalled",
+    });
+    expect(String(bridge.receivedErrors[0].message)).toContain("ACP request timed out after 50ms: session/prompt");
+    expect(bridge.receivedTraces.some((t) => t.phase === "prompt_timeout" && t.status === "failed")).toBe(true);
     await runtime.stop();
   });
 
@@ -588,6 +699,148 @@ describe("ConnectorRuntime", () => {
       msg_id: "ph-file-references",
       file_ids: ["file-1", "file-2", "file-3", "file-4"],
     });
+    await runtime.stop();
+  });
+
+  it("uploads linked local files when ACP includes a line suffix", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_FILE_LINK_WITH_LINE: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-linked-file-line",
+      channel_id: "C1",
+      seq: 6,
+      placeholder_msg_id: "ph-linked-file-line",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "create and link a report file with line suffix" },
+    });
+
+    await waitFor(() => bridge.receivedUploads.length === 1 && bridge.receivedDones.length === 1);
+    expect(bridge.receivedUploads[0]).toMatchObject({
+      type: "file_upload",
+      channel_id: "C1",
+      filename: "fake-line-linked-result.md",
+      content_type: "text/markdown",
+    });
+    expect(Buffer.from(String(bridge.receivedUploads[0].data_b64), "base64").toString("utf8"))
+      .toContain("line suffix");
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-linked-file-line",
+      file_ids: ["file-1"],
+    });
+    await runtime.stop();
+  });
+
+  it("ignores missing local file links instead of failing the ACP message", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_MISSING_FILE_LINK: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-missing-linked-file",
+      channel_id: "C1",
+      seq: 7,
+      placeholder_msg_id: "ph-missing-linked-file",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "mention a missing linked file" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    expect(bridge.receivedUploads).toHaveLength(0);
+    expect(bridge.receivedErrors).toHaveLength(0);
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-missing-linked-file",
+    });
+    await runtime.stop();
+  });
+
+  it("retries ACP file uploads after a transient data websocket disconnect", async () => {
+    const statePath = path.join(tmp, "state.json");
+    bridge.closeNextUploadWithoutAck();
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_FILE: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-file-retry",
+      channel_id: "C1",
+      seq: 8,
+      placeholder_msg_id: "ph-file-retry",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "return a report file after reconnect" },
+    });
+
+    await waitFor(() => bridge.receivedUploads.length === 1 && bridge.receivedDones.length === 1, 5000);
+    expect(bridge.receivedUploads[0]).toMatchObject({
+      type: "file_upload",
+      channel_id: "C1",
+      filename: "acp-result.md",
+    });
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-file-retry",
+      file_ids: ["file-1"],
+    });
+    expect(bridge.receivedTraces.some((t) => t.phase === "file_upload_retry")).toBe(true);
     await runtime.stop();
   });
 
