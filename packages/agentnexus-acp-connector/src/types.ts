@@ -63,6 +63,21 @@ export interface AcpSessionUpdate {
   update: Record<string, unknown>;
 }
 
+export interface AcpSessionStartResult {
+  sessionId: string;
+  modes?: unknown;
+  configOptions?: unknown;
+  availableCommands?: unknown;
+  [key: string]: unknown;
+}
+
+export interface AcpSessionLoadResult {
+  modes?: unknown;
+  configOptions?: unknown;
+  availableCommands?: unknown;
+  [key: string]: unknown;
+}
+
 export interface AcpInitializeResponse {
   protocolVersion?: number;
   agentCapabilities?: {

@@ -149,6 +149,8 @@ def _next_connector_control_config(
     }
     if isinstance(existing.get("last_status"), dict):
         control["last_status"] = existing["last_status"]
+    if isinstance(existing.get("options"), dict):
+        control["options"] = existing["options"]
     cfg[_CONNECTOR_CONTROL_KEY] = control
     return cfg
 

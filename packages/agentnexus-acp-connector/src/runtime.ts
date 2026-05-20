@@ -6,7 +6,14 @@ import { BotSession, type AttachmentInfo, type ConfigUpdateInbound, type Inbound
 
 import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";
-import type { AccountConfig, AcpSessionUpdate, ContentBlock, Logger, PermissionMode, RemoteConnectorSettings } from "./types.js";
+import type {
+  AccountConfig,
+  AcpSessionUpdate,
+  ContentBlock,
+  Logger,
+  PermissionMode,
+  RemoteConnectorSettings,
+} from "./types.js";
 
 interface ExtractedFile {
   key: string;
@@ -60,9 +67,26 @@ interface SettingsApplyResult {
   settings: RemoteConnectorSettings;
 }
 
+interface AcpDiscoveredOptions {
+  source: "acp";
+  agentInfo?: unknown;
+  agentCapabilities?: unknown;
+  sessionId?: string | null;
+  providerSessionKey?: string | null;
+  modes?: unknown;
+  configOptions?: unknown;
+  availableCommands?: unknown;
+  updatedAt: string;
+  [key: string]: unknown;
+}
+
 const REMOTE_TIMEOUT_MIN_MS = 5_000;
 const REMOTE_TIMEOUT_MAX_MS = 3_600_000;
 const REMOTE_MODEL_MAX_LENGTH = 128;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 function textOfContent(content: unknown): string {
   if (Array.isArray(content)) return content.map(textOfContent).filter(Boolean).join("");
@@ -72,6 +96,27 @@ function textOfContent(content: unknown): string {
   if (c.type === "content") return textOfContent(c.content);
   if (Array.isArray(c.content)) return textOfContent(c.content);
   return "";
+}
+
+function hasOwn(obj: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function capArray(value: unknown, max: number): unknown {
+  return Array.isArray(value) ? value.slice(0, max) : value;
+}
+
+function normalizeDiscoveredOptions(options: AcpDiscoveredOptions): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...options };
+  if (isObject(next.modes)) {
+    next.modes = {
+      ...next.modes,
+      availableModes: capArray(next.modes["availableModes"], 50),
+    };
+  }
+  if (hasOwn(next, "configOptions")) next.configOptions = capArray(next.configOptions, 100);
+  if (hasOwn(next, "availableCommands")) next.availableCommands = capArray(next.availableCommands, 100);
+  return next;
 }
 
 function safeFilename(name: string): string {
@@ -592,9 +637,11 @@ export class AcpBridgeAccount {
   private readonly bridge: BotSession;
   private readonly agent: AcpStdioAgent;
   private readonly activeProviderSessions = new Map<string, string>();
+  private readonly providerSessionKeysByAcpSession = new Map<string, string>();
   private readonly activeRunsBySession = new Map<string, RunContext>();
   private readonly activeRunsByMsg = new Map<string, RunContext>();
   private readonly queuesByProviderSessionKey = new Map<string, Promise<void>>();
+  private discoveredOptions: AcpDiscoveredOptions | null = null;
 
   constructor(
     private readonly accountId: string,
@@ -632,10 +679,49 @@ export class AcpBridgeAccount {
     await this.agent.start();
     this.bridge.start();
     await this.bridge.waitReady(15_000);
+    this.reportAcpDiscoveredOptions(null, null, {});
   }
 
   async stop(): Promise<void> {
     await Promise.allSettled([this.bridge.stop(), this.agent.stop()]);
+  }
+
+  private reportAcpDiscoveredOptions(
+    providerSessionKey: string | null,
+    sessionId: string | null,
+    payload: Record<string, unknown>,
+  ): void {
+    const next: AcpDiscoveredOptions = {
+      ...(this.discoveredOptions ?? { source: "acp" as const, updatedAt: "" }),
+      source: "acp",
+      agentInfo: this.agent.initializeResponse?.agentInfo ?? this.discoveredOptions?.agentInfo,
+      agentCapabilities: this.agent.initializeResponse?.agentCapabilities ?? this.discoveredOptions?.agentCapabilities,
+      updatedAt: new Date().toISOString(),
+    };
+    if (providerSessionKey) next.providerSessionKey = providerSessionKey;
+    if (sessionId) next.sessionId = sessionId;
+    if (hasOwn(payload, "modes")) next.modes = payload.modes;
+    if (hasOwn(payload, "configOptions")) next.configOptions = payload.configOptions;
+    if (hasOwn(payload, "availableCommands")) next.availableCommands = payload.availableCommands;
+
+    const kind = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : "";
+    if (kind === "current_mode_update" && typeof payload.currentModeId === "string") {
+      next.modes = {
+        ...(isObject(next.modes) ? next.modes : {}),
+        currentModeId: payload.currentModeId,
+      };
+    }
+    if (kind === "config_option_update" && hasOwn(payload, "configOptions")) {
+      next.configOptions = payload.configOptions;
+    }
+    if (kind === "available_commands_update" && hasOwn(payload, "availableCommands")) {
+      next.availableCommands = payload.availableCommands;
+    }
+
+    this.discoveredOptions = next;
+    if (!this.bridge.sendConfigOptions({ options: normalizeDiscoveredOptions(next) })) {
+      this.logger.debug?.("bridge account=%s skipped config_options; control stream is not open", this.accountId);
+    }
   }
 
   private enqueueMessage(message: InboundMessage): void {
@@ -667,8 +753,10 @@ export class AcpBridgeAccount {
     const saved = this.state.get(this.accountId, providerSessionKey);
     if (saved && this.agent.supportsLoadSession()) {
       try {
-        await this.agent.loadSession(saved);
+        const loaded = await this.agent.loadSession(saved);
         this.activeProviderSessions.set(providerSessionKey, saved);
+        this.providerSessionKeysByAcpSession.set(saved, providerSessionKey);
+        this.reportAcpDiscoveredOptions(providerSessionKey, saved, loaded);
         this.logger.info("acp account=%s loaded session %s", this.accountId, saved);
         return saved;
       } catch (err) {
@@ -681,10 +769,12 @@ export class AcpBridgeAccount {
       }
     }
     const created = await this.agent.newSession();
-    this.activeProviderSessions.set(providerSessionKey, created);
-    await this.state.set(this.accountId, providerSessionKey, created);
-    this.logger.info("acp account=%s created session %s for %s", this.accountId, created, providerSessionKey);
-    return created;
+    this.activeProviderSessions.set(providerSessionKey, created.sessionId);
+    this.providerSessionKeysByAcpSession.set(created.sessionId, providerSessionKey);
+    await this.state.set(this.accountId, providerSessionKey, created.sessionId);
+    this.reportAcpDiscoveredOptions(providerSessionKey, created.sessionId, created);
+    this.logger.info("acp account=%s created session %s for %s", this.accountId, created.sessionId, providerSessionKey);
+    return created.sessionId;
   }
 
   private async handleMessage(message: InboundMessage): Promise<void> {
@@ -832,6 +922,9 @@ export class AcpBridgeAccount {
           }
           await this.agent.restart();
           this.activeProviderSessions.clear();
+          this.providerSessionKeysByAcpSession.clear();
+          this.discoveredOptions = null;
+          this.reportAcpDiscoveredOptions(null, null, {});
           applied.push(...restartFields);
           this.logger.info(
             "acp account=%s restarted agent for connector config revision=%s fields=%s",
@@ -884,10 +977,21 @@ export class AcpBridgeAccount {
   }
 
   private async handleAcpUpdate(notification: AcpSessionUpdate): Promise<void> {
-    const ctx = this.activeRunsBySession.get(notification.sessionId);
-    if (!ctx) return;
     const update = notification.update;
     const kind = String(update.sessionUpdate ?? "unknown");
+    if (
+      kind === "config_option_update" ||
+      kind === "current_mode_update" ||
+      kind === "available_commands_update"
+    ) {
+      this.reportAcpDiscoveredOptions(
+        this.providerSessionKeysByAcpSession.get(notification.sessionId) ?? null,
+        notification.sessionId,
+        update,
+      );
+    }
+    const ctx = this.activeRunsBySession.get(notification.sessionId);
+    if (!ctx) return;
     if (kind === "agent_message_chunk") {
       const text = textOfContent(update.content);
       if (text) {
