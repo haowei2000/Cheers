@@ -332,6 +332,56 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("normalizes ACP auth and quota errors before sending stream errors", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: {
+              FAKE_ACP_PROMPT_ERROR_KIND: "rate_limit",
+              FAKE_ACP_PROMPT_ERROR_MESSAGE: "Internal error: You've hit your limit · resets 1:30pm (Asia/Shanghai)",
+            },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-rate-limit",
+      channel_id: "C1",
+      seq: 14,
+      placeholder_msg_id: "ph-rate-limit",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "hello" },
+    });
+
+    await waitFor(() => bridge.receivedErrors.length === 1);
+    const visibleError = bridge.receivedDeltas.map((d) => d.delta).join("");
+    expect(visibleError).toContain("Claude usage limit reached");
+    expect(visibleError).toContain("resets 1:30pm");
+    expect(bridge.receivedErrors[0]).toMatchObject({
+      type: "error",
+      msg_id: "ph-rate-limit",
+    });
+    expect(String(bridge.receivedErrors[0].message)).toContain("Claude usage limit reached");
+    expect(String(bridge.receivedErrors[0].message)).toContain("resets 1:30pm");
+    expect(bridge.receivedTraces.some((t) => t.phase === "prompt_failed" && t.status === "error")).toBe(true);
+    await runtime.stop();
+  });
+
   it("loads a persisted ACP session when the agent supports session/load", async () => {
     const statePath = path.join(tmp, "state.json");
     await writeFile(

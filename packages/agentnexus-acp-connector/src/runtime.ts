@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { BotSession, type AttachmentInfo, type ConfigUpdateInbound, type InboundMessage } from "@haowei0520/bridge-client";
 
+import { JsonRpcError } from "./acp-jsonrpc.js";
 import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";
 import type {
@@ -648,6 +649,84 @@ async function normalizeRemoteSettings(input: unknown, currentCwd: string | unde
   return { applied: [], rejected, settings };
 }
 
+function stripProviderErrorPrefix(message: string): string {
+  return message
+    .replace(/^JsonRpcError:\s*/i, "")
+    .replace(/^Internal error:\s*/i, "")
+    .trim();
+}
+
+function providerErrorKind(err: unknown): string {
+  if (err instanceof JsonRpcError && err.data && typeof err.data === "object") {
+    const data = err.data as Record<string, unknown>;
+    if (typeof data.errorKind === "string") return data.errorKind;
+    if (typeof data.error_kind === "string") return data.error_kind;
+  }
+  return "";
+}
+
+function formatProviderError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const detail = stripProviderErrorPrefix(raw) || "Unknown provider error";
+  const kind = providerErrorKind(err);
+  const haystack = `${kind} ${detail}`.toLowerCase();
+
+  if (
+    kind === "authentication_failed"
+    || haystack.includes("invalid authentication credentials")
+    || haystack.includes("401")
+    || haystack.includes("authrequired")
+  ) {
+    return [
+      `Claude authentication failed: ${detail}`,
+      "",
+      "Run `claude-agent-acp --cli auth login --console` on the connector host, or configure `ANTHROPIC_API_KEY` in the connector `agent.env`, then restart the connector.",
+    ].join("\n");
+  }
+
+  if (
+    kind === "rate_limit"
+    || haystack.includes("rate limit")
+    || haystack.includes("hit your limit")
+    || haystack.includes("quota")
+  ) {
+    return [
+      `Claude usage limit reached: ${detail}`,
+      "",
+      "Wait until the reset time, or switch this connector to Anthropic Console/API billing and restart it.",
+    ].join("\n");
+  }
+
+  if (
+    kind === "billing_error"
+    || haystack.includes("billing")
+    || haystack.includes("credit balance")
+    || haystack.includes("payment")
+  ) {
+    return [
+      `Claude billing issue: ${detail}`,
+      "",
+      "Check the Anthropic Console billing status or switch to a working Claude account/API key, then retry.",
+    ].join("\n");
+  }
+
+  if (
+    kind.includes("permission")
+    || haystack.includes("permission")
+    || haystack.includes("not allowed")
+    || haystack.includes("forbidden")
+    || haystack.includes("does not support using claude.ai subscriptions")
+  ) {
+    return [
+      `Claude permission issue: ${detail}`,
+      "",
+      "Approve the requested action, adjust the connector `agent.permissionMode`, or switch to a supported Claude Console/API login and retry.",
+    ].join("\n");
+  }
+
+  return `ACP provider error: ${detail}`;
+}
+
 function attachmentUri(attachment: AttachmentInfo): string {
   const id = attachment.file_id || "unknown";
   const name = attachment.filename ? `/${encodeURIComponent(attachment.filename)}` : "";
@@ -1083,8 +1162,31 @@ export class AcpBridgeAccount {
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
+      const userMessage = formatProviderError(err);
+      this.bridge.trace({
+        msg_id: msgId,
+        task_id: message.event.task_id,
+        channel_id: message.channelId,
+        run_id: acpSessionId,
+        session_key: providerSessionKey,
+        stream: "acp",
+        seq: ++ctx.traceSeq,
+        phase: "prompt_failed",
+        status: "error",
+        title: "ACP prompt failed",
+        message: userMessage,
+        data: {
+          error: detail,
+          error_kind: providerErrorKind(err) || undefined,
+        },
+      });
       if (message.event.placeholder_msg_id) {
-        const ack = await this.bridge.streamError({ msgId, message: detail });
+        const prefix = ctx.sentDelta && ctx.text.trim() ? "\n\n" : "";
+        const visibleError = `${prefix}${userMessage}`;
+        ctx.text += visibleError;
+        ctx.sentDelta = true;
+        this.bridge.streamDelta({ msgId, seq: ++ctx.deltaSeq, delta: visibleError });
+        const ack = await this.bridge.streamError({ msgId, message: userMessage });
         if (!ack.ok) {
           this.logger.warn(
             "acp account=%s stream error not acknowledged msg_id=%s code=%s error=%s",
@@ -1095,7 +1197,7 @@ export class AcpBridgeAccount {
           );
         }
       } else {
-        await this.bridge.reply({ source: message, text: `ACP agent error: ${detail}` });
+        await this.bridge.reply({ source: message, text: userMessage });
       }
       throw err;
     } finally {
