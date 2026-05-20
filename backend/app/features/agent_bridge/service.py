@@ -55,6 +55,13 @@ def _preserve_memory_load(content_data: Any) -> dict[str, Any] | None:
     return {"memory_load": memory_load}
 
 
+def _content_for_stream_finalize(content: str, error: str | None) -> str:
+    """Make terminal provider errors visible even when no text was streamed."""
+    if content.strip() or not error:
+        return content
+    return str(error).strip() or "Agent Bridge provider error"
+
+
 async def _get_message_with_retry(
     session: AsyncSession,
     msg_id: str,
@@ -398,7 +405,7 @@ async def finalize_stream(
         if state.finalized:
             return None
         state.finalized = True
-        content = state.buffer
+        content = _content_for_stream_finalize(state.buffer, error)
     await _flush_delta_coalescer(msg_id)
 
     pending = await pending_replies.resolve(

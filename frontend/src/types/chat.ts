@@ -141,6 +141,7 @@ export type Message = {
   /** True when the bot reply was finalized mid-stream (cancel/error).
    *  Renders a canceled / interrupted badge. */
   is_partial?: boolean;
+  error?: string | null;
   _bot_status?: string;
   _bot_trace?: BotTraceEvent[];
   _agent_bridge_task?: AgentBridgeTaskContentData;

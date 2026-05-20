@@ -9,6 +9,7 @@ from app.features.bot_runtime.bot_events import queue as bot_event_queue
 from app.features.bot_runtime.bot_events.jobs import (
     AGENT_BRIDGE_REPLY,
     AGENT_BRIDGE_STREAM_DONE,
+    AGENT_BRIDGE_STREAM_ERROR,
     handle_bot_event_job,
 )
 from app.features.bot_runtime.bot_events.queue import BotEventJob, MemoryBotEventQueue, RedisBotEventQueue
@@ -294,6 +295,92 @@ async def test_openclaw_stream_done_event_flushes_buffer(
             assert broker.channel_frames[-1][1]["data"]["content"] == "stream done"
     finally:
         await pending_replies.pop_by_msg("msg-bot-event-stream")
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_openclaw_stream_error_writes_empty_error_to_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broker = RecordingBroker()
+    monkeypatch.setattr("app.services.realtime_broker._broker", broker)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with factory() as session:
+            workspace = Workspace(workspace_id="ws-bot-event-error", name="Workspace")
+            channel = Channel(
+                channel_id="ch-bot-event-error",
+                workspace_id=workspace.workspace_id,
+                name="queued-error",
+            )
+            msg = Message(
+                msg_id="msg-bot-event-error",
+                channel_id=channel.channel_id,
+                sender_id="bot-event-error",
+                sender_type="bot",
+                content="",
+                task_id="task-bot-event-error",
+                in_reply_to_msg_id="trigger-error",
+                msg_type="reply",
+            )
+            session.add_all([workspace, channel, msg])
+            await session.flush()
+            await ensure_bot_run(
+                session,
+                task_id="task-bot-event-error",
+                channel_id=channel.channel_id,
+                trigger_msg_id="trigger-error",
+                bot_id="bot-event-error",
+                placeholder_msg_id=msg.msg_id,
+                status="dispatched_async",
+            )
+            await pending_replies.register(
+                PendingReply(
+                    task_id="task-bot-event-error",
+                    bot_id="bot-event-error",
+                    channel_id=channel.channel_id,
+                    msg_id=msg.msg_id,
+                )
+            )
+            await register_stream(
+                msg_id=msg.msg_id,
+                bot_id="bot-event-error",
+                channel_id=channel.channel_id,
+                task_id="task-bot-event-error",
+            )
+
+            error = "Claude usage limit reached: resets 1:30pm"
+            await handle_bot_event_job(
+                session,
+                BotEventJob(
+                    event_type=AGENT_BRIDGE_STREAM_ERROR,
+                    payload={
+                        "msg_id": msg.msg_id,
+                        "bot_id": "bot-event-error",
+                        "error": error,
+                    },
+                ),
+            )
+            await session.flush()
+            await session.refresh(msg)
+
+            assert msg.content == error
+            assert msg.is_partial is True
+            assert await pending_replies.peek_by_msg(msg.msg_id) is None
+            run = await get_bot_run_by_placeholder(session, msg.msg_id)
+            assert run is not None
+            assert run.status == "failed"
+            assert run.error_message == error
+            assert broker.channel_frames[-1][1]["type"] == "message_done"
+            assert broker.channel_frames[-1][1]["data"]["content"] == error
+            assert broker.channel_frames[-1][1]["data"]["error"] == error
+    finally:
+        await pending_replies.pop_by_msg("msg-bot-event-error")
         await engine.dispose()
 
 
