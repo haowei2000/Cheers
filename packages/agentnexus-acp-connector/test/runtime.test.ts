@@ -591,6 +591,148 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("uploads linked local files when ACP includes a line suffix", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_FILE_LINK_WITH_LINE: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-linked-file-line",
+      channel_id: "C1",
+      seq: 6,
+      placeholder_msg_id: "ph-linked-file-line",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "create and link a report file with line suffix" },
+    });
+
+    await waitFor(() => bridge.receivedUploads.length === 1 && bridge.receivedDones.length === 1);
+    expect(bridge.receivedUploads[0]).toMatchObject({
+      type: "file_upload",
+      channel_id: "C1",
+      filename: "fake-line-linked-result.md",
+      content_type: "text/markdown",
+    });
+    expect(Buffer.from(String(bridge.receivedUploads[0].data_b64), "base64").toString("utf8"))
+      .toContain("line suffix");
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-linked-file-line",
+      file_ids: ["file-1"],
+    });
+    await runtime.stop();
+  });
+
+  it("ignores missing local file links instead of failing the ACP message", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_MISSING_FILE_LINK: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-missing-linked-file",
+      channel_id: "C1",
+      seq: 7,
+      placeholder_msg_id: "ph-missing-linked-file",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "mention a missing linked file" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    expect(bridge.receivedUploads).toHaveLength(0);
+    expect(bridge.receivedErrors).toHaveLength(0);
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-missing-linked-file",
+    });
+    await runtime.stop();
+  });
+
+  it("retries ACP file uploads after a transient data websocket disconnect", async () => {
+    const statePath = path.join(tmp, "state.json");
+    bridge.closeNextUploadWithoutAck();
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_FILE: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-file-retry",
+      channel_id: "C1",
+      seq: 8,
+      placeholder_msg_id: "ph-file-retry",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "return a report file after reconnect" },
+    });
+
+    await waitFor(() => bridge.receivedUploads.length === 1 && bridge.receivedDones.length === 1, 5000);
+    expect(bridge.receivedUploads[0]).toMatchObject({
+      type: "file_upload",
+      channel_id: "C1",
+      filename: "acp-result.md",
+    });
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-file-retry",
+      file_ids: ["file-1"],
+    });
+    expect(bridge.receivedTraces.some((t) => t.phase === "file_upload_retry")).toBe(true);
+    await runtime.stop();
+  });
+
   it("hydrates AgentNexus text and image attachments as ACP resource/image content blocks", async () => {
     const statePath = path.join(tmp, "state.json");
     bridge.setTextFile("doc-1", {

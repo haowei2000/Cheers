@@ -8,6 +8,8 @@ const loadSession = process.env.FAKE_ACP_LOAD_SESSION === "1";
 const permission = process.env.FAKE_ACP_PERMISSION === "1";
 const returnFile = process.env.FAKE_ACP_RETURN_FILE === "1";
 const returnFileLink = process.env.FAKE_ACP_RETURN_FILE_LINK === "1";
+const returnFileLinkWithLine = process.env.FAKE_ACP_RETURN_FILE_LINK_WITH_LINE === "1";
+const returnMissingFileLink = process.env.FAKE_ACP_RETURN_MISSING_FILE_LINK === "1";
 const returnFileReferences = process.env.FAKE_ACP_RETURN_FILE_REFERENCES === "1";
 const returnOptions = process.env.FAKE_ACP_OPTIONS === "1";
 const promptErrorKind = process.env.FAKE_ACP_PROMPT_ERROR_KIND || "";
@@ -190,6 +192,35 @@ async function handle(frame) {
           content: {
             type: "text",
             text: `\nCreated linked file: [fake-linked-result.md](${filePath})`,
+          },
+        },
+      });
+    }
+    if (returnFileLinkWithLine) {
+      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const filePath = path.join(cwd, "fake-line-linked-result.md");
+      await writeFile(filePath, "# Line Linked Result\n\nGenerated through a markdown file link with a line suffix.\n", "utf8");
+      notify("session/update", {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: `\nCreated linked file: [fake-line-linked-result.md](${filePath}:12)`,
+          },
+        },
+      });
+    }
+    if (returnMissingFileLink) {
+      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const filePath = path.join(cwd, "missing-linked-result.md");
+      notify("session/update", {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: `\nMissing linked file: [missing-linked-result.md](${filePath})`,
           },
         },
       });
