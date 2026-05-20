@@ -136,16 +136,17 @@ export function useMessagePresentation({
     if (message._streaming || !message.is_partial || message.sender_type !== "bot") {
       return null;
     }
+    const hasError = Boolean(message.error);
     return (
       <span
         className="inline-block align-middle ml-1.5 px-1.5 py-0.5 rounded text-[10px]"
         style={{
           background: "var(--surface-soft)",
           border: "1px solid var(--border)",
-          color: "var(--fg-3)",
+          color: hasError ? "var(--red)" : "var(--fg-3)",
         }}
       >
-        Canceled
+        {hasError ? "Failed" : "Canceled"}
       </span>
     );
   }, []);

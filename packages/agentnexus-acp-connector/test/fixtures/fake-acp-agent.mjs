@@ -10,6 +10,8 @@ const returnFile = process.env.FAKE_ACP_RETURN_FILE === "1";
 const returnFileLink = process.env.FAKE_ACP_RETURN_FILE_LINK === "1";
 const returnFileReferences = process.env.FAKE_ACP_RETURN_FILE_REFERENCES === "1";
 const returnOptions = process.env.FAKE_ACP_OPTIONS === "1";
+const promptErrorKind = process.env.FAKE_ACP_PROMPT_ERROR_KIND || "";
+const promptErrorMessage = process.env.FAKE_ACP_PROMPT_ERROR_MESSAGE || "";
 const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS || "0");
 const promptDelayIfIncludes = process.env.FAKE_ACP_PROMPT_DELAY_IF_INCLUDES || "";
 
@@ -21,8 +23,8 @@ function result(id, value) {
   send({ jsonrpc: "2.0", id, result: value });
 }
 
-function error(id, code, message) {
-  send({ jsonrpc: "2.0", id, error: { code, message } });
+function error(id, code, message, data) {
+  send({ jsonrpc: "2.0", id, error: { code, message, ...(data ? { data } : {}) } });
 }
 
 function notify(method, params) {
@@ -115,6 +117,15 @@ async function handle(frame) {
     const promptText = textOf(params.prompt);
     if (promptDelayMs > 0 && (!promptDelayIfIncludes || promptText.includes(promptDelayIfIncludes))) {
       await sleep(promptDelayMs);
+    }
+    if (promptErrorKind) {
+      error(
+        id,
+        -32603,
+        promptErrorMessage || "Internal error: fake prompt error",
+        { errorKind: promptErrorKind },
+      );
+      return;
     }
     if (permission) {
       send({

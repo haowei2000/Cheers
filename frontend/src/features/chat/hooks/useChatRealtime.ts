@@ -350,6 +350,7 @@ export function useChatRealtime({
                   ...(typeof is_partial === "boolean"
                     ? { is_partial }
                     : {}),
+                  error: error || null,
                 };
               }),
             );
