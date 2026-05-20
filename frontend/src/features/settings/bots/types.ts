@@ -53,6 +53,18 @@ export type ConnectorControlConfig = {
     error?: string | null;
     reported_at?: string | null;
   } | null;
+  last_option_status?: {
+    request_id?: string | null;
+    ok?: boolean | null;
+    status?: string | null;
+    session_id?: string | null;
+    provider_session_key?: string | null;
+    config_id?: string | null;
+    value?: string | null;
+    error?: string | null;
+    requested_at?: string | null;
+    reported_at?: string | null;
+  } | null;
 };
 
 export type BotRow = {

@@ -131,6 +131,7 @@ async function handle(frame) {
       return;
     }
     ensureSession(params.sessionId, params.cwd || process.cwd());
+    ensureSession(params.sessionId, params.cwd || process.cwd());
     notify("session/update", {
       sessionId: params.sessionId,
       update: {
@@ -142,15 +143,23 @@ async function handle(frame) {
     return;
   }
   if (method === "session/set_config_option") {
-    const state = ensureSession(params.sessionId);
+    if (!returnOptions) {
+      error(id, -32601, "config options not supported");
+      return;
+    }
+    if (!sessions.has(params.sessionId)) {
+      error(id, -32000, "unknown session");
+      return;
+    }
     if (params.configId !== "model") {
-      error(id, -32602, `unknown config option ${params.configId}`);
+      error(id, -32000, "unknown config option");
       return;
     }
     if (params.value !== "fake-small" && params.value !== "fake-large") {
-      error(id, -32602, `unsupported model ${params.value}`);
+      error(id, -32000, "unknown config option value");
       return;
     }
+    const state = ensureSession(params.sessionId);
     state.config.model = params.value;
     result(id, sessionOptions(params.sessionId));
     return;

@@ -85,12 +85,23 @@ export interface ConfigUpdateInbound {
   updated_at?: string | null;
 }
 
+export interface ConfigOptionSetInbound {
+  type: "config_option_set";
+  request_id: string;
+  session_id?: string | null;
+  provider_session_key?: string | null;
+  config_id: string;
+  value: string;
+  updated_at?: string | null;
+}
+
 export type ControlInbound =
   | ControlHello
   | ChannelJoinedEvent
   | ChannelLeftEvent
   | CancelInbound
   | ConfigUpdateInbound
+  | ConfigOptionSetInbound
   | PongFrame
   | { type: "error"; detail?: string };
 
@@ -116,6 +127,18 @@ export interface ConfigStatusFrame {
 export interface ConfigOptionsFrame {
   type: "config_options";
   options: Record<string, unknown>;
+}
+
+export interface ConfigOptionStatusFrame {
+  type: "config_option_status";
+  request_id?: string | null;
+  ok: boolean;
+  session_id?: string | null;
+  provider_session_key?: string | null;
+  config_id?: string | null;
+  value?: string | null;
+  error?: string | null;
+  options?: Record<string, unknown> | null;
 }
 
 // ============ Data stream ============

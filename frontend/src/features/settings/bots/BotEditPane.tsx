@@ -57,25 +57,45 @@ function connectorOptionTitle(option: { id?: string; name?: string }): string {
   return name || id || "Option";
 }
 
-function connectorOptionCurrentValue(option: {
-  currentValue?: string | null;
-  currentValueId?: string | null;
-}): string {
-  return safeConnectorText(option.currentValue, safeConnectorText(option.currentValueId, ""));
+type ConnectorOptionValue = { id: string; name: string; description?: string | null };
+
+function connectorOptionValues(option: {
+  options?: Array<{ value?: string; id?: string; name?: string; description?: string | null }>;
+  values?: Array<{ id?: string; name?: string; description?: string | null }>;
+}): ConnectorOptionValue[] {
+  const rawValues = Array.isArray(option.values) && option.values.length > 0
+    ? option.values
+    : Array.isArray(option.options)
+      ? option.options
+      : [];
+  const normalized: ConnectorOptionValue[] = [];
+  rawValues.forEach((value) => {
+    const id = safeConnectorText("value" in value ? value.value : undefined, safeConnectorText(value.id, ""));
+    if (!id) return;
+    normalized.push({
+      id,
+      name: safeConnectorText(value.name, id),
+      description: typeof value.description === "string" ? value.description : null,
+    });
+  });
+  return normalized;
 }
 
 function connectorOptionChoices(option: {
   options?: Array<{ value?: string; id?: string; name?: string; description?: string | null }>;
   values?: Array<{ id?: string; name?: string; description?: string | null }>;
 }): Array<{ value: string; name: string }> {
-  const raw = option.options?.length ? option.options : option.values || [];
-  return raw
-    .map((item) => {
-      const value = safeConnectorText("value" in item ? item.value : undefined, safeConnectorText(item.id, ""));
-      const name = safeConnectorText(item.name, value);
-      return { value, name };
-    })
-    .filter((item) => item.value);
+  return connectorOptionValues(option).map((value) => ({ value: value.id, name: value.name }));
+}
+
+function connectorOptionCurrentValue(
+  option: { currentValue?: string | null; currentValueId?: string | null },
+  values: Array<{ id: string }> = [],
+): string {
+  return safeConnectorText(
+    option.currentValue,
+    safeConnectorText(option.currentValueId, safeConnectorText(values[0]?.id, "")),
+  );
 }
 
 function isManagedBotAvatarUrl(value: string): boolean {
@@ -120,7 +140,7 @@ export function BotEditPane({
     const name = safeConnectorText(option.name, "").toLowerCase();
     return id === "model" || name.includes("model");
   });
-  const discoveredModelValues = discoveredModelOption ? connectorOptionChoices(discoveredModelOption) : [];
+  const discoveredModelValues = discoveredModelOption ? connectorOptionValues(discoveredModelOption) : [];
   const connectorModelListId = `connector-model-options-${bot.bot_id}`;
   const [savingConnectorControl, setSavingConnectorControl] = useState(false);
   const [connectorPermissionMode, setConnectorPermissionMode] = useState<ConnectorPermissionMode>(
@@ -137,6 +157,7 @@ export function BotEditPane({
   const [connectorConfigOptionValues, setConnectorConfigOptionValues] = useState<Record<string, string>>(
     connectorSettings.configOptions || {},
   );
+  const [applyingAcpOptionKey, setApplyingAcpOptionKey] = useState<string | null>(null);
 
   useEffect(() => {
     setDisplayName(bot.display_name || "");
@@ -362,6 +383,48 @@ export function BotEditPane({
     }
   };
 
+  const setAcpConfigOption = async (
+    option: { id?: string; name?: string },
+    value: string,
+  ) => {
+    const configId = safeConnectorText(option.id, "");
+    const nextValue = value.trim();
+    const sessionId = safeConnectorText(connectorOptions?.sessionId, "");
+    const providerSessionKey = safeConnectorText(connectorOptions?.providerSessionKey, "");
+    if (!configId || !nextValue) {
+      toast.error("ACP option is incomplete");
+      return;
+    }
+    if (!sessionId && !providerSessionKey) {
+      toast.error("ACP session is not available yet");
+      return;
+    }
+    const key = `${configId}:${nextValue}`;
+    setApplyingAcpOptionKey(key);
+    try {
+      const res = await apiFetch(`/bots/${bot.bot_id}/connector-control/acp-option`, {
+        method: "PUT",
+        token: authToken,
+        body: {
+          sessionId: sessionId || undefined,
+          providerSessionKey: providerSessionKey || undefined,
+          configId,
+          value: nextValue,
+        },
+      });
+      const data = await res.json();
+      if (data?.status !== "success") {
+        throw new Error(data?.message || data?.detail || "ACP option update failed");
+      }
+      toast.success(data.data?.dispatched ? "ACP option sent" : "ACP option saved");
+      onUpdated();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "ACP option update failed");
+    } finally {
+      setApplyingAcpOptionKey(null);
+    }
+  };
+
   const modelOptions = modelId && !models.some((m) => m.model_id === modelId)
     ? [{ model_id: modelId, name: bot.model_name || "Current model" }, ...models]
     : models;
@@ -583,9 +646,9 @@ export function BotEditPane({
                 />
                 {discoveredModelValues.length > 0 && (
                   <datalist id={connectorModelListId}>
-                    {discoveredModelValues.map((value) => (
-                      <option key={value.value} value={value.value} label={value.name} />
-                    ))}
+                    {discoveredModelValues.map((value) => {
+                      return <option key={value.id} value={value.id} label={value.name} />;
+                    })}
                   </datalist>
                 )}
               </Field>
@@ -685,12 +748,61 @@ export function BotEditPane({
                   </div>
                 )}
                 {discoveredConfigOptions.length > 0 && (
-                  <div>
-                    Options: {discoveredConfigOptions.slice(0, 6).map((option) => {
-                      const current = connectorOptionCurrentValue(option);
-                      return current ? `${connectorOptionTitle(option)}=${current}` : connectorOptionTitle(option);
-                    }).join(", ")}
-                    {discoveredConfigOptions.length > 6 ? `, +${discoveredConfigOptions.length - 6}` : ""}
+                  <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                    {discoveredConfigOptions.map((option) => {
+                      const configId = safeConnectorText(option.id, "");
+                      const values = connectorOptionValues(option);
+                      const selectValue = connectorOptionCurrentValue(option, values);
+                      const applying = applyingAcpOptionKey?.startsWith(`${configId}:`);
+                      return (
+                        <label
+                          key={configId || connectorOptionTitle(option)}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(120px, 0.9fr) minmax(160px, 1.1fr)",
+                            gap: 8,
+                            alignItems: "center",
+                          }}
+                        >
+                          <span>
+                            {connectorOptionTitle(option)}
+                            {option.description ? <span className="an-rc-sub"> · {option.description}</span> : null}
+                          </span>
+                          <select
+                            value={selectValue}
+                            onChange={(e) => void setAcpConfigOption(option, e.target.value)}
+                            disabled={!configId || values.length === 0 || applying}
+                            className={inputCls}
+                          >
+                            {values.length === 0 ? (
+                              <option value="">No values</option>
+                            ) : (
+                              values.map((value) => {
+                                return (
+                                  <option key={value.id} value={value.id}>
+                                    {value.name}{value.id !== value.name ? ` (${value.id})` : ""}
+                                  </option>
+                                );
+                              })
+                            )}
+                          </select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {connectorControl?.last_option_status && (
+                  <div
+                    style={{
+                      color: connectorControl.last_option_status.ok === false ? "var(--red)" : "var(--fg-2)",
+                    }}
+                  >
+                    Last ACP option: {connectorControl.last_option_status.config_id || "option"}
+                    {connectorControl.last_option_status.value ? `=${connectorControl.last_option_status.value}` : ""}
+                    {connectorControl.last_option_status.ok === true ? " applied" : ""}
+                    {connectorControl.last_option_status.ok === false ? " rejected" : ""}
+                    {connectorControl.last_option_status.status === "pending" ? " pending" : ""}
+                    {connectorControl.last_option_status.error ? ` · ${connectorControl.last_option_status.error}` : ""}
                   </div>
                 )}
                 {connectorOptions.truncated && <div>Options payload was too large and was truncated.</div>}

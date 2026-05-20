@@ -76,6 +76,13 @@ class ConnectorControlUpdateIn(BaseModel):
     settings: ConnectorControlSettingsIn
 
 
+class ConnectorAcpOptionSetIn(BaseModel):
+    sessionId: str | None = Field(default=None, min_length=1, max_length=256)
+    providerSessionKey: str | None = Field(default=None, min_length=1, max_length=1024)
+    configId: str = Field(min_length=1, max_length=256)
+    value: str = Field(min_length=1, max_length=512)
+
+
 def _validate_username(username: str) -> None:
     if not username or not username.strip():
         raise BadRequestError("用户名不能为空")
@@ -150,8 +157,36 @@ def _next_connector_control_config(
     }
     if isinstance(existing.get("last_status"), dict):
         control["last_status"] = existing["last_status"]
+    if isinstance(existing.get("last_option_status"), dict):
+        control["last_option_status"] = existing["last_option_status"]
     if isinstance(existing.get("options"), dict):
         control["options"] = existing["options"]
+    cfg[_CONNECTOR_CONTROL_KEY] = control
+    return cfg
+
+
+def _next_connector_option_request_config(
+    binding_config: dict | None,
+    *,
+    request_id: str,
+    session_id: str | None,
+    provider_session_key: str | None,
+    config_id: str,
+    value: str,
+) -> dict:
+    cfg = dict(binding_config or {})
+    existing = _connector_control_from_binding_config(cfg)
+    control = dict(existing)
+    control["last_option_status"] = {
+        "request_id": request_id,
+        "session_id": session_id,
+        "provider_session_key": provider_session_key,
+        "config_id": config_id,
+        "value": value,
+        "ok": None,
+        "status": "pending",
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+    }
     cfg[_CONNECTOR_CONTROL_KEY] = control
     return cfg
 
@@ -761,6 +796,68 @@ async def update_bot_connector_control(
         "bot": _to_full(bot, current_user, owner=owner),
         "connector_control": control,
         "dispatched": dispatched,
+    })
+
+
+@router.put("/{bot_id}/connector-control/acp-option", response_model=APIResponse[dict])
+async def set_bot_connector_acp_option(
+    bot_id: str,
+    body: ConnectorAcpOptionSetIn,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Set an ACP session configuration option through the live connector."""
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    if not can_manage_bot(bot, current_user):
+        raise ForbiddenError("无权修改该 Bot")
+    if (bot.binding_type or "http") != "agent_bridge":
+        raise BadRequestError("只有 Agent Bridge Bot 支持 connector control")
+
+    session_id = body.sessionId.strip() if body.sessionId else None
+    provider_session_key = body.providerSessionKey.strip() if body.providerSessionKey else None
+    if not session_id and not provider_session_key:
+        raise BadRequestError("sessionId 或 providerSessionKey 至少需要一个")
+
+    request_id = gen_uuid()
+    config_id = body.configId.strip()
+    value = body.value.strip()
+    bot.binding_config = _next_connector_option_request_config(
+        bot.binding_config,
+        request_id=request_id,
+        session_id=session_id,
+        provider_session_key=provider_session_key,
+        config_id=config_id,
+        value=value,
+    )
+    session.add(bot)
+    await session.flush()
+    control = _connector_control_from_binding_config(bot.binding_config)
+    frame = {
+        "type": "config_option_set",
+        "request_id": request_id,
+        "session_id": session_id,
+        "provider_session_key": provider_session_key,
+        "config_id": config_id,
+        "value": value,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await session.commit()
+    dispatched = await bot_session_registry.dispatch_control(bot.bot_id, frame)
+    audit.info(
+        "action=bot.connector_control.acp_option_set actor=%s resource_id=%s config_id=%s dispatched=%s",
+        current_user.user_id,
+        bot_id,
+        config_id,
+        dispatched,
+    )
+    await session.refresh(bot)
+    owner = await session.get(User, bot.created_by) if bot.created_by else None
+    return APIResponse.ok({
+        "bot": _to_full(bot, current_user, owner=owner),
+        "connector_control": control,
+        "dispatched": dispatched,
+        "request_id": request_id,
     })
 
 

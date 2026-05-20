@@ -2,7 +2,13 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BotSession, type AttachmentInfo, type ConfigUpdateInbound, type InboundMessage } from "@haowei0520/bridge-client";
+import {
+  BotSession,
+  type AttachmentInfo,
+  type ConfigOptionSetInbound,
+  type ConfigUpdateInbound,
+  type InboundMessage,
+} from "@haowei0520/bridge-client";
 
 import { JsonRpcError, JsonRpcRequestTimeoutError } from "./acp-jsonrpc.js";
 import { AcpStdioAgent } from "./acp-agent.js";
@@ -1052,6 +1058,7 @@ export class AcpBridgeAccount {
         onMessage: (message) => this.enqueueMessage(message),
         onCancel: (msgId, reason) => this.handleCancel(msgId, reason),
         onConfigUpdate: (update) => this.handleConfigUpdate(update),
+        onConfigOptionSet: (update) => this.handleConfigOptionSet(update),
         onFatal: (reason) => this.logger.error("bridge account=%s fatal: %s", this.accountId, reason),
         onError: (err) => this.logger.error("bridge account=%s error: %s", this.accountId, String(err)),
         onConnectionChange: (stream, state) => this.logger.info(
@@ -1386,6 +1393,102 @@ export class AcpBridgeAccount {
     if (!ctx) return;
     this.logger.warn("acp account=%s cancelling session=%s reason=%s", this.accountId, ctx.acpSessionId, reason ?? "");
     this.agent.cancel(ctx.acpSessionId);
+  }
+
+  private resolveConfigOptionTarget(update: ConfigOptionSetInbound): {
+    sessionId: string | null;
+    providerSessionKey: string | null;
+  } {
+    let sessionId = typeof update.session_id === "string" && update.session_id.trim()
+      ? update.session_id.trim()
+      : null;
+    let providerSessionKey = typeof update.provider_session_key === "string" && update.provider_session_key.trim()
+      ? update.provider_session_key.trim()
+      : null;
+    if (!sessionId && providerSessionKey) {
+      sessionId = this.activeProviderSessions.get(providerSessionKey) ?? null;
+    }
+    if (!providerSessionKey && sessionId) {
+      providerSessionKey = this.providerSessionKeysByAcpSession.get(sessionId) ?? null;
+    }
+    if (!sessionId && typeof this.discoveredOptions?.sessionId === "string") {
+      sessionId = this.discoveredOptions.sessionId;
+      providerSessionKey = providerSessionKey
+        ?? (typeof this.discoveredOptions.providerSessionKey === "string" ? this.discoveredOptions.providerSessionKey : null);
+    }
+    return { sessionId, providerSessionKey };
+  }
+
+  private markKnownConfigOptionValue(
+    providerSessionKey: string | null,
+    sessionId: string,
+    configId: string,
+    value: string,
+  ): void {
+    if (!Array.isArray(this.discoveredOptions?.configOptions)) return;
+    let changed = false;
+    const configOptions = this.discoveredOptions.configOptions.map((option) => {
+      if (!isObject(option) || String(option["id"] ?? "") !== configId) return option;
+      changed = true;
+      return { ...option, currentValueId: value };
+    });
+    if (changed) this.reportAcpDiscoveredOptions(providerSessionKey, sessionId, { configOptions });
+  }
+
+  private async handleConfigOptionSet(update: ConfigOptionSetInbound): Promise<void> {
+    const requestId = typeof update.request_id === "string" ? update.request_id : null;
+    const configId = typeof update.config_id === "string" ? update.config_id.trim() : "";
+    const value = typeof update.value === "string" ? update.value.trim() : "";
+    const target = this.resolveConfigOptionTarget(update);
+    const base = {
+      request_id: requestId,
+      session_id: target.sessionId,
+      provider_session_key: target.providerSessionKey,
+      config_id: configId || null,
+      value: value || null,
+    };
+    if (!target.sessionId || !configId || !value) {
+      this.bridge.sendConfigOptionStatus({
+        ...base,
+        ok: false,
+        error: "session_id, config_id, and value are required",
+      });
+      return;
+    }
+    try {
+      const result = await this.agent.setSessionConfigOption(target.sessionId, configId, value);
+      if (hasOwn(result, "configOptions")) {
+        this.reportAcpDiscoveredOptions(target.providerSessionKey, target.sessionId, result);
+      } else {
+        this.markKnownConfigOptionValue(target.providerSessionKey, target.sessionId, configId, value);
+      }
+      const options = this.discoveredOptions ? normalizeDiscoveredOptions(this.discoveredOptions) : null;
+      this.bridge.sendConfigOptionStatus({
+        ...base,
+        ok: true,
+        options,
+      });
+      this.logger.info(
+        "acp account=%s set config option session=%s config_id=%s",
+        this.accountId,
+        target.sessionId,
+        configId,
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.bridge.sendConfigOptionStatus({
+        ...base,
+        ok: false,
+        error: detail,
+      });
+      this.logger.warn(
+        "acp account=%s set config option failed session=%s config_id=%s: %s",
+        this.accountId,
+        target.sessionId,
+        configId,
+        detail,
+      );
+    }
   }
 
   private async handleConfigUpdate(update: ConfigUpdateInbound): Promise<void> {
