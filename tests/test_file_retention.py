@@ -101,3 +101,44 @@ async def test_prune_expired_files_deletes_record_and_local_file(
         select(FileRecord).where(FileRecord.file_id == rec.file_id)
     )
     assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_prune_stale_pending_uploads_deletes_record_and_local_file(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "file_pending_upload_ttl_seconds", 60)
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-00000000f903", name="Retention")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-00000000f903",
+        workspace_id=ws.workspace_id,
+        name="pending-cleanup",
+        type="public",
+    )
+    path = tmp_path / "stale-pending.txt"
+    path.write_text("unconfirmed", encoding="utf-8")
+    rec = FileRecord(
+        file_id="aaaaaaaa-0000-0000-0000-00000000f903",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-00000000f903",
+        original_path=str(path),
+        original_filename="stale-pending.txt",
+        content_type="text/plain",
+        size_bytes=11,
+        status="pending_upload",
+        uploaded_at=None,
+        created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    )
+    db_session.add_all([ws, ch, rec])
+    await db_session.commit()
+
+    count = await FileRetentionService(db_session).prune_stale_pending_uploads()
+    assert count >= 1
+    assert not path.exists()
+
+    result = await db_session.execute(
+        select(FileRecord).where(FileRecord.file_id == rec.file_id)
+    )
+    assert result.scalar_one_or_none() is None

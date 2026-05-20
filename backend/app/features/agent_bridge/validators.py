@@ -4,8 +4,9 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ChannelMembership, FileRecord, Message
+from app.db.models import Channel, ChannelMembership, FileRecord, Message
 from app.services.file_retention import active_file_filter
+from app.services.file_scope_service import FileScopeService
 
 
 async def check_bot_in_channel(
@@ -28,16 +29,31 @@ async def check_files_in_channel(
 ) -> tuple[str, str] | None:
     if not file_ids:
         return None
-    rows = (await session.execute(
-        select(FileRecord.file_id).where(
-            FileRecord.file_id.in_(file_ids),
+
+    channel = await session.get(Channel, channel_id)
+    if channel is None:
+        return ("channel_not_found", f"频道不存在: {channel_id}")
+
+    requested_file_ids = list(dict.fromkeys(file_ids))
+    records = (await session.execute(
+        select(FileRecord).where(
+            FileRecord.file_id.in_(requested_file_ids),
             active_file_filter(),
         )
-    )).all()
-    found = {fid for (fid,) in rows}
-    missing = [f for f in file_ids if f not in found]
+    )).scalars().all()
+    found = {record.file_id for record in records}
+    missing = [file_id for file_id in requested_file_ids if file_id not in found]
     if missing:
         return ("file_not_found", f"file_ids 不存在: {missing}")
+
+    scope = FileScopeService(session)
+    not_linked: list[str] = []
+    for file_id in requested_file_ids:
+        if not await scope.file_linked_to_channel(file_id=file_id, channel=channel):
+            not_linked.append(file_id)
+    if not_linked:
+        return ("file_not_in_channel", f"file_ids 不属于频道 {channel_id}: {not_linked}")
+
     return None
 
 

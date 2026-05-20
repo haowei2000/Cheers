@@ -8,6 +8,7 @@ const loadSession = process.env.FAKE_ACP_LOAD_SESSION === "1";
 const permission = process.env.FAKE_ACP_PERMISSION === "1";
 const returnFile = process.env.FAKE_ACP_RETURN_FILE === "1";
 const returnFileLink = process.env.FAKE_ACP_RETURN_FILE_LINK === "1";
+const returnFileReferences = process.env.FAKE_ACP_RETURN_FILE_REFERENCES === "1";
 const returnOptions = process.env.FAKE_ACP_OPTIONS === "1";
 const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS || "0");
 const promptDelayIfIncludes = process.env.FAKE_ACP_PROMPT_DELAY_IF_INCLUDES || "";
@@ -178,6 +179,42 @@ async function handle(frame) {
           content: {
             type: "text",
             text: `\nCreated linked file: [fake-linked-result.md](${filePath})`,
+          },
+        },
+      });
+    }
+    if (returnFileReferences) {
+      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const absolutePath = path.join(cwd, "plain-absolute-result.csv");
+      const backtickPath = path.join(cwd, "backtick result.md");
+      const relativePath = path.join(cwd, "relative-result.json");
+      const structuredPath = path.join(cwd, "structured-path-result.txt");
+      await writeFile(absolutePath, "kind,value\nabsolute,1\n", "utf8");
+      await writeFile(backtickPath, "# Backtick Result\n\nGenerated through a backtick path.\n", "utf8");
+      await writeFile(relativePath, "{\"kind\":\"relative\"}\n", "utf8");
+      await writeFile(structuredPath, "structured path file\n", "utf8");
+      notify("session/update", {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: [
+              `Saved file: ${absolutePath}`,
+              `Created \`${backtickPath}\``,
+              "Relative output: [relative-result.json](relative-result.json)",
+            ].join("\n"),
+          },
+        },
+      });
+      notify("session/update", {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "file",
+            path: structuredPath,
+            mimeType: "text/plain",
           },
         },
       });
