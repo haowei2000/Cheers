@@ -46,11 +46,30 @@ interface BridgeBinaryFile {
   dataB64: string;
 }
 
+interface BridgeUploadedFile {
+  file_id: string;
+  filename: string;
+  content_type?: string;
+  size_bytes?: number;
+}
+
+class BridgeHttpUploadError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BridgeHttpUploadError";
+  }
+}
+
 interface RunContext {
   source: InboundMessage;
   providerSessionKey: string;
   acpSessionId: string;
   msgId: string;
+  httpBase: string;
+  botToken: string;
   startedAtMs: number;
   deltaSeq: number;
   traceSeq: number;
@@ -83,6 +102,68 @@ interface AcpDiscoveredOptions {
 const REMOTE_TIMEOUT_MIN_MS = 5_000;
 const REMOTE_TIMEOUT_MAX_MS = 3_600_000;
 const REMOTE_MODEL_MAX_LENGTH = 128;
+const OUTPUT_FILE_EXTENSIONS = new Set([
+  ".7z",
+  ".bz2",
+  ".csv",
+  ".doc",
+  ".docx",
+  ".dps",
+  ".dwg",
+  ".dxf",
+  ".epub",
+  ".et",
+  ".gif",
+  ".gz",
+  ".htm",
+  ".html",
+  ".jpeg",
+  ".jpg",
+  ".json",
+  ".md",
+  ".ofd",
+  ".pdf",
+  ".png",
+  ".ppt",
+  ".pptx",
+  ".rar",
+  ".rtf",
+  ".svg",
+  ".tar",
+  ".txt",
+  ".webp",
+  ".wps",
+  ".xls",
+  ".xlsx",
+  ".xml",
+  ".zip",
+]);
+const FILE_REFERENCE_FIELDS = [
+  "uri",
+  "url",
+  "path",
+  "filePath",
+  "filepath",
+  "absolutePath",
+  "localPath",
+];
+const NESTED_CONTENT_FIELDS = [
+  "content",
+  "contents",
+  "resource",
+  "resources",
+  "attachment",
+  "attachments",
+  "artifact",
+  "artifacts",
+  "file",
+  "files",
+  "output",
+  "outputs",
+  "item",
+  "items",
+];
+const TEXT_REFERENCE_FIELDS = ["text", "message", "markdown", "description"];
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -158,6 +239,41 @@ function guessContentType(filename: string, fallback?: string): string | undefin
   return types[ext] ?? undefined;
 }
 
+function decodePathComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function hasKnownFileExtension(value: string): boolean {
+  const clean = value.split(/[?#]/, 1)[0] ?? value;
+  return OUTPUT_FILE_EXTENSIONS.has(path.extname(clean).toLowerCase());
+}
+
+function trimAfterKnownFileExtension(value: string): string {
+  let end = -1;
+  const lower = value.toLowerCase();
+  for (const ext of OUTPUT_FILE_EXTENSIONS) {
+    const idx = lower.indexOf(ext);
+    if (idx === -1) continue;
+    const candidateEnd = idx + ext.length;
+    if (candidateEnd > end) end = candidateEnd;
+  }
+  return end === -1 ? value : value.slice(0, end);
+}
+
+function normalizeFileReference(raw: string): string {
+  let value = raw.trim();
+  value = value.replace(/\s+["'][^"']*["']\s*$/, "");
+  const angle = /^<([^>\n]+)>/.exec(value);
+  if (angle) value = angle[1] ?? "";
+  value = value.trim().replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, "");
+  value = trimAfterKnownFileExtension(value);
+  return value.trim().replace(/[.,;:!?]+$/g, "");
+}
+
 function bytesFromBase64(value: string): Uint8Array {
   const match = value.match(/^data:([^;,]+)?;base64,(.*)$/s);
   return Buffer.from(match ? match[2] : value, "base64");
@@ -216,6 +332,37 @@ async function fileFromUri(uri: string, cwd: string | undefined, resource: Recor
   return fileFromPath(fileURLToPath(uri), cwd, resource);
 }
 
+function filePathFromReference(ref: string, cwd: string | undefined): string | null {
+  const value = normalizeFileReference(ref);
+  if (!value) return null;
+  if (value.startsWith("file://")) {
+    try {
+      return fileURLToPath(value);
+    } catch {
+      return null;
+    }
+  }
+  if (path.isAbsolute(value)) {
+    return decodePathComponent(value);
+  }
+  if (!cwd) return null;
+  if (value.startsWith("./") || value.startsWith("../") || value.includes("/") || hasKnownFileExtension(value)) {
+    return path.resolve(cwd, decodePathComponent(value));
+  }
+  return null;
+}
+
+async function fileFromReference(
+  ref: string,
+  cwd: string | undefined,
+  resource: Record<string, unknown>,
+  options: { minMtimeMs?: number } = {},
+): Promise<ExtractedFile | null> {
+  const filePath = filePathFromReference(ref, cwd);
+  if (!filePath) return null;
+  return fileFromPath(filePath, cwd, resource, options);
+}
+
 async function fileFromPath(
   filePath: string,
   cwd: string | undefined,
@@ -224,7 +371,12 @@ async function fileFromPath(
 ): Promise<ExtractedFile | null> {
   const root = cwd ? path.resolve(cwd) : process.cwd();
   if (!isInsideDir(filePath, root)) return null;
-  const info = await stat(filePath);
+  let info;
+  try {
+    info = await stat(filePath);
+  } catch {
+    return null;
+  }
   if (!info.isFile()) return null;
   if (options.minMtimeMs !== undefined && info.mtimeMs + 1000 < options.minMtimeMs) return null;
   const filename = filenameFromRecord(resource, safeFilename(filePath));
@@ -239,31 +391,20 @@ async function fileFromPath(
   };
 }
 
-function filePathFromTextReference(ref: string): string | null {
-  const value = ref.trim().replace(/^<|>$/g, "");
-  if (!value) return null;
-  if (value.startsWith("file://")) {
-    try {
-      return fileURLToPath(value);
-    } catch {
-      return null;
-    }
+function markdownTargetToReference(raw: string): string {
+  const value = raw.trim();
+  if (value.startsWith("<")) {
+    const end = value.indexOf(">");
+    if (end > 0) return value.slice(1, end);
   }
-  if (path.isAbsolute(value)) {
-    try {
-      return decodeURIComponent(value);
-    } catch {
-      return value;
-    }
-  }
-  return null;
+  return value.replace(/\s+["'][^"']*["']\s*$/, "");
 }
 
-function localFileReferencesFromText(text: string): string[] {
+function localFileReferencesFromText(text: string, cwd: string | undefined): string[] {
   const refs: string[] = [];
   const seen = new Set<string>();
   const add = (raw: string) => {
-    const filePath = filePathFromTextReference(raw);
+    const filePath = filePathFromReference(raw, cwd);
     if (!filePath) return;
     const resolved = path.resolve(filePath);
     if (seen.has(resolved)) return;
@@ -271,11 +412,26 @@ function localFileReferencesFromText(text: string): string[] {
     refs.push(resolved);
   };
 
-  const markdownLinkRe = /\[[^\]\n]*\]\((file:\/\/[^)\n]+|\/[^)\n]+)\)/g;
-  for (const match of text.matchAll(markdownLinkRe)) add(match[1] ?? "");
+  const markdownLinkRe = /!?\[[^\]\n]*\]\(([^)\n]+)\)/g;
+  for (const match of text.matchAll(markdownLinkRe)) add(markdownTargetToReference(match[1] ?? ""));
 
-  const bareFileUriRe = /file:\/\/[^\s)\]]+/g;
+  const angleRefRe = /<(file:\/\/[^>\n]+|\/[^>\n]+|\.\.?\/[^>\n]+)>/g;
+  for (const match of text.matchAll(angleRefRe)) add(match[1] ?? "");
+
+  const backtickRefRe = /`([^`\n]+)`/g;
+  for (const match of text.matchAll(backtickRefRe)) add(match[1] ?? "");
+
+  const quotedRefRe = /["'](file:\/\/[^"'\n]+|\/[^"'\n]+|\.\.?\/[^"'\n]+|[^"'\n]+\.[A-Za-z0-9]{1,8})["']/g;
+  for (const match of text.matchAll(quotedRefRe)) add(match[1] ?? "");
+
+  const labeledPathRe = /(?:created|saved|wrote|written|output|exported|file|path|report|生成|保存|写入|输出|文件|路径)[^:\n]{0,80}:\s*([^\n]+)/gi;
+  for (const match of text.matchAll(labeledPathRe)) add(match[1] ?? "");
+
+  const bareFileUriRe = /file:\/\/[^\s)\]>"']+/g;
   for (const match of text.matchAll(bareFileUriRe)) add(match[0] ?? "");
+
+  const barePathRe = /(?:^|[\s(:])((?:\/|\.\.?\/)[^\s`"'<>),;]+?\.[A-Za-z0-9]{1,8})(?=$|[\s),.;:!?])/g;
+  for (const match of text.matchAll(barePathRe)) add(match[1] ?? "");
 
   return refs;
 }
@@ -286,7 +442,7 @@ async function extractFilesFromTextLinks(
   minMtimeMs: number,
 ): Promise<ExtractedFile[]> {
   const files: ExtractedFile[] = [];
-  for (const filePath of localFileReferencesFromText(text)) {
+  for (const filePath of localFileReferencesFromText(text, cwd)) {
     const file = await fileFromPath(filePath, cwd, {}, { minMtimeMs });
     if (file) files.push(file);
   }
@@ -297,9 +453,10 @@ async function extractFilesFromContent(
   content: unknown,
   cwd: string | undefined,
   fallbackName = "acp-output.bin",
+  options: { textMinMtimeMs?: number } = {},
 ): Promise<ExtractedFile[]> {
   if (Array.isArray(content)) {
-    const nested = await Promise.all(content.map((item) => extractFilesFromContent(item, cwd, fallbackName)));
+    const nested = await Promise.all(content.map((item) => extractFilesFromContent(item, cwd, fallbackName, options)));
     return nested.flat();
   }
   if (!content || typeof content !== "object") return [];
@@ -309,9 +466,12 @@ async function extractFilesFromContent(
     const resource = block.resource as Record<string, unknown>;
     const inline = inlineFileFromRecord(resource, fallbackName);
     if (inline) files.push(inline);
-    const uri = typeof resource.uri === "string" ? resource.uri : "";
-    const fromUri = uri && !inline ? await fileFromUri(uri, cwd, resource) : null;
-    if (fromUri) files.push(fromUri);
+    for (const field of FILE_REFERENCE_FIELDS) {
+      const ref = resource[field];
+      if (typeof ref !== "string" || !ref.trim()) continue;
+      const fromRef = !inline ? await fileFromReference(ref, cwd, resource) : null;
+      if (fromRef) files.push(fromRef);
+    }
   }
   const inline = (
     block.type === "file"
@@ -323,11 +483,21 @@ async function extractFilesFromContent(
     ? inlineFileFromRecord(block, fallbackName)
     : null;
   if (inline) files.push(inline);
-  const uri = typeof block.uri === "string" ? block.uri : "";
-  const fromUri = uri && !inline ? await fileFromUri(uri, cwd, block) : null;
-  if (fromUri) files.push(fromUri);
-  if (block.content && typeof block.content !== "string") {
-    files.push(...await extractFilesFromContent(block.content, cwd, fallbackName));
+  for (const field of FILE_REFERENCE_FIELDS) {
+    const ref = block[field];
+    if (typeof ref !== "string" || !ref.trim()) continue;
+    const fromRef = !inline ? await fileFromReference(ref, cwd, block) : null;
+    if (fromRef) files.push(fromRef);
+  }
+  for (const field of TEXT_REFERENCE_FIELDS) {
+    const text = block[field];
+    if (typeof text !== "string" || !text.trim()) continue;
+    files.push(...await extractFilesFromTextLinks(text, cwd, options.textMinMtimeMs ?? 0));
+  }
+  for (const field of NESTED_CONTENT_FIELDS) {
+    const nested = block[field];
+    if (!nested || typeof nested === "string") continue;
+    files.push(...await extractFilesFromContent(nested, cwd, fallbackName, options));
   }
   return files;
 }
@@ -532,6 +702,63 @@ async function fetchBridgeBinaryFile(
     sizeBytes: typeof data.size_bytes === "number" ? data.size_bytes : attachment.size_bytes ?? undefined,
     dataB64: data.data_b64,
   };
+}
+
+async function uploadBridgeBinaryFileHttp(
+  httpBase: string,
+  botToken: string,
+  channelId: string,
+  file: ExtractedFile,
+  timeoutMs: number,
+): Promise<BridgeUploadedFile | null> {
+  if (!httpBase) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+  try {
+    const response = await fetch(`${httpBase}/api/v1/agent-bridge/files/upload-binary`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        "Content-Type": file.contentType ?? "application/octet-stream",
+        "X-Channel-Id": channelId,
+        "X-Filename": file.filename,
+      },
+      body: Buffer.from(file.data),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    let payload: unknown = null;
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        payload = raw;
+      }
+    }
+    if (!response.ok) {
+      const detail = isObject(payload)
+        ? String(payload.detail ?? payload.error ?? raw)
+        : raw;
+      throw new BridgeHttpUploadError(
+        response.status,
+        `HTTP ${response.status}: ${detail || response.statusText}`,
+      );
+    }
+    const data = isObject(payload) && isObject(payload.data)
+      ? payload.data
+      : payload;
+    if (!isObject(data) || typeof data.file_id !== "string") {
+      throw new Error("upload response missing file_id");
+    }
+    return {
+      file_id: data.file_id,
+      filename: typeof data.filename === "string" ? data.filename : file.filename,
+      content_type: typeof data.content_type === "string" ? data.content_type : file.contentType,
+      size_bytes: typeof data.size_bytes === "number" ? data.size_bytes : file.data.byteLength,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function attachmentSummaryLine(attachment: AttachmentInfo): string {
@@ -786,6 +1013,8 @@ export class AcpBridgeAccount {
       providerSessionKey,
       acpSessionId,
       msgId,
+      httpBase: deriveHttpBase(this.config.dataUrl),
+      botToken: this.config.botToken,
       startedAtMs: Date.now(),
       deltaSeq: 0,
       traceSeq: 0,
@@ -1024,7 +1253,12 @@ export class AcpBridgeAccount {
   }
 
   private async uploadAcpFiles(ctx: RunContext, content: unknown): Promise<void> {
-    const files = await extractFilesFromContent(content, this.config.agent.cwd);
+    const files = await extractFilesFromContent(
+      content,
+      this.config.agent.cwd,
+      "acp-output.bin",
+      { textMinMtimeMs: ctx.startedAtMs - 5000 },
+    );
     await this.uploadFiles(ctx, files);
   }
 
@@ -1037,6 +1271,35 @@ export class AcpBridgeAccount {
     for (const file of files) {
       if (ctx.seenFileKeys.has(file.key)) continue;
       ctx.seenFileKeys.add(file.key);
+      try {
+        const uploaded = await uploadBridgeBinaryFileHttp(
+          ctx.httpBase,
+          ctx.botToken,
+          ctx.source.channelId,
+          file,
+          this.config.advanced?.sendAckTimeoutMs ?? 10 * 60_000,
+        );
+        if (uploaded) {
+          this.recordUploadedFile(ctx, uploaded);
+          continue;
+        }
+      } catch (err) {
+        if (err instanceof BridgeHttpUploadError && ![404, 405].includes(err.status)) {
+          this.logger.warn(
+            "acp account=%s HTTP file upload rejected filename=%s error=%s",
+            this.accountId,
+            file.filename,
+            err.message,
+          );
+          continue;
+        }
+        this.logger.warn(
+          "acp account=%s HTTP file upload failed; falling back to WS filename=%s error=%s",
+          this.accountId,
+          file.filename,
+          String(err),
+        );
+      }
       const ack = await this.bridge.uploadFile({
         channelId: ctx.source.channelId,
         filename: file.filename,
@@ -1044,26 +1307,7 @@ export class AcpBridgeAccount {
         contentType: file.contentType,
       });
       if (ack.ok) {
-        ctx.fileIds.push(ack.file_id);
-        this.bridge.trace({
-          msg_id: ctx.msgId,
-          task_id: ctx.source.event.task_id,
-          channel_id: ctx.source.channelId,
-          run_id: ctx.acpSessionId,
-          session_key: ctx.providerSessionKey,
-          stream: "acp",
-          seq: ++ctx.traceSeq,
-          phase: "file_uploaded",
-          status: "completed",
-          title: "ACP file uploaded",
-          message: ack.filename,
-          data: {
-            file_id: ack.file_id,
-            filename: ack.filename,
-            content_type: ack.content_type,
-            size_bytes: ack.size_bytes,
-          },
-        });
+        this.recordUploadedFile(ctx, ack);
       } else {
         this.logger.warn(
           "acp account=%s file upload failed filename=%s code=%s error=%s",
@@ -1074,6 +1318,29 @@ export class AcpBridgeAccount {
         );
       }
     }
+  }
+
+  private recordUploadedFile(ctx: RunContext, file: BridgeUploadedFile): void {
+    ctx.fileIds.push(file.file_id);
+    this.bridge.trace({
+      msg_id: ctx.msgId,
+      task_id: ctx.source.event.task_id,
+      channel_id: ctx.source.channelId,
+      run_id: ctx.acpSessionId,
+      session_key: ctx.providerSessionKey,
+      stream: "acp",
+      seq: ++ctx.traceSeq,
+      phase: "file_uploaded",
+      status: "completed",
+      title: "ACP file uploaded",
+      message: file.filename,
+      data: {
+        file_id: file.file_id,
+        filename: file.filename,
+        content_type: file.content_type,
+        size_bytes: file.size_bytes,
+      },
+    });
   }
 }
 

@@ -484,6 +484,63 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("recognizes local files from absolute, relative, backtick, and structured ACP outputs", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_RETURN_FILE_REFERENCES: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-file-references",
+      channel_id: "C1",
+      seq: 5,
+      placeholder_msg_id: "ph-file-references",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "create files in several output formats" },
+    });
+
+    await waitFor(() => bridge.receivedUploads.length === 4 && bridge.receivedDones.length === 1);
+    const uploads = new Map(bridge.receivedUploads.map((item) => [String(item.filename), item]));
+    expect([...uploads.keys()].sort()).toEqual([
+      "backtick result.md",
+      "plain-absolute-result.csv",
+      "relative-result.json",
+      "structured-path-result.txt",
+    ]);
+    expect(Buffer.from(String(uploads.get("plain-absolute-result.csv")?.data_b64), "base64").toString("utf8"))
+      .toContain("absolute,1");
+    expect(Buffer.from(String(uploads.get("backtick result.md")?.data_b64), "base64").toString("utf8"))
+      .toContain("Generated through a backtick path");
+    expect(Buffer.from(String(uploads.get("relative-result.json")?.data_b64), "base64").toString("utf8"))
+      .toContain("\"relative\"");
+    expect(Buffer.from(String(uploads.get("structured-path-result.txt")?.data_b64), "base64").toString("utf8"))
+      .toContain("structured path file");
+    expect(bridge.receivedDones[0]).toMatchObject({
+      type: "done",
+      msg_id: "ph-file-references",
+      file_ids: ["file-1", "file-2", "file-3", "file-4"],
+    });
+    await runtime.stop();
+  });
+
   it("hydrates AgentNexus text and image attachments as ACP resource/image content blocks", async () => {
     const statePath = path.join(tmp, "state.json");
     bridge.setTextFile("doc-1", {

@@ -26,6 +26,7 @@ services:
       - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
       - FILE_RETENTION_DAYS=${FILE_RETENTION_DAYS:-365}
       - FILE_RETENTION_CLEANUP_INTERVAL_SECONDS=${FILE_RETENTION_CLEANUP_INTERVAL_SECONDS:-86400}
+      - FILE_PENDING_UPLOAD_TTL_SECONDS=${FILE_PENDING_UPLOAD_TTL_SECONDS:-3600}
       - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/ofd,application/rtf,text/csv,text/html,text/plain,text/markdown,application/zip,application/vnd.rar,application/x-7z-compressed,application/x-tar,application/gzip,application/epub+zip,image/png,image/jpeg,image/webp,image/gif}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost}
       - KKFILEVIEW_ENABLED=${KKFILEVIEW_ENABLED:-true}

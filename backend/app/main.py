@@ -31,7 +31,9 @@ async def _run_file_retention_cleanup_once() -> int:
     from app.services.file_retention import FileRetentionService
 
     async with async_session_factory() as session:
-        count = await FileRetentionService(session).prune_expired_files()
+        retention = FileRetentionService(session)
+        count = await retention.prune_expired_files()
+        count += await retention.prune_stale_pending_uploads()
         await session.commit()
         return count
 
@@ -46,7 +48,7 @@ async def _file_retention_cleanup_loop() -> None:
         try:
             count = await _run_file_retention_cleanup_once()
             if count:
-                logger.info("file retention cleanup pruned %d expired files", count)
+                logger.info("file retention cleanup pruned %d file records", count)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -89,7 +91,7 @@ async def lifespan(app: FastAPI):
     try:
         count = await _run_file_retention_cleanup_once()
         if count:
-            logger.info("file retention cleanup pruned %d expired files on startup", count)
+            logger.info("file retention cleanup pruned %d file records on startup", count)
     except Exception:
         logger.exception("file retention startup cleanup failed")
 

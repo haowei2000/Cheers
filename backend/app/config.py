@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # File retention: default 365 days; <=0 disables expiry.
     file_retention_days: int = 365
     file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
+    file_pending_upload_ttl_seconds: int = 60 * 60
     file_upload_allowed_types: str = (
         "application/pdf,"
         "application/msword,"
