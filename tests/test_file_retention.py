@@ -97,6 +97,8 @@ async def test_prune_expired_files_deletes_record_and_local_file(
     assert count >= 1
     assert not path.exists()
 
+    await db_session.commit()
+    db_session.expunge_all()
     result = await db_session.execute(
         select(FileRecord).where(FileRecord.file_id == rec.file_id)
     )
@@ -138,6 +140,8 @@ async def test_prune_stale_pending_uploads_deletes_record_and_local_file(
     assert count >= 1
     assert not path.exists()
 
+    await db_session.commit()
+    db_session.expunge_all()
     result = await db_session.execute(
         select(FileRecord).where(FileRecord.file_id == rec.file_id)
     )

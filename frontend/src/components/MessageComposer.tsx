@@ -604,7 +604,7 @@ export function MessageComposer({
 
   const promptTemplateTriggerLabel = selectedPromptTemplateName || "Skill";
   const hasMentionButtonSelection = Boolean(leadingBotMentionLabel || mentionTriggerLabel);
-  const mentionButtonLabel = leadingBotMentionLabel || mentionTriggerLabel || "Agent";
+  const mentionButtonLabel = leadingBotMentionLabel || mentionTriggerLabel || "@";
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
