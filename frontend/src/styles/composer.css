@@ -750,6 +750,11 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
 }
 
 @media (max-width: 720px) {
+  .an-chat-composer-dock {
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+  }
   .an-composer-toprow {
     max-width: none;
     margin: 0 4px 6px;
@@ -768,6 +773,9 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   .an-composer {
     max-width: none;
     border-radius: 12px;
+    box-shadow:
+      0 1px 0 var(--border) inset,
+      0 6px 18px color-mix(in oklab, var(--shadow) 72%, transparent);
   }
   .an-composer-kindhead {
     padding: 7px 12px 5px;
@@ -781,7 +789,7 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   .an-composer-textarea {
     padding: 10px 12px 4px;
     font-size: 16px;
-    max-height: 36dvh;
+    max-height: min(36dvh, 240px);
   }
   .an-composer-bar {
     gap: 3px;
@@ -807,9 +815,18 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   .an-composer-bar .an-composer-send {
     height: 34px;
     padding: 0 14px;
+    max-width: 118px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .an-composer-resize {
     height: 6px;
+  }
+  .an-menu.an-mention-menu,
+  .an-composer-template-menu.is-keyboard-open {
+    max-height: min(42dvh, 260px) !important;
+    overscroll-behavior: contain;
   }
   html[data-density="compact"] .an-composer-textarea,
   html[data-density="compact"] .an-composer-title {

@@ -71,14 +71,14 @@ export function Modal({
           leaveTo="opacity-0"
         >
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-[1px]"
+            className="an-dialog-backdrop fixed inset-0 bg-black/40 backdrop-blur-[1px]"
             aria-hidden="true"
           />
         </TransitionChild>
 
         {/* Panel container */}
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
+        <div className="an-dialog-scroll fixed inset-0 overflow-y-auto">
+          <div className="an-dialog-positioner">
             <TransitionChild
               as={Fragment}
               enter="ease-out duration-150"
@@ -136,7 +136,7 @@ export function Modal({
                     )}
                   </div>
                 )}
-                <div className="px-5 py-4">{children}</div>
+                <div className="an-dialog-body px-5 py-4">{children}</div>
               </DialogPanel>
             </TransitionChild>
           </div>

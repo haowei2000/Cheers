@@ -27,6 +27,9 @@
      ═══════════════════════════════════════════════════════════════════════════ */
   :root {
     color-scheme: light;
+    --an-viewport-height: 100dvh;
+    --an-viewport-offset-top: 0px;
+    --an-keyboard-inset: 0px;
   }
   html.dark {
     color-scheme: dark;
@@ -244,10 +247,14 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  min-height: var(--an-viewport-height, 100dvh);
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 #root {
   height: 100%;
+  min-height: var(--an-viewport-height, 100dvh);
   overflow: hidden;
 }
 
@@ -268,10 +275,20 @@ body {
   line-height: var(--lh-body);
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
 }
 :where(button, input, textarea, select) {
   font-family: inherit;
   letter-spacing: var(--tracking-ui);
+}
+:where(a, button, input, textarea, select, [role="button"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@supports not (height: 100dvh) {
+  :root {
+    --an-viewport-height: 100vh;
+  }
 }
 
 /* ═════════════════════════════════════════════════════════════════════════

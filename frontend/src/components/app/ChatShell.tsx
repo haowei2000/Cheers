@@ -26,10 +26,16 @@ export function ChatShell({
   workspaces,
 }: ChatShellProps) {
   return (
-    <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
+    <div
+      className="an-app-shell flex min-h-0 overflow-hidden"
+      style={{
+        background: "var(--bg-0)",
+        height: "var(--an-viewport-height, 100dvh)",
+      }}
+    >
       {isMobile && sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-[55]"
+          className="an-mobile-backdrop fixed inset-0 bg-black/50 z-[55]"
           onClick={onCloseSidebar}
         />
       )}
