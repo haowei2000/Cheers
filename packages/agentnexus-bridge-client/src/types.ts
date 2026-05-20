@@ -162,6 +162,8 @@ export interface AttachmentInfo {
   content_type?: string | null;
   size_bytes?: number | null;
   summary?: string | null;
+  is_image?: string | boolean | null;
+  image_b64?: string | null;
 }
 
 export interface DataHello {
