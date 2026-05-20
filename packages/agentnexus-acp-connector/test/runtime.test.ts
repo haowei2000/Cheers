@@ -304,6 +304,84 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("applies ACP session config options requested over connector control", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_OPTIONS: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-set-option",
+      channel_id: "C1",
+      seq: 10,
+      placeholder_msg_id: "ph-set-option",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "discover options before setting" },
+    });
+
+    await waitFor(() => bridge.receivedConfigOptions.some((frame) => {
+      const options = frame.options as Record<string, unknown> | undefined;
+      return Array.isArray(options?.configOptions);
+    }));
+    const optionsFrame = bridge.receivedConfigOptions.find((item) => {
+      const options = item.options as Record<string, unknown> | undefined;
+      return Array.isArray(options?.configOptions);
+    })!;
+    const options = optionsFrame.options as Record<string, unknown>;
+    const sessionId = String(options.sessionId);
+
+    bridge.pushConfigOptionSet({
+      request_id: "set-model-1",
+      session_id: sessionId,
+      provider_session_key: "agentnexus:channel:C1",
+      config_id: "model",
+      value: "fake-large",
+    });
+
+    await waitFor(() => bridge.receivedConfigOptionStatuses.length === 1);
+    expect(bridge.receivedConfigOptionStatuses[0]).toMatchObject({
+      type: "config_option_status",
+      request_id: "set-model-1",
+      ok: true,
+      session_id: sessionId,
+      provider_session_key: "agentnexus:channel:C1",
+      config_id: "model",
+      value: "fake-large",
+    });
+    const statusOptions = bridge.receivedConfigOptionStatuses[0].options as Record<string, unknown>;
+    expect(statusOptions.configOptions).toMatchObject([
+      {
+        id: "model",
+        name: "Model",
+        currentValue: "fake-large",
+        currentValueId: "fake-large",
+        values: [
+          { id: "fake-small", name: "Fake Small" },
+          { id: "fake-large", name: "Fake Large" },
+        ],
+      },
+    ]);
+    await runtime.stop();
+  });
+
   it("runs different provider sessions concurrently", async () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(

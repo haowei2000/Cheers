@@ -1078,6 +1078,41 @@ async def _record_connector_config_options(bot_id: str, frame: dict) -> None:
         await s.commit()
 
 
+async def _record_connector_config_option_status(bot_id: str, frame: dict) -> None:
+    """Persist ACP session config option application status for Bot settings UI."""
+    from app.db.session import async_session_factory
+
+    status = {
+        "request_id": frame.get("request_id") if isinstance(frame.get("request_id"), str) else None,
+        "ok": frame.get("ok") is True,
+        "session_id": frame.get("session_id") if isinstance(frame.get("session_id"), str) else None,
+        "provider_session_key": (
+            frame.get("provider_session_key") if isinstance(frame.get("provider_session_key"), str) else None
+        ),
+        "config_id": frame.get("config_id") if isinstance(frame.get("config_id"), str) else None,
+        "value": frame.get("value") if isinstance(frame.get("value"), str) else None,
+        "error": frame.get("error") if isinstance(frame.get("error"), str) else None,
+        "reported_at": datetime.now(timezone.utc).isoformat(),
+    }
+    options = _connector_options_from_frame(frame)
+    async with async_session_factory() as s:
+        bot = await s.get(BotAccount, bot_id)
+        if bot is None:
+            return
+        cfg = dict(bot.binding_config or {})
+        control = cfg.get(_CONNECTOR_CONTROL_KEY)
+        if not isinstance(control, dict):
+            control = {}
+        control = dict(control)
+        control["last_option_status"] = status
+        if options is not None:
+            control["options"] = options
+        cfg[_CONNECTOR_CONTROL_KEY] = control
+        bot.binding_config = cfg
+        s.add(bot)
+        await s.commit()
+
+
 @ws_router.websocket("/ws/agent-bridge/control")
 async def control_websocket(websocket: WebSocket) -> None:
     """Control websocket."""
@@ -1156,6 +1191,14 @@ async def control_websocket(websocket: WebSocket) -> None:
             elif ftype == "config_options":
                 await _record_connector_config_options(bot.bot_id, frame)
                 logger.info("control_ws: config_options bot_id=%s", bot.bot_id)
+            elif ftype == "config_option_status":
+                await _record_connector_config_option_status(bot.bot_id, frame)
+                logger.info(
+                    "control_ws: config_option_status bot_id=%s request_id=%s ok=%s",
+                    bot.bot_id,
+                    frame.get("request_id"),
+                    frame.get("ok"),
+                )
             # Ignore other frame types.
     except WebSocketDisconnect:
         logger.info("control_ws: disconnected bot_id=%s", bot.bot_id)

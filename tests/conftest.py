@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.db.models import Base
 from app.main import app
 
+DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test"
+
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test",
+    DEFAULT_TEST_DATABASE_URL,
 )
 
 

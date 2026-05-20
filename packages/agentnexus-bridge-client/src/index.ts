@@ -21,6 +21,8 @@ export type {
   ChannelJoinedEvent,
   ChannelLeftEvent,
   ConfigOptionsFrame,
+  ConfigOptionSetInbound,
+  ConfigOptionStatusFrame,
   ConfigStatusFrame,
   ConfigUpdateInbound,
   ConnectorControlConfig,

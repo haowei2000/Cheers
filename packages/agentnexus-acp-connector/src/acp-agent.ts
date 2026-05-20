@@ -159,6 +159,18 @@ export class AcpStdioAgent {
     }, this.config.promptTimeoutMs ?? this.config.requestTimeoutMs ?? 900_000);
   }
 
+  async setSessionConfigOption(
+    sessionId: string,
+    configId: string,
+    value: string,
+  ): Promise<Record<string, unknown>> {
+    return this.peer.request<Record<string, unknown>>("session/set_config_option", {
+      sessionId,
+      configId,
+      value,
+    });
+  }
+
   cancel(sessionId: string): void {
     this.peer.notify("session/cancel", { sessionId });
   }

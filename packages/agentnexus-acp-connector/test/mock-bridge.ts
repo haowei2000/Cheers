@@ -32,6 +32,7 @@ export class MockBridge {
   public receivedUploads: Array<Record<string, unknown>> = [];
   public receivedConfigStatuses: Array<Record<string, unknown>> = [];
   public receivedConfigOptions: Array<Record<string, unknown>> = [];
+  public receivedConfigOptionStatuses: Array<Record<string, unknown>> = [];
   private closeUploadWithoutAckCount = 0;
 
   constructor(private readonly botToken = "agb_test") {}
@@ -107,6 +108,24 @@ export class MockBridge {
     });
   }
 
+  pushConfigOptionSet(frame: {
+    request_id?: string;
+    session_id?: string | null;
+    provider_session_key?: string | null;
+    config_id: string;
+    value: string;
+  }): void {
+    this.broadcast("control", {
+      type: "config_option_set",
+      request_id: frame.request_id ?? "set-option-1",
+      session_id: frame.session_id ?? null,
+      provider_session_key: frame.provider_session_key ?? null,
+      config_id: frame.config_id,
+      value: frame.value,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   connectionsFor(stream: "control" | "data"): number {
     return Array.from(this.conns).filter((c) => c.stream === stream).length;
   }
@@ -160,6 +179,10 @@ export class MockBridge {
     }
     if (stream === "control" && frame.type === "config_options") {
       this.receivedConfigOptions.push(frame);
+      return;
+    }
+    if (stream === "control" && frame.type === "config_option_status") {
+      this.receivedConfigOptionStatuses.push(frame);
       return;
     }
     if (stream !== "data") return;

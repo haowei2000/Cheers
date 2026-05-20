@@ -25,6 +25,20 @@ This is the English default edition prepared for the open-source documentation s
 
 Integration tests **must** pass against a fully running Docker Compose stack (frontend + backend). In-memory mocks or unit-level fixtures alone are insufficient for integration coverage.
 
+### Test Environment Resolution
+
+Before every local backend or integration test run, inspect the actual Docker Compose stack and `.env` values instead of assuming default ports:
+
+```bash
+docker compose ps
+docker compose port backend 8000
+docker compose port frontend 80
+docker compose port postgres 5432
+rg -n "^(BACKEND_HOST_PORT|FRONTEND_HOST_PORT|POSTGRES_HOST_PORT|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|TEST_DATABASE_URL)=" .env
+```
+
+`tests/conftest.py` defaults `TEST_DATABASE_URL` to `postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test`. If the real Docker Compose Postgres host port or credentials from `.env` differ, either start the stack with a matching `POSTGRES_HOST_PORT=5433` and test database, or pass an explicit `TEST_DATABASE_URL` for the actual container mapping. Do not hard-code a remembered port in commands or test notes after the stack has been changed.
+
 ```bash
 # Start the full stack
 cp docker-compose.yml.template docker-compose.yml

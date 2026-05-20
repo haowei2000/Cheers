@@ -244,6 +244,20 @@ alembic downgrade -1
 
 **集成测试必须在完整的前后端 Docker Compose 环境中通过，不得仅依赖内存 Mock 或单元级 Fixture。**
 
+#### 测试环境解析（强制）
+
+每次在本地运行后端测试或集成测试前，必须先检查真实 Docker Compose 服务栈和 `.env`，不得凭记忆假设端口：
+
+```bash
+docker compose ps
+docker compose port backend 8000
+docker compose port frontend 80
+docker compose port postgres 5432
+rg -n "^(BACKEND_HOST_PORT|FRONTEND_HOST_PORT|POSTGRES_HOST_PORT|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|TEST_DATABASE_URL)=" .env
+```
+
+`tests/conftest.py` 默认 `TEST_DATABASE_URL` 为 `postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test`。如果真实 Docker Compose 的 Postgres 宿主机端口或 `.env` 中的账号密码不同，要么用匹配的 `POSTGRES_HOST_PORT=5433` 和测试库启动服务栈，要么在测试命令中显式传入真实映射对应的 `TEST_DATABASE_URL`。服务栈被改过之后，禁止在命令或测试记录中硬编码旧端口。
+
 #### 标准集成测试流程
 
 ```bash

@@ -21,6 +21,8 @@ import { ReconnectingClient } from "./reconnect.js";
 import type {
   AttachmentInfo,
   ConfigOptionsFrame,
+  ConfigOptionSetInbound,
+  ConfigOptionStatusFrame,
   ChannelInfo,
   ConfigStatusFrame,
   ConfigUpdateInbound,
@@ -98,6 +100,8 @@ export interface SessionEvents {
    *  validate and apply only fields they support, then optionally report status
    *  with sendConfigStatus(). */
   onConfigUpdate?: (update: ConfigUpdateInbound) => void | Promise<void>;
+  /** Server-side AgentNexus requested an ACP session configuration option change. */
+  onConfigOptionSet?: (update: ConfigOptionSetInbound) => void | Promise<void>;
   onError?: (err: unknown) => void;
   onFatal?: (reason: string) => void;
   /** Control/data connection state changes for observability. */
@@ -287,6 +291,10 @@ export class BotSession {
           this.emitConfigUpdate(frame);
           break;
         }
+        case "config_option_set": {
+          this.emitConfigOptionSet(frame);
+          break;
+        }
         case "pong":
           break;
         default:
@@ -311,6 +319,16 @@ export class BotSession {
   private emitConfigUpdate(update: ConfigUpdateInbound): void {
     try {
       void Promise.resolve(this.events.onConfigUpdate?.(update)).catch((err) => {
+        this.events.onError?.(err);
+      });
+    } catch (err) {
+      this.events.onError?.(err);
+    }
+  }
+
+  private emitConfigOptionSet(update: ConfigOptionSetInbound): void {
+    try {
+      void Promise.resolve(this.events.onConfigOptionSet?.(update)).catch((err) => {
         this.events.onError?.(err);
       });
     } catch (err) {
@@ -519,6 +537,12 @@ export class BotSession {
   sendConfigOptions(options: Omit<ConfigOptionsFrame, "type">): boolean {
     if (!this.control.isOpen) return false;
     return this.control.send({ type: "config_options", ...options });
+  }
+
+  /** Report whether an ACP session configuration option change was applied. */
+  sendConfigOptionStatus(status: Omit<ConfigOptionStatusFrame, "type">): boolean {
+    if (!this.control.isOpen) return false;
+    return this.control.send({ type: "config_option_status", ...status });
   }
 
   /** Proactively send a message to a channel, for example a scheduled reminder. */
