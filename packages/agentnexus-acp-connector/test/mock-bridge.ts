@@ -32,6 +32,7 @@ export class MockBridge {
   public receivedUploads: Array<Record<string, unknown>> = [];
   public receivedConfigStatuses: Array<Record<string, unknown>> = [];
   public receivedConfigOptions: Array<Record<string, unknown>> = [];
+  private closeUploadWithoutAckCount = 0;
 
   constructor(private readonly botToken = "agb_test") {}
 
@@ -110,6 +111,10 @@ export class MockBridge {
     return Array.from(this.conns).filter((c) => c.stream === stream).length;
   }
 
+  closeNextUploadWithoutAck(): void {
+    this.closeUploadWithoutAckCount += 1;
+  }
+
   async stop(): Promise<void> {
     for (const c of Array.from(this.conns)) c.ws.close();
     await new Promise<void>((resolve) => this.wss.close(() => resolve()));
@@ -185,6 +190,11 @@ export class MockBridge {
     }
     if (frame.type === "trace") this.receivedTraces.push(frame);
     if (frame.type === "file_upload") {
+      if (this.closeUploadWithoutAckCount > 0) {
+        this.closeUploadWithoutAckCount -= 1;
+        ws.close(1011, "test upload disconnect");
+        return;
+      }
       this.receivedUploads.push(frame);
       ws.send(JSON.stringify({
         type: "file_upload_ack",

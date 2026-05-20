@@ -12,6 +12,16 @@ export class JsonRpcError extends Error {
   }
 }
 
+export class JsonRpcRequestTimeoutError extends Error {
+  constructor(
+    public readonly method: string,
+    public readonly timeoutMs: number,
+  ) {
+    super(`ACP request timed out after ${timeoutMs}ms: ${method}`);
+    this.name = "JsonRpcRequestTimeoutError";
+  }
+}
+
 type JsonRpcId = string | number | null;
 
 interface Pending {
@@ -103,7 +113,7 @@ export class JsonRpcStdioPeer {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`ACP request timed out: ${method}`));
+        reject(new JsonRpcRequestTimeoutError(method, timeoutMs));
       }, timeoutMs);
       this.pending.set(id, { resolve: (v) => resolve(v as T), reject, timer });
       this.write(frame);
