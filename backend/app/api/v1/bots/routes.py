@@ -69,6 +69,7 @@ class ConnectorControlSettingsIn(BaseModel):
     )
     cwd: str | None = Field(default=None, min_length=1, max_length=1024)
     model: str | None = Field(default=None, min_length=1, max_length=128)
+    configOptions: dict[str, str] | None = Field(default=None)
 
 
 class ConnectorControlUpdateIn(BaseModel):

@@ -9,6 +9,8 @@ import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";
 import type {
   AccountConfig,
+  AcpConfigOption,
+  AcpConfigOptionValue,
   AcpSessionUpdate,
   ContentBlock,
   Logger,
@@ -196,9 +198,58 @@ function normalizeDiscoveredOptions(options: AcpDiscoveredOptions): Record<strin
       availableModes: capArray(next.modes["availableModes"], 50),
     };
   }
-  if (hasOwn(next, "configOptions")) next.configOptions = capArray(next.configOptions, 100);
+  if (hasOwn(next, "configOptions")) next.configOptions = capArray(normalizeAcpConfigOptions(next.configOptions), 100);
   if (hasOwn(next, "availableCommands")) next.availableCommands = capArray(next.availableCommands, 100);
   return next;
+}
+
+function cleanConfigText(value: unknown, fallback = ""): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeAcpConfigOptionValues(value: unknown): AcpConfigOptionValue[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isObject)
+    .map((item) => {
+      const optionValue = cleanConfigText(item.value, cleanConfigText(item.id));
+      if (!optionValue) return null;
+      return {
+        ...item,
+        value: optionValue,
+        name: cleanConfigText(item.name, optionValue),
+      };
+    })
+    .filter((item): item is AcpConfigOptionValue => item !== null);
+}
+
+function normalizeAcpConfigOptions(value: unknown): AcpConfigOption[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isObject)
+    .map((item) => {
+      const id = cleanConfigText(item.id);
+      if (!id) return null;
+      const rawOptions = Array.isArray(item.options) ? item.options : item.values;
+      return {
+        ...item,
+        id,
+        name: cleanConfigText(item.name, id),
+        type: cleanConfigText(item.type, "select"),
+        currentValue: cleanConfigText(item.currentValue, cleanConfigText(item.currentValueId)),
+        options: normalizeAcpConfigOptionValues(rawOptions),
+      };
+    })
+    .filter((item): item is AcpConfigOption => item !== null);
+}
+
+function acpConfigOptionsKey(options: Record<string, string>): string {
+  return JSON.stringify(
+    Object.entries(options)
+      .map(([key, value]) => [key.trim(), value.trim()])
+      .filter(([key, value]) => key && value)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
 }
 
 function safeFilename(name: string): string {
@@ -655,6 +706,26 @@ async function normalizeRemoteSettings(input: unknown, currentCwd: string | unde
       }
     }
   }
+  if ("configOptions" in raw) {
+    if (!isObject(raw.configOptions)) {
+      rejected.push({ field: "configOptions", reason: "must be an object of config option values" });
+    } else {
+      const configOptions: Record<string, string> = {};
+      for (const [key, value] of Object.entries(raw.configOptions)) {
+        const configId = key.trim();
+        if (!configId) {
+          rejected.push({ field: "configOptions", reason: "option ids must be non-empty strings" });
+          continue;
+        }
+        if (typeof value !== "string" || !value.trim()) {
+          rejected.push({ field: `configOptions.${configId}`, reason: "must be a non-empty string" });
+          continue;
+        }
+        configOptions[configId] = value.trim();
+      }
+      settings.configOptions = configOptions;
+    }
+  }
   return { applied: [], rejected, settings };
 }
 
@@ -956,6 +1027,9 @@ export class AcpBridgeAccount {
   private readonly activeRunsBySession = new Map<string, RunContext>();
   private readonly activeRunsByMsg = new Map<string, RunContext>();
   private readonly queuesByProviderSessionKey = new Map<string, Promise<void>>();
+  private readonly configOptionsBySession = new Map<string, AcpConfigOption[]>();
+  private desiredAcpConfigOptions: Record<string, string> = {};
+  private desiredAcpConfigOptionsKey = acpConfigOptionsKey({});
   private discoveredOptions: AcpDiscoveredOptions | null = null;
 
   constructor(
@@ -1016,7 +1090,7 @@ export class AcpBridgeAccount {
     if (providerSessionKey) next.providerSessionKey = providerSessionKey;
     if (sessionId) next.sessionId = sessionId;
     if (hasOwn(payload, "modes")) next.modes = payload.modes;
-    if (hasOwn(payload, "configOptions")) next.configOptions = payload.configOptions;
+    if (hasOwn(payload, "configOptions")) next.configOptions = normalizeAcpConfigOptions(payload.configOptions);
     if (hasOwn(payload, "availableCommands")) next.availableCommands = payload.availableCommands;
 
     const kind = typeof payload.sessionUpdate === "string" ? payload.sessionUpdate : "";
@@ -1027,7 +1101,7 @@ export class AcpBridgeAccount {
       };
     }
     if (kind === "config_option_update" && hasOwn(payload, "configOptions")) {
-      next.configOptions = payload.configOptions;
+      next.configOptions = normalizeAcpConfigOptions(payload.configOptions);
     }
     if (kind === "available_commands_update" && hasOwn(payload, "availableCommands")) {
       next.availableCommands = payload.availableCommands;
@@ -1037,6 +1111,69 @@ export class AcpBridgeAccount {
     if (!this.bridge.sendConfigOptions({ options: normalizeDiscoveredOptions(next) })) {
       this.logger.debug?.("bridge account=%s skipped config_options; control stream is not open", this.accountId);
     }
+  }
+
+  private updateSessionConfigOptions(sessionId: string, configOptions: unknown): AcpConfigOption[] | undefined {
+    if (configOptions === undefined) return undefined;
+    const normalized = normalizeAcpConfigOptions(configOptions);
+    if (normalized.length > 0) {
+      this.configOptionsBySession.set(sessionId, normalized);
+    } else {
+      this.configOptionsBySession.delete(sessionId);
+    }
+    return normalized;
+  }
+
+  private async applyDesiredConfigOptionsToActiveSessions(): Promise<Array<{ field: string; reason: string }>> {
+    const rejected: Array<{ field: string; reason: string }> = [];
+    const seen = new Set<string>();
+    for (const sessionId of this.activeProviderSessions.values()) {
+      if (seen.has(sessionId)) continue;
+      seen.add(sessionId);
+      rejected.push(...await this.applyDesiredSessionConfigOptions(sessionId));
+    }
+    return rejected;
+  }
+
+  private async applyDesiredSessionConfigOptions(
+    sessionId: string,
+    options: AcpConfigOption[] | undefined = this.configOptionsBySession.get(sessionId),
+  ): Promise<Array<{ field: string; reason: string }>> {
+    const rejected: Array<{ field: string; reason: string }> = [];
+    const entries = Object.entries(this.desiredAcpConfigOptions);
+    if (entries.length === 0 || !options || options.length === 0) return rejected;
+
+    let currentOptions = options;
+    for (const [configId, value] of entries) {
+      const option = currentOptions.find((item) => item.id === configId);
+      if (!option) continue;
+      if (option.currentValue === value) continue;
+      if (option.options.length > 0 && !option.options.some((item) => item.value === value)) {
+        rejected.push({
+          field: `configOptions.${configId}`,
+          reason: `unsupported value: ${value}`,
+        });
+        continue;
+      }
+      try {
+        const nextOptions = await this.agent.setConfigOption(sessionId, configId, value);
+        const normalized = this.updateSessionConfigOptions(sessionId, nextOptions);
+        if (normalized) {
+          currentOptions = normalized;
+          this.reportAcpDiscoveredOptions(
+            this.providerSessionKeysByAcpSession.get(sessionId) ?? null,
+            sessionId,
+            { configOptions: normalized },
+          );
+        }
+      } catch (err) {
+        rejected.push({
+          field: `configOptions.${configId}`,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return rejected;
   }
 
   private enqueueMessage(message: InboundMessage): void {
@@ -1071,7 +1208,12 @@ export class AcpBridgeAccount {
         const loaded = await this.agent.loadSession(saved);
         this.activeProviderSessions.set(providerSessionKey, saved);
         this.providerSessionKeysByAcpSession.set(saved, providerSessionKey);
+        const options = this.updateSessionConfigOptions(saved, loaded.configOptions);
         this.reportAcpDiscoveredOptions(providerSessionKey, saved, loaded);
+        const rejected = await this.applyDesiredSessionConfigOptions(saved, options);
+        for (const item of rejected) {
+          this.logger.warn("acp account=%s rejected saved ACP session config %s: %s", this.accountId, item.field, item.reason);
+        }
         this.logger.info("acp account=%s loaded session %s", this.accountId, saved);
         return saved;
       } catch (err) {
@@ -1087,7 +1229,12 @@ export class AcpBridgeAccount {
     this.activeProviderSessions.set(providerSessionKey, created.sessionId);
     this.providerSessionKeysByAcpSession.set(created.sessionId, providerSessionKey);
     await this.state.set(this.accountId, providerSessionKey, created.sessionId);
+    const options = this.updateSessionConfigOptions(created.sessionId, created.configOptions);
     this.reportAcpDiscoveredOptions(providerSessionKey, created.sessionId, created);
+    const rejected = await this.applyDesiredSessionConfigOptions(created.sessionId, options);
+    for (const item of rejected) {
+      this.logger.warn("acp account=%s rejected new ACP session config %s: %s", this.accountId, item.field, item.reason);
+    }
     this.logger.info("acp account=%s created session %s for %s", this.accountId, created.sessionId, providerSessionKey);
     return created.sessionId;
   }
@@ -1243,8 +1390,19 @@ export class AcpBridgeAccount {
 
   private async handleConfigUpdate(update: ConfigUpdateInbound): Promise<void> {
     const normalized = await normalizeRemoteSettings(update.settings, this.config.agent.cwd);
+    const hasConfigOptionsSetting = hasOwn(normalized.settings as Record<string, unknown>, "configOptions");
+    const nextConfigOptions = normalized.settings.configOptions ?? {};
+    const nextConfigOptionsKey = acpConfigOptionsKey(nextConfigOptions);
+    const configOptionsChanged = hasConfigOptionsSetting && nextConfigOptionsKey !== this.desiredAcpConfigOptionsKey;
     const applied = this.agent.updateRuntimeSettings(normalized.settings);
     normalized.applied = applied;
+    if (configOptionsChanged) {
+      this.desiredAcpConfigOptions = nextConfigOptions;
+      this.desiredAcpConfigOptionsKey = nextConfigOptionsKey;
+      const rejected = await this.applyDesiredConfigOptionsToActiveSessions();
+      normalized.rejected.push(...rejected);
+      if (rejected.length === 0) applied.push("configOptions");
+    }
     const restartSettings: RemoteConnectorSettings = {};
     const restartFields: string[] = [];
     if (normalized.settings.cwd) {
@@ -1282,6 +1440,7 @@ export class AcpBridgeAccount {
           await this.agent.restart();
           this.activeProviderSessions.clear();
           this.providerSessionKeysByAcpSession.clear();
+          this.configOptionsBySession.clear();
           this.discoveredOptions = null;
           this.reportAcpDiscoveredOptions(null, null, {});
           applied.push(...restartFields);
@@ -1338,16 +1497,32 @@ export class AcpBridgeAccount {
   private async handleAcpUpdate(notification: AcpSessionUpdate): Promise<void> {
     const update = notification.update;
     const kind = String(update.sessionUpdate ?? "unknown");
+    let reportPayload = update;
+    if (kind === "config_option_update" && hasOwn(update, "configOptions")) {
+      const options = this.updateSessionConfigOptions(notification.sessionId, update.configOptions);
+      if (options) reportPayload = { ...update, configOptions: options };
+      this.reportAcpDiscoveredOptions(
+        this.providerSessionKeysByAcpSession.get(notification.sessionId) ?? null,
+        notification.sessionId,
+        reportPayload,
+      );
+      const rejected = await this.applyDesiredSessionConfigOptions(notification.sessionId, options);
+      for (const item of rejected) {
+        this.logger.warn("acp account=%s rejected ACP session config %s: %s", this.accountId, item.field, item.reason);
+      }
+    }
     if (
       kind === "config_option_update" ||
       kind === "current_mode_update" ||
       kind === "available_commands_update"
     ) {
-      this.reportAcpDiscoveredOptions(
-        this.providerSessionKeysByAcpSession.get(notification.sessionId) ?? null,
-        notification.sessionId,
-        update,
-      );
+      if (kind !== "config_option_update" || !hasOwn(update, "configOptions")) {
+        this.reportAcpDiscoveredOptions(
+          this.providerSessionKeysByAcpSession.get(notification.sessionId) ?? null,
+          notification.sessionId,
+          reportPayload,
+        );
+      }
     }
     const ctx = this.activeRunsBySession.get(notification.sessionId);
     if (!ctx) return;

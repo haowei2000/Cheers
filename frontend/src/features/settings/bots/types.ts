@@ -7,6 +7,7 @@ export type ConnectorControlSettings = {
   promptTimeoutMs?: number;
   cwd?: string;
   model?: string;
+  configOptions?: Record<string, string>;
 };
 
 export type ConnectorControlConfig = {
@@ -27,7 +28,9 @@ export type ConnectorControlConfig = {
       id?: string;
       name?: string;
       description?: string | null;
+      currentValue?: string | null;
       currentValueId?: string | null;
+      options?: Array<{ value?: string; id?: string; name?: string; description?: string | null }>;
       values?: Array<{ id?: string; name?: string; description?: string | null }>;
       [key: string]: unknown;
     }>;
