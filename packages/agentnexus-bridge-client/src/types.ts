@@ -37,6 +37,7 @@ export interface ConnectorControlConfig {
   settings?: ConnectorControlSettings;
   updated_at?: string | null;
   last_status?: Record<string, unknown> | null;
+  options?: Record<string, unknown> | null;
 }
 
 export interface ControlHello {
@@ -109,6 +110,11 @@ export interface ConfigStatusFrame {
   applied?: string[];
   rejected?: Array<{ field: string; reason: string }>;
   error?: string;
+}
+
+export interface ConfigOptionsFrame {
+  type: "config_options";
+  options: Record<string, unknown>;
 }
 
 // ============ Data stream ============

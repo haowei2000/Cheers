@@ -1,11 +1,15 @@
 """Tests for Agent Bridge connector control settings."""
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.agent_bridge.routes import _record_connector_config_options
 from app.db.models import BotAccount
+from app.db.session import async_session_factory
 from app.features.agent_bridge.registry import bot_session_registry
 
 
@@ -102,3 +106,61 @@ async def test_connector_control_update_requires_agent_bridge_bot(
     )
 
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_connector_control_records_discovered_options() -> None:
+    suffix = uuid4().hex[:8]
+    bot_id = f"connector-control-options-{suffix}"
+    async with async_session_factory() as session:
+        bot = BotAccount(
+            bot_id=bot_id,
+            username=f"connector_control_options_{suffix}",
+            display_name="Connector Control Options",
+            status="online",
+            binding_type="agent_bridge",
+            binding_config={
+                "agent_id": "codex",
+                "connector_control": {
+                    "revision": 3,
+                    "settings": {"permissionMode": "reject"},
+                },
+            },
+            created_by="a0000000-0000-0000-0000-000000000099",
+        )
+        session.add(bot)
+        await session.commit()
+
+    await _record_connector_config_options(
+        bot_id,
+        {
+            "type": "config_options",
+            "options": {
+                "source": "acp",
+                "sessionId": "fake-session",
+                "providerSessionKey": "agentnexus:channel:C1",
+                "modes": {
+                    "currentModeId": "ask",
+                    "availableModes": [{"id": "ask", "name": "Ask"}],
+                },
+                "configOptions": [
+                    {
+                        "id": "model",
+                        "name": "Model",
+                        "currentValueId": "fake-small",
+                        "values": [{"id": "fake-small", "name": "Fake Small"}],
+                    },
+                ],
+            },
+        },
+    )
+
+    async with async_session_factory() as session:
+        bot = await session.get(BotAccount, bot_id)
+        assert bot is not None
+        control = bot.binding_config["connector_control"]
+    assert control["settings"] == {"permissionMode": "reject"}
+    assert control["options"]["source"] == "acp"
+    assert control["options"]["modes"]["currentModeId"] == "ask"
+    assert control["options"]["configOptions"][0]["id"] == "model"
+    assert "reported_at" in control["options"]

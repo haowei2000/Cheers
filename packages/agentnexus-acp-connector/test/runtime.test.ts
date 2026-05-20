@@ -172,6 +172,72 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("reports ACP-discovered session options over connector control", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_OPTIONS: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-options",
+      channel_id: "C1",
+      seq: 9,
+      placeholder_msg_id: "ph-options",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "discover options" },
+    });
+
+    await waitFor(() => bridge.receivedConfigOptions.some((frame) => {
+      const options = frame.options as Record<string, unknown> | undefined;
+      return Array.isArray(options?.configOptions);
+    }));
+    const frame = bridge.receivedConfigOptions.find((item) => {
+      const options = item.options as Record<string, unknown> | undefined;
+      return Array.isArray(options?.configOptions);
+    })!;
+    const options = frame.options as Record<string, unknown>;
+    expect(options.source).toBe("acp");
+    expect(options.sessionId).toMatch(/^fake-/);
+    expect(options.providerSessionKey).toBe("agentnexus:channel:C1");
+    expect(options.modes).toMatchObject({
+      currentModeId: "ask",
+      availableModes: [
+        { id: "ask", name: "Ask" },
+        { id: "code", name: "Code" },
+      ],
+    });
+    expect(options.configOptions).toEqual([
+      {
+        id: "model",
+        name: "Model",
+        currentValueId: "fake-small",
+        values: [
+          { id: "fake-small", name: "Fake Small" },
+          { id: "fake-large", name: "Fake Large" },
+        ],
+      },
+    ]);
+    await runtime.stop();
+  });
+
   it("runs different provider sessions concurrently", async () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(

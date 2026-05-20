@@ -20,6 +20,7 @@ export type {
   ChannelInfo,
   ChannelJoinedEvent,
   ChannelLeftEvent,
+  ConfigOptionsFrame,
   ConfigStatusFrame,
   ConfigUpdateInbound,
   ConnectorControlConfig,

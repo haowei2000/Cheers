@@ -8,6 +8,7 @@ const loadSession = process.env.FAKE_ACP_LOAD_SESSION === "1";
 const permission = process.env.FAKE_ACP_PERMISSION === "1";
 const returnFile = process.env.FAKE_ACP_RETURN_FILE === "1";
 const returnFileLink = process.env.FAKE_ACP_RETURN_FILE_LINK === "1";
+const returnOptions = process.env.FAKE_ACP_OPTIONS === "1";
 const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS || "0");
 const promptDelayIfIncludes = process.env.FAKE_ACP_PROMPT_DELAY_IF_INCLUDES || "";
 
@@ -48,6 +49,30 @@ function textOf(prompt) {
     .join("\n");
 }
 
+function sessionOptions() {
+  if (!returnOptions) return {};
+  return {
+    modes: {
+      currentModeId: "ask",
+      availableModes: [
+        { id: "ask", name: "Ask", description: "Ask before changes" },
+        { id: "code", name: "Code", description: "Use coding tools" },
+      ],
+    },
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        currentValueId: "fake-small",
+        values: [
+          { id: "fake-small", name: "Fake Small" },
+          { id: "fake-large", name: "Fake Large" },
+        ],
+      },
+    ],
+  };
+}
+
 async function handle(frame) {
   if ("result" in frame || "error" in frame) return;
   const { id, method, params } = frame;
@@ -66,7 +91,7 @@ async function handle(frame) {
   if (method === "session/new") {
     const sessionId = `fake-${randomUUID()}`;
     sessions.set(sessionId, params.cwd || process.cwd());
-    result(id, { sessionId });
+    result(id, { sessionId, ...sessionOptions() });
     return;
   }
   if (method === "session/load") {
@@ -82,7 +107,7 @@ async function handle(frame) {
         title: "loaded",
       },
     });
-    result(id, null);
+    result(id, sessionOptions());
     return;
   }
   if (method === "session/prompt") {

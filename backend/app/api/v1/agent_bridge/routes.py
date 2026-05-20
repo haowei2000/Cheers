@@ -942,6 +942,7 @@ _WS_CLOSE_AUTH_FAIL = 4401        # Token missing, mismatched, or revoked.
 _WS_CLOSE_SUPERSEDED = 4402       # A newer connection for the same bot superseded this one.
 _WS_CLOSE_BOT_UNAVAILABLE = 4403  # Invalid binding_type or status != online.
 _CONNECTOR_CONTROL_KEY = "connector_control"
+_CONNECTOR_OPTIONS_MAX_BYTES = 128 * 1024
 
 
 def _extract_bearer_token(websocket: WebSocket) -> str | None:
@@ -990,6 +991,48 @@ async def _record_connector_config_status(bot_id: str, frame: dict) -> None:
             )
             return
         control["last_status"] = status
+        cfg[_CONNECTOR_CONTROL_KEY] = control
+        bot.binding_config = cfg
+        s.add(bot)
+        await s.commit()
+
+
+def _connector_options_from_frame(frame: dict) -> dict | None:
+    options = frame.get("options")
+    if not isinstance(options, dict):
+        return None
+    options = dict(options)
+    options["reported_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        encoded = json.dumps(options, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+    if len(encoded.encode("utf-8")) > _CONNECTOR_OPTIONS_MAX_BYTES:
+        return {
+            "source": options.get("source") if isinstance(options.get("source"), str) else "unknown",
+            "truncated": True,
+            "reported_at": options["reported_at"],
+        }
+    return options
+
+
+async def _record_connector_config_options(bot_id: str, frame: dict) -> None:
+    """Persist connector-discovered runtime options for Bot settings UI."""
+    from app.db.session import async_session_factory
+
+    options = _connector_options_from_frame(frame)
+    if options is None:
+        return
+    async with async_session_factory() as s:
+        bot = await s.get(BotAccount, bot_id)
+        if bot is None:
+            return
+        cfg = dict(bot.binding_config or {})
+        control = cfg.get(_CONNECTOR_CONTROL_KEY)
+        if not isinstance(control, dict):
+            control = {}
+        control = dict(control)
+        control["options"] = options
         cfg[_CONNECTOR_CONTROL_KEY] = control
         bot.binding_config = cfg
         s.add(bot)
@@ -1071,6 +1114,9 @@ async def control_websocket(websocket: WebSocket) -> None:
                     frame.get("revision"),
                     frame.get("ok"),
                 )
+            elif ftype == "config_options":
+                await _record_connector_config_options(bot.bot_id, frame)
+                logger.info("control_ws: config_options bot_id=%s", bot.bot_id)
             # Ignore other frame types.
     except WebSocketDisconnect:
         logger.info("control_ws: disconnected bot_id=%s", bot.bot_id)
