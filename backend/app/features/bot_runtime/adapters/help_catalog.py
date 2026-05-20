@@ -38,11 +38,12 @@ HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
         "输入框会自动插入 @Bot 名称。管理员也可以在频道成员管理里添加 Bot。",
     ),
     HelpEntry(
-        ("agent bridge", "openclaw", "接入", "接入bot", "接入 bot", "怎么接", "注册bot", "添加bot", "自动注册"),
+        ("agent bridge", "openclaw", "acp", "acp-connector", "acp connector", "接入", "接入bot", "接入 bot", "怎么接", "注册bot", "添加bot", "自动注册"),
         "如何接入外部 Agent",
         "外部 Agent 可通过 `/docs/agent-bridge/discovery` 获取发现信息，通过 `/docs/agent-bridge/register` 注册为 Agent Bridge Bot。"
-        "注册成功后会返回 bot_token、controlUrl、dataUrl 和 provider 配置片段。OpenClaw provider 插件包可从 "
-        "`/release/openclaw-channel-agentnexus.tgz` 下载。",
+        "注册成功后会返回 bot_token、controlUrl、dataUrl 和 provider 配置片段。"
+        "支持 OpenClaw 插件和 ACP Connector 两种接入方式：OpenClaw 插件包可从 `/release/openclaw-channel-agentnexus.tgz` 下载；"
+        "ACP 协议 Agent（如 Codex ACP）通过 `@haowei0520/acp-connector` 接入。详见《Agent Bridge 接入指南》。",
     ),
     HelpEntry(
         ("发消息", "聊天", "怎么发", "怎么@", "如何@", "at bot", "@"),
@@ -98,9 +99,9 @@ HELP_ENTRIES_EN: Sequence[HelpEntry] = (
         "Type @ in a channel to open the Bot list. If you select a Bot that is not in the channel, AgentNexus asks whether to invite it; after confirmation, the Bot joins the channel and the composer inserts the @Bot mention. Administrators can also add Bots from channel member management.",
     ),
     HelpEntry(
-        ("agent bridge", "openclaw", "connect agent", "register bot", "external agent"),
+        ("agent bridge", "openclaw", "acp", "acp-connector", "acp connector", "connect agent", "register bot", "external agent"),
         "How to Connect an External Agent",
-        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. The OpenClaw provider package is available at `/release/openclaw-channel-agentnexus.tgz`.",
+        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. Two integration methods are supported: OpenClaw plugin (package at `/release/openclaw-channel-agentnexus.tgz`) and ACP Connector for ACP protocol agents such as Codex ACP. See the Agent Bridge guide for details.",
     ),
     HelpEntry(
         ("send message", "chat", "mention", "at bot", "@"),
