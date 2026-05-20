@@ -330,7 +330,11 @@ function inlineFileFromRecord(record: Record<string, unknown>, fallbackName: str
 
 async function fileFromUri(uri: string, cwd: string | undefined, resource: Record<string, unknown>): Promise<ExtractedFile | null> {
   if (!uri.startsWith("file://")) return null;
-  return fileFromPath(fileURLToPath(uri), cwd, resource);
+  try {
+    return fileFromPath(stripTextLocationSuffix(fileURLToPath(uri)), cwd, resource);
+  } catch {
+    return null;
+  }
 }
 
 function filePathFromReference(ref: string, cwd: string | undefined): string | null {
@@ -372,24 +376,29 @@ async function fileFromPath(
 ): Promise<ExtractedFile | null> {
   const root = cwd ? path.resolve(cwd) : process.cwd();
   if (!isInsideDir(filePath, root)) return null;
-  let info;
   try {
-    info = await stat(filePath);
+    const info = await stat(filePath);
+    if (!info.isFile()) return null;
+    if (options.minMtimeMs !== undefined && info.mtimeMs + 1000 < options.minMtimeMs) return null;
+    const filename = filenameFromRecord(resource, safeFilename(filePath));
+    return {
+      key: `file:${path.resolve(filePath)}:${info.mtimeMs}:${info.size}`,
+      filename,
+      contentType: guessContentType(
+        filename,
+        typeof resource.mimeType === "string" ? resource.mimeType : undefined,
+      ),
+      data: await readFile(filePath),
+    };
   } catch {
     return null;
   }
-  if (!info.isFile()) return null;
-  if (options.minMtimeMs !== undefined && info.mtimeMs + 1000 < options.minMtimeMs) return null;
-  const filename = filenameFromRecord(resource, safeFilename(filePath));
-  return {
-    key: `file:${path.resolve(filePath)}:${info.mtimeMs}:${info.size}`,
-    filename,
-    contentType: guessContentType(
-      filename,
-      typeof resource.mimeType === "string" ? resource.mimeType : undefined,
-    ),
-    data: await readFile(filePath),
-  };
+}
+
+function stripTextLocationSuffix(filePath: string): string {
+  const match = /^(.+):(\d+)(?::\d+)?$/.exec(filePath);
+  if (!match) return filePath;
+  return path.isAbsolute(match[1]) ? match[1] : filePath;
 }
 
 function markdownTargetToReference(raw: string): string {
@@ -1402,12 +1411,7 @@ export class AcpBridgeAccount {
           String(err),
         );
       }
-      const ack = await this.bridge.uploadFile({
-        channelId: ctx.source.channelId,
-        filename: file.filename,
-        data: file.data,
-        contentType: file.contentType,
-      });
+      const ack = await this.uploadFileWithRetry(ctx, file);
       if (ack.ok) {
         this.recordUploadedFile(ctx, ack);
       } else {
@@ -1443,6 +1447,39 @@ export class AcpBridgeAccount {
         size_bytes: file.size_bytes,
       },
     });
+  }
+
+  private async uploadFileWithRetry(ctx: RunContext, file: ExtractedFile) {
+    const transientCodes = new Set(["ws_not_open", "ws_send_failed", "session_closed"]);
+    let lastAck = await this.bridge.uploadFile({
+      channelId: ctx.source.channelId,
+      filename: file.filename,
+      data: file.data,
+      contentType: file.contentType,
+    });
+    for (let attempt = 1; !lastAck.ok && transientCodes.has(lastAck.code) && attempt < 3; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+      this.bridge.trace({
+        msg_id: ctx.msgId,
+        task_id: ctx.source.event.task_id,
+        channel_id: ctx.source.channelId,
+        run_id: ctx.acpSessionId,
+        session_key: ctx.providerSessionKey,
+        stream: "acp",
+        seq: ++ctx.traceSeq,
+        phase: "file_upload_retry",
+        status: "running",
+        title: "Retrying ACP file upload",
+        message: `${file.filename}: ${lastAck.code}`,
+      });
+      lastAck = await this.bridge.uploadFile({
+        channelId: ctx.source.channelId,
+        filename: file.filename,
+        data: file.data,
+        contentType: file.contentType,
+      });
+    }
+    return lastAck;
   }
 }
 

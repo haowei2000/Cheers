@@ -105,6 +105,7 @@ export interface SessionEvents {
 }
 
 type InflightResolver = (ack: SendAck) => void;
+type DataOpenWaiter = { resolve: (open: boolean) => void; timer: NodeJS.Timeout };
 
 export interface SendResult {
   ok: boolean;
@@ -133,6 +134,7 @@ export class BotSession {
   private inflight = new Map<string, { resolve: InflightResolver; timer: NodeJS.Timeout }>();
   private inflightUploads = new Map<string, { resolve: (ack: FileUploadAck) => void; timer: NodeJS.Timeout }>();
   private inflightTerminals = new Map<string, { resolve: (ack: TerminalAck) => void; timer: NodeJS.Timeout }>();
+  private dataOpenWaiters = new Set<DataOpenWaiter>();
   private stopped = false;
   private readyPromise: Promise<void>;
   private resolveReady!: () => void;
@@ -194,6 +196,7 @@ export class BotSession {
     this.stopped = true;
     this.stopHeartbeat("control");
     this.stopHeartbeat("data");
+    this.resolveDataOpenWaiters(false);
     this.rejectAllInflight("session stopped");
     await Promise.all([this.control.stop(), this.data.stop()]);
   }
@@ -324,6 +327,7 @@ export class BotSession {
     this.dataEverOpened = true;
     this.dataBlockedUntilReconnect = false;
     this.events.onConnectionChange?.("data", "open");
+    this.resolveDataOpenWaiters(true);
     this.startHeartbeat("data");
     // Resume missed events after reconnect. A failed first event keeps seq=0,
     // so reconnects still need to request replay from the beginning.
@@ -543,14 +547,35 @@ export class BotSession {
     data: Uint8Array;
     contentType?: string;
   }): Promise<FileUploadAck> {
+    return this.uploadFileWhenConnected(args);
+  }
+
+  private async uploadFileWhenConnected(args: {
+    channelId: string;
+    filename: string;
+    data: Uint8Array;
+    contentType?: string;
+  }): Promise<FileUploadAck> {
     if (!this.data.isOpen) {
-      return Promise.resolve({
+      const connected = await this.waitDataOpen(Math.min(this.sendAckTimeoutMs, 30_000));
+      if (!connected) {
+        return {
+          type: "file_upload_ack",
+          client_file_id: null,
+          ok: false,
+          code: "ws_not_open",
+          error: "data WS not connected",
+        };
+      }
+    }
+    if (!this.data.isOpen) {
+      return {
         type: "file_upload_ack",
         client_file_id: null,
         ok: false,
         code: "ws_not_open",
         error: "data WS not connected",
-      });
+      };
     }
     const clientFileId = randomUUID();
     const dataB64 = Buffer.from(args.data).toString("base64");
@@ -587,6 +612,29 @@ export class BotSession {
         });
       }
     });
+  }
+
+  private waitDataOpen(timeoutMs: number): Promise<boolean> {
+    if (this.data.isOpen) return Promise.resolve(true);
+    if (this.stopped) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const waiter: DataOpenWaiter = {
+        resolve,
+        timer: setTimeout(() => {
+          this.dataOpenWaiters.delete(waiter);
+          resolve(false);
+        }, Math.max(1, timeoutMs)),
+      };
+      this.dataOpenWaiters.add(waiter);
+    });
+  }
+
+  private resolveDataOpenWaiters(open: boolean): void {
+    for (const waiter of Array.from(this.dataOpenWaiters)) {
+      clearTimeout(waiter.timer);
+      this.dataOpenWaiters.delete(waiter);
+      waiter.resolve(open);
+    }
   }
 
   private sendFrame<F extends ReplyFrame | SendFrame>(frame: F): Promise<SendResult> {
