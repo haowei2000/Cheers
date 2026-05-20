@@ -192,6 +192,9 @@ export function usePendingFiles({
         });
         if (!confirmRes.ok) {
           console.warn("confirm upload failed", await confirmRes.text());
+          toast.error("File upload could not be confirmed. Try again.");
+          if (localPreview) URL.revokeObjectURL(localPreview);
+          return;
         }
         appendPendingFile(file_id, file.name, localPreview);
       } catch (err) {

@@ -82,6 +82,7 @@ from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.file_retention import active_file_filter, file_expires_at
+from app.services.file_scope_service import FileScopeService
 
 logger = logging.getLogger("app.api.v1.agent_bridge")
 
@@ -266,7 +267,7 @@ async def refresh_dm_session(
 
 def _validator_http_status(code: str) -> int:
     # Map validator error codes to HTTP statuses.
-    if code in ("file_not_found", "reply_target_not_found"):
+    if code in ("channel_not_found", "file_not_found", "reply_target_not_found"):
         return 404
     return 403
 
@@ -436,6 +437,32 @@ async def _assert_bot_membership(
         )
 
 
+async def _resolve_bot_file_access_channel_id(
+    session: AsyncSession, *, bot_id: str, record: FileRecord,
+) -> str:
+    """Return a channel where this bot can access the file."""
+    channels = (await session.execute(
+        select(Channel)
+        .join(ChannelMembership, ChannelMembership.channel_id == Channel.channel_id)
+        .where(
+            ChannelMembership.member_id == bot_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )).scalars().all()
+    if not channels:
+        raise HTTPException(status_code=403, detail=f"bot {bot_id} 不在任何频道中")
+
+    scope = FileScopeService(session)
+    for channel in channels:
+        if await scope.file_linked_to_channel(file_id=record.file_id, channel=channel):
+            return channel.channel_id
+
+    raise HTTPException(
+        status_code=403,
+        detail=f"bot {bot_id} 无权读取文件 {record.file_id}",
+    )
+
+
 def _file_storage_scope(record: FileRecord) -> str:
     return "generated" if (record.object_key or "").startswith("generated/") else "uploads"
 
@@ -446,14 +473,24 @@ async def _load_bridge_file_body(record: FileRecord) -> bytes:
         if local_path.is_file():
             return local_path.read_bytes()
 
-    from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.base import StorageObjectNotFoundError, StorageObjectRef
     from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
 
     if not is_storage_enabled():
         raise HTTPException(status_code=503, detail="storage not enabled")
     storage = get_storage_service()
     try:
-        obj = await storage.get_object(record.file_id, scope=_file_storage_scope(record))
+        if record.object_key:
+            obj = await storage.get_object_ref(
+                StorageObjectRef(
+                    file_id=record.file_id,
+                    bucket=record.storage_bucket or settings.storage_s3_bucket,
+                    object_key=record.object_key,
+                    filename=record.original_filename,
+                )
+            )
+        else:
+            obj = await storage.get_object(record.file_id, scope=_file_storage_scope(record))
     except StorageObjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="file not found in storage") from exc
     except Exception as exc:
@@ -476,7 +513,9 @@ async def bridge_read_file_content(
     if record is None:
         raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
 
-    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
+    access_channel_id = await _resolve_bot_file_access_channel_id(
+        session, bot_id=bot.bot_id, record=record,
+    )
 
     if is_image_type(record.content_type or ""):
         raise HTTPException(
@@ -488,7 +527,7 @@ async def bridge_read_file_content(
     try:
         attachments = await FilePipelineService().prepare_attachments(
             session,
-            channel_id=record.channel_id,
+            channel_id=access_channel_id,
             file_ids=[file_id],
         )
         await session.commit()
@@ -529,7 +568,7 @@ async def bridge_read_file_binary(
     if record is None:
         raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
 
-    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
+    await _resolve_bot_file_access_channel_id(session, bot_id=bot.bot_id, record=record)
 
     if record.size_bytes and record.size_bytes > _FILE_BINARY_MAX_BYTES:
         raise HTTPException(
