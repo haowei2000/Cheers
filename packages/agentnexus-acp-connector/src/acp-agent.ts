@@ -1,6 +1,8 @@
 import { JsonRpcError, JsonRpcStdioPeer } from "./acp-jsonrpc.js";
 import type {
   AcpInitializeResponse,
+  AcpSessionLoadResult,
+  AcpSessionStartResult,
   AcpSessionUpdate,
   ContentBlock,
   Logger,
@@ -123,21 +125,22 @@ export class AcpStdioAgent {
     return () => this.handlers.delete(handler);
   }
 
-  async newSession(): Promise<string> {
-    const result = await this.peer.request<{ sessionId?: string }>("session/new", {
+  async newSession(): Promise<AcpSessionStartResult> {
+    const result = await this.peer.request<AcpSessionStartResult>("session/new", {
       cwd: this.config.cwd,
       mcpServers: this.config.mcpServers ?? [],
     });
     if (!result.sessionId) throw new Error("ACP session/new did not return sessionId");
-    return result.sessionId;
+    return result;
   }
 
-  async loadSession(sessionId: string): Promise<void> {
-    await this.peer.request("session/load", {
+  async loadSession(sessionId: string): Promise<AcpSessionLoadResult> {
+    const result = await this.peer.request<AcpSessionLoadResult | null>("session/load", {
       sessionId,
       cwd: this.config.cwd,
       mcpServers: this.config.mcpServers ?? [],
     });
+    return result ?? {};
   }
 
   async prompt(sessionId: string, prompt: ContentBlock[]): Promise<{ stopReason?: string }> {

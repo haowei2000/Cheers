@@ -31,6 +31,7 @@ export class MockBridge {
   public receivedTraces: Array<Record<string, unknown>> = [];
   public receivedUploads: Array<Record<string, unknown>> = [];
   public receivedConfigStatuses: Array<Record<string, unknown>> = [];
+  public receivedConfigOptions: Array<Record<string, unknown>> = [];
 
   constructor(private readonly botToken = "agb_test") {}
 
@@ -150,6 +151,10 @@ export class MockBridge {
     }
     if (stream === "control" && frame.type === "config_status") {
       this.receivedConfigStatuses.push(frame);
+      return;
+    }
+    if (stream === "control" && frame.type === "config_options") {
+      this.receivedConfigOptions.push(frame);
       return;
     }
     if (stream !== "data") return;

@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import { ReconnectingClient } from "./reconnect.js";
 import type {
   AttachmentInfo,
+  ConfigOptionsFrame,
   ChannelInfo,
   ConfigStatusFrame,
   ConfigUpdateInbound,
@@ -508,6 +509,12 @@ export class BotSession {
   sendConfigStatus(status: Omit<ConfigStatusFrame, "type">): boolean {
     if (!this.control.isOpen) return false;
     return this.control.send({ type: "config_status", ...status });
+  }
+
+  /** Report connector-discovered configuration choices, such as ACP session options. */
+  sendConfigOptions(options: Omit<ConfigOptionsFrame, "type">): boolean {
+    if (!this.control.isOpen) return false;
+    return this.control.send({ type: "config_options", ...options });
   }
 
   /** Proactively send a message to a channel, for example a scheduled reminder. */

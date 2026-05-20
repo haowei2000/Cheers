@@ -46,6 +46,17 @@ function secondsToMs(value: number): number {
   return Math.max(5, Math.round(value)) * 1000;
 }
 
+function safeConnectorText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function connectorOptionTitle(option: { id?: string; name?: string }): string {
+  const name = safeConnectorText(option.name, "");
+  const id = safeConnectorText(option.id, "");
+  if (name && id && name !== id) return `${name} (${id})`;
+  return name || id || "Option";
+}
+
 function isManagedBotAvatarUrl(value: string): boolean {
   return value.startsWith("/api/v1/avatars/bots/") ||
     value.includes("/api/v1/avatars/bots/");
@@ -80,6 +91,16 @@ export function BotEditPane({
   const [botTab, setBotTab] = useState<BotSettingsTab>("profile");
   const connectorControl = bot.binding_config?.connector_control;
   const connectorSettings = connectorControl?.settings || {};
+  const connectorOptions = connectorControl?.options || null;
+  const discoveredModes = connectorOptions?.modes?.availableModes || [];
+  const discoveredConfigOptions = connectorOptions?.configOptions || [];
+  const discoveredModelOption = discoveredConfigOptions.find((option) => {
+    const id = safeConnectorText(option.id, "").toLowerCase();
+    const name = safeConnectorText(option.name, "").toLowerCase();
+    return id === "model" || name.includes("model");
+  });
+  const discoveredModelValues = discoveredModelOption?.values || [];
+  const connectorModelListId = `connector-model-options-${bot.bot_id}`;
   const [savingConnectorControl, setSavingConnectorControl] = useState(false);
   const [connectorPermissionMode, setConnectorPermissionMode] = useState<ConnectorPermissionMode>(
     normalizeConnectorPermissionMode(connectorSettings.permissionMode),
@@ -528,8 +549,18 @@ export function BotEditPane({
                   value={connectorModel}
                   onChange={(e) => setConnectorModel(e.target.value)}
                   className={inputCls}
+                  list={discoveredModelValues.length ? connectorModelListId : undefined}
                   placeholder="gpt-5.5"
                 />
+                {discoveredModelValues.length > 0 && (
+                  <datalist id={connectorModelListId}>
+                    {discoveredModelValues.map((value) => {
+                      const id = safeConnectorText(value.id, "");
+                      const name = safeConnectorText(value.name, id || "Model");
+                      return <option key={id || name} value={id || name} label={name} />;
+                    })}
+                  </datalist>
+                )}
               </Field>
               <Field label="Prompt timeout (seconds)">
                 <input
@@ -557,6 +588,40 @@ export function BotEditPane({
                 {connectorControl.last_status.rejected.map((item) => `${item.field || "field"}: ${item.reason || "rejected"}`).join("; ")}
               </div>
             ) : null}
+            {connectorOptions && (
+              <div className="an-inline-status" style={{ background: "var(--surface-soft)", color: "var(--fg-1)" }}>
+                <div style={{ fontWeight: 650 }}>
+                  ACP discovered options
+                  {connectorOptions.reported_at ? ` · ${new Date(connectorOptions.reported_at).toLocaleString()}` : ""}
+                </div>
+                {connectorOptions.agentInfo && (
+                  <div>
+                    Agent: {safeConnectorText(connectorOptions.agentInfo["name"], "unknown")}
+                    {connectorOptions.agentInfo["version"] ? ` · ${String(connectorOptions.agentInfo["version"])}` : ""}
+                  </div>
+                )}
+                {discoveredModes.length > 0 && (
+                  <div>
+                    Modes: {discoveredModes.map((mode) => {
+                      const id = safeConnectorText(mode.id, "");
+                      const name = safeConnectorText(mode.name, id || "Mode");
+                      const current = id && id === connectorOptions.modes?.currentModeId;
+                      return `${name}${current ? " (current)" : ""}`;
+                    }).join(", ")}
+                  </div>
+                )}
+                {discoveredConfigOptions.length > 0 && (
+                  <div>
+                    Options: {discoveredConfigOptions.slice(0, 6).map((option) => {
+                      const current = safeConnectorText(option.currentValueId, "");
+                      return current ? `${connectorOptionTitle(option)}=${current}` : connectorOptionTitle(option);
+                    }).join(", ")}
+                    {discoveredConfigOptions.length > 6 ? `, +${discoveredConfigOptions.length - 6}` : ""}
+                  </div>
+                )}
+                {connectorOptions.truncated && <div>Options payload was too large and was truncated.</div>}
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <PrimaryButton onClick={() => void saveConnectorControl()} disabled={savingConnectorControl}>
                 {savingConnectorControl ? "Saving..." : "Save connector control"}

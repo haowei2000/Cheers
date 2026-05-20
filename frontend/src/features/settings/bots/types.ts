@@ -12,6 +12,35 @@ export type ConnectorControlSettings = {
 export type ConnectorControlConfig = {
   revision?: number | string | null;
   settings?: ConnectorControlSettings | null;
+  options?: {
+    source?: string;
+    agentInfo?: Record<string, unknown> | null;
+    agentCapabilities?: Record<string, unknown> | null;
+    sessionId?: string | null;
+    providerSessionKey?: string | null;
+    modes?: {
+      currentModeId?: string | null;
+      availableModes?: Array<{ id?: string; name?: string; description?: string | null }>;
+      [key: string]: unknown;
+    } | null;
+    configOptions?: Array<{
+      id?: string;
+      name?: string;
+      description?: string | null;
+      currentValueId?: string | null;
+      values?: Array<{ id?: string; name?: string; description?: string | null }>;
+      [key: string]: unknown;
+    }>;
+    availableCommands?: Array<{
+      name?: string;
+      description?: string;
+      [key: string]: unknown;
+    }>;
+    reported_at?: string | null;
+    updatedAt?: string | null;
+    truncated?: boolean;
+    [key: string]: unknown;
+  } | null;
   updated_at?: string | null;
   last_status?: {
     revision?: number | string | null;
