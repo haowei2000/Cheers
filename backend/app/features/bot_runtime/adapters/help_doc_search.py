@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger("app.features.bot_runtime.adapters.help_doc_search")
@@ -20,6 +19,10 @@ _MAX_CONTEXT_AROUND_MATCH = 60
 
 def _resolve_docs_help_dir() -> Path:
     env = os.getenv("DOCS_HELP_DIR", "").strip()
+    if not env:
+        env = os.getenv("AGENTNEXUS_DOCS_DIR", "").strip()
+        if env:
+            env = env.rstrip("/") + "/help"
     if env:
         p = Path(env)
         if p.is_dir():

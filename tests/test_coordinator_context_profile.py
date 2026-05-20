@@ -1,41 +1,44 @@
 """Coordinator context-budget policy tests."""
 from __future__ import annotations
 
-from app.features.bot_runtime.coordinator_profile import build_coordinator_profile
-from app.features.bot_runtime.adapters.channel_bot import _make_tools, _trim_memory_for_profile
+from app.features.bot_runtime.coordinator_profile import ALL_COORDINATOR_TOOLS, build_coordinator_profile
+from app.features.bot_runtime.adapters.coordinator import _make_tools, _trim_memory_for_profile
 
 
-def test_help_profile_skips_memory_and_tools() -> None:
+_ALL_MEMORY_LAYERS = frozenset({"anchor", "progress", "decisions", "files_index", "history", "todos"})
+
+
+def test_universal_profile_includes_all_tools_and_layers() -> None:
     profile = build_coordinator_profile("怎么创建项目")
 
-    assert profile.intent == "help"
+    assert profile.intent == "general"
     assert profile.include_help is True
-    assert profile.memory_layers == frozenset()
-    assert profile.enabled_tools == frozenset()
-    assert profile.history_limit <= 4
+    assert profile.memory_layers == _ALL_MEMORY_LAYERS
+    assert profile.enabled_tools == ALL_COORDINATOR_TOOLS
+    assert profile.help_limit == 3
 
 
-def test_file_profile_enables_file_tool_only() -> None:
+def test_universal_profile_with_attachments_still_all_tools() -> None:
     profile = build_coordinator_profile("帮我总结这个附件", has_attachments=True)
 
-    assert profile.intent == "file"
+    assert profile.intent == "general"
     assert "read_file" in profile.enabled_tools
-    assert "web_search" not in profile.enabled_tools
+    assert "web_search" in profile.enabled_tools
     assert "files_index" in profile.memory_layers
 
 
-def test_file_operation_without_attachment_stays_help_intent() -> None:
+def test_universal_profile_file_operation() -> None:
     profile = build_coordinator_profile("怎么上传文件")
 
-    assert profile.intent == "help"
+    assert profile.intent == "general"
     assert profile.include_help is True
-    assert "read_file" not in profile.enabled_tools
+    assert "read_file" in profile.enabled_tools
 
 
-def test_memory_profile_enables_memory_tools() -> None:
+def test_universal_profile_memory_keywords_still_all_tools() -> None:
     profile = build_coordinator_profile("请记录这个决策")
 
-    assert profile.intent == "memory"
+    assert profile.intent == "general"
     assert {"update_anchor", "update_progress", "update_decision"} & profile.enabled_tools
     assert {"anchor", "progress", "decisions"}.issubset(profile.memory_layers)
 
@@ -46,23 +49,23 @@ def test_dynamic_tool_binding_filters_tool_set() -> None:
     assert [tool.name for tool in tools] == ["call_user"]
 
 
-def test_trim_memory_profile_drops_unrequested_layers_and_clips() -> None:
+def test_trim_memory_profile_includes_all_layers_and_clips() -> None:
     profile = build_coordinator_profile("怎么创建项目")
     memory = {
         "anchor": "A" * 100,
         "history": "H" * 100,
     }
 
-    assert _trim_memory_for_profile(memory, profile) == {}
+    trimmed = _trim_memory_for_profile(memory, profile)
+    assert "anchor" in trimmed
+    assert "history" in trimmed
 
-    project_profile = build_coordinator_profile("项目现在怎么样")
     large_memory = {
         "anchor": "A" * 3000,
         "decisions": "D" * 3000,
         "history": "H" * 3000,
     }
-    trimmed = _trim_memory_for_profile(large_memory, project_profile)
-
-    assert "decisions" not in trimmed
+    trimmed = _trim_memory_for_profile(large_memory, profile)
+    assert "decisions" in trimmed
     assert len(trimmed["anchor"]) < len(large_memory["anchor"])
     assert "history" in trimmed
