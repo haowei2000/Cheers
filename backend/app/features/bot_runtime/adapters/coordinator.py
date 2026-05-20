@@ -112,16 +112,50 @@ def _trim_memory_for_profile(
     return trimmed
 
 
+def _split_questions(raw: str) -> list[str]:
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    numbered = re.split(r"(?:^|[\n\r])\s*\d+[\.、\)]\s*", raw)
+    if len(numbered) > 2:
+        return [chunk.strip(" \n\r:：") for chunk in numbered if chunk.strip()]
+    # Fallback: split by question marks.
+    parts = re.split(r"(?<=[\?？])\s+", raw)
+    if len(parts) > 1:
+        return [part.strip() for part in parts if part.strip()]
+    return []
+
+
+def _looks_like_question_list(value: list[Any]) -> bool:
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        if any(key in item for key in ("prompt", "question", "options")):
+            return True
+    return False
+
+
+def _render_clarify_block(title: str, questions: list[dict[str, Any]]) -> str:
+    clarify_schema = {
+        "title": title,
+        "skip_policy": "allow",
+        "questions": questions,
+    }
+    return "```helper-clarify\n" + json.dumps(clarify_schema, ensure_ascii=False) + "\n```"
+
+
 def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None = None) -> str:
     if is_zh(locale):
         rules = [
             "## 核心行为规则",
             "",
             "- 最终回复使用简洁、专业的 Markdown。",
-            "- 只基于本提示词包含的上下文回答。若关键信息缺失，明确说明缺少什么。",
+            "- 先给出你能给出的最佳答案，再补充需要确认的关键假设。宁可基于合理假设给出方案，也不要只追问不给答案。",
+            "- 只基于本提示词包含的上下文回答。若关键信息缺失，明确说明你的假设是什么。",
         ]
         if "call_user" in profile.enabled_tools:
-            rules.append("- 当用户信息不足或需要关键决策时，先调用 call_user，不要直接猜测。")
+            rules.append("- call_user 仅在需要关键决策（如授权、选型确认）且已有方案的情况下使用。不要用 call_user 代替回答。")
+            rules.append("- 若需要澄清多个问题，必须使用 call_user 的 questions 列表，每个问题单独 prompt 与选项；不要把多个问题塞进一个 prompt。")
         if "call_bot" in profile.enabled_tools:
             rules.append("- 当频道内其他 Bot 更适合处理时，使用 call_bot 派发聚焦的子任务。")
         if "read_file" in profile.enabled_tools:
@@ -146,6 +180,14 @@ def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None
                 "- 操作类问题要给出具体 UI 入口和简短编号步骤。",
                 "- 如果帮助上下文没有覆盖精确问题，说明这一点并给出最接近的安全路径。",
             ])
+        if profile.intent == "project":
+            rules.extend([
+                "",
+                "## 项目对话规则",
+                "",
+                "- 直接给出具体建议、方案或分析，不要用提问代替回答。",
+                "- 如果确实需要更多信息才能给出准确答案，用一句话追问，同时先给出基于现有信息的初步建议。",
+            ])
         return "\n".join(rules)
 
     rules = [
@@ -156,6 +198,7 @@ def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None
     ]
     if "call_user" in profile.enabled_tools:
         rules.append("- If the user message lacks enough information or needs a key decision, call call_user before guessing.")
+        rules.append("- If you need multiple clarifications, use call_user with a questions list (one prompt + options per question). Do not combine multiple questions into one prompt.")
     if "call_bot" in profile.enabled_tools:
         rules.append("- When another channel Bot is better suited, call call_bot with a focused delegated task.")
     if "read_file" in profile.enabled_tools:
@@ -489,6 +532,7 @@ Args:
         username: str,
         message: str,
         options: list[str] | str | None = None,
+        questions: list[dict[str, Any]] | str | None = None,
         allow_multiple: bool = False,
         allow_manual: bool = False,
         manual_label: str = "Other (manual input)",
@@ -514,6 +558,79 @@ Args:
         if not username or not message:
             return _t(locale, "Error: username and message are required", "错误：需要提供 username 和 message")
 
+        default_manual_label = _t(locale, "Other (manual input)", "其他（手动输入）")
+        default_manual_placeholder = _t(locale, "Enter your answer...", "请输入您的回答...")
+        if manual_label in {"Other (manual input)", "其他（手动输入）", ""}:
+            manual_label = default_manual_label
+        if manual_placeholder in {"Enter your answer...", "请输入您的回答...", ""}:
+            manual_placeholder = default_manual_placeholder
+
+        # Be tolerant of questions arriving as a JSON string.
+        parsed_questions: list[dict[str, Any]] = []
+        if isinstance(questions, str) and questions.strip().startswith("["):
+            try:
+                parsed = json.loads(questions)
+                if isinstance(parsed, list):
+                    parsed_questions = [q for q in parsed if isinstance(q, dict)]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif isinstance(questions, list):
+            parsed_questions = [q for q in questions if isinstance(q, dict)]
+
+        if not parsed_questions and isinstance(options, list) and _looks_like_question_list(options):
+            parsed_questions = [q for q in options if isinstance(q, dict)]
+
+        if parsed_questions:
+            built_questions: list[dict[str, Any]] = []
+            for idx, q in enumerate(parsed_questions):
+                prompt = (q.get("prompt") or q.get("question") or "").strip()
+                if not prompt:
+                    continue
+                q_options = q.get("options") or []
+                if isinstance(q_options, str) and q_options.strip().startswith("["):
+                    try:
+                        parsed = json.loads(q_options)
+                        if isinstance(parsed, list):
+                            q_options = parsed
+                    except (json.JSONDecodeError, TypeError):
+                        q_options = []
+                if isinstance(q_options, str) and q_options.strip():
+                    q_options = [q_options.strip()]
+                if not isinstance(q_options, list) or len(q_options) < 2:
+                    return _t(locale, "Error: each question must have at least 2 choices", "错误：每个问题至少需要 2 个选项")
+                option_items: list[dict[str, Any]] = []
+                for opt in q_options:
+                    if isinstance(opt, dict):
+                        label = str(opt.get("label") or opt.get("text") or "").strip()
+                        if not label:
+                            continue
+                        option_items.append({
+                            "id": str(opt.get("id") or f"a{len(option_items)}"),
+                            "label": label,
+                            "requires_text": bool(opt.get("requires_text")),
+                            "text_placeholder": opt.get("text_placeholder"),
+                        })
+                    else:
+                        option_items.append({"id": f"a{len(option_items)}", "label": str(opt)})
+                q_allow_manual = bool(q.get("allow_manual", allow_manual))
+                q_other_label = q.get("other_label") or manual_label
+                q_other_placeholder = q.get("other_placeholder") or manual_placeholder
+                built_questions.append({
+                    "id": str(q.get("id") or f"q{idx}"),
+                    "prompt": prompt,
+                    "allow_multiple": bool(q.get("allow_multiple", allow_multiple)),
+                    "options": option_items,
+                    "other_enabled": q_allow_manual,
+                    "other_label": q_other_label,
+                    "other_placeholder": q_other_placeholder,
+                })
+            if not built_questions:
+                return _t(locale, "Error: questions must include prompts and options", "错误：questions 需要包含问题和选项")
+            return _render_clarify_block(
+                _t(locale, "Please confirm the following questions", "请确认以下问题"),
+                built_questions,
+            )
+
         # Be tolerant of options arriving as a JSON string.
         if isinstance(options, str) and options.strip().startswith("["):
             try:
@@ -526,6 +643,58 @@ Args:
             # Accept a single string option for robustness, though it is not recommended.
             options = [options.strip()]
 
+        if options:
+            auto_questions = _split_questions(message)
+            if len(auto_questions) >= 2:
+                grouped_options: list[list[Any]] | None = None
+                if isinstance(options, list) and options and all(isinstance(opt, list) for opt in options):
+                    grouped_options = options
+                elif isinstance(options, list) and options:
+                    grouped: dict[int, list[dict[str, Any]]] = {}
+                    for opt in options:
+                        label = None
+                        if isinstance(opt, dict):
+                            label = opt.get("label") or opt.get("text")
+                        else:
+                            label = opt
+                        label = str(label or "").strip()
+                        if not label:
+                            continue
+                        match = re.match(r"^\s*(?:Q)?(\d+)[\.、\):：-]\s*(.+)$", label)
+                        if not match:
+                            continue
+                        idx = max(0, int(match.group(1)) - 1)
+                        grouped.setdefault(idx, []).append({
+                            "id": f"a{len(grouped.get(idx, []))}",
+                            "label": match.group(2).strip(),
+                        })
+                    if grouped:
+                        grouped_options = [grouped.get(i, []) for i in range(len(auto_questions))]
+
+                if grouped_options and len(grouped_options) == len(auto_questions):
+                    built_questions = []
+                    for idx, prompt in enumerate(auto_questions):
+                        q_opts_raw = grouped_options[idx]
+                        q_opts = [
+                            (opt if isinstance(opt, dict) else {"id": f"a{i}", "label": str(opt)})
+                            for i, opt in enumerate(q_opts_raw)
+                        ]
+                        if len(q_opts) < 2:
+                            return _t(locale, "Error: each question must have at least 2 choices", "错误：每个问题至少需要 2 个选项")
+                        built_questions.append({
+                            "id": f"q{idx}",
+                            "prompt": prompt,
+                            "allow_multiple": False,
+                            "options": q_opts,
+                            "other_enabled": allow_manual,
+                            "other_label": manual_label or default_manual_label,
+                            "other_placeholder": manual_placeholder or default_manual_placeholder,
+                        })
+                    return _render_clarify_block(
+                        _t(locale, "Please confirm the following questions", "请确认以下问题"),
+                        built_questions,
+                    )
+
         mention_prefix = f"@{username} {message}"
 
         if not options:
@@ -535,17 +704,9 @@ Args:
         if len(options) < 2:
             return _t(locale, "Error: options must contain at least 2 choices", "错误：options 至少需要 2 个选项")
 
-        default_manual_label = _t(locale, "Other (manual input)", "其他（手动输入）")
-        default_manual_placeholder = _t(locale, "Enter your answer...", "请输入您的回答...")
-        if manual_label in {"Other (manual input)", "其他（手动输入）", ""}:
-            manual_label = default_manual_label
-        if manual_placeholder in {"Enter your answer...", "请输入您的回答...", ""}:
-            manual_placeholder = default_manual_placeholder
-
-        clarify_schema = {
-            "title": message,
-            "skip_policy": "allow",
-            "questions": [
+        return _render_clarify_block(
+            _t(locale, "Please confirm the following question", "请确认以下问题"),
+            [
                 {
                     "id": "q0",
                     "prompt": message,
@@ -556,9 +717,7 @@ Args:
                     "other_placeholder": manual_placeholder or default_manual_placeholder,
                 }
             ],
-        }
-        clarify_block = "```helper-clarify\n" + json.dumps(clarify_schema, ensure_ascii=False) + "\n```"
-        return f"{mention_prefix}\n\n{clarify_block}"
+        )
 
     @tool
     async def create_file(filename: str, content: str) -> str:
