@@ -8,6 +8,7 @@ export interface RemoteConnectorSettings {
   promptTimeoutMs?: number;
   cwd?: string;
   model?: string;
+  configOptions?: Record<string, string>;
 }
 
 export interface StdioAgentConfig {
@@ -55,6 +56,24 @@ export interface ContentBlock {
     [key: string]: unknown;
   };
   content?: ContentBlock;
+  [key: string]: unknown;
+}
+
+export interface AcpConfigOptionValue {
+  value: string;
+  name: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface AcpConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: string;
+  currentValue: string;
+  options: AcpConfigOptionValue[];
   [key: string]: unknown;
 }
 

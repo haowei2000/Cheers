@@ -224,17 +224,83 @@ describe("ConnectorRuntime", () => {
         { id: "code", name: "Code" },
       ],
     });
-    expect(options.configOptions).toEqual([
+    expect(options.configOptions).toMatchObject([
       {
         id: "model",
         name: "Model",
-        currentValueId: "fake-small",
-        values: [
-          { id: "fake-small", name: "Fake Small" },
-          { id: "fake-large", name: "Fake Large" },
+        type: "select",
+        category: "model",
+        currentValue: "fake-small",
+        options: [
+          { value: "fake-small", name: "Fake Small" },
+          { value: "fake-large", name: "Fake Large" },
         ],
       },
     ]);
+    await runtime.stop();
+  });
+
+  it("applies ACP session config option values pushed from AgentNexus", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_OPTIONS: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushConfigUpdate({
+      revision: 9,
+      settings: {
+        configOptions: { model: "fake-large" },
+      },
+    });
+
+    await waitFor(() => bridge.receivedConfigStatuses.length === 1);
+    expect(bridge.receivedConfigStatuses[0]).toMatchObject({
+      type: "config_status",
+      revision: 9,
+      ok: true,
+      applied: ["configOptions"],
+      rejected: [],
+    });
+
+    bridge.pushMessage({
+      task_id: "task-set-options",
+      channel_id: "C1",
+      seq: 10,
+      placeholder_msg_id: "ph-set-options",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "use configured model" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    expect(bridge.receivedDeltas.map((d) => d.delta).join("")).toContain("config: model=fake-large");
+    expect(bridge.receivedConfigOptions.some((frame) => {
+      const options = frame.options as Record<string, unknown> | undefined;
+      const configOptions = options?.configOptions;
+      return Array.isArray(configOptions) && configOptions.some((option) => (
+        typeof option === "object" &&
+        option !== null &&
+        (option as Record<string, unknown>).id === "model" &&
+        (option as Record<string, unknown>).currentValue === "fake-large"
+      ));
+    })).toBe(true);
     await runtime.stop();
   });
 

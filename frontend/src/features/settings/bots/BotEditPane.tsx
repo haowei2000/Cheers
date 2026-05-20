@@ -57,6 +57,27 @@ function connectorOptionTitle(option: { id?: string; name?: string }): string {
   return name || id || "Option";
 }
 
+function connectorOptionCurrentValue(option: {
+  currentValue?: string | null;
+  currentValueId?: string | null;
+}): string {
+  return safeConnectorText(option.currentValue, safeConnectorText(option.currentValueId, ""));
+}
+
+function connectorOptionChoices(option: {
+  options?: Array<{ value?: string; id?: string; name?: string; description?: string | null }>;
+  values?: Array<{ id?: string; name?: string; description?: string | null }>;
+}): Array<{ value: string; name: string }> {
+  const raw = option.options?.length ? option.options : option.values || [];
+  return raw
+    .map((item) => {
+      const value = safeConnectorText("value" in item ? item.value : undefined, safeConnectorText(item.id, ""));
+      const name = safeConnectorText(item.name, value);
+      return { value, name };
+    })
+    .filter((item) => item.value);
+}
+
 function isManagedBotAvatarUrl(value: string): boolean {
   return value.startsWith("/api/v1/avatars/bots/") ||
     value.includes("/api/v1/avatars/bots/");
@@ -99,7 +120,7 @@ export function BotEditPane({
     const name = safeConnectorText(option.name, "").toLowerCase();
     return id === "model" || name.includes("model");
   });
-  const discoveredModelValues = discoveredModelOption?.values || [];
+  const discoveredModelValues = discoveredModelOption ? connectorOptionChoices(discoveredModelOption) : [];
   const connectorModelListId = `connector-model-options-${bot.bot_id}`;
   const [savingConnectorControl, setSavingConnectorControl] = useState(false);
   const [connectorPermissionMode, setConnectorPermissionMode] = useState<ConnectorPermissionMode>(
@@ -113,6 +134,9 @@ export function BotEditPane({
   );
   const [connectorCwd, setConnectorCwd] = useState(connectorSettings.cwd || "");
   const [connectorModel, setConnectorModel] = useState(connectorSettings.model || "");
+  const [connectorConfigOptionValues, setConnectorConfigOptionValues] = useState<Record<string, string>>(
+    connectorSettings.configOptions || {},
+  );
 
   useEffect(() => {
     setDisplayName(bot.display_name || "");
@@ -127,6 +151,7 @@ export function BotEditPane({
     setConnectorRequestTimeoutSeconds(msToSeconds(nextSettings.requestTimeoutMs, 120));
     setConnectorCwd(nextSettings.cwd || "");
     setConnectorModel(nextSettings.model || "");
+    setConnectorConfigOptionValues(nextSettings.configOptions || {});
     setConnectionTest(null);
   }, [
     bot.avatar_url,
@@ -313,6 +338,10 @@ export function BotEditPane({
       };
       if (connectorCwd.trim()) settings.cwd = connectorCwd.trim();
       if (connectorModel.trim()) settings.model = connectorModel.trim();
+      const configOptions = Object.fromEntries(
+        Object.entries(connectorConfigOptionValues).filter(([key, value]) => key.trim() && value.trim()),
+      );
+      if (Object.keys(configOptions).length > 0) settings.configOptions = configOptions;
       const res = await apiFetch(`/bots/${bot.bot_id}/connector-control`, {
         method: "PUT",
         token: authToken,
@@ -554,11 +583,9 @@ export function BotEditPane({
                 />
                 {discoveredModelValues.length > 0 && (
                   <datalist id={connectorModelListId}>
-                    {discoveredModelValues.map((value) => {
-                      const id = safeConnectorText(value.id, "");
-                      const name = safeConnectorText(value.name, id || "Model");
-                      return <option key={id || name} value={id || name} label={name} />;
-                    })}
+                    {discoveredModelValues.map((value) => (
+                      <option key={value.value} value={value.value} label={value.name} />
+                    ))}
                   </datalist>
                 )}
               </Field>
@@ -588,6 +615,53 @@ export function BotEditPane({
                 {connectorControl.last_status.rejected.map((item) => `${item.field || "field"}: ${item.reason || "rejected"}`).join("; ")}
               </div>
             ) : null}
+            {discoveredConfigOptions.length > 0 && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div className="an-rc-title">ACP protocol options</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                  {discoveredConfigOptions.map((option) => {
+                    const id = safeConnectorText(option.id, "");
+                    if (!id) return null;
+                    const choices = connectorOptionChoices(option);
+                    const value = connectorConfigOptionValues[id] ?? connectorOptionCurrentValue(option);
+                    return (
+                      <Field key={id} label={connectorOptionTitle(option)}>
+                        <>
+                          {choices.length > 0 ? (
+                            <select
+                              value={value}
+                              onChange={(e) => {
+                                setConnectorConfigOptionValues((prev) => ({ ...prev, [id]: e.target.value }));
+                              }}
+                              className={inputCls}
+                            >
+                              {choices.map((choice) => (
+                                <option key={choice.value} value={choice.value}>
+                                  {choice.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              value={value}
+                              onChange={(e) => {
+                                setConnectorConfigOptionValues((prev) => ({ ...prev, [id]: e.target.value }));
+                              }}
+                              className={inputCls}
+                            />
+                          )}
+                          {option.description && (
+                            <div className="an-rc-sub" style={{ marginTop: 4 }}>
+                              {option.description}
+                            </div>
+                          )}
+                        </>
+                      </Field>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {connectorOptions && (
               <div className="an-inline-status" style={{ background: "var(--surface-soft)", color: "var(--fg-1)" }}>
                 <div style={{ fontWeight: 650 }}>
@@ -613,7 +687,7 @@ export function BotEditPane({
                 {discoveredConfigOptions.length > 0 && (
                   <div>
                     Options: {discoveredConfigOptions.slice(0, 6).map((option) => {
-                      const current = safeConnectorText(option.currentValueId, "");
+                      const current = connectorOptionCurrentValue(option);
                       return current ? `${connectorOptionTitle(option)}=${current}` : connectorOptionTitle(option);
                     }).join(", ")}
                     {discoveredConfigOptions.length > 6 ? `, +${discoveredConfigOptions.length - 6}` : ""}

@@ -55,8 +55,26 @@ function textOf(prompt) {
     .join("\n");
 }
 
-function sessionOptions() {
+function ensureSession(sessionId, cwd) {
+  let state = sessions.get(sessionId);
+  if (!state || typeof state === "string") {
+    state = {
+      cwd: typeof state === "string" ? state : cwd || process.cwd(),
+      config: { model: "fake-small" },
+    };
+    sessions.set(sessionId, state);
+  }
+  if (cwd) state.cwd = cwd;
+  return state;
+}
+
+function sessionCwd(sessionId) {
+  return ensureSession(sessionId).cwd;
+}
+
+function sessionOptions(sessionId) {
   if (!returnOptions) return {};
+  const state = ensureSession(sessionId);
   return {
     modes: {
       currentModeId: "ask",
@@ -69,7 +87,14 @@ function sessionOptions() {
       {
         id: "model",
         name: "Model",
-        currentValueId: "fake-small",
+        type: "select",
+        category: "model",
+        currentValue: state.config.model,
+        currentValueId: state.config.model,
+        options: [
+          { value: "fake-small", name: "Fake Small" },
+          { value: "fake-large", name: "Fake Large" },
+        ],
         values: [
           { id: "fake-small", name: "Fake Small" },
           { id: "fake-large", name: "Fake Large" },
@@ -96,8 +121,8 @@ async function handle(frame) {
   }
   if (method === "session/new") {
     const sessionId = `fake-${randomUUID()}`;
-    sessions.set(sessionId, params.cwd || process.cwd());
-    result(id, { sessionId, ...sessionOptions() });
+    ensureSession(sessionId, params.cwd || process.cwd());
+    result(id, { sessionId, ...sessionOptions(sessionId) });
     return;
   }
   if (method === "session/load") {
@@ -105,7 +130,7 @@ async function handle(frame) {
       error(id, -32601, "load not supported");
       return;
     }
-    sessions.set(params.sessionId, params.cwd || process.cwd());
+    ensureSession(params.sessionId, params.cwd || process.cwd());
     notify("session/update", {
       sessionId: params.sessionId,
       update: {
@@ -113,10 +138,25 @@ async function handle(frame) {
         title: "loaded",
       },
     });
-    result(id, sessionOptions());
+    result(id, sessionOptions(params.sessionId));
+    return;
+  }
+  if (method === "session/set_config_option") {
+    const state = ensureSession(params.sessionId);
+    if (params.configId !== "model") {
+      error(id, -32602, `unknown config option ${params.configId}`);
+      return;
+    }
+    if (params.value !== "fake-small" && params.value !== "fake-large") {
+      error(id, -32602, `unsupported model ${params.value}`);
+      return;
+    }
+    state.config.model = params.value;
+    result(id, sessionOptions(params.sessionId));
     return;
   }
   if (method === "session/prompt") {
+    const state = ensureSession(params.sessionId);
     const promptText = textOf(params.prompt);
     if (hangPrompt) return;
     if (promptDelayMs > 0 && (!promptDelayIfIncludes || promptText.includes(promptDelayIfIncludes))) {
@@ -164,7 +204,12 @@ async function handle(frame) {
       sessionId: params.sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: `echo: ${promptText}` },
+        content: {
+          type: "text",
+          text: returnOptions
+            ? `echo: ${promptText}\nconfig: model=${state.config.model}`
+            : `echo: ${promptText}`,
+        },
       },
     });
     if (returnFile) {
@@ -184,7 +229,7 @@ async function handle(frame) {
       });
     }
     if (returnFileLink) {
-      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const cwd = sessionCwd(params.sessionId);
       const filePath = path.join(cwd, "fake-linked-result.md");
       await writeFile(filePath, "# Linked Result\n\nGenerated through a markdown file link.\n", "utf8");
       notify("session/update", {
@@ -199,7 +244,7 @@ async function handle(frame) {
       });
     }
     if (returnFileLinkWithLine) {
-      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const cwd = sessionCwd(params.sessionId);
       const filePath = path.join(cwd, "fake-line-linked-result.md");
       await writeFile(filePath, "# Line Linked Result\n\nGenerated through a markdown file link with a line suffix.\n", "utf8");
       notify("session/update", {
@@ -214,7 +259,7 @@ async function handle(frame) {
       });
     }
     if (returnMissingFileLink) {
-      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const cwd = sessionCwd(params.sessionId);
       const filePath = path.join(cwd, "missing-linked-result.md");
       notify("session/update", {
         sessionId: params.sessionId,
@@ -228,7 +273,7 @@ async function handle(frame) {
       });
     }
     if (returnFileReferences) {
-      const cwd = sessions.get(params.sessionId) || process.cwd();
+      const cwd = sessionCwd(params.sessionId);
       const absolutePath = path.join(cwd, "plain-absolute-result.csv");
       const backtickPath = path.join(cwd, "backtick result.md");
       const relativePath = path.join(cwd, "relative-result.json");

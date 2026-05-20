@@ -143,6 +143,15 @@ export class AcpStdioAgent {
     return result ?? {};
   }
 
+  async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
+    const result = await this.peer.request<{ configOptions?: unknown }>("session/set_config_option", {
+      sessionId,
+      configId,
+      value,
+    });
+    return result.configOptions;
+  }
+
   async prompt(sessionId: string, prompt: ContentBlock[]): Promise<{ stopReason?: string }> {
     return this.peer.request<{ stopReason?: string }>("session/prompt", {
       sessionId,
