@@ -152,7 +152,7 @@ async def test_agent_bridge_register_accepts_acp_provider(
     assert data["bot"]["description"] == "ACP Agent: codex-main"
     assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["botToken"] == token
     agent_config = data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]
-    assert agent_config["command"] == "codex-acp"
+    assert agent_config["command"] == "<agent-acp-command>"
     assert agent_config["args"] == []
 
     bot = (
