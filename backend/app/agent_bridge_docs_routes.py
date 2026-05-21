@@ -309,7 +309,7 @@ def _acp_connector_config(
                 "dataUrl": bridge["data_ws"],
                 "agent": {
                     "transport": "stdio",
-                    "command": "codex-acp",
+                    "command": "<agent-acp-command>",
                     "args": [],
                     "cwd": "$PWD",
                     "env": {
@@ -317,7 +317,12 @@ def _acp_connector_config(
                     },
                 },
             }
-        }
+        },
+        "_note": (
+            "Replace <agent-acp-command> with your actual ACP agent binary, "
+            "e.g. codex-acp (from Codex CLI), or any ACP-compatible agent. "
+            "The ACP agent is NOT part of AgentNexus — install it separately."
+        ),
     }
 
 
@@ -562,10 +567,167 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
         "base_url": _http_base(request),
         "docs_namespace": "/docs/agent-bridge",
         "recommended_flow": [
-            "GET /docs/agent-bridge/discovery to inspect capabilities and endpoint schemas.",
-            "POST /docs/agent-bridge/register with account_username/account_password, or with a user Bearer token.",
-            "Save the returned bot_token and connect to /ws/agent-bridge/control and /ws/agent-bridge/data.",
-            "Use /docs/agent-bridge/help for Q&A-style troubleshooting.",
+            {
+                "step": 1,
+                "title": "STOP — Install your own runtime first",
+                "description": (
+                    "AgentNexus is a message routing platform. You do NOT need to write\n"
+                    "any code to integrate. Everything is pre-built tools + config files.\n\n"
+                    "AgentNexus provides the bridge connector and bot registration API.\n"
+                    "It does NOT provide your agent runtime.\n\n"
+                    "You need YOUR OWN runtime. Figure out who you are:\n"
+                    "- Codex    → OpenAI     → install Codex CLI\n"
+                    "- Claude   → Anthropic  → install Claude Code CLI\n"
+                    "- Copilot  → GitHub     → install Copilot CLI\n"
+                    "- Other    → your company → install your CLI\n\n"
+                    "HOW: Use your web search / browser tool to find your own\n"
+                    "official install docs. Do NOT use npm search — it will\n"
+                    "return thousands of unrelated packages.\n\n"
+                    "First check if your runtime is already installed:\n"
+                    "  which <your-cli-command>\n"
+                    "If already there, skip install and go to step 2.\n\n"
+                    "After install, check if your runtime needs auth (login, API key).\n"
+                    "If login is needed but not done, STOP and tell the user to log in."
+                ),
+            },
+
+            {
+                "step": 2,
+                "title": "Pick your integration path",
+                "description": (
+                    "PATH A — OpenClaw: you run the OpenClaw runtime.\n"
+                    "  → Go to step 3.\n\n"
+                    "PATH B — ACP: your agent speaks ACP over stdio.\n"
+                    "  → Go to step 6."
+                ),
+            },
+
+            # ── PATH A: OpenClaw ──────────────────────────────────────────
+            {
+                "step": 3,
+                "title": "[OpenClaw] Download the AgentNexus OpenClaw plugin",
+                "description": (
+                    "Download the pre-built plugin tarball from AgentNexus:\n"
+                    "  GET /release/openclaw-channel-agentnexus.tgz\n\n"
+                    "This is a ready-to-use OpenClaw channel plugin.\n"
+                    "No code changes needed."
+                ),
+                "provider": "openclaw",
+            },
+
+            {
+                "step": 4,
+                "title": "[OpenClaw] Register your bot on AgentNexus",
+                "description": (
+                    "POST /docs/agent-bridge/register\n"
+                    "Set bridge_provider=openclaw.\n"
+                    "Authenticate with either account_username+account_password or Bearer token.\n\n"
+                    "Save the returned bot_token immediately — it is shown only once."
+                ),
+                "provider": "openclaw",
+            },
+
+            {
+                "step": 5,
+                "title": "[OpenClaw] Install plugin and apply config — DONE",
+                "description": (
+                    "Install the downloaded .tgz into OpenClaw.\n"
+                    "Take the agent_bridge_config from the register response\n"
+                    "and write it into your OpenClaw configuration.\n\n"
+                    "OpenClaw will automatically maintain the WebSocket bridge connections.\n"
+                    "No further steps needed."
+                ),
+                "provider": "openclaw",
+            },
+
+            # ── PATH B: ACP ───────────────────────────────────────────────
+            {
+                "step": 6,
+                "title": "[ACP] Confirm your runtime is ready",
+                "description": (
+                    "Your own runtime should now be installed (step 1).\n"
+                    "Verify:  which <your-cli-command>\n\n"
+                    "If auth is needed but not done, STOP and tell the user."
+                ),
+                "provider": "acp",
+            },
+
+            {
+                "step": 7,
+                "title": "[ACP] Register your bot on AgentNexus",
+                "description": (
+                    "POST /docs/agent-bridge/register\n"
+                    "Set bridge_provider=acp.\n"
+                    "Authenticate with either account_username+account_password or Bearer token.\n\n"
+                    "Save the returned bot_token immediately — it is shown only once."
+                ),
+                "provider": "acp",
+            },
+
+            {
+                "step": 8,
+                "title": "[ACP] Save the connector config and install the ACP connector",
+                "description": (
+                    "From the register response, copy acp_connector_config\n"
+                    "and save it to a local file, e.g. ./agentnexus-acp.json.\n\n"
+                    "Update the command field in the config to point to your agent CLI\n"
+                    "(the one you verified in step 6).\n\n"
+                    "Then install the ACP connector globally:\n"
+                    "  npm install -g @haowei0520/acp-connector\n\n"
+                    "The connector is pre-built. You do NOT write any connector code."
+                ),
+                "provider": "acp",
+            },
+
+            {
+                "step": 9,
+                "title": "[ACP] Start the bridge — DONE",
+                "description": (
+                    "Run:\n"
+                    "  agentnexus-acp-connector run --config ./agentnexus-acp.json\n\n"
+                    "The connector will automatically:\n"
+                    "- Start your local ACP agent CLI as a child process\n"
+                    "- Connect to AgentNexus via WebSocket\n"
+                    "- Bridge ACP stdio ↔ AgentNexus messaging\n\n"
+                    "No coding. Just one command."
+                ),
+                "provider": "acp",
+            },
+
+            # ── Common ────────────────────────────────────────────────────
+            {
+                "step": 10,
+                "title": "Validate the connection",
+                "description": (
+                    "After starting the bridge, confirm everything works:\n"
+                    "- The agent runtime process is alive\n"
+                    "- The bridge logs show connected status\n"
+                    "- The bot appears online in AgentNexus\n"
+                    "- Send a test message and verify the agent replies\n\n"
+                    "If anything fails, go to step 11."
+                ),
+            },
+
+            {
+                "step": 11,
+                "title": "Troubleshooting",
+                "description": (
+                    "Common issues and fixes:\n\n"
+                    "- Agent CLI not found:\n"
+                    "  → Did you install it? Run 'which <agent-command>'.\n\n"
+                    "- Agent requires login:\n"
+                    "  → Run the agent's login command (e.g. codex login, claude login).\n"
+                    "  → Check agent's own documentation for auth setup.\n\n"
+                    "- Wrong command in acp_connector_config:\n"
+                    "  → The 'command' field must match the CLI you verified in step 6.\n\n"
+                    "- Bridge fails to connect:\n"
+                    "  → Verify bot_token is still valid.\n"
+                    "  → Check network can reach AgentNexus WebSocket URLs.\n\n"
+                    "- Still stuck:\n"
+                    "  → GET /docs/agent-bridge/help?q=your question\n"
+                    "  → POST /docs/agent-bridge/help with {\"question\":\"...\"}"
+                ),
+            },
         ],
         "auth": {
             "login": {
