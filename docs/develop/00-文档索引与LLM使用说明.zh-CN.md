@@ -21,7 +21,7 @@
 | **系统管理说明书.md** | 管理员：建空间/项目、加人、接 Bot、审核申请、配置 | 怎么建项目、加人、接入 Agent Bridge provider、创建 Bot、待审核申请、引导 LLM、日志配置 | 一～七；§二 创建工作空间与项目；§三 成员；§四 Agent Bridge 接入；§五 发现与自动注册；§六 速查表；日志文件 |
 | **安装部署说明.md** | 部署与首次安装：环境、Docker/本地、迁移、初始化 | 怎么安装、部署、环境要求、数据库迁移、种子数据 | 一～六；§二 Docker；§三 本地安装；§四 配置 |
 | **技术排查Q&A.md** | 故障排查：现象→原因→步骤→解决；日志与接口 | 报错、503/404、连不上、列表为空、日志在哪、如何排查 | 一～五；§二 日志位置；§三 常见问题；§四 数据库排查 |
-| **AgentBridge接入指南.md** | OpenClaw、ACP/Codex ACP 开发者与管理员：统一接入文档 | OpenClaw plugin 接入、ACP Connector 接入、Codex ACP 示例、文件/图片输入与文件回传 | 一～六；完整接入流程 |
+| **AgentBridge接入指南.md** | OpenClaw、ACP/OpenCode ACP 开发者与管理员：统一接入文档 | OpenClaw plugin 接入、ACP Connector 接入、OpenCode ACP 示例、文件/图片输入与文件回传 | 一～六；完整接入流程 |
 
 ### 1.2 设计文档（DESIGN，内部/LLM 使用）
 
@@ -102,7 +102,7 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 | 怎么加人、怎么把别人/Bot 加进项目 | 《系统管理说明书》§三 如何管理项目成员；聊天内 @ 邀请 Bot 见《普通用户使用说明》§3.2.1 |
 | 怎么把 Bot 拉进群、聊天加 Bot、@ 没在群里 | 《普通用户使用说明》§3.2.1 在聊天里把 Bot 拉进群； 可回答 |
 | 怎么接入 OpenClaw、怎么注册 Agent Bridge Bot | 《AgentBridge接入指南》§三；《系统管理说明书》§四 |
-| 怎么接入 ACP / Codex ACP、怎么传图片或返回文件 | 《AgentBridge接入指南》§四；《系统管理说明书》§四 |
+| 怎么接入 ACP / OpenCode ACP、怎么传图片或返回文件 | 《AgentBridge接入指南》§四；《系统管理说明书》§四 |
 | 外部 provider 怎么发现并自动注册 | 《AgentBridge接入指南》§二；《系统管理说明书》§五 |
 | 怎么安装、怎么部署、环境要求 | 《安装部署说明》§一 环境、§二 Docker、§三 本地安装 |
 | Coordinator、自动接手、Bot 层级 | 《普通用户使用说明》§3.0；《AgentNexus门户与知识平台设计》§二（历史设计背景） |
@@ -154,7 +154,7 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 - [使用说明书](../help/使用说明书.md)（总索引）
 - [普通用户使用说明](../help/普通用户使用说明.md)
 - [系统管理说明书](../help/系统管理说明书.md)
-- [AgentBridge接入指南](../help/AgentBridge接入指南.md)（OpenClaw 与 ACP / Codex ACP 快速接入）
+- [AgentBridge接入指南](../help/AgentBridge接入指南.md)（OpenClaw 与 ACP / OpenCode ACP 快速接入）
 - [安装部署说明](../help/安装部署说明.md)
 - [技术排查Q&A](../help/技术排查Q&A.md)
 - [AgentNexus门户与知识平台设计](AgentNexus门户与知识平台设计.md)（门户定位、内置 Bot、分阶段实现）

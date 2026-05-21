@@ -38,7 +38,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -72,7 +72,7 @@ describe("ConnectorRuntime", () => {
     expect(bridge.receivedDones[0]).toMatchObject({ type: "done", msg_id: "ph-1" });
     expect(bridge.receivedTraces.some((t) => t.phase === "prompt_finished")).toBe(true);
     const state = JSON.parse(await readFile(statePath, "utf8"));
-    expect(state.sessions["codex-main"]["agentnexus:channel:C1"].acpSessionId).toMatch(/^fake-/);
+    expect(state.sessions["opencode-main"]["agentnexus:channel:C1"].acpSessionId).toMatch(/^fake-/);
     await runtime.stop();
   });
 
@@ -80,7 +80,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -120,27 +120,27 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
-  it("restarts codex-acp when remote cwd or model changes", async () => {
+  it("restarts opencode when remote cwd or model changes", async () => {
     const statePath = path.join(tmp, "state.json");
     const workspace = path.join(tmp, "next-workspace");
     await mkdir(workspace);
-    const codexAcp = path.join(tmp, "codex-acp");
+    const opencodeBin = path.join(tmp, "opencode");
     await writeFile(
-      codexAcp,
+      opencodeBin,
       `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeAgent)} "$@"\n`,
       "utf8",
     );
-    await chmod(codexAcp, 0o755);
+    await chmod(opencodeBin, 0o755);
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
           advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
           agent: {
             transport: "stdio",
-            command: codexAcp,
+            command: opencodeBin,
             args: [],
             cwd: tmp,
           },
@@ -176,7 +176,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -244,7 +244,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -308,7 +308,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -386,7 +386,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -434,7 +434,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -480,7 +480,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -530,7 +530,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -578,7 +578,7 @@ describe("ConnectorRuntime", () => {
       JSON.stringify({
         version: 1,
         sessions: {
-          "codex-main": {
+          "opencode-main": {
             "agentnexus:channel:C1": {
               acpSessionId: "persisted-session",
               updatedAt: new Date().toISOString(),
@@ -590,7 +590,7 @@ describe("ConnectorRuntime", () => {
     );
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -626,7 +626,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -677,7 +677,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -727,7 +727,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -770,7 +770,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -820,7 +820,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -877,7 +877,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -927,7 +927,7 @@ describe("ConnectorRuntime", () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -971,7 +971,7 @@ describe("ConnectorRuntime", () => {
     bridge.closeNextUploadWithoutAck();
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -1030,7 +1030,7 @@ describe("ConnectorRuntime", () => {
     });
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,
@@ -1086,7 +1086,7 @@ describe("ConnectorRuntime", () => {
     const imageB64 = Buffer.from("inline-png-bytes").toString("base64");
     const runtime = new ConnectorRuntime(
       {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: bridge.controlUrl,
           dataUrl: bridge.dataUrl,

@@ -673,31 +673,27 @@ function pickTimeoutMs(value: unknown): number | null {
   return rounded;
 }
 
-function isCodexAcpCommand(command: string): boolean {
+function isOpenCodeAcpCommand(command: string): boolean {
   const base = path.basename(command).toLowerCase();
-  return base === "codex-acp" || base === "codex-acp.exe";
+  return base === "opencode" || base === "opencode.exe";
 }
 
-function codexModelConfigArg(model: string): string {
-  return `model=${JSON.stringify(model)}`;
-}
-
-function withCodexModelArg(args: string[] | undefined, model: string): string[] {
-  const next: string[] = [];
-  const current = args ?? [];
-  for (let i = 0; i < current.length; i += 1) {
-    const arg = current[i];
-    const following = current[i + 1];
-    if ((arg === "-c" || arg === "--config") && typeof following === "string" && following.startsWith("model=")) {
-      i += 1;
-      continue;
+function withOpenCodeModelEnv(env: Record<string, string> | undefined, model: string): Record<string, string> {
+  const next = { ...(env ?? {}) };
+  let config: Record<string, unknown> = {};
+  const raw = next.OPENCODE_CONFIG_CONTENT;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        config = parsed as Record<string, unknown>;
+      }
+    } catch {
+      config = {};
     }
-    if (arg.startsWith("--config=model=")) {
-      continue;
-    }
-    next.push(arg);
   }
-  next.push("-c", codexModelConfigArg(model));
+  config.model = model;
+  next.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
   return next;
 }
 
@@ -1699,13 +1695,13 @@ export class AcpBridgeAccount {
       restartFields.push("cwd");
     }
     if (normalized.settings.model) {
-      if (isCodexAcpCommand(this.config.agent.command)) {
+      if (isOpenCodeAcpCommand(this.config.agent.command)) {
         restartSettings.model = normalized.settings.model;
         restartFields.push("model");
       } else {
         normalized.rejected.push({
           field: "model",
-          reason: "model switching is only supported for codex-acp",
+          reason: "model switching is only supported for OpenCode ACP",
         });
       }
     }
@@ -1724,7 +1720,7 @@ export class AcpBridgeAccount {
           if (restartSettings.cwd) this.config.agent.cwd = restartSettings.cwd;
           if (restartSettings.model) {
             this.config.agent.model = restartSettings.model;
-            this.config.agent.args = withCodexModelArg(this.config.agent.args, restartSettings.model);
+            this.config.agent.env = withOpenCodeModelEnv(this.config.agent.env, restartSettings.model);
           }
           await this.agent.restart();
           this.activeProviderSessions.clear();

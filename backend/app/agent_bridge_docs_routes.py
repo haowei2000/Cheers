@@ -327,12 +327,12 @@ def _acp_connector_config(
                 "dataUrl": bridge["data_ws"],
                 "agent": {
                     "transport": "stdio",
-                    "command": "codex-acp",
-                    "args": [],
+                    "command": "opencode",
+                    "args": ["acp", "--cwd", "$PWD"],
                     "cwd": "$PWD",
                     "promptTimeoutMs": prompt_timeout_ms,
                     "env": {
-                        "OPENAI_API_KEY": "$OPENAI_API_KEY",
+                        "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT",
                     },
                 },
             }

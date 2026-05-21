@@ -157,7 +157,7 @@ async def test_agent_bridge_register_accepts_acp_provider(
             "bridge_provider": "acp",
             "account_username": "acp_docs_user",
             "account_password": "Acp12345",
-            "agent_id": "codex-main",
+            "agent_id": "opencode-main",
             "scope": "private",
         },
     )
@@ -168,11 +168,11 @@ async def test_agent_bridge_register_accepts_acp_provider(
     assert token.startswith("agb_")
     assert data["bot"]["bridge_provider"] == "acp"
     assert data["bot"]["binding_config"]["bridge_provider"] == "acp"
-    assert data["bot"]["description"] == "ACP Agent: codex-main"
+    assert data["bot"]["description"] == "ACP Agent: opencode-main"
     assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["botToken"] == token
     agent_config = data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]
-    assert agent_config["command"] == "codex-acp"
-    assert agent_config["args"] == []
+    assert agent_config["command"] == "opencode"
+    assert agent_config["args"] == ["acp", "--cwd", "$PWD"]
     assert agent_config["promptTimeoutMs"] >= 180_000
 
     bot = (

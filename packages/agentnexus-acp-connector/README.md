@@ -2,24 +2,24 @@
 
 > **Language**: English | [Chinese](README.zh-CN.md)
 
-Runs local ACP stdio agents, such as Codex or Claude-compatible agents, and
+Runs local ACP stdio agents, such as OpenCode or Claude-compatible agents, and
 reverse-connects them to a public AgentNexus server through the existing Agent
 Bridge WebSocket protocol.
 
 ```json
 {
   "accounts": {
-    "codex-main": {
+    "opencode-main": {
       "botToken": "agb_xxx",
       "controlUrl": "wss://agentnexus.example.com/ws/agent-bridge/control",
       "dataUrl": "wss://agentnexus.example.com/ws/agent-bridge/data",
       "agent": {
         "transport": "stdio",
-        "command": "codex-acp",
-        "args": [],
+        "command": "opencode",
+        "args": ["acp", "--cwd", "/Users/me/project"],
         "cwd": "/Users/me/project",
         "env": {
-          "OPENAI_API_KEY": "$OPENAI_API_KEY"
+          "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT"
         }
       }
     }
@@ -66,20 +66,20 @@ Daemon mode keeps the connector running after the terminal exits. It writes a
 PID file plus stdout/stderr logs under `~/.agentnexus/acp-connector/<name>/`.
 
 ```bash
-agentnexus-acp-connector start --config ./agentnexus-acp.json --name codex-main
-agentnexus-acp-connector status --name codex-main
-agentnexus-acp-connector logs --name codex-main --lines 200
-agentnexus-acp-connector restart --name codex-main
-agentnexus-acp-connector stop --name codex-main
+agentnexus-acp-connector start --config ./agentnexus-acp.json --name opencode-main
+agentnexus-acp-connector status --name opencode-main
+agentnexus-acp-connector logs --name opencode-main --lines 200
+agentnexus-acp-connector restart --name opencode-main
+agentnexus-acp-connector stop --name opencode-main
 ```
 
 From a source checkout, the same commands can be run through npm:
 
 ```bash
-npm run daemon:start -- --config ./agentnexus-acp.json --name codex-main
-npm run daemon:status -- --name codex-main
-npm run daemon:logs -- --name codex-main
-npm run daemon:stop -- --name codex-main
+npm run daemon:start -- --config ./agentnexus-acp.json --name opencode-main
+npm run daemon:status -- --name opencode-main
+npm run daemon:logs -- --name opencode-main
+npm run daemon:stop -- --name opencode-main
 ```
 
 Use `AGENTNEXUS_ACP_HOME=/path/to/state` or `--home /path/to/state` to change
@@ -94,11 +94,11 @@ where daemon metadata and logs are stored.
 curl -X POST http://localhost:8000/docs/agent-bridge/register \
   -H 'Content-Type: application/json' \
   -d '{
-    "username": "codex-main",
+    "username": "opencode-main",
     "bridge_provider": "acp",
     "account_username": "alice",
     "account_password": "password",
-    "agent_id": "codex-main",
+    "agent_id": "opencode-main",
     "scope": "private"
   }'
 ```
@@ -109,17 +109,17 @@ curl -X POST http://localhost:8000/docs/agent-bridge/register \
 ```json
 {
   "accounts": {
-    "codex-main": {
+    "opencode-main": {
       "botToken": "agb_xxx",
       "controlUrl": "ws://localhost:8000/ws/agent-bridge/control",
       "dataUrl": "ws://localhost:8000/ws/agent-bridge/data",
       "agent": {
         "transport": "stdio",
-        "command": "codex-acp",
-        "args": [],
+        "command": "opencode",
+        "args": ["acp", "--cwd", "/Users/me/project"],
         "cwd": "/Users/me/project",
         "env": {
-          "OPENAI_API_KEY": "$OPENAI_API_KEY"
+          "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT"
         }
       }
     }
@@ -127,14 +127,14 @@ curl -X POST http://localhost:8000/docs/agent-bridge/register \
 }
 ```
 
-3. Start the connector from the local machine that can run Codex/Claude:
+3. Start the connector from the local machine that can run OpenCode/Claude:
 
 ```bash
-agentnexus-acp-connector start --config ./agentnexus-acp.json --name codex-main
+agentnexus-acp-connector start --config ./agentnexus-acp.json --name opencode-main
 ```
 
 4. Add the Agent Bridge bot to a channel or DM in AgentNexus, then send
-   `@codex-main hello`. The connector receives the AgentNexus dispatch frame,
+   `@opencode-main hello`. The connector receives the AgentNexus dispatch frame,
    calls the local ACP agent over stdio, and streams `delta`/`done` frames back
    through the existing Agent Bridge WebSocket.
 
@@ -154,7 +154,7 @@ hydrate the files on demand:
 - when a capability is missing or hydration fails, the connector falls back to
   the filename and summary metadata in a text block.
 
-This matches `codex-acp` 0.14.0, which declares both `image` and
+This matches OpenCode ACP, which declares both `image` and
 `embeddedContext` prompt capabilities during ACP initialization.
 
 ## Returning files
@@ -197,7 +197,7 @@ For `file://` URIs without inline content, the file must be inside the
 configured `agent.cwd`; this avoids accidentally attaching unrelated local
 files.
 
-Some ACP agents, including `codex-acp`, may create a local file and mention it
+Some ACP agents, including OpenCode ACP, may create a local file and mention it
 in the final text instead of emitting a structured `resource` block. As a
 compatibility fallback, the connector also scans the final ACP text for
 Markdown links or `file://` links that point inside `agent.cwd` and uploads

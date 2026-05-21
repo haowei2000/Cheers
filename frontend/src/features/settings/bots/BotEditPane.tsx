@@ -636,7 +636,7 @@ export function BotEditPane({
                   placeholder="/tmp/agent-workspace"
                 />
               </Field>
-              <Field label="Codex model">
+              <Field label="OpenCode model">
                 <input
                   value={connectorModel}
                   onChange={(e) => setConnectorModel(e.target.value)}

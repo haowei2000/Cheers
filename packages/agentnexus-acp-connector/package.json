@@ -39,7 +39,7 @@
     "agentnexus",
     "acp",
     "agent-client-protocol",
-    "codex",
+    "opencode",
     "claude"
   ],
   "license": "MIT",

@@ -461,9 +461,11 @@ class ChannelService:
         added_user_ids = set()
         if type in WORKSPACE_CHANNEL_TYPES:
             # Built-in bots automatically join workspace channels; private channels and DMs do not receive Helper.
-            from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
+            from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 
-            for bot_id in BUILTIN_BOT_IDS:
+            for bot_id in configured_builtin_bot_ids():
+                if await self.bot_repo.get_by_id(bot_id) is None:
+                    continue
                 if not await self.repo.get_membership(ch.channel_id, bot_id):
                     await self.repo.add_member(ch.channel_id, bot_id, "bot")
 
@@ -960,9 +962,9 @@ class ChannelService:
             raise NotFoundError("membership not found")
 
         if not is_admin(current_user):
-            from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
+            from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 
-            if member_id in BUILTIN_BOT_IDS:
+            if member_id in configured_builtin_bot_ids():
                 raise ForbiddenError("内置助手只能由管理员移除")
 
         if m.member_type == "user" and (m.role or "member") in CHANNEL_ADMIN_ROLES:

@@ -31,13 +31,13 @@ describe("loadConfig", () => {
     const configPath = path.join(tmp, "agentnexus-acp.json");
     await writeFile(configPath, JSON.stringify({
       accounts: {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: "ws://example.test/ws/agent-bridge/control",
           dataUrl: "ws://example.test/ws/agent-bridge/data",
           agent: {
             transport: "stdio",
-            command: "codex-acp",
+            command: "opencode",
             cwd: "$PWD",
           },
         },
@@ -46,7 +46,7 @@ describe("loadConfig", () => {
 
     const config = await loadConfig(configPath);
 
-    expect(config.accounts["codex-main"].agent.cwd).toBe(workdir);
+    expect(config.accounts["opencode-main"].agent.cwd).toBe(workdir);
   });
 
   it("resolves relative cwd values from the config file directory", async () => {
@@ -55,13 +55,13 @@ describe("loadConfig", () => {
     const configPath = path.join(tmp, "agentnexus-acp.json");
     await writeFile(configPath, JSON.stringify({
       accounts: {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: "ws://example.test/ws/agent-bridge/control",
           dataUrl: "ws://example.test/ws/agent-bridge/data",
           agent: {
             transport: "stdio",
-            command: "codex-acp",
+            command: "opencode",
             cwd: "./workspace",
           },
         },
@@ -70,20 +70,20 @@ describe("loadConfig", () => {
 
     const config = await loadConfig(configPath);
 
-    expect(config.accounts["codex-main"].agent.cwd).toBe(workdir);
+    expect(config.accounts["opencode-main"].agent.cwd).toBe(workdir);
   });
 
   it("fails fast when cwd does not exist", async () => {
     const configPath = path.join(tmp, "agentnexus-acp.json");
     await writeFile(configPath, JSON.stringify({
       accounts: {
-        "codex-main": {
+        "opencode-main": {
           botToken: "agb_test",
           controlUrl: "ws://example.test/ws/agent-bridge/control",
           dataUrl: "ws://example.test/ws/agent-bridge/data",
           agent: {
             transport: "stdio",
-            command: "codex-acp",
+            command: "opencode",
             cwd: "./missing",
           },
         },

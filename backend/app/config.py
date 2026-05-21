@@ -163,6 +163,15 @@ class Settings(BaseSettings):
     # Foreground wait threshold for async bots; after timeout, only the placeholder becomes a background task.
     agent_bridge_timeout_seconds: int = 600
 
+    # Optional Docker Compose managed OpenCode ACP Bot.
+    opencode_bot_enabled: bool = False
+    opencode_bot_id: str = "bot-opencode-001"
+    opencode_bot_username: str = "opencode"
+    opencode_bot_display_name: str = "OpenCode"
+    opencode_bot_description: str = "OpenCode ACP coding assistant"
+    opencode_bot_scope: str = "everyone"
+    opencode_bot_token: str = ""
+
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],
         "env_file_encoding": "utf-8",
