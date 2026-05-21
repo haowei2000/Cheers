@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../../../api";
 import { AppIcon } from "../../../components/icons";
@@ -10,7 +10,14 @@ import {
   inputCls,
 } from "../shared/SettingsControls";
 import { botScopeLabel, normalizeBotScope } from "../bots/BotShared";
-import type { BotScope } from "../bots/types";
+import type { BotRow, BotScope } from "../bots/types";
+
+type DefaultBotBrief = {
+  bot_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
 
 type TemplateRow = {
   template_id: string;
@@ -19,6 +26,9 @@ type TemplateRow = {
   system_prompt: string;
   user_template: string;
   variables?: string[];
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: DefaultBotBrief | null;
   is_builtin?: boolean;
   scope?: BotScope;
   created_by?: string | null;
@@ -59,6 +69,39 @@ function extractTemplateVars(tpl: string): string[] {
 
 function templateOwnerLabel(tpl: Pick<TemplateRow, "owner" | "created_by">) {
   return tpl.owner?.display_name || tpl.owner?.username || tpl.created_by || "System";
+}
+
+function parseTagsText(value: string): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  value.split(",").forEach((raw) => {
+    const tag = raw.trim();
+    if (!tag) return;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    tags.push(tag);
+  });
+  return tags;
+}
+
+function defaultBotLabel(bot?: DefaultBotBrief | null): string {
+  if (!bot) return "No default Bot";
+  return bot.display_name?.trim() || `@${bot.username}`;
+}
+
+function TagChips({ tags }: { tags?: string[] }) {
+  const normalized = (tags || []).filter(Boolean);
+  if (normalized.length === 0) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      {normalized.map((tag) => (
+        <span key={tag} className="an-chip off">
+          #{tag}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function TemplateScopeControl({
@@ -102,7 +145,9 @@ function TemplateScopeControl({
 
 export function TemplateListSubPane({ authToken }: { authToken: string | null }) {
   const [items, setItems] = useState<TemplateRow[]>([]);
+  const [bots, setBots] = useState<BotRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
   const [view, setView] = useState<"list" | "new" | { id: string }>("list");
 
   const reload = () => {
@@ -113,10 +158,33 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   };
+  const reloadBots = () => {
+    apiFetch("/bots", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => setBots(Array.isArray(d?.data) ? d.data : []))
+      .catch(() => setBots([]));
+  };
   useEffect(() => {
     reload();
+    reloadBots();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
+
+  const filteredItems = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter((tpl) => {
+      const defaultBot = tpl.default_bot;
+      const fields = [
+        tpl.name,
+        tpl.description || "",
+        defaultBot?.username || "",
+        defaultBot?.display_name || "",
+        ...(tpl.tags || []),
+      ];
+      return fields.some((field) => field.toLowerCase().includes(query));
+    });
+  }, [filter, items]);
 
   if (view === "new") {
     return (
@@ -124,6 +192,7 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
         <BackBar label="Back to template list" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
+          bots={bots}
           onSaved={() => {
             reload();
             setView("list");
@@ -148,6 +217,7 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
         <TemplateForm
           authToken={authToken}
           existing={tpl}
+          bots={bots}
           onSaved={() => {
             reload();
             setView("list");
@@ -170,6 +240,12 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
         </div>
       </div>
       <div className="an-list-table">
+        <input
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          className={inputCls}
+          placeholder="Search templates, tags, or default Bots"
+        />
         <button
           type="button"
           className="an-row-card"
@@ -195,8 +271,10 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>Loading...</div>
         ) : items.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>No templates</div>
+        ) : filteredItems.length === 0 ? (
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>No matching templates</div>
         ) : (
-          items.map((t) => (
+          filteredItems.map((t) => (
             <button
               key={t.template_id}
               type="button"
@@ -222,6 +300,10 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
                   {" · Owner: "}
                   {templateOwnerLabel(t)}
                 </div>
+                <div className="an-rc-sub" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span>{defaultBotLabel(t.default_bot)}</span>
+                  <TagChips tags={t.tags} />
+                </div>
               </div>
               <AppIcon name="chevronRight" className="an-rc-chev" />
             </button>
@@ -235,11 +317,13 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
 function TemplateForm({
   authToken,
   existing,
+  bots,
   onSaved,
   onDeleted,
 }: {
   authToken: string | null;
   existing?: TemplateRow;
+  bots: BotRow[];
   onSaved: () => void;
   onDeleted?: () => void;
 }) {
@@ -247,6 +331,8 @@ function TemplateForm({
   const [description, setDescription] = useState(existing?.description || "");
   const [systemPrompt, setSystemPrompt] = useState(existing?.system_prompt || "You are a helpful assistant.");
   const [userTemplate, setUserTemplate] = useState(existing?.user_template || DEFAULT_USER_TEMPLATE);
+  const [tagsText, setTagsText] = useState((existing?.tags || []).join(", "));
+  const [defaultBotId, setDefaultBotId] = useState(existing?.default_bot_id || "");
   const [scope, setScope] = useState<BotScope>(normalizeBotScope(existing?.scope));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -258,6 +344,21 @@ function TemplateForm({
   const [varFilter, setVarFilter] = useState("");
   const [varDropdownStart, setVarDropdownStart] = useState(0);
   const [settingsTab, setSettingsTab] = useState<TemplateSettingsTab>("identity");
+  const botOptions = useMemo(() => {
+    const options = [...bots];
+    if (
+      existing?.default_bot &&
+      !options.some((bot) => bot.bot_id === existing.default_bot_id)
+    ) {
+      options.unshift({
+        bot_id: existing.default_bot.bot_id,
+        username: existing.default_bot.username,
+        display_name: existing.default_bot.display_name,
+        avatar_url: existing.default_bot.avatar_url,
+      });
+    }
+    return options;
+  }, [bots, existing?.default_bot, existing?.default_bot_id]);
 
   const save = async () => {
     if (isReadOnly) return;
@@ -271,6 +372,8 @@ function TemplateForm({
         system_prompt: systemPrompt.trim() || "You are a helpful assistant.",
         user_template: tpl,
         variables: extractTemplateVars(tpl),
+        tags: parseTagsText(tagsText),
+        default_bot_id: defaultBotId || null,
         scope,
       };
       const res = await apiFetch(
@@ -368,6 +471,35 @@ function TemplateForm({
             <Field label="Visibility">
               <TemplateScopeControl value={scope} onChange={setScope} disabled={isReadOnly || saving} />
             </Field>
+            <Field label="Tags (comma separated)">
+              <input
+                value={tagsText}
+                onChange={(e) => setTagsText(e.target.value)}
+                className={inputCls}
+                disabled={isReadOnly}
+                placeholder="e.g. analysis, project, coding"
+              />
+            </Field>
+            <Field label="Default Bot">
+              <select
+                value={defaultBotId}
+                onChange={(e) => setDefaultBotId(e.target.value)}
+                className={inputCls}
+                disabled={isReadOnly}
+              >
+                <option value="">No default Bot</option>
+                {botOptions.map((bot) => (
+                  <option key={bot.bot_id} value={bot.bot_id}>
+                    {(bot.display_name || bot.username || bot.bot_id)} · @{bot.username}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {parseTagsText(tagsText).length > 0 && (
+              <div className="an-rc-sub" style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 0 }}>
+                <TagChips tags={parseTagsText(tagsText)} />
+              </div>
+            )}
             {isEdit && (
               <div className="an-rc-sub">
                 Owner: {templateOwnerLabel(existing!)}

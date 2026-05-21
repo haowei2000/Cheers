@@ -25,9 +25,10 @@ from app.core.schemas import (
     MessageStreamCreate,
     PermissionResolveRequest,
 )
-from app.db.models import BotAccount, Channel, FileRecord, Message, User
+from app.db.models import BotAccount, Channel, ChannelMembership, FileRecord, Message, PromptTemplate, User
 from app.db.session import async_session_factory, get_session
 from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
+from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 from app.features.bot_runtime.pipeline.bot.queue import enqueue_bot_pipeline_job
 from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
 from app.features.bot_runtime.pipeline.bus import EventBus, WSEventBus, make_event_bus
@@ -43,6 +44,8 @@ from app.utils.permissions import is_admin
 logger = logging.getLogger("app.api.v1.messages")
 
 router = APIRouter(prefix="/channels/{channel_id}/messages", tags=["messages"])
+
+PROMPT_TEMPLATE_OVERRIDE_KEY = "prompt_template_override_id"
 
 
 def _serialize(msg: Message, file_map: dict) -> dict:
@@ -125,6 +128,71 @@ async def _enqueue_bot_pipeline_bg(channel_id: str, msg_id: str) -> None:
             })
         except Exception:
             logger.debug("bot_pipeline_enqueue: failed to publish error frame", exc_info=True)
+
+
+async def _channel_bot_rows(session: AsyncSession, channel_id: str) -> list[BotAccount]:
+    result = await session.execute(
+        select(BotAccount)
+        .join(ChannelMembership, ChannelMembership.member_id == BotAccount.bot_id)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def _apply_template_default_bot_target(
+    session: AsyncSession,
+    *,
+    channel_id: str,
+    content: str,
+    content_data: dict | None,
+    mention_bot_ids: list[str],
+    current_user: User,
+) -> list[str]:
+    if mention_bot_ids or not isinstance(content_data, dict):
+        return mention_bot_ids
+    template_id = content_data.get(PROMPT_TEMPLATE_OVERRIDE_KEY)
+    if not isinstance(template_id, str) or not template_id.strip():
+        return mention_bot_ids
+
+    channel = await session.get(Channel, channel_id)
+    if not channel or channel.type == "dm":
+        return mention_bot_ids
+
+    channel_bots = await _channel_bot_rows(session, channel_id)
+    channel_bot_usernames = [bot.username for bot in channel_bots]
+    text_targets = filter_mentioned_bots(
+        extract_mentions(content or "", channel_bot_usernames),
+        channel_bot_usernames,
+    )
+    if text_targets:
+        return mention_bot_ids
+
+    template = await session.get(PromptTemplate, template_id.strip())
+    if not template:
+        return mention_bot_ids
+
+    from app.services.admin_service import PromptTemplateService
+    from app.services.bot_service import BotService
+
+    template_svc = PromptTemplateService(session)
+    if not await template_svc.can_use(template, current_user):
+        return mention_bot_ids
+    default_bot_id = getattr(template, "default_bot_id", None)
+    if not default_bot_id:
+        return mention_bot_ids
+
+    bot = await session.get(BotAccount, default_bot_id)
+    if not bot or not await BotService(session).can_use(bot, current_user):
+        return mention_bot_ids
+
+    channel_bot_ids = {channel_bot.bot_id for channel_bot in channel_bots}
+    if bot.bot_id not in channel_bot_ids:
+        label = bot.display_name or bot.username
+        raise BadRequestError(f"Add default Bot @{label} to this channel before using this template")
+    return [bot.bot_id]
 
 
 async def _run_bot_pipeline_once(
@@ -237,6 +305,14 @@ async def _handle_send_message(
     if hasattr(raw_content_data, "model_dump"):
         raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
     raw_content_data = with_content_locale(raw_content_data, locale)
+    mention_bot_ids = await _apply_template_default_bot_target(
+        session,
+        channel_id=channel_id,
+        content=body.content,
+        content_data=raw_content_data,
+        mention_bot_ids=list(body.mention_bot_ids or []),
+        current_user=current_user,
+    )
 
     ctx = IngestContext(
         channel_id=channel_id,
@@ -246,7 +322,7 @@ async def _handle_send_message(
         sender_type="user",
         content=body.content,
         file_ids=_normalize_file_ids(body.file_ids),
-        mention_bot_ids=body.mention_bot_ids or [],
+        mention_bot_ids=mention_bot_ids,
         in_reply_to_msg_id=getattr(body, "in_reply_to_msg_id", None) or None,
         msg_type=getattr(body, "msg_type", None) or None,
         content_data=raw_content_data,
@@ -262,7 +338,7 @@ async def _handle_send_message(
             session,
             channel_id=channel_id,
             content=body.content,
-            mention_bot_ids=body.mention_bot_ids or [],
+            mention_bot_ids=mention_bot_ids,
             channel=ctx.channel,
         )
     except Exception:
