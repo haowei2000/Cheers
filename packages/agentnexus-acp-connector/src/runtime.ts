@@ -1,6 +1,6 @@
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   BotSession,
@@ -29,14 +29,18 @@ interface ExtractedFile {
   filename: string;
   contentType?: string;
   data: Uint8Array;
+  path?: string;
 }
 
 interface PromptBuildOptions {
   httpBase: string;
   botToken: string;
+  cwd: string;
+  taskId: string;
   supportsImages: boolean;
   supportsEmbeddedContext: boolean;
   logger: Logger;
+  ignoreOutputFilePath?: (filePath: string) => void;
 }
 
 interface BridgeTextFile {
@@ -59,6 +63,14 @@ type AgentNexusAttachment = AttachmentInfo & {
   is_image?: string | boolean | null;
   image_b64?: string | null;
 };
+
+interface LocalAttachmentFile {
+  filename: string;
+  contentType: string;
+  sizeBytes?: number;
+  path: string;
+  uri: string;
+}
 
 interface BridgeUploadedFile {
   file_id: string;
@@ -91,6 +103,7 @@ interface RunContext {
   sentDelta: boolean;
   fileIds: string[];
   seenFileKeys: Set<string>;
+  ignoredOutputFilePaths: Set<string>;
   pendingFileUploads: Promise<void>[];
 }
 
@@ -151,6 +164,23 @@ const OUTPUT_FILE_EXTENSIONS = new Set([
   ".xlsx",
   ".xml",
   ".zip",
+]);
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  ".docx",
+  ".htm",
+  ".html",
+  ".md",
+  ".pdf",
+  ".txt",
+  ".xlsx",
+]);
+const TEXT_ATTACHMENT_CONTENT_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/html",
+  "text/markdown",
+  "text/plain",
 ]);
 const FILE_REFERENCE_FIELDS = [
   "uri",
@@ -492,6 +522,7 @@ async function fileFromPath(
         typeof resource.mimeType === "string" ? resource.mimeType : undefined,
       ),
       data: await readFile(filePath),
+      path: path.resolve(filePath),
     };
   } catch {
     return null;
@@ -660,6 +691,21 @@ function isImageAttachment(attachment: AgentNexusAttachment): boolean {
     || attachment.is_image === true
     || String(attachment.is_image || "").toLowerCase() === "true"
   );
+}
+
+function normalizedContentType(value: string | null | undefined): string {
+  return String(value || "").split(";", 1)[0].trim().toLowerCase();
+}
+
+function isTextHydrationCandidate(attachment: AttachmentInfo): boolean {
+  const filename = attachment.filename || "";
+  const ext = path.extname(filename).toLowerCase();
+  if (ext) return TEXT_ATTACHMENT_EXTENSIONS.has(ext);
+  return TEXT_ATTACHMENT_CONTENT_TYPES.has(normalizedContentType(attachment.content_type));
+}
+
+function safePathSegment(value: string | null | undefined, fallback: string): string {
+  return safeFilename(value || fallback).slice(0, 160);
 }
 
 function isPermissionMode(value: unknown): value is PermissionMode {
@@ -964,6 +1010,32 @@ function inlineImageFromAttachment(attachment: AgentNexusAttachment): BridgeBina
   };
 }
 
+async function saveBridgeBinaryAttachment(
+  attachment: AgentNexusAttachment,
+  options: PromptBuildOptions,
+): Promise<LocalAttachmentFile | null> {
+  const binary = await fetchBridgeBinaryFile(options.httpBase, options.botToken, attachment);
+  if (!binary?.dataB64) return null;
+
+  const fileId = attachment.file_id || "unknown";
+  const taskSegment = safePathSegment(options.taskId, "task");
+  const fileSegment = safePathSegment(fileId, "file");
+  const filename = safeFilename(binary.filename || attachment.filename || fileId);
+  const dir = path.join(options.cwd, ".agentnexus", "attachments", taskSegment, fileSegment);
+  const target = path.join(dir, filename);
+  await mkdir(dir, { recursive: true });
+  const data = Buffer.from(binary.dataB64, "base64");
+  await writeFile(target, data);
+  options.ignoreOutputFilePath?.(target);
+  return {
+    filename,
+    contentType: binary.contentType || attachment.content_type || "application/octet-stream",
+    sizeBytes: binary.sizeBytes ?? data.byteLength,
+    path: target,
+    uri: pathToFileURL(target).href,
+  };
+}
+
 async function uploadBridgeBinaryFileHttp(
   httpBase: string,
   botToken: string,
@@ -1070,28 +1142,62 @@ async function attachmentToPromptBlocks(
     return blocks;
   }
 
+  if (isTextHydrationCandidate(attachment)) {
+    try {
+      const textFile = await fetchBridgeTextFile(options.httpBase, options.botToken, attachment);
+      if (textFile?.content) {
+        const text = textFile.truncated
+          ? `${textFile.content}\n\n[AgentNexus note: file content was truncated before sending to ACP.]`
+          : textFile.content;
+        if (options.supportsEmbeddedContext) {
+          blocks.push({
+            type: "resource",
+            resource: {
+              uri: attachmentUri(attachment),
+              mimeType: "text/markdown",
+              text,
+            },
+          });
+        } else {
+          blocks.push({ type: "text", text: `--- Attachment: ${textFile.filename} ---\n${text}\n--- End attachment ---` });
+        }
+        return blocks;
+      }
+    } catch (err) {
+      options.logger.warn("acp attachment resource hydration failed file_id=%s: %s", attachment.file_id, String(err));
+    }
+  }
+
   try {
-    const textFile = await fetchBridgeTextFile(options.httpBase, options.botToken, attachment);
-    if (textFile?.content) {
-      const text = textFile.truncated
-        ? `${textFile.content}\n\n[AgentNexus note: file content was truncated before sending to ACP.]`
-        : textFile.content;
+    const localFile = await saveBridgeBinaryAttachment(attachment, options);
+    if (localFile) {
       if (options.supportsEmbeddedContext) {
         blocks.push({
           type: "resource",
           resource: {
-            uri: attachmentUri(attachment),
-            mimeType: "text/markdown",
-            text,
+            uri: localFile.uri,
+            mimeType: localFile.contentType,
+            filename: localFile.filename,
+            sizeBytes: localFile.sizeBytes,
           },
         });
-      } else {
-        blocks.push({ type: "text", text: `--- Attachment: ${textFile.filename} ---\n${text}\n--- End attachment ---` });
       }
+      blocks.push({
+        type: "text",
+        text: [
+          `--- Attachment file: ${localFile.filename} ---`,
+          `Saved locally: ${localFile.path}`,
+          `File URI: ${localFile.uri}`,
+          `MIME type: ${localFile.contentType}`,
+          localFile.sizeBytes ? `Size: ${localFile.sizeBytes} bytes` : null,
+          "Use local file tools to inspect this attachment if its content is needed.",
+          "--- End attachment file ---",
+        ].filter(Boolean).join("\n"),
+      });
       return blocks;
     }
   } catch (err) {
-    options.logger.warn("acp attachment resource hydration failed file_id=%s: %s", attachment.file_id, String(err));
+    options.logger.warn("acp attachment binary hydration failed file_id=%s: %s", attachment.file_id, String(err));
   }
 
   if (attachment.summary) {
@@ -1383,6 +1489,7 @@ export class AcpBridgeAccount {
       sentDelta: false,
       fileIds: [],
       seenFileKeys: new Set<string>(),
+      ignoredOutputFilePaths: new Set<string>(),
       pendingFileUploads: [],
     };
     this.activeRunsBySession.set(acpSessionId, ctx);
@@ -1488,9 +1595,12 @@ export class AcpBridgeAccount {
     const result = await this.agent.prompt(ctx.acpSessionId, await buildPrompt(ctx.source, {
       httpBase: ctx.httpBase,
       botToken: ctx.botToken,
+      cwd: this.config.agent.cwd ?? process.cwd(),
+      taskId: ctx.source.event.task_id,
       supportsImages: capabilities.image === true,
       supportsEmbeddedContext: capabilities.embeddedContext === true,
       logger: this.logger,
+      ignoreOutputFilePath: (filePath) => ctx.ignoredOutputFilePaths.add(path.resolve(filePath)),
     }));
     await this.uploadTextLinkedFiles(ctx);
     await Promise.allSettled(ctx.pendingFileUploads);
@@ -1543,6 +1653,7 @@ export class AcpBridgeAccount {
     ctx.sentDelta = false;
     ctx.fileIds = [];
     ctx.seenFileKeys.clear();
+    ctx.ignoredOutputFilePaths.clear();
     ctx.pendingFileUploads = [];
     this.activeRunsBySession.set(nextSessionId, ctx);
     this.bridge.trace({
@@ -1859,6 +1970,7 @@ export class AcpBridgeAccount {
 
   private async uploadFiles(ctx: RunContext, files: ExtractedFile[]): Promise<void> {
     for (const file of files) {
+      if (file.path && ctx.ignoredOutputFilePaths.has(path.resolve(file.path))) continue;
       if (ctx.seenFileKeys.has(file.key)) continue;
       ctx.seenFileKeys.add(file.key);
       try {
