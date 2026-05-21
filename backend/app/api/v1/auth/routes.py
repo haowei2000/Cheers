@@ -1,16 +1,30 @@
 """Auth API routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.builtin_defaults import seed_workspace_defaults
-from app.core.dependencies import get_current_user, get_session
+from app.core.dependencies import get_current_user, get_http_client, get_session
+from app.core.exceptions import AppError
 from app.core.localization import locale_from_headers
 from app.core.responses import APIResponse
 from app.db.models import User
+from app.services.auth.dingtalk import (
+    DingTalkAuthService,
+)
+from app.services.auth.dingtalk import (
+    callback_url as dingtalk_callback_url,
+)
+from app.services.auth.dingtalk import (
+    provider_metadata as dingtalk_provider_metadata,
+)
+from app.services.auth.dingtalk import (
+    spa_callback_url as dingtalk_spa_callback_url,
+)
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -63,6 +77,19 @@ class LoginOut(BaseModel):
     expires_in: int | None = None
 
 
+class AuthProviderOut(BaseModel):
+    provider: str
+    display_name: str
+    enabled: bool
+    web_authorize_url: str
+    client_id: str = ""
+    allowed_corp_ids: list[str] = Field(default_factory=list)
+    default_corp_id: str = ""
+    in_app_enabled: bool = False
+    rpc_scope: str = ""
+    field_scope: str = ""
+
+
 # ---- Request bodies ----
 
 class SendCodeBody(BaseModel):
@@ -100,7 +127,28 @@ class UpdateProfileBody(BaseModel):
     avatar_url: str | None = None
 
 
+class DingTalkExchangeBody(BaseModel):
+    ticket: str
+
+
+class DingTalkInAppLoginBody(BaseModel):
+    auth_code: str
+
+
+def _login_out(user: User, token: str, request: Request) -> LoginOut:
+    return LoginOut(
+        access_token=token,
+        user=UserOut.from_user(user, locale_from_headers(request.headers)),
+        expires_in=settings.jwt_access_token_expire_minutes * 60,
+    )
+
+
 # ---- Routes ----
+
+@router.get("/providers", response_model=APIResponse[list[AuthProviderOut]])
+async def list_auth_providers() -> APIResponse:
+    return APIResponse.ok([AuthProviderOut(**dingtalk_provider_metadata())])
+
 
 @router.post("/send-code", response_model=APIResponse[None])
 async def send_verification_code(
@@ -142,11 +190,59 @@ async def login(
 ) -> APIResponse:
     svc = AuthService(session)
     user, token = await svc.login(body.username, body.password)
-    return APIResponse.ok(LoginOut(
-        access_token=token,
-        user=UserOut.from_user(user, locale_from_headers(request.headers)),
-        expires_in=settings.jwt_access_token_expire_minutes * 60,
-    ))
+    return APIResponse.ok(_login_out(user, token, request))
+
+
+@router.get("/dingtalk/authorize")
+async def dingtalk_authorize(
+    redirect_path: str = "/",
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    svc = DingTalkAuthService(session)
+    return RedirectResponse(svc.build_authorize_url(dingtalk_callback_url(), redirect_path))
+
+
+@router.get("/dingtalk/callback", name="dingtalk_callback")
+async def dingtalk_callback(
+    request: Request,
+    auth_code: str | None = Query(default=None, alias="authCode"),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    session: AsyncSession = Depends(get_session),
+    http_client = Depends(get_http_client),
+) -> RedirectResponse:
+    svc = DingTalkAuthService(session, http_client)
+    if error:
+        return RedirectResponse(dingtalk_spa_callback_url(error=error))
+    try:
+        redirect_path = svc.validate_state(state)
+        user, _ = await svc.login_with_auth_code(auth_code or code or "")
+        ticket = svc.create_login_ticket(user)
+        return RedirectResponse(dingtalk_spa_callback_url(ticket=ticket, redirect_path=redirect_path))
+    except AppError as exc:
+        return RedirectResponse(dingtalk_spa_callback_url(error=exc.message))
+
+
+@router.post("/dingtalk/exchange", response_model=APIResponse[LoginOut])
+async def dingtalk_exchange(
+    body: DingTalkExchangeBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    user, token = await DingTalkAuthService(session).exchange_login_ticket(body.ticket)
+    return APIResponse.ok(_login_out(user, token, request))
+
+
+@router.post("/dingtalk/in-app-login", response_model=APIResponse[LoginOut])
+async def dingtalk_in_app_login(
+    body: DingTalkInAppLoginBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    http_client = Depends(get_http_client),
+) -> APIResponse:
+    user, token = await DingTalkAuthService(session, http_client).login_with_auth_code(body.auth_code)
+    return APIResponse.ok(_login_out(user, token, request))
 
 
 @router.post("/forgot-password", response_model=APIResponse[None])
@@ -217,4 +313,3 @@ async def delete_my_account(
         pass
     await AuthService(session).deactivate_account(current_user)
     return APIResponse.ok(None, message="账号已停用")
-

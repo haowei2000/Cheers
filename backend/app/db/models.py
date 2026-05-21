@@ -163,6 +163,38 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class AuthExternalIdentity(Base):
+    """External identity linked to an AgentNexus user."""
+    __tablename__ = "auth_external_identities"
+
+    identity_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
+    corp_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    union_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    open_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    mobile: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    profile: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    user: Mapped["User"] = relationship("User", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "subject", name="uq_auth_external_identities_provider_subject"),
+        Index("ix_auth_external_identities_user", "user_id"),
+        Index("ix_auth_external_identities_provider_corp", "provider", "corp_id"),
+    )
+
+
 class EmailCode(Base):
     """Email Code schema or model."""
     __tablename__ = "email_codes"
