@@ -874,25 +874,34 @@ export default function App() {
       );
     const defaultBotId = selectedPromptTemplate?.default_bot_id || null;
     const defaultBot = selectedPromptTemplate?.default_bot || null;
+    const defaultBotInChannel = Boolean(
+      defaultBotId && channelBots.some((bot) => bot.member_id === defaultBotId),
+    );
     if (
       defaultBotId &&
       !isDmSelected &&
       !explicitBotTarget &&
-      !channelBots.some((bot) => bot.member_id === defaultBotId)
+      !defaultBotInChannel
     ) {
       const label =
         defaultBot?.display_name ||
         defaultBot?.username ||
         "the default Bot";
-      toast.error(`Add ${label.startsWith("@") ? label : `@${label}`} to this channel before using this template`);
+      toast.error(
+        `Add ${label.startsWith("@") ? label : `@${label}`} to this channel before using this template`,
+      );
       return;
     }
+    const effectiveMentionBotIds =
+      defaultBotId && !isDmSelected && !explicitBotTarget && defaultBotInChannel
+        ? [defaultBotId]
+        : baseMentionBotIds;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
-      mention_bot_ids: baseMentionBotIds,
+      mention_bot_ids: effectiveMentionBotIds,
       is_secret: isSecretSend,
       msg_type: effectiveKind,
     };
@@ -1856,6 +1865,7 @@ export default function App() {
                 promptTemplatesLoading,
                 selectedPromptTemplateId,
                 onPromptTemplateChange: setPromptTemplateOverrideId,
+                showTemplateDefaultBotTarget: !isDmSelected,
                 normalHint: selectedComposerTemplateDescription || undefined,
               }}
               setMemoryTab={setMemoryTab}
