@@ -28,6 +28,7 @@ import { parseHelperPayload } from "./lib/helper";
 import { API, API_DOCS_URL, USER_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import { getStoredBeginnerMode, setStoredBeginnerMode } from "./lib/experience";
+import { dragEventHasFiles, filesFromDragEvent } from "./lib/file-drag";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
   buildChatPath,
@@ -435,7 +436,7 @@ export default function App() {
     pendingFiles,
     removePendingFile,
     clearPendingFiles,
-    uploadFileObject,
+    uploadFileObjects,
     uploadFile,
   } = usePendingFiles({
     selectedId,
@@ -551,12 +552,10 @@ export default function App() {
   );
   const uploadPersonalFiles = useCallback(
     async (files: File[]) => {
-      for (const file of files) {
-        await uploadFileObject(file);
-      }
+      await uploadFileObjects(files);
       setFileLibraryRefreshNonce((value) => value + 1);
     },
-    [uploadFileObject],
+    [uploadFileObjects],
   );
   useEffect(() => {
     if (selectedId) setMainFilePreviewPanel(null);
@@ -1561,18 +1560,18 @@ export default function App() {
             isDark={isDark}
             isDraggingOver={isDraggingOver}
             onDragEnter={(e) => {
-              if (!selectedId || !e.dataTransfer.types.includes("Files"))
-                return;
+              if (!selectedId || !dragEventHasFiles(e)) return;
               e.preventDefault();
               dragCounterRef.current += 1;
               if (dragCounterRef.current === 1) setIsDraggingOver(true);
             }}
             onDragOver={(e) => {
-              if (!selectedId) return;
+              if (!selectedId || !dragEventHasFiles(e)) return;
               e.preventDefault();
               e.dataTransfer.dropEffect = "copy";
             }}
-            onDragLeave={() => {
+            onDragLeave={(e) => {
+              if (!dragEventHasFiles(e)) return;
               dragCounterRef.current -= 1;
               if (dragCounterRef.current <= 0) {
                 dragCounterRef.current = 0;
@@ -1580,14 +1579,13 @@ export default function App() {
               }
             }}
             onDrop={async (e) => {
+              if (!dragEventHasFiles(e)) return;
               e.preventDefault();
               dragCounterRef.current = 0;
               setIsDraggingOver(false);
               if (!selectedId) return;
-              const files = Array.from(e.dataTransfer.files);
-              for (const file of files) {
-                await uploadFileObject(file);
-              }
+              const files = filesFromDragEvent(e);
+              if (files.length > 0) await uploadFileObjects(files);
             }}
           >
             {mainFilePreviewPanel && isPersonalWorkspace ? (
@@ -1679,6 +1677,7 @@ export default function App() {
                 pendingFiles,
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
+                onUploadFiles: uploadFileObjects,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
@@ -1802,6 +1801,7 @@ export default function App() {
                 pendingFiles,
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
+                onUploadFiles: uploadFileObjects,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,

@@ -4,12 +4,14 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import toast from "react-hot-toast";
 import type { BotItem, Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
 import { apiFetch } from "../api";
 import { makeBuiltinAvatarValue } from "../lib/avatar";
+import { dragEventHasFiles, filesFromDragEvent } from "../lib/file-drag";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
 import { AvatarVisual } from "./AvatarVisual";
 import { AppIcon, FileTypeIcon } from "./icons";
@@ -218,6 +220,7 @@ export function Sidebar({
   const [creatingProjectChannelTask, setCreatingProjectChannelTask] = useState(false);
   const [personalFiles, setPersonalFiles] = useState<PersonalFileItem[]>([]);
   const [personalFilesLoading, setPersonalFilesLoading] = useState(false);
+  const [personalFilesDragOver, setPersonalFilesDragOver] = useState(false);
   const [collapsedPersonalSections, setCollapsedPersonalSections] = useState<
     Record<PersonalSectionKey, boolean>
   >({
@@ -227,6 +230,7 @@ export function Sidebar({
   });
   const [channelsCollapsed, setChannelsCollapsed] = useState(false);
   const personalUploadInputRef = useRef<HTMLInputElement>(null);
+  const personalFilesDragDepthRef = useRef(0);
 
   const dmWorkspaceId = useMemo(
     () => selectedWorkspaceId || workspaces[0]?.workspace_id || "",
@@ -352,10 +356,12 @@ export function Sidebar({
     personalUploadInputRef.current?.click();
   };
 
-  const handlePersonalUploadInput = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
+  const uploadPersonalFileList = (files: File[]) => {
     if (files.length === 0) return;
+    if (!selectedId) {
+      toast.error("Select a DM or task before uploading files");
+      return;
+    }
     if (!onUploadPersonalFiles) {
       toast.error("File upload is not available");
       return;
@@ -363,6 +369,51 @@ export function Sidebar({
     void Promise.resolve(onUploadPersonalFiles(files)).catch(() => {
       toast.error("Failed to upload files");
     });
+  };
+
+  const handlePersonalUploadInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    uploadPersonalFileList(files);
+  };
+
+  const resetPersonalFilesDragState = () => {
+    personalFilesDragDepthRef.current = 0;
+    setPersonalFilesDragOver(false);
+  };
+
+  const handlePersonalFilesDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!isPersonalWorkspace || !onUploadPersonalFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    personalFilesDragDepthRef.current += 1;
+    setPersonalFilesDragOver(true);
+  };
+
+  const handlePersonalFilesDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!isPersonalWorkspace || !onUploadPersonalFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handlePersonalFilesDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!isPersonalWorkspace || !onUploadPersonalFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    personalFilesDragDepthRef.current -= 1;
+    if (personalFilesDragDepthRef.current <= 0) {
+      resetPersonalFilesDragState();
+    }
+  };
+
+  const handlePersonalFilesDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!isPersonalWorkspace || !onUploadPersonalFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resetPersonalFilesDragState();
+    setCollapsedPersonalSections((prev) => ({ ...prev, files: false }));
+    uploadPersonalFileList(filesFromDragEvent(event));
   };
 
   useEffect(() => {
@@ -1174,90 +1225,99 @@ export function Sidebar({
           </ul>
       )}
 
-      <div className="an-rail-section-h">
-        <span>Files</span>
-        <span className="an-rail-count">
-          {personalFilesLoading ? "..." : personalFiles.length}
-        </span>
-        <button
-          type="button"
-          className="an-rail-section-toggle"
-          title={personalSectionExpanded("files") ? "Collapse" : "Expand"}
-          aria-label={personalSectionExpanded("files") ? "Collapse Files" : "Expand Files"}
-          aria-expanded={personalSectionExpanded("files")}
-          onClick={() => togglePersonalSection("files")}
-        >
-          <AppIcon name={personalSectionExpanded("files") ? "chevronDown" : "chevronRight"} />
-        </button>
-      </div>
-      {personalSectionExpanded("files") && (
-      <ul className="px-2 py-1 pb-2">
-        <li>
+      <div
+        className={`an-personal-files-dropzone${personalFilesDragOver ? " is-drag-over" : ""}`}
+        onDragEnter={handlePersonalFilesDragEnter}
+        onDragOver={handlePersonalFilesDragOver}
+        onDragLeave={handlePersonalFilesDragLeave}
+        onDragEnd={resetPersonalFilesDragState}
+        onDrop={handlePersonalFilesDrop}
+      >
+        <div className="an-rail-section-h">
+          <span>Files</span>
+          <span className="an-rail-count">
+            {personalFilesLoading ? "..." : personalFiles.length}
+          </span>
           <button
             type="button"
-            className="an-rail-row an-rail-action-row w-full"
-            title="Upload File"
-            onClick={handlePersonalUploadClick}
+            className="an-rail-section-toggle"
+            title={personalSectionExpanded("files") ? "Collapse" : "Expand"}
+            aria-label={personalSectionExpanded("files") ? "Collapse Files" : "Expand Files"}
+            aria-expanded={personalSectionExpanded("files")}
+            onClick={() => togglePersonalSection("files")}
           >
-            <span className="an-sigil">
-              <AppIcon name="upload" />
-            </span>
-            <span className="an-name">Upload File</span>
+            <AppIcon name={personalSectionExpanded("files") ? "chevronDown" : "chevronRight"} />
           </button>
-        </li>
-        {personalFiles.length === 0 && (
-          <li className="an-rail-empty">
-            {personalFilesLoading ? "Loading files..." : "No files"}
-          </li>
-        )}
-        {personalFiles.map((file) => (
-          <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
+        </div>
+        {personalSectionExpanded("files") && (
+        <ul className="px-2 py-1 pb-2">
+          <li>
             <button
               type="button"
-              className="an-rail-row w-full pr-7"
-              title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
-              onClick={() => {
-                setSelectedId(null);
-                if (onOpenPersonalFileMain) {
-                  onOpenPersonalFileMain(file);
-                } else {
-                  onOpenFilePreview?.(file);
-                }
-                if (isMobile) setSidebarOpen(false);
-              }}
+              className="an-rail-row an-rail-action-row w-full"
+              title="Upload File"
+              onClick={handlePersonalUploadClick}
             >
               <span className="an-sigil">
-                <FileTypeIcon
-                  contentType={file.content_type}
-                  filename={file.original_filename || file.file_id}
-                  size={14}
-                  title={file.original_filename || file.file_id}
-                />
+                <AppIcon name="upload" />
               </span>
-              <span className="an-name">
-                {file.original_filename || file.file_id}
-              </span>
+              <span className="an-name">Upload File</span>
             </button>
-            <Tooltip
-              content="Remove from files"
-              placement="right"
-              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
+          </li>
+          {personalFiles.length === 0 && (
+            <li className="an-rail-empty">
+              {personalFilesLoading ? "Loading files..." : "No files"}
+            </li>
+          )}
+          {personalFiles.map((file) => (
+            <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
               <button
                 type="button"
-                onClick={(event) => void deletePersonalFile(file, event)}
-                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
-                style={{ color: "var(--fg-3)" }}
-                title="Remove from files"
-                aria-label="Remove from files"
+                className="an-rail-row w-full pr-7"
+                title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
+                onClick={() => {
+                  setSelectedId(null);
+                  if (onOpenPersonalFileMain) {
+                    onOpenPersonalFileMain(file);
+                  } else {
+                    onOpenFilePreview?.(file);
+                  }
+                  if (isMobile) setSidebarOpen(false);
+                }}
               >
-                <AppIcon name="trash" className="w-3 h-3" />
+                <span className="an-sigil">
+                  <FileTypeIcon
+                    contentType={file.content_type}
+                    filename={file.original_filename || file.file_id}
+                    size={14}
+                    title={file.original_filename || file.file_id}
+                  />
+                </span>
+                <span className="an-name">
+                  {file.original_filename || file.file_id}
+                </span>
               </button>
-            </Tooltip>
-          </li>
-        ))}
-      </ul>
-      )}
+              <Tooltip
+                content="Remove from files"
+                placement="right"
+                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <button
+                  type="button"
+                  onClick={(event) => void deletePersonalFile(file, event)}
+                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                  style={{ color: "var(--fg-3)" }}
+                  title="Remove from files"
+                  aria-label="Remove from files"
+                >
+                  <AppIcon name="trash" className="w-3 h-3" />
+                </button>
+              </Tooltip>
+            </li>
+          ))}
+        </ul>
+        )}
+      </div>
 
       <div className="an-rail-section-h">
         <span>Project</span>

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
+  DragEvent,
   KeyboardEvent,
   PointerEvent,
   ReactNode,
   RefObject,
 } from "react";
+import { dragEventHasFiles, filesFromDragEvent } from "../lib/file-drag";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { AppIcon } from "./icons/AppIcon";
@@ -81,6 +83,7 @@ export interface MessageComposerProps {
   pendingFiles?: ComposerPendingFile[];
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onUploadFiles?: (files: File[]) => void | Promise<void>;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -182,6 +185,7 @@ export function MessageComposer({
   pendingFiles = [],
   onRemovePendingFile,
   onUploadFile,
+  onUploadFiles,
   keychainEnabled = false,
   keychainOpen = false,
   keychainLoading = false,
@@ -212,7 +216,9 @@ export function MessageComposer({
     end: number;
   } | null>(null);
   const [textareaHeight, setTextareaHeight] = useState<number | null>(null);
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const fileDragDepthRef = useRef(0);
   const actionTriggerRef = useRef<HTMLDivElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const keychainMenuRef = useRef<HTMLDivElement | null>(null);
@@ -232,6 +238,7 @@ export function MessageComposer({
   );
   const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
   const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
+  const canDropFiles = Boolean(onUploadFiles && !disabled);
   const leadingBotMention = useMemo(
     () =>
       findLeadingBotMentionMatch(
@@ -552,6 +559,62 @@ export function MessageComposer({
     }
   };
 
+  const resetFileDragState = () => {
+    fileDragDepthRef.current = 0;
+    setIsFileDragOver(false);
+  };
+
+  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!onUploadFiles) {
+      onUploadFile?.(event);
+      return;
+    }
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    void Promise.resolve(onUploadFiles(files)).catch((error) => {
+      console.error("Failed to upload selected files", error);
+    });
+  };
+
+  const handleFileDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDropFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepthRef.current += 1;
+    setIsFileDragOver(true);
+  };
+
+  const handleFileDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDropFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleFileDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDropFiles || !dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepthRef.current -= 1;
+    if (fileDragDepthRef.current <= 0) {
+      resetFileDragState();
+    }
+  };
+
+  const handleFileDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resetFileDragState();
+    if (!canDropFiles || !onUploadFiles) return;
+    const files = filesFromDragEvent(event);
+    if (files.length === 0) return;
+    void Promise.resolve(onUploadFiles(files)).catch((error) => {
+      console.error("Failed to upload dropped files", error);
+    });
+  };
+
   const removePendingFile = (index: number, previewUrl: string | null) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     onRemovePendingFile?.(index);
@@ -722,9 +785,24 @@ export function MessageComposer({
                 ? " is-announcement"
                 : !replyingTo && displayKind === "topic"
                   ? " is-topic"
-                  : "")
+                  : "") +
+            (isFileDragOver ? " is-file-drag-over" : "")
           }
+          onDragEnter={handleFileDragEnter}
+          onDragOver={handleFileDragOver}
+          onDragLeave={handleFileDragLeave}
+          onDragEnd={resetFileDragState}
+          onDrop={handleFileDrop}
         >
+          {isFileDragOver && (
+            <div className="an-composer-drop-hint" aria-hidden="true">
+              <span className="an-composer-drop-icon">
+                <AppIcon name="upload" className="w-5 h-5" />
+              </span>
+              <span>Drop files here</span>
+            </div>
+          )}
+
           <div
             className="an-composer-resize"
             onPointerDown={handleResizeDown}
@@ -788,13 +866,14 @@ export function MessageComposer({
 
           <div className="an-composer-bar">
             <div className="flex items-center gap-1">
-              {onUploadFile && (
+              {(onUploadFile || onUploadFiles) && (
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   accept=".txt,.md,.html,.htm,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.wps,.et,.dps,.ofd,.rtf,.csv,.zip,.rar,.7z,.tar,.gz,.bz2,.xz,.dwg,.dxf,.epub,.pdf,.png,.jpg,.jpeg,.webp,.gif"
                   className="hidden"
-                  onChange={onUploadFile}
+                  onChange={handleFileInputChange}
                 />
               )}
 
@@ -924,7 +1003,7 @@ export function MessageComposer({
                 <span>Insert keychain secret</span>
               </button>
             )}
-            {onUploadFile && (
+            {(onUploadFile || onUploadFiles) && (
               <button
                 type="button"
                 className="an-menu-item"

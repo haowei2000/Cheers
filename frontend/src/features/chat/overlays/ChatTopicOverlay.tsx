@@ -43,6 +43,7 @@ export interface ChatTopicOverlayProps {
   pendingFiles: ComposerPendingFile[];
   onRemovePendingFile: (index: number) => void;
   onUploadFile: (event: ChangeEvent<HTMLInputElement>) => void;
+  onUploadFiles: (files: File[]) => void | Promise<void>;
   keychainEnabled: boolean;
   keychainOpen: boolean;
   keychainLoading: boolean;
@@ -79,6 +80,7 @@ export function ChatTopicOverlay({
   pendingFiles,
   onRemovePendingFile,
   onUploadFile,
+  onUploadFiles,
   keychainEnabled,
   keychainOpen,
   keychainLoading,
@@ -131,6 +133,7 @@ export function ChatTopicOverlay({
             pendingFiles={pendingFiles}
             onRemovePendingFile={onRemovePendingFile}
             onUploadFile={onUploadFile}
+            onUploadFiles={onUploadFiles}
             keychainEnabled={keychainEnabled}
             keychainOpen={keychainOpen}
             keychainLoading={keychainLoading}

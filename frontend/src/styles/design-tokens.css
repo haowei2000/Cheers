@@ -2059,6 +2059,29 @@
   font-size: 10px;
   color: var(--fg-3);
 }
+.an-personal-files-dropzone {
+  position: relative;
+}
+.an-personal-files-dropzone::before {
+  content: "";
+  position: absolute;
+  inset: 2px 6px;
+  z-index: 0;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  pointer-events: none;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast);
+}
+.an-personal-files-dropzone.is-drag-over::before {
+  border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
+  background: var(--accent-muted);
+}
+.an-personal-files-dropzone > * {
+  position: relative;
+  z-index: 1;
+}
 
 .an-rail-row {
   display: flex;

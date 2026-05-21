@@ -21,6 +21,7 @@ export interface TopicComposerProps {
   pendingFiles?: ComposerPendingFile[];
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onUploadFiles?: (files: File[]) => void | Promise<void>;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -40,6 +41,7 @@ export function TopicComposer({
   pendingFiles = [],
   onRemovePendingFile,
   onUploadFile,
+  onUploadFiles,
   keychainEnabled = false,
   keychainOpen = false,
   keychainLoading = false,
@@ -87,6 +89,7 @@ export function TopicComposer({
       pendingFiles={pendingFiles}
       onRemovePendingFile={onRemovePendingFile}
       onUploadFile={onUploadFile}
+      onUploadFiles={onUploadFiles}
       keychainEnabled={keychainEnabled}
       keychainOpen={keychainOpen}
       keychainLoading={keychainLoading}
