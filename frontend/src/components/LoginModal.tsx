@@ -1,14 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { appLanguageHeaders } from "../api/client";
 import type { CurrentUser } from "../types";
 import { AppIcon } from "./icons/AppIcon";
+import { DingTalkIcon } from "./icons/DingTalkIcon";
 import { Modal } from "./Modal";
 
 const API = "/api/v1";
 const jsonHeaders = () => ({ "Content-Type": "application/json", ...appLanguageHeaders() });
 
 type AuthUser = Exclude<CurrentUser, null>;
+
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+type AuthProvider = {
+  provider: string;
+  display_name: string;
+  enabled: boolean;
+  web_authorize_url: string;
+  client_id?: string;
+  allowed_corp_ids?: string[];
+  default_corp_id?: string;
+  in_app_enabled?: boolean;
+  rpc_scope?: string;
+  field_scope?: string;
+};
 
 interface LoginModalProps {
   open: boolean;
@@ -30,6 +46,28 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
   const [forgotNewPw, setForgotNewPw] = useState("");
   const [forgotCodeSent, setForgotCodeSent] = useState(false);
   const [forgotCodeLoading, setForgotCodeLoading] = useState(false);
+  const [dingtalkProvider, setDingtalkProvider] = useState<AuthProvider | null>(null);
+  const [dingtalkLoading, setDingtalkLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch(`${API}/auth/providers`, { headers: appLanguageHeaders() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const providers = (data?.data ?? data ?? []) as AuthProvider[];
+        setDingtalkProvider(
+          providers.find((p) => p.provider === "dingtalk" && p.enabled) ?? null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setDingtalkProvider(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const handleLogin = async (username: string, password: string) => {
     setLoginLoading(true);
@@ -63,12 +101,86 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     }
   };
 
+  const redirectPath = () => {
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (!current.startsWith("/") || current.startsWith("//") || current.includes("\\")) return "/";
+    if (current.startsWith("/auth/dingtalk/")) return "/";
+    return current;
+  };
+
+  const startDingTalkWebOAuth = () => {
+    if (!dingtalkProvider?.web_authorize_url) return;
+    const url = `${dingtalkProvider.web_authorize_url}?redirect_path=${encodeURIComponent(redirectPath())}`;
+    window.location.assign(url);
+  };
+
+  const pickDingTalkCorpId = () => {
+    const allowed = dingtalkProvider?.allowed_corp_ids ?? [];
+    if (dingtalkProvider?.default_corp_id) return dingtalkProvider.default_corp_id;
+    if (allowed.length === 1) return allowed[0];
+    return "";
+  };
+
+  const handleDingTalkLogin = async () => {
+    if (!dingtalkProvider) return;
+    const isDingTalkClient = /DingTalk/i.test(navigator.userAgent);
+    const corpId = pickDingTalkCorpId();
+    if (!isDingTalkClient || !dingtalkProvider.in_app_enabled || !corpId || !dingtalkProvider.client_id) {
+      startDingTalkWebOAuth();
+      return;
+    }
+
+    setDingtalkLoading(true);
+    setLoginError("");
+    try {
+      const mod = await import("dingtalk-design-libs/biz/openAuth");
+      const res = await mod.openAuth({
+        clientId: dingtalkProvider.client_id,
+        corpId,
+        rpcScope: dingtalkProvider.rpc_scope || "Contact.User.Read",
+        fieldScope: dingtalkProvider.field_scope || "",
+        type: 0,
+      });
+      if (res?.status !== "ok" || !res?.result?.authCode) {
+        if (res?.status === "cancel") return;
+        throw new Error("DingTalk authorization failed");
+      }
+      const loginRes = await fetch(`${API}/auth/dingtalk/in-app-login`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({ auth_code: res.result.authCode }),
+      });
+      const data = await loginRes.json();
+      if (!loginRes.ok) throw new Error(data.detail || data.message || "DingTalk sign-in failed");
+      const payload = data.data ?? data;
+      const userInfo = payload.user ?? payload;
+      const user: AuthUser = {
+        user_id: userInfo.user_id,
+        username: userInfo.username,
+        display_name: userInfo.display_name || userInfo.username,
+        email: userInfo.email ?? null,
+        role: userInfo.role,
+        avatar_url: userInfo.avatar_url ?? null,
+        bio: userInfo.bio ?? null,
+      };
+      onSuccess(user, payload.access_token || payload.token);
+    } catch (e: any) {
+      if (/Failed to resolve module|Cannot find module|dingtalk-design-libs/i.test(String(e?.message || e))) {
+        startDingTalkWebOAuth();
+        return;
+      }
+      setLoginError(e.message || "DingTalk sign-in failed");
+    } finally {
+      setDingtalkLoading(false);
+    }
+  };
+
   const handleSendCode = async (
     email: string,
     purpose: string,
     onSent: () => void,
   ) => {
-    if (!email.trim() || !email.includes("@")) {
+    if (!isEmail(email)) {
       setLoginError("Enter a valid email address");
       return;
     }
@@ -187,17 +299,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     <Modal
       open={open}
       onClose={handleClose}
-      maxWidth="max-w-xs sm:max-w-sm"
+      maxWidth="max-w-sm sm:max-w-md"
       hideCloseButton={!currentUser}
       panelClassName="p-2"
     >
-      <div className="an-token-panel px-3 py-3">
-        <div className="text-center mb-6">
-          <div
-            className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-3"
-            style={{ background: "var(--accent)" }}
-          >
-            <AppIcon name="users" className="w-7 h-7 text-white" />
+      <div className="an-token-panel an-auth-shell">
+        <div className="an-auth-header">
+          <div className="an-auth-brand-mark">
+            <AppIcon name="users" className="w-7 h-7" />
           </div>
           <h2 className="an-type-title">
             {authMode === "login"
@@ -208,12 +317,40 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           </h2>
           <p className="an-type-meta mt-1">
             {authMode === "login"
-              ? "Welcome back."
+              ? "Use email, username, or DingTalk to continue."
               : authMode === "register"
-                ? "Fill in details to create an account"
+                ? "Verify your email before creating an account."
                 : "Reset your password with email verification"}
           </p>
         </div>
+        {authMode !== "forgot" && (
+          <div className="an-auth-switch" role="tablist" aria-label="Authentication mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={authMode === "login"}
+              className={authMode === "login" ? "is-active" : ""}
+              onClick={() => {
+                setAuthMode("login");
+                setLoginError("");
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={authMode === "register"}
+              className={authMode === "register" ? "is-active" : ""}
+              onClick={() => {
+                setAuthMode("register");
+                setLoginError("");
+              }}
+            >
+              Create
+            </button>
+          </div>
+        )}
         {loginError && (
           <div className="an-alert-danger mb-4">
             {loginError}
@@ -232,20 +369,35 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               );
             }}
           >
-            <input
-              name="username"
-              placeholder="Username or email"
-              required
-              className="an-input mb-3"
-            />
-            <input
-              name="password"
-              type="password"
-              placeholder="Password"
-              required
-              className="an-input mb-1"
-            />
-            <div className="text-right mb-4">
+            <label className="an-auth-field">
+              <span className="an-auth-label">Email or username</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="mail" className="an-auth-input-icon" />
+                <input
+                  name="username"
+                  placeholder="name@company.com or username"
+                  required
+                  inputMode="email"
+                  autoComplete="username"
+                  className="an-input"
+                />
+              </span>
+            </label>
+            <label className="an-auth-field">
+              <span className="an-auth-label">Password</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="lock" className="an-auth-input-icon" />
+                <input
+                  name="password"
+                  type="password"
+                  placeholder="Your password"
+                  required
+                  autoComplete="current-password"
+                  className="an-input"
+                />
+              </span>
+            </label>
+            <div className="an-auth-action-row">
               <button
                 type="button"
                 onClick={() => {
@@ -260,10 +412,24 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             <button
               type="submit"
               disabled={loginLoading}
-              className="an-btn an-btn-primary w-full py-2.5"
+              className="an-btn an-btn-primary an-auth-submit w-full"
             >
               {loginLoading ? "Processing..." : "Sign in"}
             </button>
+            {dingtalkProvider && (
+              <>
+                <div className="an-auth-divider"><span>or</span></div>
+                <button
+                  type="button"
+                  disabled={dingtalkLoading}
+                  onClick={handleDingTalkLogin}
+                  className="an-btn an-auth-dingtalk-btn w-full"
+                >
+                  <DingTalkIcon className="an-auth-dingtalk-icon" />
+                  {dingtalkLoading ? "Processing..." : "Continue with DingTalk"}
+                </button>
+              </>
+            )}
           </form>
         )}
 
@@ -281,71 +447,108 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             }}
           >
             {/* Step 1: Email verification */}
-            <div className="flex gap-2 mb-3">
-              <input
-                value={regEmail}
-                onChange={(e) => {
-                  setRegEmail(e.target.value);
-                  setRegCodeSent(false);
-                  setRegCode("");
-                }}
-                type="email"
-                placeholder="Email address (required)"
-                required
-                className="an-input flex-1"
-              />
-              <button
-                type="button"
-                disabled={regCodeLoading || !regEmail.includes("@")}
-                onClick={() =>
-                  handleSendCode(regEmail, "register", () =>
-                    setRegCodeSent(true),
-                  )
-                }
-                className="an-btn an-btn-ghost an-btn-sm"
-              >
-                {regCodeLoading
-                  ? "Sending"
-                  : regCodeSent
-                    ? "Resend"
-                    : "Get code"}
-              </button>
+            <div className="an-auth-field">
+              <span className="an-auth-label">Work email</span>
+              <div className="an-auth-email-row">
+                <span className="an-auth-input-wrap">
+                  <AppIcon name="mail" className="an-auth-input-icon" />
+                  <input
+                    value={regEmail}
+                    onChange={(e) => {
+                      setRegEmail(e.target.value);
+                      setRegCodeSent(false);
+                      setRegCode("");
+                    }}
+                    type="email"
+                    placeholder="name@company.com"
+                    required
+                    inputMode="email"
+                    autoComplete="email"
+                    className="an-input"
+                  />
+                </span>
+                <button
+                  type="button"
+                  disabled={regCodeLoading || !isEmail(regEmail)}
+                  onClick={() =>
+                    handleSendCode(regEmail, "register", () =>
+                      setRegCodeSent(true),
+                    )
+                  }
+                  className="an-btn an-btn-ghost an-btn-sm an-auth-code-btn"
+                >
+                  {regCodeLoading
+                    ? "Sending"
+                    : regCodeSent
+                      ? "Resend"
+                      : "Get code"}
+                </button>
+              </div>
             </div>
-            <input
-              value={regCode}
-              onChange={(e) => setRegCode(e.target.value)}
-              placeholder="Email verification code"
-              required
-              disabled={!regCodeSent}
-              className="an-input mb-4"
-            />
+            <label className="an-auth-field">
+              <span className="an-auth-label">Email verification code</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="key" className="an-auth-input-icon" />
+                <input
+                  value={regCode}
+                  onChange={(e) => setRegCode(e.target.value)}
+                  placeholder="6-digit code"
+                  required
+                  disabled={!regCodeSent}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="an-input"
+                />
+              </span>
+            </label>
             {/* Step 2: Account info (shown after code sent) */}
-            <input
-              name="display_name"
-              placeholder="Display name"
-              required
-              disabled={!regCodeSent}
-              className="an-input mb-3"
-            />
-            <input
-              name="username"
-              placeholder="Username (for sign-in)"
-              required
-              disabled={!regCodeSent}
-              className="an-input mb-3"
-            />
-            <input
-              name="password"
-              type="password"
-              placeholder="Password (8+ chars, letters and numbers)"
-              required
-              disabled={!regCodeSent}
-              className="an-input mb-4"
-            />
+            <label className="an-auth-field">
+              <span className="an-auth-label">Display name</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="users" className="an-auth-input-icon" />
+                <input
+                  name="display_name"
+                  placeholder="How teammates see you"
+                  required
+                  disabled={!regCodeSent}
+                  autoComplete="name"
+                  className="an-input"
+                />
+              </span>
+            </label>
+            <label className="an-auth-field">
+              <span className="an-auth-label">Username</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="user" className="an-auth-input-icon" />
+                <input
+                  name="username"
+                  placeholder="For password sign-in"
+                  required
+                  disabled={!regCodeSent}
+                  autoComplete="username"
+                  className="an-input"
+                />
+              </span>
+            </label>
+            <label className="an-auth-field">
+              <span className="an-auth-label">Password</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="lock" className="an-auth-input-icon" />
+                <input
+                  name="password"
+                  type="password"
+                  placeholder="8+ chars, letters and numbers"
+                  required
+                  disabled={!regCodeSent}
+                  autoComplete="new-password"
+                  className="an-input"
+                />
+              </span>
+            </label>
             <button
               type="submit"
               disabled={loginLoading || !regCodeSent}
-              className="an-btn an-btn-primary w-full py-2.5"
+              className="an-btn an-btn-primary an-auth-submit w-full"
             >
               {loginLoading ? "Processing..." : "Create account"}
             </button>
@@ -355,49 +558,72 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         {/* ── Forgot Password ── */}
         {authMode === "forgot" && (
           <div>
-            <div className="flex gap-2 mb-3">
-              <input
-                value={forgotEmail}
-                onChange={(e) => setForgotEmail(e.target.value)}
-                type="email"
-                placeholder="Registered email"
-                required
-                className="an-input flex-1"
-              />
-              <button
-                type="button"
-                disabled={forgotCodeLoading || !forgotEmail.includes("@")}
-                onClick={() =>
-                  handleSendCode(forgotEmail, "reset_password", () =>
-                    setForgotCodeSent(true),
-                  )
-                }
-                className="an-btn an-btn-ghost an-btn-sm"
-              >
-                {forgotCodeLoading
-                  ? "Sending"
-                  : forgotCodeSent
-                    ? "Resend"
-                    : "Get code"}
-              </button>
+            <div className="an-auth-field">
+              <span className="an-auth-label">Registered email</span>
+              <div className="an-auth-email-row">
+                <span className="an-auth-input-wrap">
+                  <AppIcon name="mail" className="an-auth-input-icon" />
+                  <input
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    type="email"
+                    placeholder="name@company.com"
+                    required
+                    inputMode="email"
+                    autoComplete="email"
+                    className="an-input"
+                  />
+                </span>
+                <button
+                  type="button"
+                  disabled={forgotCodeLoading || !isEmail(forgotEmail)}
+                  onClick={() =>
+                    handleSendCode(forgotEmail, "reset_password", () =>
+                      setForgotCodeSent(true),
+                    )
+                  }
+                  className="an-btn an-btn-ghost an-btn-sm an-auth-code-btn"
+                >
+                  {forgotCodeLoading
+                    ? "Sending"
+                    : forgotCodeSent
+                      ? "Resend"
+                      : "Get code"}
+                </button>
+              </div>
             </div>
-            <input
-              value={forgotCode}
-              onChange={(e) => setForgotCode(e.target.value)}
-              placeholder="Email verification code"
-              className="an-input mb-3"
-            />
-            <input
-              value={forgotNewPw}
-              onChange={(e) => setForgotNewPw(e.target.value)}
-              type="password"
-              placeholder="New password (8+ chars, letters and numbers)"
-              className="an-input mb-4"
-            />
+            <label className="an-auth-field">
+              <span className="an-auth-label">Email verification code</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="key" className="an-auth-input-icon" />
+                <input
+                  value={forgotCode}
+                  onChange={(e) => setForgotCode(e.target.value)}
+                  placeholder="6-digit code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className="an-input"
+                />
+              </span>
+            </label>
+            <label className="an-auth-field">
+              <span className="an-auth-label">New password</span>
+              <span className="an-auth-input-wrap">
+                <AppIcon name="lock" className="an-auth-input-icon" />
+                <input
+                  value={forgotNewPw}
+                  onChange={(e) => setForgotNewPw(e.target.value)}
+                  type="password"
+                  placeholder="8+ chars, letters and numbers"
+                  autoComplete="new-password"
+                  className="an-input"
+                />
+              </span>
+            </label>
             <button
               onClick={handleForgotPassword}
               disabled={loginLoading || !forgotCodeSent}
-              className="an-btn an-btn-primary w-full py-2.5"
+              className="an-btn an-btn-primary an-auth-submit w-full"
             >
               {loginLoading ? "Processing..." : "Reset password"}
             </button>
@@ -405,20 +631,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         )}
 
         <div className="an-type-meta mt-4 text-center">
-          {authMode === "login" ? (
-            <>
-              No account?{" "}
-              <button
-                onClick={() => {
-                  setAuthMode("register");
-                  setLoginError("");
-                }}
-                className="an-text-link"
-              >
-                Create account
-              </button>
-            </>
-          ) : (
+          {authMode === "forgot" ? (
             <button
               onClick={() => {
                 setAuthMode("login");
@@ -428,6 +641,21 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             >
               Back to sign in
             </button>
+          ) : authMode === "register" ? (
+            <>
+              Already have an account?{" "}
+              <button
+                onClick={() => {
+                  setAuthMode("login");
+                  setLoginError("");
+                }}
+                className="an-text-link"
+              >
+                Sign in
+              </button>
+            </>
+          ) : (
+            <span>Email sign-in uses the same password as username sign-in.</span>
           )}
         </div>
       </div>
