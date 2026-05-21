@@ -206,14 +206,23 @@ export function usePendingFiles({
     [appendPendingFile, authFetch, currentUserId, onRequireLogin, selectedId],
   );
 
-  const uploadFile = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      event.target.value = "";
-      await uploadFileObject(file);
+  const uploadFileObjects = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        await uploadFileObject(file);
+      }
     },
     [uploadFileObject],
+  );
+
+  const uploadFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      if (files.length === 0) return;
+      await uploadFileObjects(files);
+    },
+    [uploadFileObjects],
   );
 
   return {
@@ -224,6 +233,7 @@ export function usePendingFiles({
     removePendingFile,
     clearPendingFiles,
     uploadFileObject,
+    uploadFileObjects,
     uploadFile,
   };
 }
