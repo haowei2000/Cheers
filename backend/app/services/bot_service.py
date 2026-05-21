@@ -9,18 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import BotAccount, User
-from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
+from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
 from app.utils.permissions import can_access, get_friend_ids
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
-_BUILTIN_BOT_IDS = set(BUILTIN_BOT_IDS)
 BOT_SCOPES = {"private", "friend", "everyone"}
 BotScope = Literal["private", "friend", "everyone"]
 
 
 def is_builtin_bot(bot: BotAccount) -> bool:
-    return bot.bot_id in _BUILTIN_BOT_IDS
+    return bot.bot_id in set(configured_builtin_bot_ids())
 
 
 def normalize_bot_scope(scope: str | None) -> BotScope:

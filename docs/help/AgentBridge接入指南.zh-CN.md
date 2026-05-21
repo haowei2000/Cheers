@@ -5,7 +5,7 @@
 本文档说明两类外部 Agent 如何接入 AgentNexus：
 
 1. OpenClaw 通过 `@haowei0520/openclaw-channel-agentnexus` 插件接入。
-2. ACP 协议 Agent 通过 `@haowei0520/acp-connector` 接入，并以 `codex-acp` 为例。
+2. ACP 协议 Agent 通过 `@haowei0520/acp-connector` 接入，并以 OpenCode ACP 为例。
 
 两种方式都使用 AgentNexus 的 **Agent Bridge Bot**。用户在频道或 DM 中 `@Bot` 后，AgentNexus 通过两条 WebSocket 把任务推给外部 provider，provider 再把流式文本、最终回复和附件回传给 AgentNexus。
 
@@ -68,7 +68,7 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 3. 在 Bot 管理中创建 Bot，绑定类型选择 **Agent Bridge Bot**。
 4. `bridge_provider` 按场景填写：
    - OpenClaw：`openclaw`
-   - ACP / Codex ACP：`acp`
+   - ACP / OpenCode ACP：`acp`
 5. 创建后立刻保存弹出的 `agb_...` token。
 6. 把该 Bot 加入要使用的频道。
 
@@ -286,12 +286,12 @@ agentnexus: openclaw-main inbound channel=... task=...
 
 ---
 
-## 四、连接 ACP 协议 Agent：以 Codex ACP 为例
+## 四、连接 ACP 协议 Agent：以 OpenCode ACP 为例
 
 ACP Connector 适合把本机 stdio ACP agent 接到 AgentNexus。它本身负责：
 
 - 连接 AgentNexus 的 control/data WS；
-- 启动本机 ACP agent，例如 `codex-acp`；
+- 启动本机 ACP agent，例如 `opencode acp`；
 - 把 AgentNexus 用户消息转成 ACP session prompt；
 - 把 ACP 的流式输出、最终回复和文件资源回传给 AgentNexus。
 
@@ -316,7 +316,39 @@ npm install -g ./packages/agentnexus-acp-connector
 agentnexus-acp-connector --help
 ```
 
-### 4.2 注册 Codex ACP Bot
+### 4.2 Docker Compose 预置 OpenCode Bot
+
+`docker-compose.yml.template` 内置了可选的 `opencode-bot` profile：backend seed 会创建一个 Agent Bridge Bot，`opencode-bot` 容器会用同一个 Bot token 连接 AgentNexus，并通过 OpenCode ACP 调用 DeepSeek/OpenAI 兼容 API。OpenCode ACP 声明支持图片输入和嵌入文件上下文；实际图片理解能力仍取决于配置的模型/供应商。
+
+在 `.env` 中配置：
+
+```bash
+OPENCODE_BOT_ENABLED=true
+OPENCODE_BOT_TOKEN=agb_<随机密钥>
+OPENCODE_OPENAI_API_KEY=<你的 OpenAI 兼容 API Key>
+OPENCODE_OPENAI_BASE_URL=https://api.deepseek.com
+OPENCODE_PROVIDER=deepseek
+OPENCODE_MODEL=<模型名>
+```
+
+生成 `OPENCODE_BOT_TOKEN` 示例：
+
+```bash
+python - <<'PY'
+import secrets
+print("agb_" + secrets.token_urlsafe(32))
+PY
+```
+
+启动：
+
+```bash
+docker compose --profile opencode-bot up -d --wait
+```
+
+`OPENCODE_BOT_TOKEN` 必须同时给 backend seed 和 `opencode-bot` 容器使用。`OPENCODE_PERMISSION_MODE` 默认是 `reject`；如果希望 OpenCode 在容器工作区内写文件，可改成 `allow` 并确认 `./data/opencode-workspace` 是可信目录。
+
+### 4.3 注册 OpenCode ACP Bot
 
 通过 AgentNexus 注册接口创建一个 ACP provider Bot：
 
@@ -324,12 +356,12 @@ agentnexus-acp-connector --help
 curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "codex-acp",
-    "display_name": "Codex ACP",
+    "username": "opencode-acp",
+    "display_name": "OpenCode ACP",
     "bridge_provider": "acp",
     "account_username": "admin",
     "account_password": "<你的登录密码>",
-    "agent_id": "codex-acp",
+    "agent_id": "opencode-acp",
     "scope": "private"
   }'
 ```
@@ -341,24 +373,24 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
 - `data.bridge.data_ws`
 - 或直接保存 `data.acp_connector_config` 后再修改本地 agent 配置。
 
-### 4.3 编写 `agentnexus-acp.json`
+### 4.4 编写 `agentnexus-acp.json`
 
 示例：
 
 ```json
 {
   "accounts": {
-    "codex-acp": {
+    "opencode-acp": {
       "botToken": "agb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "controlUrl": "ws://localhost:8000/ws/agent-bridge/control",
       "dataUrl": "ws://localhost:8000/ws/agent-bridge/data",
       "agent": {
         "transport": "stdio",
-        "command": "codex-acp",
-        "args": [],
+        "command": "opencode",
+        "args": ["acp", "--cwd", "/Users/haowei/Projects/AgentNexus"],
         "cwd": "/Users/haowei/Projects/AgentNexus",
         "env": {
-          "OPENAI_API_KEY": "$OPENAI_API_KEY"
+          "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT"
         },
         "requestTimeoutMs": 1200000,
         "permissionMode": "reject"
@@ -375,9 +407,9 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
   - `reject`：默认值；遇到写文件、执行命令等权限请求时拒绝。
   - `allow`：自动选择允许；只建议用于可信本地工作区。
   - `cancel`：收到权限请求时取消。
-- 如果希望 Codex ACP 能生成并返回文件，需要把 `cwd` 设成允许它读写的项目目录，并在可信场景下使用 `"permissionMode": "allow"`。
+- 如果希望 OpenCode ACP 能生成并返回文件，需要把 `cwd` 设成允许它读写的项目目录，并在可信场景下使用 `"permissionMode": "allow"`。
 
-### 4.4 启动 ACP Connector
+### 4.5 启动 ACP Connector
 
 前台调试：
 
@@ -388,24 +420,24 @@ agentnexus-acp-connector run --config ./agentnexus-acp.json
 后台守护进程：
 
 ```bash
-agentnexus-acp-connector start --config ./agentnexus-acp.json --name codex-acp
-agentnexus-acp-connector status --name codex-acp
-agentnexus-acp-connector logs --name codex-acp --lines 200
+agentnexus-acp-connector start --config ./agentnexus-acp.json --name opencode-acp
+agentnexus-acp-connector status --name opencode-acp
+agentnexus-acp-connector logs --name opencode-acp --lines 200
 ```
 
 停止或重启：
 
 ```bash
-agentnexus-acp-connector restart --name codex-acp
-agentnexus-acp-connector stop --name codex-acp
+agentnexus-acp-connector restart --name opencode-acp
+agentnexus-acp-connector stop --name opencode-acp
 ```
 
-### 4.5 在 AgentNexus 中测试 Codex ACP
+### 4.6 在 AgentNexus 中测试 OpenCode ACP
 
-先把 `codex-acp` Bot 加入目标频道，然后发送：
+先把 `opencode-acp` Bot 加入目标频道，然后发送：
 
 ```text
-@codex-acp 请读取当前消息并回复一句你已经通过 ACP 接入 AgentNexus
+@opencode-acp 请读取当前消息并回复一句你已经通过 ACP 接入 AgentNexus
 ```
 
 测试图片输入：
@@ -414,7 +446,7 @@ agentnexus-acp-connector stop --name codex-acp
 2. 发送：
 
 ```text
-@codex-acp 请分析这张图片的内容
+@opencode-acp 请分析这张图片的内容
 ```
 
 当前 ACP Connector 会在 agent 声明 `image` capability 时，把图片通过 `/api/v1/agent-bridge/files/{file_id}/binary` 读取后作为 ACP `image` content block 传给 agent。
@@ -425,12 +457,12 @@ agentnexus-acp-connector stop --name codex-acp
 2. 发送：
 
 ```text
-@codex-acp 请总结这个附件
+@opencode-acp 请总结这个附件
 ```
 
 当前 ACP Connector 会在 agent 声明 `embeddedContext` capability 时，通过 `/api/v1/agent-bridge/files/{file_id}/content` 读取文件正文，并作为 ACP `resource` content block 传给 agent。
 
-### 4.6 让 Codex ACP 返回文件到 AgentNexus
+### 4.7 让 OpenCode ACP 返回文件到 AgentNexus
 
 ACP Connector 支持两条文件回传路径：
 
@@ -440,7 +472,7 @@ ACP Connector 支持两条文件回传路径：
 可以在 AgentNexus 中这样测试：
 
 ```text
-@codex-acp 在当前工作区生成一个 outputs/acp-test.md，内容写一段 AgentNexus ACP 文件回传测试，然后把文件链接返回给我
+@opencode-acp 在当前工作区生成一个 outputs/acp-test.md，内容写一段 AgentNexus ACP 文件回传测试，然后把文件链接返回给我
 ```
 
 配置要求：
@@ -479,8 +511,8 @@ openclaw channels logs | grep agentnexus | tail -100
 常见原因：
 
 - JSON 少逗号或字段放错层级。
-- `agent.command` 找不到，例如本机没有 `codex-acp`。
-- `OPENAI_API_KEY` 没有在环境中设置。
+- `agent.command` 找不到，例如本机没有 `opencode`。
+- `OPENCODE_CONFIG_CONTENT` 或其中引用的 API Key 没有在环境中设置。
 - `agent.cwd` 不存在。
 
 ### 5.4 生成 PPT、文档或长任务被取消

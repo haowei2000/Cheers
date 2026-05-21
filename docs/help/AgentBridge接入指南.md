@@ -74,7 +74,7 @@ openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.4.tgz
 
 Then configure OpenClaw with the returned token and WebSocket URLs.
 
-## ACP / Codex ACP Provider
+## ACP / OpenCode ACP Provider
 
 Install:
 
@@ -84,6 +84,29 @@ agentnexus-acp-connector --help
 ```
 
 Register an ACP Bot with `bridge_provider=acp`, save the token, then configure the connector with `controlUrl`, `dataUrl`, and your local ACP agent command.
+
+## Docker Compose OpenCode Bot
+
+The Compose template includes an optional `opencode-bot` profile that seeds an OpenCode Agent Bridge Bot and runs `@haowei0520/acp-connector` with OpenCode ACP. OpenCode ACP declares image input and embedded-context support; actual image understanding still depends on the configured model/provider.
+
+In `.env`, set:
+
+```bash
+OPENCODE_BOT_ENABLED=true
+OPENCODE_BOT_TOKEN=agb_<random-secret>
+OPENCODE_OPENAI_API_KEY=<your-openai-compatible-key>
+OPENCODE_OPENAI_BASE_URL=https://api.deepseek.com
+OPENCODE_PROVIDER=deepseek
+OPENCODE_MODEL=<model-name>
+```
+
+Then start it with:
+
+```bash
+docker compose --profile opencode-bot up -d --wait
+```
+
+`OPENCODE_BOT_TOKEN` must be the same value for the backend seed and the `opencode-bot` container. Generate one with `python -c "import secrets; print('agb_' + secrets.token_urlsafe(32))"`.
 
 ## Status and Debugging
 

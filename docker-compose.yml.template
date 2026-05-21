@@ -41,6 +41,13 @@ services:
       - AGENT_BRIDGE_ENABLED=${AGENT_BRIDGE_ENABLED:-true}
       - AGENT_BRIDGE_TOKEN=${AGENT_BRIDGE_TOKEN:-}
       - AGENT_BRIDGE_TIMEOUT_SECONDS=${AGENT_BRIDGE_TIMEOUT_SECONDS:-600}
+      - OPENCODE_BOT_ENABLED=${OPENCODE_BOT_ENABLED:-false}
+      - OPENCODE_BOT_ID=${OPENCODE_BOT_ID:-bot-opencode-001}
+      - OPENCODE_BOT_USERNAME=${OPENCODE_BOT_USERNAME:-opencode}
+      - OPENCODE_BOT_DISPLAY_NAME=${OPENCODE_BOT_DISPLAY_NAME:-OpenCode}
+      - OPENCODE_BOT_DESCRIPTION=${OPENCODE_BOT_DESCRIPTION:-OpenCode ACP coding assistant}
+      - OPENCODE_BOT_SCOPE=${OPENCODE_BOT_SCOPE:-everyone}
+      - OPENCODE_BOT_TOKEN=${OPENCODE_BOT_TOKEN:-}
       - OPENCLAW_PLUGIN_PACKAGE=${OPENCLAW_PLUGIN_PACKAGE:-@haowei0520/openclaw-channel-agentnexus}
       - OPENCLAW_PLUGIN_RELEASE_DIR=${OPENCLAW_PLUGIN_RELEASE_DIR:-/app/release}
       - OPENCLAW_PLUGIN_FILE=${OPENCLAW_PLUGIN_FILE:-openclaw-channel-agentnexus.tgz}
@@ -61,6 +68,38 @@ services:
       redis:
         condition: service_started
       rustfs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  opencode-bot:
+    image: ${OPENCODE_BOT_IMAGE:-registry.example.invalid:5000/ai/agentnexus-opencode:latest}
+    profiles:
+      - opencode-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AGENTNEXUS_WS_BASE=${OPENCODE_BOT_WS_BASE:-ws://backend:8000}
+      - OPENCODE_BOT_USERNAME=${OPENCODE_BOT_USERNAME:-opencode}
+      - OPENCODE_BOT_TOKEN=${OPENCODE_BOT_TOKEN:-}
+      - OPENCODE_OPENAI_API_KEY=${OPENCODE_OPENAI_API_KEY:-}
+      - OPENCODE_OPENAI_BASE_URL=${OPENCODE_OPENAI_BASE_URL:-}
+      - OPENCODE_PROVIDER=${OPENCODE_PROVIDER:-deepseek}
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-}
+      - OPENCODE_WORKSPACE_DIR=${OPENCODE_WORKSPACE_DIR:-/workspace}
+      - OPENCODE_PERMISSION_MODE=${OPENCODE_PERMISSION_MODE:-reject}
+      - OPENCODE_PROMPT_TIMEOUT_MS=${OPENCODE_PROMPT_TIMEOUT_MS:-660000}
+      - OPENCODE_REQUEST_TIMEOUT_MS=${OPENCODE_REQUEST_TIMEOUT_MS:-}
+    volumes:
+      - ./data/opencode-bot:/app/state
+      - ./data/opencode-workspace:/workspace
+    depends_on:
+      backend:
         condition: service_healthy
 
   db-migrate:

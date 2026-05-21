@@ -35,7 +35,7 @@ async def test_connector_control_update_persists_and_dispatches(
         display_name="Connector Control Bot",
         status="online",
         binding_type="agent_bridge",
-        binding_config={"agent_id": "codex"},
+        binding_config={"agent_id": "opencode"},
         created_by="a0000000-0000-0000-0000-000000000099",
     )
     db_session.add(bot)
@@ -125,7 +125,7 @@ async def test_connector_acp_option_set_persists_and_dispatches(
         status="online",
         binding_type="agent_bridge",
         binding_config={
-            "agent_id": "codex",
+            "agent_id": "opencode",
             "connector_control": {
                 "options": {
                     "source": "acp",
@@ -198,7 +198,7 @@ async def test_connector_control_records_discovered_options() -> None:
             status="online",
             binding_type="agent_bridge",
             binding_config={
-                "agent_id": "codex",
+                "agent_id": "opencode",
                 "connector_control": {
                     "revision": 3,
                     "settings": {"permissionMode": "reject"},
@@ -256,7 +256,7 @@ async def test_connector_control_records_option_status() -> None:
             status="online",
             binding_type="agent_bridge",
             binding_config={
-                "agent_id": "codex",
+                "agent_id": "opencode",
                 "connector_control": {
                     "last_option_status": {
                         "request_id": "request-old",

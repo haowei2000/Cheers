@@ -18,7 +18,7 @@
 - [使用说明书](docs/help/使用说明书.md)（总索引）
   - [普通用户使用说明](docs/help/普通用户使用说明.md) · [系统管理说明书](docs/help/系统管理说明书.md) · [安装部署说明](docs/help/安装部署说明.md) · [技术排查Q&A](docs/help/技术排查Q&A.md)
 - [RustFS 对象存储部署说明](docs/help/RustFS对象存储部署说明.md)
-- [Agent Bridge 接入指南](docs/help/AgentBridge接入指南.md)（OpenClaw 与 ACP / Codex ACP）
+- [Agent Bridge 接入指南](docs/help/AgentBridge接入指南.md)（OpenClaw 与 ACP / OpenCode ACP）
 
 **开发 / 设计（`docs/develop/`）**
 
