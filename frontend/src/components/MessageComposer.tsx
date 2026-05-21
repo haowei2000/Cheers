@@ -39,6 +39,13 @@ function promptTemplateDisplayName(template?: ComposerPromptTemplate | null): st
   return name;
 }
 
+function promptTemplateDefaultBotLabel(
+  bot?: ComposerPromptTemplate["default_bot"],
+): string {
+  if (!bot) return "";
+  return bot.display_name?.trim() || bot.username || "";
+}
+
 export interface ComposerPendingFile {
   name: string;
   previewUrl: string | null;
@@ -102,6 +109,7 @@ export interface MessageComposerProps {
   promptTemplatesLoading?: boolean;
   selectedPromptTemplateId?: string | null;
   onPromptTemplateChange?: (templateId: string | null) => void;
+  showTemplateDefaultBotTarget?: boolean;
   sendButtonLabel?: string;
   normalHint?: ReactNode;
 }
@@ -204,6 +212,7 @@ export function MessageComposer({
   promptTemplatesLoading = false,
   selectedPromptTemplateId = null,
   onPromptTemplateChange,
+  showTemplateDefaultBotTarget = true,
   sendButtonLabel,
   normalHint,
 }: MessageComposerProps) {
@@ -219,6 +228,9 @@ export function MessageComposer({
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [templateFilter, setTemplateFilter] = useState("");
+  const [selectedTemplateTag, setSelectedTemplateTag] = useState<string | null>(
+    null,
+  );
   const [templateTriggerRange, setTemplateTriggerRange] = useState<{
     start: number;
     end: number;
@@ -246,6 +258,15 @@ export function MessageComposer({
   );
   const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
   const selectedPromptTemplateDescription = selectedPromptTemplate?.description?.trim() || "";
+  const selectedPromptTemplateHint = selectedPromptTemplate
+    ? [selectedPromptTemplateName, selectedPromptTemplateDescription]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const selectedPromptTemplateDefaultBotLabel =
+    showTemplateDefaultBotTarget && selectedPromptTemplate?.default_bot
+      ? promptTemplateDefaultBotLabel(selectedPromptTemplate.default_bot)
+      : "";
   const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
   const canDropFiles = Boolean(onUploadFiles && !disabled);
   const leadingBotMention = useMemo(
@@ -272,6 +293,7 @@ export function MessageComposer({
   const closeTemplateMenu = () => {
     setTemplateMenuOpen(false);
     setTemplateFilter("");
+    setSelectedTemplateTag(null);
     setTemplateTriggerRange(null);
   };
 
@@ -352,8 +374,15 @@ export function MessageComposer({
   const matchedPromptTemplates = useMemo(() => {
     if (!templateMenuOpen) return [];
     const filter = templateFilter.trim().toLowerCase();
-    if (!filter) return promptTemplates;
+    const tagFilter = selectedTemplateTag?.toLowerCase() || "";
     return promptTemplates.filter((template) => {
+      if (
+        tagFilter &&
+        !(template.tags || []).some((tag) => tag.toLowerCase() === tagFilter)
+      ) {
+        return false;
+      }
+      if (!filter) return true;
       const name = promptTemplateDisplayName(template).toLowerCase();
       const description = (template.description ?? "").toLowerCase();
       const tags = (template.tags || []).join(" ").toLowerCase();
@@ -368,7 +397,27 @@ export function MessageComposer({
         defaultBot.includes(filter)
       );
     });
-  }, [promptTemplates, templateFilter, templateMenuOpen]);
+  }, [promptTemplates, selectedTemplateTag, templateFilter, templateMenuOpen]);
+
+  const promptTemplateTagOptions = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const template of promptTemplates) {
+      for (const rawTag of template.tags || []) {
+        const label = rawTag.trim();
+        if (!label) continue;
+        const key = label.toLowerCase();
+        const existing = counts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(key, { label, count: 1 });
+        }
+      }
+    }
+    return Array.from(counts.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [promptTemplates]);
 
   const insertAtCursor = (snippet: string) => {
     const el = inputRef.current;
@@ -452,28 +501,70 @@ export function MessageComposer({
     closeMentionMenu();
   };
 
-  const clearTemplateTriggerText = () => {
-    if (!templateTriggerRange) return;
+  const applyPromptTemplateTextSelection = (
+    template: ComposerPromptTemplate | null,
+  ) => {
     const el = inputRef.current;
     const currentValue = el?.value ?? draftValue;
-    const start = Math.min(templateTriggerRange.start, currentValue.length);
-    const end = Math.min(
-      Math.max(templateTriggerRange.end, start),
-      currentValue.length,
-    );
-    const next = currentValue.slice(0, start) + currentValue.slice(end);
+    const ranges: ComposerTextRange[] = [];
+
+    if (templateTriggerRange) ranges.push(templateTriggerRange);
+    if (showTemplateDefaultBotTarget && template?.default_bot) {
+      const leadingRange = findLeadingBotMentionMatch(
+        currentValue,
+        channelBots.map((bot) => bot.username),
+      );
+      if (leadingRange) ranges.push(leadingRange);
+      setMentionTriggerLabel("");
+    }
+
+    if (ranges.length === 0) return;
+
+    let next = currentValue;
+    let selectionStart = el?.selectionStart ?? currentValue.length;
+    let selectionEnd = el?.selectionEnd ?? selectionStart;
+    const normalizedRanges = ranges
+      .map((range) => {
+        const start = Math.min(range.start, currentValue.length);
+        const end = Math.min(Math.max(range.end, start), currentValue.length);
+        return { start, end };
+      })
+      .filter((range) => range.end > range.start)
+      .sort((a, b) => b.start - a.start);
+
+    for (const { start, end } of normalizedRanges) {
+      next = next.slice(0, start) + next.slice(end);
+      const removedLength = end - start;
+      if (end <= selectionStart) {
+        selectionStart -= removedLength;
+      } else if (start < selectionStart) {
+        selectionStart = start;
+      }
+      if (end <= selectionEnd) {
+        selectionEnd -= removedLength;
+      } else if (start < selectionEnd) {
+        selectionEnd = start;
+      }
+    }
+
+    selectionStart = Math.max(0, Math.min(selectionStart, next.length));
+    selectionEnd = Math.max(selectionStart, Math.min(selectionEnd, next.length));
     setDraftValue(next);
     onValueChange(next);
     requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
-      el.setSelectionRange(start, start);
+      el.setSelectionRange(selectionStart, selectionEnd);
     });
   };
 
   const pickPromptTemplate = (templateId: string | null) => {
+    const nextTemplate = templateId
+      ? promptTemplates.find((template) => template.template_id === templateId) ||
+        null
+      : null;
     onPromptTemplateChange?.(templateId);
-    clearTemplateTriggerText();
+    applyPromptTemplateTextSelection(nextTemplate);
     closeTemplateMenu();
   };
 
@@ -676,9 +767,14 @@ export function MessageComposer({
     setActionMenuOpen(false);
     onCloseKeychain?.();
     closeMentionMenu();
+    if (templateMenuOpen) {
+      closeTemplateMenu();
+      return;
+    }
     setTemplateFilter("");
+    setSelectedTemplateTag(null);
     setTemplateTriggerRange(null);
-    setTemplateMenuOpen((open) => !open);
+    setTemplateMenuOpen(true);
   };
 
   const handleActionButtonClick = () => {
@@ -689,8 +785,16 @@ export function MessageComposer({
   };
 
   const promptTemplateTriggerLabel = selectedPromptTemplateName || "Skill";
-  const hasMentionButtonSelection = Boolean(leadingBotMentionLabel || mentionTriggerLabel);
-  const mentionButtonLabel = leadingBotMentionLabel || mentionTriggerLabel || "@";
+  const hasMentionButtonSelection = Boolean(
+    leadingBotMentionLabel ||
+      selectedPromptTemplateDefaultBotLabel ||
+      mentionTriggerLabel,
+  );
+  const mentionButtonLabel =
+    leadingBotMentionLabel ||
+    selectedPromptTemplateDefaultBotLabel ||
+    mentionTriggerLabel ||
+    "@";
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
@@ -864,7 +968,7 @@ export function MessageComposer({
               )}
               {displayKind === "normal" && (
                 <span className="an-composer-kindhead-hint">
-                  {selectedPromptTemplateDescription || normalHint || "@ Agent · Tab switches type · Enter sends"}
+                  {selectedPromptTemplateHint || normalHint || "@ Agent · Tab switches type · Enter sends"}
                 </span>
               )}
             </div>
@@ -1119,6 +1223,40 @@ export function MessageComposer({
                 <span>Clear template override</span>
               </button>
             )}
+            {promptTemplateTagOptions.length > 0 && (
+              <div className="an-composer-template-tags" aria-label="Filter templates by tag">
+                <button
+                  type="button"
+                  className={
+                    "an-composer-template-tag" +
+                    (!selectedTemplateTag ? " is-active" : "")
+                  }
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setSelectedTemplateTag(null)}
+                >
+                  All
+                  <span>{promptTemplates.length}</span>
+                </button>
+                {promptTemplateTagOptions.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className={
+                      "an-composer-template-tag" +
+                      (selectedTemplateTag?.toLowerCase() ===
+                      option.label.toLowerCase()
+                        ? " is-active"
+                        : "")
+                    }
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setSelectedTemplateTag(option.label)}
+                  >
+                    #{option.label}
+                    <span>{option.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {promptTemplatesLoading ? (
               <div className="an-menu-empty">Loading...</div>
             ) : promptTemplates.length === 0 ? (
@@ -1158,7 +1296,7 @@ export function MessageComposer({
                       >
                         {template.default_bot && (
                           <span className="truncate">
-                            @{template.default_bot.username}
+                            @{promptTemplateDefaultBotLabel(template.default_bot)}
                           </span>
                         )}
                         {(template.tags || []).map((tag) => (
