@@ -1129,4 +1129,60 @@ describe("ConnectorRuntime", () => {
     expect(streamed).toContain(`[image:image/png:${imageB64.length}]`);
     await runtime.stop();
   });
+
+  it("downloads unsupported document attachments to local files for ACP agents", async () => {
+    const statePath = path.join(tmp, "state.json");
+    bridge.setBinaryFile("doc-legacy", {
+      filename: "legacy.doc",
+      contentType: "application/msword",
+      data: Buffer.from("legacy document bytes"),
+    });
+    const runtime = new ConnectorRuntime(
+      {
+        "opencode-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-binary-attachment",
+      channel_id: "C1",
+      seq: 6,
+      placeholder_msg_id: "ph-binary-attachment",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "please inspect the legacy document" },
+      attachments: [
+        {
+          file_id: "doc-legacy",
+          filename: "legacy.doc",
+          content_type: "application/msword",
+          size_bytes: 21,
+        },
+      ],
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    const savedPath = path.join(tmp, ".agentnexus", "attachments", "task-binary-attachment", "doc-legacy", "legacy.doc");
+    await expect(readFile(savedPath, "utf8")).resolves.toBe("legacy document bytes");
+    const streamed = bridge.receivedDeltas.map((d) => d.delta).join("");
+    expect(streamed).toContain("Attachment file: legacy.doc");
+    expect(streamed).toContain(savedPath);
+    expect(streamed).toContain("[resource:file://");
+    expect(bridge.receivedUploads).toHaveLength(0);
+    await runtime.stop();
+  });
 });
