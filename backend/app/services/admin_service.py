@@ -26,6 +26,21 @@ def template_scope(template: PromptTemplate) -> TemplateScope:
     return normalize_template_scope(getattr(template, "scope", None))
 
 
+def normalize_template_tags(tags: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for tag in tags or []:
+        value = str(tag).strip()
+        if not value:
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(value)
+    return normalized
+
+
 def can_manage_template(template: PromptTemplate, current_user: User) -> bool:
     if template.is_builtin:
         return False
@@ -171,6 +186,19 @@ class PromptTemplateService:
             raise NotFoundError("template not found")
         return template
 
+    async def _validate_default_bot(self, default_bot_id: str | None, user: User | None) -> str | None:
+        if not default_bot_id:
+            return None
+        if user is None:
+            return default_bot_id
+        from app.services.bot_service import BotService
+
+        bot_svc = BotService(self.session)
+        bot = await bot_svc.get_or_404(default_bot_id)
+        if not await bot_svc.can_use(bot, user):
+            raise ForbiddenError("无权使用该默认 Bot")
+        return bot.bot_id
+
     async def create(
         self,
         name: str,
@@ -178,18 +206,24 @@ class PromptTemplateService:
         user_template: str = DEFAULT_USER_TEMPLATE,
         description: str | None = None,
         variables: list | None = None,
+        tags: list[str] | None = None,
+        default_bot_id: str | None = None,
         scope: str | None = None,
         created_by: str | None = None,
+        user: User | None = None,
     ) -> PromptTemplate:
         existing = await self.repo.get_by_name(name)
         if existing:
             raise ConflictError(f"模板名称 '{name}' 已存在")
+        default_bot_id = await self._validate_default_bot(default_bot_id, user)
         return await self.repo.create(
             name=name,
             system_prompt=system_prompt,
             user_template=user_template,
             description=description,
             variables=variables or [],
+            tags=normalize_template_tags(tags),
+            default_bot_id=default_bot_id,
             scope=normalize_template_scope(scope),
             created_by=created_by,
         )
@@ -208,6 +242,10 @@ class PromptTemplateService:
             self._check_owner(tmpl, user)
         if "scope" in kwargs:
             kwargs["scope"] = normalize_template_scope(kwargs["scope"])
+        if "tags" in kwargs:
+            kwargs["tags"] = normalize_template_tags(kwargs["tags"])
+        if "default_bot_id" in kwargs:
+            kwargs["default_bot_id"] = await self._validate_default_bot(kwargs["default_bot_id"], user)
         return await self.repo.update(tmpl, **kwargs)
 
     async def delete(self, template_id: str, user: User | None = None) -> None:

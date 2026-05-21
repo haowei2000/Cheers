@@ -53,6 +53,14 @@ export interface ComposerPromptTemplate {
   template_id: string;
   name: string;
   description?: string | null;
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
   is_builtin?: boolean;
 }
 
@@ -237,6 +245,7 @@ export function MessageComposer({
     [promptTemplates, selectedPromptTemplateId],
   );
   const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
+  const selectedPromptTemplateDescription = selectedPromptTemplate?.description?.trim() || "";
   const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
   const canDropFiles = Boolean(onUploadFiles && !disabled);
   const leadingBotMention = useMemo(
@@ -347,7 +356,17 @@ export function MessageComposer({
     return promptTemplates.filter((template) => {
       const name = promptTemplateDisplayName(template).toLowerCase();
       const description = (template.description ?? "").toLowerCase();
-      return name.includes(filter) || description.includes(filter);
+      const tags = (template.tags || []).join(" ").toLowerCase();
+      const defaultBot = [
+        template.default_bot?.username || "",
+        template.default_bot?.display_name || "",
+      ].join(" ").toLowerCase();
+      return (
+        name.includes(filter) ||
+        description.includes(filter) ||
+        tags.includes(filter) ||
+        defaultBot.includes(filter)
+      );
     });
   }, [promptTemplates, templateFilter, templateMenuOpen]);
 
@@ -630,6 +649,10 @@ export function MessageComposer({
   const toolbarMenuClass = "an-menu absolute left-0 right-0 bottom-full mb-1";
   const shouldShowKindSwitcher =
     showKindSwitcher && !replyingTo && !normalOnly;
+  const effectivePlaceholder =
+    selectedPromptTemplateDescription && !replyingTo
+      ? `${selectedPromptTemplateDescription}...`
+      : placeholder;
 
   const handleMentionButtonClick = () => {
     setActionMenuOpen(false);
@@ -841,7 +864,7 @@ export function MessageComposer({
               )}
               {displayKind === "normal" && (
                 <span className="an-composer-kindhead-hint">
-                  {normalHint ?? "@ Agent · Tab switches type · Enter sends"}
+                  {selectedPromptTemplateDescription || normalHint || "@ Agent · Tab switches type · Enter sends"}
                 </span>
               )}
             </div>
@@ -853,7 +876,7 @@ export function MessageComposer({
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={effectivePlaceholder}
             className="an-composer-textarea"
             enterKeyHint="send"
             style={
@@ -1126,6 +1149,27 @@ export function MessageComposer({
                         style={{ color: "var(--fg-3)" }}
                       >
                         {template.description}
+                      </span>
+                    )}
+                    {(template.default_bot || (template.tags && template.tags.length > 0)) && (
+                      <span
+                        className="an-type-caption flex min-w-0 flex-wrap gap-1"
+                        style={{ color: "var(--fg-3)", marginTop: 2 }}
+                      >
+                        {template.default_bot && (
+                          <span className="truncate">
+                            @{template.default_bot.username}
+                          </span>
+                        )}
+                        {(template.tags || []).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-sm border border-[var(--border)] px-1"
+                            style={{ lineHeight: "16px" }}
+                          >
+                            #{tag}
+                          </span>
+                        ))}
                       </span>
                     )}
                   </span>

@@ -54,6 +54,18 @@ class PromptTemplate(Base):
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)  # System prompt.
     user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # User-message template.
     variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # Variable list, for example ["message"].
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # Free-form tags for grouping templates.
+    default_bot_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey(
+            "bot_accounts.bot_id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_prompt_templates_default_bot_id",
+        ),
+        nullable=True,
+        default=None,
+    )
     is_builtin: Mapped[bool] = mapped_column(default=False)  # Built-in templates cannot be deleted.
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="friend", default="friend")
     created_by: Mapped[Optional[str]] = mapped_column(
@@ -96,7 +108,11 @@ class BotAccount(Base):
 
     # Relationships
     ai_model: Mapped[Optional["AIModel"]] = relationship("AIModel", lazy="joined")
-    prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")
+    prompt_template: Mapped[Optional["PromptTemplate"]] = relationship(
+        "PromptTemplate",
+        foreign_keys=[template_id],
+        lazy="joined",
+    )
 
 
 class Workspace(Base):

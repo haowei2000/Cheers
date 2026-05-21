@@ -118,4 +118,13 @@ export type ModelItem = {
 export type TemplateItem = {
   template_id: string;
   name: string;
+  description?: string | null;
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
 };

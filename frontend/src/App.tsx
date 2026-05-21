@@ -63,6 +63,14 @@ type ComposerPromptTemplateOption = {
   template_id: string;
   name: string;
   description?: string | null;
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
   is_builtin?: boolean;
 };
 
@@ -134,6 +142,12 @@ function stripLeadingBotMentions(value: string, botUsernames: string[]): string 
     }
   }
   return text;
+}
+
+function hasLeadingBotMention(value: string, botUsernames: string[]): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return stripLeadingBotMentions(trimmed, botUsernames) !== trimmed;
 }
 
 function isDefaultTaskTitle(value: string | null | undefined): boolean {
@@ -842,17 +856,6 @@ export default function App() {
         : msgKind === "secret"
           ? "normal"
           : msgKind;
-    const body: Record<string, unknown> = {
-      content,
-      sender_id: currentUserId,
-      sender_type: "user",
-      file_ids: pendingFileIds,
-      mention_bot_ids: botMentionIdsForChannel(targetChannelId),
-      is_secret: isSecretSend,
-      msg_type: effectiveKind,
-    };
-    if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
-    const titleTrim = composerTitle.trim() || null;
     const selectedPromptTemplateIdForSend = selectedPromptTemplateIdRef.current;
     const selectedPromptTemplate = selectedPromptTemplateIdForSend
       ? promptTemplates.find(
@@ -862,6 +865,39 @@ export default function App() {
     if (selectedPromptTemplateIdForSend && !selectedPromptTemplate) {
       setPromptTemplateOverrideId(null);
     }
+    const baseMentionBotIds = botMentionIdsForChannel(targetChannelId);
+    const explicitBotTarget =
+      baseMentionBotIds.length > 0 ||
+      hasLeadingBotMention(
+        content,
+        channelBots.map((bot) => bot.username),
+      );
+    const defaultBotId = selectedPromptTemplate?.default_bot_id || null;
+    const defaultBot = selectedPromptTemplate?.default_bot || null;
+    if (
+      defaultBotId &&
+      !isDmSelected &&
+      !explicitBotTarget &&
+      !channelBots.some((bot) => bot.member_id === defaultBotId)
+    ) {
+      const label =
+        defaultBot?.display_name ||
+        defaultBot?.username ||
+        "the default Bot";
+      toast.error(`Add ${label.startsWith("@") ? label : `@${label}`} to this channel before using this template`);
+      return;
+    }
+    const body: Record<string, unknown> = {
+      content,
+      sender_id: currentUserId,
+      sender_type: "user",
+      file_ids: pendingFileIds,
+      mention_bot_ids: baseMentionBotIds,
+      is_secret: isSecretSend,
+      msg_type: effectiveKind,
+    };
+    if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
+    const titleTrim = composerTitle.trim() || null;
     if (effectiveKind === "announcement") {
       body.content_data = {
         pinned_by: currentUserId,
@@ -1152,9 +1188,17 @@ export default function App() {
           bot.username === "Helper" ||
           bot.username === "channel bot" ||
           bot.username === "coordinator",
-      ),
+    ),
     [channelBots],
   );
+  const selectedComposerTemplate = useMemo(
+    () =>
+      selectedPromptTemplateId
+        ? promptTemplates.find((template) => template.template_id === selectedPromptTemplateId) || null
+        : null,
+    [promptTemplates, selectedPromptTemplateId],
+  );
+  const selectedComposerTemplateDescription = selectedComposerTemplate?.description?.trim() || "";
   const userById = useMemo(
     () => new Map(channelUsers.map((user) => [user.member_id, user])),
     [channelUsers],
@@ -1812,6 +1856,7 @@ export default function App() {
                 promptTemplatesLoading,
                 selectedPromptTemplateId,
                 onPromptTemplateChange: setPromptTemplateOverrideId,
+                normalHint: selectedComposerTemplateDescription || undefined,
               }}
               setMemoryTab={setMemoryTab}
               setPageTopicId={setPageTopicId}
