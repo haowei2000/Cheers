@@ -72,4 +72,3 @@ release/*.tar.gz
 .pytest_tmp/
 tmp_pytest/
 docker-compose.yml.bak-20260521-104115
-release/agentnexus-opencode-amd64-latest-c0fe981b454e.tar.gz
