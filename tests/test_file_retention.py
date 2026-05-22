@@ -106,6 +106,48 @@ async def test_prune_expired_files_deletes_record_and_local_file(
 
 
 @pytest.mark.asyncio
+async def test_prune_expired_files_keeps_generated_files(
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-00000000f904", name="Retention")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-00000000f904",
+        workspace_id=ws.workspace_id,
+        name="generated-retention",
+        type="public",
+    )
+    path = tmp_path / "generated" / ch.channel_id / "generated.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("bot output", encoding="utf-8")
+    rec = FileRecord(
+        file_id="aaaaaaaa-0000-0000-0000-00000000f904",
+        channel_id=ch.channel_id,
+        uploader_id="bot-0000-0000-0000-00000000f904",
+        original_path=str(path),
+        original_filename="generated.md",
+        content_type="text/markdown",
+        size_bytes=10,
+        status="ready",
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    db_session.add_all([ws, ch, rec])
+    await db_session.commit()
+
+    count = await FileRetentionService(db_session).prune_expired_files()
+    assert count == 0
+    assert path.exists()
+
+    await db_session.commit()
+    db_session.expunge_all()
+    result = await db_session.execute(
+        select(FileRecord).where(FileRecord.file_id == rec.file_id)
+    )
+    kept = result.scalar_one()
+    assert kept.expires_at is None
+
+
+@pytest.mark.asyncio
 async def test_prune_stale_pending_uploads_deletes_record_and_local_file(
     db_session: AsyncSession,
     tmp_path,

@@ -55,6 +55,17 @@ def is_file_expired(record: FileRecord, now: datetime | None = None) -> bool:
     return _as_utc(record.expires_at) <= _as_utc(now or utcnow())
 
 
+def is_generated_file_record(record: FileRecord) -> bool:
+    object_key = (record.object_key or "").replace("\\", "/")
+    if object_key.startswith("generated/"):
+        return True
+    for raw_path in (record.original_path, record.md_path):
+        path = (raw_path or "").replace("\\", "/")
+        if path.startswith("generated/") or "/generated/" in path:
+            return True
+    return False
+
+
 def active_file_filter(now: datetime | None = None):
     """Active file filter."""
     if file_retention_days() <= 0:
@@ -82,6 +93,9 @@ class FileRetentionService:
         records = list(result.scalars().all())
         deleted_count = 0
         for record in records:
+            if is_generated_file_record(record):
+                record.expires_at = None
+                continue
             if await self._delete_physical_assets(record):
                 await self.session.delete(record)
                 deleted_count += 1

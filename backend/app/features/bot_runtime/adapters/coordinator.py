@@ -739,7 +739,6 @@ Args:
 
         from app.config import settings
         from app.db.models import Channel, FileRecord
-        from app.services.file_retention import file_expires_at
         from app.services.file_scope_service import FileScopeService
 
         file_id = str(uuid.uuid4())
@@ -773,7 +772,7 @@ Args:
             status="ready",
             uploaded_at=now,
             converted_at=now,
-            expires_at=file_expires_at(now),
+            expires_at=None,
         )
         if db_session:
             db_session.add(record)
