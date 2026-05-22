@@ -11,7 +11,11 @@ import toast from "react-hot-toast";
 import type { BotItem, Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
 import { apiFetch } from "../api";
 import { makeBuiltinAvatarValue } from "../lib/avatar";
-import { dragEventHasFiles, filesFromDragEvent } from "../lib/file-drag";
+import {
+  dragEventHasFiles,
+  filesFromDragEvent,
+  setFileReferenceDragData,
+} from "../lib/file-drag";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
 import { AvatarVisual } from "./AvatarVisual";
 import { AppIcon, FileTypeIcon } from "./icons";
@@ -1337,8 +1341,19 @@ export function Sidebar({
             <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
               <button
                 type="button"
-                className="an-rail-row w-full pr-7"
+                className="an-rail-row an-file-drag-row w-full pr-7"
+                draggable
                 title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
+                onDragStart={(event) => {
+                  setFileReferenceDragData(event, [
+                    {
+                      file_id: file.file_id,
+                      original_filename: file.original_filename,
+                      content_type: file.content_type,
+                      size_bytes: file.size_bytes,
+                    },
+                  ]);
+                }}
                 onClick={() => {
                   setSelectedId(null);
                   if (onOpenPersonalFileMain) {

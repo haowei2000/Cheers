@@ -2167,6 +2167,12 @@
   gap: 4px;
   flex-shrink: 0;
 }
+.an-file-drag-row {
+  cursor: grab;
+}
+.an-file-drag-row:active {
+  cursor: grabbing;
+}
 .an-rail-empty {
   padding: 2px 10px 8px;
   font-size: 11px;

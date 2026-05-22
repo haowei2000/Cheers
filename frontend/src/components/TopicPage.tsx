@@ -2,6 +2,7 @@
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
 import { useMemo, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
+import type { FileDragReference } from "../lib/file-drag";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { formatTs } from "../lib/message";
 import { stripThinkTags } from "../lib/think";
@@ -39,6 +40,7 @@ export interface TopicPageProps {
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles?: (files: File[]) => void | Promise<void>;
+  onAttachFiles?: (files: FileDragReference[]) => void;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -88,6 +90,7 @@ export function TopicPage({
   onRemovePendingFile,
   onUploadFile,
   onUploadFiles,
+  onAttachFiles,
   keychainEnabled,
   keychainOpen,
   keychainLoading,
@@ -382,6 +385,7 @@ export function TopicPage({
           onRemovePendingFile={onRemovePendingFile}
           onUploadFile={onUploadFile}
           onUploadFiles={onUploadFiles}
+          onAttachFiles={onAttachFiles}
           keychainEnabled={keychainEnabled}
           keychainOpen={keychainOpen}
           keychainLoading={keychainLoading}

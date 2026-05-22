@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import type { ChangeEvent, ReactNode } from "react";
+import type { FileDragReference } from "../../../lib/file-drag";
 import { LazyPanelFallback } from "../../../components/app/LazyPanelFallback";
 import { AppIcon } from "../../../components/icons/AppIcon";
 import { SessionScopePanel } from "../../../components/SessionScopePanel";
@@ -44,6 +45,7 @@ export interface ChatTopicOverlayProps {
   onRemovePendingFile: (index: number) => void;
   onUploadFile: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles: (files: File[]) => void | Promise<void>;
+  onAttachFiles: (files: FileDragReference[]) => void;
   keychainEnabled: boolean;
   keychainOpen: boolean;
   keychainLoading: boolean;
@@ -81,6 +83,7 @@ export function ChatTopicOverlay({
   onRemovePendingFile,
   onUploadFile,
   onUploadFiles,
+  onAttachFiles,
   keychainEnabled,
   keychainOpen,
   keychainLoading,
@@ -134,6 +137,7 @@ export function ChatTopicOverlay({
             onRemovePendingFile={onRemovePendingFile}
             onUploadFile={onUploadFile}
             onUploadFiles={onUploadFiles}
+            onAttachFiles={onAttachFiles}
             keychainEnabled={keychainEnabled}
             keychainOpen={keychainOpen}
             keychainLoading={keychainLoading}
