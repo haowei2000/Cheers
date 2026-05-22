@@ -152,26 +152,6 @@ export function useMessagePresentation({
     );
   }, []);
 
-  const renderBotTraceStatus = useCallback((message: Message) => {
-    if (!message._streaming || message.sender_type !== "bot" || !message._bot_status) {
-      return null;
-    }
-    return (
-      <div
-        className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug"
-        style={{ color: "var(--fg-3)" }}
-      >
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-          style={{ background: "var(--fg-3)" }}
-        />
-        <span className="truncate max-w-[min(520px,70vw)]">
-          {message._bot_status}
-        </span>
-      </div>
-    );
-  }, []);
-
   const activeAgentBridgeTaskData = useCallback(
     (message: Message): AgentBridgeTaskContentData | null =>
       getActiveAgentBridgeTaskData(message, isDmSelected),
@@ -217,7 +197,6 @@ export function useMessagePresentation({
     renderMemoryLoadButton,
     renderStopStreamButton,
     renderPartialBadge,
-    renderBotTraceStatus,
     activeAgentBridgeTaskData,
     agentBridgeTaskMessages,
     renderAgentBridgeTaskCard,

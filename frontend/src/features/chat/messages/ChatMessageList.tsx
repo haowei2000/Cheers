@@ -110,7 +110,6 @@ export interface ChatMessageListProps {
   renderMemoryLoadButton: (message: Message) => ReactNode;
   renderStopStreamButton: (message: Message) => ReactNode;
   renderPartialBadge: (message: Message) => ReactNode;
-  renderBotTraceStatus: (message: Message) => ReactNode;
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   renderFileAttachments: (message: Message, alignRight?: boolean) => ReactNode;
   activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
@@ -259,7 +258,6 @@ type MessageBodyProps = {
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   renderStopStreamButton: (message: Message) => ReactNode;
   renderPartialBadge: (message: Message) => ReactNode;
-  renderBotTraceStatus: (message: Message) => ReactNode;
   handleMarkdownImageClick: (src: string) => void;
   handleMarkdownFileClick: (url: string, name: string) => void;
   handleClarifyContinue: ChatMessageListProps["handleClarifyContinue"];
@@ -276,7 +274,6 @@ function MessageBody({
   renderAgentBridgeTaskCard,
   renderStopStreamButton,
   renderPartialBadge,
-  renderBotTraceStatus,
   handleMarkdownImageClick,
   handleMarkdownFileClick,
   handleClarifyContinue,
@@ -340,7 +337,6 @@ function MessageBody({
       )}
       {renderStopStreamButton(message)}
       {renderPartialBadge(message)}
-      {renderBotTraceStatus(message)}
       {!compact && <BotTracePanel message={message} />}
       {vm.clarifyStatus !== null && selectedId && vm.clarify && (
         <ClarifyInlineBlock
@@ -374,7 +370,6 @@ type MessageRowProps = {
   renderMemoryLoadButton: (message: Message) => ReactNode;
   renderStopStreamButton: (message: Message) => ReactNode;
   renderPartialBadge: (message: Message) => ReactNode;
-  renderBotTraceStatus: (message: Message) => ReactNode;
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
   handleMarkdownImageClick: (src: string) => void;
@@ -407,7 +402,6 @@ const MessageRow = memo(function MessageRow({
   renderMemoryLoadButton,
   renderStopStreamButton,
   renderPartialBadge,
-  renderBotTraceStatus,
   renderAgentBridgeTaskCard,
   activeAgentBridgeTaskData,
   handleMarkdownImageClick,
@@ -462,7 +456,6 @@ const MessageRow = memo(function MessageRow({
               renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
               renderStopStreamButton={renderStopStreamButton}
               renderPartialBadge={renderPartialBadge}
-              renderBotTraceStatus={renderBotTraceStatus}
               handleMarkdownImageClick={handleMarkdownImageClick}
               handleMarkdownFileClick={handleMarkdownFileClick}
               handleClarifyContinue={handleClarifyContinue}
@@ -517,7 +510,6 @@ const MessageRow = memo(function MessageRow({
               renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
               renderStopStreamButton={renderStopStreamButton}
               renderPartialBadge={renderPartialBadge}
-              renderBotTraceStatus={renderBotTraceStatus}
               handleMarkdownImageClick={handleMarkdownImageClick}
               handleMarkdownFileClick={handleMarkdownFileClick}
               handleClarifyContinue={handleClarifyContinue}
@@ -595,7 +587,6 @@ const MessageRow = memo(function MessageRow({
                 renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
                 renderStopStreamButton={renderStopStreamButton}
                 renderPartialBadge={renderPartialBadge}
-                renderBotTraceStatus={renderBotTraceStatus}
                 handleMarkdownImageClick={handleMarkdownImageClick}
                 handleMarkdownFileClick={handleMarkdownFileClick}
                 handleClarifyContinue={handleClarifyContinue}
@@ -1161,7 +1152,6 @@ function ChatMessageListBase({
   renderMemoryLoadButton,
   renderStopStreamButton,
   renderPartialBadge,
-  renderBotTraceStatus,
   renderAgentBridgeTaskCard,
   renderFileAttachments,
   activeAgentBridgeTaskData,
@@ -1339,7 +1329,6 @@ function ChatMessageListBase({
         renderMemoryLoadButton={renderMemoryLoadButton}
         renderStopStreamButton={renderStopStreamButton}
         renderPartialBadge={renderPartialBadge}
-        renderBotTraceStatus={renderBotTraceStatus}
         renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
         activeAgentBridgeTaskData={activeAgentBridgeTaskData}
         handleMarkdownImageClick={handleMarkdownImageClick}
