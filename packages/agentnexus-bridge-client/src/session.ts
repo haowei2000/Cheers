@@ -120,6 +120,7 @@ export interface SendResult {
   ok: boolean;
   messageId?: string;
   finalizedPlaceholder?: boolean;
+  permissionResolution?: PermissionResolutionInbound & { outcome?: "selected" | "cancelled" };
   error?: string;
   code?: string;
 }
@@ -728,6 +729,7 @@ export class BotSession {
               ok: true,
               messageId: ack.message_id,
               finalizedPlaceholder: ack.finalized_placeholder,
+              permissionResolution: ack.permission_resolution,
             });
           } else {
             resolve({ ok: false, error: ack.error, code: ack.code });

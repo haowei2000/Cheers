@@ -25,6 +25,9 @@ export interface ChannelInfo {
 export type ConnectorPermissionMode = "ask" | "reject" | "allow" | "cancel";
 
 export interface ConnectorControlSettings {
+  agentnexusApprovalMode?: ConnectorPermissionMode;
+  agentNativePermissionMode?: string;
+  /** @deprecated Use agentnexusApprovalMode. */
   permissionMode?: ConnectorPermissionMode;
   requestTimeoutMs?: number;
   promptTimeoutMs?: number;
@@ -220,6 +223,9 @@ export interface SendAckOk {
   ok: true;
   message_id: string;
   finalized_placeholder?: boolean;
+  permission_resolution?: (PermissionResolutionInbound & {
+    outcome?: "selected" | "cancelled";
+  });
 }
 
 export interface SendAckErr {

@@ -56,6 +56,9 @@ _CONNECTOR_CONTROL_TIMEOUT_MAX_MS = 3_600_000
 
 
 class ConnectorControlSettingsIn(BaseModel):
+    agentnexusApprovalMode: Literal["ask", "reject", "allow", "cancel"] | None = Field(default=None)
+    agentNativePermissionMode: str | None = Field(default=None, min_length=1, max_length=64)
+    # Legacy alias accepted from older clients; persisted as agentnexusApprovalMode.
     permissionMode: Literal["ask", "reject", "allow", "cancel"] | None = Field(default=None)
     requestTimeoutMs: int | None = Field(
         default=None,
@@ -134,7 +137,15 @@ def _connector_control_from_binding_config(binding_config: dict | None) -> dict:
 def _connector_control_settings_from_binding_config(binding_config: dict | None) -> dict:
     control = _connector_control_from_binding_config(binding_config)
     settings = control.get("settings")
-    return dict(settings) if isinstance(settings, dict) else {}
+    return _normalize_connector_control_settings(dict(settings)) if isinstance(settings, dict) else {}
+
+
+def _normalize_connector_control_settings(settings: dict) -> dict:
+    normalized = dict(settings)
+    legacy_permission_mode = normalized.pop("permissionMode", None)
+    if "agentnexusApprovalMode" not in normalized and legacy_permission_mode in {"ask", "reject", "allow", "cancel"}:
+        normalized["agentnexusApprovalMode"] = legacy_permission_mode
+    return normalized
 
 
 def _next_connector_control_config(
@@ -144,7 +155,7 @@ def _next_connector_control_config(
     cfg = dict(binding_config or {})
     existing = _connector_control_from_binding_config(cfg)
     settings = _connector_control_settings_from_binding_config(cfg)
-    settings.update(settings_update)
+    settings.update(_normalize_connector_control_settings(settings_update))
     revision = existing.get("revision")
     try:
         next_revision: int | str = int(revision or 0) + 1

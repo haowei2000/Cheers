@@ -847,10 +847,11 @@ function withOpenCodeConfigEnv(
   return next;
 }
 
-function openCodePermissionForMode(mode: PermissionMode): Record<string, "allow" | "ask" | "deny"> {
+function openCodePermissionForNativeMode(mode: string): Record<string, "allow" | "ask" | "deny"> | null {
   if (mode === "allow") return { edit: "allow", bash: "allow" };
-  if (mode === "ask" || mode === "cancel") return { edit: "ask", bash: "ask" };
-  return { edit: "deny", bash: "deny" };
+  if (mode === "ask") return { edit: "ask", bash: "ask" };
+  if (mode === "deny" || mode === "reject") return { edit: "deny", bash: "deny" };
+  return null;
 }
 
 function withOpenCodeModelEnv(env: Record<string, string> | undefined, model: string): Record<string, string> {
@@ -859,9 +860,11 @@ function withOpenCodeModelEnv(env: Record<string, string> | undefined, model: st
 
 function withOpenCodePermissionEnv(
   env: Record<string, string> | undefined,
-  mode: PermissionMode,
+  mode: string,
 ): Record<string, string> {
-  return withOpenCodeConfigEnv(env, { permission: openCodePermissionForMode(mode) });
+  const permission = openCodePermissionForNativeMode(mode);
+  if (!permission) return { ...(env ?? {}) };
+  return withOpenCodeConfigEnv(env, { permission });
 }
 
 async function normalizeRemoteSettings(input: unknown, currentCwd: string | undefined): Promise<SettingsApplyResult> {
@@ -875,6 +878,20 @@ async function normalizeRemoteSettings(input: unknown, currentCwd: string | unde
     };
   }
   const raw = input as Record<string, unknown>;
+  if ("agentnexusApprovalMode" in raw) {
+    if (isPermissionMode(raw.agentnexusApprovalMode)) {
+      settings.agentnexusApprovalMode = raw.agentnexusApprovalMode;
+    } else {
+      rejected.push({ field: "agentnexusApprovalMode", reason: "must be ask, reject, allow, or cancel" });
+    }
+  }
+  if ("agentNativePermissionMode" in raw) {
+    if (typeof raw.agentNativePermissionMode === "string" && raw.agentNativePermissionMode.trim()) {
+      settings.agentNativePermissionMode = raw.agentNativePermissionMode.trim();
+    } else {
+      rejected.push({ field: "agentNativePermissionMode", reason: "must be a non-empty string" });
+    }
+  }
   if ("permissionMode" in raw) {
     if (isPermissionMode(raw.permissionMode)) {
       settings.permissionMode = raw.permissionMode;
@@ -1046,7 +1063,7 @@ function formatProviderError(err: unknown): string {
     return [
       `Claude permission issue: ${detail}`,
       "",
-      "Approve the requested action, adjust the connector `agent.permissionMode`, or switch to a supported Claude Console/API login and retry.",
+      "Approve the requested action, adjust the AgentNexus approval/native permission settings, or switch to a supported Claude Console/API login and retry.",
     ].join("\n");
   }
 
@@ -1872,6 +1889,14 @@ export class AcpBridgeAccount {
       },
     });
 
+    if (ack.permissionResolution) {
+      return this.permissionOutcomeFromResolution(ctx, params, {
+        ...ack.permissionResolution,
+        request_id: ack.permissionResolution.request_id || requestId,
+        message_id: ack.permissionResolution.message_id ?? ack.messageId ?? null,
+      });
+    }
+
     const timeoutMs = this.config.agent.promptTimeoutMs ?? this.config.agent.requestTimeoutMs ?? 900_000;
     return await new Promise<AcpPermissionOutcome>((resolve) => {
       const timer = setTimeout(() => {
@@ -1888,19 +1913,30 @@ export class AcpBridgeAccount {
     if (!pending) return;
     this.pendingPermissions.delete(resolution.request_id);
     clearTimeout(pending.timer);
+    pending.resolve(this.permissionOutcomeFromResolution(pending.ctx, pending.params, resolution));
+  }
 
-    const optionId = resolution.option_id || permissionOptionIdForResolution(pending.params, resolution.resolution);
-    const outcome: AcpPermissionOutcome = optionId
+  private permissionOutcomeFromResolution(
+    ctx: RunContext,
+    params: unknown,
+    resolution: PermissionResolutionInbound & { outcome?: "selected" | "cancelled" },
+  ): AcpPermissionOutcome {
+    const optionId = resolution.outcome === "cancelled"
+      ? null
+      : resolution.option_id || permissionOptionIdForResolution(params, resolution.resolution);
+    const outcome: AcpPermissionOutcome = resolution.outcome === "cancelled"
+      ? { outcome: "cancelled" }
+      : optionId
       ? { outcome: "selected", optionId }
       : { outcome: "cancelled" };
     this.bridge.trace({
-      msg_id: pending.ctx.msgId,
-      task_id: pending.ctx.source.event.task_id,
-      channel_id: pending.ctx.source.channelId,
-      run_id: pending.ctx.acpSessionId,
-      session_key: pending.ctx.providerSessionKey,
+      msg_id: ctx.msgId,
+      task_id: ctx.source.event.task_id,
+      channel_id: ctx.source.channelId,
+      run_id: ctx.acpSessionId,
+      session_key: ctx.providerSessionKey,
       stream: "acp",
-      seq: ++pending.ctx.traceSeq,
+      seq: ++ctx.traceSeq,
       phase: "permission_resolved",
       status: resolution.resolution === "allow" ? "approved" : "denied",
       title: "ACP permission resolved",
@@ -1912,7 +1948,7 @@ export class AcpBridgeAccount {
         option_id: optionId,
       },
     });
-    pending.resolve(outcome);
+    return outcome;
   }
 
   private resolveConfigOptionTarget(update: ConfigOptionSetInbound): {
@@ -2019,9 +2055,7 @@ export class AcpBridgeAccount {
     const configOptionsChanged = hasConfigOptionsSetting && nextConfigOptionsKey !== this.desiredAcpConfigOptionsKey;
     const isOpenCode = isOpenCodeAcpCommand(this.config.agent.command);
     const runtimeSettings: RemoteConnectorSettings = { ...normalized.settings };
-    if (isOpenCode && runtimeSettings.permissionMode) {
-      delete runtimeSettings.permissionMode;
-    }
+    if (isOpenCode) delete runtimeSettings.agentNativePermissionMode;
     const applied = this.agent.updateRuntimeSettings(runtimeSettings);
     normalized.applied = applied;
     if (configOptionsChanged) {
@@ -2048,9 +2082,17 @@ export class AcpBridgeAccount {
         });
       }
     }
-    if (isOpenCode && normalized.settings.permissionMode) {
-      restartSettings.permissionMode = normalized.settings.permissionMode;
-      restartFields.push("permissionMode");
+    if (normalized.settings.agentNativePermissionMode) {
+      const nativeMode = normalized.settings.agentNativePermissionMode;
+      if (isOpenCode && !openCodePermissionForNativeMode(nativeMode)) {
+        normalized.rejected.push({
+          field: "agentNativePermissionMode",
+          reason: "OpenCode native permission mode must be ask, allow, deny, or reject",
+        });
+      } else if (isOpenCode) {
+        restartSettings.agentNativePermissionMode = nativeMode;
+        restartFields.push("agentNativePermissionMode");
+      }
     }
     if (restartFields.length > 0) {
       if (this.activeRunsByMsg.size > 0) {
@@ -2063,7 +2105,7 @@ export class AcpBridgeAccount {
           cwd: this.config.agent.cwd,
           model: this.config.agent.model,
           env: this.config.agent.env ? { ...this.config.agent.env } : undefined,
-          permissionMode: this.config.agent.permissionMode,
+          agentNativePermissionMode: this.config.agent.agentNativePermissionMode,
         };
         try {
           if (restartSettings.cwd) this.config.agent.cwd = restartSettings.cwd;
@@ -2071,9 +2113,12 @@ export class AcpBridgeAccount {
             this.config.agent.model = restartSettings.model;
             this.config.agent.env = withOpenCodeModelEnv(this.config.agent.env, restartSettings.model);
           }
-          if (restartSettings.permissionMode) {
-            this.config.agent.permissionMode = restartSettings.permissionMode;
-            this.config.agent.env = withOpenCodePermissionEnv(this.config.agent.env, restartSettings.permissionMode);
+          if (restartSettings.agentNativePermissionMode) {
+            this.config.agent.agentNativePermissionMode = restartSettings.agentNativePermissionMode;
+            this.config.agent.env = withOpenCodePermissionEnv(
+              this.config.agent.env,
+              restartSettings.agentNativePermissionMode,
+            );
           }
           await this.agent.restart();
           this.activeProviderSessions.clear();
@@ -2093,7 +2138,7 @@ export class AcpBridgeAccount {
           this.config.agent.cwd = previous.cwd;
           this.config.agent.model = previous.model;
           this.config.agent.env = previous.env;
-          this.config.agent.permissionMode = previous.permissionMode;
+          this.config.agent.agentNativePermissionMode = previous.agentNativePermissionMode;
           try {
             await this.agent.restart();
           } catch (rollbackErr) {

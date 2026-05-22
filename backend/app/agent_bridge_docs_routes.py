@@ -331,6 +331,8 @@ def _acp_connector_config(
                     "args": ["acp", "--cwd", "$PWD"],
                     "cwd": "$PWD",
                     "promptTimeoutMs": prompt_timeout_ms,
+                    "agentnexusApprovalMode": "ask",
+                    "agentNativePermissionMode": "ask",
                     "env": {
                         "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT",
                     },

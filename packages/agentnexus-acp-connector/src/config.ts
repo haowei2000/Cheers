@@ -8,6 +8,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function normalizePermissionMode(value: unknown, fallback: "ask" | "reject" | "allow" | "cancel"): "ask" | "reject" | "allow" | "cancel" {
+  return value === "ask" || value === "allow" || value === "cancel" || value === "reject"
+    ? value
+    : fallback;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function expandEnvValue(
   value: string,
   options: { missing?: "empty" | "throw"; pwdFallback?: boolean } = {},
@@ -82,6 +92,10 @@ async function normalizeAccount(id: string, raw: unknown, baseDir: string): Prom
   if (typeof agent.command !== "string" || !agent.command.trim()) {
     throw new Error(`accounts.${id}.agent.command is required`);
   }
+  const agentnexusApprovalMode = normalizePermissionMode(
+    agent.agentnexusApprovalMode ?? agent.permissionMode,
+    "ask",
+  );
   for (const key of ["botToken", "controlUrl", "dataUrl"] as const) {
     if (typeof raw[key] !== "string" || !raw[key].trim()) {
       throw new Error(`accounts.${id}.${key} is required`);
@@ -103,9 +117,8 @@ async function normalizeAccount(id: string, raw: unknown, baseDir: string): Prom
       ) : undefined),
       requestTimeoutMs: typeof agent.requestTimeoutMs === "number" ? agent.requestTimeoutMs : undefined,
       promptTimeoutMs: typeof agent.promptTimeoutMs === "number" ? agent.promptTimeoutMs : undefined,
-      permissionMode: agent.permissionMode === "ask" || agent.permissionMode === "allow" || agent.permissionMode === "cancel"
-        ? agent.permissionMode
-        : "reject",
+      agentnexusApprovalMode,
+      agentNativePermissionMode: normalizeOptionalString(agent.agentNativePermissionMode),
       mcpServers: Array.isArray(agent.mcpServers) ? agent.mcpServers : [],
       clientCapabilities: isObject(agent.clientCapabilities) ? agent.clientCapabilities : undefined,
     },

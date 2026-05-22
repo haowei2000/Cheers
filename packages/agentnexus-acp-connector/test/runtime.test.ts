@@ -132,6 +132,57 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("uses AgentNexus auto permission decisions returned in the permission ack", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "opencode-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            agentnexusApprovalMode: "allow",
+            promptTimeoutMs: 60_000,
+            env: { FAKE_ACP_PERMISSION: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    bridge.nextPermissionResolutionAck = {
+      resolution: "allow",
+      option_id: "allow",
+      resolved_by: null,
+      resolved_at: new Date().toISOString(),
+      outcome: "selected",
+    };
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-auto-permission",
+      channel_id: "C1",
+      seq: 1,
+      placeholder_msg_id: "ph-auto-permission",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "please use a tool", sender_name: "Alice" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    expect(bridge.receivedPermissionRequests.length).toBe(1);
+    const output = bridge.receivedDeltas.map((d) => d.delta).join("");
+    expect(output).toContain("please use a tool");
+    expect(output).not.toContain("permission denied");
+    expect(bridge.receivedTraces.some((t) => t.phase === "permission_resolved")).toBe(true);
+    await runtime.stop();
+  });
+
   it("applies remote connector control updates from AgentNexus", async () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
@@ -159,7 +210,7 @@ describe("ConnectorRuntime", () => {
     bridge.pushConfigUpdate({
       revision: 7,
       settings: {
-        permissionMode: "allow",
+        agentnexusApprovalMode: "allow",
         promptTimeoutMs: 60_000,
         requestTimeoutMs: 30_000,
       },
@@ -170,7 +221,7 @@ describe("ConnectorRuntime", () => {
       type: "config_status",
       revision: 7,
       ok: true,
-      applied: ["permissionMode", "requestTimeoutMs", "promptTimeoutMs"],
+      applied: ["agentnexusApprovalMode", "requestTimeoutMs", "promptTimeoutMs"],
       rejected: [],
     });
     await runtime.stop();
@@ -228,7 +279,7 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
-  it("restarts opencode when remote permission mode changes and updates OPENCODE_CONFIG_CONTENT", async () => {
+  it("restarts opencode when native permission mode changes and updates OPENCODE_CONFIG_CONTENT", async () => {
     const statePath = path.join(tmp, "state.json");
     const envLog = path.join(tmp, "opencode-env.log");
     const opencodeBin = path.join(tmp, "opencode");
@@ -255,7 +306,7 @@ describe("ConnectorRuntime", () => {
             command: opencodeBin,
             args: [],
             cwd: tmp,
-            permissionMode: "reject",
+            agentNativePermissionMode: "deny",
             env: {
               OPENCODE_CONFIG_CONTENT: JSON.stringify({
                 model: "fake-small",
@@ -274,7 +325,7 @@ describe("ConnectorRuntime", () => {
     bridge.pushConfigUpdate({
       revision: 9,
       settings: {
-        permissionMode: "ask",
+        agentNativePermissionMode: "ask",
       },
     });
 
@@ -283,7 +334,7 @@ describe("ConnectorRuntime", () => {
       type: "config_status",
       revision: 9,
       ok: true,
-      applied: ["permissionMode"],
+      applied: ["agentNativePermissionMode"],
       rejected: [],
     });
     const lines = (await readFile(envLog, "utf8")).trim().split("\n").filter(Boolean);

@@ -34,6 +34,7 @@ export class MockBridge {
   public receivedConfigStatuses: Array<Record<string, unknown>> = [];
   public receivedConfigOptions: Array<Record<string, unknown>> = [];
   public receivedConfigOptionStatuses: Array<Record<string, unknown>> = [];
+  public nextPermissionResolutionAck: Record<string, unknown> | null = null;
   private closeUploadWithoutAckCount = 0;
 
   constructor(private readonly botToken = "agb_test") {}
@@ -232,11 +233,21 @@ export class MockBridge {
     if (frame.type === "trace") this.receivedTraces.push(frame);
     if (frame.type === "permission_request") {
       this.receivedPermissionRequests.push(frame);
+      const permissionResolution = this.nextPermissionResolutionAck
+        ? {
+          type: "permission_resolution",
+          request_id: frame.request_id,
+          message_id: `permission-card-${this.receivedPermissionRequests.length}`,
+          ...this.nextPermissionResolutionAck,
+        }
+        : null;
+      this.nextPermissionResolutionAck = null;
       ws.send(JSON.stringify({
         type: "send_ack",
         client_msg_id: frame.client_msg_id,
         ok: true,
         message_id: `permission-card-${this.receivedPermissionRequests.length}`,
+        ...(permissionResolution ? { permission_resolution: permissionResolution } : {}),
       }));
       return;
     }

@@ -255,9 +255,11 @@ newly-created/modified files as AgentNexus attachments.
 下生成了 `agentnexus-acp-connector-0.1.9.tgz`，ACP agent 可以通过提及该文件名、
 Markdown 链接或 `file://` URI 将它回传。
 
-如果 ACP agent 需要创建或修改文件再返回，请有意识地设置
-`agent.permissionMode`。使用 `ask` 会在当前 AgentNexus 会话里向 Bot 所有者发送审批卡片；
-`reject` 会自动拒绝；只有可信本地工作区才建议使用 `allow`。
+如果 ACP agent 需要创建或修改文件再返回，请让 agent 自身权限模式保持能发出 ACP
+审批请求（OpenCode 对应 `agent.agentNativePermissionMode: "ask"`）。AgentNexus
+再通过 `agent.agentnexusApprovalMode` 决定这些请求：`ask` 会在当前会话里向 Bot
+所有者发送审批卡片，`reject` 会自动拒绝，`cancel` 会不选择 ACP 选项直接取消，
+只有可信工作区才建议使用 `allow`。
 
 ## Troubleshooting
 

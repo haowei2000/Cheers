@@ -8,10 +8,11 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.agent_bridge.routes import (
+    _handle_data_permission_request,
     _record_connector_config_option_status,
     _record_connector_config_options,
 )
-from app.db.models import BotAccount
+from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace
 from app.db.session import async_session_factory
 from app.features.agent_bridge.registry import bot_session_registry
 
@@ -22,6 +23,59 @@ class _FakeControlWS:
 
     async def send_json(self, event: dict) -> None:
         self.sent.append(event)
+
+
+class _FakeDataWS:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, event: dict) -> None:
+        self.sent.append(event)
+
+
+async def _seed_permission_bridge_bot(
+    *,
+    suffix: str,
+    approval_mode: str,
+) -> tuple[BotAccount, Channel]:
+    owner = User(
+        user_id=f"owner-{suffix}",
+        username=f"owner_{suffix}",
+        password_hash="x",
+        display_name=f"Owner {suffix}",
+    )
+    ws = Workspace(workspace_id=f"permission-ws-{suffix}", name=f"Permission WS {suffix}")
+    ch = Channel(
+        channel_id=f"permission-channel-{suffix}",
+        workspace_id=ws.workspace_id,
+        name=f"permission-{suffix}",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id=f"permission-bot-{suffix}",
+        username=f"permission_bot_{suffix}",
+        display_name=f"Permission Bot {suffix}",
+        status="online",
+        binding_type="agent_bridge",
+        created_by=owner.user_id,
+        binding_config={
+            "connector_control": {
+                "settings": {
+                    "agentnexusApprovalMode": approval_mode,
+                },
+            },
+        },
+    )
+    async with async_session_factory() as session:
+        session.add_all([
+            owner,
+            ws,
+            ch,
+            bot,
+            ChannelMembership(channel_id=ch.channel_id, member_id=bot.bot_id, member_type="bot"),
+        ])
+        await session.commit()
+    return bot, ch
 
 
 @pytest.mark.asyncio
@@ -48,7 +102,8 @@ async def test_connector_control_update_persists_and_dispatches(
             f"/api/v1/bots/{bot.bot_id}/connector-control",
             json={
                 "settings": {
-                    "permissionMode": "allow",
+                    "agentnexusApprovalMode": "allow",
+                    "agentNativePermissionMode": "ask",
                     "promptTimeoutMs": 900_000,
                     "requestTimeoutMs": 120_000,
                     "cwd": "/tmp/agentnexus-workspace",
@@ -63,7 +118,8 @@ async def test_connector_control_update_persists_and_dispatches(
     payload = resp.json()["data"]
     assert payload["dispatched"] is True
     assert payload["connector_control"]["settings"] == {
-        "permissionMode": "allow",
+        "agentnexusApprovalMode": "allow",
+        "agentNativePermissionMode": "ask",
         "promptTimeoutMs": 900_000,
         "requestTimeoutMs": 120_000,
         "cwd": "/tmp/agentnexus-workspace",
@@ -73,7 +129,8 @@ async def test_connector_control_update_persists_and_dispatches(
         "type": "config_update",
         "revision": 1,
         "settings": {
-            "permissionMode": "allow",
+            "agentnexusApprovalMode": "allow",
+            "agentNativePermissionMode": "ask",
             "promptTimeoutMs": 900_000,
             "requestTimeoutMs": 120_000,
             "cwd": "/tmp/agentnexus-workspace",
@@ -83,8 +140,82 @@ async def test_connector_control_update_persists_and_dispatches(
     }
 
     await db_session.refresh(bot)
-    assert bot.binding_config["connector_control"]["settings"]["permissionMode"] == "allow"
+    assert bot.binding_config["connector_control"]["settings"]["agentnexusApprovalMode"] == "allow"
+    assert bot.binding_config["connector_control"]["settings"]["agentNativePermissionMode"] == "ask"
     assert bot.binding_config["connector_control"]["settings"]["model"] == "gpt-5.5"
+
+
+@pytest.mark.asyncio
+async def test_permission_request_auto_allow_is_decided_by_agentnexus() -> None:
+    suffix = uuid4().hex[:8]
+    bot, ch = await _seed_permission_bridge_bot(suffix=suffix, approval_mode="allow")
+    ws = _FakeDataWS()
+
+    await _handle_data_permission_request(
+        ws,  # type: ignore[arg-type]
+        bot,
+        {
+            "type": "permission_request",
+            "client_msg_id": "permission-auto-allow",
+            "channel_id": ch.channel_id,
+            "request_id": f"request-{suffix}",
+            "body": "Need approval",
+            "title": "Fetch URL",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+        },
+    )
+
+    ack = ws.sent[-1]
+    assert ack["ok"] is True
+    assert ack["permission_resolution"] == {
+        "type": "permission_resolution",
+        "request_id": f"request-{suffix}",
+        "message_id": ack["message_id"],
+        "resolution": "allow",
+        "option_id": "allow",
+        "resolved_by": None,
+        "resolved_at": ack["permission_resolution"]["resolved_at"],
+        "outcome": "selected",
+    }
+    async with async_session_factory() as session:
+        msg = await session.get(Message, ack["message_id"])
+        assert msg is not None
+        assert msg.content_data["resolved"] is True
+        assert msg.content_data["agentnexus_approval_mode"] == "allow"
+        assert msg.content_data["resolution_source"] == "agentnexus_policy"
+        assert msg.content_data["selected_option_id"] == "allow"
+
+
+@pytest.mark.asyncio
+async def test_permission_request_cancel_mode_returns_cancelled_ack() -> None:
+    suffix = uuid4().hex[:8]
+    bot, ch = await _seed_permission_bridge_bot(suffix=suffix, approval_mode="cancel")
+    ws = _FakeDataWS()
+
+    await _handle_data_permission_request(
+        ws,  # type: ignore[arg-type]
+        bot,
+        {
+            "type": "permission_request",
+            "client_msg_id": "permission-auto-cancel",
+            "channel_id": ch.channel_id,
+            "request_id": f"request-{suffix}",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+        },
+    )
+
+    ack = ws.sent[-1]
+    assert ack["ok"] is True
+    assert ack["permission_resolution"]["resolution"] == "deny"
+    assert ack["permission_resolution"]["option_id"] is None
+    assert ack["permission_resolution"]["outcome"] == "cancelled"
 
 
 @pytest.mark.asyncio
@@ -199,11 +330,11 @@ async def test_connector_control_records_discovered_options() -> None:
             binding_type="agent_bridge",
             binding_config={
                 "agent_id": "opencode",
-                "connector_control": {
-                    "revision": 3,
-                    "settings": {"permissionMode": "reject"},
+                    "connector_control": {
+                        "revision": 3,
+                        "settings": {"agentnexusApprovalMode": "reject"},
+                    },
                 },
-            },
             created_by="a0000000-0000-0000-0000-000000000099",
         )
         session.add(bot)
@@ -237,7 +368,7 @@ async def test_connector_control_records_discovered_options() -> None:
         bot = await session.get(BotAccount, bot_id)
         assert bot is not None
         control = bot.binding_config["connector_control"]
-    assert control["settings"] == {"permissionMode": "reject"}
+    assert control["settings"] == {"agentnexusApprovalMode": "reject"}
     assert control["options"]["source"] == "acp"
     assert control["options"]["modes"]["currentModeId"] == "ask"
     assert control["options"]["configOptions"][0]["id"] == "model"

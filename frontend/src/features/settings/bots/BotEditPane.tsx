@@ -22,6 +22,7 @@ import {
   normalizeBotScope,
 } from "./BotShared";
 import type {
+  AgentNativePermissionMode,
   BotConnectionTestResult,
   BotRow,
   BotScope,
@@ -33,7 +34,11 @@ import type {
 type BotSettingsTab = "profile" | "runtime" | "status";
 
 function normalizeConnectorPermissionMode(value: unknown): ConnectorPermissionMode {
-  return value === "ask" || value === "allow" || value === "cancel" || value === "reject" ? value : "reject";
+  return value === "ask" || value === "allow" || value === "cancel" || value === "reject" ? value : "ask";
+}
+
+function normalizeAgentNativePermissionMode(value: unknown): AgentNativePermissionMode {
+  return value === "allow" || value === "deny" || value === "ask" ? value : "ask";
 }
 
 function msToSeconds(value: unknown, fallback: number): number {
@@ -143,8 +148,11 @@ export function BotEditPane({
   const discoveredModelValues = discoveredModelOption ? connectorOptionValues(discoveredModelOption) : [];
   const connectorModelListId = `connector-model-options-${bot.bot_id}`;
   const [savingConnectorControl, setSavingConnectorControl] = useState(false);
-  const [connectorPermissionMode, setConnectorPermissionMode] = useState<ConnectorPermissionMode>(
-    normalizeConnectorPermissionMode(connectorSettings.permissionMode),
+  const [agentnexusApprovalMode, setAgentnexusApprovalMode] = useState<ConnectorPermissionMode>(
+    normalizeConnectorPermissionMode(connectorSettings.agentnexusApprovalMode ?? connectorSettings.permissionMode),
+  );
+  const [agentNativePermissionMode, setAgentNativePermissionMode] = useState<AgentNativePermissionMode>(
+    normalizeAgentNativePermissionMode(connectorSettings.agentNativePermissionMode),
   );
   const [connectorPromptTimeoutSeconds, setConnectorPromptTimeoutSeconds] = useState(
     msToSeconds(connectorSettings.promptTimeoutMs, 900),
@@ -167,7 +175,10 @@ export function BotEditPane({
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
     const nextSettings = bot.binding_config?.connector_control?.settings || {};
-    setConnectorPermissionMode(normalizeConnectorPermissionMode(nextSettings.permissionMode));
+    setAgentnexusApprovalMode(
+      normalizeConnectorPermissionMode(nextSettings.agentnexusApprovalMode ?? nextSettings.permissionMode),
+    );
+    setAgentNativePermissionMode(normalizeAgentNativePermissionMode(nextSettings.agentNativePermissionMode));
     setConnectorPromptTimeoutSeconds(msToSeconds(nextSettings.promptTimeoutMs, 900));
     setConnectorRequestTimeoutSeconds(msToSeconds(nextSettings.requestTimeoutMs, 120));
     setConnectorCwd(nextSettings.cwd || "");
@@ -353,7 +364,8 @@ export function BotEditPane({
     setSavingConnectorControl(true);
     try {
       const settings: Record<string, unknown> = {
-        permissionMode: connectorPermissionMode,
+        agentnexusApprovalMode,
+        agentNativePermissionMode,
         promptTimeoutMs: secondsToMs(connectorPromptTimeoutSeconds),
         requestTimeoutMs: secondsToMs(connectorRequestTimeoutSeconds),
       };
@@ -616,10 +628,10 @@ export function BotEditPane({
                 </span>
               )}
             </div>
-            <Field label="Permission mode">
+            <Field label="AgentNexus approval handling">
               <select
-                value={connectorPermissionMode}
-                onChange={(e) => setConnectorPermissionMode(normalizeConnectorPermissionMode(e.target.value))}
+                value={agentnexusApprovalMode}
+                onChange={(e) => setAgentnexusApprovalMode(normalizeConnectorPermissionMode(e.target.value))}
                 className={inputCls}
               >
                 <option value="ask">Ask owner in chat</option>
@@ -627,6 +639,23 @@ export function BotEditPane({
                 <option value="allow">Allow</option>
                 <option value="cancel">Cancel</option>
               </select>
+              <div className="an-rc-sub" style={{ marginTop: 4 }}>
+                Platform policy for ACP approval requests that reach AgentNexus.
+              </div>
+            </Field>
+            <Field label="Agent native permission mode">
+              <select
+                value={agentNativePermissionMode}
+                onChange={(e) => setAgentNativePermissionMode(normalizeAgentNativePermissionMode(e.target.value))}
+                className={inputCls}
+              >
+                <option value="ask">Ask through ACP</option>
+                <option value="allow">Allow in agent</option>
+                <option value="deny">Deny in agent</option>
+              </select>
+              <div className="an-rc-sub" style={{ marginTop: 4 }}>
+                Provider-side mode; use ask when the provider should forward requests to AgentNexus.
+              </div>
             </Field>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
               <Field label="Working directory">

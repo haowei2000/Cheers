@@ -109,9 +109,17 @@ export class AcpStdioAgent {
 
   updateRuntimeSettings(settings: RemoteConnectorSettings): string[] {
     const applied: string[] = [];
+    if (settings.agentnexusApprovalMode) {
+      this.config.agentnexusApprovalMode = settings.agentnexusApprovalMode;
+      applied.push("agentnexusApprovalMode");
+    }
     if (settings.permissionMode) {
-      this.config.permissionMode = settings.permissionMode;
+      this.config.agentnexusApprovalMode = settings.permissionMode;
       applied.push("permissionMode");
+    }
+    if (settings.agentNativePermissionMode) {
+      this.config.agentNativePermissionMode = settings.agentNativePermissionMode;
+      applied.push("agentNativePermissionMode");
     }
     if (typeof settings.requestTimeoutMs === "number") {
       this.config.requestTimeoutMs = settings.requestTimeoutMs;
@@ -192,8 +200,8 @@ export class AcpStdioAgent {
 
   private async handleRequest(method: string, params: unknown): Promise<unknown> {
     if (method === "session/request_permission") {
-      const mode = this.config.permissionMode ?? "reject";
-      if (mode === "ask" && this.permissionRequestHandler) {
+      const mode = this.config.agentnexusApprovalMode ?? this.config.permissionMode ?? "ask";
+      if (this.permissionRequestHandler) {
         const outcome = await this.permissionRequestHandler(params, mode);
         if (outcome) return { outcome };
       }

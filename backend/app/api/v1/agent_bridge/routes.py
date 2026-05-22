@@ -983,6 +983,7 @@ _WS_CLOSE_SUPERSEDED = 4402       # A newer connection for the same bot supersed
 _WS_CLOSE_BOT_UNAVAILABLE = 4403  # Invalid binding_type or status != online.
 _CONNECTOR_CONTROL_KEY = "connector_control"
 _CONNECTOR_OPTIONS_MAX_BYTES = 128 * 1024
+_AGENTNEXUS_APPROVAL_MODES = {"ask", "reject", "allow", "cancel"}
 
 
 def _extract_bearer_token(websocket: WebSocket) -> str | None:
@@ -997,6 +998,28 @@ def _connector_control_from_bot(bot: BotAccount) -> dict | None:
     cfg = bot.binding_config if isinstance(bot.binding_config, dict) else {}
     control = cfg.get(_CONNECTOR_CONTROL_KEY)
     return control if isinstance(control, dict) else None
+
+
+def _agentnexus_approval_mode_from_bot(bot: BotAccount) -> str:
+    control = _connector_control_from_bot(bot) or {}
+    settings = control.get("settings")
+    if not isinstance(settings, dict):
+        return "ask"
+    raw = settings.get("agentnexusApprovalMode")
+    if not isinstance(raw, str):
+        raw = settings.get("permissionMode")
+    mode = raw.strip() if isinstance(raw, str) else ""
+    return mode if mode in _AGENTNEXUS_APPROVAL_MODES else "ask"
+
+
+def _permission_option_id_for_resolution(options: list[dict], resolution: str) -> str | None:
+    target_prefix = "allow" if resolution == "allow" else "reject"
+    for raw in options:
+        kind = str(raw.get("kind") or "")
+        option_id = raw.get("option_id") or raw.get("optionId") or raw.get("id")
+        if kind.startswith(target_prefix) and isinstance(option_id, str) and option_id:
+            return option_id
+    return None
 
 
 async def _record_connector_config_status(bot_id: str, frame: dict) -> None:
@@ -1223,13 +1246,21 @@ async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, co
     })
 
 
-async def _send_send_ack_ok(websocket: WebSocket, client_msg_id: str | None, message_id: str) -> None:
-    await websocket.send_json({
+async def _send_send_ack_ok(
+    websocket: WebSocket,
+    client_msg_id: str | None,
+    message_id: str,
+    extra: dict | None = None,
+) -> None:
+    payload = {
         "type": "send_ack",
         "client_msg_id": client_msg_id,
         "ok": True,
         "message_id": message_id,
-    })
+    }
+    if extra:
+        payload.update(extra)
+    await websocket.send_json(payload)
 
 
 async def _send_terminal_ack_err(
@@ -1631,13 +1662,18 @@ async def _handle_data_permission_request(
     task_id = _clean_permission_text(frame.get("task_id"), 64)
     msg_id = _clean_permission_text(frame.get("msg_id"), 64)
     owner_payload: dict | None = None
+    ack_extra: dict | None = None
 
     async with async_session_factory() as s:
         err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
         if err:
             await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
             return
-        if not bot.created_by:
+        current_bot = await s.get(BotAccount, bot.bot_id)
+        if current_bot is None:
+            await _send_send_ack_err(websocket, client_msg_id, "bot_not_found", "Bot no longer exists")
+            return
+        if not current_bot.created_by:
             await _send_send_ack_err(
                 websocket,
                 client_msg_id,
@@ -1645,7 +1681,7 @@ async def _handle_data_permission_request(
                 "Bot owner is not configured; permission request cannot be approved",
             )
             return
-        owner = await s.get(User, bot.created_by) if bot.created_by else None
+        owner = await s.get(User, current_bot.created_by) if current_bot.created_by else None
         if owner is None:
             await _send_send_ack_err(
                 websocket,
@@ -1660,27 +1696,48 @@ async def _handle_data_permission_request(
             "display_name": owner.display_name,
         }
 
+        options = _normalize_permission_options(frame.get("options"))
+        approval_mode = _agentnexus_approval_mode_from_bot(current_bot)
+        resolved_at: str | None = None
+        selected_option_id: str | None = None
+        resolution: str | None = None
+        auto_outcome: str | None = None
+        if approval_mode != "ask":
+            resolved_at = datetime.now(timezone.utc).isoformat()
+            resolution = "allow" if approval_mode == "allow" else "deny"
+            auto_outcome = "cancelled" if approval_mode == "cancel" else "selected"
+            if auto_outcome == "selected":
+                selected_option_id = _permission_option_id_for_resolution(options, resolution)
+
         content_data = {
             "kind": "agent_bridge_permission_request",
             "source": "acp",
             "request_id": request_id,
-            "bot_id": bot.bot_id,
-            "bot_owner_id": bot.created_by,
+            "bot_id": current_bot.bot_id,
+            "bot_owner_id": current_bot.created_by,
             "owner": owner_payload,
             "title": title,
             "body": body,
             "tool": _clean_permission_text(frame.get("tool"), 240),
-            "options": _normalize_permission_options(frame.get("options")),
+            "options": options,
             "task_id": task_id,
             "reply_msg_id": msg_id,
             "acp_session_id": _clean_permission_text(frame.get("acp_session_id"), 256),
             "provider_session_key": _clean_permission_text(frame.get("provider_session_key"), 1024),
-            "resolved": False,
+            "agentnexus_approval_mode": approval_mode,
+            "resolved": approval_mode != "ask",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        if resolution:
+            content_data["resolution"] = resolution
+            content_data["resolved_at"] = resolved_at
+            content_data["resolution_source"] = "agentnexus_policy"
+            content_data["resolution_dispatch_status"] = "auto"
+            content_data["selected_option_id"] = selected_option_id
+            content_data["auto_outcome"] = auto_outcome
         msg = Message(
             channel_id=channel_id,
-            sender_id=bot.bot_id,
+            sender_id=current_bot.bot_id,
             sender_type="bot",
             content=body,
             task_id=task_id,
@@ -1691,11 +1748,24 @@ async def _handle_data_permission_request(
         await s.flush()
         payload = MessageAssembler.assemble(msg, {})
         await s.commit()
+        if resolution:
+            ack_extra = {
+                "permission_resolution": {
+                    "type": "permission_resolution",
+                    "request_id": request_id,
+                    "message_id": msg.msg_id,
+                    "resolution": resolution,
+                    "option_id": selected_option_id,
+                    "resolved_by": None,
+                    "resolved_at": resolved_at,
+                    "outcome": auto_outcome,
+                },
+            }
 
     from app.features.bot_runtime.pipeline.bus import WSEventBus
     from app.features.bot_runtime.pipeline.events import MessageCreated
     await WSEventBus(channel_id).publish(MessageCreated(data=payload))
-    await _send_send_ack_ok(websocket, client_msg_id, msg.msg_id)
+    await _send_send_ack_ok(websocket, client_msg_id, msg.msg_id, ack_extra)
 
 
 async def _handle_data_send(

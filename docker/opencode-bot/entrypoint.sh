@@ -50,22 +50,31 @@ const dataUrl = env("OPENCODE_BOT_DATA_URL", `${wsBase}/ws/agent-bridge/data`);
 const cwd = path.resolve(env("OPENCODE_WORKSPACE_DIR", "/workspace"));
 const promptTimeoutMs = intEnv("OPENCODE_PROMPT_TIMEOUT_MS", 660000);
 const requestTimeoutMsRaw = env("OPENCODE_REQUEST_TIMEOUT_MS", "").trim();
-const permissionMode = env("OPENCODE_PERMISSION_MODE", "ask").trim() || "ask";
+const legacyPermissionMode = env("OPENCODE_PERMISSION_MODE", "").trim();
+const agentnexusApprovalMode = (
+  env("OPENCODE_AGENTNEXUS_APPROVAL_MODE", "").trim() ||
+  legacyPermissionMode ||
+  "ask"
+);
+const agentNativePermissionMode = env("OPENCODE_NATIVE_PERMISSION_MODE", "ask").trim() || "ask";
 const model = env("OPENCODE_MODEL", "").trim();
 const baseUrl = env("OPENCODE_OPENAI_BASE_URL", "https://api.deepseek.com").trim();
 const provider = env("OPENCODE_PROVIDER", "deepseek").trim() || "deepseek";
 const opencodeCommand = env("OPENCODE_ACP_COMMAND", "opencode").trim() || "opencode";
 const opencodeModelName = opencodeModel(provider, model);
 
-if (!["ask", "reject", "allow", "cancel"].includes(permissionMode)) {
-  throw new Error("OPENCODE_PERMISSION_MODE must be ask, reject, allow, or cancel");
+if (!["ask", "reject", "allow", "cancel"].includes(agentnexusApprovalMode)) {
+  throw new Error("OPENCODE_AGENTNEXUS_APPROVAL_MODE must be ask, reject, allow, or cancel");
+}
+if (!["ask", "allow", "deny", "reject"].includes(agentNativePermissionMode)) {
+  throw new Error("OPENCODE_NATIVE_PERMISSION_MODE must be ask, allow, deny, or reject");
 }
 
 fs.mkdirSync(cwd, { recursive: true });
 
-const opencodePermission = permissionMode === "allow"
+const opencodePermission = agentNativePermissionMode === "allow"
   ? { edit: "allow", bash: "allow" }
-  : permissionMode === "ask" || permissionMode === "cancel"
+  : agentNativePermissionMode === "ask"
     ? { edit: "ask", bash: "ask" }
     : { edit: "deny", bash: "deny" };
 
@@ -90,7 +99,8 @@ const agent = {
   args: ["acp", "--cwd", cwd],
   cwd,
   promptTimeoutMs,
-  permissionMode,
+  agentnexusApprovalMode,
+  agentNativePermissionMode,
   env: {
     OPENCODE_OPENAI_API_KEY: "$OPENCODE_OPENAI_API_KEY",
     OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig),
@@ -116,12 +126,14 @@ const config = {
 
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 console.info(
-  "generated OpenCode ACP connector config account=%s control=%s data=%s cwd=%s model=%s base_url=%s api_key_set=%s image_support=true embedded_context=true",
+  "generated OpenCode ACP connector config account=%s control=%s data=%s cwd=%s model=%s approval_mode=%s native_permission=%s base_url=%s api_key_set=%s image_support=true embedded_context=true",
   username,
   controlUrl,
   dataUrl,
   cwd,
   opencodeModelName,
+  agentnexusApprovalMode,
+  agentNativePermissionMode,
   baseUrl,
   apiKey ? "true" : "false",
 );

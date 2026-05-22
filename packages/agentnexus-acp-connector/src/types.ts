@@ -3,6 +3,9 @@ import type { SessionConfig } from "@haowei0520/bridge-client";
 export type PermissionMode = "ask" | "reject" | "allow" | "cancel";
 
 export interface RemoteConnectorSettings {
+  agentnexusApprovalMode?: PermissionMode;
+  agentNativePermissionMode?: string;
+  /** @deprecated Use agentnexusApprovalMode. */
   permissionMode?: PermissionMode;
   requestTimeoutMs?: number;
   promptTimeoutMs?: number;
@@ -20,6 +23,9 @@ export interface StdioAgentConfig {
   env?: Record<string, string>;
   requestTimeoutMs?: number;
   promptTimeoutMs?: number;
+  agentnexusApprovalMode?: PermissionMode;
+  agentNativePermissionMode?: string;
+  /** @deprecated Use agentnexusApprovalMode. */
   permissionMode?: PermissionMode;
   mcpServers?: unknown[];
   clientCapabilities?: Record<string, unknown>;
