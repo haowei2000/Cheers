@@ -822,10 +822,8 @@ function isOpenCodeAcpCommand(command: string): boolean {
   return base === "opencode" || base === "opencode.exe";
 }
 
-function withOpenCodeModelEnv(env: Record<string, string> | undefined, model: string): Record<string, string> {
-  const next = { ...(env ?? {}) };
+function parseOpenCodeConfigEnv(raw: string | undefined): Record<string, unknown> {
   let config: Record<string, unknown> = {};
-  const raw = next.OPENCODE_CONFIG_CONTENT;
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
@@ -836,9 +834,34 @@ function withOpenCodeModelEnv(env: Record<string, string> | undefined, model: st
       config = {};
     }
   }
-  config.model = model;
+  return config;
+}
+
+function withOpenCodeConfigEnv(
+  env: Record<string, string> | undefined,
+  patch: Record<string, unknown>,
+): Record<string, string> {
+  const next = { ...(env ?? {}) };
+  const config = { ...parseOpenCodeConfigEnv(next.OPENCODE_CONFIG_CONTENT), ...patch };
   next.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
   return next;
+}
+
+function openCodePermissionForMode(mode: PermissionMode): Record<string, "allow" | "ask" | "deny"> {
+  if (mode === "allow") return { edit: "allow", bash: "allow" };
+  if (mode === "ask" || mode === "cancel") return { edit: "ask", bash: "ask" };
+  return { edit: "deny", bash: "deny" };
+}
+
+function withOpenCodeModelEnv(env: Record<string, string> | undefined, model: string): Record<string, string> {
+  return withOpenCodeConfigEnv(env, { model });
+}
+
+function withOpenCodePermissionEnv(
+  env: Record<string, string> | undefined,
+  mode: PermissionMode,
+): Record<string, string> {
+  return withOpenCodeConfigEnv(env, { permission: openCodePermissionForMode(mode) });
 }
 
 async function normalizeRemoteSettings(input: unknown, currentCwd: string | undefined): Promise<SettingsApplyResult> {
@@ -1994,7 +2017,12 @@ export class AcpBridgeAccount {
     const nextConfigOptions = normalized.settings.configOptions ?? {};
     const nextConfigOptionsKey = acpConfigOptionsKey(nextConfigOptions);
     const configOptionsChanged = hasConfigOptionsSetting && nextConfigOptionsKey !== this.desiredAcpConfigOptionsKey;
-    const applied = this.agent.updateRuntimeSettings(normalized.settings);
+    const isOpenCode = isOpenCodeAcpCommand(this.config.agent.command);
+    const runtimeSettings: RemoteConnectorSettings = { ...normalized.settings };
+    if (isOpenCode && runtimeSettings.permissionMode) {
+      delete runtimeSettings.permissionMode;
+    }
+    const applied = this.agent.updateRuntimeSettings(runtimeSettings);
     normalized.applied = applied;
     if (configOptionsChanged) {
       this.desiredAcpConfigOptions = nextConfigOptions;
@@ -2010,7 +2038,7 @@ export class AcpBridgeAccount {
       restartFields.push("cwd");
     }
     if (normalized.settings.model) {
-      if (isOpenCodeAcpCommand(this.config.agent.command)) {
+      if (isOpenCode) {
         restartSettings.model = normalized.settings.model;
         restartFields.push("model");
       } else {
@@ -2019,6 +2047,10 @@ export class AcpBridgeAccount {
           reason: "model switching is only supported for OpenCode ACP",
         });
       }
+    }
+    if (isOpenCode && normalized.settings.permissionMode) {
+      restartSettings.permissionMode = normalized.settings.permissionMode;
+      restartFields.push("permissionMode");
     }
     if (restartFields.length > 0) {
       if (this.activeRunsByMsg.size > 0) {
@@ -2030,12 +2062,18 @@ export class AcpBridgeAccount {
           args: [...(this.config.agent.args ?? [])],
           cwd: this.config.agent.cwd,
           model: this.config.agent.model,
+          env: this.config.agent.env ? { ...this.config.agent.env } : undefined,
+          permissionMode: this.config.agent.permissionMode,
         };
         try {
           if (restartSettings.cwd) this.config.agent.cwd = restartSettings.cwd;
           if (restartSettings.model) {
             this.config.agent.model = restartSettings.model;
             this.config.agent.env = withOpenCodeModelEnv(this.config.agent.env, restartSettings.model);
+          }
+          if (restartSettings.permissionMode) {
+            this.config.agent.permissionMode = restartSettings.permissionMode;
+            this.config.agent.env = withOpenCodePermissionEnv(this.config.agent.env, restartSettings.permissionMode);
           }
           await this.agent.restart();
           this.activeProviderSessions.clear();
@@ -2054,6 +2092,8 @@ export class AcpBridgeAccount {
           this.config.agent.args = previous.args;
           this.config.agent.cwd = previous.cwd;
           this.config.agent.model = previous.model;
+          this.config.agent.env = previous.env;
+          this.config.agent.permissionMode = previous.permissionMode;
           try {
             await this.agent.restart();
           } catch (rollbackErr) {

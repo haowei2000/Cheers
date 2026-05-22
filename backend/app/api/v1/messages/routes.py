@@ -963,6 +963,24 @@ def _permission_option_id(content_data: dict, resolution: str) -> str | None:
     return None
 
 
+def _permission_dispatch_failure(
+    content_data: dict,
+    *,
+    resolution: str,
+    current_user_id: str,
+    attempted_at: str,
+    reason: str,
+) -> dict:
+    next_data = dict(content_data)
+    next_data["resolved"] = False
+    next_data["last_resolution_attempt"] = resolution
+    next_data["resolution_dispatch_status"] = "undelivered"
+    next_data["resolution_dispatch_error"] = reason
+    next_data["resolution_dispatch_attempted_by"] = current_user_id
+    next_data["resolution_dispatch_attempted_at"] = attempted_at
+    return next_data
+
+
 @router.post("/{msg_id}/resolve", response_model=APIResponse[dict])
 async def resolve_permission(
     channel_id: str,
@@ -999,29 +1017,63 @@ async def resolve_permission(
         # Previously processed requests return the current state directly.
         return APIResponse.ok(_serialize(msg, {}))
 
-    cd["resolved"] = True
-    cd["resolution"] = body.resolution
-    cd["resolved_by"] = current_user.user_id
-    cd["resolved_at"] = datetime.now(timezone.utc).isoformat()
-    msg.content_data = cd
-
-    await session.commit()
-    await session.refresh(msg)
+    resolved_at = datetime.now(timezone.utc).isoformat()
 
     if cd.get("kind") == "agent_bridge_permission_request":
         from app.features.agent_bridge.registry import bot_session_registry
 
         request_id = cd.get("request_id")
-        if isinstance(request_id, str) and request_id:
-            await bot_session_registry.dispatch_control(bot.bot_id, {
-                "type": "permission_resolution",
-                "request_id": request_id,
-                "message_id": msg.msg_id,
-                "resolution": body.resolution,
-                "option_id": _permission_option_id(cd, body.resolution),
-                "resolved_by": current_user.user_id,
-                "resolved_at": cd["resolved_at"],
-            })
+        option_id = _permission_option_id(cd, body.resolution)
+        if not isinstance(request_id, str) or not request_id:
+            cd = _permission_dispatch_failure(
+                cd,
+                resolution=body.resolution,
+                current_user_id=current_user.user_id,
+                attempted_at=resolved_at,
+                reason="permission request_id is missing",
+            )
+        else:
+            dispatched = await bot_session_registry.dispatch_control(
+                bot.bot_id,
+                {
+                    "type": "permission_resolution",
+                    "request_id": request_id,
+                    "message_id": msg.msg_id,
+                    "resolution": body.resolution,
+                    "option_id": option_id,
+                    "resolved_by": current_user.user_id,
+                    "resolved_at": resolved_at,
+                },
+            )
+            if dispatched:
+                cd["resolved"] = True
+                cd["resolution"] = body.resolution
+                cd["resolved_by"] = current_user.user_id
+                cd["resolved_at"] = resolved_at
+                cd["resolution_dispatch_status"] = "delivered"
+                cd["resolution_dispatched_at"] = resolved_at
+                cd["selected_option_id"] = option_id
+                cd.pop("resolution_dispatch_error", None)
+                cd.pop("last_resolution_attempt", None)
+                cd.pop("resolution_dispatch_attempted_by", None)
+                cd.pop("resolution_dispatch_attempted_at", None)
+            else:
+                cd = _permission_dispatch_failure(
+                    cd,
+                    resolution=body.resolution,
+                    current_user_id=current_user.user_id,
+                    attempted_at=resolved_at,
+                    reason="connector control channel is not connected",
+                )
+    else:
+        cd["resolved"] = True
+        cd["resolution"] = body.resolution
+        cd["resolved_by"] = current_user.user_id
+        cd["resolved_at"] = resolved_at
+
+    msg.content_data = cd
+    await session.commit()
+    await session.refresh(msg)
 
     payload = MessageAssembler.assemble(msg, {})
     # Permission resolve is a "modify + re-broadcast" of an existing message;

@@ -346,7 +346,7 @@ PY
 docker compose --profile opencode-bot up -d --wait
 ```
 
-`OPENCODE_BOT_TOKEN` 必须同时给 backend seed 和 `opencode-bot` 容器使用。`OPENCODE_PERMISSION_MODE` 默认是 `reject`；如果希望 OpenCode 在容器工作区内写文件，可改成 `allow` 并确认 `./data/opencode-workspace` 是可信目录。
+`OPENCODE_BOT_TOKEN` 必须同时给 backend seed 和 `opencode-bot` 容器使用。`OPENCODE_PERMISSION_MODE` 默认是 `ask`，会在 AgentNexus 中生成真实审批卡片；如需全部拒绝可改为 `reject`，如需直接允许 OpenCode 在容器工作区内写文件，可改成 `allow` 并确认 `./data/opencode-workspace` 是可信目录。
 
 ### 4.3 注册 OpenCode ACP Bot
 

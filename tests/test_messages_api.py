@@ -345,7 +345,10 @@ async def test_acp_permission_owner_resolution_dispatches_to_connector(
         await bot_session_registry.unbind_control(bot.bot_id, ws)  # type: ignore[arg-type]
 
     assert resp.status_code == 200
-    assert resp.json()["data"]["content_data"]["resolved"] is True
+    content_data = resp.json()["data"]["content_data"]
+    assert content_data["resolved"] is True
+    assert content_data["resolution_dispatch_status"] == "delivered"
+    assert content_data["selected_option_id"] == "allow"
     assert ws.sent[-1] == {
         "type": "permission_resolution",
         "request_id": "permission-request-002",
@@ -355,6 +358,73 @@ async def test_acp_permission_owner_resolution_dispatches_to_connector(
         "resolved_by": current_user_id,
         "resolved_at": ws.sent[-1]["resolved_at"],
     }
+
+
+@pytest.mark.asyncio
+async def test_acp_permission_resolution_without_control_channel_stays_retryable(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws_row = Workspace(workspace_id="permission-ws-003", name="Permission WS 3")
+    ch = Channel(
+        channel_id="permission-channel-003",
+        workspace_id=ws_row.workspace_id,
+        name="permission-3",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="permission-bot-003",
+        username="permission_bot_003",
+        display_name="Permission Bot 3",
+        binding_type="agent_bridge",
+        status="online",
+        created_by=current_user_id,
+    )
+    msg = Message(
+        msg_id="permission-msg-003",
+        channel_id=ch.channel_id,
+        sender_id=bot.bot_id,
+        sender_type="bot",
+        content="Need approval",
+        msg_type="permission",
+        content_data={
+            "kind": "agent_bridge_permission_request",
+            "request_id": "permission-request-003",
+            "bot_id": bot.bot_id,
+            "bot_owner_id": current_user_id,
+            "title": "Permission retry test",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+            "resolved": False,
+        },
+    )
+    db_session.add_all([
+        ws_row,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=current_user_id, member_type="user"),
+        msg,
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/resolve",
+        json={"resolution": "allow"},
+    )
+
+    assert resp.status_code == 200
+    content_data = resp.json()["data"]["content_data"]
+    assert content_data["resolved"] is False
+    assert content_data["last_resolution_attempt"] == "allow"
+    assert content_data["resolution_dispatch_status"] == "undelivered"
+    assert content_data["resolution_dispatch_error"] == "connector control channel is not connected"
+
+    await db_session.refresh(msg)
+    assert msg.content_data["resolved"] is False
 
 
 @pytest.mark.asyncio

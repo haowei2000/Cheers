@@ -1637,13 +1637,28 @@ async def _handle_data_permission_request(
         if err:
             await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
             return
+        if not bot.created_by:
+            await _send_send_ack_err(
+                websocket,
+                client_msg_id,
+                "bot_owner_missing",
+                "Bot owner is not configured; permission request cannot be approved",
+            )
+            return
         owner = await s.get(User, bot.created_by) if bot.created_by else None
-        if owner is not None:
-            owner_payload = {
-                "user_id": owner.user_id,
-                "username": owner.username,
-                "display_name": owner.display_name,
-            }
+        if owner is None:
+            await _send_send_ack_err(
+                websocket,
+                client_msg_id,
+                "bot_owner_not_found",
+                "Bot owner no longer exists; permission request cannot be approved",
+            )
+            return
+        owner_payload = {
+            "user_id": owner.user_id,
+            "username": owner.username,
+            "display_name": owner.display_name,
+        }
 
         content_data = {
             "kind": "agent_bridge_permission_request",

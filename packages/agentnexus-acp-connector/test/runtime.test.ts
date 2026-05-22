@@ -228,6 +228,73 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("restarts opencode when remote permission mode changes and updates OPENCODE_CONFIG_CONTENT", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const envLog = path.join(tmp, "opencode-env.log");
+    const opencodeBin = path.join(tmp, "opencode");
+    await writeFile(
+      opencodeBin,
+      [
+        "#!/bin/sh",
+        `printf '%s\\n' "$OPENCODE_CONFIG_CONTENT" >> ${JSON.stringify(envLog)}`,
+        `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeAgent)} "$@"`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await chmod(opencodeBin, 0o755);
+    const runtime = new ConnectorRuntime(
+      {
+        "opencode-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: opencodeBin,
+            args: [],
+            cwd: tmp,
+            permissionMode: "reject",
+            env: {
+              OPENCODE_CONFIG_CONTENT: JSON.stringify({
+                model: "fake-small",
+                permission: { edit: "deny", bash: "deny" },
+              }),
+            },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushConfigUpdate({
+      revision: 9,
+      settings: {
+        permissionMode: "ask",
+      },
+    });
+
+    await waitFor(() => bridge.receivedConfigStatuses.length === 1);
+    expect(bridge.receivedConfigStatuses[0]).toMatchObject({
+      type: "config_status",
+      revision: 9,
+      ok: true,
+      applied: ["permissionMode"],
+      rejected: [],
+    });
+    const lines = (await readFile(envLog, "utf8")).trim().split("\n").filter(Boolean);
+    const lastConfig = JSON.parse(lines[lines.length - 1]) as Record<string, unknown>;
+    expect(lastConfig).toMatchObject({
+      model: "fake-small",
+      permission: { edit: "ask", bash: "ask" },
+    });
+    await runtime.stop();
+  });
+
   it("reports ACP-discovered session options over connector control", async () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(
