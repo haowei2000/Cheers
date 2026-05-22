@@ -438,6 +438,30 @@
 .an-composer-template-trigger {
   display: block;
 }
+.an-composer-template-trigger:has(.an-composer-template-clear-badge)
+  .an-composer-iconbtn.is-named-trigger {
+  padding-right: 24px;
+}
+.an-composer-template-clear-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--red) 45%, var(--border));
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 2px 6px color-mix(in oklab, var(--shadow) 72%, transparent);
+  cursor: pointer;
+}
+.an-composer-template-clear-badge:hover {
+  background: color-mix(in oklab, var(--red) 84%, #000);
+  color: #fff;
+}
 .an-composer-template-menu.is-open {
   display: block;
 }

@@ -2189,12 +2189,26 @@
 }
 .an-project-row {
   min-width: 0;
+  width: 100%;
   color: var(--fg-2);
   font-weight: 600;
-  cursor: default;
+  cursor: pointer;
 }
 .an-project-row:hover {
-  background: transparent;
+  background: var(--surface-soft);
+  color: var(--fg-1);
+}
+.an-project-chevron {
+  width: 13px;
+  height: 13px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 13px;
+  color: var(--fg-3);
+}
+.an-project-chevron [data-app-icon] {
+  width: 13px;
+  height: 13px;
 }
 .an-project-add {
   width: 22px;

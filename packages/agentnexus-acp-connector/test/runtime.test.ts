@@ -1231,7 +1231,7 @@ describe("ConnectorRuntime", () => {
     const streamed = bridge.receivedDeltas.map((d) => d.delta).join("");
     expect(streamed).toContain("Attachment file: legacy.doc");
     expect(streamed).toContain(savedPath);
-    expect(streamed).toContain("[resource:file://");
+    expect(streamed).toContain("[resource_link:file://");
     expect(bridge.receivedUploads).toHaveLength(0);
     await runtime.stop();
   });

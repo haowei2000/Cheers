@@ -1770,6 +1770,7 @@ export default function App() {
                 keychainItems: keychainPopupItems,
                 onToggleKeychain: openKeychainPopup,
                 onCloseKeychain: () => setKeychainPopupOpen(false),
+                beginnerMode,
               }}
               messageListProps={{
                 messagesContainerRef,
@@ -1900,6 +1901,7 @@ export default function App() {
                 onPromptTemplateChange: setPromptTemplateOverrideId,
                 showTemplateDefaultBotTarget: !isDmSelected,
                 normalHint: selectedComposerTemplateDescription || undefined,
+                beginnerMode,
               }}
               setMemoryTab={setMemoryTab}
               setPageTopicId={setPageTopicId}

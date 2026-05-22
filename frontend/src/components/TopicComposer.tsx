@@ -30,6 +30,7 @@ export interface TopicComposerProps {
   keychainItems?: ComposerKeychainItem[];
   onToggleKeychain?: () => void;
   onCloseKeychain?: () => void;
+  beginnerMode?: boolean;
 }
 
 export function TopicComposer({
@@ -51,6 +52,7 @@ export function TopicComposer({
   keychainItems = [],
   onToggleKeychain,
   onCloseKeychain,
+  beginnerMode = false,
 }: TopicComposerProps) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,6 +102,7 @@ export function TopicComposer({
       keychainItems={keychainItems}
       onToggleKeychain={onToggleKeychain}
       onCloseKeychain={onCloseKeychain}
+      beginnerMode={beginnerMode}
       sendButtonLabel={busy ? "Sending..." : undefined}
     />
   );

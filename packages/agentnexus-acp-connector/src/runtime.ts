@@ -1188,17 +1188,13 @@ async function attachmentToPromptBlocks(
   try {
     const localFile = await saveBridgeBinaryAttachment(attachment, options);
     if (localFile) {
-      if (options.supportsEmbeddedContext) {
-        blocks.push({
-          type: "resource",
-          resource: {
-            uri: localFile.uri,
-            mimeType: localFile.contentType,
-            filename: localFile.filename,
-            sizeBytes: localFile.sizeBytes,
-          },
-        });
-      }
+      blocks.push({
+        type: "resource_link",
+        uri: localFile.uri,
+        name: localFile.filename,
+        mimeType: localFile.contentType,
+        ...(localFile.sizeBytes ? { size: localFile.sizeBytes } : {}),
+      });
       blocks.push({
         type: "text",
         text: [

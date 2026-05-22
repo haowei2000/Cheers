@@ -54,6 +54,9 @@ function textOf(prompt) {
         const resource = block.resource || {};
         return `[resource:${resource.uri || "unknown"}]\n${resource.text || resource.blob || ""}`;
       }
+      if (block?.type === "resource_link") {
+        return `[resource_link:${block.uri || "unknown"}:${block.name || ""}]`;
+      }
       return "";
     })
     .filter(Boolean)
