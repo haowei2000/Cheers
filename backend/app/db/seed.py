@@ -271,6 +271,7 @@ async def _seed_opencode_bot(session: AsyncSession) -> bool:
             status="online",
             scope=scope,
             intro=_opencode_bot_intro(),
+            created_by=ADMIN_USER_ID,
             binding_type="agent_bridge",
             bridge_provider="acp",
             binding_config={
@@ -300,6 +301,8 @@ async def _seed_opencode_bot(session: AsyncSession) -> bool:
     did_write |= _assign_if_changed(existing, "status", "online")
     did_write |= _assign_if_changed(existing, "scope", scope)
     did_write |= _assign_if_changed(existing, "intro", _opencode_bot_intro())
+    if not existing.created_by:
+        did_write |= _assign_if_changed(existing, "created_by", ADMIN_USER_ID)
     did_write |= _assign_if_changed(existing, "binding_type", "agent_bridge")
     did_write |= _assign_if_changed(existing, "bridge_provider", "acp")
     binding_config = dict(existing.binding_config or {})

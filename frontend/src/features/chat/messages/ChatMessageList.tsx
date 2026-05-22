@@ -776,9 +776,15 @@ const PermissionRow = memo(function PermissionRow({
     (typeof owner.username === "string" && `@${owner.username}`) ||
     (ownerId ? "Bot owner" : "");
   const ownerOnly = kind === "agent_bridge_permission_request";
+  const ownerMissing = ownerOnly && !ownerId;
   const canResolve = !ownerOnly || (Boolean(ownerId) && ownerId === currentUserId);
   const canRequestApproval = ownerOnly && !canResolve && !resolved && Boolean(ownerId);
   const approvalRequested = cd.approval_requested === true;
+  const dispatchStatus =
+    typeof cd.resolution_dispatch_status === "string" ? cd.resolution_dispatch_status : "";
+  const dispatchError =
+    typeof cd.resolution_dispatch_error === "string" ? cd.resolution_dispatch_error : "";
+  const resolutionDeliveryFailed = !resolved && dispatchStatus === "undelivered";
   const senderBot =
     message.sender_type === "bot" ? botById.get(message.sender_id) : null;
   const senderLabel = senderBot?.display_name || senderBot?.username || "Bot";
@@ -790,18 +796,29 @@ const PermissionRow = memo(function PermissionRow({
         `/channels/${selectedId}/messages/${message.msg_id}/resolve`,
         { method: "POST", body: { resolution: value }, token: authToken },
       );
-      if (!response.ok) return;
-      const data = await response.json();
-      if (data?.data?.content_data) {
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "Permission update failed");
+        return;
+      }
+      const nextContentData = data?.data?.content_data as Record<string, unknown> | undefined;
+      if (nextContentData) {
         setMessageStore((prev) =>
           patchMessage(prev, message.msg_id, (current) => ({
             ...current,
-            content_data: data.data.content_data,
+            content_data: nextContentData,
           })),
         );
+        if (ownerOnly && nextContentData.resolved !== true) {
+          toast.error(
+            typeof nextContentData.resolution_dispatch_error === "string"
+              ? nextContentData.resolution_dispatch_error
+              : "Permission was not delivered to the connector",
+          );
+        }
       }
     } catch {
-      /* keep unresolved so the user can retry */
+      toast.error("Permission update failed");
     }
   };
 
@@ -847,6 +864,16 @@ const PermissionRow = memo(function PermissionRow({
           {ownerOnly && ownerName && !resolved && (
             <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
               · Owner approval: {ownerName}
+            </span>
+          )}
+          {ownerMissing && !resolved && (
+            <span style={{ marginLeft: 8, color: "var(--red)" }}>
+              · Bot owner is not configured
+            </span>
+          )}
+          {resolutionDeliveryFailed && (
+            <span style={{ marginLeft: 8, color: "var(--red)" }}>
+              · Not delivered to connector{dispatchError ? `: ${dispatchError}` : ""}
             </span>
           )}
           {resolved && resolution && (
