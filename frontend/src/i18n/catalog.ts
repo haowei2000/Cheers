@@ -191,6 +191,7 @@ export const EN_TO_ZH: Record<string, string> = {
   "Reply": "回复",
   "Composer actions": "发送框操作",
   "More composer actions": "更多发送框操作",
+  "Other options": "其他选项",
   "Insert keychain secret": "插入密钥链",
   "Insert line break": "插入换行",
   "Message type": "消息类型",

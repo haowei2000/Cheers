@@ -46,13 +46,13 @@ export interface ChatTopicOverlayProps {
   onUploadFile: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles: (files: File[]) => void | Promise<void>;
   onAttachFiles: (files: FileDragReference[]) => void | Promise<void>;
+  beginnerMode: boolean;
   keychainEnabled: boolean;
   keychainOpen: boolean;
   keychainLoading: boolean;
   keychainItems: ComposerKeychainItem[];
   onToggleKeychain: () => void;
   onCloseKeychain: () => void;
-  beginnerMode?: boolean;
   onOpenSessionScope?: (target: SessionScopeTarget) => void;
 }
 
@@ -85,13 +85,13 @@ export function ChatTopicOverlay({
   onUploadFile,
   onUploadFiles,
   onAttachFiles,
+  beginnerMode,
   keychainEnabled,
   keychainOpen,
   keychainLoading,
   keychainItems,
   onToggleKeychain,
   onCloseKeychain,
-  beginnerMode = false,
   onOpenSessionScope,
 }: ChatTopicOverlayProps) {
   if (!open || !selectedId || !pageTopicId) return null;
@@ -140,13 +140,13 @@ export function ChatTopicOverlay({
             onUploadFile={onUploadFile}
             onUploadFiles={onUploadFiles}
             onAttachFiles={onAttachFiles}
+            beginnerMode={beginnerMode}
             keychainEnabled={keychainEnabled}
             keychainOpen={keychainOpen}
             keychainLoading={keychainLoading}
             keychainItems={keychainItems}
             onToggleKeychain={onToggleKeychain}
             onCloseKeychain={onCloseKeychain}
-            beginnerMode={beginnerMode}
             sessionPanel={
               <SessionScopePanel
                 scopeType="topic"

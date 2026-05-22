@@ -115,6 +115,7 @@ export interface MessageComposerProps {
   showKindSwitcher?: boolean;
   enableKindCycling?: boolean;
   normalOnly?: boolean;
+  beginnerMode?: boolean;
   titleValue?: string;
   titleRef?: RefObject<HTMLInputElement>;
   onTitleChange?: (value: string) => void;
@@ -141,7 +142,6 @@ export interface MessageComposerProps {
   showTemplateDefaultBotTarget?: boolean;
   sendButtonLabel?: string;
   normalHint?: ReactNode;
-  beginnerMode?: boolean;
 }
 
 type MentionItem = (ChannelBot | ChannelUser) & {
@@ -220,6 +220,7 @@ export function MessageComposer({
   showKindSwitcher = true,
   enableKindCycling = true,
   normalOnly = false,
+  beginnerMode = false,
   titleValue = "",
   titleRef,
   onTitleChange,
@@ -246,7 +247,6 @@ export function MessageComposer({
   showTemplateDefaultBotTarget = true,
   sendButtonLabel,
   normalHint,
-  beginnerMode = false,
 }: MessageComposerProps) {
   const [draftValue, setDraftValue] = useState(value);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -267,10 +267,14 @@ export function MessageComposer({
     start: number;
     end: number;
   } | null>(null);
+  const [mentionPeekVisible, setMentionPeekVisible] = useState(false);
+  const [mentionPeekNonce, setMentionPeekNonce] = useState(0);
   const [textareaHeight, setTextareaHeight] = useState<number | null>(null);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
   const fileDragDepthRef = useRef(0);
+  const lastMentionPeekLabelRef = useRef<string | null>(null);
+  const lastBeginnerModeRef = useRef(beginnerMode);
   const actionTriggerRef = useRef<HTMLDivElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const keychainMenuRef = useRef<HTMLDivElement | null>(null);
@@ -842,17 +846,65 @@ export function MessageComposer({
     selectedPromptTemplateDefaultBotLabel ||
     mentionTriggerLabel ||
     "@";
-  const shouldShowMentionButton =
-    !beginnerMode || mentionOpen || hasMentionButtonSelection;
+  const shouldShowMentionButton = !beginnerMode;
   const hasUploadControl = Boolean(onUploadFile || onUploadFiles);
   const openFilePicker = () => {
     fileInputRef.current?.click();
   };
 
+  useEffect(() => {
+    const currentLabel = hasMentionButtonSelection ? mentionButtonLabel : "";
+    const previousLabel = lastMentionPeekLabelRef.current;
+    const modeChanged = lastBeginnerModeRef.current !== beginnerMode;
+    lastMentionPeekLabelRef.current = currentLabel;
+    lastBeginnerModeRef.current = beginnerMode;
+
+    if (!beginnerMode) {
+      setMentionPeekVisible(false);
+      return;
+    }
+    if (
+      previousLabel === null ||
+      modeChanged ||
+      !currentLabel ||
+      currentLabel === previousLabel
+    ) {
+      return;
+    }
+
+    setMentionPeekVisible(true);
+    setMentionPeekNonce((nonce) => nonce + 1);
+    const timer = window.setTimeout(() => setMentionPeekVisible(false), 1700);
+    return () => window.clearTimeout(timer);
+  }, [beginnerMode, hasMentionButtonSelection, mentionButtonLabel]);
+
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
     setActionMenuOpen(false);
   };
+
+  const renderMentionButton = (extraClassName = "") => (
+    <button
+      type="button"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={handleMentionButtonClick}
+      className={
+        "an-composer-iconbtn is-named-trigger" +
+        (hasMentionButtonSelection ? " is-active" : "") +
+        extraClassName
+      }
+      title="Choose agent or member"
+      aria-label="Choose agent or member"
+    >
+      <span className="an-composer-glyph">@</span>
+      <span
+        className="an-composer-trigger-label"
+        data-i18n-skip={hasMentionButtonSelection ? "" : undefined}
+      >
+        {mentionButtonLabel}
+      </span>
+    </button>
+  );
 
   return (
     <>
@@ -1080,24 +1132,7 @@ export function MessageComposer({
                 </button>
               )}
 
-              {shouldShowMentionButton && (
-                <button
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={handleMentionButtonClick}
-                  className="an-composer-iconbtn is-named-trigger"
-                  title="Choose agent or member"
-                  aria-label="Choose agent or member"
-                >
-                  <span className="an-composer-glyph">@</span>
-                  <span
-                    className="an-composer-trigger-label"
-                    data-i18n-skip={hasMentionButtonSelection ? "" : undefined}
-                  >
-                    {mentionButtonLabel}
-                  </span>
-                </button>
-              )}
+              {shouldShowMentionButton && renderMentionButton()}
 
               {onPromptTemplateChange && (
                 <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
@@ -1152,6 +1187,12 @@ export function MessageComposer({
                   <AppIcon name="more" className="w-4 h-4" />
                 </button>
               </div>
+
+              {beginnerMode && mentionPeekVisible && hasMentionButtonSelection && (
+                <span key={mentionPeekNonce} className="an-composer-mention-peek-wrap">
+                  {renderMentionButton(" is-mention-peek")}
+                </span>
+              )}
             </div>
 
             <button
@@ -1207,7 +1248,28 @@ export function MessageComposer({
 
         {actionMenuOpen && (
           <div ref={actionMenuRef} className={toolbarMenuClass}>
-            <div className="an-menu-head">Composer actions</div>
+            <div className="an-menu-head">
+              {beginnerMode ? "Other options" : "Composer actions"}
+            </div>
+            {beginnerMode && (
+              <button
+                type="button"
+                className={"an-menu-item" + (hasMentionButtonSelection ? " on" : "")}
+                onClick={handleMentionButtonClick}
+              >
+                <span className="an-mi-ico">
+                  <span className="an-composer-glyph">@</span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Choose agent or member</span>
+                  {hasMentionButtonSelection && (
+                    <span className="an-mi-sub truncate" data-i18n-skip>
+                      {mentionButtonLabel}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )}
             {keychainEnabled && (
               <button
                 type="button"

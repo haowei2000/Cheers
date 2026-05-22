@@ -1764,13 +1764,13 @@ export default function App() {
                 onUploadFile: uploadFile,
                 onUploadFiles: uploadFileObjects,
                 onAttachFiles: attachFilesToComposer,
+                beginnerMode,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
                 keychainItems: keychainPopupItems,
                 onToggleKeychain: openKeychainPopup,
                 onCloseKeychain: () => setKeychainPopupOpen(false),
-                beginnerMode,
               }}
               messageListProps={{
                 messagesContainerRef,
@@ -1877,6 +1877,7 @@ export default function App() {
                 onCycleKind: cycleMsgKind,
                 showKindSwitcher: !replyingTo && !isDmSelected,
                 enableKindCycling: !replyingTo && !isDmSelected,
+                beginnerMode,
                 titleValue: composerTitle,
                 titleRef: composerTitleRef,
                 onTitleChange: setComposerTitle,
@@ -1901,7 +1902,6 @@ export default function App() {
                 onPromptTemplateChange: setPromptTemplateOverrideId,
                 showTemplateDefaultBotTarget: !isDmSelected,
                 normalHint: selectedComposerTemplateDescription || undefined,
-                beginnerMode,
               }}
               setMemoryTab={setMemoryTab}
               setPageTopicId={setPageTopicId}

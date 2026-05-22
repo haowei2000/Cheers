@@ -41,13 +41,13 @@ export interface TopicPageProps {
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles?: (files: File[]) => void | Promise<void>;
   onAttachFiles?: (files: FileDragReference[]) => void | Promise<void>;
+  beginnerMode?: boolean;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
   keychainItems?: ComposerKeychainItem[];
   onToggleKeychain?: () => void;
   onCloseKeychain?: () => void;
-  beginnerMode?: boolean;
   sessionPanel?: ReactNode;
 }
 
@@ -92,13 +92,13 @@ export function TopicPage({
   onUploadFile,
   onUploadFiles,
   onAttachFiles,
+  beginnerMode = false,
   keychainEnabled,
   keychainOpen,
   keychainLoading,
   keychainItems,
   onToggleKeychain,
   onCloseKeychain,
-  beginnerMode = false,
   sessionPanel,
 }: TopicPageProps) {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -388,13 +388,13 @@ export function TopicPage({
           onUploadFile={onUploadFile}
           onUploadFiles={onUploadFiles}
           onAttachFiles={onAttachFiles}
+          beginnerMode={beginnerMode}
           keychainEnabled={keychainEnabled}
           keychainOpen={keychainOpen}
           keychainLoading={keychainLoading}
           keychainItems={keychainItems}
           onToggleKeychain={onToggleKeychain}
           onCloseKeychain={onCloseKeychain}
-          beginnerMode={beginnerMode}
         />
       </div>
     </div>
