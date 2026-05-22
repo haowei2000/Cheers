@@ -452,6 +452,7 @@ export default function App() {
     clearPendingFiles,
     uploadFileObjects,
     uploadFile,
+    attachExistingFiles,
   } = usePendingFiles({
     selectedId,
     currentUserId,
@@ -1731,6 +1732,7 @@ export default function App() {
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
                 onUploadFiles: uploadFileObjects,
+                onAttachFiles: attachExistingFiles,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
@@ -1855,6 +1857,7 @@ export default function App() {
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
                 onUploadFiles: uploadFileObjects,
+                onAttachFiles: attachExistingFiles,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,

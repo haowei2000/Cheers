@@ -7,7 +7,13 @@ import type {
   ReactNode,
   RefObject,
 } from "react";
-import { dragEventHasFiles, filesFromDragEvent } from "../lib/file-drag";
+import {
+  dragEventHasFileReferences,
+  dragEventHasFiles,
+  fileReferencesFromDragEvent,
+  filesFromDragEvent,
+  type FileDragReference,
+} from "../lib/file-drag";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { AppIcon } from "./icons/AppIcon";
@@ -99,6 +105,7 @@ export interface MessageComposerProps {
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles?: (files: File[]) => void | Promise<void>;
+  onAttachFiles?: (files: FileDragReference[]) => void;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -202,6 +209,7 @@ export function MessageComposer({
   onRemovePendingFile,
   onUploadFile,
   onUploadFiles,
+  onAttachFiles,
   keychainEnabled = false,
   keychainOpen = false,
   keychainLoading = false,
@@ -268,7 +276,7 @@ export function MessageComposer({
       ? promptTemplateDefaultBotLabel(selectedPromptTemplate.default_bot)
       : "";
   const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
-  const canDropFiles = Boolean(onUploadFiles && !disabled);
+  const canDropFiles = Boolean((onUploadFiles || onAttachFiles) && !disabled);
   const leadingBotMention = useMemo(
     () =>
       findLeadingBotMentionMatch(
@@ -687,8 +695,12 @@ export function MessageComposer({
     });
   };
 
+  const isComposerFileDrag = (event: DragEvent<HTMLDivElement>) =>
+    Boolean(onUploadFiles && dragEventHasFiles(event)) ||
+    Boolean(onAttachFiles && dragEventHasFileReferences(event));
+
   const handleFileDragEnter = (event: DragEvent<HTMLDivElement>) => {
-    if (!canDropFiles || !dragEventHasFiles(event)) return;
+    if (!canDropFiles || !isComposerFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     fileDragDepthRef.current += 1;
@@ -696,14 +708,14 @@ export function MessageComposer({
   };
 
   const handleFileDragOver = (event: DragEvent<HTMLDivElement>) => {
-    if (!canDropFiles || !dragEventHasFiles(event)) return;
+    if (!canDropFiles || !isComposerFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
   };
 
   const handleFileDragLeave = (event: DragEvent<HTMLDivElement>) => {
-    if (!canDropFiles || !dragEventHasFiles(event)) return;
+    if (!canDropFiles || !isComposerFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     fileDragDepthRef.current -= 1;
@@ -713,11 +725,17 @@ export function MessageComposer({
   };
 
   const handleFileDrop = (event: DragEvent<HTMLDivElement>) => {
-    if (!dragEventHasFiles(event)) return;
+    if (!isComposerFileDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     resetFileDragState();
-    if (!canDropFiles || !onUploadFiles) return;
+    if (!canDropFiles) return;
+    const fileReferences = fileReferencesFromDragEvent(event);
+    if (fileReferences.length > 0 && onAttachFiles) {
+      onAttachFiles(fileReferences);
+      return;
+    }
+    if (!onUploadFiles) return;
     const files = filesFromDragEvent(event);
     if (files.length === 0) return;
     void Promise.resolve(onUploadFiles(files)).catch((error) => {

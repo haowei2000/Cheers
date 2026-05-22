@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import type { ChangeEvent } from "react";
 import type { AuthFetch } from "../../../api/client";
 import { API } from "../../../lib/app-config";
+import type { FileDragReference } from "../../../lib/file-drag";
 
 const PRESIGN_EXTS = new Set([
   ".txt",
@@ -225,6 +226,36 @@ export function usePendingFiles({
     [uploadFileObjects],
   );
 
+  const attachExistingFiles = useCallback(
+    (files: FileDragReference[]) => {
+      if (files.length === 0) return;
+      if (!selectedId) return;
+      const existingIds = new Set(pendingFileIds);
+      const nextFiles = files.filter((file) => {
+        if (existingIds.has(file.file_id)) return false;
+        existingIds.add(file.file_id);
+        return true;
+      });
+      if (nextFiles.length === 0) return;
+      setPendingFileIds((prev) => {
+        const next = [...prev];
+        for (const file of nextFiles) next.push(file.file_id);
+        return next;
+      });
+      setPendingFileNames((prev) => {
+        const next = [...prev];
+        for (const file of nextFiles) next.push(file.original_filename || file.file_id);
+        return next;
+      });
+      setPendingFilePreviews((prev) => {
+        const next = [...prev];
+        for (let index = 0; index < nextFiles.length; index += 1) next.push(null);
+        return next;
+      });
+    },
+    [pendingFileIds, selectedId],
+  );
+
   return {
     pendingFileIds,
     pendingFileNames,
@@ -235,5 +266,6 @@ export function usePendingFiles({
     uploadFileObject,
     uploadFileObjects,
     uploadFile,
+    attachExistingFiles,
   };
 }
