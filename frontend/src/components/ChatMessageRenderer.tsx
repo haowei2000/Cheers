@@ -12,6 +12,7 @@ import {
 import toast from "react-hot-toast";
 import type { FileInfo } from "../types";
 import { createProtectedFileObjectUrl, downloadProtectedFile, openProtectedFile } from "../lib/protected-file";
+import { setAgentNexusFileRefs } from "../lib/file-drag";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 
@@ -178,6 +179,7 @@ interface ChatAttachmentCardProps {
   getPreviewUrl: (file: FileInfo) => string;
   onPreview?: (file: FileInfo) => void;
   onForward?: (file: FileInfo) => void;
+  onAttach?: (file: FileInfo) => void;
 }
 
 const ChatAttachmentCard = memo(function ChatAttachmentCard({
@@ -187,6 +189,7 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
   getPreviewUrl,
   onPreview,
   onForward,
+  onAttach,
 }: ChatAttachmentCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [imagePreviewSrc, setImagePreviewSrc] = useState<string | null>(null);
@@ -227,6 +230,8 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
 
   return (
     <div
+      draggable
+      onDragStart={(event) => setAgentNexusFileRefs(event.dataTransfer, [file])}
       className={`group w-full max-w-[320px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-colors hover:border-gray-300 ${
         align === "right" ? "self-end" : "self-start"
       }`}
@@ -295,6 +300,20 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
               <AppIcon name="forward" className="h-4 w-4" />
             </button>
           )}
+          {onAttach && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAttach(file);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              title="Copy to composer"
+              aria-label={`Copy ${name} to composer`}
+            >
+              <AppIcon name="copy" className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={(event) => {
@@ -320,6 +339,7 @@ export interface ChatAttachmentsProps {
   getPreviewUrl: (file: FileInfo) => string;
   onPreview?: (file: FileInfo) => void;
   onForward?: (file: FileInfo) => void;
+  onAttach?: (file: FileInfo) => void;
 }
 
 export const ChatAttachments = memo(function ChatAttachments({
@@ -329,6 +349,7 @@ export const ChatAttachments = memo(function ChatAttachments({
   getPreviewUrl,
   onPreview,
   onForward,
+  onAttach,
 }: ChatAttachmentsProps) {
   if (!files?.length) return null;
 
@@ -343,6 +364,7 @@ export const ChatAttachments = memo(function ChatAttachments({
           getPreviewUrl={getPreviewUrl}
           onPreview={onPreview}
           onForward={onForward}
+          onAttach={onAttach}
         />
       ))}
     </div>
@@ -439,6 +461,7 @@ export interface ChatMessageRendererProps {
   keyPrefix?: string;
   onPreview?: (file: FileInfo) => void;
   onForwardFile?: (file: FileInfo) => void;
+  onAttachFile?: (file: FileInfo) => void;
   renderBody?: (children: ReactNode) => ReactNode;
   showStreamingCursor?: boolean;
   streaming?: boolean;
@@ -464,6 +487,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   onImageClick,
   onPreview,
   onForwardFile,
+  onAttachFile,
   renderBody,
   showStreamingCursor = true,
   streaming,
@@ -627,6 +651,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
             getPreviewUrl={getPreviewUrl}
             onPreview={onPreview}
             onForward={onForwardFile}
+            onAttach={onAttachFile}
           />
         ) : null)}
       {hasContent || streaming || bodySuffix ? (

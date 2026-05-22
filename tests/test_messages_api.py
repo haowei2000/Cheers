@@ -1083,6 +1083,277 @@ async def test_forward_single_file_without_message(
 
 
 @pytest.mark.asyncio
+async def test_send_existing_file_links_it_to_target_channel(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000880", name="W880")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000880",
+        workspace_id=ws.workspace_id,
+        name="send-file-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000881",
+        workspace_id=ws.workspace_id,
+        name="send-file-target",
+        type="public",
+    )
+    file_path = tmp_path / "send-existing.txt"
+    file_path.write_text("send existing", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000880",
+        channel_id=source_ch.channel_id,
+        workspace_id=ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="send-existing.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, source_ch, target_ch, record])
+    await db_session.flush()
+    db_session.add(
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="channel",
+            scope_id=source_ch.channel_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages",
+        json={
+            "content": "attach existing file",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "file_ids": [record.file_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    message = resp.json()["data"]
+    assert message["file_ids"] == [record.file_id]
+    target_link = (
+        await db_session.execute(
+            select(FileScopeLink).where(
+                FileScopeLink.file_id == record.file_id,
+                FileScopeLink.scope_type == "channel",
+                FileScopeLink.scope_id == target_ch.channel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert target_link is not None
+
+
+@pytest.mark.asyncio
+async def test_send_personal_channel_file_reuses_same_channel_record(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    personal_ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000882",
+        name="Personal",
+        kind="personal",
+    )
+    target_dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000882",
+        workspace_id=personal_ws.workspace_id,
+        name="dm:test:send-personal-file",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000882",
+        username="send_personal_file_bot",
+        display_name="Send Personal File Bot",
+        status="online",
+    )
+    file_path = tmp_path / "personal-existing.txt"
+    file_path.write_text("personal existing", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000882",
+        channel_id=target_dm.channel_id,
+        workspace_id=personal_ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="personal-existing.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([personal_ws, target_dm, bot])
+    await db_session.flush()
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+        ),
+    )
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+        ),
+    )
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add_all([
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="personal",
+            scope_id=current_user_id,
+            workspace_id=personal_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="dm",
+            scope_id=target_dm.channel_id,
+            workspace_id=personal_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_dm.channel_id}/messages",
+        json={
+            "content": "reuse personal file",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "file_ids": [record.file_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    message = resp.json()["data"]
+    assert message["file_ids"] == [record.file_id]
+    rows = (
+        await db_session.execute(
+            select(FileRecord).where(FileRecord.original_filename == record.original_filename)
+        )
+    ).scalars().all()
+    assert [item.file_id for item in rows] == [record.file_id]
+
+
+@pytest.mark.asyncio
+async def test_send_team_file_to_personal_channel_clones_record(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    team_ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000883", name="W883")
+    personal_ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000884",
+        name="Personal",
+        kind="personal",
+    )
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000883",
+        workspace_id=team_ws.workspace_id,
+        name="team-source-for-personal-send",
+        type="public",
+    )
+    target_dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000884",
+        workspace_id=personal_ws.workspace_id,
+        name="dm:test:send-cross-scope-file",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000884",
+        username="send_cross_scope_file_bot",
+        display_name="Send Cross Scope File Bot",
+        status="online",
+    )
+    file_path = tmp_path / "team-to-personal.txt"
+    file_path.write_text("team to personal", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000883",
+        channel_id=source_ch.channel_id,
+        workspace_id=team_ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="team-to-personal.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([team_ws, personal_ws, source_ch, target_dm, bot])
+    await db_session.flush()
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+        ),
+    )
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+        ),
+    )
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add(
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="channel",
+            scope_id=source_ch.channel_id,
+            workspace_id=team_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_dm.channel_id}/messages",
+        json={
+            "content": "copy team file into personal chat",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "file_ids": [record.file_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    message = resp.json()["data"]
+    assert message["file_ids"] != [record.file_id]
+    copied_file_id = message["file_ids"][0]
+    copied = await db_session.get(FileRecord, copied_file_id)
+    assert copied is not None
+    assert copied.channel_id == target_dm.channel_id
+    assert copied.workspace_id == personal_ws.workspace_id
+    assert copied.original_filename == record.original_filename
+    assert Path(copied.original_path).read_text(encoding="utf-8") == "team to personal"
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == copied_file_id)
+        )
+    ).scalars().all()
+    assert {(link.scope_type, link.scope_id) for link in links} == {
+        ("personal", current_user_id),
+        ("dm", target_dm.channel_id),
+    }
+
+
+@pytest.mark.asyncio
 async def test_forward_file_to_personal_space_deep_copies_attachment(
     client: AsyncClient,
     db_session: AsyncSession,

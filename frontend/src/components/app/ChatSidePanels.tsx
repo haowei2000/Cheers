@@ -35,6 +35,7 @@ interface ChatSidePanelsProps {
   memoryWidth: number;
   onCloseFilePreview: () => void;
   onCloseMemory: () => void;
+  onAttachFileToComposer?: (file: FileInfo) => void;
   onFileDeleted?: () => void;
   onFilePreview: (file: FileInfo) => void;
   onFilePreviewResize: (event: MouseEvent) => void;
@@ -63,6 +64,7 @@ export function ChatSidePanels({
   memoryWidth,
   onCloseFilePreview,
   onCloseMemory,
+  onAttachFileToComposer,
   onFileDeleted,
   onFilePreview,
   onFilePreviewResize,
@@ -111,6 +113,21 @@ export function ChatSidePanels({
                   scope_id: file.scope_id ?? selectedId,
                 })
               }
+              onAttachFileToComposer={
+                onAttachFileToComposer
+                  ? (file: ChannelFilePreview) =>
+                      onAttachFileToComposer({
+                        file_id: file.file_id,
+                        original_filename: file.original_filename ?? undefined,
+                        content_type: file.content_type ?? undefined,
+                        size_bytes: file.size_bytes ?? undefined,
+                        channel_id: file.channel_id ?? selectedId,
+                        channel_label: file.channel_label ?? channelName,
+                        scope_type: file.scope_type ?? "channel",
+                        scope_id: file.scope_id ?? selectedId,
+                      })
+                  : undefined
+              }
               onClose={onCloseMemory}
             />
           </Suspense>
@@ -147,6 +164,7 @@ export function ChatSidePanels({
               scopeId={filePreviewPanel.scopeId}
               source={filePreviewPanel.source}
               onDeleted={onFileDeleted}
+              onAttachFile={onAttachFileToComposer}
               onClose={onCloseFilePreview}
             />
           </Suspense>

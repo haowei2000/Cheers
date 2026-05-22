@@ -66,6 +66,7 @@ interface SidebarProps {
   onOpenFilePreview?: (file: FileInfo) => void;
   onOpenPersonalFileMain?: (file: FileInfo) => void;
   onUploadPersonalFiles?: (files: File[]) => void | Promise<void>;
+  onAttachFilesToComposer?: (files: FileInfo[]) => void | Promise<void>;
   fileLibraryRefreshKey?: number;
   onPreloadChannel?: (channelId: string) => void;
   onOpenMessage?: (channelId: string, msgId: string) => void;
@@ -134,6 +135,7 @@ export function Sidebar({
   onOpenFilePreview,
   onOpenPersonalFileMain,
   onUploadPersonalFiles,
+  onAttachFilesToComposer,
   fileLibraryRefreshKey = 0,
   onPreloadChannel,
   onOpenMessage,
@@ -1341,7 +1343,7 @@ export function Sidebar({
             <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
               <button
                 type="button"
-                className="an-rail-row an-file-drag-row w-full pr-7"
+                className="an-rail-row an-file-drag-row w-full pr-14"
                 draggable
                 title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
                 onDragStart={(event) => {
@@ -1376,22 +1378,37 @@ export function Sidebar({
                   {file.original_filename || file.file_id}
                 </span>
               </button>
-              <Tooltip
-                content="Remove from files"
-                placement="right"
-                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <button
-                  type="button"
-                  onClick={(event) => void deletePersonalFile(file, event)}
-                  className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
-                  style={{ color: "var(--fg-3)" }}
-                  title="Remove from files"
-                  aria-label="Remove from files"
-                >
-                  <AppIcon name="trash" className="w-3 h-3" />
-                </button>
-              </Tooltip>
+              <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                {onAttachFilesToComposer && (
+                  <Tooltip content="Copy to composer" placement="right">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void Promise.resolve(onAttachFilesToComposer([file]));
+                      }}
+                      className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                      style={{ color: "var(--fg-3)" }}
+                      title="Copy to composer"
+                      aria-label="Copy to composer"
+                    >
+                      <AppIcon name="copy" className="w-3 h-3" />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip content="Remove from files" placement="right">
+                  <button
+                    type="button"
+                    onClick={(event) => void deletePersonalFile(file, event)}
+                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                    style={{ color: "var(--fg-3)" }}
+                    title="Remove from files"
+                    aria-label="Remove from files"
+                  >
+                    <AppIcon name="trash" className="w-3 h-3" />
+                  </button>
+                </Tooltip>
+              </div>
             </li>
           ))}
         </ul>

@@ -28,7 +28,11 @@ import { parseHelperPayload } from "./lib/helper";
 import { API, API_DOCS_URL, USER_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import { getStoredBeginnerMode, setStoredBeginnerMode } from "./lib/experience";
-import { dragEventHasFiles, filesFromDragEvent } from "./lib/file-drag";
+import {
+  dragEventHasFiles,
+  filesFromDragEvent,
+  type FileDragReference,
+} from "./lib/file-drag";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
   buildChatPath,
@@ -450,9 +454,9 @@ export default function App() {
     pendingFiles,
     removePendingFile,
     clearPendingFiles,
+    attachExistingFiles,
     uploadFileObjects,
     uploadFile,
-    attachExistingFiles,
   } = usePendingFiles({
     selectedId,
     currentUserId,
@@ -461,6 +465,26 @@ export default function App() {
   });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
+  const attachFilesToComposer = useCallback(
+    (files: FileDragReference[]) => {
+      if (!selectedId) {
+        toast.error("Select a conversation before attaching files");
+        return;
+      }
+      if (!currentUserId) {
+        setLoginModalOpen(true);
+        toast.error("Sign in before attaching files");
+        return;
+      }
+      if (isSystemDm) {
+        toast.error("Friend notification conversations cannot send messages directly");
+        return;
+      }
+      attachExistingFiles(files);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [attachExistingFiles, currentUserId, inputRef, isSystemDm, selectedId],
+  );
 
   // Keychain insert popup
   const [keychainPopupOpen, setKeychainPopupOpen] = useState(false);
@@ -537,7 +561,10 @@ export default function App() {
     handleMarkdownImageClick,
     handleMarkdownFileClick,
     renderFileAttachments,
-  } = useFilePreviewController({ onForwardFile: openForwardFile });
+  } = useFilePreviewController({
+    onForwardFile: openForwardFile,
+    onAttachFile: (file) => attachFilesToComposer([file]),
+  });
   // Resizable panel widths.
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
   const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
@@ -1601,6 +1628,7 @@ export default function App() {
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
             onUploadPersonalFiles={uploadPersonalFiles}
+            onAttachFilesToComposer={attachFilesToComposer}
             fileLibraryRefreshKey={fileLibraryRefreshNonce}
             onPreloadChannel={preloadChannelMessages}
             onOpenMessage={handleMessageNavigate}
@@ -1660,6 +1688,7 @@ export default function App() {
                     setMainFilePreviewPanel(null);
                     setFileLibraryRefreshNonce((value) => value + 1);
                   }}
+                  onAttachFile={(file) => attachFilesToComposer([file])}
                   onClose={() => {
                     setMainFilePreviewPanel(null);
                     setSelectedId(null);
@@ -1732,7 +1761,7 @@ export default function App() {
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
                 onUploadFiles: uploadFileObjects,
-                onAttachFiles: attachExistingFiles,
+                onAttachFiles: attachFilesToComposer,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
@@ -1857,7 +1886,7 @@ export default function App() {
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
                 onUploadFiles: uploadFileObjects,
-                onAttachFiles: attachExistingFiles,
+                onAttachFiles: attachFilesToComposer,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
@@ -1895,6 +1924,7 @@ export default function App() {
             onMemoryTabChange={setMemoryTab}
             currentUserId={currentUserId}
             onFilePreview={openFilePreview}
+            onAttachFileToComposer={(file) => attachFilesToComposer([file])}
             onFileDeleted={() => setFileLibraryRefreshNonce((value) => value + 1)}
             onCloseMemory={() => setMemoryTab(null)}
             filePreviewPanel={filePreviewPanel}

@@ -21,7 +21,7 @@ from app.db.models import Channel, FileRecord, FileScopeLink, Message, User, Wor
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.file_repo import FileRepository
 from app.services.channel_service import ChannelService
-from app.services.file_retention import file_expires_at
+from app.services.file_retention import active_file_filter, file_expires_at
 from app.services.file_scope_service import (
     SCOPE_CHANNEL,
     SCOPE_DM,
@@ -136,6 +136,75 @@ class FileService:
         rec = await self.get_or_404(file_id)
         await FileScopeService(self.session).require_user_access(rec, user)
         return f"/api/v1/files/{rec.file_id}/download"
+
+    async def attach_file_ids_to_channel(
+        self,
+        *,
+        file_ids: list[str],
+        target_channel_id: str,
+        current_user: User,
+        created_by: str | None = None,
+    ) -> list[str]:
+        normalized = list(dict.fromkeys(file_id.strip() for file_id in file_ids if file_id and file_id.strip()))
+        if not normalized:
+            return []
+        rows = (
+            await self.session.execute(
+                select(FileRecord).where(FileRecord.file_id.in_(normalized), active_file_filter())
+            )
+        ).scalars().all()
+        by_id = {record.file_id: record for record in rows}
+        missing = [file_id for file_id in normalized if file_id not in by_id]
+        if missing:
+            raise NotFoundError(f"file not found: {missing[0]}")
+        return await self.attach_records_to_channel(
+            records=[by_id[file_id] for file_id in normalized],
+            target_channel_id=target_channel_id,
+            current_user=current_user,
+            created_by=created_by,
+        )
+
+    async def attach_records_to_channel(
+        self,
+        *,
+        records: list[FileRecord],
+        target_channel_id: str,
+        current_user: User,
+        created_by: str | None = None,
+    ) -> list[str]:
+        target_channel = await self.channel_repo.get_by_id(target_channel_id)
+        if target_channel is None:
+            raise NotFoundError("channel not found")
+
+        scope_service = FileScopeService(self.session)
+        target_is_personal = await self._channel_is_personal_space(target_channel)
+        linked_ids: list[str] = []
+        seen: set[str] = set()
+        for record in records:
+            if record.file_id in seen:
+                continue
+            seen.add(record.file_id)
+            await scope_service.require_user_access(record, current_user)
+            if target_is_personal:
+                already_in_target_channel = (
+                    record.channel_id == target_channel.channel_id
+                    and record.workspace_id == target_channel.workspace_id
+                )
+                if not already_in_target_channel:
+                    clone = await self.clone_to_personal_channel(
+                        record,
+                        target_channel=target_channel,
+                        owner=current_user,
+                    )
+                    linked_ids.append(clone.file_id)
+                    continue
+            await scope_service.link_file_to_channel(
+                record,
+                target_channel,
+                created_by=created_by or current_user.user_id,
+            )
+            linked_ids.append(record.file_id)
+        return linked_ids
 
     async def delete_or_unlink(
         self,

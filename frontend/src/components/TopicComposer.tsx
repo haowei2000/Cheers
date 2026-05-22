@@ -23,7 +23,7 @@ export interface TopicComposerProps {
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles?: (files: File[]) => void | Promise<void>;
-  onAttachFiles?: (files: FileDragReference[]) => void;
+  onAttachFiles?: (files: FileDragReference[]) => void | Promise<void>;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;

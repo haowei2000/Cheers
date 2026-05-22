@@ -149,6 +149,19 @@ class PersistStage(Stage[IngestContext]):
         msg_type = ctx.msg_type or (
             MSG_TYPE_REPLY if ctx.in_reply_to_msg_id else MSG_TYPE_NORMAL
         )
+        linked_files_before_persist = False
+        if ctx.file_ids and ctx.sender_type == "user" and ctx.sender_id:
+            user = await ctx.session.get(User, ctx.sender_id)
+            if user is not None:
+                from app.services.file_service import FileService
+
+                ctx.file_ids = await FileService(ctx.session).attach_file_ids_to_channel(
+                    file_ids=ctx.file_ids,
+                    target_channel_id=ctx.channel_id,
+                    current_user=user,
+                    created_by=ctx.sender_id,
+                )
+                linked_files_before_persist = True
         msg = Message(
             channel_id=ctx.channel_id,
             sender_id=ctx.sender_id,
@@ -183,7 +196,7 @@ class PersistStage(Stage[IngestContext]):
 
         ctx.msg = msg
 
-        if ctx.file_ids:
+        if ctx.file_ids and not linked_files_before_persist:
             from app.services.file_scope_service import FileScopeService
 
             await FileScopeService(ctx.session).link_files_to_channel(

@@ -4,6 +4,7 @@ import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
+import { setAgentNexusFileRefs } from "../lib/file-drag";
 import { getAuthToken as getStoredToken } from "../api";
 import { AppIcon, FileTypeIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
@@ -44,6 +45,7 @@ export function MemoryPanel({
   onLayerChange,
   currentUserId,
   onFilePreview,
+  onAttachFileToComposer,
 }: {
   channelId: string;
   channelName: string;
@@ -53,6 +55,7 @@ export function MemoryPanel({
   onLayerChange?: (layer: string) => void;
   currentUserId?: string | null;
   onFilePreview?: (file: ChannelFilePreview) => void;
+  onAttachFileToComposer?: (file: ChannelFilePreview) => void;
 }) {
   const isControlled = externalLayer !== undefined;
   const [internalLayer, setInternalLayer] = useState<string>("ANCHOR");
@@ -1323,6 +1326,24 @@ export function MemoryPanel({
                     key={f.file_id}
                     role={onFilePreview ? "button" : undefined}
                     tabIndex={onFilePreview ? 0 : undefined}
+                    draggable
+                    onDragStart={(event) =>
+                      setAgentNexusFileRefs(event.dataTransfer, [
+                        {
+                          file_id: f.file_id,
+                          original_filename: f.original_filename,
+                          content_type: f.content_type,
+                          size_bytes: f.size_bytes,
+                          status: f.status,
+                          channel_id: channelId,
+                          channel_label: channelName,
+                          scope_type: "channel",
+                          scope_id: channelId,
+                          summary_3lines: f.summary_3lines,
+                          created_at: f.created_at,
+                        },
+                      ])
+                    }
                     onClick={() =>
                       onFilePreview?.({
                         ...f,
@@ -1381,6 +1402,26 @@ export function MemoryPanel({
                     >
                       <AppIcon name="download" className="w-4 h-4" />
                     </a>
+                    {onAttachFileToComposer && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onAttachFileToComposer({
+                            ...f,
+                            channel_id: channelId,
+                            channel_label: channelName,
+                            scope_type: "channel",
+                            scope_id: channelId,
+                          });
+                        }}
+                        className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
+                        title="Copy to composer"
+                        aria-label="Copy to composer"
+                      >
+                        <AppIcon name="copy" className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={(event) => void handleChannelFileDelete(f, event)}

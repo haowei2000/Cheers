@@ -52,9 +52,31 @@ function promptTemplateDefaultBotLabel(
   return bot.display_name?.trim() || bot.username || "";
 }
 
+function formatFileSize(bytes?: number | null): string {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileTypeLabel(contentType?: string | null, filename?: string): string {
+  const ct = contentType || "";
+  const ext = (filename?.split(".").pop() || "").toLowerCase();
+  if (ct.includes("pdf") || ext === "pdf") return "PDF";
+  if (ct.includes("wordprocessingml") || ["doc", "docx"].includes(ext)) return "Word";
+  if (ct.includes("spreadsheetml") || ["xls", "xlsx", "csv"].includes(ext)) return "Spreadsheet";
+  if (ct.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "Image";
+  if (ct.startsWith("text/") || ["txt", "md"].includes(ext)) return "Text";
+  return "Files";
+}
+
 export interface ComposerPendingFile {
+  fileId: string;
   name: string;
   previewUrl: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  source?: "upload" | "existing";
 }
 
 export interface ComposerKeychainItem {
@@ -105,7 +127,7 @@ export interface MessageComposerProps {
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
   onUploadFiles?: (files: File[]) => void | Promise<void>;
-  onAttachFiles?: (files: FileDragReference[]) => void;
+  onAttachFiles?: (files: FileDragReference[]) => void | Promise<void>;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -732,19 +754,20 @@ export function MessageComposer({
     if (!canDropFiles) return;
     const fileReferences = fileReferencesFromDragEvent(event);
     if (fileReferences.length > 0 && onAttachFiles) {
-      onAttachFiles(fileReferences);
-      return;
+      void Promise.resolve(onAttachFiles(fileReferences)).catch((error) => {
+        console.error("Failed to attach dropped files", error);
+      });
     }
-    if (!onUploadFiles) return;
-    const files = filesFromDragEvent(event);
-    if (files.length === 0) return;
-    void Promise.resolve(onUploadFiles(files)).catch((error) => {
-      console.error("Failed to upload dropped files", error);
-    });
+    if (dragEventHasFiles(event) && onUploadFiles) {
+      const files = filesFromDragEvent(event);
+      if (files.length === 0) return;
+      void Promise.resolve(onUploadFiles(files)).catch((error) => {
+        console.error("Failed to upload dropped files", error);
+      });
+    }
   };
 
-  const removePendingFile = (index: number, previewUrl: string | null) => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  const removePendingFile = (index: number) => {
     onRemovePendingFile?.(index);
   };
 
@@ -866,10 +889,15 @@ export function MessageComposer({
 
       {pendingFiles.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
-          {pendingFiles.map((file, index) =>
-            file.previewUrl ? (
+          {pendingFiles.map((file, index) => {
+            const meta = [
+              file.source === "existing" ? "Attached" : "Pending send",
+              fileTypeLabel(file.contentType, file.name),
+              formatFileSize(file.sizeBytes),
+            ].filter(Boolean).join(" · ");
+            return file.previewUrl ? (
               <div
-                key={`${file.name}:${index}`}
+                key={`${file.fileId}:${index}`}
                 className="relative group cursor-pointer rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-1)] shadow-sm inline-block"
               >
                 <img
@@ -883,8 +911,8 @@ export function MessageComposer({
                 </div>
                 <button
                   type="button"
-                  onClick={() => removePendingFile(index, file.previewUrl)}
-                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  onClick={() => removePendingFile(index)}
+                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full leading-none items-center justify-center flex opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                   aria-label="Remove attachment"
                   title="Remove attachment"
                 >
@@ -893,30 +921,34 @@ export function MessageComposer({
               </div>
             ) : (
               <div
-                key={`${file.name}:${index}`}
+                key={`${file.fileId}:${index}`}
                 className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-[var(--bg-1)] border border-[var(--border)] rounded-lg shadow-sm max-w-[240px]"
               >
                 <div className="w-9 h-9 rounded-md bg-[var(--accent-muted)] flex items-center justify-center flex-shrink-0">
-                  <FileTypeIcon filename={file.name} size={20} />
+                  <FileTypeIcon
+                    contentType={file.contentType}
+                    filename={file.name}
+                    size={20}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="an-type-label text-[var(--fg-2)] truncate">
                     {file.name}
                   </div>
-                  <div className="an-type-caption text-[var(--fg-3)]">Pending send</div>
+                  <div className="an-type-caption text-[var(--fg-3)] truncate">{meta}</div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => removePendingFile(index, null)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--fg-3)] text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  onClick={() => removePendingFile(index)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--fg-3)] text-white rounded-full leading-none items-center justify-center flex opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                   aria-label="Remove attachment"
                   title="Remove attachment"
                 >
                   <AppIcon name="close" className="w-3 h-3" />
                 </button>
               </div>
-            ),
-          )}
+            );
+          })}
         </div>
       )}
 

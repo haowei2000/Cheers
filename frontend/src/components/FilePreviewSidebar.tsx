@@ -7,6 +7,7 @@ import {
   downloadProtectedFile,
   openProtectedFile,
 } from "../lib/protected-file";
+import type { FileInfo } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 import { Tooltip } from "./Tooltip";
@@ -67,6 +68,7 @@ export function FilePreviewPanel({
   scopeId,
   source,
   onDeleted,
+  onAttachFile,
   onClose,
   variant = "side",
 }: {
@@ -81,6 +83,7 @@ export function FilePreviewPanel({
   scopeId?: string | null;
   source?: "message" | "memory" | "personal";
   onDeleted?: () => void;
+  onAttachFile?: (file: FileInfo) => void;
   onClose: () => void;
   variant?: "side" | "main";
 }) {
@@ -351,6 +354,19 @@ export function FilePreviewPanel({
     });
   };
 
+  const handleAttachFile = () => {
+    if (!resolvedFileId) return;
+    onAttachFile?.({
+      file_id: resolvedFileId,
+      original_filename: filename,
+      content_type: contentType ?? undefined,
+      size_bytes: sizeBytes ?? undefined,
+      channel_id: channelId ?? undefined,
+      scope_type: scopeType,
+      scope_id: scopeId,
+    });
+  };
+
   const handleDelete = async () => {
     if (!resolvedFileId || deleting) return;
     if (!confirm(`Delete ${filename}?`)) return;
@@ -421,6 +437,18 @@ export function FilePreviewPanel({
               <AppIcon name="externalLink" />
             </button>
           </Tooltip>
+          {resolvedFileId && onAttachFile && (
+            <Tooltip content="Copy to composer" placement="bottom">
+              <button
+                type="button"
+                onClick={handleAttachFile}
+                className="an-file-preview-action"
+                aria-label="Copy to composer"
+              >
+                <AppIcon name="copy" />
+              </button>
+            </Tooltip>
+          )}
           {canDelete && (
             <Tooltip content="Delete file" placement="bottom">
               <button
