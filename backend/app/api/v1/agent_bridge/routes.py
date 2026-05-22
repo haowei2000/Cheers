@@ -81,7 +81,7 @@ from app.features.bot_runtime.bot_events.queue import enqueue_bot_event_job
 from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
-from app.services.file_retention import active_file_filter, file_expires_at
+from app.services.file_retention import active_file_filter
 from app.services.file_scope_service import FileScopeService
 
 logger = logging.getLogger("app.api.v1.agent_bridge")
@@ -654,7 +654,7 @@ async def bridge_upload_markdown_file(
         status="ready",
         uploaded_at=now,
         converted_at=now,
-        expires_at=file_expires_at(now),
+        expires_at=None,
     )
     session.add(record)
     await session.flush()
@@ -755,7 +755,7 @@ async def bridge_upload_binary_file(
         size_bytes=total,
         status="ready",
         uploaded_at=now,
-        expires_at=file_expires_at(now),
+        expires_at=None,
     )
     session.add(record)
     await session.flush()
@@ -1732,7 +1732,7 @@ async def _handle_data_file_upload(
             size_bytes=len(raw),
             status="ready",
             uploaded_at=now,
-            expires_at=file_expires_at(now),
+            expires_at=None,
         )
         s.add(record)
         await s.flush()
