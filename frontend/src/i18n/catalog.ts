@@ -202,6 +202,7 @@ export const EN_TO_ZH: Record<string, string> = {
   "Skill · Force override for this message": "技能 · 强制覆盖本次消息",
   "Enable encrypted mode (only bots can read the original)": "开启加密模式（仅 Bot 可读原文）",
   "@ Agent · Tab switches type · Enter sends": "@ 智能体 · Tab 切换类型 · ↵ 发送",
+  "Enter sends": "Enter 发送",
   "Tab switches type": "Tab 切换类型",
   "Mention a bot": "呼叫 Bot",
   "switch type": "切换类型",

@@ -47,6 +47,7 @@ export interface TopicPageProps {
   keychainItems?: ComposerKeychainItem[];
   onToggleKeychain?: () => void;
   onCloseKeychain?: () => void;
+  beginnerMode?: boolean;
   sessionPanel?: ReactNode;
 }
 
@@ -97,6 +98,7 @@ export function TopicPage({
   keychainItems,
   onToggleKeychain,
   onCloseKeychain,
+  beginnerMode = false,
   sessionPanel,
 }: TopicPageProps) {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -392,6 +394,7 @@ export function TopicPage({
           keychainItems={keychainItems}
           onToggleKeychain={onToggleKeychain}
           onCloseKeychain={onCloseKeychain}
+          beginnerMode={beginnerMode}
         />
       </div>
     </div>

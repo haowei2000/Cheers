@@ -66,6 +66,9 @@ docker-compose.yml
 
 # OpenClaw plugin 构建产物（每次 release 时由 npm pack 生成，不入 git）
 packages/openclaw-channel-agentnexus/*.tgz
+release/*.tgz
+release/*.tar.gz
 .tmp_pytest/
 .pytest_tmp/
 tmp_pytest/
+docker-compose.yml.bak-20260521-104115

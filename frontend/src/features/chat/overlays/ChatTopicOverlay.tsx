@@ -52,6 +52,7 @@ export interface ChatTopicOverlayProps {
   keychainItems: ComposerKeychainItem[];
   onToggleKeychain: () => void;
   onCloseKeychain: () => void;
+  beginnerMode?: boolean;
   onOpenSessionScope?: (target: SessionScopeTarget) => void;
 }
 
@@ -90,6 +91,7 @@ export function ChatTopicOverlay({
   keychainItems,
   onToggleKeychain,
   onCloseKeychain,
+  beginnerMode = false,
   onOpenSessionScope,
 }: ChatTopicOverlayProps) {
   if (!open || !selectedId || !pageTopicId) return null;
@@ -144,6 +146,7 @@ export function ChatTopicOverlay({
             keychainItems={keychainItems}
             onToggleKeychain={onToggleKeychain}
             onCloseKeychain={onCloseKeychain}
+            beginnerMode={beginnerMode}
             sessionPanel={
               <SessionScopePanel
                 scopeType="topic"

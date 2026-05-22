@@ -247,6 +247,9 @@ export function Sidebar({
     files: false,
     projects: false,
   });
+  const [collapsedProjectGroups, setCollapsedProjectGroups] = useState<
+    Record<string, boolean>
+  >({});
   const [channelsCollapsed, setChannelsCollapsed] = useState(false);
   const personalUploadInputRef = useRef<HTMLInputElement>(null);
   const personalFilesDragDepthRef = useRef(0);
@@ -267,6 +270,14 @@ export function Sidebar({
     setCollapsedPersonalSections((prev) => ({
       ...prev,
       [key]: !prev[key],
+    }));
+  };
+  const isProjectGroupExpanded = (projectId: string) =>
+    !collapsedProjectGroups[projectId];
+  const toggleProjectGroup = (projectId: string) => {
+    setCollapsedProjectGroups((prev) => ({
+      ...prev,
+      [projectId]: !prev[projectId],
     }));
   };
 
@@ -1446,139 +1457,167 @@ export function Sidebar({
         {projectGroups.length === 0 && (
           <li className="an-rail-empty">No groups yet</li>
         )}
-        {projectGroups.map((project) => (
-          <li key={project.projectId} className="an-project-group">
-            <div className="an-project-head">
-              <div className="an-rail-row an-project-row" title={project.projectTitle}>
-                <span className="an-sigil">
-                  <AppIcon name="folder" />
-                </span>
-                <span className="an-name">{project.projectTitle}</span>
-              </div>
-              <button
-                type="button"
-                className="an-project-add"
-                title="Rename Group"
-                aria-label={`Rename Group ${project.projectTitle}`}
-                onClick={() => openRenameGroupDialog(project)}
-              >
-                <AppIcon name="pencil" />
-              </button>
-            </div>
-            <ul className="an-project-chats">
-              <li>
+        {projectGroups.map((project) => {
+          const projectExpanded = isProjectGroupExpanded(project.projectId);
+          return (
+            <li key={project.projectId} className="an-project-group">
+              <div className="an-project-head">
                 <button
                   type="button"
-                  className="an-rail-row an-rail-action-row an-project-chat-row w-full"
-                  title="New Task"
-                  disabled={beginnerMode && creatingProjectChannelTask}
-                  onClick={() => openPersonalAddDialog("projectChat", project)}
+                  className="an-rail-row an-project-row"
+                  title={
+                    projectExpanded
+                      ? `Collapse ${project.projectTitle}`
+                      : `Expand ${project.projectTitle}`
+                  }
+                  aria-label={
+                    projectExpanded
+                      ? `Collapse ${project.projectTitle}`
+                      : `Expand ${project.projectTitle}`
+                  }
+                  aria-expanded={projectExpanded}
+                  onClick={() => toggleProjectGroup(project.projectId)}
                 >
-                  <span className="an-sigil">
-                    <AppIcon name="plus" />
+                  <span className="an-project-chevron">
+                    <AppIcon name={projectExpanded ? "chevronDown" : "chevronRight"} />
                   </span>
-                  <span className="an-name">New Task</span>
+                  <span className="an-sigil">
+                    <AppIcon name="folder" />
+                  </span>
+                  <span className="an-name">{project.projectTitle}</span>
+                  <span className="an-rail-tags">
+                    <span className="an-ws-abbrev">{project.tasks.length}</span>
+                  </span>
                 </button>
-              </li>
-              {project.tasks.map((task) => {
-                const channelId = task.kind === "dm" ? task.dm.channel_id : task.channel.channel_id;
-                const isActive = selectedId === channelId;
-                const cp = task.kind === "dm" ? task.dm.counterparty : null;
-                const label = task.label;
-                return (
-                  <li
-                    key={task.key}
-                    className="group relative"
-                    onClick={() => isMobile && setSidebarOpen(false)}
-                  >
+                <button
+                  type="button"
+                  className="an-project-add"
+                  title="Rename Group"
+                  aria-label={`Rename Group ${project.projectTitle}`}
+                  onClick={() => openRenameGroupDialog(project)}
+                >
+                  <AppIcon name="pencil" />
+                </button>
+              </div>
+              {projectExpanded && (
+                <ul className="an-project-chats">
+                  <li>
                     <button
                       type="button"
-                      onClick={() => setSelectedId(channelId)}
-                      onFocus={() => onPreloadChannel?.(channelId)}
-                      onPointerEnter={() => onPreloadChannel?.(channelId)}
-                      className={`an-rail-row an-project-chat-row w-full ${
-                        isActive ? "active" : ""
-                      } pr-7`}
-                      title={cp?.username ? `${label} · @${cp.username}` : label}
+                      className="an-rail-row an-rail-action-row an-project-chat-row w-full"
+                      title="New Task"
+                      disabled={beginnerMode && creatingProjectChannelTask}
+                      onClick={() => openPersonalAddDialog("projectChat", project)}
                     >
                       <span className="an-sigil">
-                        {task.kind === "dm" ? (
-                          <MemberAvatar
-                            avatarUrl={cp?.avatar_url}
-                            kind="bot"
-                            label={task.botLabel}
-                            size={16}
-                          />
-                        ) : (
-                          <AppIcon name="channel" />
-                        )}
+                        <AppIcon name="plus" />
                       </span>
-                      <span className="an-name">{label}</span>
-                      {!isActive &&
-                        ((task.kind === "dm" ? task.dm.unread_count : task.channel.unread_count) ?? 0) > 0 && (
-                        <span className="an-rail-tags">
-                          <span className="an-unread">
-                            {((task.kind === "dm" ? task.dm.unread_count : task.channel.unread_count) ?? 0) > 99
-                              ? "99+"
-                              : (task.kind === "dm" ? task.dm.unread_count : task.channel.unread_count)}
-                          </span>
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      title="Remove this chat"
-                      aria-label="Remove this chat"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!currentUser) return;
-                        if (
-                          !confirm(
-                            task.kind === "dm"
-                              ? `Remove "${label}"? It will reappear when the bot messages again.`
-                              : `Delete channel task "${label}"?`,
-                          )
-                        )
-                          return;
-                        const request =
-                          task.kind === "dm"
-                            ? apiFetch(
-                                `/channels/${task.dm.channel_id}/members/${currentUser.user_id}`,
-                                { method: "DELETE", token: authToken },
-                              )
-                            : apiFetch(`/channels/${task.channel.channel_id}`, {
-                                method: "DELETE",
-                                token: authToken,
-                              });
-                        request
-                          .then((r) => {
-                            if (!r.ok) throw new Error("leave failed");
-                            if (task.kind === "dm") {
-                              setDMs?.((prev) =>
-                                prev.filter((x) => x.channel_id !== task.dm.channel_id),
-                              );
-                            } else {
-                              setChannels((prev) =>
-                                prev.filter((x) => x.channel_id !== task.channel.channel_id),
-                              );
-                            }
-                            if (selectedId === channelId) {
-                              setSelectedId(null);
-                            }
-                          })
-                          .catch(() => toast.error("Failed to remove chat"));
-                      }}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
-                      style={{ color: "var(--fg-3)" }}
-                    >
-                      <AppIcon name="minus" className="w-3 h-3" />
+                      <span className="an-name">New Task</span>
                     </button>
                   </li>
-                );
-              })}
-            </ul>
-          </li>
-        ))}
+                  {project.tasks.map((task) => {
+                    const channelId =
+                      task.kind === "dm" ? task.dm.channel_id : task.channel.channel_id;
+                    const isActive = selectedId === channelId;
+                    const cp = task.kind === "dm" ? task.dm.counterparty : null;
+                    const label = task.label;
+                    const unread =
+                      task.kind === "dm"
+                        ? task.dm.unread_count
+                        : task.channel.unread_count;
+                    return (
+                      <li
+                        key={task.key}
+                        className="group relative"
+                        onClick={() => isMobile && setSidebarOpen(false)}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(channelId)}
+                          onFocus={() => onPreloadChannel?.(channelId)}
+                          onPointerEnter={() => onPreloadChannel?.(channelId)}
+                          className={`an-rail-row an-project-chat-row w-full ${
+                            isActive ? "active" : ""
+                          } pr-7`}
+                          title={cp?.username ? `${label} · @${cp.username}` : label}
+                        >
+                          <span className="an-sigil">
+                            {task.kind === "dm" ? (
+                              <MemberAvatar
+                                avatarUrl={cp?.avatar_url}
+                                kind="bot"
+                                label={task.botLabel}
+                                size={16}
+                              />
+                            ) : (
+                              <AppIcon name="channel" />
+                            )}
+                          </span>
+                          <span className="an-name">{label}</span>
+                          {!isActive && (unread ?? 0) > 0 && (
+                            <span className="an-rail-tags">
+                              <span className="an-unread">
+                                {(unread ?? 0) > 99 ? "99+" : unread}
+                              </span>
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          title="Remove this chat"
+                          aria-label="Remove this chat"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!currentUser) return;
+                            if (
+                              !confirm(
+                                task.kind === "dm"
+                                  ? `Remove "${label}"? It will reappear when the bot messages again.`
+                                  : `Delete channel task "${label}"?`,
+                              )
+                            )
+                              return;
+                            const request =
+                              task.kind === "dm"
+                                ? apiFetch(
+                                    `/channels/${task.dm.channel_id}/members/${currentUser.user_id}`,
+                                    { method: "DELETE", token: authToken },
+                                  )
+                                : apiFetch(`/channels/${task.channel.channel_id}`, {
+                                    method: "DELETE",
+                                    token: authToken,
+                                  });
+                            request
+                              .then((r) => {
+                                if (!r.ok) throw new Error("leave failed");
+                                if (task.kind === "dm") {
+                                  setDMs?.((prev) =>
+                                    prev.filter((x) => x.channel_id !== task.dm.channel_id),
+                                  );
+                                } else {
+                                  setChannels((prev) =>
+                                    prev.filter((x) => x.channel_id !== task.channel.channel_id),
+                                  );
+                                }
+                                if (selectedId === channelId) {
+                                  setSelectedId(null);
+                                }
+                              })
+                              .catch(() => toast.error("Failed to remove chat"));
+                          }}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                          style={{ color: "var(--fg-3)" }}
+                        >
+                          <AppIcon name="minus" className="w-3 h-3" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </li>
+          );
+        })}
       </ul>
       )}
         </>

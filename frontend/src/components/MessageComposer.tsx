@@ -141,6 +141,7 @@ export interface MessageComposerProps {
   showTemplateDefaultBotTarget?: boolean;
   sendButtonLabel?: string;
   normalHint?: ReactNode;
+  beginnerMode?: boolean;
 }
 
 type MentionItem = (ChannelBot | ChannelUser) & {
@@ -245,6 +246,7 @@ export function MessageComposer({
   showTemplateDefaultBotTarget = true,
   sendButtonLabel,
   normalHint,
+  beginnerMode = false,
 }: MessageComposerProps) {
   const [draftValue, setDraftValue] = useState(value);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -785,6 +787,10 @@ export function MessageComposer({
     selectedPromptTemplateDescription && !replyingTo
       ? `${selectedPromptTemplateDescription}...`
       : placeholder;
+  const normalComposerHint =
+    selectedPromptTemplateHint ||
+    normalHint ||
+    (beginnerMode ? "Enter sends" : "@ Agent · Tab switches type · Enter sends");
 
   const handleMentionButtonClick = () => {
     setActionMenuOpen(false);
@@ -836,6 +842,12 @@ export function MessageComposer({
     selectedPromptTemplateDefaultBotLabel ||
     mentionTriggerLabel ||
     "@";
+  const shouldShowMentionButton =
+    !beginnerMode || mentionOpen || hasMentionButtonSelection;
+  const hasUploadControl = Boolean(onUploadFile || onUploadFiles);
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
@@ -1018,7 +1030,7 @@ export function MessageComposer({
               )}
               {displayKind === "normal" && (
                 <span className="an-composer-kindhead-hint">
-                  {selectedPromptTemplateHint || normalHint || "@ Agent · Tab switches type · Enter sends"}
+                  {normalComposerHint}
                 </span>
               )}
             </div>
@@ -1043,7 +1055,7 @@ export function MessageComposer({
 
           <div className="an-composer-bar">
             <div className="flex items-center gap-1">
-              {(onUploadFile || onUploadFiles) && (
+              {hasUploadControl && (
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1054,22 +1066,38 @@ export function MessageComposer({
                 />
               )}
 
-              <button
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={handleMentionButtonClick}
-                className="an-composer-iconbtn is-named-trigger"
-                title="Choose agent or member"
-                aria-label="Choose agent or member"
-              >
-                <span className="an-composer-glyph">@</span>
-                <span
-                  className="an-composer-trigger-label"
-                  data-i18n-skip={hasMentionButtonSelection ? "" : undefined}
+              {hasUploadControl && (
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={openFilePicker}
+                  className="an-composer-iconbtn is-named-trigger is-upload-trigger"
+                  title="Upload files and images"
+                  aria-label="Upload files and images"
                 >
-                  {mentionButtonLabel}
-                </span>
-              </button>
+                  <AppIcon name="attachment" className="an-composer-upload-icon w-3.5 h-3.5" />
+                  <span className="an-composer-trigger-label">Upload</span>
+                </button>
+              )}
+
+              {shouldShowMentionButton && (
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={handleMentionButtonClick}
+                  className="an-composer-iconbtn is-named-trigger"
+                  title="Choose agent or member"
+                  aria-label="Choose agent or member"
+                >
+                  <span className="an-composer-glyph">@</span>
+                  <span
+                    className="an-composer-trigger-label"
+                    data-i18n-skip={hasMentionButtonSelection ? "" : undefined}
+                  >
+                    {mentionButtonLabel}
+                  </span>
+                </button>
+              )}
 
               {onPromptTemplateChange && (
                 <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
@@ -1091,6 +1119,21 @@ export function MessageComposer({
                     <span className="an-composer-glyph">/</span>
                     <span className="an-composer-trigger-label">{promptTemplateTriggerLabel}</span>
                   </button>
+                  {selectedPromptTemplate && (
+                    <button
+                      type="button"
+                      className="an-composer-template-clear-badge"
+                      title="Clear template override"
+                      aria-label="Clear template override"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        pickPromptTemplate(null);
+                      }}
+                    >
+                      <AppIcon name="close" className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1178,21 +1221,6 @@ export function MessageComposer({
                   <AppIcon name="key" className="w-3.5 h-3.5" />
                 </span>
                 <span>Insert keychain secret</span>
-              </button>
-            )}
-            {(onUploadFile || onUploadFiles) && (
-              <button
-                type="button"
-                className="an-menu-item"
-                onClick={() => {
-                  setActionMenuOpen(false);
-                  fileInputRef.current?.click();
-                }}
-              >
-                <span className="an-mi-ico">
-                  <AppIcon name="attachment" className="w-3.5 h-3.5" />
-                </span>
-                <span>Upload files and images</span>
               </button>
             )}
             <button
