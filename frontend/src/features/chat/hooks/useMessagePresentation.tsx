@@ -8,6 +8,7 @@ import {
   getAgentBridgeTaskData,
   type AgentBridgeTaskMessage,
 } from "../../../lib/agent-bridge";
+import { messageBotTraceEvents } from "../../../lib/bot-trace";
 import { patchMessage, type MessageStore } from "../../../lib/message-store";
 import type {
   AgentBridgeTaskContentData,
@@ -45,7 +46,7 @@ export function useMessagePresentation({
   const hasBotReplyDetails = useCallback(
     (message: Message): boolean =>
       message.sender_type === "bot" &&
-      Boolean(getMemoryLoadDetail(message) || message._bot_trace?.length),
+      Boolean(getMemoryLoadDetail(message) || messageBotTraceEvents(message).length),
     [getMemoryLoadDetail],
   );
 

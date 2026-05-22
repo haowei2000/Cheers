@@ -23,6 +23,15 @@ logger = logging.getLogger("app.features.agent_bridge.service")
 AGENT_BRIDGE_TASK_KIND = "agent_bridge_background_task"
 _DELTA_COALESCERS: dict[str, StreamDeltaCoalescer] = {}
 _DELTA_COALESCERS_LOCK = asyncio.Lock()
+MAX_PERSISTED_TRACE_EVENTS = 160
+MAX_TRACE_STRING_CHARS = 2_000
+MAX_TRACE_MESSAGE_CHARS = 800
+MAX_TRACE_TITLE_CHARS = 240
+MAX_TRACE_ARRAY_ITEMS = 20
+MAX_TRACE_OBJECT_KEYS = 40
+MAX_TRACE_DEPTH = 4
+TRACE_BINARY_KEY_PARTS = ("b64", "base64", "blob", "binary", "image")
+TRACE_LARGE_TEXT_KEYS = ("content", "delta", "input", "output", "prompt", "stderr", "stdout", "text")
 
 
 def agent_bridge_task_content_data(
@@ -46,13 +55,98 @@ def is_agent_bridge_task_content_data(value: Any) -> bool:
     return isinstance(value, dict) and value.get("kind") == AGENT_BRIDGE_TASK_KIND
 
 
-def _preserve_memory_load(content_data: Any) -> dict[str, Any] | None:
+def _truncate_trace_string(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}... [truncated {len(value) - limit} chars]"
+
+
+def _trace_string_limit_for_key(key: str | None) -> int:
+    normalized = (key or "").lower()
+    if any(part in normalized for part in TRACE_BINARY_KEY_PARTS):
+        return 160
+    if normalized in TRACE_LARGE_TEXT_KEYS:
+        return 600
+    return MAX_TRACE_STRING_CHARS
+
+
+def _sanitize_trace_value(
+    value: Any,
+    *,
+    key: str | None = None,
+    depth: int = MAX_TRACE_DEPTH,
+) -> Any:
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, str):
+        normalized_key = (key or "").lower()
+        if any(part in normalized_key for part in TRACE_BINARY_KEY_PARTS) and len(value) > 160:
+            return f"[omitted {len(value)} chars from {key}]"
+        return _truncate_trace_string(value, _trace_string_limit_for_key(key))
+    if depth <= 0:
+        return "[omitted nested trace data]"
+    if isinstance(value, list):
+        items = [
+            _sanitize_trace_value(item, depth=depth - 1)
+            for item in value[:MAX_TRACE_ARRAY_ITEMS]
+        ]
+        if len(value) > MAX_TRACE_ARRAY_ITEMS:
+            items.append(f"[omitted {len(value) - MAX_TRACE_ARRAY_ITEMS} items]")
+        return items
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        items = list(value.items())
+        for item_key, item_value in items[:MAX_TRACE_OBJECT_KEYS]:
+            safe_key = str(item_key)
+            sanitized[safe_key] = _sanitize_trace_value(
+                item_value,
+                key=safe_key,
+                depth=depth - 1,
+            )
+        if len(items) > MAX_TRACE_OBJECT_KEYS:
+            sanitized["__omitted_keys"] = len(items) - MAX_TRACE_OBJECT_KEYS
+        return sanitized
+    return _truncate_trace_string(str(value), MAX_TRACE_STRING_CHARS)
+
+
+def _sanitize_trace_event(event: dict[str, Any]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key, value in event.items():
+        if key == "title" and isinstance(value, str):
+            sanitized[key] = _truncate_trace_string(value, MAX_TRACE_TITLE_CHARS)
+        elif key == "message" and isinstance(value, str):
+            sanitized[key] = _truncate_trace_string(value, MAX_TRACE_MESSAGE_CHARS)
+        elif key == "data":
+            sanitized[key] = _sanitize_trace_value(value, key=key)
+        else:
+            sanitized[key] = _sanitize_trace_value(value, key=key, depth=1)
+    return sanitized
+
+
+def _preserve_message_observability(
+    content_data: Any,
+    *,
+    bot_trace: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    preserved: dict[str, Any] = {}
     if not isinstance(content_data, dict):
-        return None
+        content_data = {}
     memory_load = content_data.get("memory_load")
-    if not isinstance(memory_load, dict):
-        return None
-    return {"memory_load": memory_load}
+    if isinstance(memory_load, dict):
+        preserved["memory_load"] = memory_load
+    existing_trace = content_data.get("bot_trace")
+    trace_items: list[dict[str, Any]] = []
+    if isinstance(existing_trace, list):
+        trace_items.extend(item for item in existing_trace if isinstance(item, dict))
+    if bot_trace:
+        trace_items.extend(item for item in bot_trace if isinstance(item, dict))
+    if trace_items:
+        preserved["bot_trace"] = trace_items[-MAX_PERSISTED_TRACE_EVENTS:]
+    return preserved or None
+
+
+def _preserve_memory_load(content_data: Any) -> dict[str, Any] | None:
+    return _preserve_message_observability(content_data)
 
 
 def _content_for_stream_finalize(content: str, error: str | None) -> str:
@@ -125,8 +219,9 @@ async def finalize_bot_reply(
     )
     # If the same msg_id has a streaming buffer (legacy plugin chose `reply`
     # instead of `delta`/`done`), drop it — the full text in `content` wins.
+    stream_state: StreamState | None = None
     if pending:
-        await stream_registry.pop(pending.msg_id)
+        stream_state = await stream_registry.pop(pending.msg_id)
         await _flush_delta_coalescer(pending.msg_id)
     file_ids = list(dict.fromkeys(file_ids or []))
 
@@ -141,7 +236,10 @@ async def finalize_bot_reply(
 
     if pending:
         assert msg is not None
-        content_data = _preserve_memory_load(msg.content_data)
+        content_data = _preserve_message_observability(
+            msg.content_data,
+            bot_trace=stream_state.trace_events if stream_state is not None else None,
+        )
         msg.content = content
         msg.content_data = content_data
         msg.is_partial = False
@@ -376,6 +474,11 @@ async def apply_trace(
         "channel_id": state.channel_id,
         "bot_id": state.bot_id,
     })
+    out = _sanitize_trace_event(out)
+    async with state.lock:
+        state.trace_events.append(out)
+        if len(state.trace_events) > MAX_PERSISTED_TRACE_EVENTS:
+            del state.trace_events[:-MAX_PERSISTED_TRACE_EVENTS]
     await WSEventBus(state.channel_id).publish(BotTrace(data=out))
     return True
 
@@ -422,7 +525,10 @@ async def finalize_stream(
         return None
 
     msg.content = content
-    content_data = _preserve_memory_load(msg.content_data)
+    content_data = _preserve_message_observability(
+        msg.content_data,
+        bot_trace=state.trace_events,
+    )
     msg.content_data = content_data
     msg.is_partial = bool(partial)
     msg.mention_user_ids = await resolve_user_mentions(content, session, state.channel_id)

@@ -33,6 +33,7 @@ import {
   filesFromDragEvent,
   type FileDragReference,
 } from "./lib/file-drag";
+import { messageBotTraceEvents } from "./lib/bot-trace";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
   buildChatPath,
@@ -1246,7 +1247,9 @@ export default function App() {
   const selectedMemoryLoadDetail = selectedDetailMessage
     ? getMemoryLoadDetail(selectedDetailMessage)
     : null;
-  const selectedBotTraceEvents = selectedDetailMessage?._bot_trace || [];
+  const selectedBotTraceEvents = selectedDetailMessage
+    ? messageBotTraceEvents(selectedDetailMessage)
+    : [];
   const messagePreviewText = useCallback((message: Message): string => {
     const raw = parseHelperPayload(message.content || "").text || message.content || "";
     return (

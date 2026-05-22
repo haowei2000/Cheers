@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger("app.features.agent_bridge.streams")
 
@@ -28,6 +29,7 @@ class StreamState:
     cancel_requested: bool = False
     cancel_reason: str | None = None
     finalized: bool = False
+    trace_events: list[dict[str, Any]] = field(default_factory=list)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     producer_task: asyncio.Task | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)

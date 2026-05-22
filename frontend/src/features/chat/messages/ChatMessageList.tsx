@@ -35,6 +35,7 @@ import {
   type MessageRenderItem,
   type MessageViewModel,
 } from "./renderModel";
+import { BotTracePanel } from "./BotTracePanel";
 
 const CHAT_TIME_CACHE_LIMIT = 2000;
 const chatTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -340,6 +341,7 @@ function MessageBody({
       {renderStopStreamButton(message)}
       {renderPartialBadge(message)}
       {renderBotTraceStatus(message)}
+      {!compact && <BotTracePanel message={message} />}
       {vm.clarifyStatus !== null && selectedId && vm.clarify && (
         <ClarifyInlineBlock
           msgId={message.msg_id}

@@ -2,9 +2,96 @@ import type { BotTraceEvent, Message } from "../types";
 
 const CLIENT_STREAM_TRACE = "agentnexus_client";
 const MAX_BOT_TRACE_EVENTS = 160;
+const TRACE_ARRAY_KEYS = ["bot_trace", "agent_bridge_trace", "trace_events"];
 
 export function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
   return events.slice(-MAX_BOT_TRACE_EVENTS);
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeTraceEvent(value: unknown, message: Message): BotTraceEvent | null {
+  if (!isObject(value)) return null;
+  return {
+    ...(value as Record<string, unknown>),
+    msg_id: typeof value.msg_id === "string" ? value.msg_id : message.msg_id,
+    task_id:
+      typeof value.task_id === "string" || value.task_id === null
+        ? value.task_id
+        : message.task_id || null,
+    bot_id:
+      typeof value.bot_id === "string" ? value.bot_id : message.sender_id,
+    channel_id:
+      typeof value.channel_id === "string" ? value.channel_id : undefined,
+    stream: typeof value.stream === "string" ? value.stream : undefined,
+    seq: typeof value.seq === "number" ? value.seq : undefined,
+    ts: typeof value.ts === "number" ? value.ts : undefined,
+    phase: typeof value.phase === "string" ? value.phase : undefined,
+    status: typeof value.status === "string" ? value.status : undefined,
+    title: typeof value.title === "string" ? value.title : undefined,
+    message: typeof value.message === "string" ? value.message : undefined,
+    data: isObject(value.data) ? value.data : undefined,
+  } as BotTraceEvent;
+}
+
+function traceDedupeKey(trace: BotTraceEvent, index: number): string {
+  const hasStableSeq =
+    trace.seq !== undefined &&
+    (trace.stream || trace.phase || trace.run_id || trace.task_id);
+  if (hasStableSeq) {
+    return [
+      trace.bot_id || "",
+      trace.task_id || "",
+      trace.run_id || "",
+      trace.stream || "",
+      trace.phase || "",
+      trace.seq,
+    ].join(":");
+  }
+  return [
+    trace.bot_id || "",
+    trace.task_id || "",
+    trace.stream || "",
+    trace.phase || "",
+    trace.title || "",
+    trace.message || "",
+    trace.ts || index,
+  ].join(":");
+}
+
+export function persistedBotTraceEvents(message: Message): BotTraceEvent[] {
+  const contentData = message.content_data;
+  if (!contentData || typeof contentData !== "object") return [];
+  const events: BotTraceEvent[] = [];
+  for (const key of TRACE_ARRAY_KEYS) {
+    const value = contentData[key];
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      const event = normalizeTraceEvent(item, message);
+      if (event) events.push(event);
+    }
+  }
+  return trimBotTraceEvents(events);
+}
+
+export function messageBotTraceEvents(message: Message): BotTraceEvent[] {
+  const events: BotTraceEvent[] = [];
+  const seen = new Set<string>();
+  const append = (items: BotTraceEvent[]) => {
+    for (const item of items) {
+      const normalized = normalizeTraceEvent(item, message);
+      if (!normalized) continue;
+      const key = traceDedupeKey(normalized, events.length);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push(normalized);
+    }
+  };
+  append(message._bot_trace || []);
+  append(persistedBotTraceEvents(message));
+  return trimBotTraceEvents(events);
 }
 
 export function traceTimeLabel(ts?: number): string {

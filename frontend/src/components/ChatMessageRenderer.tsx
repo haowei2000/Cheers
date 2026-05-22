@@ -19,6 +19,7 @@ import { FileTypeIcon } from "./icons/FileTypeIcon";
 const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
 const MESSAGE_COLLAPSE_MAX_HEIGHT = 360;
 const MESSAGE_COLLAPSE_THRESHOLD = 40;
+const STREAMING_RICH_MARKDOWN_MAX_LENGTH = 24000;
 const PROTECTED_IMAGE_PREVIEW_CACHE_LIMIT = 100;
 const THINK_BLOCK_RE = /<think>([\s\S]*?)<\/think>/gi;
 const OPEN_THINK_TAG = "<think>";
@@ -500,9 +501,17 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   } | null>(null);
   const hasContent = content.trim().length > 0;
   const richMarkdown = hasContent ? shouldUseRichMarkdown(content) : false;
+  const streamingRichMarkdown =
+    Boolean(streaming) &&
+    richMarkdown &&
+    content.length <= STREAMING_RICH_MARKDOWN_MAX_LENGTH;
   const [richReady, setRichReady] = useState(!richMarkdown);
 
   useEffect(() => {
+    if (streamingRichMarkdown) {
+      setRichReady(true);
+      return;
+    }
     if (!richMarkdown || streaming) {
       setRichReady(!richMarkdown);
       return;
@@ -516,7 +525,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     }
     const timer = window.setTimeout(() => setRichReady(true), 80);
     return () => window.clearTimeout(timer);
-  }, [content, richMarkdown, streaming]);
+  }, [content, richMarkdown, streaming, streamingRichMarkdown]);
 
   const hideSelectionButton = useCallback(() => {
     setSelectionCopy(null);
@@ -607,6 +616,16 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     <>
       {streaming && !hasContent ? (
         <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-gray-400 align-middle" />
+      ) : hasContent && streamingRichMarkdown ? (
+        <Suspense fallback={markdownFallback}>
+          <ThinkMarkdownContent
+            content={content}
+            keyPrefix={keyPrefix}
+            streaming={streaming}
+            onImageClick={onImageClick}
+            onFileClick={onFileClick}
+          />
+        </Suspense>
       ) : hasContent && streaming ? (
         <StreamingPlainContent content={content} keyPrefix={keyPrefix} />
       ) : hasContent && (!richMarkdown || !richReady) ? (

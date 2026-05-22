@@ -111,6 +111,90 @@ function cacheEntryToWindowState(
   };
 }
 
+function compareMessagesByCreatedAt(a: Message, b: Message): number {
+  const aTime = a.created_at ? Date.parse(a.created_at) : 0;
+  const bTime = b.created_at ? Date.parse(b.created_at) : 0;
+  const normalizedA = Number.isFinite(aTime) ? aTime : 0;
+  const normalizedB = Number.isFinite(bTime) ? bTime : 0;
+  if (normalizedA !== normalizedB) return normalizedA - normalizedB;
+  return a.msg_id.localeCompare(b.msg_id);
+}
+
+function mergeFetchedMessageWithCached(
+  fetched: Message,
+  cached?: Message,
+): Message {
+  if (!cached) return fetched;
+  const merged: Message = { ...cached, ...fetched };
+  if (cached._bot_trace?.length && !fetched._bot_trace?.length) {
+    merged._bot_trace = cached._bot_trace;
+  }
+  if (cached._bot_status && !fetched._bot_status) {
+    merged._bot_status = cached._bot_status;
+  }
+  if (cached._agent_bridge_task && !fetched._agent_bridge_task) {
+    merged._agent_bridge_task = cached._agent_bridge_task;
+  }
+  if (cached._streaming && !fetched._streaming) {
+    const cachedContent = cached.content || "";
+    const fetchedContent = fetched.content || "";
+    const fetchedIsBlankBotPlaceholder =
+      fetched.sender_type === "bot" &&
+      !fetched.is_deleted &&
+      !fetched.is_partial &&
+      fetchedContent.trim().length === 0;
+    if (fetchedIsBlankBotPlaceholder || cachedContent.length > fetchedContent.length) {
+      merged.content = cachedContent;
+      merged._streaming = true;
+    } else {
+      merged._streaming = false;
+      merged._bot_status = undefined;
+    }
+  }
+  return merged;
+}
+
+function mergeFetchedStoreWithCache(
+  fetched: MessageStore,
+  cached?: MessageStore | null,
+  includeCachedOnly = true,
+): MessageStore {
+  if (!cached || cached.ids.length === 0) return fetched;
+  const byId = new Map<string, Message>();
+  if (includeCachedOnly) {
+    for (const cachedMessage of storeToMessages(cached)) {
+      byId.set(cachedMessage.msg_id, cachedMessage);
+    }
+  }
+  for (const fetchedMessage of storeToMessages(fetched)) {
+    byId.set(
+      fetchedMessage.msg_id,
+      mergeFetchedMessageWithCached(
+        fetchedMessage,
+        cached.byId[fetchedMessage.msg_id],
+      ),
+    );
+  }
+  return messagesToStore(
+    trimToRecentMessages(Array.from(byId.values()).sort(compareMessagesByCreatedAt)),
+  );
+}
+
+function mergeCacheEntry(
+  cached: ChannelMessageCacheEntry | undefined,
+  fetched: ChannelMessageCacheEntry,
+): ChannelMessageCacheEntry {
+  if (!cached) return fetched;
+  return {
+    ...fetched,
+    store: mergeFetchedStoreWithCache(
+      fetched.store,
+      cached.store,
+      fetched.anchorId === null,
+    ),
+  };
+}
+
 function messageAnchorNodes(container: HTMLElement): HTMLElement[] {
   const anchorRows = Array.from(
     container.querySelectorAll<HTMLElement>("[data-message-anchor-id]"),
@@ -401,10 +485,14 @@ export function useChannelMessages({
       const generation = cacheGenerationRef.current;
       const request = fetchInitialMessages(channelId, anchorId)
         .then((entry) => {
+          const mergedEntry = mergeCacheEntry(
+            channelMessageCacheRef.current[channelId],
+            entry,
+          );
           if (cacheGenerationRef.current === generation) {
-            channelMessageCacheRef.current[channelId] = entry;
+            channelMessageCacheRef.current[channelId] = mergedEntry;
           }
-          return entry;
+          return mergedEntry;
         })
         .catch((error) => {
           if ((error as { name?: string }).name !== "AbortError") {
@@ -475,6 +563,17 @@ export function useChannelMessages({
   }, [authFetch]);
 
   useEffect(() => {
+    if (!windowState.channelId || windowState.loading) return;
+    channelMessageCacheRef.current[windowState.channelId] = {
+      store: windowState.store,
+      hasMore: windowState.hasMore,
+      hasMoreAfter: windowState.hasMoreAfter,
+      receivedAt: Date.now(),
+      anchorId: windowState.anchorId,
+    };
+  }, [windowState]);
+
+  useEffect(() => {
     return () => {
       cancelJumpToBottomRaf();
     };
@@ -499,9 +598,7 @@ export function useChannelMessages({
     const requestedAnchorId = pendingAnchorId || null;
     setFocusedMsgId(requestedAnchorId);
     const requestKey = fetchKey(targetChannelId, requestedAnchorId);
-    const cached = requestedAnchorId
-      ? channelMessageCacheRef.current[targetChannelId]
-      : null;
+    const cached = channelMessageCacheRef.current[targetChannelId] ?? null;
     const cachedMatchesAnchor =
       cached &&
       (requestedAnchorId
@@ -520,7 +617,7 @@ export function useChannelMessages({
     suppressInitialScrollEventsRef.current = true;
     setRestoringInitialScroll(Boolean(requestedAnchorId));
     setJumpToBottomVisible(false);
-    if (requestedAnchorId && cached && cachedMatchesAnchor) {
+    if (cached && cachedMatchesAnchor) {
       setWindowState(cacheEntryToWindowState(targetChannelId, cached));
       if (cached.store.ids.length === 0) {
         suppressInitialScrollEventsRef.current = false;
@@ -563,25 +660,29 @@ export function useChannelMessages({
         ) {
           return;
         }
+        const mergedEntry = mergeCacheEntry(
+          channelMessageCacheRef.current[targetChannelId],
+          entry,
+        );
         initialScrollTargetRef.current = {
           channelId: targetChannelId,
-          msgId: entry.anchorId,
-          align: requestedAnchorId && entry.anchorId ? "center" : "bottom",
+          msgId: mergedEntry.anchorId,
+          align: requestedAnchorId && mergedEntry.anchorId ? "center" : "bottom",
         };
-        stickToBottomRef.current = !entry.anchorId;
-        channelMessageCacheRef.current[targetChannelId] = entry;
+        stickToBottomRef.current = !mergedEntry.anchorId;
+        channelMessageCacheRef.current[targetChannelId] = mergedEntry;
         setWindowState((prev) => {
           if (prev.channelId !== targetChannelId) return prev;
           return {
             channelId: targetChannelId,
-            store: entry.store,
-            hasMore: entry.hasMore,
-            hasMoreAfter: entry.hasMoreAfter,
+            store: mergedEntry.store,
+            hasMore: mergedEntry.hasMore,
+            hasMoreAfter: mergedEntry.hasMoreAfter,
             loading: false,
-            anchorId: entry.anchorId,
+            anchorId: mergedEntry.anchorId,
           };
         });
-        if (entry.store.ids.length === 0) {
+        if (mergedEntry.store.ids.length === 0) {
           suppressInitialScrollEventsRef.current = false;
           setRestoringInitialScroll(false);
         }

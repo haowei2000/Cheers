@@ -3003,6 +3003,213 @@
   background: transparent;
 }
 
+/* Inline bot/ACP trace panel shown directly under an AI message. */
+.an-trace-panel {
+  margin-top: 7px;
+  max-width: min(680px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  color: var(--fg-2);
+  overflow: hidden;
+}
+.an-trace-panel.is-blue { border-color: color-mix(in oklab, var(--accent) 28%, var(--border)); }
+.an-trace-panel.is-green { border-color: color-mix(in oklab, var(--green) 34%, var(--border)); }
+.an-trace-panel.is-orange { border-color: color-mix(in oklab, var(--orange) 36%, var(--border)); }
+.an-trace-panel.is-red { border-color: color-mix(in oklab, var(--red) 38%, var(--border)); }
+.an-trace-toggle {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.an-trace-toggle:hover {
+  background: color-mix(in oklab, var(--bg-1) 64%, transparent);
+}
+.an-trace-toggle-icon,
+.an-trace-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--fg-3);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+}
+.an-trace-kind {
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--fg-2);
+}
+.an-trace-latest {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-2);
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-trace-count {
+  min-width: 22px;
+  border-radius: 999px;
+  background: var(--bg-1);
+  color: var(--fg-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: center;
+}
+.an-trace-list {
+  display: grid;
+  gap: 0;
+  max-height: 360px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.an-trace-event {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+}
+.an-trace-event + .an-trace-event {
+  border-top: 1px solid var(--border);
+}
+.an-trace-marker {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--fg-3);
+}
+.an-trace-event.is-blue .an-trace-marker { color: var(--accent); background: var(--accent-muted); }
+.an-trace-event.is-green .an-trace-marker { color: var(--green); background: var(--green-muted); }
+.an-trace-event.is-orange .an-trace-marker { color: var(--orange); background: var(--orange-muted); }
+.an-trace-event.is-red .an-trace-marker { color: var(--red); background: var(--red-muted); }
+.an-trace-event-body {
+  min-width: 0;
+}
+.an-trace-event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.an-trace-event-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-1);
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-trace-event-meta {
+  flex-shrink: 0;
+  color: var(--fg-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+.an-trace-preview {
+  margin-top: 3px;
+  color: var(--fg-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.an-trace-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.an-trace-kv span {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 18px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--fg-3);
+  font-size: 10.5px;
+  line-height: 1.2;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}
+.an-trace-plan {
+  display: grid;
+  gap: 4px;
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.an-trace-plan li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  color: var(--fg-2);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.an-trace-plan span {
+  color: var(--fg-3);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-trace-plan b {
+  min-width: 0;
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+.an-trace-raw {
+  margin-top: 5px;
+  color: var(--fg-3);
+  font-size: 10.5px;
+}
+.an-trace-raw summary {
+  display: inline-flex;
+  cursor: pointer;
+  user-select: none;
+}
+.an-trace-raw pre {
+  max-height: 190px;
+  margin: 5px 0 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--fg-2);
+  font-size: 10.5px;
+  line-height: 1.45;
+  padding: 7px;
+  white-space: pre-wrap;
+}
+
 /* Routing card (Coordinator) */
 .an-routing {
   background: var(--surface-soft);
