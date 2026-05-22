@@ -259,8 +259,9 @@ creates `agentnexus-acp-connector-0.1.9.tgz` under `agent.cwd`, the ACP agent
 can return it by mentioning that filename, a Markdown link, or a `file://` URI.
 
 If the ACP agent needs to create or modify files before returning them, set
-`agent.permissionMode` intentionally. The default is `reject`; use `allow` only
-for a trusted local workspace.
+`agent.permissionMode` intentionally. Use `ask` to post an approval card in the
+current AgentNexus chat for the Bot owner, `reject` to deny automatically, or
+`allow` only for a trusted local workspace.
 
 ## Troubleshooting
 

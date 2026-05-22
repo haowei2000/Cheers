@@ -746,20 +746,39 @@ const PermissionRow = memo(function PermissionRow({
   selectedId,
   authToken,
   botById,
+  currentUserId,
   setMessageStore,
 }: {
   message: Message;
   selectedId: string | null;
   authToken: string | null;
   botById: Map<string, ChannelBot>;
+  currentUserId: string | null;
   setMessageStore: Dispatch<SetStateAction<MessageStore>>;
 }) {
   const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const kind = typeof cd.kind === "string" ? cd.kind : "";
   const tool = typeof cd.tool === "string" ? cd.tool : null;
   const body = typeof cd.body === "string" ? cd.body : message.content || "";
   const resolved = cd.resolved === true;
   const resolution =
     cd.resolution === "allow" || cd.resolution === "deny" ? cd.resolution : null;
+  const owner =
+    cd.owner && typeof cd.owner === "object"
+      ? (cd.owner as Record<string, unknown>)
+      : {};
+  const ownerId =
+    (typeof cd.bot_owner_id === "string" && cd.bot_owner_id) ||
+    (typeof owner.user_id === "string" && owner.user_id) ||
+    "";
+  const ownerName =
+    (typeof owner.display_name === "string" && owner.display_name) ||
+    (typeof owner.username === "string" && `@${owner.username}`) ||
+    (ownerId ? "Bot owner" : "");
+  const ownerOnly = kind === "agent_bridge_permission_request";
+  const canResolve = !ownerOnly || (Boolean(ownerId) && ownerId === currentUserId);
+  const canRequestApproval = ownerOnly && !canResolve && !resolved && Boolean(ownerId);
+  const approvalRequested = cd.approval_requested === true;
   const senderBot =
     message.sender_type === "bot" ? botById.get(message.sender_id) : null;
   const senderLabel = senderBot?.display_name || senderBot?.username || "Bot";
@@ -786,6 +805,32 @@ const PermissionRow = memo(function PermissionRow({
     }
   };
 
+  const requestApproval = async () => {
+    if (!selectedId) return;
+    try {
+      const response = await apiFetch(
+        `/channels/${selectedId}/messages/${message.msg_id}/request-approval`,
+        { method: "POST", body: {}, token: authToken },
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "Approval request failed");
+        return;
+      }
+      if (data?.data?.permission?.content_data) {
+        setMessageStore((prev) =>
+          patchMessage(prev, message.msg_id, (current) => ({
+            ...current,
+            content_data: data.data.permission.content_data,
+          })),
+        );
+      }
+      toast.success("Approval request sent");
+    } catch {
+      toast.error("Approval request failed");
+    }
+  };
+
   return (
     <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
       <div className="flex items-baseline gap-1.5 mb-1 pl-1">
@@ -795,17 +840,22 @@ const PermissionRow = memo(function PermissionRow({
           <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
         )}
       </div>
-      <div className={`an-approval${resolved ? " resolved" : ""}`}>
+      <div className={`an-approval an-approval-inline${resolved ? " resolved" : ""}`}>
         <div className="an-body">
           <b>Approval needed.</b> {body}
           {tool && <span className="an-type-caption ml-1.5 font-mono">({tool})</span>}
+          {ownerOnly && ownerName && !resolved && (
+            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
+              · Owner approval: {ownerName}
+            </span>
+          )}
           {resolved && resolution && (
             <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
               · {resolution === "allow" ? "Approved" : "Denied"}
             </span>
           )}
         </div>
-        {!resolved && (
+        {!resolved && canResolve && (
           <>
             <button type="button" className="deny" onClick={() => submitResolution("deny")}>
               Reject
@@ -814,6 +864,11 @@ const PermissionRow = memo(function PermissionRow({
               Allow
             </button>
           </>
+        )}
+        {canRequestApproval && (
+          <button type="button" className="allow" onClick={requestApproval} disabled={approvalRequested}>
+            {approvalRequested ? "Requested" : "Request approval"}
+          </button>
         )}
       </div>
     </div>
@@ -1293,6 +1348,7 @@ function ChatMessageListBase({
             selectedId={selectedId}
             authToken={authToken}
             botById={botById}
+            currentUserId={currentUserId}
             setMessageStore={setMessageStore}
           />
         );

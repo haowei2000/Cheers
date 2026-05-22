@@ -480,8 +480,18 @@ class RoutingContentData(BaseModel):
 
 class PermissionContentData(BaseModel):
     """Permission Content Data schema or model."""
+    kind: str | None = None
+    source: str | None = None
+    request_id: str | None = None
+    bot_id: str | None = None
+    bot_owner_id: str | None = None
+    title: str | None = None
     tool: str | None = None
     body: str | None = None
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    approval_requested: bool = False
+    approval_requested_by: str | None = None
+    approval_requested_at: datetime | None = None
     resolved: bool = False
     resolution: Literal["allow", "deny"] | None = None
     resolved_by: str | None = None
@@ -652,6 +662,11 @@ AnyMessageInResponse = Annotated[
 class PermissionResolveRequest(BaseModel):
     """Permission Resolve Request schema or model."""
     resolution: Literal["allow", "deny"]
+
+
+class PermissionApprovalRequest(BaseModel):
+    """Permission Approval Request schema or model."""
+    note: str | None = Field(default=None, max_length=500)
 
 
 # Backward-compatible unified response type with all fields.

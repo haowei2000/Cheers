@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.application.chat.message_assembler import MessageAssembler
 from app.config import resolve_data_dir, settings
 from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
@@ -1222,6 +1223,15 @@ async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, co
     })
 
 
+async def _send_send_ack_ok(websocket: WebSocket, client_msg_id: str | None, message_id: str) -> None:
+    await websocket.send_json({
+        "type": "send_ack",
+        "client_msg_id": client_msg_id,
+        "ok": True,
+        "message_id": message_id,
+    })
+
+
 async def _send_terminal_ack_err(
     websocket: WebSocket,
     client_msg_id: str | None,
@@ -1566,6 +1576,113 @@ async def _handle_data_error(
     await _send_terminal_ack_ok(websocket, client_msg_id, msg_id=msg_id, job_id=job_id)
 
 
+def _clean_permission_text(value: object, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _normalize_permission_options(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    options: list[dict] = []
+    for raw in value[:20]:
+        if not isinstance(raw, dict):
+            continue
+        option_id = _clean_permission_text(raw.get("option_id") or raw.get("optionId") or raw.get("id"), 256)
+        if not option_id:
+            continue
+        item = {
+            "option_id": option_id,
+            "kind": _clean_permission_text(raw.get("kind"), 64),
+            "name": _clean_permission_text(raw.get("name"), 120) or option_id,
+            "description": _clean_permission_text(raw.get("description"), 500),
+        }
+        options.append({key: value for key, value in item.items() if value is not None})
+    return options
+
+
+async def _handle_data_permission_request(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """Create an interactive permission card in the current channel."""
+    from app.db.session import async_session_factory
+    from app.features.agent_bridge.validators import check_bot_in_channel
+
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
+    channel_id = _clean_permission_text(frame.get("channel_id"), 64)
+    request_id = _clean_permission_text(frame.get("request_id"), 128)
+    body = _clean_permission_text(frame.get("body"), 4000)
+    if not channel_id:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_channel", "channel_id 必填")
+        return
+    if not request_id:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_request_id", "request_id 必填")
+        return
+    if not body:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_body", "body 必填")
+        return
+
+    title = _clean_permission_text(frame.get("title"), 240) or "ACP permission request"
+    task_id = _clean_permission_text(frame.get("task_id"), 64)
+    msg_id = _clean_permission_text(frame.get("msg_id"), 64)
+    owner_payload: dict | None = None
+
+    async with async_session_factory() as s:
+        err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
+        if err:
+            await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+            return
+        owner = await s.get(User, bot.created_by) if bot.created_by else None
+        if owner is not None:
+            owner_payload = {
+                "user_id": owner.user_id,
+                "username": owner.username,
+                "display_name": owner.display_name,
+            }
+
+        content_data = {
+            "kind": "agent_bridge_permission_request",
+            "source": "acp",
+            "request_id": request_id,
+            "bot_id": bot.bot_id,
+            "bot_owner_id": bot.created_by,
+            "owner": owner_payload,
+            "title": title,
+            "body": body,
+            "tool": _clean_permission_text(frame.get("tool"), 240),
+            "options": _normalize_permission_options(frame.get("options")),
+            "task_id": task_id,
+            "reply_msg_id": msg_id,
+            "acp_session_id": _clean_permission_text(frame.get("acp_session_id"), 256),
+            "provider_session_key": _clean_permission_text(frame.get("provider_session_key"), 1024),
+            "resolved": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        msg = Message(
+            channel_id=channel_id,
+            sender_id=bot.bot_id,
+            sender_type="bot",
+            content=body,
+            task_id=task_id,
+            msg_type="permission",
+            content_data={key: value for key, value in content_data.items() if value is not None},
+        )
+        s.add(msg)
+        await s.flush()
+        payload = MessageAssembler.assemble(msg, {})
+        await s.commit()
+
+    from app.features.bot_runtime.pipeline.bus import WSEventBus
+    from app.features.bot_runtime.pipeline.events import MessageCreated
+    await WSEventBus(channel_id).publish(MessageCreated(data=payload))
+    await _send_send_ack_ok(websocket, client_msg_id, msg.msg_id)
+
+
 async def _handle_data_send(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
@@ -1818,6 +1935,8 @@ async def data_websocket(websocket: WebSocket) -> None:
                 await _handle_data_reply(websocket, bot, frame)
             elif ftype == "send":
                 await _handle_data_send(websocket, bot, frame)
+            elif ftype == "permission_request":
+                await _handle_data_permission_request(websocket, bot, frame)
             elif ftype == "delta":
                 await _handle_data_delta(websocket, bot, frame)
             elif ftype == "trace":

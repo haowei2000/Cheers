@@ -33,7 +33,7 @@ import type {
 type BotSettingsTab = "profile" | "runtime" | "status";
 
 function normalizeConnectorPermissionMode(value: unknown): ConnectorPermissionMode {
-  return value === "allow" || value === "cancel" || value === "reject" ? value : "reject";
+  return value === "ask" || value === "allow" || value === "cancel" || value === "reject" ? value : "reject";
 }
 
 function msToSeconds(value: unknown, fallback: number): number {
@@ -622,6 +622,7 @@ export function BotEditPane({
                 onChange={(e) => setConnectorPermissionMode(normalizeConnectorPermissionMode(e.target.value))}
                 className={inputCls}
               >
+                <option value="ask">Ask owner in chat</option>
                 <option value="reject">Reject</option>
                 <option value="allow">Allow</option>
                 <option value="cancel">Cancel</option>

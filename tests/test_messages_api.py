@@ -35,6 +35,14 @@ from app.services.storage.base import (
 )
 
 
+class _FakeControlWS:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, event: dict) -> None:
+        self.sent.append(event)
+
+
 def _make_disabled_model(model_id: str) -> AIModel:
     return AIModel(
         model_id=model_id,
@@ -197,6 +205,156 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     assert resp2.status_code == 200
     assert len(resp2.json()["data"]) == 1
     assert resp2.json()["data"][0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_acp_permission_card_requires_bot_owner_to_resolve(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    owner = User(
+        user_id="permission-owner-001",
+        username="permission_owner_001",
+        password_hash="x",
+        display_name="Permission Owner",
+    )
+    ws = Workspace(workspace_id="permission-ws-001", name="Permission WS")
+    ch = Channel(
+        channel_id="permission-channel-001",
+        workspace_id=ws.workspace_id,
+        name="permission",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="permission-bot-001",
+        username="permission_bot_001",
+        display_name="Permission Bot",
+        binding_type="agent_bridge",
+        created_by=owner.user_id,
+    )
+    msg = Message(
+        msg_id="permission-msg-001",
+        channel_id=ch.channel_id,
+        sender_id=bot.bot_id,
+        sender_type="bot",
+        content="Need approval",
+        msg_type="permission",
+        content_data={
+            "kind": "agent_bridge_permission_request",
+            "request_id": "permission-request-001",
+            "bot_id": bot.bot_id,
+            "bot_owner_id": owner.user_id,
+            "title": "Permission test",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+            "resolved": False,
+        },
+    )
+    db_session.add_all([
+        owner,
+        ws,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=current_user_id, member_type="user"),
+        ChannelMembership(channel_id=ch.channel_id, member_id=owner.user_id, member_type="user"),
+        msg,
+    ])
+    await db_session.commit()
+
+    denied = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/resolve",
+        json={"resolution": "allow"},
+    )
+    assert denied.status_code == 403
+
+    request = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/request-approval",
+        json={},
+    )
+    assert request.status_code == 200
+    data = request.json()["data"]
+    assert data["permission"]["content_data"]["approval_requested"] is True
+    assert "@permission_owner_001" in data["request"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_acp_permission_owner_resolution_dispatches_to_connector(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws_row = Workspace(workspace_id="permission-ws-002", name="Permission WS 2")
+    ch = Channel(
+        channel_id="permission-channel-002",
+        workspace_id=ws_row.workspace_id,
+        name="permission-2",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="permission-bot-002",
+        username="permission_bot_002",
+        display_name="Permission Bot 2",
+        binding_type="agent_bridge",
+        status="online",
+        created_by=current_user_id,
+    )
+    msg = Message(
+        msg_id="permission-msg-002",
+        channel_id=ch.channel_id,
+        sender_id=bot.bot_id,
+        sender_type="bot",
+        content="Need approval",
+        msg_type="permission",
+        content_data={
+            "kind": "agent_bridge_permission_request",
+            "request_id": "permission-request-002",
+            "bot_id": bot.bot_id,
+            "bot_owner_id": current_user_id,
+            "title": "Permission test",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+            "resolved": False,
+        },
+    )
+    db_session.add_all([
+        ws_row,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=current_user_id, member_type="user"),
+        msg,
+    ])
+    await db_session.commit()
+
+    from app.features.agent_bridge.registry import bot_session_registry
+
+    ws = _FakeControlWS()
+    await bot_session_registry.bind_control(bot.bot_id, ws)  # type: ignore[arg-type]
+    try:
+        resp = await client.post(
+            f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/resolve",
+            json={"resolution": "allow"},
+        )
+    finally:
+        await bot_session_registry.unbind_control(bot.bot_id, ws)  # type: ignore[arg-type]
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["content_data"]["resolved"] is True
+    assert ws.sent[-1] == {
+        "type": "permission_resolution",
+        "request_id": "permission-request-002",
+        "message_id": msg.msg_id,
+        "resolution": "allow",
+        "option_id": "allow",
+        "resolved_by": current_user_id,
+        "resolved_at": ws.sent[-1]["resolved_at"],
+    }
 
 
 @pytest.mark.asyncio

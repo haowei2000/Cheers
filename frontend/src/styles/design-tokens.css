@@ -3277,6 +3277,50 @@
   background: var(--orange-muted);
   border-radius: 8px;
 }
+
+.an-approval.an-approval-inline {
+  margin-top: 4px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.an-approval.an-approval-inline .an-body {
+  font-size: 11px;
+  color: var(--fg-2);
+  line-height: 1.4;
+}
+
+.an-approval.an-approval-inline .an-body b {
+  color: var(--fg-1);
+  font-weight: 600;
+}
+
+.an-approval.an-approval-inline button {
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  color: var(--fg-2);
+  border-color: var(--border);
+}
+
+.an-approval.an-approval-inline button.allow {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.an-approval.an-approval-inline button.allow:hover {
+  background: var(--accent-muted);
+}
+
+.an-approval.an-approval-inline button.deny:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
 .an-approval .an-body { flex: 1; font-size: 12.5px; color: var(--fg-1); }
 .an-approval .an-body b { color: var(--orange); font-weight: 600; }
 .an-approval button {

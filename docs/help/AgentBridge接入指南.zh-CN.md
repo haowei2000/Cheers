@@ -393,7 +393,7 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
           "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT"
         },
         "requestTimeoutMs": 1200000,
-        "permissionMode": "reject"
+        "permissionMode": "ask"
       }
     }
   }
@@ -404,10 +404,11 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
 
 - `requestTimeoutMs` 和 `permissionMode` 放在 `agent` 对象里。
 - `permissionMode` 支持：
-  - `reject`：默认值；遇到写文件、执行命令等权限请求时拒绝。
+  - `ask`：在当前频道发送权限审批卡片，只有 Bot 所有者可以批准或拒绝。
+  - `reject`：遇到写文件、执行命令等权限请求时自动拒绝。
   - `allow`：自动选择允许；只建议用于可信本地工作区。
   - `cancel`：收到权限请求时取消。
-- 如果希望 OpenCode ACP 能生成并返回文件，需要把 `cwd` 设成允许它读写的项目目录，并在可信场景下使用 `"permissionMode": "allow"`。
+- 如果希望 OpenCode ACP 能生成并返回文件，需要把 `cwd` 设成允许它读写的项目目录；生产/协作场景建议使用 `"permissionMode": "ask"`，可信本地工作区才使用 `"allow"`。
 
 ### 4.5 启动 ACP Connector
 

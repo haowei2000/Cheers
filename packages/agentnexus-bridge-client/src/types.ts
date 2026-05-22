@@ -22,7 +22,7 @@ export interface ChannelInfo {
   joined_at?: string | null;
 }
 
-export type ConnectorPermissionMode = "reject" | "allow" | "cancel";
+export type ConnectorPermissionMode = "ask" | "reject" | "allow" | "cancel";
 
 export interface ConnectorControlSettings {
   permissionMode?: ConnectorPermissionMode;
@@ -95,6 +95,16 @@ export interface ConfigOptionSetInbound {
   updated_at?: string | null;
 }
 
+export interface PermissionResolutionInbound {
+  type: "permission_resolution";
+  request_id: string;
+  message_id?: string | null;
+  resolution: "allow" | "deny";
+  option_id?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+}
+
 export type ControlInbound =
   | ControlHello
   | ChannelJoinedEvent
@@ -102,6 +112,7 @@ export type ControlInbound =
   | CancelInbound
   | ConfigUpdateInbound
   | ConfigOptionSetInbound
+  | PermissionResolutionInbound
   | PongFrame
   | { type: "error"; detail?: string };
 
@@ -294,6 +305,28 @@ export interface SendFrame {
   text: string;
   in_reply_to_msg_id?: string | null;
   file_ids?: string[];
+}
+
+export interface PermissionRequestOption {
+  option_id: string;
+  kind?: string;
+  name?: string;
+  description?: string;
+}
+
+export interface PermissionRequestFrame {
+  type: "permission_request";
+  client_msg_id: string;
+  channel_id: string;
+  request_id: string;
+  task_id?: string | null;
+  msg_id?: string | null;
+  acp_session_id?: string | null;
+  provider_session_key?: string | null;
+  title?: string | null;
+  body: string;
+  tool?: string | null;
+  options?: PermissionRequestOption[];
 }
 
 export interface TypingFrame {

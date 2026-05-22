@@ -1,6 +1,6 @@
 import type { SessionConfig } from "@haowei0520/bridge-client";
 
-export type PermissionMode = "reject" | "allow" | "cancel";
+export type PermissionMode = "ask" | "reject" | "allow" | "cancel";
 
 export interface RemoteConnectorSettings {
   permissionMode?: PermissionMode;

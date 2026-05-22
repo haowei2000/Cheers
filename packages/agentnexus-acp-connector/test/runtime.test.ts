@@ -76,6 +76,62 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("posts ACP permission requests to AgentNexus and waits for owner resolution", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "opencode-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            permissionMode: "ask",
+            promptTimeoutMs: 60_000,
+            env: { FAKE_ACP_PERMISSION: "1" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-permission",
+      channel_id: "C1",
+      seq: 1,
+      placeholder_msg_id: "ph-permission",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "please use a tool", sender_name: "Alice" },
+    });
+
+    await waitFor(() => bridge.receivedPermissionRequests.length === 1);
+    expect(bridge.receivedDones.length).toBe(0);
+    expect(bridge.receivedPermissionRequests[0]).toMatchObject({
+      type: "permission_request",
+      channel_id: "C1",
+      task_id: "task-permission",
+      msg_id: "ph-permission",
+      tool: "fake permission",
+    });
+    bridge.pushPermissionResolution({
+      request_id: String(bridge.receivedPermissionRequests[0].request_id),
+      resolution: "allow",
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 1);
+    const output = bridge.receivedDeltas.map((d) => d.delta).join("");
+    expect(output).toContain("please use a tool");
+    expect(output).not.toContain("permission denied");
+    await runtime.stop();
+  });
+
   it("applies remote connector control updates from AgentNexus", async () => {
     const statePath = path.join(tmp, "state.json");
     const runtime = new ConnectorRuntime(

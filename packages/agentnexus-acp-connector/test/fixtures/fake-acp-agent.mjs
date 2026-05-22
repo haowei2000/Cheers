@@ -22,6 +22,7 @@ const hangPrompt = process.env.FAKE_ACP_HANG_PROMPT === "1";
 const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS || "0");
 const promptDelayIfIncludes = process.env.FAKE_ACP_PROMPT_DELAY_IF_INCLUDES || "";
 let nonPersistedItemFailureSent = false;
+const pendingClientRequests = new Map();
 
 function send(frame) {
   process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -37,6 +38,18 @@ function error(id, code, message, data) {
 
 function notify(method, params) {
   send({ jsonrpc: "2.0", method, params });
+}
+
+function request(method, params) {
+  const id = `client-${randomUUID()}`;
+  send({ jsonrpc: "2.0", id, method, params });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingClientRequests.delete(id);
+      reject(new Error(`client request timed out: ${method}`));
+    }, 30_000);
+    pendingClientRequests.set(id, { resolve, reject, timer });
+  });
 }
 
 function sleep(ms) {
@@ -113,7 +126,16 @@ function sessionOptions(sessionId) {
 }
 
 async function handle(frame) {
-  if ("result" in frame || "error" in frame) return;
+  if ("result" in frame || "error" in frame) {
+    const pending = pendingClientRequests.get(frame.id);
+    if (pending) {
+      clearTimeout(pending.timer);
+      pendingClientRequests.delete(frame.id);
+      if (frame.error) pending.reject(new Error(frame.error.message || "client request failed"));
+      else pending.resolve(frame.result);
+    }
+    return;
+  }
   const { id, method, params } = frame;
   if (method === "initialize") {
     result(id, {
@@ -204,11 +226,9 @@ async function handle(frame) {
       return;
     }
     if (permission) {
-      send({
-        jsonrpc: "2.0",
-        id: `perm-${id}`,
-        method: "session/request_permission",
-        params: {
+      const permissionResult = await request(
+        "session/request_permission",
+        {
           sessionId: params.sessionId,
           toolCall: {
             sessionUpdate: "tool_call_update",
@@ -221,7 +241,19 @@ async function handle(frame) {
             { optionId: "allow", kind: "allow_once", name: "Allow" },
           ],
         },
-      });
+      );
+      const outcome = permissionResult?.outcome || {};
+      if (outcome.outcome !== "selected" || outcome.optionId !== "allow") {
+        notify("session/update", {
+          sessionId: params.sessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "permission denied" },
+          },
+        });
+        result(id, { stopReason: "cancelled" });
+        return;
+      }
     }
     notify("session/update", {
       sessionId: params.sessionId,

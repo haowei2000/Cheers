@@ -56,7 +56,7 @@ _CONNECTOR_CONTROL_TIMEOUT_MAX_MS = 3_600_000
 
 
 class ConnectorControlSettingsIn(BaseModel):
-    permissionMode: Literal["reject", "allow", "cancel"] | None = Field(default=None)
+    permissionMode: Literal["ask", "reject", "allow", "cancel"] | None = Field(default=None)
     requestTimeoutMs: int | None = Field(
         default=None,
         ge=_CONNECTOR_CONTROL_TIMEOUT_MIN_MS,

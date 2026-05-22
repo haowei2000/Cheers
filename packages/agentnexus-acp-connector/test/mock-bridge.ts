@@ -30,6 +30,7 @@ export class MockBridge {
   public receivedReplies: Array<Record<string, unknown>> = [];
   public receivedTraces: Array<Record<string, unknown>> = [];
   public receivedUploads: Array<Record<string, unknown>> = [];
+  public receivedPermissionRequests: Array<Record<string, unknown>> = [];
   public receivedConfigStatuses: Array<Record<string, unknown>> = [];
   public receivedConfigOptions: Array<Record<string, unknown>> = [];
   public receivedConfigOptionStatuses: Array<Record<string, unknown>> = [];
@@ -126,6 +127,23 @@ export class MockBridge {
     });
   }
 
+  pushPermissionResolution(frame: {
+    request_id: string;
+    resolution: "allow" | "deny";
+    message_id?: string | null;
+    option_id?: string | null;
+  }): void {
+    this.broadcast("control", {
+      type: "permission_resolution",
+      request_id: frame.request_id,
+      resolution: frame.resolution,
+      message_id: frame.message_id ?? "permission-card-1",
+      option_id: frame.option_id ?? null,
+      resolved_by: "owner-1",
+      resolved_at: new Date().toISOString(),
+    });
+  }
+
   connectionsFor(stream: "control" | "data"): number {
     return Array.from(this.conns).filter((c) => c.stream === stream).length;
   }
@@ -212,6 +230,16 @@ export class MockBridge {
       }
     }
     if (frame.type === "trace") this.receivedTraces.push(frame);
+    if (frame.type === "permission_request") {
+      this.receivedPermissionRequests.push(frame);
+      ws.send(JSON.stringify({
+        type: "send_ack",
+        client_msg_id: frame.client_msg_id,
+        ok: true,
+        message_id: `permission-card-${this.receivedPermissionRequests.length}`,
+      }));
+      return;
+    }
     if (frame.type === "file_upload") {
       if (this.closeUploadWithoutAckCount > 0) {
         this.closeUploadWithoutAckCount -= 1;

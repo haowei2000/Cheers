@@ -255,9 +255,9 @@ newly-created/modified files as AgentNexus attachments.
 下生成了 `agentnexus-acp-connector-0.1.9.tgz`，ACP agent 可以通过提及该文件名、
 Markdown 链接或 `file://` URI 将它回传。
 
-If the ACP agent needs to create or modify files before returning them, set
-`agent.permissionMode` intentionally. The default is `reject`; use `allow` only
-for a trusted local workspace.
+如果 ACP agent 需要创建或修改文件再返回，请有意识地设置
+`agent.permissionMode`。使用 `ask` 会在当前 AgentNexus 会话里向 Bot 所有者发送审批卡片；
+`reject` 会自动拒绝；只有可信本地工作区才建议使用 `allow`。
 
 ## Troubleshooting
 

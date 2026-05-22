@@ -35,6 +35,9 @@ import type {
   FileUploadAck,
   FileUploadFrame,
   MessageEvent,
+  PermissionRequestFrame,
+  PermissionRequestOption,
+  PermissionResolutionInbound,
   ReplyFrame,
   SendAck,
   SendFrame,
@@ -102,6 +105,8 @@ export interface SessionEvents {
   onConfigUpdate?: (update: ConfigUpdateInbound) => void | Promise<void>;
   /** Server-side AgentNexus requested an ACP session configuration option change. */
   onConfigOptionSet?: (update: ConfigOptionSetInbound) => void | Promise<void>;
+  /** A channel user resolved a previously posted provider permission request. */
+  onPermissionResolution?: (resolution: PermissionResolutionInbound) => void | Promise<void>;
   onError?: (err: unknown) => void;
   onFatal?: (reason: string) => void;
   /** Control/data connection state changes for observability. */
@@ -295,6 +300,10 @@ export class BotSession {
           this.emitConfigOptionSet(frame);
           break;
         }
+        case "permission_resolution": {
+          this.emitPermissionResolution(frame);
+          break;
+        }
         case "pong":
           break;
         default:
@@ -329,6 +338,16 @@ export class BotSession {
   private emitConfigOptionSet(update: ConfigOptionSetInbound): void {
     try {
       void Promise.resolve(this.events.onConfigOptionSet?.(update)).catch((err) => {
+        this.events.onError?.(err);
+      });
+    } catch (err) {
+      this.events.onError?.(err);
+    }
+  }
+
+  private emitPermissionResolution(update: PermissionResolutionInbound): void {
+    try {
+      void Promise.resolve(this.events.onPermissionResolution?.(update)).catch((err) => {
         this.events.onError?.(err);
       });
     } catch (err) {
@@ -562,6 +581,35 @@ export class BotSession {
     });
   }
 
+  /** Ask AgentNexus to post an interactive permission card in a channel. */
+  async requestPermission(args: {
+    channelId: string;
+    requestId: string;
+    body: string;
+    title?: string | null;
+    tool?: string | null;
+    taskId?: string | null;
+    msgId?: string | null;
+    acpSessionId?: string | null;
+    providerSessionKey?: string | null;
+    options?: PermissionRequestOption[];
+  }): Promise<SendResult> {
+    return this.sendFrame<PermissionRequestFrame>({
+      type: "permission_request",
+      client_msg_id: randomUUID(),
+      channel_id: args.channelId,
+      request_id: args.requestId,
+      task_id: args.taskId ?? null,
+      msg_id: args.msgId ?? null,
+      acp_session_id: args.acpSessionId ?? null,
+      provider_session_key: args.providerSessionKey ?? null,
+      title: args.title ?? null,
+      body: args.body,
+      tool: args.tool ?? null,
+      options: args.options ?? [],
+    });
+  }
+
   /** Upload a binary file inline over the data WS. Returns the bridge file_id
    *  on success, which can then be referenced in reply / done / send frames.
    *  No HTTP fallback — pure WS path so the plugin only needs WS connectivity. */
@@ -661,7 +709,7 @@ export class BotSession {
     }
   }
 
-  private sendFrame<F extends ReplyFrame | SendFrame>(frame: F): Promise<SendResult> {
+  private sendFrame<F extends ReplyFrame | SendFrame | PermissionRequestFrame>(frame: F): Promise<SendResult> {
     if (!this.data.isOpen) {
       return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
     }

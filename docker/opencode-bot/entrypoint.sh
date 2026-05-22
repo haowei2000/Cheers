@@ -50,22 +50,22 @@ const dataUrl = env("OPENCODE_BOT_DATA_URL", `${wsBase}/ws/agent-bridge/data`);
 const cwd = path.resolve(env("OPENCODE_WORKSPACE_DIR", "/workspace"));
 const promptTimeoutMs = intEnv("OPENCODE_PROMPT_TIMEOUT_MS", 660000);
 const requestTimeoutMsRaw = env("OPENCODE_REQUEST_TIMEOUT_MS", "").trim();
-const permissionMode = env("OPENCODE_PERMISSION_MODE", "reject").trim() || "reject";
+const permissionMode = env("OPENCODE_PERMISSION_MODE", "ask").trim() || "ask";
 const model = env("OPENCODE_MODEL", "").trim();
 const baseUrl = env("OPENCODE_OPENAI_BASE_URL", "https://api.deepseek.com").trim();
 const provider = env("OPENCODE_PROVIDER", "deepseek").trim() || "deepseek";
 const opencodeCommand = env("OPENCODE_ACP_COMMAND", "opencode").trim() || "opencode";
 const opencodeModelName = opencodeModel(provider, model);
 
-if (!["reject", "allow", "cancel"].includes(permissionMode)) {
-  throw new Error("OPENCODE_PERMISSION_MODE must be reject, allow, or cancel");
+if (!["ask", "reject", "allow", "cancel"].includes(permissionMode)) {
+  throw new Error("OPENCODE_PERMISSION_MODE must be ask, reject, allow, or cancel");
 }
 
 fs.mkdirSync(cwd, { recursive: true });
 
 const opencodePermission = permissionMode === "allow"
   ? { edit: "allow", bash: "allow" }
-  : permissionMode === "cancel"
+  : permissionMode === "ask" || permissionMode === "cancel"
     ? { edit: "ask", bash: "ask" }
     : { edit: "deny", bash: "deny" };
 

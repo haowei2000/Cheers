@@ -103,7 +103,7 @@ async function normalizeAccount(id: string, raw: unknown, baseDir: string): Prom
       ) : undefined),
       requestTimeoutMs: typeof agent.requestTimeoutMs === "number" ? agent.requestTimeoutMs : undefined,
       promptTimeoutMs: typeof agent.promptTimeoutMs === "number" ? agent.promptTimeoutMs : undefined,
-      permissionMode: agent.permissionMode === "allow" || agent.permissionMode === "cancel"
+      permissionMode: agent.permissionMode === "ask" || agent.permissionMode === "allow" || agent.permissionMode === "cancel"
         ? agent.permissionMode
         : "reject",
       mcpServers: Array.isArray(agent.mcpServers) ? agent.mcpServers : [],

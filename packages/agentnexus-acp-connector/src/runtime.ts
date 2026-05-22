@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ import {
   type ConfigOptionSetInbound,
   type ConfigUpdateInbound,
   type InboundMessage,
+  type PermissionResolutionInbound,
 } from "@haowei0520/bridge-client";
 
 import { JsonRpcError, JsonRpcRequestTimeoutError } from "./acp-jsonrpc.js";
@@ -113,6 +114,24 @@ interface SettingsApplyResult {
   rejected: Array<{ field: string; reason: string }>;
   settings: RemoteConnectorSettings;
 }
+
+interface PermissionOption {
+  option_id: string;
+  kind?: string;
+  name?: string;
+  description?: string;
+}
+
+interface PendingPermissionRequest {
+  ctx: RunContext;
+  params: unknown;
+  resolve: (outcome: AcpPermissionOutcome) => void;
+  timer: NodeJS.Timeout;
+}
+
+type AcpPermissionOutcome =
+  | { outcome: "selected"; optionId: string }
+  | { outcome: "cancelled" };
 
 interface AcpDiscoveredOptions {
   source: "acp";
@@ -681,6 +700,69 @@ function summarizeUpdate(update: Record<string, unknown>): string {
   return kind;
 }
 
+function permissionOptions(params: unknown): PermissionOption[] {
+  if (!isObject(params) || !Array.isArray(params.options)) return [];
+  const options: PermissionOption[] = [];
+  for (const option of params.options.filter(isObject)) {
+    const optionId = cleanConfigText(option.optionId, cleanConfigText(option.id));
+    if (!optionId) continue;
+    options.push({
+      option_id: optionId,
+      kind: cleanConfigText(option.kind) || undefined,
+      name: cleanConfigText(option.name, optionId),
+      description: cleanConfigText(option.description, "") || undefined,
+    });
+  }
+  return options;
+}
+
+function permissionOptionIdForResolution(params: unknown, resolution: "allow" | "deny"): string | null {
+  const options = permissionOptions(params);
+  const prefix = resolution === "allow" ? "allow" : "reject";
+  return options.find((option) => String(option.kind ?? "").startsWith(prefix))?.option_id ?? null;
+}
+
+function permissionToolCall(params: unknown): Record<string, unknown> {
+  return isObject(params) && isObject(params.toolCall) ? params.toolCall : {};
+}
+
+function permissionText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function permissionTitle(params: unknown): string {
+  const toolCall = permissionToolCall(params);
+  return (
+    permissionText(toolCall.title)
+    || permissionText(toolCall.name)
+    || permissionText(toolCall.tool)
+    || "ACP permission request"
+  );
+}
+
+function permissionToolName(params: unknown): string | null {
+  const toolCall = permissionToolCall(params);
+  return (
+    permissionText(toolCall.tool)
+    || permissionText(toolCall.name)
+    || permissionText(toolCall.toolName)
+    || permissionText(toolCall.title)
+    || null
+  );
+}
+
+function permissionBody(params: unknown): string {
+  const title = permissionTitle(params);
+  const toolCall = permissionToolCall(params);
+  const detail = (
+    permissionText(toolCall.message)
+    || permissionText(toolCall.description)
+    || permissionText(toolCall.content)
+  );
+  if (detail && detail !== title) return `${title}\n\n${detail}`;
+  return title;
+}
+
 function providerSessionKeyOf(message: InboundMessage): string {
   const event = message.event;
   const fromEvent = event.provider_session_key;
@@ -725,7 +807,7 @@ function safePathSegment(value: string | null | undefined, fallback: string): st
 }
 
 function isPermissionMode(value: unknown): value is PermissionMode {
-  return value === "reject" || value === "allow" || value === "cancel";
+  return value === "ask" || value === "reject" || value === "allow" || value === "cancel";
 }
 
 function pickTimeoutMs(value: unknown): number | null {
@@ -774,7 +856,7 @@ async function normalizeRemoteSettings(input: unknown, currentCwd: string | unde
     if (isPermissionMode(raw.permissionMode)) {
       settings.permissionMode = raw.permissionMode;
     } else {
-      rejected.push({ field: "permissionMode", reason: "must be reject, allow, or cancel" });
+      rejected.push({ field: "permissionMode", reason: "must be ask, reject, allow, or cancel" });
     }
   }
   for (const field of ["requestTimeoutMs", "promptTimeoutMs"] as const) {
@@ -1259,6 +1341,7 @@ export class AcpBridgeAccount {
   private readonly activeRunsByMsg = new Map<string, RunContext>();
   private readonly queuesByProviderSessionKey = new Map<string, Promise<void>>();
   private readonly configOptionsBySession = new Map<string, AcpConfigOption[]>();
+  private readonly pendingPermissions = new Map<string, PendingPermissionRequest>();
   private desiredAcpConfigOptions: Record<string, string> = {};
   private desiredAcpConfigOptionsKey = acpConfigOptionsKey({});
   private discoveredOptions: AcpDiscoveredOptions | null = null;
@@ -1269,7 +1352,12 @@ export class AcpBridgeAccount {
     private readonly state: SessionStateStore,
     private readonly logger: Logger,
   ) {
-    this.agent = new AcpStdioAgent(accountId, config.agent, logger);
+    this.agent = new AcpStdioAgent(
+      accountId,
+      config.agent,
+      logger,
+      (params) => this.handleAcpPermissionRequest(params),
+    );
     this.agent.onSessionUpdate((update) => this.handleAcpUpdate(update));
     this.bridge = new BotSession(
       {
@@ -1284,6 +1372,7 @@ export class AcpBridgeAccount {
         onCancel: (msgId, reason) => this.handleCancel(msgId, reason),
         onConfigUpdate: (update) => this.handleConfigUpdate(update),
         onConfigOptionSet: (update) => this.handleConfigOptionSet(update),
+        onPermissionResolution: (resolution) => this.handlePermissionResolution(resolution),
         onFatal: (reason) => this.logger.error("bridge account=%s fatal: %s", this.accountId, reason),
         onError: (err) => this.logger.error("bridge account=%s error: %s", this.accountId, String(err)),
         onConnectionChange: (stream, state) => this.logger.info(
@@ -1304,6 +1393,11 @@ export class AcpBridgeAccount {
   }
 
   async stop(): Promise<void> {
+    for (const [requestId, pending] of this.pendingPermissions) {
+      clearTimeout(pending.timer);
+      pending.resolve({ outcome: "cancelled" });
+      this.pendingPermissions.delete(requestId);
+    }
     await Promise.allSettled([this.bridge.stop(), this.agent.stop()]);
   }
 
@@ -1699,6 +1793,103 @@ export class AcpBridgeAccount {
     if (!ctx) return;
     this.logger.warn("acp account=%s cancelling session=%s reason=%s", this.accountId, ctx.acpSessionId, reason ?? "");
     this.agent.cancel(ctx.acpSessionId);
+  }
+
+  private async handleAcpPermissionRequest(params: unknown): Promise<AcpPermissionOutcome> {
+    const sessionId = isObject(params) && typeof params.sessionId === "string" ? params.sessionId : "";
+    const ctx = sessionId ? this.activeRunsBySession.get(sessionId) : undefined;
+    if (!ctx) {
+      this.logger.warn("acp account=%s permission request has no active run session=%s", this.accountId, sessionId);
+      return { outcome: "cancelled" };
+    }
+
+    const requestId = randomUUID();
+    const title = permissionTitle(params);
+    const body = permissionBody(params);
+    const options = permissionOptions(params);
+    const ack = await this.bridge.requestPermission({
+      channelId: ctx.source.channelId,
+      requestId,
+      taskId: ctx.source.event.task_id,
+      msgId: ctx.msgId,
+      acpSessionId: ctx.acpSessionId,
+      providerSessionKey: ctx.providerSessionKey,
+      title,
+      body,
+      tool: permissionToolName(params),
+      options,
+    });
+    if (!ack.ok) {
+      this.logger.warn(
+        "acp account=%s permission request card rejected request_id=%s code=%s error=%s",
+        this.accountId,
+        requestId,
+        ack.code,
+        ack.error,
+      );
+      return { outcome: "cancelled" };
+    }
+
+    this.bridge.trace({
+      msg_id: ctx.msgId,
+      task_id: ctx.source.event.task_id,
+      channel_id: ctx.source.channelId,
+      run_id: ctx.acpSessionId,
+      session_key: ctx.providerSessionKey,
+      stream: "acp",
+      seq: ++ctx.traceSeq,
+      phase: "permission_requested",
+      status: "waiting",
+      title: "ACP permission requested",
+      message: title,
+      data: {
+        request_id: requestId,
+        message_id: ack.messageId,
+        options,
+      },
+    });
+
+    const timeoutMs = this.config.agent.promptTimeoutMs ?? this.config.agent.requestTimeoutMs ?? 900_000;
+    return await new Promise<AcpPermissionOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingPermissions.delete(requestId);
+        this.logger.warn("acp account=%s permission request timed out request_id=%s", this.accountId, requestId);
+        resolve({ outcome: "cancelled" });
+      }, timeoutMs);
+      this.pendingPermissions.set(requestId, { ctx, params, resolve, timer });
+    });
+  }
+
+  private handlePermissionResolution(resolution: PermissionResolutionInbound): void {
+    const pending = this.pendingPermissions.get(resolution.request_id);
+    if (!pending) return;
+    this.pendingPermissions.delete(resolution.request_id);
+    clearTimeout(pending.timer);
+
+    const optionId = resolution.option_id || permissionOptionIdForResolution(pending.params, resolution.resolution);
+    const outcome: AcpPermissionOutcome = optionId
+      ? { outcome: "selected", optionId }
+      : { outcome: "cancelled" };
+    this.bridge.trace({
+      msg_id: pending.ctx.msgId,
+      task_id: pending.ctx.source.event.task_id,
+      channel_id: pending.ctx.source.channelId,
+      run_id: pending.ctx.acpSessionId,
+      session_key: pending.ctx.providerSessionKey,
+      stream: "acp",
+      seq: ++pending.ctx.traceSeq,
+      phase: "permission_resolved",
+      status: resolution.resolution === "allow" ? "approved" : "denied",
+      title: "ACP permission resolved",
+      message: resolution.resolution,
+      data: {
+        request_id: resolution.request_id,
+        message_id: resolution.message_id ?? null,
+        resolved_by: resolution.resolved_by ?? null,
+        option_id: optionId,
+      },
+    });
+    pending.resolve(outcome);
   }
 
   private resolveConfigOptionTarget(update: ConfigOptionSetInbound): {

@@ -12,6 +12,10 @@ import type {
 } from "./types.js";
 
 type SessionUpdateHandler = (update: AcpSessionUpdate) => void | Promise<void>;
+type PermissionOutcome =
+  | { outcome: "selected"; optionId: string }
+  | { outcome: "cancelled" };
+type PermissionRequestHandler = (params: unknown, mode: PermissionMode) => PermissionOutcome | null | Promise<PermissionOutcome | null>;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -39,6 +43,7 @@ export class AcpStdioAgent {
     private readonly accountId: string,
     private readonly config: StdioAgentConfig,
     private readonly logger: Logger,
+    private readonly permissionRequestHandler?: PermissionRequestHandler,
   ) {
     this.peer = this.createPeer();
   }
@@ -188,6 +193,10 @@ export class AcpStdioAgent {
   private async handleRequest(method: string, params: unknown): Promise<unknown> {
     if (method === "session/request_permission") {
       const mode = this.config.permissionMode ?? "reject";
+      if (mode === "ask" && this.permissionRequestHandler) {
+        const outcome = await this.permissionRequestHandler(params, mode);
+        if (outcome) return { outcome };
+      }
       const optionId = pickPermissionOption(params, mode);
       if (mode === "cancel" || !optionId) {
         return { outcome: { outcome: "cancelled" } };

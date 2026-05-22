@@ -56,7 +56,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@haowei0520/bridge-client": "^0.1.4"
+    "@haowei0520/bridge-client": "file:../agentnexus-bridge-client"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

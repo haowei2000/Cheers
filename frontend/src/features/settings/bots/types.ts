@@ -1,5 +1,5 @@
 export type BotScope = "private" | "friend" | "everyone";
-export type ConnectorPermissionMode = "reject" | "allow" | "cancel";
+export type ConnectorPermissionMode = "ask" | "reject" | "allow" | "cancel";
 
 export type ConnectorControlSettings = {
   permissionMode?: ConnectorPermissionMode;
