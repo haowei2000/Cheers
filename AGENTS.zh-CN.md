@@ -25,6 +25,21 @@ Project-specific instructions for AI coding agents working on AgentNexus.
 - `main` 分支只接受来自 `develop` 分支的合并。
 - 禁止将功能分支、修复分支或其他工作分支的 PR 直接合并到 `main`。
 
+## ACP Connector 发布顺序（强制）
+
+当 `packages/agentnexus-acp-connector` 有实质性更新时，必须发布新的 `@haowei0520/acp-connector` npm 版本，因为实际部署里同时存在远程机器上的本地 npm 安装版 connector 和容器化的 `opencode-bot`。
+
+必须按以下顺序执行：
+
+1. 在包含 connector 改动的同一个 PR 中，按 semver bump `packages/agentnexus-acp-connector/package.json` 和 `package-lock.json`。
+2. 先将 PR 合并到 `develop`，不要在功能分支上提前打发布 tag。
+3. 基于最新 `develop` 合并提交创建并推送精确 tag：`agentnexus-acp-connector-v<version>`。该 tag 会触发 `.github/workflows/release-acp-connector.yml`，发布 npm 包并创建 GitHub Release。
+4. 从同一个已合并提交重建并推送 `opencode-bot` 镜像，确保容器部署拿到的 connector 代码与 npm 发布版本一致。
+5. 对所有使用本地 npm 安装的机器（包括当前操作本机和远程机器），执行 `npm install -g @haowei0520/acp-connector@<version>`，并重启对应的 connector daemon 或前台进程。
+6. 对容器部署，拉取或部署重建后的 `opencode-bot` 镜像，并重新创建服务。
+
+不要从功能分支或未合并提交打 tag；release workflow 会校验 tag 与当前提交中的 package version 是否一致。
+
 ## Architecture
 
 ### 六层架构

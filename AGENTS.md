@@ -21,6 +21,21 @@ This is the English default edition prepared for the open-source documentation s
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
+## ACP Connector Release Order (Mandatory)
+
+When a change materially updates `packages/agentnexus-acp-connector`, always publish a new `@haowei0520/acp-connector` npm version because deployments may run either local npm-installed connectors or the containerized `opencode-bot`.
+
+Required order:
+
+1. Bump `packages/agentnexus-acp-connector/package.json` and `package-lock.json` in the same PR as the connector change, using semver.
+2. Merge the PR into `develop` before creating the release tag.
+3. From the updated `develop` commit, create and push the exact tag `agentnexus-acp-connector-v<version>`. This triggers `.github/workflows/release-acp-connector.yml` to publish npm and create the GitHub Release.
+4. Rebuild and push the `opencode-bot` image from the same merged commit so container deployments contain the same connector code as the npm release.
+5. Upgrade every machine that uses a local npm install, including the current operator machine and remote hosts, with `npm install -g @haowei0520/acp-connector@<version>` and restart the corresponding connector daemon or foreground process.
+6. Upgrade container deployments by pulling or deploying the rebuilt `opencode-bot` image and recreating the service.
+
+Do not tag from a feature branch or before the PR is merged; the release workflow validates that the tag matches the package version in the checked-out commit.
+
 ## Integration Test Requirements (Mandatory)
 
 Integration tests **must** pass against a fully running Docker Compose stack (frontend + backend). In-memory mocks or unit-level fixtures alone are insufficient for integration coverage.
