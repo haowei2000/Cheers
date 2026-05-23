@@ -36,6 +36,9 @@ async def list_dms(
         current_user,
         locale=locale_from_headers(request.headers),
     )
+    from app.services.notification_service import NotificationService
+
+    await NotificationService(session).ensure_notification_channel(current_user)
     svc = ChannelService(session)
     rows = await svc.list_dms_with_counterparty(current_user)
     unread = await svc.unread_counts_for(

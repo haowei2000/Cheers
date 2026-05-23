@@ -78,8 +78,6 @@ services:
 
   opencode-bot:
     image: ${OPENCODE_BOT_IMAGE:-registry.example.invalid:5000/ai/agentnexus-opencode:latest}
-    profiles:
-      - opencode-bot
     restart: unless-stopped
     env_file:
       - .env
