@@ -31,6 +31,7 @@ from app.features.bot_runtime.pipeline.ingest.stages import (
     CommitStage,
     EmitStage,
     FanoutUnreadStage,
+    NotificationFanoutStage,
     PersistStage,
     SecretEnvelopeStage,
     SerializeStage,
@@ -123,6 +124,7 @@ def build_message_workflow(ctx: IngestContext, *, bot_trigger: str = "none") -> 
     stages.append(EmitStage())
     if not ctx.skip_fanout:
         stages.append(FanoutUnreadStage())
+        stages.append(NotificationFanoutStage())
 
     secret_mode = "skip" if ctx.skip_secret else ("sealed" if ctx.is_secret else "plain")
     reason_parts = [message_kind]

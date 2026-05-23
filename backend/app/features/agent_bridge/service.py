@@ -12,7 +12,7 @@ from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import BotAccount, Channel, FileRecord, Message
 from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.streams import StreamState, stream_registry
-from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
+from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions_anywhere
 from app.features.bot_runtime.pipeline.bus import WSEventBus
 from app.features.bot_runtime.pipeline.events import BotTrace, MessageCreated, MessageDone
 from app.features.bot_runtime.pipeline.stream_coalescer import StreamDeltaCoalescer
@@ -243,7 +243,7 @@ async def finalize_bot_reply(
         msg.content = content
         msg.content_data = content_data
         msg.is_partial = False
-        msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
+        msg.mention_user_ids = await resolve_user_mentions_anywhere(content, session, channel_id)
         if file_ids:
             msg.file_ids = list(dict.fromkeys([*(msg.file_ids or []), *file_ids]))
         await session.flush()
@@ -277,7 +277,7 @@ async def finalize_bot_reply(
         msg.file_ids = file_ids
     session.add(msg)
     await session.flush()
-    msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
+    msg.mention_user_ids = await resolve_user_mentions_anywhere(content, session, channel_id)
     await session.flush()
     await _broadcast_new(session, msg)
     logger.info(
@@ -531,7 +531,7 @@ async def finalize_stream(
     )
     msg.content_data = content_data
     msg.is_partial = bool(partial)
-    msg.mention_user_ids = await resolve_user_mentions(content, session, state.channel_id)
+    msg.mention_user_ids = await resolve_user_mentions_anywhere(content, session, state.channel_id)
     if file_ids:
         msg.file_ids = list(dict.fromkeys([*(msg.file_ids or []), *file_ids]))
     await session.flush()

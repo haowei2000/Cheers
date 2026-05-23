@@ -129,7 +129,8 @@ export type Message = {
     | "announcement"
     | "routing"
     | "permission"
-    | "friend_request";
+    | "friend_request"
+    | "notification";
   content_data?: Record<string, unknown> | null;
   file_ids?: string[];
   files?: FileInfo[];

@@ -555,6 +555,7 @@ class MessageCreate(BaseModel):
     sender_type: str = "user"
     file_ids: list[str] = Field(default_factory=list)
     mention_bot_ids: list[str] = Field(default_factory=list)
+    mention_user_ids: list[str] = Field(default_factory=list)
     in_reply_to_msg_id: str | None = None
     content_data: dict[str, Any] | None = None
     msg_type: str | None = None
@@ -596,6 +597,7 @@ class MessageStreamCreate(BaseModel):
     file_id: str | None = None
     file_ids: list[str] = Field(default_factory=list)
     mention_bot_ids: list[str] = Field(default_factory=list)
+    mention_user_ids: list[str] = Field(default_factory=list)
 
 
 # ==================== Message Response Schemas ====================

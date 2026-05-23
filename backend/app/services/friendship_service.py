@@ -5,20 +5,29 @@ from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.db.models import Channel, ChannelMembership, Friendship, Message, User
-from app.repositories.channel_repo import ChannelRepository
+from app.db.models import Channel, Friendship, Message, User
 from app.repositories.friendship_repo import FriendshipRepository, friendship_pair_key
 from app.repositories.user_repo import UserRepository
-from app.services.workspace_service import WorkspaceService
+from app.services.notification_service import (
+    FRIEND_NOTICE_DISPLAY_NAME as _FRIEND_NOTICE_DISPLAY_NAME,
+)
+from app.services.notification_service import (
+    FRIEND_NOTICE_SYSTEM_ID as _FRIEND_NOTICE_SYSTEM_ID,
+)
+from app.services.notification_service import (
+    FRIEND_NOTICE_USERNAME as _FRIEND_NOTICE_USERNAME,
+)
+from app.services.notification_service import (
+    FRIEND_REQUEST_MSG_TYPE,
+    NotificationService,
+)
 from app.services.ws_service import ws_manager
 
-FRIEND_NOTICE_SYSTEM_ID = "system:friend_requests"
-FRIEND_NOTICE_USERNAME = "friend-notice"
-FRIEND_NOTICE_DISPLAY_NAME = "好友通知"
-FRIEND_REQUEST_MSG_TYPE = "friend_request"
+FRIEND_NOTICE_SYSTEM_ID = _FRIEND_NOTICE_SYSTEM_ID
+FRIEND_NOTICE_USERNAME = _FRIEND_NOTICE_USERNAME
+FRIEND_NOTICE_DISPLAY_NAME = _FRIEND_NOTICE_DISPLAY_NAME
 
 
 class FriendshipService:
@@ -26,7 +35,6 @@ class FriendshipService:
         self.session = session
         self.repo = FriendshipRepository(session)
         self.user_repo = UserRepository(session)
-        self.channel_repo = ChannelRepository(session)
 
     # ---- Query helpers -------------------------------------------------
 
@@ -128,8 +136,12 @@ class FriendshipService:
             friendship = await self.repo.create(current_user.user_id, target.user_id, status="pending")
 
         _, notice_msg = await self._create_request_notice(friendship, current_user, target)
+        notice_delivery = await NotificationService(self.session).delivery_for_message(
+            target.user_id,
+            notice_msg,
+        )
         await self.session.commit()
-        await self._broadcast_notice_message(notice_msg)
+        await NotificationService.publish_delivery(notice_delivery)
         await self._notify_user(target.user_id, "friend_request_created", {
             "friendship_id": friendship.friendship_id,
             "channel_id": notice_msg.channel_id,
@@ -234,40 +246,10 @@ class FriendshipService:
             {"friend_id": friend_id, "status": "unblocked"},
         )
 
-    # ---- Personal friend-notice channel --------------------------------
+    # ---- Personal notification channel ---------------------------------
 
     async def ensure_friend_notice_channel(self, user: User) -> Channel:
-        personal = await WorkspaceService(self.session).ensure_personal_workspace(user)
-        m_user = aliased(ChannelMembership)
-        m_system = aliased(ChannelMembership)
-        existing = (
-            await self.session.execute(
-                select(Channel)
-                .join(m_user, m_user.channel_id == Channel.channel_id)
-                .join(m_system, m_system.channel_id == Channel.channel_id)
-                .where(
-                    Channel.workspace_id == personal.workspace_id,
-                    Channel.type == "dm",
-                    m_user.member_id == user.user_id,
-                    m_user.member_type == "user",
-                    m_system.member_id == FRIEND_NOTICE_SYSTEM_ID,
-                    m_system.member_type == "system",
-                )
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if existing:
-            return existing
-
-        ch = await self.channel_repo.create(
-            workspace_id=personal.workspace_id,
-            name=f"system:friend-notice:{user.user_id}"[:255],
-            type="dm",
-            purpose="friend_requests",
-        )
-        await self.channel_repo.add_member(ch.channel_id, user.user_id, "user", added_by=FRIEND_NOTICE_SYSTEM_ID)
-        await self.channel_repo.add_member(ch.channel_id, FRIEND_NOTICE_SYSTEM_ID, "system")
-        return ch
+        return await NotificationService(self.session).ensure_notification_channel(user)
 
     async def _create_request_notice(
         self,

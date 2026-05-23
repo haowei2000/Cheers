@@ -112,6 +112,7 @@ export interface ChatMessageListProps {
   renderPartialBadge: (message: Message) => ReactNode;
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   renderFileAttachments: (message: Message, alignRight?: boolean) => ReactNode;
+  onOpenMessage?: (channelId: string, msgId?: string) => void;
   activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
   handleMarkdownImageClick: (src: string) => void;
   handleMarkdownFileClick: (url: string, name: string) => void;
@@ -968,7 +969,7 @@ const FriendRequestRow = memo(function FriendRequestRow({
   return (
     <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
       <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-        <span className="an-chat-sender">Friend notifications</span>
+        <span className="an-chat-sender">Notifications</span>
         {message.created_at && (
           <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
         )}
@@ -1002,6 +1003,124 @@ const FriendRequestRow = memo(function FriendRequestRow({
               Accept
             </button>
           </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const NotificationRow = memo(function NotificationRow({
+  message,
+  onOpenMessage,
+  authToken,
+  setMessageStore,
+}: {
+  message: Message;
+  onOpenMessage?: (channelId: string, msgId?: string) => void;
+  authToken: string | null;
+  setMessageStore: Dispatch<SetStateAction<MessageStore>>;
+}) {
+  const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const kind = typeof cd.kind === "string" ? cd.kind : "";
+  const sourceChannelId =
+    typeof cd.source_channel_id === "string" ? cd.source_channel_id : "";
+  const sourceMsgId =
+    (typeof cd.source_msg_id === "string" && cd.source_msg_id) ||
+    (typeof cd.permission_msg_id === "string" && cd.permission_msg_id) ||
+    "";
+  const preview = typeof cd.preview === "string" ? cd.preview : "";
+  const title =
+    kind === "bot_permission_approval_notification"
+      ? "Bot permission approval"
+      : kind === "mention_notification"
+        ? "Mention"
+        : "Notification";
+  const actionLabel =
+    kind === "bot_permission_approval_notification" ? "Open request" : "Open message";
+  const canOpen = Boolean(sourceChannelId && sourceMsgId && onOpenMessage);
+  const resolved = cd.resolved === true;
+  const resolution =
+    cd.resolution === "allow" || cd.resolution === "deny" ? cd.resolution : null;
+  const canResolve = kind === "bot_permission_approval_notification" && !resolved && Boolean(sourceChannelId && sourceMsgId);
+
+  const submitResolution = async (value: "allow" | "deny") => {
+    if (!sourceChannelId || !sourceMsgId) return;
+    try {
+      const response = await apiFetch(
+        `/channels/${sourceChannelId}/messages/${sourceMsgId}/resolve`,
+        { method: "POST", body: { resolution: value }, token: authToken },
+      );
+      const data = await response.json().catch(() => null);
+      const nextContentData = data?.data?.content_data as Record<string, unknown> | undefined;
+      if (!response.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "Permission update failed");
+        return;
+      }
+      setMessageStore((prev) =>
+        patchMessage(prev, message.msg_id, (current) => ({
+          ...current,
+          content_data: {
+            ...(current.content_data || {}),
+            resolved: nextContentData?.resolved === true,
+            resolution: nextContentData?.resolution || value,
+            resolved_at: nextContentData?.resolved_at || new Date().toISOString(),
+          },
+        })),
+      );
+      if (nextContentData?.resolved === true) {
+        toast.success(value === "allow" ? "Permission allowed" : "Permission denied");
+      } else {
+        toast.error(
+          typeof nextContentData?.resolution_dispatch_error === "string"
+            ? nextContentData.resolution_dispatch_error
+            : "Permission was not delivered to the connector",
+        );
+      }
+    } catch {
+      toast.error("Permission update failed");
+    }
+  };
+
+  return (
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
+      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+        <span className="an-chat-sender">Notifications</span>
+        {message.created_at && (
+          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
+        )}
+      </div>
+      <div className="an-approval an-approval-inline">
+        <div className="an-body">
+          <b>{title}.</b> {message.content}
+          {preview && (
+            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
+              · {preview}
+            </span>
+          )}
+        </div>
+        {canOpen && (
+          <button
+            type="button"
+            className="allow"
+            onClick={() => onOpenMessage?.(sourceChannelId, sourceMsgId)}
+          >
+            {actionLabel}
+          </button>
+        )}
+        {canResolve && (
+          <>
+            <button type="button" className="deny" onClick={() => submitResolution("deny")}>
+              Reject
+            </button>
+            <button type="button" className="allow" onClick={() => submitResolution("allow")}>
+              Allow
+            </button>
+          </>
+        )}
+        {resolved && resolution && (
+          <span className="an-type-caption">
+            {resolution === "allow" ? "Approved" : "Denied"}
+          </span>
         )}
       </div>
     </div>
@@ -1236,6 +1355,7 @@ function ChatMessageListBase({
   renderPartialBadge,
   renderAgentBridgeTaskCard,
   renderFileAttachments,
+  onOpenMessage,
   activeAgentBridgeTaskData,
   handleMarkdownImageClick,
   handleMarkdownFileClick,
@@ -1365,6 +1485,16 @@ function ChatMessageListBase({
             authToken={authToken}
             setMessageStore={setMessageStore}
             setDMs={setDMs}
+          />
+        );
+      }
+      if (!message.is_deleted && message.msg_type === "notification") {
+        return (
+          <NotificationRow
+            message={message}
+            onOpenMessage={onOpenMessage}
+            authToken={authToken}
+            setMessageStore={setMessageStore}
           />
         );
       }

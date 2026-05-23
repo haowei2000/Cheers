@@ -324,6 +324,7 @@ async def _handle_send_message(
         content=body.content,
         file_ids=_normalize_file_ids(body.file_ids),
         mention_bot_ids=mention_bot_ids,
+        mention_user_ids=list(body.mention_user_ids or []),
         in_reply_to_msg_id=getattr(body, "in_reply_to_msg_id", None) or None,
         msg_type=getattr(body, "msg_type", None) or None,
         content_data=raw_content_data,
@@ -725,6 +726,7 @@ async def send_message_stream(
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
+                    mention_user_ids=body.mention_user_ids or [],
                     content_data=with_content_locale(None, locale_from_headers(request.headers)),
                 )
                 try:
@@ -1141,6 +1143,14 @@ async def request_permission_approval(
     )
     session.add(request_msg)
     await session.flush()
+    from app.services.notification_service import NotificationService
+
+    notification_delivery = await NotificationService(session).create_permission_approval_delivery(
+        owner,
+        permission_msg=msg,
+        bot=bot,
+        title=title,
+    )
     permission_payload = MessageAssembler.assemble(msg, {})
     request_payload = MessageAssembler.assemble(request_msg, {})
     await session.commit()
@@ -1149,6 +1159,7 @@ async def request_permission_approval(
     from app.features.bot_runtime.pipeline.events import MessageCreated
     await bus.publish(MessageCreated(data=permission_payload))
     await bus.publish(MessageCreated(data=request_payload))
+    await NotificationService.publish_delivery(notification_delivery)
     _schedule_history_update(channel_id)
     return APIResponse.ok({
         "permission": permission_payload.to_wire(),

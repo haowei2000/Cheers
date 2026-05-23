@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import AgentTask, BotAccount, FileRecord, Message
-from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
+from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions_anywhere
 from app.features.bot_runtime.pipeline.bot.topic_context import MSG_TYPE_REPLY, ensure_topic_root
 from app.features.bot_runtime.pipeline.events import (
     BotMessagePlaceholder,
@@ -100,7 +100,7 @@ class BotMessageWriter:
         ctx = self.ctx
         msg.content = content
         msg.is_partial = bool(is_partial)
-        msg.mention_user_ids = await resolve_user_mentions(
+        msg.mention_user_ids = await resolve_user_mentions_anywhere(
             content, ctx.session, ctx.channel_id,
         )
         if file_ids:
@@ -137,6 +137,10 @@ class BotMessageWriter:
                 content_data=msg.content_data,
             )
         )
+        if msg.mention_user_ids:
+            from app.services.notification_service import NotificationService
+
+            await NotificationService.fanout_mentions_for_message_id(msg.msg_id)
         from app.features.agent_bridge.streams import stream_registry
 
         await stream_registry.pop(msg.msg_id)

@@ -478,7 +478,7 @@ export default function App() {
         return;
       }
       if (isSystemDm) {
-        toast.error("Friend notification conversations cannot send messages directly");
+        toast.error("Notification conversations cannot send messages directly");
         return;
       }
       attachExistingFiles(files);
@@ -796,7 +796,7 @@ export default function App() {
       return Promise.resolve();
     }
     if (isSystemDm) {
-      toast.error("Friend notification conversations cannot send messages directly");
+      toast.error("Notification conversations cannot send messages directly");
       return Promise.resolve();
     }
     const targetChannelId = selectedId;
@@ -866,7 +866,7 @@ export default function App() {
       return;
     }
     if (isSystemDm) {
-      toast.error("Friend notification conversations cannot send messages directly");
+      toast.error("Notification conversations cannot send messages directly");
       return;
     }
     const targetChannelId = selectedId;
@@ -1816,6 +1816,7 @@ export default function App() {
                 renderPartialBadge,
                 renderAgentBridgeTaskCard,
                 renderFileAttachments,
+                onOpenMessage: handleMessageNavigate,
                 activeAgentBridgeTaskData,
                 handleMarkdownImageClick,
                 handleMarkdownFileClick,
@@ -1862,7 +1863,7 @@ export default function App() {
                   Boolean((value.trim() && value.trim() !== "@") || pendingFileIds.length > 0),
                 disabled: isSystemDm,
                 placeholder: isSystemDm
-                  ? "Friend notification conversations handle requests and cannot send messages directly..."
+                  ? "Notification conversations collect system updates and cannot send messages directly..."
                   : msgKind === "secret"
                     ? "Enter encrypted content (only bots can read the original)..."
                     : isDmSelected

@@ -1663,6 +1663,7 @@ async def _handle_data_permission_request(
     msg_id = _clean_permission_text(frame.get("msg_id"), 64)
     owner_payload: dict | None = None
     ack_extra: dict | None = None
+    notification_delivery = None
 
     async with async_session_factory() as s:
         err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
@@ -1746,6 +1747,15 @@ async def _handle_data_permission_request(
         )
         s.add(msg)
         await s.flush()
+        if approval_mode == "ask":
+            from app.services.notification_service import NotificationService
+
+            notification_delivery = await NotificationService(s).create_permission_approval_delivery(
+                owner,
+                permission_msg=msg,
+                bot=current_bot,
+                title=title,
+            )
         payload = MessageAssembler.assemble(msg, {})
         await s.commit()
         if resolution:
@@ -1765,6 +1775,10 @@ async def _handle_data_permission_request(
     from app.features.bot_runtime.pipeline.bus import WSEventBus
     from app.features.bot_runtime.pipeline.events import MessageCreated
     await WSEventBus(channel_id).publish(MessageCreated(data=payload))
+    if notification_delivery is not None:
+        from app.services.notification_service import NotificationService
+
+        await NotificationService.publish_delivery(notification_delivery)
     await _send_send_ack_ok(websocket, client_msg_id, msg.msg_id, ack_extra)
 
 

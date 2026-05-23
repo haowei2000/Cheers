@@ -333,7 +333,7 @@ class ChannelService:
                     else f"user:{user.user_id}:bot:{bot.bot_id}"
                 )
             elif other.member_type == "system":
-                from app.services.friendship_service import (
+                from app.services.notification_service import (
                     FRIEND_NOTICE_DISPLAY_NAME,
                     FRIEND_NOTICE_SYSTEM_ID,
                     FRIEND_NOTICE_USERNAME,
