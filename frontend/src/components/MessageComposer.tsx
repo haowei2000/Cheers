@@ -672,11 +672,11 @@ export function MessageComposer({
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
-      !event.nativeEvent.isComposing &&
-      !mentionOpen &&
-      !templateMenuOpen
+      !event.nativeEvent.isComposing
     ) {
       event.preventDefault();
+      if (mentionOpen) closeMentionMenu();
+      if (templateMenuOpen) closeTemplateMenu();
       if (effectiveCanSend) onSend(event.currentTarget.value);
     }
   };
