@@ -850,54 +850,63 @@ const PermissionRow = memo(function PermissionRow({
   };
 
   return (
-    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
-      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-        <span className="an-chat-sender">{senderLabel}</span>
-        <span className="an-chip off">BOT</span>
-        {message.created_at && (
-          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
-        )}
-      </div>
-      <div className={`an-approval an-approval-inline${resolved ? " resolved" : ""}`}>
-        <div className="an-body">
-          <b>Approval needed.</b> {body}
-          {tool && <span className="an-type-caption ml-1.5 font-mono">({tool})</span>}
-          {ownerOnly && ownerName && !resolved && (
-            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
-              · Owner approval: {ownerName}
-            </span>
-          )}
-          {ownerMissing && !resolved && (
-            <span style={{ marginLeft: 8, color: "var(--red)" }}>
-              · Bot owner is not configured
-            </span>
-          )}
-          {resolutionDeliveryFailed && (
-            <span style={{ marginLeft: 8, color: "var(--red)" }}>
-              · Not delivered to connector{dispatchError ? `: ${dispatchError}` : ""}
-            </span>
-          )}
-          {resolved && resolution && (
-            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
-              · {resolution === "allow" ? "Approved" : "Denied"}
-            </span>
-          )}
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg an-approval-event-row pl-16 pr-4 pt-1">
+      <div className={`an-trace-panel an-approval-trace-panel is-${resolved ? "green" : "orange"}`}>
+        <div className="an-approval-trace-main">
+          <span className="an-trace-toggle-icon" aria-hidden="true">
+            <AppIcon name="chevronRight" className="h-3.5 w-3.5" />
+          </span>
+          <span className="an-trace-kind">
+            <AppIcon name={resolved ? "checkCircle" : "shieldCheck"} className="h-3.5 w-3.5" />
+            Approval
+          </span>
+          <span className="an-approval-trace-copy">
+            <span className="an-approval-trace-title">Approval needed.</span>
+            <span>{body}</span>
+            {tool && <span className="an-type-caption font-mono">({tool})</span>}
+            {ownerOnly && ownerName && !resolved && (
+              <span className="an-approval-trace-muted">
+                Owner approval: {ownerName}
+              </span>
+            )}
+            {ownerMissing && !resolved && (
+              <span className="an-approval-trace-danger">
+                Bot owner is not configured
+              </span>
+            )}
+            {resolutionDeliveryFailed && (
+              <span className="an-approval-trace-danger">
+                Not delivered to connector{dispatchError ? `: ${dispatchError}` : ""}
+              </span>
+            )}
+            {resolved && resolution && (
+              <span className="an-approval-trace-muted">
+                {resolution === "allow" ? "Approved" : "Denied"}
+              </span>
+            )}
+          </span>
+          <span className="an-approval-trace-meta">
+            {senderLabel}
+            {message.created_at ? ` · ${formatChatTime(message.created_at)}` : ""}
+          </span>
+          <div className="an-approval-trace-actions">
+            {!resolved && canResolve && (
+              <>
+                <button type="button" className="deny" onClick={() => submitResolution("deny")}>
+                  Reject
+                </button>
+                <button type="button" className="allow" onClick={() => submitResolution("allow")}>
+                  Allow
+                </button>
+              </>
+            )}
+            {canRequestApproval && (
+              <button type="button" className="allow" onClick={requestApproval} disabled={approvalRequested}>
+                {approvalRequested ? "Requested" : "Request approval"}
+              </button>
+            )}
+          </div>
         </div>
-        {!resolved && canResolve && (
-          <>
-            <button type="button" className="deny" onClick={() => submitResolution("deny")}>
-              Reject
-            </button>
-            <button type="button" className="allow" onClick={() => submitResolution("allow")}>
-              Allow
-            </button>
-          </>
-        )}
-        {canRequestApproval && (
-          <button type="button" className="allow" onClick={requestApproval} disabled={approvalRequested}>
-            {approvalRequested ? "Requested" : "Request approval"}
-          </button>
-        )}
       </div>
     </div>
   );

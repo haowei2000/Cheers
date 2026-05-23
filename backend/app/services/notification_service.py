@@ -101,6 +101,10 @@ class NotificationService:
             if existing.purpose != NOTIFICATION_CHANNEL_PURPOSE:
                 existing.purpose = NOTIFICATION_CHANNEL_PURPOSE
                 changed = True
+            membership = await self.channel_repo.get_membership(existing.channel_id, user.user_id)
+            if membership and membership.hidden_at is not None:
+                membership.hidden_at = None
+                changed = True
             if changed:
                 await self.session.flush()
             return existing
