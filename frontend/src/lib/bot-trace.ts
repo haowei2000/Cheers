@@ -90,6 +90,10 @@ function isTokenChunkTrace(trace: BotTraceEvent): boolean {
   return trace.stream === CLIENT_STREAM_TRACE && trace.phase === "message_stream";
 }
 
+function isClientPlaceholderTrace(trace: BotTraceEvent): boolean {
+  return trace.stream === CLIENT_STREAM_TRACE && trace.phase === "placeholder";
+}
+
 function isThinkingChunkTrace(trace: BotTraceEvent): boolean {
   return trace.phase === "agent_thought_chunk" || trace.stream === "thinking";
 }
@@ -223,6 +227,12 @@ export function messageBotTraceEvents(message: Message): BotTraceEvent[] {
   append(message._bot_trace || []);
   append(persistedBotTraceEvents(message));
   return trimBotTraceEvents(events);
+}
+
+export function userVisibleBotTraceEvents(message: Message): BotTraceEvent[] {
+  const events = messageBotTraceEvents(message);
+  if (message._streaming) return events;
+  return events.filter((event) => !isClientPlaceholderTrace(event));
 }
 
 export function traceTimeLabel(ts?: number): string {

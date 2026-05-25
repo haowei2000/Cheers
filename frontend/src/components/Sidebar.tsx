@@ -72,7 +72,7 @@ interface SidebarProps {
   onOpenMessage?: (channelId: string, msgId: string) => void;
 }
 
-const WS_LETTER_COLORS = ["#7c6cf5", "#3ecf8e", "#f5a623", "#56a7ff", "#f05454", "#9586ff"];
+const WS_LETTER_COLORS = ["#5b4bc4", "#087f5b", "#8a5600", "#1d5f9e", "#b91c1c", "#6d5bd0"];
 type PersonalAddDialogState = {
   kind: "dm" | "project" | "projectChat";
   projectId: string;
@@ -1663,8 +1663,8 @@ export function Sidebar({
                         </button>
                         <button
                           type="button"
-                          title="Remove this chat"
-                          aria-label="Remove this chat"
+                          title={`Remove ${label}`}
+                          aria-label={`Remove ${label}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (!currentUser) return;
