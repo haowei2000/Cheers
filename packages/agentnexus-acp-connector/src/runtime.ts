@@ -79,6 +79,8 @@ interface BridgeUploadedFile {
   filename: string;
   content_type?: string;
   size_bytes?: number;
+  preview_url?: string;
+  download_url?: string;
 }
 
 class BridgeHttpUploadError extends Error {
@@ -1226,6 +1228,8 @@ async function uploadBridgeBinaryFileHttp(
       filename: typeof data.filename === "string" ? data.filename : file.filename,
       content_type: typeof data.content_type === "string" ? data.content_type : file.contentType,
       size_bytes: typeof data.size_bytes === "number" ? data.size_bytes : file.data.byteLength,
+      preview_url: typeof data.preview_url === "string" ? data.preview_url : undefined,
+      download_url: typeof data.download_url === "string" ? data.download_url : undefined,
     };
   } finally {
     clearTimeout(timer);
@@ -1765,7 +1769,11 @@ export class AcpBridgeAccount {
       message: result.stopReason ?? "end_turn",
     });
     if (ctx.source.event.placeholder_msg_id) {
-      const ack = await this.bridge.streamDone({ msgId: ctx.msgId, fileIds: ctx.fileIds });
+      const ack = await this.bridge.streamDone({
+        msgId: ctx.msgId,
+        fileIds: ctx.fileIds,
+        content: ctx.text,
+      });
       if (!ack.ok) {
         this.logger.warn(
           "acp account=%s stream done not acknowledged msg_id=%s code=%s error=%s",
@@ -2325,6 +2333,8 @@ export class AcpBridgeAccount {
         filename: file.filename,
         content_type: file.content_type,
         size_bytes: file.size_bytes,
+        preview_url: file.preview_url,
+        download_url: file.download_url,
       },
     });
   }
