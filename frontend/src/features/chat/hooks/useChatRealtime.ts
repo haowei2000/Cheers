@@ -5,6 +5,7 @@ import type { AuthFetch } from "../../../api/client";
 import { AGENT_BRIDGE_TASK_KIND } from "../../../lib/agent-bridge";
 import { API } from "../../../lib/app-config";
 import {
+  appendBotTraceEvent,
   botTraceStatusText,
   makeClientStreamTrace,
   trimBotTraceEvents,
@@ -89,8 +90,8 @@ export function useChatRealtime({
                     message: "Receiving provider output.",
                   }
                 : m._agent_bridge_task,
-              _bot_trace: trimBotTraceEvents([
-                ...(m._bot_trace || []),
+              _bot_trace: appendBotTraceEvent(
+                m._bot_trace || [],
                 makeClientStreamTrace(
                   m,
                   "message_stream",
@@ -106,7 +107,7 @@ export function useChatRealtime({
                     ? `+${item.delta.length} chars / ${item.chunks} chunks`
                     : `+${item.delta.length} chars`,
                 ),
-              ]),
+              ),
               _streaming: true,
             };
           },
@@ -260,10 +261,10 @@ export function useChatRealtime({
               patchMessage(prev, trace.msg_id!, (m) => ({
                 ...m,
                 _bot_status: status,
-                _bot_trace: trimBotTraceEvents([
-                  ...(m._bot_trace || []),
+                _bot_trace: appendBotTraceEvent(
+                  m._bot_trace || [],
                   { ...trace, ts: trace.ts ?? Date.now() },
-                ]),
+                ),
               })),
             );
           } else if (msg.type === "message_done" && msg.data) {
