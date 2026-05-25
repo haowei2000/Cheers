@@ -2,6 +2,7 @@ import type { BotTraceEvent, Message } from "../types";
 
 const CLIENT_STREAM_TRACE = "agentnexus_client";
 const MAX_BOT_TRACE_EVENTS = 160;
+const MERGED_PREVIEW_LIMIT = 600;
 const TRACE_ARRAY_KEYS = ["bot_trace", "agent_bridge_trace", "trace_events"];
 
 export function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
@@ -61,6 +62,131 @@ function traceDedupeKey(trace: BotTraceEvent, index: number): string {
   ].join(":");
 }
 
+function numericValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function truncateMergedPreview(value: string): string {
+  if (value.length <= MERGED_PREVIEW_LIMIT) return value;
+  return `${value.slice(0, MERGED_PREVIEW_LIMIT)}...`;
+}
+
+function sameTraceBatch(a: BotTraceEvent, b: BotTraceEvent): boolean {
+  return (
+    a.msg_id === b.msg_id &&
+    (a.task_id || "") === (b.task_id || "") &&
+    (a.bot_id || "") === (b.bot_id || "") &&
+    (a.run_id || "") === (b.run_id || "") &&
+    (a.stream || "") === (b.stream || "") &&
+    (a.phase || "") === (b.phase || "")
+  );
+}
+
+function isTokenChunkTrace(trace: BotTraceEvent): boolean {
+  return trace.stream === CLIENT_STREAM_TRACE && trace.phase === "message_stream";
+}
+
+function isThinkingChunkTrace(trace: BotTraceEvent): boolean {
+  return trace.phase === "agent_thought_chunk" || trace.stream === "thinking";
+}
+
+function canCoalesceTrace(a: BotTraceEvent, b: BotTraceEvent): boolean {
+  if (!sameTraceBatch(a, b)) return false;
+  return (
+    (isTokenChunkTrace(a) && isTokenChunkTrace(b)) ||
+    (isThinkingChunkTrace(a) && isThinkingChunkTrace(b))
+  );
+}
+
+function mergeTokenChunkTrace(a: BotTraceEvent, b: BotTraceEvent): BotTraceEvent {
+  const aData = isObject(a.data) ? a.data : {};
+  const bData = isObject(b.data) ? b.data : {};
+  const chars =
+    numericValue(aData.delta_chars) + numericValue(bData.delta_chars);
+  const chunks =
+    Math.max(1, numericValue(aData.coalesced_chunks)) +
+    Math.max(1, numericValue(bData.coalesced_chunks));
+  const preview = truncateMergedPreview(
+    stringValue(aData.delta_preview) + stringValue(bData.delta_preview),
+  );
+  return {
+    ...a,
+    seq: b.seq ?? a.seq,
+    ts: b.ts ?? a.ts,
+    status: b.status ?? a.status,
+    title: b.title ?? a.title,
+    message: `+${chars} chars / ${chunks} chunks`,
+    data: {
+      ...aData,
+      ...bData,
+      delta_chars: chars,
+      delta_preview: preview,
+      accumulated_chars:
+        numericValue(bData.accumulated_chars) ||
+        numericValue(aData.accumulated_chars),
+      coalesced_chunks: chunks,
+    },
+  };
+}
+
+function mergeThinkingChunkTrace(a: BotTraceEvent, b: BotTraceEvent): BotTraceEvent {
+  const aData = isObject(a.data) ? a.data : {};
+  const bData = isObject(b.data) ? b.data : {};
+  const message = truncateMergedPreview(
+    `${a.message || ""}${b.message || ""}`,
+  );
+  return {
+    ...a,
+    seq: b.seq ?? a.seq,
+    ts: b.ts ?? a.ts,
+    status: b.status ?? a.status,
+    title: b.title ?? a.title,
+    message,
+    data: {
+      ...aData,
+      ...bData,
+      coalesced_chunks:
+        Math.max(1, numericValue(aData.coalesced_chunks)) +
+        Math.max(1, numericValue(bData.coalesced_chunks)),
+      thought_preview: message,
+    },
+  };
+}
+
+function mergeTraceEvents(a: BotTraceEvent, b: BotTraceEvent): BotTraceEvent {
+  if (isTokenChunkTrace(a) && isTokenChunkTrace(b)) {
+    return mergeTokenChunkTrace(a, b);
+  }
+  if (isThinkingChunkTrace(a) && isThinkingChunkTrace(b)) {
+    return mergeThinkingChunkTrace(a, b);
+  }
+  return b;
+}
+
+export function coalesceBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
+  const merged: BotTraceEvent[] = [];
+  for (const event of events) {
+    const previous = merged[merged.length - 1];
+    if (previous && canCoalesceTrace(previous, event)) {
+      merged[merged.length - 1] = mergeTraceEvents(previous, event);
+    } else {
+      merged.push(event);
+    }
+  }
+  return merged;
+}
+
+export function appendBotTraceEvent(
+  events: BotTraceEvent[],
+  event: BotTraceEvent,
+): BotTraceEvent[] {
+  return trimBotTraceEvents(coalesceBotTraceEvents([...events, event]));
+}
+
 export function persistedBotTraceEvents(message: Message): BotTraceEvent[] {
   const contentData = message.content_data;
   if (!contentData || typeof contentData !== "object") return [];
@@ -73,7 +199,7 @@ export function persistedBotTraceEvents(message: Message): BotTraceEvent[] {
       if (event) events.push(event);
     }
   }
-  return trimBotTraceEvents(events);
+  return trimBotTraceEvents(coalesceBotTraceEvents(events));
 }
 
 export function messageBotTraceEvents(message: Message): BotTraceEvent[] {
@@ -86,7 +212,12 @@ export function messageBotTraceEvents(message: Message): BotTraceEvent[] {
       const key = traceDedupeKey(normalized, events.length);
       if (seen.has(key)) continue;
       seen.add(key);
-      events.push(normalized);
+      const previous = events[events.length - 1];
+      if (previous && canCoalesceTrace(previous, normalized)) {
+        events[events.length - 1] = mergeTraceEvents(previous, normalized);
+      } else {
+        events.push(normalized);
+      }
     }
   };
   append(message._bot_trace || []);
