@@ -301,7 +301,7 @@ export function Sidebar({
     Record<PersonalSectionKey, boolean>
   >({
     dms: false,
-    files: false,
+    files: true,
     projects: false,
   });
   const [collapsedProjectGroups, setCollapsedProjectGroups] = useState<
