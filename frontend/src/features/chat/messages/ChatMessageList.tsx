@@ -852,7 +852,7 @@ const PermissionRow = memo(function PermissionRow({
   return (
     <div id={`msg-${message.msg_id}`} className="an-chat-msg an-approval-event-row pl-16 pr-4 pt-1">
       <div className={`an-trace-panel an-approval-trace-panel is-${resolved ? "green" : "orange"}`}>
-        <div className="an-approval-trace-main">
+        <div className="an-trace-toggle an-approval-trace-line">
           <span className="an-trace-toggle-icon" aria-hidden="true">
             <AppIcon name="chevronRight" className="h-3.5 w-3.5" />
           </span>
@@ -860,7 +860,7 @@ const PermissionRow = memo(function PermissionRow({
             <AppIcon name={resolved ? "checkCircle" : "shieldCheck"} className="h-3.5 w-3.5" />
             Approval
           </span>
-          <span className="an-approval-trace-copy">
+          <span className="an-trace-latest an-approval-trace-copy">
             <span className="an-approval-trace-title">Approval needed.</span>
             <span>{body}</span>
             {tool && <span className="an-type-caption font-mono">({tool})</span>}

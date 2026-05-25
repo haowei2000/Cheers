@@ -65,6 +65,13 @@ function traceMeta(event: BotTraceEvent): TraceMeta {
   if (phase === "plan" || stream === "plan") {
     return { icon: "task", label: "Plan", tone: "blue" };
   }
+  if (phase === "permission_requested" || phase === "permission_resolved" || stream === "approval") {
+    return {
+      icon: phase === "permission_resolved" ? "checkCircle" : "shieldCheck",
+      label: "Approval",
+      tone: status === "denied" ? "red" : status === "approved" ? "green" : "orange",
+    };
+  }
   if (stream === "acp" || phase.startsWith("prompt_")) {
     return { icon: "zap", label: "ACP", tone: status === "cancelled" ? "orange" : "neutral" };
   }
