@@ -25,6 +25,31 @@ Project-specific instructions for AI coding agents working on AgentNexus.
 - `main` 分支只接受来自 `develop` 分支的合并。
 - 禁止将功能分支、修复分支或其他工作分支的 PR 直接合并到 `main`。
 
+## Alembic 迁移纪律（强制）
+
+迁移文件要当作数据库协议变更处理，不要当作普通代码文件处理。
+
+- 每次 merge 或 rebase 后，只要涉及 `backend/alembic/versions/*.py`，必须运行 `cd backend && uv run ./scripts/check_alembic_heads.sh`。如果 Alembic 不是恰好一个 head，CI 必须失败。
+- 多人并行新增 migration 时，必须先 rebase 或 merge 最新 `develop`，再确定新的 `revision` 和 `down_revision`。正确链路应该保持线性，例如 `059 -> 060 -> 061`，不能出现两个独立的 `060`。
+- 修 migration 时，不要只改文件名；必须同步修改文件内部的 `revision` 和 `down_revision`。Alembic 识别的是 Python 变量，不是文件名。
+- 发布前必须同时验证迁移图和空库 SQL 执行：先运行 `uv run ./scripts/check_alembic_heads.sh`，再运行 `uv run alembic upgrade head` 和 `uv run alembic -c alembic_context.ini upgrade head`。
+- 部署排错必须检查真实容器或镜像状态，不要只看宿主机 Git 目录：
+
+```bash
+docker compose run --rm --entrypoint bash backend -lc \
+  "cd /app && /app/.venv/bin/alembic heads --verbose"
+```
+
+- 镜像重建和容器重启不是一回事。后端代码或迁移变更后，必须重建镜像并重建 backend 服务，不能只 `restart`：
+
+```bash
+docker compose build --no-cache backend
+docker compose up -d --force-recreate --no-deps backend
+```
+
+- 不要在服务器上临时创建 `alembic merge` revision。迁移链必须在 repo 中修清楚、commit、push、重建镜像并重新部署。
+- 后端容器内显式使用 `/app/.venv/bin/alembic`；不要假设裸 `alembic` 或 `python -m alembic` 可用。
+
 ## ACP Connector 发布顺序（强制）
 
 当 `packages/agentnexus-acp-connector` 有实质性更新时，必须发布新的 `@haowei0520/acp-connector` npm 版本，因为实际部署里同时存在远程机器上的本地 npm 安装版 connector 和容器化的 `opencode-bot`。

@@ -134,6 +134,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --extra dev
 
+      - name: Check Alembic heads
+        run: uv run ./scripts/check_alembic_heads.sh
+
       - name: Run migrations (main DB)
         run: uv run alembic upgrade head
 

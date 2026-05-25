@@ -3,6 +3,19 @@ set -e
 
 cd /app
 
+ALEMBIC_BIN="${ALEMBIC_BIN:-/app/.venv/bin/alembic}"
+PYTHON_BIN="${PYTHON_BIN:-/app/.venv/bin/python}"
+
+if [ ! -x "$ALEMBIC_BIN" ]; then
+  echo "Alembic executable not found or not executable: ${ALEMBIC_BIN}" >&2
+  exit 69
+fi
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "Python executable not found or not executable: ${PYTHON_BIN}" >&2
+  exit 69
+fi
+
 is_true() {
   value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
   case "$value" in
@@ -20,7 +33,7 @@ run_migration() {
   case "$mode" in
     upgrade)
       echo "Running ${label} migrations: upgrade ${target}"
-      python -m alembic -c "$config" upgrade "$target"
+      "$ALEMBIC_BIN" -c "$config" upgrade "$target"
       ;;
     downgrade)
       if ! is_true "${ALLOW_DB_DOWNGRADE:-0}"; then
@@ -32,7 +45,7 @@ run_migration() {
         exit 64
       fi
       echo "Running ${label} migrations: downgrade ${target}"
-      python -m alembic -c "$config" downgrade "$target"
+      "$ALEMBIC_BIN" -c "$config" downgrade "$target"
       ;;
     none|skip|off|false|0)
       echo "Skipping ${label} migrations"
@@ -65,4 +78,4 @@ if is_true "${MIGRATE_ONLY:-0}"; then
 fi
 
 echo "Starting server..."
-exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+exec "$PYTHON_BIN" -m uvicorn app.main:app --host 0.0.0.0 --port 8000

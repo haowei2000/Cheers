@@ -173,12 +173,12 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull backend frontend
 
-            # Rolling restart (zero-downtime for stateless services)
-            docker compose up -d --no-deps backend frontend
+            # Recreate services so the pulled image is definitely used
+            docker compose up -d --force-recreate --no-deps backend frontend
 
             # Run DB migrations inside new backend container
-            docker compose exec -T backend alembic upgrade head
-            docker compose exec -T backend alembic -c alembic_context.ini upgrade head
+            docker compose exec -T backend /app/.venv/bin/alembic -c /app/alembic.ini upgrade head
+            docker compose exec -T backend /app/.venv/bin/alembic -c /app/alembic_context.ini upgrade head
 
             # Prune dangling images
             docker image prune -f
