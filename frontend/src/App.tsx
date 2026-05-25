@@ -1594,6 +1594,7 @@ export default function App() {
       />
 
       <ChatShell
+        appInert={loginModalOpen && !currentUser}
         isMobile={isMobile}
         sidebarOpen={sidebarOpen}
         onCloseSidebar={() => setSidebarOpen(false)}

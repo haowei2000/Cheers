@@ -1002,12 +1002,12 @@ export function MemoryPanel({
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)] transition-colors"
-            style={{ color: "var(--fg-3)", fontSize: 16, lineHeight: 1 }}
-            title="Close"
-            aria-label="Close panel"
+            className="an-memory-close"
+            title="Back to chat"
+            aria-label="Back to chat"
           >
-            ✕
+            <AppIcon name="close" className="w-4 h-4" />
+            <span className="an-memory-close-label">Back to chat</span>
           </button>
         </div>
       </div>

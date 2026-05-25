@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 import { AppIcon, type AppIconName } from "../../../components/icons/AppIcon";
 import {
   botTraceStatusText,
-  messageBotTraceEvents,
   streamTraceLabel,
   traceTimeLabel,
+  userVisibleBotTraceEvents,
 } from "../../../lib/bot-trace";
 import type { BotTraceEvent, Message } from "../../../types";
 
@@ -203,7 +203,7 @@ function TraceRawData({ data }: { data: Record<string, unknown> }) {
 
 export function BotTracePanel({ message }: { message: Message }) {
   const [expanded, setExpanded] = useState(false);
-  const events = useMemo(() => messageBotTraceEvents(message), [message]);
+  const events = useMemo(() => userVisibleBotTraceEvents(message), [message]);
   if (message.sender_type !== "bot" || events.length === 0) return null;
 
   const latest = events[events.length - 1];

@@ -167,22 +167,25 @@ const RowActions = memo(function RowActions({
 }: RowActionProps) {
   if (message.is_deleted) return null;
 
-  return (
-    <div className={`${actionVisibilityClass} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
+  const deleteLabel = `Delete message${message.created_at ? ` from ${formatChatTime(message.created_at)}` : ""}`;
+  const renderButtons = (actionClassName = "an-chat-action", iconClassName = "w-3.5 h-3.5") => (
+    <>
       <button
         type="button"
         title="Copy message content"
+        aria-label="Copy message content"
         onClick={() => copyMessageText(message)}
-        className="an-chat-action"
+        className={actionClassName}
       >
-        <AppIcon name="copy" className="w-3.5 h-3.5" />
+        <AppIcon name="copy" className={iconClassName} />
       </button>
-      {renderForwardActionButtons?.(message)}
+      {renderForwardActionButtons?.(message, actionClassName, iconClassName)}
       {renderMemoryLoadButton(message)}
       {showReply && (
         <button
           type="button"
           title="Reply"
+          aria-label="Reply"
           onClick={() => {
             setReplyingTo(message);
             const mention =
@@ -192,21 +195,42 @@ const RowActions = memo(function RowActions({
             if (mention) setComposerInput(mention);
             (secretMode ? secretInputRef.current : inputRef.current)?.focus();
           }}
-          className="an-chat-action"
+          className={actionClassName}
         >
-          <AppIcon name="reply" className="w-3.5 h-3.5" />
+          <AppIcon name="reply" className={iconClassName} />
         </button>
       )}
       {canDelete && (
         <button
           type="button"
-          title="Delete message"
+          title={deleteLabel}
+          aria-label={deleteLabel}
           onClick={() => onDeleteMessage(message)}
-          className="an-chat-action"
+          className={`${actionClassName} an-chat-action-danger`}
         >
-          <AppIcon name="trash" className="w-3.5 h-3.5" />
+          <AppIcon name="trash" className={iconClassName} />
         </button>
       )}
+    </>
+  );
+
+  return (
+    <div className={`${actionVisibilityClass} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
+      <div className="an-msg-actions-desktop flex items-center gap-1">
+        {renderButtons()}
+      </div>
+      <details className="an-msg-actions-mobile">
+        <summary
+          className="an-chat-action"
+          title="More message actions"
+          aria-label="More message actions"
+        >
+          <AppIcon name="more" className="w-3.5 h-3.5" />
+        </summary>
+        <div className="an-msg-actions-menu">
+          {renderButtons("an-chat-action an-chat-action-menu-item")}
+        </div>
+      </details>
     </div>
   );
 });
