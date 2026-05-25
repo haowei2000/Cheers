@@ -12,6 +12,7 @@ from app.db.models import BotAccount, Channel, ChannelMembership, Message, User,
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
+from app.services.bot_service import BotService
 from app.utils.permissions import is_admin
 
 PERSONAL_WORKSPACE_KIND = "personal"
@@ -208,6 +209,8 @@ class WorkspaceService:
         name: str | None = None,
         avatar_url: str | None = None,
         avatar_url_provided: bool = False,
+        default_bot_id: str | None = None,
+        default_bot_id_provided: bool = False,
     ) -> Workspace:
         ws = await self.get_or_404(workspace_id)
         await self.ensure_can_manage(workspace_id, current_user)
@@ -219,6 +222,17 @@ class WorkspaceService:
             updates["name"] = name
         if avatar_url_provided:
             updates["avatar_url"] = avatar_url.strip() if avatar_url else None
+        if default_bot_id_provided:
+            cleaned_default_bot_id = default_bot_id.strip() if default_bot_id else None
+            if cleaned_default_bot_id and ws.kind != PERSONAL_WORKSPACE_KIND:
+                raise BadRequestError("只有个人空间可以设置默认 Bot")
+            if cleaned_default_bot_id:
+                bot = await self.session.get(BotAccount, cleaned_default_bot_id)
+                if not bot:
+                    raise NotFoundError("default bot not found")
+                if not await BotService(self.session).can_use(bot, current_user):
+                    raise ForbiddenError("无权使用该默认 Bot")
+            updates["default_bot_id"] = cleaned_default_bot_id
         if not updates:
             return ws
         return await self.repo.update(ws, **updates)
