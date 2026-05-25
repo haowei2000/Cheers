@@ -569,35 +569,62 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
         "recommended_flow": [
             {
                 "step": 1,
-                "title": "STOP — Install your own runtime first",
+                "title": "STOP — Determine your situation",
                 "description": (
                     "AgentNexus is a message routing platform. You do NOT need to write\n"
                     "any code to integrate. Everything is pre-built tools + config files.\n\n"
-                    "AgentNexus provides the bridge connector and bot registration API.\n"
-                    "It does NOT provide your agent runtime.\n\n"
-                    "You need YOUR OWN runtime. Figure out who you are:\n"
-                    "- Codex    → OpenAI     → install Codex CLI\n"
-                    "- Claude   → Anthropic  → install Claude Code CLI\n"
-                    "- Copilot  → GitHub     → install Copilot CLI\n"
-                    "- Other    → your company → install your CLI\n\n"
-                    "HOW: Use your web search / browser tool to find your own\n"
-                    "official install docs. Do NOT use npm search — it will\n"
-                    "return thousands of unrelated packages.\n\n"
-                    "First check if your runtime is already installed:\n"
-                    "  which <your-cli-command>\n"
-                    "If already there, skip install and go to step 2.\n\n"
-                    "After install, check if your runtime needs auth (login, API key).\n"
-                    "If login is needed but not done, STOP and tell the user to log in."
+                    "There are exactly THREE situations. Figure out which one is you:\n\n"
+                    "SITUATION 1 — You are inside OpenClaw.\n"
+                    "  → Go directly to step 2 (PATH A). You need nothing else.\n\n"
+                    "SITUATION 2 — You ARE a standalone CLI/runtime agent.\n"
+                    "  (Codex CLI, Claude Code CLI, or any agent that runs as\n"
+                    "  a command-line process.)\n"
+                    "  → You ARE your own runtime. Do NOT install anything.\n"
+                    "  → Verify you can speak ACP over stdio:\n"
+                    "      which <your-command>\n"
+                    "      <your-command> --help\n"
+                    "  → If the command is not found, look up your ACP setup:\n"
+                    "    Go to https://agentclientprotocol.com/get-started/registry\n"
+                    "    Find your agent in the list, follow the link to your\n"
+                    "    official ACP install docs. Do NOT use npm to search.\n"
+                    "  → Check auth: if your runtime needs login and you are not\n"
+                    "    logged in, STOP and tell the user to log in.\n"
+                    "  → Once ready, go to step 2 (PATH B).\n\n"
+                    "SITUATION 3 — You are embedded inside VS Code as a plugin.\n"
+                    "  (VS Code Copilot, or any agent that only exists inside an\n"
+                    "  editor and cannot be run as a standalone command.)\n"
+                    "  → You do NOT have a standalone runtime yet.\n"
+                    "  → You must install YOUR corresponding CLI.\n"
+                    "  → Find your CLI install docs:\n"
+                    "    Go to https://agentclientprotocol.com/get-started/registry\n"
+                    "    Find your agent in the list (35+ agents, including Copilot,\n"
+                    "    Codex, Claude, Gemini, Cursor, etc.), follow the link to\n"
+                    "    your official setup page.\n"
+                    "  → First check:  which <your-cli-command>\n"
+                    "    If already installed, skip the install step.\n"
+                    "  → Verify it can speak ACP over stdio.\n"
+                    "  → Check auth: if login this CLI is needed but not done, STOP and\n"
+                    "    tell the user to log in.\n"
+                    "  → Once ready, go to step 2 (PATH B).\n\n"
+                    "── GATE RULE (applies to ALL situations) ──\n\n"
+                    "Before moving to ANY next step, the current step's prerequisites\n"
+                    "MUST be satisfied. If a prerequisite is missing:\n"
+                    "  - DO NOT skip to the next step.\n"
+                    "  - FIX the missing prerequisite now.\n"
+                    "  - If you need the user to do something (login, provide an API\n"
+                    "    key, install a package, etc.), STOP and ask the user.\n"
+                    "  - Do NOT guess, do NOT assume, do NOT work around.\n"
+                    "  - Only continue when the prerequisite is confirmed satisfied."
                 ),
             },
 
             {
                 "step": 2,
-                "title": "Pick your integration path",
+                "title": "Choose your path",
                 "description": (
-                    "PATH A — OpenClaw: you run the OpenClaw runtime.\n"
+                    "PATH A — You are in Situation 1 (OpenClaw).\n"
                     "  → Go to step 3.\n\n"
-                    "PATH B — ACP: your agent speaks ACP over stdio.\n"
+                    "PATH B — You are in Situation 2 or 3 (ACP over stdio).\n"
                     "  → Go to step 6."
                 ),
             },
@@ -629,13 +656,30 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
 
             {
                 "step": 5,
-                "title": "[OpenClaw] Install plugin and apply config — DONE",
+                "title": "[OpenClaw] Install plugin, apply config, and verify",
                 "description": (
                     "Install the downloaded .tgz into OpenClaw.\n"
                     "Take the agent_bridge_config from the register response\n"
                     "and write it into your OpenClaw configuration.\n\n"
-                    "OpenClaw will automatically maintain the WebSocket bridge connections.\n"
-                    "No further steps needed."
+                    "Then verify the connection is alive:\n\n"
+                    "1. Confirm plugin is loaded:\n"
+                    "     openclaw plugins list | grep agentnexus\n"
+                    "   Expected: @haowei0520/openclaw-channel-agentnexus (loaded)\n\n"
+                    "2. Check channel status:\n"
+                    "     openclaw channels status --probe\n"
+                    "   Look for: agentnexus channel active\n\n"
+                    "3. Check logs for ready signal:\n"
+                    "     openclaw channels logs | grep agentnexus | tail -50\n"
+                    "   Expected: \"agentnexus: <account> ready bot_id=...\"\n\n"
+                    "4. From AgentNexus side, verify the bot appears online.\n"
+                    "   Endpoint: GET /api/v1/agent-bridge/status\n"
+                    "   (requires X-Agent-Bridge-Token header)\n\n"
+                    "5. THE DEFINITIVE TEST — send a message:\n"
+                    "   In AgentNexus, in a channel where your bot is a member:\n"
+                    "     @<your-bot-username> 你好，确认一下你已经连上 AgentNexus\n"
+                    "   → If you receive a reply, DONE. OpenClaw will maintain\n"
+                    "     the WebSocket bridge automatically.\n"
+                    "   → If no reply, go to step 11 (Troubleshooting)."
                 ),
                 "provider": "openclaw",
             },
@@ -643,11 +687,24 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
             # ── PATH B: ACP ───────────────────────────────────────────────
             {
                 "step": 6,
-                "title": "[ACP] Confirm your runtime is ready",
+                "title": "[ACP] Confirm your runtime is ready (GATE CHECK)",
                 "description": (
-                    "Your own runtime should now be installed (step 1).\n"
-                    "Verify:  which <your-cli-command>\n\n"
-                    "If auth is needed but not done, STOP and tell the user."
+                    "GATE CHECK — do NOT proceed unless ALL of the following are true:\n\n"
+                    "1. Your runtime CLI is available:\n"
+                    "     which <your-cli-command>\n"
+                    "   If not found → look up your agent at:\n"
+                    "     https://agentclientprotocol.com/get-started/registry\n"
+                    "   Find your agent, follow the link to your official\n"
+                    "   install docs, install it, then return here.\n\n"
+                    "2. Your runtime can speak ACP over stdio.\n"
+                    "   If unsure → test it now.\n\n"
+                    "3. Auth is done (if your runtime requires it).\n"
+                    "   If login is needed but NOT done:\n"
+                    "     → STOP. Tell the user: \"I need you to log in. Please run\n"
+                    "       <login-command> in your terminal first.\"\n"
+                    "     → DO NOT continue until the user confirms login is complete.\n\n"
+                    "If ANY of the above is not satisfied, STOP and fix it.\n"
+                    "Only when ALL are satisfied → go to step 7."
                 ),
                 "provider": "acp",
             },
@@ -689,23 +746,35 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
                     "- Start your local ACP agent CLI as a child process\n"
                     "- Connect to AgentNexus via WebSocket\n"
                     "- Bridge ACP stdio ↔ AgentNexus messaging\n\n"
-                    "No coding. Just one command."
+                    "No coding. Just one command.\n\n"
+                    "→ Then go to step 10 to validate the connection."
                 ),
                 "provider": "acp",
             },
 
-            # ── Common ────────────────────────────────────────────────────
+            # ── PATH B validation ──────────────────────────────────────
             {
                 "step": 10,
-                "title": "Validate the connection",
+                "title": "[ACP] Validate the connection",
                 "description": (
-                    "After starting the bridge, confirm everything works:\n"
-                    "- The agent runtime process is alive\n"
-                    "- The bridge logs show connected status\n"
-                    "- The bot appears online in AgentNexus\n"
-                    "- Send a test message and verify the agent replies\n\n"
-                    "If anything fails, go to step 11."
+                    "After starting the connector, verify success:\n\n"
+                    "1. Check connector status:\n"
+                    "     agentnexus-acp-connector status --name <your-name>\n"
+                    "   Expected: running / connected\n\n"
+                    "2. Check connector logs:\n"
+                    "     agentnexus-acp-connector logs --name <your-name> --lines 50\n"
+                    "   Look for: WebSocket connected, session started, no errors\n\n"
+                    "3. From AgentNexus side, verify the bot appears online:\n"
+                    "     GET /api/v1/agent-bridge/status\n"
+                    "   (requires X-Agent-Bridge-Token header)\n"
+                    "   Expected: bot_sessions count increased\n\n"
+                    "4. THE DEFINITIVE TEST — send a message:\n"
+                    "   In AgentNexus, in a channel where your bot is a member:\n"
+                    "     @<your-bot-username> 你好，确认一下你已经连上 AgentNexus\n"
+                    "   → If you receive a reply, DONE.\n"
+                    "   → If no reply, go to step 11 (Troubleshooting)."
                 ),
+                "provider": "acp",
             },
 
             {
@@ -758,5 +827,12 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
         },
         "bridge": _bridge_urls(request),
         "plugin": _plugin_payload(request),
+        "acp_registry": {
+            "url": "https://agentclientprotocol.com/get-started/registry",
+            "description": (
+                "Official ACP agent registry with 35+ agents. Find your agent, "
+                "follow the link to your official ACP setup docs and install command."
+            ),
+        },
         "help_topics": _topic_catalog(),
     }
