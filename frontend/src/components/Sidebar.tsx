@@ -94,11 +94,68 @@ type PersonalFileItem = FileInfo & {
 type ProjectTaskItem =
   | { kind: "dm"; key: string; dm: DM; botLabel: string; label: string; createdAt: number }
   | { kind: "channel"; key: string; channel: Channel; label: string; createdAt: number };
+type ChatOrderRule = "time" | "name";
 
 const GROUP_FALLBACK_TITLE = "Group 1";
+const CHAT_ORDER_STORAGE_KEY = "agentnexus.sidebar.chatOrder";
+const CHAT_ORDER_LOCALE = "zh-Hans-CN";
 
 const displayGroupTitle = (value: string | null | undefined) =>
   (value || GROUP_FALLBACK_TITLE).replace(/^Project(\s+\d+)?$/i, "Group$1");
+const chatTimestamp = (value: string | null | undefined) => {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const compareChatNames = (a: string, b: string) =>
+  a.localeCompare(b, CHAT_ORDER_LOCALE, { numeric: true, sensitivity: "base" });
+const compareChatOrder = (
+  a: { label: string; createdAt: number },
+  b: { label: string; createdAt: number },
+  orderRule: ChatOrderRule,
+) => {
+  if (orderRule === "name") {
+    return compareChatNames(a.label, b.label) || b.createdAt - a.createdAt;
+  }
+  return b.createdAt - a.createdAt || compareChatNames(a.label, b.label);
+};
+const dmLabel = (dm: DM) => {
+  const cp = dm.counterparty;
+  return cp.display_name || cp.username || (cp.member_type === "system" ? "System" : "User");
+};
+const readStoredChatOrder = (): ChatOrderRule => {
+  try {
+    if (typeof window === "undefined") return "time";
+    return window.localStorage.getItem(CHAT_ORDER_STORAGE_KEY) === "name" ? "name" : "time";
+  } catch {
+    return "time";
+  }
+};
+
+function ChatOrderSelect({
+  onChange,
+  value,
+}: {
+  onChange: (value: ChatOrderRule) => void;
+  value: ChatOrderRule;
+}) {
+  return (
+    <label className="an-rail-sort" title="Chat order">
+      <span className="sr-only">Chat order</span>
+      <select
+        aria-label="Chat order"
+        className="an-select an-rail-sort-select"
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value === "name" ? "name" : "time")
+        }
+      >
+        <option value="time">Time</option>
+        <option value="name">Name</option>
+      </select>
+    </label>
+  );
+}
 
 const wsColor = (id: string) => {
   let h = 0;
@@ -244,13 +301,14 @@ export function Sidebar({
     Record<PersonalSectionKey, boolean>
   >({
     dms: false,
-    files: false,
+    files: true,
     projects: false,
   });
   const [collapsedProjectGroups, setCollapsedProjectGroups] = useState<
     Record<string, boolean>
   >({});
   const [channelsCollapsed, setChannelsCollapsed] = useState(false);
+  const [chatOrderRule, setChatOrderRule] = useState<ChatOrderRule>(readStoredChatOrder);
   const personalUploadInputRef = useRef<HTMLInputElement>(null);
   const personalFilesDragDepthRef = useRef(0);
 
@@ -280,6 +338,14 @@ export function Sidebar({
       [projectId]: !prev[projectId],
     }));
   };
+  const updateChatOrderRule = (nextRule: ChatOrderRule) => {
+    setChatOrderRule(nextRule);
+    try {
+      window.localStorage.setItem(CHAT_ORDER_STORAGE_KEY, nextRule);
+    } catch {
+      // Local storage can be unavailable in privacy-restricted contexts.
+    }
+  };
 
   const visiblePersonalDms = useMemo(
     () =>
@@ -291,20 +357,34 @@ export function Sidebar({
 
   const directDms = useMemo(
     () =>
-      visiblePersonalDms.filter(
-        (dm) => dm.counterparty.member_type !== "bot",
-      ),
-    [visiblePersonalDms],
+      visiblePersonalDms
+        .filter((dm) => dm.counterparty.member_type !== "bot")
+        .sort((a, b) =>
+          compareChatOrder(
+            { label: dmLabel(a), createdAt: chatTimestamp(a.created_at) },
+            { label: dmLabel(b), createdAt: chatTimestamp(b.created_at) },
+            chatOrderRule,
+          ),
+        ),
+    [chatOrderRule, visiblePersonalDms],
   );
 
   const visibleChannels = useMemo(
     () =>
-      channels.filter(
-        (channel) =>
-          (!selectedWorkspaceId || channel.workspace_id === selectedWorkspaceId) &&
-          channel.project_task_type !== "channel",
-      ),
-    [channels, selectedWorkspaceId],
+      channels
+        .filter(
+          (channel) =>
+            (!selectedWorkspaceId || channel.workspace_id === selectedWorkspaceId) &&
+            channel.project_task_type !== "channel",
+        )
+        .sort((a, b) =>
+          compareChatOrder(
+            { label: a.name || "Channel", createdAt: chatTimestamp(a.created_at) },
+            { label: b.name || "Channel", createdAt: chatTimestamp(b.created_at) },
+            chatOrderRule,
+          ),
+        ),
+    [channels, chatOrderRule, selectedWorkspaceId],
   );
 
   const projectGroups = useMemo(() => {
@@ -353,16 +433,18 @@ export function Sidebar({
         key: channel.channel_id,
         channel,
         label: channel.task_title || channel.name || "Channel",
-        createdAt: 0,
+        createdAt: chatTimestamp(channel.created_at),
       });
     }
     return [...groups.values()]
       .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle, "zh-Hans-CN"))
       .map((group) => ({
         ...group,
-        tasks: group.tasks.sort((a, b) => a.createdAt - b.createdAt || a.label.localeCompare(b.label, "zh-Hans-CN")),
+        tasks: [...group.tasks].sort((a, b) =>
+          compareChatOrder(a, b, chatOrderRule),
+        ),
       }));
-  }, [channels, selectedWorkspaceId, visiblePersonalDms]);
+  }, [channels, chatOrderRule, selectedWorkspaceId, visiblePersonalDms]);
 
   const nextProjectTitle = () => `Group ${projectGroups.length + 1}`;
 
@@ -1079,17 +1161,23 @@ export function Sidebar({
         <>
       <div className="an-rail-section-h">
         <span>Channels</span>
-        <span className="an-rail-count">{visibleChannels.length}</span>
-        <button
-          type="button"
-          className="an-rail-section-toggle"
-          title={channelsCollapsed ? "Expand" : "Collapse"}
-          aria-label={channelsCollapsed ? "Expand Channels" : "Collapse Channels"}
-          aria-expanded={!channelsCollapsed}
-          onClick={() => setChannelsCollapsed((collapsed) => !collapsed)}
-        >
-          <AppIcon name={channelsCollapsed ? "chevronRight" : "chevronDown"} />
-        </button>
+        <div className="an-rail-section-actions">
+          <span className="an-rail-count">{visibleChannels.length}</span>
+          <ChatOrderSelect
+            value={chatOrderRule}
+            onChange={updateChatOrderRule}
+          />
+          <button
+            type="button"
+            className="an-rail-section-toggle"
+            title={channelsCollapsed ? "Expand" : "Collapse"}
+            aria-label={channelsCollapsed ? "Expand Channels" : "Collapse Channels"}
+            aria-expanded={!channelsCollapsed}
+            onClick={() => setChannelsCollapsed((collapsed) => !collapsed)}
+          >
+            <AppIcon name={channelsCollapsed ? "chevronRight" : "chevronDown"} />
+          </button>
+        </div>
       </div>
       {!channelsCollapsed && (
       <ul className="px-2 py-1">
@@ -1188,16 +1276,22 @@ export function Sidebar({
         <>
       <div className="an-rail-section-h">
         <span>DMs</span>
-        <button
-          type="button"
-          className="an-rail-section-toggle an-rail-section-toggle-solo"
-          title={personalSectionExpanded("dms") ? "Collapse" : "Expand"}
-          aria-label={personalSectionExpanded("dms") ? "Collapse DMs" : "Expand DMs"}
-          aria-expanded={personalSectionExpanded("dms")}
-          onClick={() => togglePersonalSection("dms")}
-        >
-          <AppIcon name={personalSectionExpanded("dms") ? "chevronDown" : "chevronRight"} />
-        </button>
+        <div className="an-rail-section-actions">
+          <ChatOrderSelect
+            value={chatOrderRule}
+            onChange={updateChatOrderRule}
+          />
+          <button
+            type="button"
+            className="an-rail-section-toggle"
+            title={personalSectionExpanded("dms") ? "Collapse" : "Expand"}
+            aria-label={personalSectionExpanded("dms") ? "Collapse DMs" : "Expand DMs"}
+            aria-expanded={personalSectionExpanded("dms")}
+            onClick={() => togglePersonalSection("dms")}
+          >
+            <AppIcon name={personalSectionExpanded("dms") ? "chevronDown" : "chevronRight"} />
+          </button>
+        </div>
       </div>
       {personalSectionExpanded("dms") && (
           <ul className="px-2 py-1 pb-2">

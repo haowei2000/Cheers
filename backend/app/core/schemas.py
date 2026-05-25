@@ -282,6 +282,7 @@ class ChannelInResponse(BaseModel):
     can_manage: bool = False
     can_invite_members: bool = False
     can_add_bots: bool = False
+    created_at: datetime | None = None
     # Number of unread messages for the user in this channel, derived from channel_memberships.last_read_at.
     # Remains None for anonymous users or non-members.
     unread_count: int | None = None

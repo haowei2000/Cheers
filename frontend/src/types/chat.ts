@@ -24,6 +24,7 @@ export type Channel = {
   can_manage?: boolean;
   can_invite_members?: boolean;
   can_add_bots?: boolean;
+  created_at?: string | null;
   /** Count of messages in this channel that the caller has not yet read.
    *  Populated by the channel list endpoints; updated locally on select. */
   unread_count?: number;
