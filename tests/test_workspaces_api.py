@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ForbiddenError
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace, WorkspaceMembership
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 from app.services.channel_service import parse_personal_project_channel_purpose
@@ -108,6 +109,161 @@ async def test_create_workspace_invites_initial_members(
     )
     assert membership is not None
     assert membership.role == "member"
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_default_bot_can_be_set_and_cleared(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000041",
+        username="default_personal_bot",
+        display_name="Default Personal Bot",
+        status="online",
+        scope="everyone",
+    )
+    db_session.add(bot)
+    await db_session.commit()
+
+    workspace_resp = await client.get("/api/v1/workspaces")
+    assert workspace_resp.status_code == 200
+    personal_ws = next(w for w in workspace_resp.json()["data"] if w["kind"] == "personal")
+    assert personal_ws["default_bot_id"] is None
+    assert personal_ws["default_bot"] is None
+
+    set_resp = await client.put(
+        f"/api/v1/workspaces/{personal_ws['workspace_id']}",
+        json={
+            "name": personal_ws["name"],
+            "default_bot_id": bot.bot_id,
+        },
+    )
+    assert set_resp.status_code == 200
+    set_data = set_resp.json()["data"]
+    assert set_data["default_bot_id"] == bot.bot_id
+    assert set_data["default_bot"] == {
+        "bot_id": bot.bot_id,
+        "username": "default_personal_bot",
+        "display_name": "Default Personal Bot",
+        "avatar_url": None,
+    }
+
+    list_resp = await client.get("/api/v1/workspaces")
+    assert list_resp.status_code == 200
+    listed_personal = next(w for w in list_resp.json()["data"] if w["kind"] == "personal")
+    assert listed_personal["default_bot_id"] == bot.bot_id
+    assert listed_personal["default_bot"]["username"] == "default_personal_bot"
+
+    clear_resp = await client.put(
+        f"/api/v1/workspaces/{personal_ws['workspace_id']}",
+        json={
+            "name": personal_ws["name"],
+            "default_bot_id": None,
+        },
+    )
+    assert clear_resp.status_code == 200
+    clear_data = clear_resp.json()["data"]
+    assert clear_data["default_bot_id"] is None
+    assert clear_data["default_bot"] is None
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_default_bot_rejects_missing_bot(
+    client: AsyncClient,
+) -> None:
+    workspace_resp = await client.get("/api/v1/workspaces")
+    assert workspace_resp.status_code == 200
+    personal_ws = next(w for w in workspace_resp.json()["data"] if w["kind"] == "personal")
+
+    resp = await client.put(
+        f"/api/v1/workspaces/{personal_ws['workspace_id']}",
+        json={
+            "name": personal_ws["name"],
+            "default_bot_id": "missing-default-bot",
+        },
+    )
+
+    assert resp.status_code == 404
+    assert resp.json()["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_default_bot_rejects_inaccessible_bot(
+    db_session: AsyncSession,
+) -> None:
+    user = User(
+        user_id="a0000000-0000-0000-0000-000000000341",
+        username="default_bot_owner_user",
+        password_hash="x",
+        role="user",
+    )
+    other = User(
+        user_id="a0000000-0000-0000-0000-000000000342",
+        username="default_bot_other_owner",
+        password_hash="x",
+        role="user",
+    )
+    workspace = Workspace(
+        workspace_id="w1000000-0000-0000-0000-000000000341",
+        name="Personal",
+        kind="personal",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000342",
+        username="private_other_bot",
+        display_name="Private Other Bot",
+        status="online",
+        scope="private",
+        created_by=other.user_id,
+    )
+    db_session.add_all([
+        user,
+        other,
+        workspace,
+        WorkspaceMembership(
+            workspace_id=workspace.workspace_id,
+            user_id=user.user_id,
+            role="owner",
+        ),
+        bot,
+    ])
+    await db_session.flush()
+
+    with pytest.raises(ForbiddenError):
+        await WorkspaceService(db_session).update(
+            workspace.workspace_id,
+            user,
+            default_bot_id=bot.bot_id,
+            default_bot_id_provided=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_default_bot_is_cleared_when_bot_is_deleted(
+    db_session: AsyncSession,
+) -> None:
+    workspace = Workspace(
+        workspace_id="w1000000-0000-0000-0000-000000000351",
+        name="Personal",
+        kind="personal",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000351",
+        username="delete_default_bot",
+        status="online",
+        scope="everyone",
+    )
+    db_session.add_all([bot, workspace])
+    await db_session.flush()
+    workspace.default_bot_id = bot.bot_id
+    await db_session.flush()
+
+    await db_session.delete(bot)
+    await db_session.flush()
+    await db_session.refresh(workspace)
+
+    assert workspace.default_bot_id is None
 
 
 @pytest.mark.asyncio

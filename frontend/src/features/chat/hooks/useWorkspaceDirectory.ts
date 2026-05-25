@@ -45,7 +45,8 @@ export function useWorkspaceDirectory({
   const selectedIdRef = useRef<string | null>(null);
   const channelsRef = useRef<Channel[]>([]);
   const dmsRef = useRef<DM[]>([]);
-  const didAutoSelectHelperDmRef = useRef(false);
+  const autoSelectPersonalKeyRef = useRef<string | null>(null);
+  const openingDefaultBotDmRef = useRef(false);
 
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -122,24 +123,78 @@ export function useWorkspaceDirectory({
   }, [selectedId, selectedIdWorkspaceId, selectedWorkspaceId]);
 
   useEffect(() => {
-    if (
-      didAutoSelectHelperDmRef.current ||
-      routeChannelId ||
-      selectedId ||
-      !isPersonalWorkspace
-    ) {
+    if (routeChannelId || selectedId || !activeWorkspace || !isPersonalWorkspace) {
       return;
     }
+
+    const defaultBotId = activeWorkspace.default_bot_id;
+    if (defaultBotId) {
+      const autoSelectKey = `${activeWorkspace.workspace_id}:${defaultBotId}`;
+      if (autoSelectPersonalKeyRef.current === autoSelectKey) return;
+
+      const defaultBotDm = dms.find(
+        (dm) =>
+          dm.workspace_id === activeWorkspace.workspace_id &&
+          !dm.project_id &&
+          dm.counterparty.member_type === "bot" &&
+          dm.counterparty.member_id === defaultBotId,
+      );
+      if (defaultBotDm) {
+        autoSelectPersonalKeyRef.current = autoSelectKey;
+        setSelectedId(defaultBotDm.channel_id);
+        return;
+      }
+
+      if (!authToken || openingDefaultBotDmRef.current) return;
+      openingDefaultBotDmRef.current = true;
+      apiFetch("dms", {
+        method: "POST",
+        token: authToken,
+        body: {
+          workspace_id: activeWorkspace.workspace_id,
+          member_id: defaultBotId,
+          member_type: "bot",
+        },
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data?.status === "error" || !data?.data) {
+            throw new Error(data?.detail || data?.message || "Failed to open default bot");
+          }
+          const dm = data.data as DM;
+          setDMs((prev) =>
+            prev.some((item) => item.channel_id === dm.channel_id)
+              ? prev.map((item) => (item.channel_id === dm.channel_id ? dm : item))
+              : [...prev, dm],
+          );
+          autoSelectPersonalKeyRef.current = autoSelectKey;
+          if (!selectedIdRef.current) {
+            setSelectedId(dm.channel_id);
+          }
+        })
+        .catch((error: unknown) => {
+          autoSelectPersonalKeyRef.current = autoSelectKey;
+          toast.error((error as Error).message || "Failed to open default bot");
+        })
+        .finally(() => {
+          openingDefaultBotDmRef.current = false;
+        });
+      return;
+    }
+
+    const helperKey = `${activeWorkspace.workspace_id}:helper`;
+    if (autoSelectPersonalKeyRef.current === helperKey) return;
     const helperDm = dms.find(
       (dm) =>
+        dm.workspace_id === activeWorkspace.workspace_id &&
         dm.counterparty.member_type === "bot" &&
         (dm.counterparty.member_id === BUILTIN_HELPER_BOT_ID ||
           dm.counterparty.username === "Coordinator"),
     );
     if (!helperDm) return;
-    didAutoSelectHelperDmRef.current = true;
+    autoSelectPersonalKeyRef.current = helperKey;
     setSelectedId(helperDm.channel_id);
-  }, [dms, isPersonalWorkspace, routeChannelId, selectedId]);
+  }, [activeWorkspace, authToken, dms, isPersonalWorkspace, routeChannelId, selectedId]);
 
   const activeDm = useMemo(
     () => (selectedId ? dms.find((dm) => dm.channel_id === selectedId) ?? null : null),
