@@ -49,6 +49,11 @@ async def _seed_bot_in_channel(
     return bot_id, ch_id, plaintext
 
 
+def _disable_object_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.storage.bootstrap.is_storage_enabled", lambda: False)
+    monkeypatch.setattr("app.services.file_processor.service.is_storage_enabled", lambda: False)
+
+
 @pytest.mark.asyncio
 async def test_upload_binary_happy_path(
     client: AsyncClient,
@@ -59,6 +64,7 @@ async def test_upload_binary_happy_path(
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
     monkeypatch.setattr(settings, "agent_bridge_token", "dummy")
+    _disable_object_storage(monkeypatch)
 
     bot_id, ch_id, token = await _seed_bot_in_channel(db_session)
 
@@ -106,6 +112,7 @@ async def test_upload_markdown_file_is_persistent(
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
     monkeypatch.setattr(settings, "agent_bridge_token", "dummy")
+    _disable_object_storage(monkeypatch)
 
     bot_id, ch_id, token = await _seed_bot_in_channel(db_session)
 
@@ -143,6 +150,7 @@ async def test_upload_binary_rejects_missing_token(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    _disable_object_storage(monkeypatch)
     _, ch_id, _ = await _seed_bot_in_channel(db_session)
 
     resp = await client.post(
@@ -164,6 +172,7 @@ async def test_upload_binary_rejects_bot_not_in_channel(
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
+    _disable_object_storage(monkeypatch)
 
     _, _, token = await _seed_bot_in_channel(db_session)
     # Another channel where the bot is not a member.
@@ -193,6 +202,7 @@ async def test_upload_binary_rejects_empty_body(
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
+    _disable_object_storage(monkeypatch)
 
     _, ch_id, token = await _seed_bot_in_channel(db_session)
 
@@ -217,6 +227,7 @@ async def test_upload_binary_rejects_oversize(
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
     monkeypatch.setattr(settings, "file_upload_max_bytes", 100)
+    _disable_object_storage(monkeypatch)
 
     _, ch_id, token = await _seed_bot_in_channel(db_session)
 
@@ -247,6 +258,7 @@ async def test_upload_binary_infers_content_type_from_filename(
     """Covers test upload binary infers content type from filename behavior."""
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
+    _disable_object_storage(monkeypatch)
 
     _, ch_id, token = await _seed_bot_in_channel(db_session)
 

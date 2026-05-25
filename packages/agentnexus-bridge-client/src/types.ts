@@ -252,6 +252,8 @@ export interface FileUploadAckOk {
   filename: string;
   content_type: string;
   size_bytes: number;
+  preview_url?: string;
+  download_url?: string;
 }
 
 export interface FileUploadAckErr {
@@ -391,12 +393,16 @@ export interface DeltaFrame {
  *  `file_ids` lets the plugin attach binary outputs (uploaded via the
  *  /agent-bridge/files/upload-binary HTTP route while the stream was in
  *  flight) to the same finalized message — so a typing-to-file-reveal UX
- *  shows up as a single bot reply, not text + a separate media message. */
+ *  shows up as a single bot reply, not text + a separate media message.
+ *
+ *  `content` is a durable final snapshot. It lets the server complete the
+ *  placeholder even if a backend restart lost the in-memory delta buffer. */
 export interface DoneFrame {
   type: "done";
   client_msg_id?: string;
   msg_id: string;
   file_ids?: string[];
+  content?: string;
 }
 
 /** Plugin reports a mid-stream error. Server finalizes the placeholder with

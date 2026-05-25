@@ -515,10 +515,12 @@ export class BotSession {
 
   /** End of a streaming reply. Server flushes the buffer + broadcasts
    *  message_done. Optional `fileIds` attaches binary outputs uploaded
-   *  during the stream (e.g. images / .md from sendMedia). */
-  streamDone(args: { msgId: string; fileIds?: string[] }): Promise<SendResult> {
+   *  during the stream (e.g. images / .md from sendMedia). Optional `content`
+   *  is a durable final snapshot for restart recovery. */
+  streamDone(args: { msgId: string; fileIds?: string[]; content?: string }): Promise<SendResult> {
     const frame: DoneFrame = { type: "done", client_msg_id: randomUUID(), msg_id: args.msgId };
     if (args.fileIds && args.fileIds.length > 0) frame.file_ids = args.fileIds;
+    if (args.content !== undefined) frame.content = args.content;
     return this.sendTerminalFrame(frame);
   }
 

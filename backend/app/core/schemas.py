@@ -448,6 +448,16 @@ class MessageFileInResponse(BaseModel):
     size_bytes: int | None = None
     status: str
     expires_at: datetime | None = None
+    preview_url: str | None = None
+    download_url: str | None = None
+
+    @model_validator(mode="after")
+    def _fill_access_urls(self) -> "MessageFileInResponse":
+        if not self.preview_url:
+            self.preview_url = f"/api/v1/files/{self.file_id}/preview"
+        if not self.download_url:
+            self.download_url = f"/api/v1/files/{self.file_id}/download"
+        return self
 
 
 # ==================== content_data schemas (per msg_type) ====================

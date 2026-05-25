@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -119,6 +121,75 @@ async def test_redis_bot_event_queue_reads_configured_batch(monkeypatch: pytest.
 
 def test_redis_bot_event_queue_socket_timeout_exceeds_block_wait() -> None:
     assert bot_event_queue._REDIS_SOCKET_TIMEOUT_SECONDS > bot_event_queue._XREAD_BLOCK_MS / 1000
+
+
+@pytest.mark.asyncio
+async def test_agent_bridge_timeout_recovery_rearms_live_dispatched_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+    from app.features.bot_runtime.pipeline.bot import task_timeout as task_timeout_mod
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        scheduled: list[dict] = []
+
+        def fake_schedule_agent_bridge_task_timeout(**kwargs) -> bool:
+            scheduled.append(kwargs)
+            return True
+
+        monkeypatch.setattr(settings, "agent_bridge_timeout_seconds", 600)
+        monkeypatch.setattr(
+            task_timeout_mod,
+            "schedule_agent_bridge_task_timeout",
+            fake_schedule_agent_bridge_task_timeout,
+        )
+
+        async with factory() as session:
+            workspace = Workspace(workspace_id="ws-timeout-rearm", name="Workspace")
+            channel = Channel(
+                channel_id="ch-timeout-rearm",
+                workspace_id=workspace.workspace_id,
+                name="timeout-rearm",
+            )
+            msg = Message(
+                msg_id="msg-timeout-rearm",
+                channel_id=channel.channel_id,
+                sender_id="bot-timeout-rearm",
+                sender_type="bot",
+                content="",
+                task_id="task-timeout-rearm",
+                in_reply_to_msg_id="trigger-timeout-rearm",
+                msg_type="reply",
+            )
+            session.add_all([workspace, channel, msg])
+            await session.flush()
+            run = await ensure_bot_run(
+                session,
+                task_id="task-timeout-rearm",
+                channel_id=channel.channel_id,
+                trigger_msg_id="trigger-timeout-rearm",
+                bot_id="bot-timeout-rearm",
+                placeholder_msg_id=msg.msg_id,
+                status="dispatched_async",
+            )
+            run.binding_type = "agent_bridge"
+            run.updated_at = datetime.now(UTC)
+            await session.flush()
+
+            converted = await task_timeout_mod.recover_agent_bridge_task_timeouts_once(session)
+
+            assert converted == 0
+            assert len(scheduled) == 1
+            assert scheduled[0]["msg_id"] == msg.msg_id
+            assert scheduled[0]["bot_id"] == "bot-timeout-rearm"
+            assert 0 < scheduled[0]["delay_s"] <= 600
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -295,6 +366,146 @@ async def test_openclaw_stream_done_event_flushes_buffer(
             assert broker.channel_frames[-1][1]["data"]["content"] == "stream done"
     finally:
         await pending_replies.pop_by_msg("msg-bot-event-stream")
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_agent_bridge_stream_done_recovers_placeholder_after_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broker = RecordingBroker()
+    monkeypatch.setattr("app.services.realtime_broker._broker", broker)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with factory() as session:
+            workspace = Workspace(workspace_id="ws-bot-event-restart-done", name="Workspace")
+            channel = Channel(
+                channel_id="ch-bot-event-restart-done",
+                workspace_id=workspace.workspace_id,
+                name="queued-restart-done",
+            )
+            msg = Message(
+                msg_id="msg-bot-event-restart-done",
+                channel_id=channel.channel_id,
+                sender_id="bot-event-restart-done",
+                sender_type="bot",
+                content="",
+                task_id="task-bot-event-restart-done",
+                in_reply_to_msg_id="trigger-restart-done",
+                msg_type="reply",
+            )
+            session.add_all([workspace, channel, msg])
+            await session.flush()
+            await ensure_bot_run(
+                session,
+                task_id="task-bot-event-restart-done",
+                channel_id=channel.channel_id,
+                trigger_msg_id="trigger-restart-done",
+                bot_id="bot-event-restart-done",
+                placeholder_msg_id=msg.msg_id,
+                status="dispatched_async",
+            )
+
+            await handle_bot_event_job(
+                session,
+                BotEventJob(
+                    event_type=AGENT_BRIDGE_STREAM_DONE,
+                    payload={
+                        "msg_id": msg.msg_id,
+                        "bot_id": "bot-event-restart-done",
+                        "content": "final content survived restart",
+                    },
+                ),
+            )
+            await session.flush()
+            await session.refresh(msg)
+
+            assert msg.content == "final content survived restart"
+            assert msg.is_partial is False
+            run = await get_bot_run_by_placeholder(session, msg.msg_id)
+            assert run is not None
+            assert run.status == "done"
+            assert run.last_event_type == AGENT_BRIDGE_STREAM_DONE
+            assert broker.channel_frames[-1][1]["type"] == "message_done"
+            assert broker.channel_frames[-1][1]["data"]["content"] == "final content survived restart"
+    finally:
+        await pending_replies.pop_by_msg("msg-bot-event-restart-done")
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_agent_bridge_stream_error_recovers_placeholder_after_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broker = RecordingBroker()
+    monkeypatch.setattr("app.services.realtime_broker._broker", broker)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with factory() as session:
+            workspace = Workspace(workspace_id="ws-bot-event-restart-error", name="Workspace")
+            channel = Channel(
+                channel_id="ch-bot-event-restart-error",
+                workspace_id=workspace.workspace_id,
+                name="queued-restart-error",
+            )
+            msg = Message(
+                msg_id="msg-bot-event-restart-error",
+                channel_id=channel.channel_id,
+                sender_id="bot-event-restart-error",
+                sender_type="bot",
+                content="",
+                task_id="task-bot-event-restart-error",
+                in_reply_to_msg_id="trigger-restart-error",
+                msg_type="reply",
+            )
+            session.add_all([workspace, channel, msg])
+            await session.flush()
+            await ensure_bot_run(
+                session,
+                task_id="task-bot-event-restart-error",
+                channel_id=channel.channel_id,
+                trigger_msg_id="trigger-restart-error",
+                bot_id="bot-event-restart-error",
+                placeholder_msg_id=msg.msg_id,
+                status="dispatched_async",
+            )
+
+            error = "ACP request timed out after 660000ms: session/prompt"
+            await handle_bot_event_job(
+                session,
+                BotEventJob(
+                    event_type=AGENT_BRIDGE_STREAM_ERROR,
+                    payload={
+                        "msg_id": msg.msg_id,
+                        "bot_id": "bot-event-restart-error",
+                        "error": error,
+                    },
+                ),
+            )
+            await session.flush()
+            await session.refresh(msg)
+
+            assert msg.content == error
+            assert msg.is_partial is True
+            run = await get_bot_run_by_placeholder(session, msg.msg_id)
+            assert run is not None
+            assert run.status == "failed"
+            assert run.error_message == error
+            assert run.last_event_type == AGENT_BRIDGE_STREAM_ERROR
+            assert broker.channel_frames[-1][1]["type"] == "message_done"
+            assert broker.channel_frames[-1][1]["data"]["content"] == error
+    finally:
+        await pending_replies.pop_by_msg("msg-bot-event-restart-error")
         await engine.dispose()
 
 

@@ -7,6 +7,7 @@ Agent Bridge reply can still finalize the same message.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -22,6 +23,7 @@ from app.features.bot_runtime.pipeline.runner import Pipeline
 from app.features.bot_runtime.pipeline.stage import Stage
 
 logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.task_timeout")
+_RECOVERED_TIMEOUT_HANDLES: dict[str, asyncio.TimerHandle] = {}
 
 
 @dataclass
@@ -135,22 +137,111 @@ def make_agent_bridge_task_timeout_pipeline() -> Pipeline[AgentBridgeTaskTimeout
     )
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def schedule_agent_bridge_task_timeout(
+    *,
+    bot_id: str,
+    channel_id: str,
+    task_id: str,
+    msg_id: str,
+    timeout_s: int,
+    delay_s: float,
+) -> bool:
+    """Schedule the durable timeout conversion after process restart."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.warning(
+            "agent_bridge_task_timeout: no running loop; cannot re-arm timeout bot_id=%s task_id=%s msg_id=%s",
+            bot_id,
+            task_id,
+            msg_id,
+        )
+        return False
+
+    async def _on_timeout() -> None:
+        from app.db.session import async_session_factory
+
+        logger.warning(
+            "agent_bridge_bot_slow_reply: bot_id=%s task_id=%s msg_id=%s after %ds",
+            bot_id,
+            task_id,
+            msg_id,
+            timeout_s,
+        )
+        try:
+            async with async_session_factory() as s2:
+                try:
+                    timeout_ctx = AgentBridgeTaskTimeoutContext(
+                        session=s2,
+                        bot_id=bot_id,
+                        channel_id=channel_id,
+                        task_id=task_id,
+                        msg_id=msg_id,
+                        timeout_s=timeout_s,
+                    )
+                    await make_agent_bridge_task_timeout_pipeline().run(timeout_ctx)
+                except Exception:
+                    await s2.rollback()
+                    raise
+        except Exception:
+            logger.exception(
+                "agent_bridge_task_timeout: recovered timer failed bot_id=%s task_id=%s msg_id=%s",
+                bot_id,
+                task_id,
+                msg_id,
+            )
+        finally:
+            _RECOVERED_TIMEOUT_HANDLES.pop(msg_id, None)
+
+    def _fire() -> None:
+        asyncio.create_task(_on_timeout())
+
+    existing = _RECOVERED_TIMEOUT_HANDLES.pop(msg_id, None)
+    if existing is not None:
+        existing.cancel()
+    _RECOVERED_TIMEOUT_HANDLES[msg_id] = loop.call_later(max(0.0, delay_s), _fire)
+    return True
+
+
 async def recover_agent_bridge_task_timeouts_once(session: AsyncSession) -> int:
-    """Convert stale dispatched Agent Bridge placeholders after process restart."""
+    """Convert stale dispatched Agent Bridge placeholders and re-arm live ones."""
     timeout_s = max(5, int(settings.agent_bridge_timeout_seconds or 600))
-    cutoff = datetime.now(UTC) - timedelta(seconds=timeout_s)
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(seconds=timeout_s)
     rows = (
         await session.execute(
             select(BotRun).where(
                 BotRun.binding_type == "agent_bridge",
                 BotRun.status == "dispatched_async",
-                BotRun.updated_at <= cutoff,
             )
         )
     ).scalars().all()
     converted = 0
+    scheduled = 0
     pipeline = make_agent_bridge_task_timeout_pipeline()
     for run in rows:
+        updated_at = _as_utc(run.updated_at) if run.updated_at else cutoff
+        elapsed_s = (now - updated_at).total_seconds()
+        if elapsed_s < timeout_s:
+            channel = await session.get(Channel, run.channel_id)
+            if channel is not None and channel.type == "dm":
+                continue
+            if schedule_agent_bridge_task_timeout(
+                bot_id=run.bot_id,
+                channel_id=run.channel_id,
+                task_id=run.task_id,
+                msg_id=run.placeholder_msg_id,
+                timeout_s=timeout_s,
+                delay_s=timeout_s - elapsed_s,
+            ):
+                scheduled += 1
+            continue
         ctx = AgentBridgeTaskTimeoutContext(
             session=session,
             bot_id=run.bot_id,
@@ -162,4 +253,6 @@ async def recover_agent_bridge_task_timeouts_once(session: AsyncSession) -> int:
         await pipeline.run(ctx)
         if ctx.converted:
             converted += 1
+    if scheduled:
+        logger.info("agent_bridge_task_timeout: re-armed %d pending task timeout(s)", scheduled)
     return converted

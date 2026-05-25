@@ -65,6 +65,8 @@ export type FileInfo = {
   size_bytes?: number;
   status?: string;
   expires_at?: string | null;
+  preview_url?: string | null;
+  download_url?: string | null;
   channel_id?: string | null;
   channel_label?: string | null;
   scope_type?: string | null;

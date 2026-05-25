@@ -25,10 +25,16 @@ def _created_at_wire(message: Message) -> str | None:
 
 def message_file_dto(record: FileLike) -> MessageFileDTO:
     if isinstance(record, MessageFileDTO):
-        return record
-    if isinstance(record, Mapping):
-        return MessageFileDTO.model_validate(dict(record))
-    return MessageFileDTO.model_validate(record)
+        dto = record
+    elif isinstance(record, Mapping):
+        dto = MessageFileDTO.model_validate(dict(record))
+    else:
+        dto = MessageFileDTO.model_validate(record)
+    if not dto.preview_url:
+        dto.preview_url = f"/api/v1/files/{dto.file_id}/preview"
+    if not dto.download_url:
+        dto.download_url = f"/api/v1/files/{dto.file_id}/download"
+    return dto
 
 
 class MessageAssembler:

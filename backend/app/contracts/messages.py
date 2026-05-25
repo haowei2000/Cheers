@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _string_list(value: Any) -> list[str]:
@@ -29,6 +29,16 @@ class MessageFileDTO(BaseModel):
     size_bytes: int | None = None
     status: str = "ready"
     expires_at: datetime | None = None
+    preview_url: str | None = None
+    download_url: str | None = None
+
+    @model_validator(mode="after")
+    def _fill_access_urls(self) -> "MessageFileDTO":
+        if not self.preview_url:
+            self.preview_url = f"/api/v1/files/{self.file_id}/preview"
+        if not self.download_url:
+            self.download_url = f"/api/v1/files/{self.file_id}/download"
+        return self
 
 
 class MessageDTO(BaseModel):
