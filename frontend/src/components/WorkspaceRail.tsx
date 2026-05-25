@@ -16,12 +16,12 @@ export interface WorkspaceRailProps {
 }
 
 const WS_LETTER_COLORS = [
-  "#7c6cf5",
-  "#3ecf8e",
-  "#f5a623",
-  "#56a7ff",
-  "#f05454",
-  "#9586ff",
+  "#5b4bc4",
+  "#087f5b",
+  "#8a5600",
+  "#1d5f9e",
+  "#b91c1c",
+  "#6d5bd0",
 ];
 const wsColor = (id: string) => {
   let h = 0;

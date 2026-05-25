@@ -12,6 +12,14 @@ const jsonHeaders = () => ({ "Content-Type": "application/json", ...appLanguageH
 type AuthUser = Exclude<CurrentUser, null>;
 
 const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+const normalizeAuthError = (message: string | undefined) => {
+  const value = (message || "").trim();
+  if (!value) return "Authentication failed. Please try again.";
+  if (/用户名|邮箱|密码错误|incorrect|invalid credentials/i.test(value)) {
+    return "Username/email or password is incorrect.";
+  }
+  return value;
+};
 
 type AuthProvider = {
   provider: string;
@@ -95,7 +103,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         payload.access_token || payload.token || userInfo.user_id;
       onSuccess(user, token);
     } catch (e: any) {
-      setLoginError(e.message);
+      setLoginError(normalizeAuthError(e.message));
     } finally {
       setLoginLoading(false);
     }
@@ -169,7 +177,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         startDingTalkWebOAuth();
         return;
       }
-      setLoginError(e.message || "DingTalk sign-in failed");
+      setLoginError(normalizeAuthError(e.message || "DingTalk sign-in failed"));
     } finally {
       setDingtalkLoading(false);
     }
@@ -198,7 +206,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       onSent();
       toast.success("Verification code sent. Check your email.");
     } catch (e: any) {
-      setLoginError(e.message);
+      setLoginError(normalizeAuthError(e.message));
     } finally {
       if (purpose === "register") setRegCodeLoading(false);
       else setForgotCodeLoading(false);
@@ -251,7 +259,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       setRegCode("");
       setRegCodeSent(false);
     } catch (e: any) {
-      setLoginError(e.message);
+      setLoginError(normalizeAuthError(e.message));
     } finally {
       setLoginLoading(false);
     }
@@ -283,7 +291,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       setForgotNewPw("");
       setForgotCodeSent(false);
     } catch (e: any) {
-      setLoginError(e.message);
+      setLoginError(normalizeAuthError(e.message));
     } finally {
       setLoginLoading(false);
     }
@@ -301,7 +309,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       onClose={handleClose}
       maxWidth="max-w-sm sm:max-w-md"
       hideCloseButton={!currentUser}
-      panelClassName="p-2"
+      panelClassName="p-2 an-auth-dialog-panel"
     >
       <div className="an-token-panel an-auth-shell">
         <div className="an-auth-header">
@@ -484,6 +492,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                       : "Get code"}
                 </button>
               </div>
+              <p className="an-auth-help">
+                Enter a valid work email to request a verification code. The remaining fields unlock after the code is sent.
+              </p>
             </div>
             <label className="an-auth-field">
               <span className="an-auth-label">Email verification code</span>
@@ -591,6 +602,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                       : "Get code"}
                 </button>
               </div>
+              <p className="an-auth-help">
+                Enter your registered email to receive a password reset code.
+              </p>
             </div>
             <label className="an-auth-field">
               <span className="an-auth-label">Email verification code</span>
