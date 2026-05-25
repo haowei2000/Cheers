@@ -39,12 +39,14 @@ export function useFilePreviewController({
 
   const filePreviewUrl = (fileId: string) => `${API}/files/${fileId}/preview`;
   const fileDownloadUrl = (fileId: string) => `${API}/files/${fileId}/download`;
+  const previewUrlFor = (file: FileInfo) => file.preview_url || filePreviewUrl(file.file_id);
+  const downloadUrlFor = (file: FileInfo) => file.download_url || fileDownloadUrl(file.file_id);
 
   const toPreviewState = (
     file: FileWithChannelMeta,
     source: FilePreviewPanelState["source"],
   ): FilePreviewPanelState => ({
-      url: filePreviewUrl(file.file_id),
+      url: previewUrlFor(file),
       filename: file.original_filename || file.file_id,
       contentType: file.content_type,
       sizeBytes: file.size_bytes,
@@ -93,8 +95,8 @@ export function useFilePreviewController({
     <ChatAttachments
       align={alignRight ? "right" : "left"}
       files={message.files}
-      getPreviewUrl={(file) => filePreviewUrl(file.file_id)}
-      getDownloadUrl={(file) => fileDownloadUrl(file.file_id)}
+      getPreviewUrl={previewUrlFor}
+      getDownloadUrl={downloadUrlFor}
       onPreview={openFilePreview}
       onForward={onForwardFile}
       onAttach={onAttachFile}

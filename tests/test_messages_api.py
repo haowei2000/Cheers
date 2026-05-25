@@ -25,6 +25,7 @@ from app.db.models import (
     User,
     Workspace,
 )
+from app.features.agent_bridge.tokens import apply_token_to_bot
 from app.services.file_processor.service import FilePipelineService
 from app.services.storage.base import (
     PresignedUpload,
@@ -1051,6 +1052,8 @@ async def test_create_message_with_file_metadata(client: AsyncClient, db_session
     data = resp.json()["data"]
     assert data["file_ids"] == [record.file_id]
     assert data["files"][0]["original_filename"] == "note.txt"
+    assert data["files"][0]["preview_url"] == f"/api/v1/files/{record.file_id}/preview"
+    assert data["files"][0]["download_url"] == f"/api/v1/files/{record.file_id}/download"
 
 
 @pytest.mark.asyncio
@@ -2307,6 +2310,82 @@ async def test_create_presigned_upload_returns_file_record(
         pptx_data["headers"]["Content-Type"]
         == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_bridge_binary_upload_persists_generated_file_to_storage(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000012", name="W12")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000012",
+        workspace_id=ws.workspace_id,
+        name="bridge-generated-files",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="b3000000-0000-0000-0000-000000000012",
+        username="bridge_file_bot",
+        display_name="Bridge File Bot",
+        binding_type="agent_bridge",
+        status="online",
+    )
+    token = apply_token_to_bot(bot)
+    db_session.add_all([
+        ws,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=bot.bot_id, member_type="bot"),
+    ])
+    await db_session.commit()
+
+    fake_storage = FakeStorageProvider()
+    monkeypatch.setattr("app.services.storage.bootstrap.is_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.services.storage.bootstrap.get_storage_service", lambda: fake_storage)
+    monkeypatch.setattr("app.services.file_processor.service.is_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.services.file_processor.service.get_storage_service", lambda: fake_storage)
+
+    payload = b"bot generated file stored in object storage"
+    resp = await client.post(
+        "/api/v1/agent-bridge/files/upload-binary",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Channel-Id": ch.channel_id,
+            "X-Filename": "report.txt",
+            "Content-Type": "text/plain",
+        },
+        content=payload,
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    file_id = data["file_id"]
+    assert data["preview_url"] == f"/api/v1/files/{file_id}/preview"
+    assert data["download_url"] == f"/api/v1/files/{file_id}/download"
+    assert fake_storage.objects[file_id][0] == payload
+    assert fake_storage.metadata_sidecars[file_id]["source"] == "agent_bridge_generated"
+
+    record = (await db_session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )).scalar_one()
+    assert record.object_key == fake_storage.build_object_key(file_id, scope="generated")
+    assert record.original_path == record.object_key
+    assert record.storage_bucket == fake_storage.bucket
+    assert record.expires_at is None
+
+    link = (await db_session.execute(
+        select(FileScopeLink).where(
+            FileScopeLink.file_id == file_id,
+            FileScopeLink.scope_id == ch.channel_id,
+        )
+    )).scalar_one_or_none()
+    assert link is not None
+
+    preview = await client.get(f"/api/v1/files/{file_id}/preview")
+    assert preview.status_code == 200
+    assert preview.content == payload
 
 
 @pytest.mark.asyncio
