@@ -462,6 +462,59 @@ async def test_bridge_apply_trace_broadcasts_registered_stream(monkeypatch) -> N
         await stream_registry.pop("placeholder-trace")
 
 
+@pytest.mark.asyncio
+async def test_bridge_apply_trace_sanitizes_large_payload(monkeypatch) -> None:
+    from app.features.agent_bridge.service import apply_trace, register_stream
+    from app.features.agent_bridge.streams import stream_registry
+
+    sent: list[tuple[str, dict]] = []
+
+    async def fake_broadcast(channel_id: str, message: dict) -> None:
+        sent.append((channel_id, message))
+
+    monkeypatch.setattr(
+        "app.services.ws_service.ws_manager.broadcast_to_channel",
+        fake_broadcast,
+    )
+
+    await register_stream(
+        msg_id="placeholder-trace-large",
+        bot_id="bot-ws-001",
+        channel_id="c-001",
+        task_id="t-trace",
+    )
+    try:
+        ok = await apply_trace(
+            msg_id="placeholder-trace-large",
+            bot_id="bot-ws-001",
+            payload={
+                "task_id": "t-trace",
+                "stream": "acp",
+                "seq": 3,
+                "title": "t" * 300,
+                "message": "m" * 1000,
+                "data": {
+                    "text": "x" * 3000,
+                    "image_b64": "a" * 1000,
+                    "items": list(range(30)),
+                    "nested": {"a": {"b": {"c": {"d": {"e": "deep"}}}}},
+                },
+            },
+        )
+        assert ok is True
+        payload = sent[0][1]["data"]
+        assert payload["title"].endswith("[truncated 60 chars]")
+        assert payload["message"].endswith("[truncated 200 chars]")
+        assert payload["data"]["text"].endswith("[truncated 2400 chars]")
+        assert payload["data"]["image_b64"] == "[omitted 1000 chars from image_b64]"
+        assert payload["data"]["items"][-1] == "[omitted 10 items]"
+        state = await stream_registry.get("placeholder-trace-large")
+        assert state is not None
+        assert state.trace_events == [payload]
+    finally:
+        await stream_registry.pop("placeholder-trace-large")
+
+
 # --------------------------- PendingReplyRegistry --------------------------
 
 @pytest.mark.asyncio

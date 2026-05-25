@@ -2,7 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import type { ChangeEvent } from "react";
 import type { AuthFetch } from "../../../api/client";
+import type { ComposerPendingFile } from "../../../components/MessageComposer";
 import { API } from "../../../lib/app-config";
+import type { FileDragReference } from "../../../lib/file-drag";
 
 const PRESIGN_EXTS = new Set([
   ".txt",
@@ -88,54 +90,91 @@ export function usePendingFiles({
   authFetch,
   onRequireLogin,
 }: UsePendingFilesOptions) {
-  const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
-  const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
-  const [pendingFilePreviews, setPendingFilePreviews] = useState<
-    (string | null)[]
+  const [pendingAttachments, setPendingAttachments] = useState<
+    ComposerPendingFile[]
   >([]);
 
-  const pendingFiles = useMemo(
-    () =>
-      pendingFileNames.map((name, index) => ({
-        name,
-        previewUrl: pendingFilePreviews[index] ?? null,
-      })),
-    [pendingFileNames, pendingFilePreviews],
+  const pendingFileIds = useMemo(
+    () => pendingAttachments.map((file) => file.fileId),
+    [pendingAttachments],
   );
+  const pendingFiles = pendingAttachments;
 
-  const appendPendingFile = useCallback(
-    (fileId: string, filename: string, previewUrl: string | null) => {
-      setPendingFileIds((prev) => [...prev, fileId]);
-      setPendingFileNames((prev) => [...prev, filename]);
-      setPendingFilePreviews((prev) => [...prev, previewUrl]);
-    },
-    [],
-  );
+  const appendPendingFile = useCallback((file: ComposerPendingFile) => {
+    setPendingAttachments((prev) =>
+      prev.some((item) => item.fileId === file.fileId) ? prev : [...prev, file],
+    );
+  }, []);
 
   const removePendingFile = useCallback((index: number) => {
-    setPendingFileIds((prev) =>
-      prev.filter((_, itemIndex) => itemIndex !== index),
-    );
-    setPendingFileNames((prev) =>
-      prev.filter((_, itemIndex) => itemIndex !== index),
-    );
-    setPendingFilePreviews((prev) => {
+    setPendingAttachments((prev) => {
       const removed = prev[index];
-      if (removed) URL.revokeObjectURL(removed);
+      if (removed?.previewUrl && removed.source === "upload") {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
       return prev.filter((_, itemIndex) => itemIndex !== index);
     });
   }, []);
 
   const clearPendingFiles = useCallback(() => {
-    setPendingFileIds([]);
-    setPendingFileNames([]);
-    setPendingFilePreviews((prev) => {
-      prev.forEach((url) => {
-        if (url) URL.revokeObjectURL(url);
+    setPendingAttachments((prev) => {
+      prev.forEach((file) => {
+        if (file.previewUrl && file.source === "upload") {
+          URL.revokeObjectURL(file.previewUrl);
+        }
       });
       return [];
     });
   }, []);
+
+  const attachExistingFiles = useCallback(
+    (files: FileDragReference[]) => {
+      const pendingIds = new Set(pendingAttachments.map((file) => file.fileId));
+      const nextIds = new Set(pendingIds);
+      const attachments: ComposerPendingFile[] = [];
+      for (const file of files) {
+        const fileId = file.file_id;
+        if (!fileId || nextIds.has(fileId)) continue;
+        nextIds.add(fileId);
+        attachments.push({
+          fileId,
+          name: file.original_filename || fileId,
+          previewUrl: null,
+          contentType: file.content_type,
+          sizeBytes: file.size_bytes,
+          source: "existing",
+        });
+      }
+      if (attachments.length === 0) {
+        if (files.some((file) => file.file_id && pendingIds.has(file.file_id))) {
+          toast("File already attached");
+        }
+        return;
+      }
+
+      setPendingAttachments((prev) => {
+        const seen = new Set(prev.map((file) => file.fileId));
+        const deduped = attachments.filter((file) => {
+          if (seen.has(file.fileId)) return false;
+          seen.add(file.fileId);
+          return true;
+        });
+        return deduped.length > 0 ? [...prev, ...deduped] : prev;
+      });
+
+      toast.success(
+        attachments.length === 1
+          ? "File attached to composer"
+          : `${attachments.length} files attached to composer`,
+      );
+    },
+    [pendingAttachments],
+  );
+
+  const attachExistingFile = useCallback(
+    (file: FileDragReference) => attachExistingFiles([file]),
+    [attachExistingFiles],
+  );
 
   const uploadFileObject = useCallback(
     async (file: File) => {
@@ -192,8 +231,18 @@ export function usePendingFiles({
         });
         if (!confirmRes.ok) {
           console.warn("confirm upload failed", await confirmRes.text());
+          toast.error("File upload could not be confirmed. Try again.");
+          if (localPreview) URL.revokeObjectURL(localPreview);
+          return;
         }
-        appendPendingFile(file_id, file.name, localPreview);
+        appendPendingFile({
+          fileId: file_id,
+          name: file.name,
+          previewUrl: localPreview,
+          contentType,
+          sizeBytes: file.size,
+          source: "upload",
+        });
       } catch (err) {
         toast.error("File upload failed");
         if (localPreview) URL.revokeObjectURL(localPreview);
@@ -203,24 +252,34 @@ export function usePendingFiles({
     [appendPendingFile, authFetch, currentUserId, onRequireLogin, selectedId],
   );
 
-  const uploadFile = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      event.target.value = "";
-      await uploadFileObject(file);
+  const uploadFileObjects = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        await uploadFileObject(file);
+      }
     },
     [uploadFileObject],
   );
 
+  const uploadFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      if (files.length === 0) return;
+      await uploadFileObjects(files);
+    },
+    [uploadFileObjects],
+  );
+
   return {
     pendingFileIds,
-    pendingFileNames,
-    pendingFilePreviews,
     pendingFiles,
     removePendingFile,
     clearPendingFiles,
+    attachExistingFile,
+    attachExistingFiles,
     uploadFileObject,
+    uploadFileObjects,
     uploadFile,
   };
 }

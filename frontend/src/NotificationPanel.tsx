@@ -150,7 +150,7 @@ function Section({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <span className="an-type-label text-[var(--accent)]">
-                      {n.notif_type === "friend_request" ? "Friend notifications" : `#${n.channel_name}`}
+                      {n.notif_type === "friend_request" ? "Notifications" : `#${n.channel_name}`}
                     </span>
                     <span className="an-type-caption">{timeAgo(n.created_at)}</span>
                   </div>

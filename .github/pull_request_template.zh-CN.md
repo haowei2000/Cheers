@@ -23,7 +23,7 @@
 ## 数据库迁移
 
 - [ ] 不涉及数据库变更
-- [ ] 已添加 Alembic 迁移文件并本地验证 (`alembic upgrade head`)
+- [ ] 已添加 Alembic 迁移文件并本地验证（`alembic heads` 只有一个 head，然后 `alembic upgrade head`）
 
 ## 安全与发布影响
 

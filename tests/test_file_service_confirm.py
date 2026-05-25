@@ -6,7 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError
-from app.db.models import Channel, FileRecord, FileScopeLink, User, Workspace
+from app.db.models import (
+    Channel,
+    ChannelMembership,
+    FileRecord,
+    FileScopeLink,
+    User,
+    Workspace,
+)
+from app.services.file_scope_service import FileScopeService
 from app.services.file_service import FileService
 from app.services.storage.base import StorageObjectNotFoundError
 
@@ -131,6 +139,82 @@ async def test_confirm_upload_links_personal_library_for_personal_workspace(
         ("personal", user.user_id),
         ("channel", rec.channel_id),
     }
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_bot_file_is_linked_to_user_library(
+    db_session: AsyncSession,
+) -> None:
+    user_id = "a0000000-0000-0000-0000-0000000000e1"
+    bot_id = "b0000000-0000-0000-0000-0000000000e1"
+    ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-0000000000e1",
+        name="Personal",
+        kind="personal",
+    )
+    channel = Channel(
+        channel_id="e1000000-0000-0000-0000-0000000000e1",
+        workspace_id=ws.workspace_id,
+        name="bot-dm",
+        type="dm",
+    )
+    user = User(
+        user_id=user_id,
+        username="personal-file-user",
+        password_hash="x",
+        display_name="Personal File User",
+        role="member",
+    )
+    record = FileRecord(
+        file_id="aaaaaaaa-0000-0000-0000-0000000000e1",
+        channel_id=None,
+        workspace_id=None,
+        uploader_id=bot_id,
+        original_path="/tmp/bot-generated.md",
+        original_filename="bot-generated.md",
+        content_type="text/markdown",
+        size_bytes=12,
+        status="ready",
+    )
+    db_session.add_all([ws, user])
+    await db_session.flush()
+    db_session.add(channel)
+    await db_session.flush()
+    db_session.add_all([
+        ChannelMembership(
+            channel_id=channel.channel_id,
+            member_id=user_id,
+            member_type="user",
+        ),
+        ChannelMembership(
+            channel_id=channel.channel_id,
+            member_id=bot_id,
+            member_type="bot",
+        ),
+    ])
+    db_session.add(record)
+    await db_session.flush()
+
+    await FileScopeService(db_session).link_file_to_channel(
+        record,
+        channel,
+        created_by=bot_id,
+    )
+
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == record.file_id)
+        )
+    ).scalars().all()
+    assert {(link.scope_type, link.scope_id) for link in links} == {
+        ("dm", channel.channel_id),
+        ("personal", user_id),
+    }
+    library = await FileScopeService(db_session).list_library_for_user(user)
+    by_id = {item.record.file_id: item for item in library}
+    assert record.file_id in by_id
+    assert by_id[record.file_id].scope_type == "personal"
+    assert by_id[record.file_id].channel_id == channel.channel_id
 
 
 @pytest.mark.asyncio

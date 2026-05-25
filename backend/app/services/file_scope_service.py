@@ -90,6 +90,38 @@ class FileScopeService:
             created_by=record.uploader_id,
         )
 
+    async def _workspace_is_personal(self, workspace_id: str | None) -> bool:
+        if not workspace_id:
+            return False
+        workspace = await self.session.get(Workspace, workspace_id)
+        return bool(workspace and workspace.kind == "personal")
+
+    async def _link_personal_library_to_channel_users(
+        self,
+        record: FileRecord,
+        channel: Channel,
+        *,
+        created_by: str | None = None,
+    ) -> None:
+        if not await self._workspace_is_personal(channel.workspace_id):
+            return
+        rows = (
+            await self.session.execute(
+                select(ChannelMembership.member_id).where(
+                    ChannelMembership.channel_id == channel.channel_id,
+                    ChannelMembership.member_type == "user",
+                )
+            )
+        ).scalars().all()
+        for user_id in dict.fromkeys(rows):
+            await self.ensure_link(
+                file_id=record.file_id,
+                scope_type=SCOPE_PERSONAL,
+                scope_id=user_id,
+                workspace_id=channel.workspace_id,
+                created_by=created_by or record.uploader_id,
+            )
+
     async def link_file_to_channel(
         self,
         record: FileRecord,
@@ -106,6 +138,11 @@ class FileScopeService:
             scope_type=channel_scope_type(channel),
             scope_id=channel.channel_id,
             workspace_id=channel.workspace_id,
+            created_by=created_by,
+        )
+        await self._link_personal_library_to_channel_users(
+            record,
+            channel,
             created_by=created_by,
         )
 

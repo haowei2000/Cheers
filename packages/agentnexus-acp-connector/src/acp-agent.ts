@@ -1,14 +1,21 @@
 import { JsonRpcError, JsonRpcStdioPeer } from "./acp-jsonrpc.js";
 import type {
   AcpInitializeResponse,
+  AcpSessionLoadResult,
+  AcpSessionStartResult,
   AcpSessionUpdate,
   ContentBlock,
   Logger,
   PermissionMode,
+  RemoteConnectorSettings,
   StdioAgentConfig,
 } from "./types.js";
 
 type SessionUpdateHandler = (update: AcpSessionUpdate) => void | Promise<void>;
+type PermissionOutcome =
+  | { outcome: "selected"; optionId: string }
+  | { outcome: "cancelled" };
+type PermissionRequestHandler = (params: unknown, mode: PermissionMode) => PermissionOutcome | null | Promise<PermissionOutcome | null>;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -36,13 +43,18 @@ export class AcpStdioAgent {
     private readonly accountId: string,
     private readonly config: StdioAgentConfig,
     private readonly logger: Logger,
+    private readonly permissionRequestHandler?: PermissionRequestHandler,
   ) {
-    this.peer = new JsonRpcStdioPeer({
-      command: config.command,
-      args: config.args ?? [],
-      cwd: config.cwd,
-      env: config.env,
-      requestTimeoutMs: config.requestTimeoutMs,
+    this.peer = this.createPeer();
+  }
+
+  private createPeer(): JsonRpcStdioPeer {
+    return new JsonRpcStdioPeer({
+      command: this.config.command,
+      args: this.config.args ?? [],
+      cwd: this.config.cwd,
+      env: this.config.env,
+      requestTimeoutMs: this.config.requestTimeoutMs,
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, params) => this.handleRequest(method, params),
       onStderr: (line) => this.logger.info("[acp:%s stderr] %s", this.accountId, line),
@@ -79,10 +91,46 @@ export class AcpStdioAgent {
 
   async stop(): Promise<void> {
     await this.peer.stop();
+    this.initialized = false;
+    this.initializeResponse = null;
+  }
+
+  async restart(): Promise<void> {
+    await this.peer.stop();
+    this.peer = this.createPeer();
+    this.initialized = false;
+    this.initializeResponse = null;
+    await this.start();
   }
 
   supportsLoadSession(): boolean {
     return Boolean(this.initializeResponse?.agentCapabilities?.loadSession);
+  }
+
+  updateRuntimeSettings(settings: RemoteConnectorSettings): string[] {
+    const applied: string[] = [];
+    if (settings.agentnexusApprovalMode) {
+      this.config.agentnexusApprovalMode = settings.agentnexusApprovalMode;
+      applied.push("agentnexusApprovalMode");
+    }
+    if (settings.permissionMode) {
+      this.config.agentnexusApprovalMode = settings.permissionMode;
+      applied.push("permissionMode");
+    }
+    if (settings.agentNativePermissionMode) {
+      this.config.agentNativePermissionMode = settings.agentNativePermissionMode;
+      applied.push("agentNativePermissionMode");
+    }
+    if (typeof settings.requestTimeoutMs === "number") {
+      this.config.requestTimeoutMs = settings.requestTimeoutMs;
+      this.peer.setRequestTimeoutMs(settings.requestTimeoutMs);
+      applied.push("requestTimeoutMs");
+    }
+    if (typeof settings.promptTimeoutMs === "number") {
+      this.config.promptTimeoutMs = settings.promptTimeoutMs;
+      applied.push("promptTimeoutMs");
+    }
+    return applied;
   }
 
   onSessionUpdate(handler: SessionUpdateHandler): () => void {
@@ -90,27 +138,49 @@ export class AcpStdioAgent {
     return () => this.handlers.delete(handler);
   }
 
-  async newSession(): Promise<string> {
-    const result = await this.peer.request<{ sessionId?: string }>("session/new", {
+  async newSession(): Promise<AcpSessionStartResult> {
+    const result = await this.peer.request<AcpSessionStartResult>("session/new", {
       cwd: this.config.cwd,
       mcpServers: this.config.mcpServers ?? [],
     });
     if (!result.sessionId) throw new Error("ACP session/new did not return sessionId");
-    return result.sessionId;
+    return result;
   }
 
-  async loadSession(sessionId: string): Promise<void> {
-    await this.peer.request("session/load", {
+  async loadSession(sessionId: string): Promise<AcpSessionLoadResult> {
+    const result = await this.peer.request<AcpSessionLoadResult | null>("session/load", {
       sessionId,
       cwd: this.config.cwd,
       mcpServers: this.config.mcpServers ?? [],
     });
+    return result ?? {};
+  }
+
+  async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
+    const result = await this.peer.request<{ configOptions?: unknown }>("session/set_config_option", {
+      sessionId,
+      configId,
+      value,
+    });
+    return result.configOptions;
   }
 
   async prompt(sessionId: string, prompt: ContentBlock[]): Promise<{ stopReason?: string }> {
     return this.peer.request<{ stopReason?: string }>("session/prompt", {
       sessionId,
       prompt,
+    }, this.config.promptTimeoutMs ?? this.config.requestTimeoutMs ?? 900_000);
+  }
+
+  async setSessionConfigOption(
+    sessionId: string,
+    configId: string,
+    value: string,
+  ): Promise<Record<string, unknown>> {
+    return this.peer.request<Record<string, unknown>>("session/set_config_option", {
+      sessionId,
+      configId,
+      value,
     });
   }
 
@@ -130,7 +200,11 @@ export class AcpStdioAgent {
 
   private async handleRequest(method: string, params: unknown): Promise<unknown> {
     if (method === "session/request_permission") {
-      const mode = this.config.permissionMode ?? "reject";
+      const mode = this.config.agentnexusApprovalMode ?? this.config.permissionMode ?? "ask";
+      if (this.permissionRequestHandler) {
+        const outcome = await this.permissionRequestHandler(params, mode);
+        if (outcome) return { outcome };
+      }
       const optionId = pickPermissionOption(params, mode);
       if (mode === "cancel" || !optionId) {
         return { outcome: { outcome: "cancelled" } };

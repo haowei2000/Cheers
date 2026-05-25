@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { Workspace } from "../../types";
 import { WorkspaceRail } from "../WorkspaceRail";
 
 interface ChatShellProps {
   children: ReactNode;
+  appInert?: boolean;
   isMobile: boolean;
   onCloseSidebar: () => void;
   onCreateWorkspace: () => void;
@@ -16,6 +17,7 @@ interface ChatShellProps {
 
 export function ChatShell({
   children,
+  appInert = false,
   isMobile,
   onCloseSidebar,
   onCreateWorkspace,
@@ -25,11 +27,31 @@ export function ChatShell({
   sidebarOpen,
   workspaces,
 }: ChatShellProps) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    if (appInert) {
+      shell.setAttribute("inert", "");
+    } else {
+      shell.removeAttribute("inert");
+    }
+  }, [appInert]);
+
   return (
-    <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
+    <div
+      ref={shellRef}
+      aria-hidden={appInert || undefined}
+      className="an-app-shell flex min-h-0 overflow-hidden"
+      style={{
+        background: "var(--bg-0)",
+        height: "var(--an-viewport-height, 100dvh)",
+      }}
+    >
       {isMobile && sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-[55]"
+          className="an-mobile-backdrop fixed inset-0 bg-black/50 z-[55]"
           onClick={onCloseSidebar}
         />
       )}

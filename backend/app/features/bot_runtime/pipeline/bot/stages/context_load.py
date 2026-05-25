@@ -39,8 +39,8 @@ _LAYERS_BY_MSG_TYPE: dict[str, frozenset[str]] = {
 
 _LAYER_ORDER = ("anchor", "progress", "decisions", "files_index", "history", "todos")
 _LAYER_LABELS = {
-    "anchor": "Project Anchor",
-    "progress": "Project Progress",
+    "anchor": "Group Anchor",
+    "progress": "Group Progress",
     "decisions": "Decision Records",
     "files_index": "File Index",
     "history": "Conversation History",

@@ -25,8 +25,10 @@ type FileWithChannelMeta = FileInfo & {
 
 export function useFilePreviewController({
   onForwardFile,
+  onAttachFile,
 }: {
   onForwardFile?: (file: FileInfo) => void;
+  onAttachFile?: (file: FileInfo) => void;
 } = {}) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -95,6 +97,7 @@ export function useFilePreviewController({
       getDownloadUrl={(file) => fileDownloadUrl(file.file_id)}
       onPreview={openFilePreview}
       onForward={onForwardFile}
+      onAttach={onAttachFile}
     />
   );
 

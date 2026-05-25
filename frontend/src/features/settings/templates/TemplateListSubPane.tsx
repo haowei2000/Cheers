@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../../../api";
 import { AppIcon } from "../../../components/icons";
@@ -9,6 +9,15 @@ import {
   PrimaryButton,
   inputCls,
 } from "../shared/SettingsControls";
+import { botScopeLabel, normalizeBotScope } from "../bots/BotShared";
+import type { BotRow, BotScope } from "../bots/types";
+
+type DefaultBotBrief = {
+  bot_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
 
 type TemplateRow = {
   template_id: string;
@@ -17,7 +26,18 @@ type TemplateRow = {
   system_prompt: string;
   user_template: string;
   variables?: string[];
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: DefaultBotBrief | null;
   is_builtin?: boolean;
+  scope?: BotScope;
+  created_by?: string | null;
+  owner?: {
+    user_id: string;
+    username: string;
+    display_name?: string | null;
+  } | null;
+  can_manage?: boolean;
 };
 
 type TemplateSettingsTab = "identity" | "template";
@@ -34,6 +54,12 @@ const TEMPLATE_VARS: { name: string; desc: string }[] = [
 
 const DEFAULT_USER_TEMPLATE = "{{memory}}\n\n{{message}}";
 
+const TEMPLATE_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
+  { value: "private", label: "Private", hint: "Only you can use this template" },
+  { value: "friend", label: "Friend", hint: "You and friends can use this template" },
+  { value: "everyone", label: "Everyone", hint: "All users can use this template" },
+];
+
 function extractTemplateVars(tpl: string): string[] {
   const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
   const out = new Set<string>();
@@ -41,9 +67,87 @@ function extractTemplateVars(tpl: string): string[] {
   return out.size === 0 ? ["memory", "message"] : Array.from(out);
 }
 
+function templateOwnerLabel(tpl: Pick<TemplateRow, "owner" | "created_by">) {
+  return tpl.owner?.display_name || tpl.owner?.username || tpl.created_by || "System";
+}
+
+function parseTagsText(value: string): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  value.split(",").forEach((raw) => {
+    const tag = raw.trim();
+    if (!tag) return;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    tags.push(tag);
+  });
+  return tags;
+}
+
+function defaultBotLabel(bot?: DefaultBotBrief | null): string {
+  if (!bot) return "No default Bot";
+  return bot.display_name?.trim() || `@${bot.username}`;
+}
+
+function TagChips({ tags }: { tags?: string[] }) {
+  const normalized = (tags || []).filter(Boolean);
+  if (normalized.length === 0) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      {normalized.map((tag) => (
+        <span key={tag} className="an-chip off">
+          #{tag}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function TemplateScopeControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: BotScope;
+  onChange: (scope: BotScope) => void;
+  disabled?: boolean;
+}) {
+  const current = TEMPLATE_SCOPE_OPTIONS.find((opt) => opt.value === value) || TEMPLATE_SCOPE_OPTIONS[1];
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div
+        className="an-seg"
+        role="radiogroup"
+        aria-label="Template Scope"
+        style={{ display: "inline-flex", justifySelf: "start" }}
+      >
+        {TEMPLATE_SCOPE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={value === opt.value ? "on" : ""}
+            onClick={() => onChange(opt.value)}
+            disabled={disabled}
+            role="radio"
+            aria-checked={value === opt.value}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <div className="an-rc-sub" style={{ marginTop: 0 }}>
+        {current.hint}
+      </div>
+    </div>
+  );
+}
+
 export function TemplateListSubPane({ authToken }: { authToken: string | null }) {
   const [items, setItems] = useState<TemplateRow[]>([]);
+  const [bots, setBots] = useState<BotRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
   const [view, setView] = useState<"list" | "new" | { id: string }>("list");
 
   const reload = () => {
@@ -54,10 +158,33 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   };
+  const reloadBots = () => {
+    apiFetch("/bots", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => setBots(Array.isArray(d?.data) ? d.data : []))
+      .catch(() => setBots([]));
+  };
   useEffect(() => {
     reload();
+    reloadBots();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authToken]);
+
+  const filteredItems = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter((tpl) => {
+      const defaultBot = tpl.default_bot;
+      const fields = [
+        tpl.name,
+        tpl.description || "",
+        defaultBot?.username || "",
+        defaultBot?.display_name || "",
+        ...(tpl.tags || []),
+      ];
+      return fields.some((field) => field.toLowerCase().includes(query));
+    });
+  }, [filter, items]);
 
   if (view === "new") {
     return (
@@ -65,6 +192,7 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
         <BackBar label="Back to template list" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
+          bots={bots}
           onSaved={() => {
             reload();
             setView("list");
@@ -89,6 +217,7 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
         <TemplateForm
           authToken={authToken}
           existing={tpl}
+          bots={bots}
           onSaved={() => {
             reload();
             setView("list");
@@ -111,6 +240,12 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
         </div>
       </div>
       <div className="an-list-table">
+        <input
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          className={inputCls}
+          placeholder="Search templates, tags, or default Bots"
+        />
         <button
           type="button"
           className="an-row-card"
@@ -136,8 +271,10 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>Loading...</div>
         ) : items.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>No templates</div>
+        ) : filteredItems.length === 0 ? (
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>No matching templates</div>
         ) : (
-          items.map((t) => (
+          filteredItems.map((t) => (
             <button
               key={t.template_id}
               type="button"
@@ -151,8 +288,22 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
                   {t.is_builtin && (
                     <span className="an-chip off">BUILTIN</span>
                   )}
+                  {!t.is_builtin && (
+                    <span className="an-chip off">{botScopeLabel(t.scope)}</span>
+                  )}
+                  {t.can_manage === false && (
+                    <span className="an-chip off">READ ONLY</span>
+                  )}
                 </div>
-                {t.description && <div className="an-rc-sub">{t.description}</div>}
+                <div className="an-rc-sub">
+                  {t.description || "No description"}
+                  {" · Owner: "}
+                  {templateOwnerLabel(t)}
+                </div>
+                <div className="an-rc-sub" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span>{defaultBotLabel(t.default_bot)}</span>
+                  <TagChips tags={t.tags} />
+                </div>
               </div>
               <AppIcon name="chevronRight" className="an-rc-chev" />
             </button>
@@ -166,11 +317,13 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
 function TemplateForm({
   authToken,
   existing,
+  bots,
   onSaved,
   onDeleted,
 }: {
   authToken: string | null;
   existing?: TemplateRow;
+  bots: BotRow[];
   onSaved: () => void;
   onDeleted?: () => void;
 }) {
@@ -178,17 +331,37 @@ function TemplateForm({
   const [description, setDescription] = useState(existing?.description || "");
   const [systemPrompt, setSystemPrompt] = useState(existing?.system_prompt || "You are a helpful assistant.");
   const [userTemplate, setUserTemplate] = useState(existing?.user_template || DEFAULT_USER_TEMPLATE);
+  const [tagsText, setTagsText] = useState((existing?.tags || []).join(", "));
+  const [defaultBotId, setDefaultBotId] = useState(existing?.default_bot_id || "");
+  const [scope, setScope] = useState<BotScope>(normalizeBotScope(existing?.scope));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isEdit = !!existing;
   const isBuiltin = !!existing?.is_builtin;
+  const isReadOnly = isBuiltin || (isEdit && existing?.can_manage === false);
   const userTplRef = useRef<HTMLTextAreaElement | null>(null);
   const [varDropdownOpen, setVarDropdownOpen] = useState(false);
   const [varFilter, setVarFilter] = useState("");
   const [varDropdownStart, setVarDropdownStart] = useState(0);
   const [settingsTab, setSettingsTab] = useState<TemplateSettingsTab>("identity");
+  const botOptions = useMemo(() => {
+    const options = [...bots];
+    if (
+      existing?.default_bot &&
+      !options.some((bot) => bot.bot_id === existing.default_bot_id)
+    ) {
+      options.unshift({
+        bot_id: existing.default_bot.bot_id,
+        username: existing.default_bot.username,
+        display_name: existing.default_bot.display_name,
+        avatar_url: existing.default_bot.avatar_url,
+      });
+    }
+    return options;
+  }, [bots, existing?.default_bot, existing?.default_bot_id]);
 
   const save = async () => {
+    if (isReadOnly) return;
     if (!name.trim()) return toast.error("Template name is required");
     setSaving(true);
     try {
@@ -199,6 +372,9 @@ function TemplateForm({
         system_prompt: systemPrompt.trim() || "You are a helpful assistant.",
         user_template: tpl,
         variables: extractTemplateVars(tpl),
+        tags: parseTagsText(tagsText),
+        default_bot_id: defaultBotId || null,
+        scope,
       };
       const res = await apiFetch(
         isEdit ? `/templates/${existing!.template_id}` : "/templates",
@@ -252,6 +428,9 @@ function TemplateForm({
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "New template"}</div>
           {isBuiltin && <div className="an-pane-sub">System built-in template (read-only)</div>}
+          {!isBuiltin && isReadOnly && (
+            <div className="an-pane-sub">Shared template (read-only)</div>
+          )}
         </div>
         <div className="an-seg" role="tablist" aria-label="Template settings view">
           <button
@@ -278,7 +457,7 @@ function TemplateForm({
         {settingsTab === "identity" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
             <Field label="Name">
-              <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
+              <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isReadOnly} />
             </Field>
             <Field label="Description">
               <textarea
@@ -286,9 +465,46 @@ function TemplateForm({
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
                 className={`${inputCls} resize-none`}
-                disabled={isBuiltin}
+                disabled={isReadOnly}
               />
             </Field>
+            <Field label="Visibility">
+              <TemplateScopeControl value={scope} onChange={setScope} disabled={isReadOnly || saving} />
+            </Field>
+            <Field label="Tags (comma separated)">
+              <input
+                value={tagsText}
+                onChange={(e) => setTagsText(e.target.value)}
+                className={inputCls}
+                disabled={isReadOnly}
+                placeholder="e.g. analysis, project, coding"
+              />
+            </Field>
+            <Field label="Default Bot">
+              <select
+                value={defaultBotId}
+                onChange={(e) => setDefaultBotId(e.target.value)}
+                className={inputCls}
+                disabled={isReadOnly}
+              >
+                <option value="">No default Bot</option>
+                {botOptions.map((bot) => (
+                  <option key={bot.bot_id} value={bot.bot_id}>
+                    {(bot.display_name || bot.username || bot.bot_id)} · @{bot.username}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {parseTagsText(tagsText).length > 0 && (
+              <div className="an-rc-sub" style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 0 }}>
+                <TagChips tags={parseTagsText(tagsText)} />
+              </div>
+            )}
+            {isEdit && (
+              <div className="an-rc-sub">
+                Owner: {templateOwnerLabel(existing!)}
+              </div>
+            )}
           </div>
         )}
 
@@ -300,7 +516,7 @@ function TemplateForm({
                 onChange={(e) => setSystemPrompt(e.target.value)}
                 rows={8}
                 className={`${inputCls} resize-none`}
-                disabled={isBuiltin}
+                disabled={isReadOnly}
                 style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)" }}
               />
             </Field>
@@ -337,7 +553,7 @@ function TemplateForm({
                   }}
                   rows={4}
                   className={`${inputCls} resize-none`}
-                  disabled={isBuiltin}
+                  disabled={isReadOnly}
                   style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)" }}
                 />
                 {varDropdownOpen && (() => {
@@ -411,7 +627,7 @@ function TemplateForm({
           </div>
         )}
 
-        {!isBuiltin && (
+        {!isReadOnly && (
           <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
             {isEdit && (
               <DangerButton onClick={remove} disabled={deleting}>

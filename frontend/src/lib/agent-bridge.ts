@@ -1,4 +1,5 @@
 import type { AgentBridgeTaskContentData, Message } from "../types";
+import { messageBotTraceEvents } from "./bot-trace";
 
 export const AGENT_BRIDGE_TASK_KIND = "agent_bridge_background_task";
 
@@ -25,7 +26,7 @@ export function getAgentBridgeTaskData(
   const activeTask = getActiveAgentBridgeTaskData(message, isDmSelected);
   if (activeTask) return activeTask;
   if (message._agent_bridge_task) return message._agent_bridge_task;
-  if (message._bot_trace?.length) {
+  if (messageBotTraceEvents(message).length) {
     return {
       kind: AGENT_BRIDGE_TASK_KIND,
       status: message._streaming ? "running" : "done",

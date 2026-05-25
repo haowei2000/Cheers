@@ -9,18 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import BotAccount, User
-from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
+from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
 from app.utils.permissions import can_access, get_friend_ids
 
-_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
-_BUILTIN_BOT_IDS = set(BUILTIN_BOT_IDS)
+_USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 BOT_SCOPES = {"private", "friend", "everyone"}
 BotScope = Literal["private", "friend", "everyone"]
 
 
 def is_builtin_bot(bot: BotAccount) -> bool:
-    return bot.bot_id in _BUILTIN_BOT_IDS
+    return bot.bot_id in set(configured_builtin_bot_ids())
 
 
 def normalize_bot_scope(scope: str | None) -> BotScope:
@@ -60,7 +59,7 @@ def _validate_username(username: str) -> str:
     if not username:
         raise BadRequestError("用户名不能为空")
     if not _USERNAME_RE.match(username):
-        raise BadRequestError("用户名只能包含字母、数字、下划线、连字符、单引号和中文")
+        raise BadRequestError("Bot @ ID 只能使用小写英文字母、数字、下划线和连字符，且必须以小写字母开头")
     return username
 
 
@@ -135,12 +134,26 @@ class BotService:
         template = await self.template_repo.get_by_id(template_id)
         if not template:
             raise BadRequestError("指定的提示词模板不存在")
+        from app.services.admin_service import PromptTemplateService
+
+        await PromptTemplateService(self.session).assert_can_use(
+            template,
+            current_user,
+            "无权使用该提示词模板",
+        )
         return model, template
 
-    async def _validate_template(self, template_id: str) -> None:
+    async def _validate_template(self, template_id: str, current_user: User) -> None:
         template = await self.template_repo.get_by_id(template_id)
         if not template:
             raise BadRequestError("指定的提示词模板不存在")
+        from app.services.admin_service import PromptTemplateService
+
+        await PromptTemplateService(self.session).assert_can_use(
+            template,
+            current_user,
+            "无权使用该提示词模板",
+        )
 
     async def create(
         self,
@@ -180,7 +193,7 @@ class BotService:
             # They can still use PromptTemplate to render task text sent to the plugin.
             model_id = None
             if template_id:
-                await self._validate_template(template_id)
+                await self._validate_template(template_id, current_user)
         else:
             raise BadRequestError(f"未知的 binding_type: {binding_type}")
 
@@ -261,7 +274,7 @@ class BotService:
                 next_model_id, next_template_id, current_user
             )
         elif next_binding_type == "agent_bridge" and "template_id" in kwargs and kwargs["template_id"]:
-            await self._validate_template(kwargs["template_id"])
+            await self._validate_template(kwargs["template_id"], current_user)
 
         return await self.repo.update(bot, **kwargs)
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { SearchSelection } from "../../types";
+import { setAgentNexusFileRefs } from "../../lib/file-drag";
 import { FileTypeIcon } from "../icons/FileTypeIcon";
 import { MemberIdentity } from "../members";
 import { SearchHighlight } from "./SearchHighlight";
@@ -56,6 +57,27 @@ export function SearchResultItem({
     <button
       key={itemKey(selection)}
       type="button"
+      draggable={selection.type === "file"}
+      onDragStart={
+        selection.type === "file"
+          ? (event) =>
+              setAgentNexusFileRefs(event.dataTransfer, [
+                {
+                  file_id: selection.item.file_id,
+                  original_filename: selection.item.original_filename || undefined,
+                  content_type: selection.item.content_type || undefined,
+                  size_bytes: selection.item.size_bytes || undefined,
+                  status: selection.item.status,
+                  channel_id: selection.item.channel_id,
+                  channel_label: selection.item.channel_name,
+                  scope_type: "channel",
+                  scope_id: selection.item.channel_id,
+                  summary_3lines: selection.item.snippet,
+                  created_at: selection.item.created_at,
+                },
+              ])
+          : undefined
+      }
       className={`an-search-hit ${rich ? "is-rich" : ""}`}
       onClick={() => onSelect(selection)}
     >

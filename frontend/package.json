@@ -13,6 +13,7 @@
     "@lobehub/icons": "^1.80.0",
     "@tanstack/react-virtual": "^3.13.24",
     "clsx": "^2.1.1",
+    "dingtalk-design-libs": "^0.2.0",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.16.0",
     "mermaid": "^11.13.0",
@@ -35,5 +36,8 @@
     "tailwindcss": "^3.4.15",
     "typescript": "~5.6.2",
     "vite": "^6.4.2"
+  },
+  "overrides": {
+    "axios": "^1.16.1"
   }
 }

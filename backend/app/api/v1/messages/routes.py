@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.chat.message_assembler import MessageAssembler
 from app.contracts.messages import MessageDTO
 from app.core.dependencies import get_current_user
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.core.localization import locale_from_headers, with_content_locale
 from app.core.responses import APIResponse
 from app.core.schemas import (
@@ -23,11 +23,13 @@ from app.core.schemas import (
     ForwardMessageResponse,
     MessageCreate,
     MessageStreamCreate,
+    PermissionApprovalRequest,
     PermissionResolveRequest,
 )
-from app.db.models import BotAccount, Channel, FileRecord, Message, User
+from app.db.models import BotAccount, Channel, ChannelMembership, FileRecord, Message, PromptTemplate, User
 from app.db.session import async_session_factory, get_session
 from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
+from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 from app.features.bot_runtime.pipeline.bot.queue import enqueue_bot_pipeline_job
 from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
 from app.features.bot_runtime.pipeline.bus import EventBus, WSEventBus, make_event_bus
@@ -43,6 +45,8 @@ from app.utils.permissions import is_admin
 logger = logging.getLogger("app.api.v1.messages")
 
 router = APIRouter(prefix="/channels/{channel_id}/messages", tags=["messages"])
+
+PROMPT_TEMPLATE_OVERRIDE_KEY = "prompt_template_override_id"
 
 
 def _serialize(msg: Message, file_map: dict) -> dict:
@@ -125,6 +129,71 @@ async def _enqueue_bot_pipeline_bg(channel_id: str, msg_id: str) -> None:
             })
         except Exception:
             logger.debug("bot_pipeline_enqueue: failed to publish error frame", exc_info=True)
+
+
+async def _channel_bot_rows(session: AsyncSession, channel_id: str) -> list[BotAccount]:
+    result = await session.execute(
+        select(BotAccount)
+        .join(ChannelMembership, ChannelMembership.member_id == BotAccount.bot_id)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def _apply_template_default_bot_target(
+    session: AsyncSession,
+    *,
+    channel_id: str,
+    content: str,
+    content_data: dict | None,
+    mention_bot_ids: list[str],
+    current_user: User,
+) -> list[str]:
+    if mention_bot_ids or not isinstance(content_data, dict):
+        return mention_bot_ids
+    template_id = content_data.get(PROMPT_TEMPLATE_OVERRIDE_KEY)
+    if not isinstance(template_id, str) or not template_id.strip():
+        return mention_bot_ids
+
+    channel = await session.get(Channel, channel_id)
+    if not channel or channel.type == "dm":
+        return mention_bot_ids
+
+    channel_bots = await _channel_bot_rows(session, channel_id)
+    channel_bot_usernames = [bot.username for bot in channel_bots]
+    text_targets = filter_mentioned_bots(
+        extract_mentions(content or "", channel_bot_usernames),
+        channel_bot_usernames,
+    )
+    if text_targets:
+        return mention_bot_ids
+
+    template = await session.get(PromptTemplate, template_id.strip())
+    if not template:
+        return mention_bot_ids
+
+    from app.services.admin_service import PromptTemplateService
+    from app.services.bot_service import BotService
+
+    template_svc = PromptTemplateService(session)
+    if not await template_svc.can_use(template, current_user):
+        return mention_bot_ids
+    default_bot_id = getattr(template, "default_bot_id", None)
+    if not default_bot_id:
+        return mention_bot_ids
+
+    bot = await session.get(BotAccount, default_bot_id)
+    if not bot or not await BotService(session).can_use(bot, current_user):
+        return mention_bot_ids
+
+    channel_bot_ids = {channel_bot.bot_id for channel_bot in channel_bots}
+    if bot.bot_id not in channel_bot_ids:
+        label = bot.display_name or bot.username
+        raise BadRequestError(f"Add default Bot @{label} to this channel before using this template")
+    return [bot.bot_id]
 
 
 async def _run_bot_pipeline_once(
@@ -237,6 +306,14 @@ async def _handle_send_message(
     if hasattr(raw_content_data, "model_dump"):
         raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
     raw_content_data = with_content_locale(raw_content_data, locale)
+    mention_bot_ids = await _apply_template_default_bot_target(
+        session,
+        channel_id=channel_id,
+        content=body.content,
+        content_data=raw_content_data,
+        mention_bot_ids=list(body.mention_bot_ids or []),
+        current_user=current_user,
+    )
 
     ctx = IngestContext(
         channel_id=channel_id,
@@ -246,7 +323,8 @@ async def _handle_send_message(
         sender_type="user",
         content=body.content,
         file_ids=_normalize_file_ids(body.file_ids),
-        mention_bot_ids=body.mention_bot_ids or [],
+        mention_bot_ids=mention_bot_ids,
+        mention_user_ids=list(body.mention_user_ids or []),
         in_reply_to_msg_id=getattr(body, "in_reply_to_msg_id", None) or None,
         msg_type=getattr(body, "msg_type", None) or None,
         content_data=raw_content_data,
@@ -262,7 +340,7 @@ async def _handle_send_message(
             session,
             channel_id=channel_id,
             content=body.content,
-            mention_bot_ids=body.mention_bot_ids or [],
+            mention_bot_ids=mention_bot_ids,
             channel=ctx.channel,
         )
     except Exception:
@@ -378,33 +456,15 @@ async def _link_files_to_channel(
     target_channel_id: str,
     current_user: User,
 ) -> list[str]:
-    linked_ids: list[str] = []
-    target_channel = await session.get(Channel, target_channel_id)
-    if target_channel is None:
-        raise NotFoundError("channel not found")
-    from app.services.file_scope_service import FileScopeService
     from app.services.file_service import FileService
 
     file_service = FileService(session)
-    scope_service = FileScopeService(session)
-    target_is_personal = await file_service._channel_is_personal_space(target_channel)
-    for rec in records:
-        await scope_service.require_user_access(rec, current_user)
-        if target_is_personal:
-            clone = await file_service.clone_to_personal_channel(
-                rec,
-                target_channel=target_channel,
-                owner=current_user,
-            )
-            linked_ids.append(clone.file_id)
-            continue
-        await scope_service.link_files_to_channel(
-            file_ids=[rec.file_id],
-            channel_id=target_channel_id,
-            created_by=current_user.user_id,
-        )
-        linked_ids.append(rec.file_id)
-    return linked_ids
+    return await file_service.attach_records_to_channel(
+        records=records,
+        target_channel_id=target_channel_id,
+        current_user=current_user,
+        created_by=current_user.user_id,
+    )
 
 
 async def _sender_labels(
@@ -666,6 +726,7 @@ async def send_message_stream(
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
+                    mention_user_ids=body.mention_user_ids or [],
                     content_data=with_content_locale(None, locale_from_headers(request.headers)),
                 )
                 try:
@@ -860,6 +921,68 @@ async def delete_message(
     return APIResponse.ok(_serialize(msg, {}))
 
 
+def _permission_card_bot_id(msg: Message, content_data: dict) -> str | None:
+    bot_id = content_data.get("bot_id")
+    if isinstance(bot_id, str) and bot_id.strip():
+        return bot_id.strip()
+    if msg.sender_type == "bot" and msg.sender_id:
+        return msg.sender_id
+    return None
+
+
+async def _load_permission_card_owner(
+    session: AsyncSession,
+    *,
+    msg: Message,
+    content_data: dict,
+) -> tuple[BotAccount, User]:
+    bot_id = _permission_card_bot_id(msg, content_data)
+    if not bot_id:
+        raise BadRequestError("permission card is missing bot_id")
+    bot = await session.get(BotAccount, bot_id)
+    if bot is None:
+        raise NotFoundError("bot not found")
+    if not bot.created_by:
+        raise BadRequestError("bot has no owner configured")
+    owner = await session.get(User, bot.created_by)
+    if owner is None:
+        raise NotFoundError("bot owner not found")
+    return bot, owner
+
+
+def _permission_option_id(content_data: dict, resolution: str) -> str | None:
+    raw_options = content_data.get("options")
+    if not isinstance(raw_options, list):
+        return None
+    target_prefix = "allow" if resolution == "allow" else "reject"
+    for raw in raw_options:
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("kind") or "")
+        option_id = raw.get("option_id") or raw.get("optionId") or raw.get("id")
+        if kind.startswith(target_prefix) and isinstance(option_id, str) and option_id:
+            return option_id
+    return None
+
+
+def _permission_dispatch_failure(
+    content_data: dict,
+    *,
+    resolution: str,
+    current_user_id: str,
+    attempted_at: str,
+    reason: str,
+) -> dict:
+    next_data = dict(content_data)
+    next_data["resolved"] = False
+    next_data["last_resolution_attempt"] = resolution
+    next_data["resolution_dispatch_status"] = "undelivered"
+    next_data["resolution_dispatch_error"] = reason
+    next_data["resolution_dispatch_attempted_by"] = current_user_id
+    next_data["resolution_dispatch_attempted_at"] = attempted_at
+    return next_data
+
+
 @router.post("/{msg_id}/resolve", response_model=APIResponse[dict])
 async def resolve_permission(
     channel_id: str,
@@ -887,16 +1010,70 @@ async def resolve_permission(
         raise AppError("message is not a permission card")
 
     cd = dict(msg.content_data or {})
+    if cd.get("kind") == "agent_bridge_permission_request":
+        bot, owner = await _load_permission_card_owner(session, msg=msg, content_data=cd)
+        if owner.user_id != current_user.user_id:
+            raise ForbiddenError("only the Bot owner can resolve this permission request")
+
     if cd.get("resolved"):
         # Previously processed requests return the current state directly.
         return APIResponse.ok(_serialize(msg, {}))
 
-    cd["resolved"] = True
-    cd["resolution"] = body.resolution
-    cd["resolved_by"] = current_user.user_id
-    cd["resolved_at"] = datetime.now(timezone.utc).isoformat()
-    msg.content_data = cd
+    resolved_at = datetime.now(timezone.utc).isoformat()
 
+    if cd.get("kind") == "agent_bridge_permission_request":
+        from app.features.agent_bridge.registry import bot_session_registry
+
+        request_id = cd.get("request_id")
+        option_id = _permission_option_id(cd, body.resolution)
+        if not isinstance(request_id, str) or not request_id:
+            cd = _permission_dispatch_failure(
+                cd,
+                resolution=body.resolution,
+                current_user_id=current_user.user_id,
+                attempted_at=resolved_at,
+                reason="permission request_id is missing",
+            )
+        else:
+            dispatched = await bot_session_registry.dispatch_control(
+                bot.bot_id,
+                {
+                    "type": "permission_resolution",
+                    "request_id": request_id,
+                    "message_id": msg.msg_id,
+                    "resolution": body.resolution,
+                    "option_id": option_id,
+                    "resolved_by": current_user.user_id,
+                    "resolved_at": resolved_at,
+                },
+            )
+            if dispatched:
+                cd["resolved"] = True
+                cd["resolution"] = body.resolution
+                cd["resolved_by"] = current_user.user_id
+                cd["resolved_at"] = resolved_at
+                cd["resolution_dispatch_status"] = "delivered"
+                cd["resolution_dispatched_at"] = resolved_at
+                cd["selected_option_id"] = option_id
+                cd.pop("resolution_dispatch_error", None)
+                cd.pop("last_resolution_attempt", None)
+                cd.pop("resolution_dispatch_attempted_by", None)
+                cd.pop("resolution_dispatch_attempted_at", None)
+            else:
+                cd = _permission_dispatch_failure(
+                    cd,
+                    resolution=body.resolution,
+                    current_user_id=current_user.user_id,
+                    attempted_at=resolved_at,
+                    reason="connector control channel is not connected",
+                )
+    else:
+        cd["resolved"] = True
+        cd["resolution"] = body.resolution
+        cd["resolved_by"] = current_user.user_id
+        cd["resolved_at"] = resolved_at
+
+    msg.content_data = cd
     await session.commit()
     await session.refresh(msg)
 
@@ -908,6 +1085,86 @@ async def resolve_permission(
     from app.features.bot_runtime.pipeline.events import MessageCreated
     await WSEventBus(channel_id).publish(MessageCreated(data=payload))
     return APIResponse.ok(payload.to_wire())
+
+
+@router.post("/{msg_id}/request-approval", response_model=APIResponse[dict])
+async def request_permission_approval(
+    channel_id: str,
+    msg_id: str,
+    body: PermissionApprovalRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Post a user-authored request asking the Bot owner to review a permission card."""
+    await ChannelService(session).require_can_send_message(channel_id, current_user)
+    result = await session.execute(
+        select(Message)
+        .where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+        .with_for_update()
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise NotFoundError("message not found")
+    if msg.msg_type != "permission":
+        raise BadRequestError("message is not a permission card")
+    cd = dict(msg.content_data or {})
+    if cd.get("resolved"):
+        raise BadRequestError("permission request is already resolved")
+    bot, owner = await _load_permission_card_owner(session, msg=msg, content_data=cd)
+    if owner.user_id == current_user.user_id:
+        raise BadRequestError("bot owner can approve directly")
+
+    owner_label = f"@{owner.username}" if owner.username else (owner.display_name or "Bot owner")
+    bot_label = f"@{bot.username}" if bot.username else (bot.display_name or "Bot")
+    title = cd.get("title") if isinstance(cd.get("title"), str) else "ACP permission request"
+    note = (body.note or "").strip() if body else ""
+    content = f"{owner_label} please review {bot_label}'s permission request: {title}"
+    if note:
+        content = f"{content}\n\n{note}"
+
+    now = datetime.now(timezone.utc).isoformat()
+    cd["approval_requested"] = True
+    cd["approval_requested_by"] = current_user.user_id
+    cd["approval_requested_at"] = now
+    msg.content_data = cd
+    request_msg = Message(
+        channel_id=channel_id,
+        sender_id=current_user.user_id,
+        sender_type="user",
+        content=content,
+        msg_type="normal",
+        mention_user_ids=[owner.user_id],
+        content_data={
+            "kind": "permission_approval_request",
+            "permission_msg_id": msg.msg_id,
+            "bot_id": bot.bot_id,
+            "owner_id": owner.user_id,
+        },
+    )
+    session.add(request_msg)
+    await session.flush()
+    from app.services.notification_service import NotificationService
+
+    notification_delivery = await NotificationService(session).create_permission_approval_delivery(
+        owner,
+        permission_msg=msg,
+        bot=bot,
+        title=title,
+    )
+    permission_payload = MessageAssembler.assemble(msg, {})
+    request_payload = MessageAssembler.assemble(request_msg, {})
+    await session.commit()
+
+    bus = WSEventBus(channel_id)
+    from app.features.bot_runtime.pipeline.events import MessageCreated
+    await bus.publish(MessageCreated(data=permission_payload))
+    await bus.publish(MessageCreated(data=request_payload))
+    await NotificationService.publish_delivery(notification_delivery)
+    _schedule_history_update(channel_id)
+    return APIResponse.ok({
+        "permission": permission_payload.to_wire(),
+        "request": request_payload.to_wire(),
+    })
 
 
 @router.get("/{msg_id}/secret", response_model=APIResponse[dict])

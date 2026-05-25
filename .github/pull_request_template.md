@@ -23,7 +23,7 @@
 ## Database migration
 
 - [ ] Does not involve database changes
-- [ ] Alembic migration file added and verified locally (`alembic upgrade head`)
+- [ ] Alembic migration file added and verified locally (`alembic heads` has one head, then `alembic upgrade head`)
 
 ## Security and Release Impact
 

@@ -31,6 +31,7 @@ from app.features.bot_runtime.pipeline.ingest.stages import (
     CommitStage,
     EmitStage,
     FanoutUnreadStage,
+    NotificationFanoutStage,
     PersistStage,
     SecretEnvelopeStage,
     SerializeStage,
@@ -65,16 +66,14 @@ async def _load_message_prompt_template_override(ctx: BotRunContext) -> PromptTe
             template_id,
         )
         return None
+    sender = await ctx.session.get(User, ctx.trigger_msg.sender_id)
+    if sender:
+        from app.services.admin_service import PromptTemplateService
+
+        if await PromptTemplateService(ctx.session).can_use(template, sender):
+            return template
     if template.is_builtin or template.created_by is None:
         return template
-    sender = await ctx.session.get(User, ctx.trigger_msg.sender_id)
-    if sender and sender.user_id == template.created_by:
-        return template
-    if sender:
-        from app.utils.permissions import is_admin
-
-        if is_admin(sender):
-            return template
     logger.warning(
         "bot_pipeline.workflow: prompt template override denied msg_id=%s sender=%s template_id=%s",
         ctx.trigger_msg.msg_id,
@@ -125,6 +124,7 @@ def build_message_workflow(ctx: IngestContext, *, bot_trigger: str = "none") -> 
     stages.append(EmitStage())
     if not ctx.skip_fanout:
         stages.append(FanoutUnreadStage())
+        stages.append(NotificationFanoutStage())
 
     secret_mode = "skip" if ctx.skip_secret else ("sealed" if ctx.is_secret else "plain")
     reason_parts = [message_kind]

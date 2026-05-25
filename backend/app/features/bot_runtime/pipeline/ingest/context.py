@@ -32,6 +32,7 @@ class IngestContext:
     content: str = ""
     file_ids: list[str] = field(default_factory=list)
     mention_bot_ids: list[str] = field(default_factory=list)
+    mention_user_ids: list[str] = field(default_factory=list)
     in_reply_to_msg_id: str | None = None
     msg_type: str | None = None  # None → derived from in_reply_to_msg_id
     content_data: dict | None = None

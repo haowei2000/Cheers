@@ -35,6 +35,14 @@ from app.services.storage.base import (
 )
 
 
+class _FakeControlWS:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, event: dict) -> None:
+        self.sent.append(event)
+
+
 def _make_disabled_model(model_id: str) -> AIModel:
     return AIModel(
         model_id=model_id,
@@ -197,6 +205,226 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     assert resp2.status_code == 200
     assert len(resp2.json()["data"]) == 1
     assert resp2.json()["data"][0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_acp_permission_card_requires_bot_owner_to_resolve(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    owner = User(
+        user_id="permission-owner-001",
+        username="permission_owner_001",
+        password_hash="x",
+        display_name="Permission Owner",
+    )
+    ws = Workspace(workspace_id="permission-ws-001", name="Permission WS")
+    ch = Channel(
+        channel_id="permission-channel-001",
+        workspace_id=ws.workspace_id,
+        name="permission",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="permission-bot-001",
+        username="permission_bot_001",
+        display_name="Permission Bot",
+        binding_type="agent_bridge",
+        created_by=owner.user_id,
+    )
+    msg = Message(
+        msg_id="permission-msg-001",
+        channel_id=ch.channel_id,
+        sender_id=bot.bot_id,
+        sender_type="bot",
+        content="Need approval",
+        msg_type="permission",
+        content_data={
+            "kind": "agent_bridge_permission_request",
+            "request_id": "permission-request-001",
+            "bot_id": bot.bot_id,
+            "bot_owner_id": owner.user_id,
+            "title": "Permission test",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+            "resolved": False,
+        },
+    )
+    db_session.add_all([
+        owner,
+        ws,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=current_user_id, member_type="user"),
+        ChannelMembership(channel_id=ch.channel_id, member_id=owner.user_id, member_type="user"),
+        msg,
+    ])
+    await db_session.commit()
+
+    denied = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/resolve",
+        json={"resolution": "allow"},
+    )
+    assert denied.status_code == 403
+
+    request = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/request-approval",
+        json={},
+    )
+    assert request.status_code == 200
+    data = request.json()["data"]
+    assert data["permission"]["content_data"]["approval_requested"] is True
+    assert "@permission_owner_001" in data["request"]["content"]
+
+
+@pytest.mark.asyncio
+async def test_acp_permission_owner_resolution_dispatches_to_connector(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws_row = Workspace(workspace_id="permission-ws-002", name="Permission WS 2")
+    ch = Channel(
+        channel_id="permission-channel-002",
+        workspace_id=ws_row.workspace_id,
+        name="permission-2",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="permission-bot-002",
+        username="permission_bot_002",
+        display_name="Permission Bot 2",
+        binding_type="agent_bridge",
+        status="online",
+        created_by=current_user_id,
+    )
+    msg = Message(
+        msg_id="permission-msg-002",
+        channel_id=ch.channel_id,
+        sender_id=bot.bot_id,
+        sender_type="bot",
+        content="Need approval",
+        msg_type="permission",
+        content_data={
+            "kind": "agent_bridge_permission_request",
+            "request_id": "permission-request-002",
+            "bot_id": bot.bot_id,
+            "bot_owner_id": current_user_id,
+            "title": "Permission test",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+            "resolved": False,
+        },
+    )
+    db_session.add_all([
+        ws_row,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=current_user_id, member_type="user"),
+        msg,
+    ])
+    await db_session.commit()
+
+    from app.features.agent_bridge.registry import bot_session_registry
+
+    ws = _FakeControlWS()
+    await bot_session_registry.bind_control(bot.bot_id, ws)  # type: ignore[arg-type]
+    try:
+        resp = await client.post(
+            f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/resolve",
+            json={"resolution": "allow"},
+        )
+    finally:
+        await bot_session_registry.unbind_control(bot.bot_id, ws)  # type: ignore[arg-type]
+
+    assert resp.status_code == 200
+    content_data = resp.json()["data"]["content_data"]
+    assert content_data["resolved"] is True
+    assert content_data["resolution_dispatch_status"] == "delivered"
+    assert content_data["selected_option_id"] == "allow"
+    assert ws.sent[-1] == {
+        "type": "permission_resolution",
+        "request_id": "permission-request-002",
+        "message_id": msg.msg_id,
+        "resolution": "allow",
+        "option_id": "allow",
+        "resolved_by": current_user_id,
+        "resolved_at": ws.sent[-1]["resolved_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_acp_permission_resolution_without_control_channel_stays_retryable(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws_row = Workspace(workspace_id="permission-ws-003", name="Permission WS 3")
+    ch = Channel(
+        channel_id="permission-channel-003",
+        workspace_id=ws_row.workspace_id,
+        name="permission-3",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="permission-bot-003",
+        username="permission_bot_003",
+        display_name="Permission Bot 3",
+        binding_type="agent_bridge",
+        status="online",
+        created_by=current_user_id,
+    )
+    msg = Message(
+        msg_id="permission-msg-003",
+        channel_id=ch.channel_id,
+        sender_id=bot.bot_id,
+        sender_type="bot",
+        content="Need approval",
+        msg_type="permission",
+        content_data={
+            "kind": "agent_bridge_permission_request",
+            "request_id": "permission-request-003",
+            "bot_id": bot.bot_id,
+            "bot_owner_id": current_user_id,
+            "title": "Permission retry test",
+            "body": "Need approval",
+            "options": [
+                {"option_id": "reject", "kind": "reject_once", "name": "Reject"},
+                {"option_id": "allow", "kind": "allow_once", "name": "Allow"},
+            ],
+            "resolved": False,
+        },
+    )
+    db_session.add_all([
+        ws_row,
+        ch,
+        bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=current_user_id, member_type="user"),
+        msg,
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}/resolve",
+        json={"resolution": "allow"},
+    )
+
+    assert resp.status_code == 200
+    content_data = resp.json()["data"]["content_data"]
+    assert content_data["resolved"] is False
+    assert content_data["last_resolution_attempt"] == "allow"
+    assert content_data["resolution_dispatch_status"] == "undelivered"
+    assert content_data["resolution_dispatch_error"] == "connector control channel is not connected"
+
+    await db_session.refresh(msg)
+    assert msg.content_data["resolved"] is False
 
 
 @pytest.mark.asyncio
@@ -1080,6 +1308,277 @@ async def test_forward_single_file_without_message(
         )
     ).scalar_one_or_none()
     assert target_link is not None
+
+
+@pytest.mark.asyncio
+async def test_send_existing_file_links_it_to_target_channel(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000880", name="W880")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000880",
+        workspace_id=ws.workspace_id,
+        name="send-file-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000881",
+        workspace_id=ws.workspace_id,
+        name="send-file-target",
+        type="public",
+    )
+    file_path = tmp_path / "send-existing.txt"
+    file_path.write_text("send existing", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000880",
+        channel_id=source_ch.channel_id,
+        workspace_id=ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="send-existing.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, source_ch, target_ch, record])
+    await db_session.flush()
+    db_session.add(
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="channel",
+            scope_id=source_ch.channel_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages",
+        json={
+            "content": "attach existing file",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "file_ids": [record.file_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    message = resp.json()["data"]
+    assert message["file_ids"] == [record.file_id]
+    target_link = (
+        await db_session.execute(
+            select(FileScopeLink).where(
+                FileScopeLink.file_id == record.file_id,
+                FileScopeLink.scope_type == "channel",
+                FileScopeLink.scope_id == target_ch.channel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert target_link is not None
+
+
+@pytest.mark.asyncio
+async def test_send_personal_channel_file_reuses_same_channel_record(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    personal_ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000882",
+        name="Personal",
+        kind="personal",
+    )
+    target_dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000882",
+        workspace_id=personal_ws.workspace_id,
+        name="dm:test:send-personal-file",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000882",
+        username="send_personal_file_bot",
+        display_name="Send Personal File Bot",
+        status="online",
+    )
+    file_path = tmp_path / "personal-existing.txt"
+    file_path.write_text("personal existing", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000882",
+        channel_id=target_dm.channel_id,
+        workspace_id=personal_ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="personal-existing.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([personal_ws, target_dm, bot])
+    await db_session.flush()
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+        ),
+    )
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+        ),
+    )
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add_all([
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="personal",
+            scope_id=current_user_id,
+            workspace_id=personal_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="dm",
+            scope_id=target_dm.channel_id,
+            workspace_id=personal_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_dm.channel_id}/messages",
+        json={
+            "content": "reuse personal file",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "file_ids": [record.file_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    message = resp.json()["data"]
+    assert message["file_ids"] == [record.file_id]
+    rows = (
+        await db_session.execute(
+            select(FileRecord).where(FileRecord.original_filename == record.original_filename)
+        )
+    ).scalars().all()
+    assert [item.file_id for item in rows] == [record.file_id]
+
+
+@pytest.mark.asyncio
+async def test_send_team_file_to_personal_channel_clones_record(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    team_ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000883", name="W883")
+    personal_ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000884",
+        name="Personal",
+        kind="personal",
+    )
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000883",
+        workspace_id=team_ws.workspace_id,
+        name="team-source-for-personal-send",
+        type="public",
+    )
+    target_dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000884",
+        workspace_id=personal_ws.workspace_id,
+        name="dm:test:send-cross-scope-file",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000884",
+        username="send_cross_scope_file_bot",
+        display_name="Send Cross Scope File Bot",
+        status="online",
+    )
+    file_path = tmp_path / "team-to-personal.txt"
+    file_path.write_text("team to personal", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000883",
+        channel_id=source_ch.channel_id,
+        workspace_id=team_ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="team-to-personal.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([team_ws, personal_ws, source_ch, target_dm, bot])
+    await db_session.flush()
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+        ),
+    )
+    db_session.add(
+        ChannelMembership(
+            channel_id=target_dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+        ),
+    )
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add(
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="channel",
+            scope_id=source_ch.channel_id,
+            workspace_id=team_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_dm.channel_id}/messages",
+        json={
+            "content": "copy team file into personal chat",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "file_ids": [record.file_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    message = resp.json()["data"]
+    assert message["file_ids"] != [record.file_id]
+    copied_file_id = message["file_ids"][0]
+    copied = await db_session.get(FileRecord, copied_file_id)
+    assert copied is not None
+    assert copied.channel_id == target_dm.channel_id
+    assert copied.workspace_id == personal_ws.workspace_id
+    assert copied.original_filename == record.original_filename
+    assert Path(copied.original_path).read_text(encoding="utf-8") == "team to personal"
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == copied_file_id)
+        )
+    ).scalars().all()
+    assert {(link.scope_type, link.scope_id) for link in links} == {
+        ("personal", current_user_id),
+        ("dm", target_dm.channel_id),
+    }
 
 
 @pytest.mark.asyncio

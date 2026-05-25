@@ -12,12 +12,14 @@ import {
 import toast from "react-hot-toast";
 import type { FileInfo } from "../types";
 import { createProtectedFileObjectUrl, downloadProtectedFile, openProtectedFile } from "../lib/protected-file";
+import { setAgentNexusFileRefs } from "../lib/file-drag";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 
 const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
 const MESSAGE_COLLAPSE_MAX_HEIGHT = 360;
 const MESSAGE_COLLAPSE_THRESHOLD = 40;
+const STREAMING_RICH_MARKDOWN_MAX_LENGTH = 24000;
 const PROTECTED_IMAGE_PREVIEW_CACHE_LIMIT = 100;
 const THINK_BLOCK_RE = /<think>([\s\S]*?)<\/think>/gi;
 const OPEN_THINK_TAG = "<think>";
@@ -178,6 +180,7 @@ interface ChatAttachmentCardProps {
   getPreviewUrl: (file: FileInfo) => string;
   onPreview?: (file: FileInfo) => void;
   onForward?: (file: FileInfo) => void;
+  onAttach?: (file: FileInfo) => void;
 }
 
 const ChatAttachmentCard = memo(function ChatAttachmentCard({
@@ -187,6 +190,7 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
   getPreviewUrl,
   onPreview,
   onForward,
+  onAttach,
 }: ChatAttachmentCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [imagePreviewSrc, setImagePreviewSrc] = useState<string | null>(null);
@@ -227,6 +231,8 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
 
   return (
     <div
+      draggable
+      onDragStart={(event) => setAgentNexusFileRefs(event.dataTransfer, [file])}
       className={`group w-full max-w-[320px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-colors hover:border-gray-300 ${
         align === "right" ? "self-end" : "self-start"
       }`}
@@ -295,6 +301,20 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
               <AppIcon name="forward" className="h-4 w-4" />
             </button>
           )}
+          {onAttach && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAttach(file);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              title="Copy to composer"
+              aria-label={`Copy ${name} to composer`}
+            >
+              <AppIcon name="copy" className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={(event) => {
@@ -320,6 +340,7 @@ export interface ChatAttachmentsProps {
   getPreviewUrl: (file: FileInfo) => string;
   onPreview?: (file: FileInfo) => void;
   onForward?: (file: FileInfo) => void;
+  onAttach?: (file: FileInfo) => void;
 }
 
 export const ChatAttachments = memo(function ChatAttachments({
@@ -329,6 +350,7 @@ export const ChatAttachments = memo(function ChatAttachments({
   getPreviewUrl,
   onPreview,
   onForward,
+  onAttach,
 }: ChatAttachmentsProps) {
   if (!files?.length) return null;
 
@@ -343,6 +365,7 @@ export const ChatAttachments = memo(function ChatAttachments({
           getPreviewUrl={getPreviewUrl}
           onPreview={onPreview}
           onForward={onForward}
+          onAttach={onAttach}
         />
       ))}
     </div>
@@ -439,6 +462,7 @@ export interface ChatMessageRendererProps {
   keyPrefix?: string;
   onPreview?: (file: FileInfo) => void;
   onForwardFile?: (file: FileInfo) => void;
+  onAttachFile?: (file: FileInfo) => void;
   renderBody?: (children: ReactNode) => ReactNode;
   showStreamingCursor?: boolean;
   streaming?: boolean;
@@ -464,6 +488,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   onImageClick,
   onPreview,
   onForwardFile,
+  onAttachFile,
   renderBody,
   showStreamingCursor = true,
   streaming,
@@ -476,9 +501,17 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   } | null>(null);
   const hasContent = content.trim().length > 0;
   const richMarkdown = hasContent ? shouldUseRichMarkdown(content) : false;
+  const streamingRichMarkdown =
+    Boolean(streaming) &&
+    richMarkdown &&
+    content.length <= STREAMING_RICH_MARKDOWN_MAX_LENGTH;
   const [richReady, setRichReady] = useState(!richMarkdown);
 
   useEffect(() => {
+    if (streamingRichMarkdown) {
+      setRichReady(true);
+      return;
+    }
     if (!richMarkdown || streaming) {
       setRichReady(!richMarkdown);
       return;
@@ -492,7 +525,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     }
     const timer = window.setTimeout(() => setRichReady(true), 80);
     return () => window.clearTimeout(timer);
-  }, [content, richMarkdown, streaming]);
+  }, [content, richMarkdown, streaming, streamingRichMarkdown]);
 
   const hideSelectionButton = useCallback(() => {
     setSelectionCopy(null);
@@ -583,6 +616,16 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     <>
       {streaming && !hasContent ? (
         <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-gray-400 align-middle" />
+      ) : hasContent && streamingRichMarkdown ? (
+        <Suspense fallback={markdownFallback}>
+          <ThinkMarkdownContent
+            content={content}
+            keyPrefix={keyPrefix}
+            streaming={streaming}
+            onImageClick={onImageClick}
+            onFileClick={onFileClick}
+          />
+        </Suspense>
       ) : hasContent && streaming ? (
         <StreamingPlainContent content={content} keyPrefix={keyPrefix} />
       ) : hasContent && (!richMarkdown || !richReady) ? (
@@ -627,6 +670,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
             getPreviewUrl={getPreviewUrl}
             onPreview={onPreview}
             onForward={onForwardFile}
+            onAttach={onAttachFile}
           />
         ) : null)}
       {hasContent || streaming || bodySuffix ? (

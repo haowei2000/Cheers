@@ -181,8 +181,8 @@ class ChannelMemory:
         """Export md."""
         sections: list[str] = []
         for layer_name, label in [
-            ("ANCHOR", "Project Anchor"),
-            ("PROGRESS", "Project Progress"),
+            ("ANCHOR", "Group Anchor"),
+            ("PROGRESS", "Group Progress"),
             ("DECISIONS", "Decision Records"),
         ]:
             content = self.export_layer_md(layer_name)

@@ -82,7 +82,7 @@ export function AppearancePane({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="an-rc-title">Beginner mode</div>
             <div className="an-rc-sub">
-              Fewer choices. Project tasks create a private channel and invite every bot you can use.
+              Fewer choices. Group tasks create a private channel and invite every bot you can use.
             </div>
           </div>
           <button

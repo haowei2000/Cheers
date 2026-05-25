@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # File retention: default 365 days; <=0 disables expiry.
     file_retention_days: int = 365
     file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
+    file_pending_upload_ttl_seconds: int = 60 * 60
     file_upload_allowed_types: str = (
         "application/pdf,"
         "application/msword,"
@@ -83,6 +84,18 @@ class Settings(BaseSettings):
     jwt_secret_key: str = ""  # Empty means generated at startup and not persisted; prefer setting it in .env.
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440  # 24 hours
+
+    # DingTalk delegated-login integration.
+    dingtalk_login_enabled: bool = False
+    dingtalk_client_id: str = ""
+    dingtalk_client_secret: str = ""
+    dingtalk_allowed_corp_ids: str = ""  # Comma-separated corpId allowlist.
+    dingtalk_default_corp_id: str = ""
+    dingtalk_oauth_authorize_url: str = "https://login.dingtalk.com/oauth2/auth"
+    dingtalk_oauth_token_url: str = "https://api.dingtalk.com/v1.0/oauth2/userAccessToken"
+    dingtalk_user_info_url: str = "https://api.dingtalk.com/v1.0/contact/users/me"
+    dingtalk_state_ttl_seconds: int = 300
+    dingtalk_login_ticket_ttl_seconds: int = 120
 
     # API key encrypted storage with Fernet symmetric encryption.
     api_key_encryption_key: str = ""  # Base64 Fernet key; empty means generated and persisted to data/.encryption_key.
@@ -149,6 +162,15 @@ class Settings(BaseSettings):
     agent_bridge_token: str = ""  # Empty means bridge routes return 503.
     # Foreground wait threshold for async bots; after timeout, only the placeholder becomes a background task.
     agent_bridge_timeout_seconds: int = 600
+
+    # Optional Docker Compose managed OpenCode ACP Bot.
+    opencode_bot_enabled: bool = False
+    opencode_bot_id: str = "bot-opencode-001"
+    opencode_bot_username: str = "opencode"
+    opencode_bot_display_name: str = "OpenCode"
+    opencode_bot_description: str = "OpenCode ACP coding assistant"
+    opencode_bot_scope: str = "everyone"
+    opencode_bot_token: str = ""
 
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],

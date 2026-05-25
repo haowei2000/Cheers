@@ -18,7 +18,7 @@ export const MEMORY_TABS: {
 }[] = [
   {
     id: "PROJECT",
-    label: "Project",
+    label: "Group",
     icon: (
       <AppIcon name="briefcase" />
     ),
@@ -96,7 +96,8 @@ export function ChannelHeader({
     activeDm?.counterparty.username ||
     "DM";
   const dmChatTitle = activeDm?.chat_title?.trim() || activeDm?.title?.trim() || "";
-  const dmProjectTitle = activeDm?.project_title?.trim() || "";
+  const dmProjectTitle =
+    (activeDm?.project_title?.trim() || "").replace(/^Project(\s+\d+)?$/i, "Group$1");
   const dmContextTitle =
     dmProjectTitle && dmChatTitle
       ? `${dmProjectTitle} · ${dmChatTitle}`
@@ -321,6 +322,21 @@ export function ChannelHeader({
                     ))
                   )}
                 </div>
+              )}
+              {!activeDm && channel && (
+                <button
+                  type="button"
+                  className="an-menu-item an-mobile-settings-item"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    onOpenChannelSettings();
+                  }}
+                >
+                  <span className="an-mi-ico">
+                    <AppIcon name="settings" className="w-3.5 h-3.5" />
+                  </span>
+                  <span>Channel settings</span>
+                </button>
               )}
               {sessionAction && <div className="an-mobile-session-action">{sessionAction}</div>}
             </div>

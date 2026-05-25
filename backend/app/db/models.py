@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -49,12 +49,25 @@ class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
 
     template_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Template name, for example "Code review".
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Template name, for example "General assistant".
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Description.
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)  # System prompt.
     user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # User-message template.
     variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # Variable list, for example ["message"].
+    tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # Free-form tags for grouping templates.
+    default_bot_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey(
+            "bot_accounts.bot_id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_prompt_templates_default_bot_id",
+        ),
+        nullable=True,
+        default=None,
+    )
     is_builtin: Mapped[bool] = mapped_column(default=False)  # Built-in templates cannot be deleted.
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="friend", default="friend")
     created_by: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("users.user_id"), nullable=True, default=None
     )  # Template creator; empty means system/admin-created.
@@ -95,7 +108,11 @@ class BotAccount(Base):
 
     # Relationships
     ai_model: Mapped[Optional["AIModel"]] = relationship("AIModel", lazy="joined")
-    prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")
+    prompt_template: Mapped[Optional["PromptTemplate"]] = relationship(
+        "PromptTemplate",
+        foreign_keys=[template_id],
+        lazy="joined",
+    )
 
 
 class Workspace(Base):
@@ -105,6 +122,12 @@ class Workspace(Base):
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    default_bot_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("bot_accounts.bot_id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
     # "team" (default, shared workspace with channels) or "personal" (auto-
     # provisioned per user; hosts their DMs).
     kind: Mapped[str] = mapped_column(
@@ -114,6 +137,7 @@ class Workspace(Base):
 
     channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
     memberships: Mapped[list["WorkspaceMembership"]] = relationship("WorkspaceMembership", cascade="all, delete-orphan")
+    default_bot: Mapped[Optional["BotAccount"]] = relationship("BotAccount", lazy="joined")
 
 
 class Channel(Base):
@@ -160,6 +184,38 @@ class User(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class AuthExternalIdentity(Base):
+    """External identity linked to an AgentNexus user."""
+    __tablename__ = "auth_external_identities"
+
+    identity_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
+    corp_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    union_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    open_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    mobile: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    profile: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    user: Mapped["User"] = relationship("User", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "subject", name="uq_auth_external_identities_provider_subject"),
+        Index("ix_auth_external_identities_user", "user_id"),
+        Index("ix_auth_external_identities_provider_corp", "provider", "corp_id"),
+    )
 
 
 class EmailCode(Base):
@@ -356,6 +412,82 @@ class FileScopeLink(Base):
         UniqueConstraint("file_id", "scope_type", "scope_id", name="uq_file_scope_links_file_scope"),
         Index("ix_file_scope_links_scope", "scope_type", "scope_id"),
         Index("ix_file_scope_links_file", "file_id"),
+    )
+
+
+class DocumentSet(Base):
+    """Scoped collection of similar documents."""
+    __tablename__ = "document_sets"
+
+    set_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("channels.channel_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    auto_rule: Mapped[str] = mapped_column(String(64), nullable=False, default="title_without_digits")
+    similarity_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.9)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    items: Mapped[list["DocumentSetItem"]] = relationship(
+        "DocumentSetItem", back_populates="document_set", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_document_sets_channel_created_at", "channel_id", "created_at"),
+        Index("ix_document_sets_owner_created_at", "owner_id", "created_at"),
+    )
+
+
+class DocumentSetItem(Base):
+    """A file membership within a document set."""
+    __tablename__ = "document_set_items"
+
+    item_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    set_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("document_sets.set_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("file_records.file_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    added_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    document_set: Mapped["DocumentSet"] = relationship("DocumentSet", back_populates="items")
+    file: Mapped["FileRecord"] = relationship("FileRecord")
+
+    __table_args__ = (
+        UniqueConstraint("set_id", "file_id", name="uq_document_set_items_set_file"),
+    )
+
+
+class DocumentSetExclusion(Base):
+    """A channel file manually kept outside automatic document grouping."""
+    __tablename__ = "document_set_exclusions"
+
+    exclusion_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("channels.channel_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    file_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("file_records.file_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    file: Mapped["FileRecord"] = relationship("FileRecord")
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "file_id", name="uq_document_set_exclusions_channel_file"),
+        UniqueConstraint("owner_id", "file_id", name="uq_document_set_exclusions_owner_file"),
     )
 
 

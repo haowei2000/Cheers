@@ -74,7 +74,7 @@ const LAYER_META: Record<
   }
 > = {
 	  ANCHOR: {
-	    label: "Project anchor",
+	    label: "Group anchor",
 	    desc: "Core goals, constraints, and background",
 	    icon: ico("note"),
 	    color: "text-[var(--accent)]",
@@ -83,7 +83,7 @@ const LAYER_META: Record<
 	    entryBased: true,
 	  },
 	  PROGRESS: {
-	    label: "Project progress",
+	    label: "Group progress",
 	    desc: "Current progress, completed work, and next steps",
 	    icon: ico("trending"),
 	    color: "text-[var(--green)]",

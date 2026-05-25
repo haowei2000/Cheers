@@ -48,7 +48,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "briefcase",
-    label: "Project",
+    label: "Group",
     color: "#B45309",
     background: "#FFF7E6",
     groups: ["user", "workspace", "all"],

@@ -17,6 +17,8 @@ COPY . .
 ENV PYTHONPATH=/app
 ENV PATH="/app/.venv/bin:$PATH"
 RUN sed -i 's/\r$//' /app/entrypoint.sh \
-    && chmod +x /app/entrypoint.sh
+    && chmod +x /app/entrypoint.sh \
+    && /app/.venv/bin/alembic --version \
+    && /app/.venv/bin/python -m uvicorn --version
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]

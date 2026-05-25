@@ -1,7 +1,7 @@
 """Bot repo module."""
 from __future__ import annotations
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -73,6 +73,11 @@ class BotRepository:
         return bot
 
     async def delete(self, bot: BotAccount) -> None:
+        await self.session.execute(
+            update(PromptTemplate)
+            .where(PromptTemplate.default_bot_id == bot.bot_id)
+            .values(default_bot_id=None)
+        )
         await self.session.execute(
             delete(AgentNexusSessionBinding).where(AgentNexusSessionBinding.bot_id == bot.bot_id)
         )

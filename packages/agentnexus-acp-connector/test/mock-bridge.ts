@@ -30,6 +30,12 @@ export class MockBridge {
   public receivedReplies: Array<Record<string, unknown>> = [];
   public receivedTraces: Array<Record<string, unknown>> = [];
   public receivedUploads: Array<Record<string, unknown>> = [];
+  public receivedPermissionRequests: Array<Record<string, unknown>> = [];
+  public receivedConfigStatuses: Array<Record<string, unknown>> = [];
+  public receivedConfigOptions: Array<Record<string, unknown>> = [];
+  public receivedConfigOptionStatuses: Array<Record<string, unknown>> = [];
+  public nextPermissionResolutionAck: Record<string, unknown> | null = null;
+  private closeUploadWithoutAckCount = 0;
 
   constructor(private readonly botToken = "agb_test") {}
 
@@ -91,8 +97,60 @@ export class MockBridge {
     this.binaryFiles.set(fileId, file);
   }
 
+  pushConfigUpdate(frame: {
+    revision?: number | string | null;
+    settings?: Record<string, unknown>;
+    updated_at?: string | null;
+  }): void {
+    this.broadcast("control", {
+      type: "config_update",
+      revision: frame.revision ?? null,
+      settings: frame.settings ?? {},
+      updated_at: frame.updated_at ?? null,
+    });
+  }
+
+  pushConfigOptionSet(frame: {
+    request_id?: string;
+    session_id?: string | null;
+    provider_session_key?: string | null;
+    config_id: string;
+    value: string;
+  }): void {
+    this.broadcast("control", {
+      type: "config_option_set",
+      request_id: frame.request_id ?? "set-option-1",
+      session_id: frame.session_id ?? null,
+      provider_session_key: frame.provider_session_key ?? null,
+      config_id: frame.config_id,
+      value: frame.value,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  pushPermissionResolution(frame: {
+    request_id: string;
+    resolution: "allow" | "deny";
+    message_id?: string | null;
+    option_id?: string | null;
+  }): void {
+    this.broadcast("control", {
+      type: "permission_resolution",
+      request_id: frame.request_id,
+      resolution: frame.resolution,
+      message_id: frame.message_id ?? "permission-card-1",
+      option_id: frame.option_id ?? null,
+      resolved_by: "owner-1",
+      resolved_at: new Date().toISOString(),
+    });
+  }
+
   connectionsFor(stream: "control" | "data"): number {
     return Array.from(this.conns).filter((c) => c.stream === stream).length;
+  }
+
+  closeNextUploadWithoutAck(): void {
+    this.closeUploadWithoutAckCount += 1;
   }
 
   async stop(): Promise<void> {
@@ -134,12 +192,71 @@ export class MockBridge {
       ws.send(JSON.stringify({ type: "pong" }));
       return;
     }
+    if (stream === "control" && frame.type === "config_status") {
+      this.receivedConfigStatuses.push(frame);
+      return;
+    }
+    if (stream === "control" && frame.type === "config_options") {
+      this.receivedConfigOptions.push(frame);
+      return;
+    }
+    if (stream === "control" && frame.type === "config_option_status") {
+      this.receivedConfigOptionStatuses.push(frame);
+      return;
+    }
     if (stream !== "data") return;
     if (frame.type === "delta") this.receivedDeltas.push(frame);
-    if (frame.type === "done") this.receivedDones.push(frame);
-    if (frame.type === "error") this.receivedErrors.push(frame);
+    if (frame.type === "done") {
+      this.receivedDones.push(frame);
+      if (typeof frame.client_msg_id === "string") {
+        ws.send(JSON.stringify({
+          type: "terminal_ack",
+          client_msg_id: frame.client_msg_id,
+          ok: true,
+          msg_id: frame.msg_id,
+          queued: true,
+        }));
+      }
+    }
+    if (frame.type === "error") {
+      this.receivedErrors.push(frame);
+      if (typeof frame.client_msg_id === "string") {
+        ws.send(JSON.stringify({
+          type: "terminal_ack",
+          client_msg_id: frame.client_msg_id,
+          ok: true,
+          msg_id: frame.msg_id,
+          queued: true,
+        }));
+      }
+    }
     if (frame.type === "trace") this.receivedTraces.push(frame);
+    if (frame.type === "permission_request") {
+      this.receivedPermissionRequests.push(frame);
+      const permissionResolution = this.nextPermissionResolutionAck
+        ? {
+          type: "permission_resolution",
+          request_id: frame.request_id,
+          message_id: `permission-card-${this.receivedPermissionRequests.length}`,
+          ...this.nextPermissionResolutionAck,
+        }
+        : null;
+      this.nextPermissionResolutionAck = null;
+      ws.send(JSON.stringify({
+        type: "send_ack",
+        client_msg_id: frame.client_msg_id,
+        ok: true,
+        message_id: `permission-card-${this.receivedPermissionRequests.length}`,
+        ...(permissionResolution ? { permission_resolution: permissionResolution } : {}),
+      }));
+      return;
+    }
     if (frame.type === "file_upload") {
+      if (this.closeUploadWithoutAckCount > 0) {
+        this.closeUploadWithoutAckCount -= 1;
+        ws.close(1011, "test upload disconnect");
+        return;
+      }
       this.receivedUploads.push(frame);
       ws.send(JSON.stringify({
         type: "file_upload_ack",

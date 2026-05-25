@@ -35,6 +35,7 @@ import {
   type MessageRenderItem,
   type MessageViewModel,
 } from "./renderModel";
+import { BotTracePanel } from "./BotTracePanel";
 
 const CHAT_TIME_CACHE_LIMIT = 2000;
 const chatTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -109,9 +110,9 @@ export interface ChatMessageListProps {
   renderMemoryLoadButton: (message: Message) => ReactNode;
   renderStopStreamButton: (message: Message) => ReactNode;
   renderPartialBadge: (message: Message) => ReactNode;
-  renderBotTraceStatus: (message: Message) => ReactNode;
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   renderFileAttachments: (message: Message, alignRight?: boolean) => ReactNode;
+  onOpenMessage?: (channelId: string, msgId?: string) => void;
   activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
   handleMarkdownImageClick: (src: string) => void;
   handleMarkdownFileClick: (url: string, name: string) => void;
@@ -166,22 +167,25 @@ const RowActions = memo(function RowActions({
 }: RowActionProps) {
   if (message.is_deleted) return null;
 
-  return (
-    <div className={`${actionVisibilityClass} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
+  const deleteLabel = `Delete message${message.created_at ? ` from ${formatChatTime(message.created_at)}` : ""}`;
+  const renderButtons = (actionClassName = "an-chat-action", iconClassName = "w-3.5 h-3.5") => (
+    <>
       <button
         type="button"
         title="Copy message content"
+        aria-label="Copy message content"
         onClick={() => copyMessageText(message)}
-        className="an-chat-action"
+        className={actionClassName}
       >
-        <AppIcon name="copy" className="w-3.5 h-3.5" />
+        <AppIcon name="copy" className={iconClassName} />
       </button>
-      {renderForwardActionButtons?.(message)}
+      {renderForwardActionButtons?.(message, actionClassName, iconClassName)}
       {renderMemoryLoadButton(message)}
       {showReply && (
         <button
           type="button"
           title="Reply"
+          aria-label="Reply"
           onClick={() => {
             setReplyingTo(message);
             const mention =
@@ -191,21 +195,42 @@ const RowActions = memo(function RowActions({
             if (mention) setComposerInput(mention);
             (secretMode ? secretInputRef.current : inputRef.current)?.focus();
           }}
-          className="an-chat-action"
+          className={actionClassName}
         >
-          <AppIcon name="reply" className="w-3.5 h-3.5" />
+          <AppIcon name="reply" className={iconClassName} />
         </button>
       )}
       {canDelete && (
         <button
           type="button"
-          title="Delete message"
+          title={deleteLabel}
+          aria-label={deleteLabel}
           onClick={() => onDeleteMessage(message)}
-          className="an-chat-action"
+          className={`${actionClassName} an-chat-action-danger`}
         >
-          <AppIcon name="trash" className="w-3.5 h-3.5" />
+          <AppIcon name="trash" className={iconClassName} />
         </button>
       )}
+    </>
+  );
+
+  return (
+    <div className={`${actionVisibilityClass} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
+      <div className="an-msg-actions-desktop flex items-center gap-1">
+        {renderButtons()}
+      </div>
+      <details className="an-msg-actions-mobile">
+        <summary
+          className="an-chat-action"
+          title="More message actions"
+          aria-label="More message actions"
+        >
+          <AppIcon name="more" className="w-3.5 h-3.5" />
+        </summary>
+        <div className="an-msg-actions-menu">
+          {renderButtons("an-chat-action an-chat-action-menu-item")}
+        </div>
+      </details>
     </div>
   );
 });
@@ -258,7 +283,6 @@ type MessageBodyProps = {
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   renderStopStreamButton: (message: Message) => ReactNode;
   renderPartialBadge: (message: Message) => ReactNode;
-  renderBotTraceStatus: (message: Message) => ReactNode;
   handleMarkdownImageClick: (src: string) => void;
   handleMarkdownFileClick: (url: string, name: string) => void;
   handleClarifyContinue: ChatMessageListProps["handleClarifyContinue"];
@@ -275,7 +299,6 @@ function MessageBody({
   renderAgentBridgeTaskCard,
   renderStopStreamButton,
   renderPartialBadge,
-  renderBotTraceStatus,
   handleMarkdownImageClick,
   handleMarkdownFileClick,
   handleClarifyContinue,
@@ -339,7 +362,7 @@ function MessageBody({
       )}
       {renderStopStreamButton(message)}
       {renderPartialBadge(message)}
-      {renderBotTraceStatus(message)}
+      {!compact && <BotTracePanel message={message} />}
       {vm.clarifyStatus !== null && selectedId && vm.clarify && (
         <ClarifyInlineBlock
           msgId={message.msg_id}
@@ -372,7 +395,6 @@ type MessageRowProps = {
   renderMemoryLoadButton: (message: Message) => ReactNode;
   renderStopStreamButton: (message: Message) => ReactNode;
   renderPartialBadge: (message: Message) => ReactNode;
-  renderBotTraceStatus: (message: Message) => ReactNode;
   renderAgentBridgeTaskCard: (message: Message) => ReactNode;
   activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
   handleMarkdownImageClick: (src: string) => void;
@@ -405,7 +427,6 @@ const MessageRow = memo(function MessageRow({
   renderMemoryLoadButton,
   renderStopStreamButton,
   renderPartialBadge,
-  renderBotTraceStatus,
   renderAgentBridgeTaskCard,
   activeAgentBridgeTaskData,
   handleMarkdownImageClick,
@@ -460,7 +481,6 @@ const MessageRow = memo(function MessageRow({
               renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
               renderStopStreamButton={renderStopStreamButton}
               renderPartialBadge={renderPartialBadge}
-              renderBotTraceStatus={renderBotTraceStatus}
               handleMarkdownImageClick={handleMarkdownImageClick}
               handleMarkdownFileClick={handleMarkdownFileClick}
               handleClarifyContinue={handleClarifyContinue}
@@ -515,7 +535,6 @@ const MessageRow = memo(function MessageRow({
               renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
               renderStopStreamButton={renderStopStreamButton}
               renderPartialBadge={renderPartialBadge}
-              renderBotTraceStatus={renderBotTraceStatus}
               handleMarkdownImageClick={handleMarkdownImageClick}
               handleMarkdownFileClick={handleMarkdownFileClick}
               handleClarifyContinue={handleClarifyContinue}
@@ -593,7 +612,6 @@ const MessageRow = memo(function MessageRow({
                 renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
                 renderStopStreamButton={renderStopStreamButton}
                 renderPartialBadge={renderPartialBadge}
-                renderBotTraceStatus={renderBotTraceStatus}
                 handleMarkdownImageClick={handleMarkdownImageClick}
                 handleMarkdownFileClick={handleMarkdownFileClick}
                 handleClarifyContinue={handleClarifyContinue}
@@ -753,20 +771,45 @@ const PermissionRow = memo(function PermissionRow({
   selectedId,
   authToken,
   botById,
+  currentUserId,
   setMessageStore,
 }: {
   message: Message;
   selectedId: string | null;
   authToken: string | null;
   botById: Map<string, ChannelBot>;
+  currentUserId: string | null;
   setMessageStore: Dispatch<SetStateAction<MessageStore>>;
 }) {
   const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const kind = typeof cd.kind === "string" ? cd.kind : "";
   const tool = typeof cd.tool === "string" ? cd.tool : null;
   const body = typeof cd.body === "string" ? cd.body : message.content || "";
   const resolved = cd.resolved === true;
   const resolution =
     cd.resolution === "allow" || cd.resolution === "deny" ? cd.resolution : null;
+  const owner =
+    cd.owner && typeof cd.owner === "object"
+      ? (cd.owner as Record<string, unknown>)
+      : {};
+  const ownerId =
+    (typeof cd.bot_owner_id === "string" && cd.bot_owner_id) ||
+    (typeof owner.user_id === "string" && owner.user_id) ||
+    "";
+  const ownerName =
+    (typeof owner.display_name === "string" && owner.display_name) ||
+    (typeof owner.username === "string" && `@${owner.username}`) ||
+    (ownerId ? "Bot owner" : "");
+  const ownerOnly = kind === "agent_bridge_permission_request";
+  const ownerMissing = ownerOnly && !ownerId;
+  const canResolve = !ownerOnly || (Boolean(ownerId) && ownerId === currentUserId);
+  const canRequestApproval = ownerOnly && !canResolve && !resolved && Boolean(ownerId);
+  const approvalRequested = cd.approval_requested === true;
+  const dispatchStatus =
+    typeof cd.resolution_dispatch_status === "string" ? cd.resolution_dispatch_status : "";
+  const dispatchError =
+    typeof cd.resolution_dispatch_error === "string" ? cd.resolution_dispatch_error : "";
+  const resolutionDeliveryFailed = !resolved && dispatchStatus === "undelivered";
   const senderBot =
     message.sender_type === "bot" ? botById.get(message.sender_id) : null;
   const senderLabel = senderBot?.display_name || senderBot?.username || "Bot";
@@ -778,50 +821,116 @@ const PermissionRow = memo(function PermissionRow({
         `/channels/${selectedId}/messages/${message.msg_id}/resolve`,
         { method: "POST", body: { resolution: value }, token: authToken },
       );
-      if (!response.ok) return;
-      const data = await response.json();
-      if (data?.data?.content_data) {
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "Permission update failed");
+        return;
+      }
+      const nextContentData = data?.data?.content_data as Record<string, unknown> | undefined;
+      if (nextContentData) {
         setMessageStore((prev) =>
           patchMessage(prev, message.msg_id, (current) => ({
             ...current,
-            content_data: data.data.content_data,
+            content_data: nextContentData,
+          })),
+        );
+        if (ownerOnly && nextContentData.resolved !== true) {
+          toast.error(
+            typeof nextContentData.resolution_dispatch_error === "string"
+              ? nextContentData.resolution_dispatch_error
+              : "Permission was not delivered to the connector",
+          );
+        }
+      }
+    } catch {
+      toast.error("Permission update failed");
+    }
+  };
+
+  const requestApproval = async () => {
+    if (!selectedId) return;
+    try {
+      const response = await apiFetch(
+        `/channels/${selectedId}/messages/${message.msg_id}/request-approval`,
+        { method: "POST", body: {}, token: authToken },
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "Approval request failed");
+        return;
+      }
+      if (data?.data?.permission?.content_data) {
+        setMessageStore((prev) =>
+          patchMessage(prev, message.msg_id, (current) => ({
+            ...current,
+            content_data: data.data.permission.content_data,
           })),
         );
       }
+      toast.success("Approval request sent");
     } catch {
-      /* keep unresolved so the user can retry */
+      toast.error("Approval request failed");
     }
   };
 
   return (
-    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
-      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-        <span className="an-chat-sender">{senderLabel}</span>
-        <span className="an-chip off">BOT</span>
-        {message.created_at && (
-          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
-        )}
-      </div>
-      <div className={`an-approval${resolved ? " resolved" : ""}`}>
-        <div className="an-body">
-          <b>Approval needed.</b> {body}
-          {tool && <span className="an-type-caption ml-1.5 font-mono">({tool})</span>}
-          {resolved && resolution && (
-            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
-              · {resolution === "allow" ? "Approved" : "Denied"}
-            </span>
-          )}
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg an-approval-event-row pl-16 pr-4 pt-1">
+      <div className={`an-trace-panel an-approval-trace-panel is-${resolved ? "green" : "orange"}`}>
+        <div className="an-trace-toggle an-approval-trace-line">
+          <span className="an-trace-toggle-icon" aria-hidden="true">
+            <AppIcon name="chevronRight" className="h-3.5 w-3.5" />
+          </span>
+          <span className="an-trace-kind">
+            <AppIcon name={resolved ? "checkCircle" : "shieldCheck"} className="h-3.5 w-3.5" />
+            Approval
+          </span>
+          <span className="an-trace-latest an-approval-trace-copy">
+            <span className="an-approval-trace-title">Approval needed.</span>
+            <span>{body}</span>
+            {tool && <span className="an-type-caption font-mono">({tool})</span>}
+            {ownerOnly && ownerName && !resolved && (
+              <span className="an-approval-trace-muted">
+                Owner approval: {ownerName}
+              </span>
+            )}
+            {ownerMissing && !resolved && (
+              <span className="an-approval-trace-danger">
+                Bot owner is not configured
+              </span>
+            )}
+            {resolutionDeliveryFailed && (
+              <span className="an-approval-trace-danger">
+                Not delivered to connector{dispatchError ? `: ${dispatchError}` : ""}
+              </span>
+            )}
+            {resolved && resolution && (
+              <span className="an-approval-trace-muted">
+                {resolution === "allow" ? "Approved" : "Denied"}
+              </span>
+            )}
+          </span>
+          <span className="an-approval-trace-meta">
+            {senderLabel}
+            {message.created_at ? ` · ${formatChatTime(message.created_at)}` : ""}
+          </span>
+          <div className="an-approval-trace-actions">
+            {!resolved && canResolve && (
+              <>
+                <button type="button" className="deny" onClick={() => submitResolution("deny")}>
+                  Reject
+                </button>
+                <button type="button" className="allow" onClick={() => submitResolution("allow")}>
+                  Allow
+                </button>
+              </>
+            )}
+            {canRequestApproval && (
+              <button type="button" className="allow" onClick={requestApproval} disabled={approvalRequested}>
+                {approvalRequested ? "Requested" : "Request approval"}
+              </button>
+            )}
+          </div>
         </div>
-        {!resolved && (
-          <>
-            <button type="button" className="deny" onClick={() => submitResolution("deny")}>
-              Reject
-            </button>
-            <button type="button" className="allow" onClick={() => submitResolution("allow")}>
-              Allow
-            </button>
-          </>
-        )}
       </div>
     </div>
   );
@@ -893,7 +1002,7 @@ const FriendRequestRow = memo(function FriendRequestRow({
   return (
     <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
       <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-        <span className="an-chat-sender">Friend notifications</span>
+        <span className="an-chat-sender">Notifications</span>
         {message.created_at && (
           <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
         )}
@@ -927,6 +1036,124 @@ const FriendRequestRow = memo(function FriendRequestRow({
               Accept
             </button>
           </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const NotificationRow = memo(function NotificationRow({
+  message,
+  onOpenMessage,
+  authToken,
+  setMessageStore,
+}: {
+  message: Message;
+  onOpenMessage?: (channelId: string, msgId?: string) => void;
+  authToken: string | null;
+  setMessageStore: Dispatch<SetStateAction<MessageStore>>;
+}) {
+  const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const kind = typeof cd.kind === "string" ? cd.kind : "";
+  const sourceChannelId =
+    typeof cd.source_channel_id === "string" ? cd.source_channel_id : "";
+  const sourceMsgId =
+    (typeof cd.source_msg_id === "string" && cd.source_msg_id) ||
+    (typeof cd.permission_msg_id === "string" && cd.permission_msg_id) ||
+    "";
+  const preview = typeof cd.preview === "string" ? cd.preview : "";
+  const title =
+    kind === "bot_permission_approval_notification"
+      ? "Bot permission approval"
+      : kind === "mention_notification"
+        ? "Mention"
+        : "Notification";
+  const actionLabel =
+    kind === "bot_permission_approval_notification" ? "Open request" : "Open message";
+  const canOpen = Boolean(sourceChannelId && sourceMsgId && onOpenMessage);
+  const resolved = cd.resolved === true;
+  const resolution =
+    cd.resolution === "allow" || cd.resolution === "deny" ? cd.resolution : null;
+  const canResolve = kind === "bot_permission_approval_notification" && !resolved && Boolean(sourceChannelId && sourceMsgId);
+
+  const submitResolution = async (value: "allow" | "deny") => {
+    if (!sourceChannelId || !sourceMsgId) return;
+    try {
+      const response = await apiFetch(
+        `/channels/${sourceChannelId}/messages/${sourceMsgId}/resolve`,
+        { method: "POST", body: { resolution: value }, token: authToken },
+      );
+      const data = await response.json().catch(() => null);
+      const nextContentData = data?.data?.content_data as Record<string, unknown> | undefined;
+      if (!response.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "Permission update failed");
+        return;
+      }
+      setMessageStore((prev) =>
+        patchMessage(prev, message.msg_id, (current) => ({
+          ...current,
+          content_data: {
+            ...(current.content_data || {}),
+            resolved: nextContentData?.resolved === true,
+            resolution: nextContentData?.resolution || value,
+            resolved_at: nextContentData?.resolved_at || new Date().toISOString(),
+          },
+        })),
+      );
+      if (nextContentData?.resolved === true) {
+        toast.success(value === "allow" ? "Permission allowed" : "Permission denied");
+      } else {
+        toast.error(
+          typeof nextContentData?.resolution_dispatch_error === "string"
+            ? nextContentData.resolution_dispatch_error
+            : "Permission was not delivered to the connector",
+        );
+      }
+    } catch {
+      toast.error("Permission update failed");
+    }
+  };
+
+  return (
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
+      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+        <span className="an-chat-sender">Notifications</span>
+        {message.created_at && (
+          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
+        )}
+      </div>
+      <div className="an-approval an-approval-inline">
+        <div className="an-body">
+          <b>{title}.</b> {message.content}
+          {preview && (
+            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
+              · {preview}
+            </span>
+          )}
+        </div>
+        {canOpen && (
+          <button
+            type="button"
+            className="allow"
+            onClick={() => onOpenMessage?.(sourceChannelId, sourceMsgId)}
+          >
+            {actionLabel}
+          </button>
+        )}
+        {canResolve && (
+          <>
+            <button type="button" className="deny" onClick={() => submitResolution("deny")}>
+              Reject
+            </button>
+            <button type="button" className="allow" onClick={() => submitResolution("allow")}>
+              Allow
+            </button>
+          </>
+        )}
+        {resolved && resolution && (
+          <span className="an-type-caption">
+            {resolution === "allow" ? "Approved" : "Denied"}
+          </span>
         )}
       </div>
     </div>
@@ -1159,9 +1386,9 @@ function ChatMessageListBase({
   renderMemoryLoadButton,
   renderStopStreamButton,
   renderPartialBadge,
-  renderBotTraceStatus,
   renderAgentBridgeTaskCard,
   renderFileAttachments,
+  onOpenMessage,
   activeAgentBridgeTaskData,
   handleMarkdownImageClick,
   handleMarkdownFileClick,
@@ -1294,6 +1521,16 @@ function ChatMessageListBase({
           />
         );
       }
+      if (!message.is_deleted && message.msg_type === "notification") {
+        return (
+          <NotificationRow
+            message={message}
+            onOpenMessage={onOpenMessage}
+            authToken={authToken}
+            setMessageStore={setMessageStore}
+          />
+        );
+      }
       if (!message.is_deleted && message.msg_type === "permission") {
         return (
           <PermissionRow
@@ -1301,6 +1538,7 @@ function ChatMessageListBase({
             selectedId={selectedId}
             authToken={authToken}
             botById={botById}
+            currentUserId={currentUserId}
             setMessageStore={setMessageStore}
           />
         );
@@ -1337,7 +1575,6 @@ function ChatMessageListBase({
         renderMemoryLoadButton={renderMemoryLoadButton}
         renderStopStreamButton={renderStopStreamButton}
         renderPartialBadge={renderPartialBadge}
-        renderBotTraceStatus={renderBotTraceStatus}
         renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
         activeAgentBridgeTaskData={activeAgentBridgeTaskData}
         handleMarkdownImageClick={handleMarkdownImageClick}

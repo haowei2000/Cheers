@@ -2,25 +2,31 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
   - package-ecosystem: "pip"
     directory: "/backend"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm"
     directory: "/frontend"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm"
     directory: "/packages/agentnexus-bridge-client"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm"
     directory: "/packages/openclaw-channel-agentnexus"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm"
     directory: "/packages/agentnexus-acp-connector"
+    target-branch: "develop"
     schedule:
       interval: "weekly"

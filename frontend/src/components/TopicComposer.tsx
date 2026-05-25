@@ -3,6 +3,7 @@
  * message mode: no secret, announcement, or new-topic switching. */
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import type { FileDragReference } from "../lib/file-drag";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import {
   MessageComposer,
@@ -21,6 +22,9 @@ export interface TopicComposerProps {
   pendingFiles?: ComposerPendingFile[];
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onUploadFiles?: (files: File[]) => void | Promise<void>;
+  onAttachFiles?: (files: FileDragReference[]) => void | Promise<void>;
+  beginnerMode?: boolean;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -40,6 +44,9 @@ export function TopicComposer({
   pendingFiles = [],
   onRemovePendingFile,
   onUploadFile,
+  onUploadFiles,
+  onAttachFiles,
+  beginnerMode = false,
   keychainEnabled = false,
   keychainOpen = false,
   keychainLoading = false,
@@ -87,6 +94,9 @@ export function TopicComposer({
       pendingFiles={pendingFiles}
       onRemovePendingFile={onRemovePendingFile}
       onUploadFile={onUploadFile}
+      onUploadFiles={onUploadFiles}
+      onAttachFiles={onAttachFiles}
+      beginnerMode={beginnerMode}
       keychainEnabled={keychainEnabled}
       keychainOpen={keychainOpen}
       keychainLoading={keychainLoading}

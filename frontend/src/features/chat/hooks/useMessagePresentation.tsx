@@ -8,6 +8,7 @@ import {
   getAgentBridgeTaskData,
   type AgentBridgeTaskMessage,
 } from "../../../lib/agent-bridge";
+import { userVisibleBotTraceEvents } from "../../../lib/bot-trace";
 import { patchMessage, type MessageStore } from "../../../lib/message-store";
 import type {
   AgentBridgeTaskContentData,
@@ -45,7 +46,7 @@ export function useMessagePresentation({
   const hasBotReplyDetails = useCallback(
     (message: Message): boolean =>
       message.sender_type === "bot" &&
-      Boolean(getMemoryLoadDetail(message) || message._bot_trace?.length),
+      Boolean(getMemoryLoadDetail(message) || userVisibleBotTraceEvents(message).length),
     [getMemoryLoadDetail],
   );
 
@@ -136,37 +137,18 @@ export function useMessagePresentation({
     if (message._streaming || !message.is_partial || message.sender_type !== "bot") {
       return null;
     }
+    const hasError = Boolean(message.error);
     return (
       <span
         className="inline-block align-middle ml-1.5 px-1.5 py-0.5 rounded text-[10px]"
         style={{
           background: "var(--surface-soft)",
           border: "1px solid var(--border)",
-          color: "var(--fg-3)",
+          color: hasError ? "var(--red)" : "var(--fg-3)",
         }}
       >
-        Canceled
+        {hasError ? "Failed" : "Canceled"}
       </span>
-    );
-  }, []);
-
-  const renderBotTraceStatus = useCallback((message: Message) => {
-    if (!message._streaming || message.sender_type !== "bot" || !message._bot_status) {
-      return null;
-    }
-    return (
-      <div
-        className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug"
-        style={{ color: "var(--fg-3)" }}
-      >
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-          style={{ background: "var(--fg-3)" }}
-        />
-        <span className="truncate max-w-[min(520px,70vw)]">
-          {message._bot_status}
-        </span>
-      </div>
     );
   }, []);
 
@@ -215,7 +197,6 @@ export function useMessagePresentation({
     renderMemoryLoadButton,
     renderStopStreamButton,
     renderPartialBadge,
-    renderBotTraceStatus,
     activeAgentBridgeTaskData,
     agentBridgeTaskMessages,
     renderAgentBridgeTaskCard,

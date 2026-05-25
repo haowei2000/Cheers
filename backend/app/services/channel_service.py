@@ -271,7 +271,7 @@ class ChannelService:
             resolved_project_id = _clean_short_text(project_id) or f"project:{uuid4()}"
             resolved_project_title = (
                 _clean_short_text(project_title)
-                or "Project"
+                or "Group"
             )
             resolved_chat_title = (
                 _clean_short_text(chat_title)
@@ -333,7 +333,7 @@ class ChannelService:
                     else f"user:{user.user_id}:bot:{bot.bot_id}"
                 )
             elif other.member_type == "system":
-                from app.services.friendship_service import (
+                from app.services.notification_service import (
                     FRIEND_NOTICE_DISPLAY_NAME,
                     FRIEND_NOTICE_SYSTEM_ID,
                     FRIEND_NOTICE_USERNAME,
@@ -392,6 +392,67 @@ class ChannelService:
             channel_ids=channel_ids,
         )
 
+    async def rename_personal_project(
+        self,
+        workspace_id: str,
+        current_user: User,
+        project_id: str,
+        project_title: str,
+    ) -> int:
+        clean_project_id = _clean_short_text(project_id)
+        clean_project_title = _clean_short_text(project_title)
+        if not clean_project_id:
+            raise BadRequestError("group id is required")
+        if not clean_project_title:
+            raise BadRequestError("group name is required")
+
+        ws = await self.ws_repo.get_by_id(workspace_id)
+        if not ws or ws.kind != "personal":
+            raise BadRequestError("groups can only be renamed in Personal workspace")
+        wm = await self.ws_repo.get_membership(workspace_id, current_user.user_id)
+        if not wm and not is_admin(current_user):
+            raise ForbiddenError("not a member of this workspace")
+
+        result = await self.session.execute(
+            select(Channel)
+            .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
+            .where(
+                Channel.workspace_id == workspace_id,
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+            )
+        )
+        updated = 0
+        for channel in result.scalars().all():
+            if channel.type == "dm":
+                meta = _parse_personal_project_purpose(channel.purpose)
+                if meta.get("project_id") != clean_project_id:
+                    continue
+                channel.purpose = _personal_project_purpose(
+                    project_id=clean_project_id,
+                    project_title=clean_project_title,
+                    chat_title=meta.get("chat_title") or "Chat 1",
+                )
+                self.session.add(channel)
+                updated += 1
+                continue
+
+            meta = parse_personal_project_channel_purpose(channel.purpose)
+            if meta.get("project_id") != clean_project_id:
+                continue
+            channel.purpose = _personal_project_channel_purpose(
+                project_id=clean_project_id,
+                project_title=clean_project_title,
+                task_title=meta.get("task_title") or channel.name or "Task",
+            )
+            self.session.add(channel)
+            updated += 1
+
+        if updated == 0:
+            raise NotFoundError("group not found")
+        await self.session.flush()
+        return updated
+
     async def mark_read(self, channel_id: str, user_id: str) -> datetime | None:
         """Move the user's read cursor to "now" for this channel. Returns the
         new timestamp, or None if the user isn't a member of the channel."""
@@ -439,9 +500,9 @@ class ChannelService:
         )
         if has_project_meta:
             if ws.kind != "personal" or type != "private":
-                raise BadRequestError("个人 Project task 只能创建在 Personal workspace 的 private channel 中")
+                raise BadRequestError("个人 Group task 只能创建在 Personal workspace 的 private channel 中")
             resolved_project_id = _clean_short_text(project_id) or f"project:{uuid4()}"
-            resolved_project_title = _clean_short_text(project_title) or "Project"
+            resolved_project_title = _clean_short_text(project_title) or "Group"
             resolved_task_title = _clean_short_text(task_title) or _clean_short_text(name) or "Task"
             purpose = _personal_project_channel_purpose(
                 project_id=resolved_project_id,
@@ -461,9 +522,11 @@ class ChannelService:
         added_user_ids = set()
         if type in WORKSPACE_CHANNEL_TYPES:
             # Built-in bots automatically join workspace channels; private channels and DMs do not receive Helper.
-            from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
+            from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 
-            for bot_id in BUILTIN_BOT_IDS:
+            for bot_id in configured_builtin_bot_ids():
+                if await self.bot_repo.get_by_id(bot_id) is None:
+                    continue
                 if not await self.repo.get_membership(ch.channel_id, bot_id):
                     await self.repo.add_member(ch.channel_id, bot_id, "bot")
 
@@ -960,9 +1023,9 @@ class ChannelService:
             raise NotFoundError("membership not found")
 
         if not is_admin(current_user):
-            from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
+            from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 
-            if member_id in BUILTIN_BOT_IDS:
+            if member_id in configured_builtin_bot_ids():
                 raise ForbiddenError("内置助手只能由管理员移除")
 
         if m.member_type == "user" and (m.role or "member") in CHANNEL_ADMIN_ROLES:
@@ -1020,13 +1083,13 @@ class ChannelService:
             )).scalar_one_or_none()
             if not tmpl:
                 raise NotFoundError("提示词模板不存在")
-            if (
-                not is_admin(current_user)
-                and not tmpl.is_builtin
-                and tmpl.created_by is not None
-                and tmpl.created_by != current_user.user_id
-            ):
-                raise ForbiddenError("只能使用自己可见的提示词模板")
+            from app.services.admin_service import PromptTemplateService
+
+            await PromptTemplateService(self.session).assert_can_use(
+                tmpl,
+                current_user,
+                "只能使用自己可见的提示词模板",
+            )
 
         m.template_id = template_id
         await self.session.flush()

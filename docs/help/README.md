@@ -13,6 +13,7 @@ This directory contains user-facing, administrator-facing, and operations-facing
 | Frontend operator | [Frontend Operation Manual](<AgentNexus 前端操作手册.md>) | Main UI entry points, controls, and common operations |
 | UI reviewer | [Interface Interaction Guide](<AgentNexus 界面交互指南.md>) | Layout, interaction rules, and usage recommendations |
 | System administrator | [Admin Guide](系统管理说明书.md) | Workspaces, channels, members, Bots, Agent Bridge |
+| Prompt operator | [Prompt Template Operations Guide](prompt-template-operations.md) | Prompt template variables, runtime priority, Bot binding, overrides, and troubleshooting |
 | Agent provider author | [Agent Bridge Integration Guide](AgentBridge接入指南.md) | Registering Agent Bridge Bots and connecting OpenClaw / ACP providers |
 | File preview operator | [kkFileView Preview Guide](kkFileView配置说明.md) | Complex Office/PDF preview setup and troubleshooting |
 | Object storage operator | [RustFS Object Storage Guide](RustFS对象存储部署说明.md) | S3-compatible storage, bucket, and key setup |

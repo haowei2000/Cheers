@@ -32,6 +32,7 @@ export type SearchChannelHit = {
   channel_id: string;
   name: string;
   workspace_id: string;
+  workspace_name?: string | null;
   type: string;
 };
 
