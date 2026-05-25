@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -405,6 +405,82 @@ class FileScopeLink(Base):
         UniqueConstraint("file_id", "scope_type", "scope_id", name="uq_file_scope_links_file_scope"),
         Index("ix_file_scope_links_scope", "scope_type", "scope_id"),
         Index("ix_file_scope_links_file", "file_id"),
+    )
+
+
+class DocumentSet(Base):
+    """Scoped collection of similar documents."""
+    __tablename__ = "document_sets"
+
+    set_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("channels.channel_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    auto_rule: Mapped[str] = mapped_column(String(64), nullable=False, default="title_without_digits")
+    similarity_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.9)
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    items: Mapped[list["DocumentSetItem"]] = relationship(
+        "DocumentSetItem", back_populates="document_set", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_document_sets_channel_created_at", "channel_id", "created_at"),
+        Index("ix_document_sets_owner_created_at", "owner_id", "created_at"),
+    )
+
+
+class DocumentSetItem(Base):
+    """A file membership within a document set."""
+    __tablename__ = "document_set_items"
+
+    item_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    set_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("document_sets.set_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("file_records.file_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    added_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    document_set: Mapped["DocumentSet"] = relationship("DocumentSet", back_populates="items")
+    file: Mapped["FileRecord"] = relationship("FileRecord")
+
+    __table_args__ = (
+        UniqueConstraint("set_id", "file_id", name="uq_document_set_items_set_file"),
+    )
+
+
+class DocumentSetExclusion(Base):
+    """A channel file manually kept outside automatic document grouping."""
+    __tablename__ = "document_set_exclusions"
+
+    exclusion_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("channels.channel_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    file_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("file_records.file_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    file: Mapped["FileRecord"] = relationship("FileRecord")
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "file_id", name="uq_document_set_exclusions_channel_file"),
+        UniqueConstraint("owner_id", "file_id", name="uq_document_set_exclusions_owner_file"),
     )
 
 
