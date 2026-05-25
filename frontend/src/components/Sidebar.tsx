@@ -91,6 +91,23 @@ type PersonalFileItem = FileInfo & {
   scope_type?: string | null;
   scope_id?: string | null;
 };
+type PersonalDocumentSetItem = {
+  set_id: string;
+  owner_id?: string | null;
+  name: string;
+  auto_rule: string;
+  similarity_threshold: number;
+  file_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  files: PersonalFileItem[];
+};
+type PersonalDocumentSetPayload = {
+  auto_rule: string;
+  similarity_threshold: number;
+  sets: PersonalDocumentSetItem[];
+  ungrouped_files: PersonalFileItem[];
+};
 type ProjectTaskItem =
   | { kind: "dm"; key: string; dm: DM; botLabel: string; label: string; createdAt: number }
   | { kind: "channel"; key: string; channel: Channel; label: string; createdAt: number };
@@ -300,8 +317,12 @@ export function Sidebar({
   const [creatingProjectChannelTask, setCreatingProjectChannelTask] = useState(false);
   const [renamingGroup, setRenamingGroup] = useState(false);
   const [personalFiles, setPersonalFiles] = useState<PersonalFileItem[]>([]);
+  const [personalDocumentSets, setPersonalDocumentSets] = useState<PersonalDocumentSetItem[]>([]);
+  const [personalUngroupedFiles, setPersonalUngroupedFiles] = useState<PersonalFileItem[]>([]);
   const [personalFilesLoading, setPersonalFilesLoading] = useState(false);
   const [personalFilesDragOver, setPersonalFilesDragOver] = useState(false);
+  const [personalFileSetDraftName, setPersonalFileSetDraftName] = useState("");
+  const [personalFileSetBusy, setPersonalFileSetBusy] = useState<string | null>(null);
   const [collapsedPersonalSections, setCollapsedPersonalSections] = useState<
     Record<PersonalSectionKey, boolean>
   >({
@@ -533,34 +554,120 @@ export function Sidebar({
     uploadPersonalFileList(filesFromDragEvent(event));
   };
 
+  const normalizePersonalFile = (file: PersonalFileItem): PersonalFileItem => ({
+    ...file,
+    channel_label: file.channel_label || "Files",
+  });
+
+  const applyPersonalDocumentSetPayload = (
+    payload: Partial<PersonalDocumentSetPayload>,
+  ) => {
+    const sets = (payload.sets || []).map((set) => ({
+      ...set,
+      files: (set.files || []).map(normalizePersonalFile),
+    }));
+    const ungrouped = (payload.ungrouped_files || []).map(normalizePersonalFile);
+    setPersonalDocumentSets(sets);
+    setPersonalUngroupedFiles(ungrouped);
+    setPersonalFiles([...sets.flatMap((set) => set.files), ...ungrouped]);
+  };
+
+  const requestPersonalDocumentSetUpdate = async (
+    path: string,
+    options: Parameters<typeof apiFetch>[1],
+    busyKey: string,
+    successMessage?: string,
+  ) => {
+    setPersonalFileSetBusy(busyKey);
+    try {
+      const response = await apiFetch(path, {
+        ...options,
+        token: authToken,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Update failed");
+      }
+      applyPersonalDocumentSetPayload(payload.data || {});
+      if (successMessage) toast.success(successMessage);
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Update failed");
+    } finally {
+      setPersonalFileSetBusy(null);
+    }
+  };
+
+  const handleCreatePersonalDocumentSet = async () => {
+    const name = personalFileSetDraftName.trim();
+    if (!name) return;
+    await requestPersonalDocumentSetUpdate(
+      "/files/library/document-sets",
+      { method: "POST", body: { name } },
+      "create-personal-set",
+      "Document set created",
+    );
+    setPersonalFileSetDraftName("");
+  };
+
+  const handleAutoClassifyPersonalDocumentSets = async () => {
+    await requestPersonalDocumentSetUpdate(
+      "/files/library/document-sets/auto-classify",
+      { method: "POST" },
+      "auto-classify-personal",
+      "Document sets updated",
+    );
+  };
+
+  const handleMovePersonalFileIntoSet = async (fileId: string, setId: string) => {
+    if (!setId) return;
+    await requestPersonalDocumentSetUpdate(
+      `/files/library/document-sets/${encodeURIComponent(setId)}/files/${encodeURIComponent(fileId)}`,
+      { method: "POST" },
+      `move-in-${fileId}`,
+      "File moved",
+    );
+  };
+
+  const handleMovePersonalFileOutOfSet = async (setId: string, fileId: string) => {
+    await requestPersonalDocumentSetUpdate(
+      `/files/library/document-sets/${encodeURIComponent(setId)}/files/${encodeURIComponent(fileId)}`,
+      { method: "DELETE" },
+      `move-out-${fileId}`,
+      "File moved out",
+    );
+  };
+
+  const handleDeletePersonalDocumentSet = async (set: PersonalDocumentSetItem) => {
+    if (!confirm(`Delete ${set.name}?`)) return;
+    await requestPersonalDocumentSetUpdate(
+      `/files/library/document-sets/${encodeURIComponent(set.set_id)}`,
+      { method: "DELETE" },
+      `delete-set-${set.set_id}`,
+      "Document set deleted",
+    );
+  };
+
   useEffect(() => {
     if (!isPersonalWorkspace) {
       setPersonalFiles([]);
+      setPersonalDocumentSets([]);
+      setPersonalUngroupedFiles([]);
       setPersonalFilesLoading(false);
       return;
     }
     let active = true;
     setPersonalFilesLoading(true);
-    apiFetch("/files/library", { token: authToken })
-      .then((response) => (response.ok ? response.json() : { data: [] }))
+    apiFetch("/files/library/document-sets", { token: authToken })
+      .then((response) => (response.ok ? response.json() : { data: {} }))
       .then((payload) => {
         if (!active) return;
-        const files: PersonalFileItem[] = Array.isArray(payload?.data) ? payload.data : [];
-        setPersonalFiles(
-          files
-            .map((file: PersonalFileItem) => ({
-              ...file,
-              channel_label: file.channel_label || "Files",
-            }))
-            .sort((a, b) => {
-              const at = a.created_at ? Date.parse(a.created_at) : 0;
-              const bt = b.created_at ? Date.parse(b.created_at) : 0;
-              return bt - at;
-            }),
-        );
+        applyPersonalDocumentSetPayload(payload?.data || {});
       })
       .catch(() => {
-        if (active) setPersonalFiles([]);
+        if (!active) return;
+        setPersonalFiles([]);
+        setPersonalDocumentSets([]);
+        setPersonalUngroupedFiles([]);
       })
       .finally(() => {
         if (active) setPersonalFilesLoading(false);
@@ -594,10 +701,148 @@ export function Sidebar({
       setPersonalFiles((files) =>
         files.filter((item) => item.file_id !== file.file_id),
       );
+      setPersonalDocumentSets((sets) =>
+        sets.map((set) => {
+          const nextFiles = set.files.filter((item) => item.file_id !== file.file_id);
+          return { ...set, files: nextFiles, file_count: nextFiles.length };
+        }),
+      );
+      setPersonalUngroupedFiles((files) =>
+        files.filter((item) => item.file_id !== file.file_id),
+      );
       toast.success("File removed");
     } catch (error: unknown) {
       toast.error((error as Error).message || "Remove failed");
     }
+  };
+
+  const renderPersonalFileRow = (
+    file: PersonalFileItem,
+    options: { setId?: string; ungrouped?: boolean } = {},
+  ) => {
+    const moveBusy =
+      personalFileSetBusy === `move-in-${file.file_id}` ||
+      personalFileSetBusy === `move-out-${file.file_id}`;
+    return (
+      <li key={`${options.setId || "library"}:${file.file_id}`} className="group relative">
+        <button
+          type="button"
+          className={`an-rail-row an-file-drag-row w-full ${
+            options.ungrouped && personalDocumentSets.length > 0 ? "pr-28" : "pr-14"
+          }`}
+          draggable
+          title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
+          onDragStart={(event) => {
+            setFileReferenceDragData(event, [
+              {
+                file_id: file.file_id,
+                original_filename: file.original_filename,
+                content_type: file.content_type,
+                size_bytes: file.size_bytes,
+                status: file.status,
+                channel_id: file.channel_id,
+                channel_label: file.channel_label,
+                scope_type: file.scope_type,
+                scope_id: file.scope_id,
+                summary_3lines: file.summary_3lines,
+                created_at: file.created_at,
+              },
+            ]);
+          }}
+          onClick={() => {
+            setSelectedId(null);
+            if (onOpenPersonalFileMain) {
+              onOpenPersonalFileMain(file);
+            } else {
+              onOpenFilePreview?.(file);
+            }
+            if (isMobile) setSidebarOpen(false);
+          }}
+        >
+          <span className="an-sigil">
+            <FileTypeIcon
+              contentType={file.content_type}
+              filename={file.original_filename || file.file_id}
+              size={14}
+              title={file.original_filename || file.file_id}
+            />
+          </span>
+          <span className="an-name">
+            {file.original_filename || file.file_id}
+          </span>
+        </button>
+        <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+          {options.setId ? (
+            <Tooltip content="Move out" placement="right">
+              <button
+                type="button"
+                disabled={moveBusy}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleMovePersonalFileOutOfSet(options.setId as string, file.file_id);
+                }}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)] disabled:opacity-40"
+                style={{ color: "var(--fg-3)" }}
+                title="Move out"
+                aria-label="Move out of document set"
+              >
+                <AppIcon name="minus" className="w-3 h-3" />
+              </button>
+            </Tooltip>
+          ) : options.ungrouped && personalDocumentSets.length > 0 ? (
+            <select
+              value=""
+              disabled={moveBusy}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                const nextSetId = event.target.value;
+                event.currentTarget.value = "";
+                void handleMovePersonalFileIntoSet(file.file_id, nextSetId);
+              }}
+              className="h-6 w-16 rounded border border-transparent bg-transparent px-1 text-[10px] text-[var(--fg-3)] hover:border-[var(--border)] hover:bg-[var(--surface-hover)] focus:outline-none disabled:opacity-40"
+              title="Move to set"
+              aria-label="Move to document set"
+            >
+              <option value="">Move</option>
+              {personalDocumentSets.map((set) => (
+                <option key={set.set_id} value={set.set_id}>
+                  {set.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {onAttachFilesToComposer && (
+            <Tooltip content="Copy to composer" placement="right">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void Promise.resolve(onAttachFilesToComposer([file]));
+                }}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                style={{ color: "var(--fg-3)" }}
+                title="Copy to composer"
+                aria-label="Copy to composer"
+              >
+                <AppIcon name="copy" className="w-3 h-3" />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip content="Remove from files" placement="right">
+            <button
+              type="button"
+              onClick={(event) => void deletePersonalFile(file, event)}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+              style={{ color: "var(--fg-3)" }}
+              title="Remove from files"
+              aria-label="Remove from files"
+            >
+              <AppIcon name="trash" className="w-3 h-3" />
+            </button>
+          </Tooltip>
+        </div>
+      </li>
+    );
   };
 
   const selectWorkspace = (workspaceId: string) => {
@@ -1430,98 +1675,109 @@ export function Sidebar({
           </button>
         </div>
         {personalSectionExpanded("files") && (
-        <ul className="px-2 py-1 pb-2">
-          <li>
-            <button
-              type="button"
-              className="an-rail-row an-rail-action-row w-full"
-              title="Upload File"
-              onClick={handlePersonalUploadClick}
-            >
-              <span className="an-sigil">
-                <AppIcon name="upload" />
-              </span>
-              <span className="an-name">Upload File</span>
-            </button>
-          </li>
-          {personalFiles.length === 0 && (
-            <li className="an-rail-empty">
-              {personalFilesLoading ? "Loading files..." : "No files"}
-            </li>
-          )}
-          {personalFiles.map((file) => (
-            <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
+        <div className="px-2 py-1 pb-2">
+          <ul>
+            <li>
               <button
                 type="button"
-                className="an-rail-row an-file-drag-row w-full pr-14"
-                draggable
-                title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
-                onDragStart={(event) => {
-                  setFileReferenceDragData(event, [
-                    {
-                      file_id: file.file_id,
-                      original_filename: file.original_filename,
-                      content_type: file.content_type,
-                      size_bytes: file.size_bytes,
-                    },
-                  ]);
-                }}
-                onClick={() => {
-                  setSelectedId(null);
-                  if (onOpenPersonalFileMain) {
-                    onOpenPersonalFileMain(file);
-                  } else {
-                    onOpenFilePreview?.(file);
-                  }
-                  if (isMobile) setSidebarOpen(false);
-                }}
+                className="an-rail-row an-rail-action-row w-full"
+                title="Upload File"
+                onClick={handlePersonalUploadClick}
               >
                 <span className="an-sigil">
-                  <FileTypeIcon
-                    contentType={file.content_type}
-                    filename={file.original_filename || file.file_id}
-                    size={14}
-                    title={file.original_filename || file.file_id}
-                  />
+                  <AppIcon name="upload" />
                 </span>
-                <span className="an-name">
-                  {file.original_filename || file.file_id}
-                </span>
+                <span className="an-name">Upload File</span>
               </button>
-              <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                {onAttachFilesToComposer && (
-                  <Tooltip content="Copy to composer" placement="right">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void Promise.resolve(onAttachFilesToComposer([file]));
-                      }}
-                      className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
-                      style={{ color: "var(--fg-3)" }}
-                      title="Copy to composer"
-                      aria-label="Copy to composer"
-                    >
-                      <AppIcon name="copy" className="w-3 h-3" />
-                    </button>
-                  </Tooltip>
-                )}
-                <Tooltip content="Remove from files" placement="right">
-                  <button
-                    type="button"
-                    onClick={(event) => void deletePersonalFile(file, event)}
-                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
-                    style={{ color: "var(--fg-3)" }}
-                    title="Remove from files"
-                    aria-label="Remove from files"
-                  >
-                    <AppIcon name="trash" className="w-3 h-3" />
-                  </button>
-                </Tooltip>
-              </div>
             </li>
+          </ul>
+          <div className="my-1 flex items-center gap-1">
+            <input
+              value={personalFileSetDraftName}
+              onChange={(event) => setPersonalFileSetDraftName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleCreatePersonalDocumentSet();
+                }
+              }}
+              placeholder="New set"
+              className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-[11px] text-[var(--fg-1)] outline-none focus:border-[var(--accent)]"
+            />
+            <button
+              type="button"
+              disabled={!personalFileSetDraftName.trim() || personalFileSetBusy === "create-personal-set"}
+              onClick={() => void handleCreatePersonalDocumentSet()}
+              className="w-7 h-7 flex items-center justify-center rounded hover:bg-[var(--surface-hover)] disabled:opacity-40"
+              style={{ color: "var(--fg-2)" }}
+              title="New document set"
+              aria-label="New document set"
+            >
+              <AppIcon name="plus" className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={personalFileSetBusy === "auto-classify-personal"}
+              onClick={() => void handleAutoClassifyPersonalDocumentSets()}
+              className="w-7 h-7 flex items-center justify-center rounded hover:bg-[var(--surface-hover)] disabled:opacity-40"
+              style={{ color: "var(--fg-2)" }}
+              title="Auto classify"
+              aria-label="Auto classify files"
+            >
+              <AppIcon name="refresh" className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {personalFiles.length === 0 && (
+            <div className="an-rail-empty">
+              {personalFilesLoading ? "Loading files..." : "No files"}
+            </div>
+          )}
+          {personalDocumentSets.map((set) => (
+            <div key={set.set_id} className="mt-1">
+              <div className="group relative">
+                <div className="an-rail-row w-full pr-7">
+                  <span className="an-sigil">
+                    <AppIcon name="folder" />
+                  </span>
+                  <span className="an-name">{set.name}</span>
+                  <span className="an-rail-count">{set.file_count}</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={personalFileSetBusy === `delete-set-${set.set_id}`}
+                  onClick={() => void handleDeletePersonalDocumentSet(set)}
+                  className="absolute right-1 top-1/2 w-6 h-6 -translate-y-1/2 flex items-center justify-center rounded opacity-100 hover:bg-[var(--surface-hover)] disabled:opacity-40 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                  style={{ color: "var(--fg-3)" }}
+                  title="Delete document set"
+                  aria-label="Delete document set"
+                >
+                  <AppIcon name="trash" className="w-3 h-3" />
+                </button>
+              </div>
+              <ul className="ml-3 border-l border-[var(--border)] pl-1">
+                {set.files.length === 0 ? (
+                  <li className="an-rail-empty">Empty</li>
+                ) : (
+                  set.files.map((file) => renderPersonalFileRow(file, { setId: set.set_id }))
+                )}
+              </ul>
+            </div>
           ))}
-        </ul>
+          {personalUngroupedFiles.length > 0 && (
+            <div className="mt-1">
+              {personalDocumentSets.length > 0 && (
+                <div className="px-2 py-1 text-[10px] font-medium text-[var(--fg-3)]">
+                  Ungrouped
+                </div>
+              )}
+              <ul>
+                {personalUngroupedFiles.map((file) =>
+                  renderPersonalFileRow(file, { ungrouped: true }),
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
         )}
       </div>
 

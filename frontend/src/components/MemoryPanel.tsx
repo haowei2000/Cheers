@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import toast from "react-hot-toast";
 import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
@@ -24,6 +24,36 @@ const PANEL_TITLE_BY_LAYER: Record<string, string> = {
   MEMBERS: "Members",
   TODO: "Todos",
   RECENT: "Recent activity",
+};
+
+type ChannelFile = {
+  file_id: string;
+  original_filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  status: string | null;
+  summary_3lines: string | null;
+  created_at: string | null;
+  expires_at?: string | null;
+};
+
+type DocumentSetItem = {
+  set_id: string;
+  channel_id: string;
+  name: string;
+  auto_rule: string;
+  similarity_threshold: number;
+  file_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+  files: ChannelFile[];
+};
+
+type DocumentSetPayload = {
+  auto_rule: string;
+  similarity_threshold: number;
+  sets: DocumentSetItem[];
+  ungrouped_files: ChannelFile[];
 };
 
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
@@ -84,17 +114,13 @@ export function MemoryPanel({
 
   // Channel files state (for FILES_INDEX layer)
   const [channelFiles, setChannelFiles] = useState<
-    {
-      file_id: string;
-      original_filename: string;
-      content_type: string;
-      size_bytes: number;
-      status: string;
-      summary_3lines: string | null;
-      created_at: string | null;
-    }[]
+    ChannelFile[]
   >([]);
+  const [documentSets, setDocumentSets] = useState<DocumentSetItem[]>([]);
+  const [ungroupedFiles, setUngroupedFiles] = useState<ChannelFile[]>([]);
   const [channelFilesLoading, setChannelFilesLoading] = useState(false);
+  const [documentSetDraftName, setDocumentSetDraftName] = useState("");
+  const [documentSetBusy, setDocumentSetBusy] = useState<string | null>(null);
 
   // Entry-based state
   const [entries, setEntries] = useState<MemoryEntryItem[]>([]);
@@ -251,16 +277,110 @@ export function MemoryPanel({
     }
   };
 
+  const applyDocumentSetPayload = (payload: Partial<DocumentSetPayload>) => {
+    const sets = payload.sets || [];
+    const ungrouped = payload.ungrouped_files || [];
+    setDocumentSets(sets);
+    setUngroupedFiles(ungrouped);
+    setChannelFiles([...sets.flatMap((item) => item.files || []), ...ungrouped]);
+  };
+
   const loadChannelFiles = () => {
     const token = getStoredToken();
     setChannelFilesLoading(true);
-    fetch(`${API}/files/by-channel/${channelId}`, {
+    fetch(`${API}/files/by-channel/${channelId}/document-sets`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then((r) => r.json())
-      .then((d) => setChannelFiles(d.data || []))
-      .catch(() => {})
+      .then((d) => applyDocumentSetPayload(d.data || {}))
+      .catch(() => {
+        setDocumentSets([]);
+        setUngroupedFiles([]);
+        setChannelFiles([]);
+      })
       .finally(() => setChannelFilesLoading(false));
+  };
+
+  const requestDocumentSetUpdate = async (
+    path: string,
+    options: RequestInit,
+    busyKey: string,
+    successMessage?: string,
+  ) => {
+    const token = getStoredToken();
+    setDocumentSetBusy(busyKey);
+    try {
+      const headers = {
+        ...(options.headers || {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      const res = await fetch(path, { ...options, headers });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Update failed");
+      }
+      applyDocumentSetPayload(payload.data || {});
+      if (successMessage) toast.success(successMessage);
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Update failed");
+    } finally {
+      setDocumentSetBusy(null);
+    }
+  };
+
+  const handleCreateDocumentSet = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = documentSetDraftName.trim();
+    if (!name) return;
+    await requestDocumentSetUpdate(
+      `${API}/files/by-channel/${channelId}/document-sets`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      },
+      "create-set",
+      "Document set created",
+    );
+    setDocumentSetDraftName("");
+  };
+
+  const handleAutoClassifyDocumentSets = async () => {
+    await requestDocumentSetUpdate(
+      `${API}/files/by-channel/${channelId}/document-sets/auto-classify`,
+      { method: "POST" },
+      "auto-classify",
+      "Document sets updated",
+    );
+  };
+
+  const handleMoveFileIntoSet = async (fileId: string, setId: string) => {
+    if (!setId) return;
+    await requestDocumentSetUpdate(
+      `${API}/files/by-channel/${channelId}/document-sets/${setId}/files/${fileId}`,
+      { method: "POST" },
+      `move-in-${fileId}`,
+      "File moved",
+    );
+  };
+
+  const handleMoveFileOutOfSet = async (setId: string, fileId: string) => {
+    await requestDocumentSetUpdate(
+      `${API}/files/by-channel/${channelId}/document-sets/${setId}/files/${fileId}`,
+      { method: "DELETE" },
+      `move-out-${fileId}`,
+      "File moved out",
+    );
+  };
+
+  const handleDeleteDocumentSet = async (set: DocumentSetItem) => {
+    if (!confirm(`Delete ${set.name}?`)) return;
+    await requestDocumentSetUpdate(
+      `${API}/files/by-channel/${channelId}/document-sets/${set.set_id}`,
+      { method: "DELETE" },
+      `delete-set-${set.set_id}`,
+      "Document set deleted",
+    );
   };
 
   const handleChannelFileDelete = async (
@@ -282,13 +402,317 @@ export function MemoryPanel({
       if (!res.ok || payload?.status === "error") {
         throw new Error(payload?.message || payload?.detail || "Delete failed");
       }
-      setChannelFiles((files) =>
-        files.filter((item) => item.file_id !== file.file_id),
-      );
+      loadChannelFiles();
       toast.success("File deleted");
     } catch (error: unknown) {
       toast.error((error as Error).message || "Delete failed");
     }
+  };
+
+  const fileTypeLabel = (file: ChannelFile) => {
+    const ct = file.content_type || "";
+    if (ct.includes("pdf")) return "PDF";
+    if (ct.includes("wordprocessingml") || ct.includes("docx")) return "Word";
+    if (ct.includes("spreadsheetml") || ct.includes("xlsx")) return "Excel";
+    if (ct.startsWith("text/")) return "Text";
+    return "Files";
+  };
+
+  const fileSizeLabel = (file: ChannelFile) => {
+    const size = file.size_bytes || 0;
+    if (!size) return "";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const withChannelFileContext = (file: ChannelFile): ChannelFilePreview => ({
+    ...file,
+    channel_id: channelId,
+    channel_label: channelName,
+    scope_type: "channel",
+    scope_id: channelId,
+  });
+
+  const renderChannelFileRow = (
+    file: ChannelFile,
+    options: { setId?: string; ungrouped?: boolean } = {},
+  ) => {
+    const typeLabel = fileTypeLabel(file);
+    const sizeStr = fileSizeLabel(file);
+    const moveBusy =
+      documentSetBusy === `move-in-${file.file_id}` ||
+      documentSetBusy === `move-out-${file.file_id}`;
+
+    return (
+      <div
+        key={`${options.setId || "ungrouped"}-${file.file_id}`}
+        role={onFilePreview ? "button" : undefined}
+        tabIndex={onFilePreview ? 0 : undefined}
+        draggable
+        onDragStart={(event) =>
+          setAgentNexusFileRefs(event.dataTransfer, [
+            {
+              ...file,
+              channel_id: channelId,
+              channel_label: channelName,
+              scope_type: "channel",
+              scope_id: channelId,
+            },
+          ])
+        }
+        onClick={() => onFilePreview?.(withChannelFileContext(file))}
+        onKeyDown={(event) => {
+          if (!onFilePreview) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onFilePreview(withChannelFileContext(file));
+          }
+        }}
+        className={`flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors ${
+          onFilePreview ? "cursor-pointer" : ""
+        }`}
+      >
+        <div className="w-8 h-8 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0">
+          <FileTypeIcon
+            contentType={file.content_type || undefined}
+            filename={file.original_filename || file.file_id}
+            size={26}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-gray-800 truncate">
+            {file.original_filename || file.file_id}
+          </p>
+          <p className="text-[10px] text-gray-400 truncate">
+            {typeLabel}
+            {sizeStr ? ` · ${sizeStr}` : ""}
+            {file.created_at ? ` · ${file.created_at.slice(0, 10)}` : ""}
+          </p>
+          {file.summary_3lines && (
+            <p className="text-[10px] text-gray-400 truncate mt-0.5">
+              {file.summary_3lines}
+            </p>
+          )}
+        </div>
+        {options.setId ? (
+          <button
+            type="button"
+            disabled={moveBusy}
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleMoveFileOutOfSet(options.setId as string, file.file_id);
+            }}
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0 disabled:opacity-40"
+            title="Move out"
+            aria-label="Move out of document set"
+          >
+            <AppIcon name="minus" className="w-4 h-4" />
+          </button>
+        ) : options.ungrouped && documentSets.length > 0 ? (
+          <select
+            value=""
+            disabled={moveBusy}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => {
+              const nextSetId = event.target.value;
+              event.currentTarget.value = "";
+              void handleMoveFileIntoSet(file.file_id, nextSetId);
+            }}
+            className="h-7 max-w-[92px] rounded border border-gray-200 bg-white px-1.5 text-[10px] text-gray-500 hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-200 disabled:opacity-40"
+            aria-label="Move file to document set"
+          >
+            <option value="">Move</option>
+            {documentSets.map((set) => (
+              <option key={set.set_id} value={set.set_id}>
+                {set.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <a
+          href={`${API}/files/${file.file_id}/download`}
+          onClick={(event) => event.stopPropagation()}
+          className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
+          title="Download file"
+        >
+          <AppIcon name="download" className="w-4 h-4" />
+        </a>
+        {onAttachFileToComposer && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onAttachFileToComposer(withChannelFileContext(file));
+            }}
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
+            title="Copy to composer"
+            aria-label="Copy to composer"
+          >
+            <AppIcon name="copy" className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={(event) => void handleChannelFileDelete(file, event)}
+          className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
+          title="Delete file"
+          aria-label="Delete file"
+        >
+          <AppIcon name="trash" className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  };
+
+  const renderFilesIndex = () => {
+    if (channelFilesLoading) {
+      return (
+        <div className="flex items-center justify-center h-full text-gray-400 text-xs">
+          Loading...
+        </div>
+      );
+    }
+
+    if (channelFiles.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
+          <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
+          <p className="text-xs font-medium text-gray-500">No files</p>
+          <p className="text-[11px] text-gray-400">
+            Current channel memory reference files appear here after upload.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex h-full flex-col">
+        <div className="border-b border-gray-100 px-3 py-2">
+          <SearchPicker
+            context="file_lookup"
+            channelId={channelId}
+            types={["files"]}
+            modal
+            placeholder="Search file name, summary, or type"
+            emptyText="No matching files"
+            actionLabel="Preview"
+            onSelect={(selection) => {
+              if (selection.type !== "file") return;
+              onFilePreview?.({
+                file_id: selection.item.file_id,
+                original_filename: selection.item.original_filename,
+                content_type: selection.item.content_type,
+                size_bytes: selection.item.size_bytes,
+                channel_id: channelId,
+                channel_label: channelName,
+                scope_type: "channel",
+                scope_id: channelId,
+              });
+            }}
+          />
+        </div>
+
+        <div className="border-b border-gray-100 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700">
+                <AppIcon name="folder" className="w-3.5 h-3.5 text-gray-400" />
+                <span>Document sets</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                  Auto 90%
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={documentSetBusy === "auto-classify"}
+              onClick={() => void handleAutoClassifyDocumentSets()}
+              className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-40"
+              title="Auto classify"
+              aria-label="Auto classify document sets"
+            >
+              <AppIcon name="refresh" className="w-4 h-4" />
+            </button>
+          </div>
+          <form
+            onSubmit={(event) => void handleCreateDocumentSet(event)}
+            className="mt-2 flex items-center gap-1.5"
+          >
+            <input
+              value={documentSetDraftName}
+              onChange={(event) => setDocumentSetDraftName(event.target.value)}
+              placeholder="Set name"
+              className="min-w-0 flex-1 rounded border border-gray-200 px-2 py-1.5 text-xs text-gray-700 focus:border-blue-300 focus:outline-none focus:ring-1 focus:ring-blue-100"
+            />
+            <button
+              type="submit"
+              disabled={!documentSetDraftName.trim() || documentSetBusy === "create-set"}
+              className="w-8 h-8 flex items-center justify-center rounded bg-gray-900 text-white hover:bg-gray-700 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              title="New document set"
+              aria-label="New document set"
+            >
+              <AppIcon name="plus" className="w-4 h-4" />
+            </button>
+          </form>
+        </div>
+
+        <div className="overflow-y-auto px-3 py-3 space-y-3">
+          {documentSets.map((set) => (
+            <section
+              key={set.set_id}
+              className="overflow-hidden rounded-md border border-gray-200 bg-white"
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold text-gray-800">
+                    {set.name}
+                  </div>
+                  <div className="text-[10px] text-gray-400">
+                    {set.file_count} file{set.file_count === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={documentSetBusy === `delete-set-${set.set_id}`}
+                  onClick={() => void handleDeleteDocumentSet(set)}
+                  className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-40"
+                  title="Delete document set"
+                  aria-label="Delete document set"
+                >
+                  <AppIcon name="trash" className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {set.files.length === 0 ? (
+                  <div className="px-3 py-3 text-[11px] text-gray-400">
+                    Empty
+                  </div>
+                ) : (
+                  set.files.map((file) => renderChannelFileRow(file, { setId: set.set_id }))
+                )}
+              </div>
+            </section>
+          ))}
+
+          {ungroupedFiles.length > 0 && (
+            <section className="overflow-hidden rounded-md border border-dashed border-gray-200 bg-white">
+              <div className="border-b border-gray-100 px-3 py-2">
+                <div className="text-xs font-semibold text-gray-700">Ungrouped</div>
+                <div className="text-[10px] text-gray-400">
+                  {ungroupedFiles.length} file{ungroupedFiles.length === 1 ? "" : "s"}
+                </div>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {ungroupedFiles.map((file) =>
+                  renderChannelFileRow(file, { ungrouped: true }),
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -1264,179 +1688,7 @@ export function MemoryPanel({
         ) : activeLayer === "MEMBERS" ? (
           renderMembersHub()
         ) : activeLayer === "FILES_INDEX" ? (
-          channelFilesLoading ? (
-            <div className="flex items-center justify-center h-full text-gray-400 text-xs">
-              Loading...
-            </div>
-          ) : channelFiles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
-              <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-              <p className="text-xs font-medium text-gray-500">No files</p>
-              <p className="text-[11px] text-gray-400">
-                Current channel memory reference files appear here after upload.
-              </p>
-            </div>
-          ) : (
-            <div className="flex h-full flex-col">
-              <div className="border-b border-gray-100 px-3 py-2">
-                <SearchPicker
-                  context="file_lookup"
-                  channelId={channelId}
-                  types={["files"]}
-                  modal
-                  placeholder="Search file name, summary, or type"
-                  emptyText="No matching files"
-                  actionLabel="Preview"
-                  onSelect={(selection) => {
-                    if (selection.type !== "file") return;
-                    onFilePreview?.({
-                      file_id: selection.item.file_id,
-                      original_filename: selection.item.original_filename,
-                      content_type: selection.item.content_type,
-                      size_bytes: selection.item.size_bytes,
-                      channel_id: channelId,
-                      channel_label: channelName,
-                      scope_type: "channel",
-                      scope_id: channelId,
-                    });
-                  }}
-                />
-              </div>
-              <div className="divide-y divide-gray-100 overflow-y-auto">
-                {channelFiles.map((f) => {
-                const ct = f.content_type || "";
-                const typeLabel = ct.includes("pdf")
-                  ? "PDF"
-                  : ct.includes("wordprocessingml") || ct.includes("docx")
-                    ? "Word"
-                    : ct.includes("spreadsheetml") || ct.includes("xlsx")
-                      ? "Excel"
-                      : ct.startsWith("text/")
-                        ? "Text"
-                        : "Files";
-                const sizeStr = f.size_bytes
-                  ? f.size_bytes < 1024
-                    ? `${f.size_bytes} B`
-                    : f.size_bytes < 1024 * 1024
-                      ? `${(f.size_bytes / 1024).toFixed(1)} KB`
-                      : `${(f.size_bytes / (1024 * 1024)).toFixed(1)} MB`
-                  : "";
-                return (
-                  <div
-                    key={f.file_id}
-                    role={onFilePreview ? "button" : undefined}
-                    tabIndex={onFilePreview ? 0 : undefined}
-                    draggable
-                    onDragStart={(event) =>
-                      setAgentNexusFileRefs(event.dataTransfer, [
-                        {
-                          file_id: f.file_id,
-                          original_filename: f.original_filename,
-                          content_type: f.content_type,
-                          size_bytes: f.size_bytes,
-                          status: f.status,
-                          channel_id: channelId,
-                          channel_label: channelName,
-                          scope_type: "channel",
-                          scope_id: channelId,
-                          summary_3lines: f.summary_3lines,
-                          created_at: f.created_at,
-                        },
-                      ])
-                    }
-                    onClick={() =>
-                      onFilePreview?.({
-                        ...f,
-                        channel_id: channelId,
-                        channel_label: channelName,
-                        scope_type: "channel",
-                        scope_id: channelId,
-                      })
-                    }
-                    onKeyDown={(event) => {
-                      if (!onFilePreview) return;
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        onFilePreview({
-                          ...f,
-                          channel_id: channelId,
-                          channel_label: channelName,
-                          scope_type: "channel",
-                          scope_id: channelId,
-                        });
-                      }
-                    }}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors ${
-                      onFilePreview ? "cursor-pointer" : ""
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0">
-                      <FileTypeIcon
-                        contentType={f.content_type}
-                        filename={f.original_filename || f.file_id}
-                        size={26}
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-gray-800 truncate">
-                        {f.original_filename || f.file_id}
-                      </p>
-                      <p className="text-[10px] text-gray-400 truncate">
-                        {typeLabel}
-                        {sizeStr ? ` · ${sizeStr}` : ""}
-                        {f.created_at
-                          ? ` · ${f.created_at.slice(0, 10)}`
-                          : ""}
-                      </p>
-                      {f.summary_3lines && (
-                        <p className="text-[10px] text-gray-400 truncate mt-0.5">
-                          {f.summary_3lines}
-                        </p>
-                      )}
-                    </div>
-                    <a
-                      href={`${API}/files/${f.file_id}/download`}
-                      onClick={(event) => event.stopPropagation()}
-                      className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
-                      title="Download file"
-                    >
-                      <AppIcon name="download" className="w-4 h-4" />
-                    </a>
-                    {onAttachFileToComposer && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onAttachFileToComposer({
-                            ...f,
-                            channel_id: channelId,
-                            channel_label: channelName,
-                            scope_type: "channel",
-                            scope_id: channelId,
-                          });
-                        }}
-                        className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
-                        title="Copy to composer"
-                        aria-label="Copy to composer"
-                      >
-                        <AppIcon name="copy" className="w-4 h-4" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(event) => void handleChannelFileDelete(f, event)}
-                      className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
-                      title="Delete file"
-                      aria-label="Delete file"
-                    >
-                      <AppIcon name="trash" className="w-4 h-4" />
-                    </button>
-                  </div>
-                );
-                })}
-              </div>
-            </div>
-          )
+          renderFilesIndex()
         ) : rawContent.trim() ? (
           /* Readonly derived layers (history) */
           <div className="px-3 py-3 text-sm overflow-y-auto">
