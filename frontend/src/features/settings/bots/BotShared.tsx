@@ -7,6 +7,18 @@ const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
   { value: "everyone", label: "Everyone", hint: "All users can start DMs or invite" },
 ];
 
+const BOT_MENTION_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+
+export const BOT_MENTION_ID_HINT = "Use lowercase letters, numbers, underscores, or hyphens. Start with a letter.";
+
+export function normalizeBotMentionId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function isValidBotMentionId(value: string): boolean {
+  return BOT_MENTION_ID_RE.test(normalizeBotMentionId(value));
+}
+
 export function normalizeBotScope(scope?: string | null): BotScope {
   if (scope === "private" || scope === "friend" || scope === "everyone") return scope;
   return "friend";

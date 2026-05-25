@@ -13,7 +13,7 @@ from app.features.bot_runtime.builtin_ids import configured_builtin_bot_ids
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
 from app.utils.permissions import can_access, get_friend_ids
 
-_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+_USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 BOT_SCOPES = {"private", "friend", "everyone"}
 BotScope = Literal["private", "friend", "everyone"]
 
@@ -59,7 +59,7 @@ def _validate_username(username: str) -> str:
     if not username:
         raise BadRequestError("用户名不能为空")
     if not _USERNAME_RE.match(username):
-        raise BadRequestError("用户名只能包含字母、数字、下划线、连字符、单引号和中文")
+        raise BadRequestError("Bot @ ID 只能使用小写英文字母、数字、下划线和连字符，且必须以小写字母开头")
     return username
 
 
