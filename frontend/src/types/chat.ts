@@ -5,6 +5,13 @@ export type Workspace = {
    *  auto-provisioned, hosts DMs only). Defaults to "team" server-side. */
   kind?: "team" | "personal";
   avatar_url?: string | null;
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
 };
 
 export type Channel = {

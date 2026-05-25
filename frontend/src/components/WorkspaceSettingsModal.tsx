@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import type { Workspace } from "../types";
+import type { BotItem, Workspace } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
 import { AvatarIconPicker } from "./AvatarIconPicker";
@@ -52,15 +52,51 @@ export function WorkspaceSettingsModal({
 }) {
   const [name, setName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [defaultBotId, setDefaultBotId] = useState("");
+  const [visibleBots, setVisibleBots] = useState<BotItem[]>([]);
+  const [botsLoading, setBotsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const isPersonalWorkspace = workspace?.kind === "personal";
 
   useEffect(() => {
     if (!workspace) return;
     setName(workspace.name || "");
     setAvatarUrl(workspace.avatar_url || "");
-  }, [workspace?.workspace_id, workspace?.name, workspace?.avatar_url]);
+    setDefaultBotId(workspace.default_bot_id || "");
+  }, [
+    workspace?.avatar_url,
+    workspace?.default_bot_id,
+    workspace?.name,
+    workspace?.workspace_id,
+  ]);
+
+  useEffect(() => {
+    if (!open || !isPersonalWorkspace || !authToken) {
+      setVisibleBots([]);
+      setBotsLoading(false);
+      return;
+    }
+    let active = true;
+    setBotsLoading(true);
+    apiFetch("/bots", { token: authToken })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!active) return;
+        const bots: BotItem[] = Array.isArray(data?.data) ? data.data : [];
+        setVisibleBots(bots);
+      })
+      .catch(() => {
+        if (active) setVisibleBots([]);
+      })
+      .finally(() => {
+        if (active) setBotsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authToken, isPersonalWorkspace, open]);
 
   const saveWorkspace = async () => {
     if (!workspace) return;
@@ -71,13 +107,17 @@ export function WorkspaceSettingsModal({
     }
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        name: nextName,
+        avatar_url: avatarUrl.trim() || null,
+      };
+      if (isPersonalWorkspace) {
+        body.default_bot_id = defaultBotId || null;
+      }
       const res = await apiFetch(`/workspaces/${workspace.workspace_id}`, {
         method: "PUT",
         token: authToken,
-        body: {
-          name: nextName,
-          avatar_url: avatarUrl.trim() || null,
-        },
+        body,
       });
       const data = await res.json();
       if (!res.ok || data?.status === "error") {
@@ -136,6 +176,21 @@ export function WorkspaceSettingsModal({
       toast.error((e as Error).message || "Avatar clear failed");
     }
   };
+
+  const currentDefaultBot = workspace?.default_bot;
+  const botOptions =
+    currentDefaultBot &&
+    !visibleBots.some((bot) => bot.bot_id === currentDefaultBot.bot_id)
+      ? [
+          {
+            bot_id: currentDefaultBot.bot_id,
+            username: currentDefaultBot.username,
+            display_name: currentDefaultBot.display_name || undefined,
+            avatar_url: currentDefaultBot.avatar_url || undefined,
+          },
+          ...visibleBots,
+        ]
+      : visibleBots;
 
   return (
     <Modal
@@ -216,6 +271,32 @@ export function WorkspaceSettingsModal({
             </button>
           )}
         </div>
+
+        {isPersonalWorkspace && (
+          <div>
+            <label className="block text-sm font-medium mb-1" style={{ color: "var(--fg-2)" }}>
+              Default bot
+            </label>
+            <select
+              value={defaultBotId}
+              onChange={(e) => setDefaultBotId(e.target.value)}
+              className={inputCls}
+              disabled={botsLoading}
+            >
+              <option value="">
+                {botsLoading ? "Loading bots..." : "No default bot"}
+              </option>
+              {botOptions.map((bot) => {
+                const label = bot.display_name || bot.username || "Bot";
+                return (
+                  <option key={bot.bot_id} value={bot.bot_id}>
+                    {label}{bot.username ? ` (@${bot.username})` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        )}
 
         <ModalFooter>
           <button type="button" onClick={onClose} className="an-btn an-btn-ghost">
