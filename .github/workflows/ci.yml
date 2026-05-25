@@ -5,18 +5,60 @@ on:
     branches: [main, develop, "feat/**", "fix/**"]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      plugin: ${{ steps.filter.outputs.plugin }}
+      integration: ${{ steps.filter.outputs.integration }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed areas
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - "backend/**"
+              - "tests/**"
+              - "pytest.ini"
+              - ".github/workflows/ci.yml"
+            frontend:
+              - "frontend/**"
+              - ".github/workflows/ci.yml"
+            plugin:
+              - "packages/agentnexus-bridge-client/**"
+              - "packages/openclaw-channel-agentnexus/**"
+              - ".github/workflows/ci.yml"
+            integration:
+              - "backend/**"
+              - "frontend/**"
+              - "tests/**"
+              - "docker-compose.yml.template"
+              - ".github/workflows/ci.yml"
+
   # ─────────────────────────────────────────────
   # Backend: lint
   # ─────────────────────────────────────────────
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
       run:
         working-directory: backend
@@ -28,6 +70,8 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -46,6 +90,8 @@ jobs:
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
       run:
         working-directory: backend
@@ -77,6 +123,8 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -93,15 +141,90 @@ jobs:
         run: uv run alembic -c alembic_context.ini upgrade head
 
       - name: Run tests
-        run: uv run pytest ../tests/ -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
+        run: uv run pytest ../tests/ -m "not integration" -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./coverage.xml
+          files: backend/coverage.xml
           flags: backend
           fail_ci_if_error: false
+
+  # ─────────────────────────────────────────────
+  # Integration: Docker Compose stack
+  # ─────────────────────────────────────────────
+  integration-compose:
+    name: Integration Tests (Compose)
+    runs-on: ubuntu-latest
+    needs: [changes, backend-test, frontend-build]
+    if: |
+      always() &&
+      (needs.changes.outputs.integration == 'true' || github.event_name == 'workflow_dispatch') &&
+      (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') &&
+      (needs.frontend-build.result == 'success' || needs.frontend-build.result == 'skipped')
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Prepare Compose environment
+        run: |
+          cp docker-compose.yml.template docker-compose.yml
+          cat > .env <<'EOF'
+          BACKEND_HOST_PORT=8000
+          FRONTEND_HOST_PORT=8080
+          POSTGRES_HOST_PORT=5433
+          POSTGRES_USER=agentnexus
+          POSTGRES_PASSWORD=agentnexus
+          POSTGRES_DB=agentnexus_test
+          TEST_DATABASE_URL=postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test
+          SEED_DATA=1
+          EOF
+
+      - name: Start Docker Compose stack
+        run: docker compose up -d --wait
+
+      - name: Inspect test environment
+        run: |
+          docker compose ps
+          docker compose port backend 8000
+          docker compose port frontend 80
+          docker compose port postgres 5432
+          rg -n "^(BACKEND_HOST_PORT|FRONTEND_HOST_PORT|POSTGRES_HOST_PORT|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|TEST_DATABASE_URL)=" .env
+
+      - name: Install test dependencies
+        working-directory: backend
+        run: uv sync --frozen --extra dev
+
+      - name: Run integration tests
+        working-directory: backend
+        env:
+          INTEGRATION_BASE_URL: http://localhost:8000
+          TEST_DATABASE_URL: postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test
+        run: uv run pytest ../tests -m integration -v
+
+      - name: Show Compose logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Stop Docker Compose stack
+        if: always()
+        run: docker compose down -v
 
   # ─────────────────────────────────────────────
   # Frontend: type-check + build
@@ -109,6 +232,8 @@ jobs:
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
       run:
         working-directory: frontend
@@ -135,6 +260,8 @@ jobs:
   plugin-build:
     name: Plugin Build
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.plugin == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
       run:
         working-directory: packages/openclaw-channel-agentnexus
@@ -170,18 +297,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  # ─────────────────────────────────────────────
-  # Deploy (only on push to main)
-  # ─────────────────────────────────────────────
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-build, plugin-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to production
-        run: echo "TODO – replace with real deploy steps"
