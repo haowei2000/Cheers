@@ -5,8 +5,6 @@ import asyncio
 import base64
 import json
 import logging
-import re
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.chat.message_assembler import MessageAssembler
-from app.config import resolve_data_dir, settings
+from app.config import settings
 from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
 from app.db.models import (
@@ -84,6 +82,12 @@ from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.file_retention import active_file_filter
 from app.services.file_scope_service import FileScopeService
+from app.services.generated_file_service import (
+    GeneratedFileError,
+    generated_file_access_payload,
+    sanitize_generated_filename,
+    store_generated_file,
+)
 
 logger = logging.getLogger("app.api.v1.agent_bridge")
 
@@ -627,49 +631,25 @@ async def bridge_upload_markdown_file(
             detail=f"content 超过上限 {_FILE_UPLOAD_MAX_BYTES} bytes",
         )
 
-    safe_name = re.sub(r"[^\w\-. ]", "_", body.filename.strip()) or "reply"
+    safe_name = sanitize_generated_filename(body.filename, fallback="reply")
     if not safe_name.lower().endswith(".md"):
         safe_name = f"{safe_name}.md"
 
-    file_id = str(uuid.uuid4())
-    gen_dir = resolve_data_dir() / "generated" / body.channel_id
-    gen_dir.mkdir(parents=True, exist_ok=True)
-    md_path = gen_dir / f"{file_id}.md"
-    # Path traversal guard: body.channel_id is untrusted, so keep writes within gen_dir.
-    if not md_path.resolve().is_relative_to(gen_dir.resolve()):
-        raise HTTPException(status_code=400, detail="invalid channel_id path")
-    md_path.write_text(text, encoding="utf-8")
-
-    now = datetime.now(timezone.utc)
-    channel = await session.get(Channel, body.channel_id)
-    record = FileRecord(
-        file_id=file_id,
-        channel_id=body.channel_id,
-        workspace_id=channel.workspace_id if channel else None,
-        uploader_id=bot.bot_id,
-        original_path=str(md_path),
-        original_filename=safe_name,
-        content_type="text/markdown",
-        size_bytes=byte_size,
-        md_path=str(md_path),
-        status="ready",
-        uploaded_at=now,
-        converted_at=now,
-        expires_at=None,
-    )
-    session.add(record)
-    await session.flush()
-    from app.services.file_scope_service import FileScopeService
-
-    if channel:
-        await FileScopeService(session).link_file_to_channel(record, channel, created_by=bot.bot_id)
+    try:
+        record = await store_generated_file(
+            session,
+            channel_id=body.channel_id,
+            uploader_id=bot.bot_id,
+            filename=safe_name,
+            data=text.encode("utf-8"),
+            content_type="text/markdown",
+            markdown_cache_text=text,
+        )
+    except GeneratedFileError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     await session.commit()
 
-    return APIResponse.ok({
-        "file_id": file_id,
-        "filename": safe_name,
-        "size_bytes": byte_size,
-    })
+    return APIResponse.ok(generated_file_access_payload(record))
 
 
 # ============================================================================
@@ -680,8 +660,15 @@ async def bridge_upload_markdown_file(
 # MEDIA: the gateway passes local media files to the plugin, which uploads them here
 # as FileRecord attachments.
 def _sanitize_filename(raw: str) -> str:
-    safe = re.sub(r"[^\w\-. ]", "_", raw.strip())
-    return safe or "media"
+    return sanitize_generated_filename(raw, fallback="media")
+
+
+def _markdown_cache_text(filename: str, content_type: str, data: bytes) -> str | None:
+    if content_type not in {"text/markdown", "text/plain"}:
+        return None
+    if not filename.lower().endswith((".md", ".markdown")):
+        return None
+    return data.decode("utf-8", errors="replace")
 
 
 @router.post("/files/upload-binary", response_model=APIResponse[dict])
@@ -700,42 +687,24 @@ async def bridge_upload_binary_file(
     max_bytes = int(settings.file_upload_max_bytes)
 
     raw_name = _sanitize_filename(x_filename)
-    suffix = Path(raw_name).suffix.lower()
 
-    file_id = str(uuid.uuid4())
-    gen_dir = resolve_data_dir() / "generated" / x_channel_id
-    gen_dir.mkdir(parents=True, exist_ok=True)
-    dst = gen_dir / f"{file_id}{suffix}"
-    # Path traversal guard: x_channel_id is untrusted input.
-    if not dst.resolve().is_relative_to(gen_dir.resolve()):
-        raise HTTPException(status_code=400, detail="invalid channel_id path")
-
-    # Stream to disk and stop immediately on size limit to avoid loading the whole body into memory.
+    # Stop immediately on size limit while collecting the bounded upload body for object storage.
     total = 0
-    try:
-        with open(dst, "wb") as fh:
-            async for chunk in request.stream():
-                if not chunk:
-                    continue
-                total += len(chunk)
-                if total > max_bytes:
-                    fh.close()
-                    dst.unlink(missing_ok=True)
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"文件超过上限 {max_bytes} bytes",
-                    )
-                fh.write(chunk)
-    except HTTPException:
-        raise
-    except OSError as exc:
-        dst.unlink(missing_ok=True)
-        logger.warning("upload-binary write failed: %s", exc)
-        raise HTTPException(status_code=500, detail="write failed") from exc
+    chunks: list[bytes] = []
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"文件超过上限 {max_bytes} bytes",
+            )
+        chunks.append(bytes(chunk))
 
     if total == 0:
-        dst.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="文件不能为空")
+    data = b"".join(chunks)
 
     import mimetypes as _mimetypes
     # Infer content type from extension when missing or application/octet-stream.
@@ -743,35 +712,22 @@ async def bridge_upload_binary_file(
     if not header_ctype or header_ctype == "application/octet-stream":
         header_ctype = _mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
 
-    now = datetime.now(timezone.utc)
-    channel = await session.get(Channel, x_channel_id)
-    record = FileRecord(
-        file_id=file_id,
-        channel_id=x_channel_id,
-        workspace_id=channel.workspace_id if channel else None,
-        uploader_id=bot.bot_id,
-        original_path=str(dst),
-        original_filename=raw_name,
-        content_type=header_ctype,
-        size_bytes=total,
-        status="ready",
-        uploaded_at=now,
-        expires_at=None,
-    )
-    session.add(record)
-    await session.flush()
-    from app.services.file_scope_service import FileScopeService
-
-    if channel:
-        await FileScopeService(session).link_file_to_channel(record, channel, created_by=bot.bot_id)
+    try:
+        record = await store_generated_file(
+            session,
+            channel_id=x_channel_id,
+            uploader_id=bot.bot_id,
+            filename=raw_name,
+            data=data,
+            content_type=header_ctype,
+            markdown_cache_text=_markdown_cache_text(raw_name, header_ctype, data),
+        )
+    except GeneratedFileError as exc:
+        logger.warning("upload-binary persist failed: %s", exc)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     await session.commit()
 
-    return APIResponse.ok({
-        "file_id": file_id,
-        "filename": raw_name,
-        "content_type": header_ctype,
-        "size_bytes": total,
-    })
+    return APIResponse.ok(generated_file_access_payload(record))
 
 
 # ============================================================================
@@ -1544,6 +1500,8 @@ async def _handle_data_done(
         await _send_terminal_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids must be string[]")
         return
     file_ids: list[str] = list(raw_file_ids)
+    raw_content = frame.get("content")
+    content = raw_content if isinstance(raw_content, str) else None
     stream_snapshot: dict | None = None
 
     async with async_session_factory() as s:
@@ -1574,6 +1532,8 @@ async def _handle_data_done(
         "bot_id": bot.bot_id,
         "file_ids": file_ids or [],
     }
+    if content is not None:
+        payload["content"] = content
     if stream_snapshot:
         payload.update(stream_snapshot)
     job_id = await enqueue_bot_event_job(
@@ -1900,32 +1860,11 @@ async def _handle_data_file_upload(
         return
 
     safe_name = _sanitize_filename(filename)
-    suffix = Path(safe_name).suffix.lower()
-
-    file_id = str(uuid.uuid4())
-    gen_dir = resolve_data_dir() / "generated" / channel_id
-    gen_dir.mkdir(parents=True, exist_ok=True)
-    dst = gen_dir / f"{file_id}{suffix}"
-    if not dst.resolve().is_relative_to(gen_dir.resolve()):
-        await _err("invalid_path", "invalid channel_id path")
-        return
 
     async with async_session_factory() as s:
         err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
         if err:
             await _err(err[0], err[1])
-            return
-
-        try:
-            with open(dst, "wb") as fh:
-                fh.write(raw)
-        except OSError as exc:
-            dst.unlink(missing_ok=True)
-            logger.warning(
-                "data_ws.file_upload: write failed bot_id=%s channel=%s: %s",
-                bot.bot_id, channel_id, exc,
-            )
-            await _err("write_failed", "write failed")
             return
 
         header_ctype = (
@@ -1935,42 +1874,37 @@ async def _handle_data_file_upload(
         if not header_ctype or header_ctype == "application/octet-stream":
             header_ctype = _mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
 
-        now = datetime.now(timezone.utc)
-        channel = await s.get(Channel, channel_id)
-        record = FileRecord(
-            file_id=file_id,
-            channel_id=channel_id,
-            workspace_id=channel.workspace_id if channel else None,
-            uploader_id=bot.bot_id,
-            original_path=str(dst),
-            original_filename=safe_name,
-            content_type=header_ctype,
-            size_bytes=len(raw),
-            status="ready",
-            uploaded_at=now,
-            expires_at=None,
-        )
-        s.add(record)
-        await s.flush()
-        from app.services.file_scope_service import FileScopeService
-
-        if channel:
-            await FileScopeService(s).link_file_to_channel(record, channel, created_by=bot.bot_id)
+        try:
+            record = await store_generated_file(
+                s,
+                channel_id=channel_id,
+                uploader_id=bot.bot_id,
+                filename=safe_name,
+                data=raw,
+                content_type=header_ctype,
+                markdown_cache_text=_markdown_cache_text(safe_name, header_ctype, raw),
+            )
+        except GeneratedFileError as exc:
+            logger.warning(
+                "data_ws.file_upload: persist failed bot_id=%s channel=%s: %s",
+                bot.bot_id, channel_id, exc,
+            )
+            await s.rollback()
+            await _err("persist_failed", exc.detail)
+            return
         await s.commit()
 
     logger.info(
         "data_ws.file_upload: ok bot_id=%s channel=%s file_id=%s name=%s size=%d",
-        bot.bot_id, channel_id, file_id, safe_name, len(raw),
+        bot.bot_id, channel_id, record.file_id, safe_name, len(raw),
     )
 
+    payload = generated_file_access_payload(record)
     await websocket.send_json({
         "type": "file_upload_ack",
         "client_file_id": client_file_id,
         "ok": True,
-        "file_id": file_id,
-        "filename": safe_name,
-        "content_type": header_ctype,
-        "size_bytes": len(raw),
+        **payload,
     })
 
 

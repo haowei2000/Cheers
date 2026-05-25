@@ -726,74 +726,52 @@ Args:
     filename: File name without an extension.
     content: Complete Markdown body.
         """
-        import uuid
-        from datetime import datetime, timezone
-        from pathlib import Path
-
-        safe_name = re.sub(r"[^\w\-. ]", "_", filename.strip()) or "output"
         body = content.strip()
         if not body:
             return _t(locale, "Error: content cannot be empty", "错误：content 不能为空")
 
-        from app.config import settings
-        from app.db.models import Channel, FileRecord
-        from app.services.file_scope_service import FileScopeService
-
-        file_id = str(uuid.uuid4())
-        channel_id = ctx["channel_id"]
-
-        base = Path(settings.data_dir)
-        if not base.is_absolute():
-            base = Path(__file__).resolve().parent.parent.parent / settings.data_dir
-        gen_dir = base / "generated" / channel_id
-        gen_dir.mkdir(parents=True, exist_ok=True)
-
-        md_path = gen_dir / f"{file_id}.md"
-        md_path.write_text(body, encoding="utf-8")
-
-        original_filename = f"{safe_name}.md"
-        now = datetime.now(timezone.utc)
-
-        db_session = ctx.get("_db_session")
-        channel = await db_session.get(Channel, channel_id) if db_session else None
-
-        record = FileRecord(
-            file_id=file_id,
-            channel_id=channel_id,
-            workspace_id=channel.workspace_id if channel else None,
-            uploader_id=ctx.get("sender_id") or "system",
-            original_path=str(md_path),
-            original_filename=original_filename,
-            content_type="text/markdown",
-            size_bytes=len(body.encode("utf-8")),
-            md_path=str(md_path),
-            status="ready",
-            uploaded_at=now,
-            converted_at=now,
-            expires_at=None,
+        from app.services.generated_file_service import (
+            GeneratedFileError,
+            sanitize_generated_filename,
+            store_generated_file,
         )
-        if db_session:
-            db_session.add(record)
-            await db_session.flush()
-            if channel:
-                await FileScopeService(db_session).link_file_to_channel(
-                    record, channel, created_by=ctx.get("sender_id") or "system"
-                )
-        else:
-            from app.db.session import async_session_factory
 
-            async with async_session_factory() as s:
-                channel = await s.get(Channel, channel_id)
-                if channel:
-                    record.workspace_id = channel.workspace_id
-                s.add(record)
-                await s.flush()
-                if channel:
-                    await FileScopeService(s).link_file_to_channel(
-                        record, channel, created_by=ctx.get("sender_id") or "system"
-                    )
-                await s.commit()
+        safe_name = sanitize_generated_filename(filename, fallback="output")
+        if not safe_name.lower().endswith(".md"):
+            safe_name = f"{safe_name}.md"
+        channel_id = ctx["channel_id"]
+        uploader_id = ctx.get("sender_id") or "system"
+        db_session = ctx.get("_db_session")
 
+        async def _persist(session):
+            return await store_generated_file(
+                session,
+                channel_id=channel_id,
+                uploader_id=uploader_id,
+                filename=safe_name,
+                data=body.encode("utf-8"),
+                content_type="text/markdown",
+                markdown_cache_text=body,
+            )
+
+        try:
+            if db_session:
+                record = await _persist(db_session)
+            else:
+                from app.db.session import async_session_factory
+
+                async with async_session_factory() as s:
+                    record = await _persist(s)
+                    await s.commit()
+        except GeneratedFileError as exc:
+            return _t(
+                locale,
+                f"Error: {exc.detail}",
+                f"错误：{exc.detail}",
+            )
+
+        file_id = record.file_id
+        original_filename = record.original_filename or safe_name
         preview_url = f"/api/v1/files/{file_id}/preview"
         logger.info(
             "channel_bot[tool]: create_file %s channel=%s",

@@ -491,47 +491,93 @@ async def finalize_stream(
     partial: bool = False,
     error: str | None = None,
     file_ids: list[str] | None = None,
+    content: str | None = None,
 ) -> Message | None:
     """Flush buffered deltas to the placeholder Message, broadcast message_done.
 
-    Idempotent: if the stream was already finalized (or never registered),
-    returns None and does nothing.
+    Idempotent: if the stream was already finalized, returns None and does
+    nothing. If process restart lost the in-memory stream state, terminal
+    content/error/file payloads can still finalize the durable placeholder.
 
     `file_ids` lets the plugin attach binary outputs uploaded during the
     stream (sendMedia path) to the same finalized message so the frontend
     renders text + files as a single bot reply.
     """
     state = await stream_registry.pop(msg_id)
-    if state is None:
-        return None
-    async with state.lock:
-        if state.finalized:
+    channel_id: str | None = None
+    task_id: str | None = None
+    trace_events: list[dict[str, Any]] | None = None
+    stream_content = content if isinstance(content, str) else ""
+    if state is not None:
+        if state.bot_id != bot_id:
+            logger.warning(
+                "bridge.stream.finalize: bot mismatch msg_id=%s state_bot_id=%s frame_bot_id=%s",
+                msg_id,
+                state.bot_id,
+                bot_id,
+            )
             return None
-        state.finalized = True
-        content = _content_for_stream_finalize(state.buffer, error)
+        async with state.lock:
+            if state.finalized:
+                return None
+            state.finalized = True
+            channel_id = state.channel_id
+            task_id = state.task_id
+            trace_events = list(state.trace_events)
+            stream_content = state.buffer if state.buffer or content is None else content
+    elif content is None and not error and not file_ids:
+        logger.warning(
+            "bridge.stream.finalize: no stream state or terminal content for msg_id=%s bot_id=%s; "
+            "leaving placeholder unchanged",
+            msg_id,
+            bot_id,
+        )
+        return None
+    content = _content_for_stream_finalize(stream_content, error)
     await _flush_delta_coalescer(msg_id)
 
     pending = await pending_replies.resolve(
-        task_id=state.task_id, bot_id=bot_id, msg_id=msg_id,
+        task_id=task_id, bot_id=bot_id, msg_id=msg_id,
     )
     msg: Message | None = None
     if pending:
         msg = await _get_message_with_retry(session, pending.msg_id)
 
     if msg is None:
+        msg = await _get_message_with_retry(session, msg_id)
+    if msg is None:
         logger.warning(
-            "bridge.stream.finalize: placeholder missing msg_id=%s; dropping stream", msg_id,
+            "bridge.stream.finalize: durable placeholder missing msg_id=%s; dropping stream",
+            msg_id,
         )
         return None
+    if msg.sender_id != bot_id or msg.sender_type != "bot":
+        logger.warning(
+            "bridge.stream.finalize: placeholder owner mismatch msg_id=%s sender_id=%s sender_type=%s bot_id=%s",
+            msg_id,
+            msg.sender_id,
+            msg.sender_type,
+            bot_id,
+        )
+        return None
+    if channel_id and msg.channel_id != channel_id:
+        logger.warning(
+            "bridge.stream.finalize: placeholder channel mismatch msg_id=%s state_channel_id=%s db_channel_id=%s",
+            msg_id,
+            channel_id,
+            msg.channel_id,
+        )
+        return None
+    channel_id = channel_id or msg.channel_id
 
     msg.content = content
     content_data = _preserve_message_observability(
         msg.content_data,
-        bot_trace=state.trace_events,
+        bot_trace=trace_events,
     )
     msg.content_data = content_data
     msg.is_partial = bool(partial)
-    msg.mention_user_ids = await resolve_user_mentions_anywhere(content, session, state.channel_id)
+    msg.mention_user_ids = await resolve_user_mentions_anywhere(content, session, channel_id)
     if file_ids:
         msg.file_ids = list(dict.fromkeys([*(msg.file_ids or []), *file_ids]))
     await session.flush()
@@ -542,7 +588,7 @@ async def finalize_stream(
             select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids), active_file_filter())
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
-    await WSEventBus(state.channel_id).publish(
+    await WSEventBus(channel_id).publish(
         MessageDone(
             msg_id=msg.msg_id,
             content=msg.content,

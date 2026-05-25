@@ -156,6 +156,7 @@ async def _handle_agent_bridge_stream_done(session: AsyncSession, payload: dict)
         bot_id=bot_id,
         partial=False,
         file_ids=file_ids or None,
+        content=content if isinstance(content, str) else None,
     )
     if msg is not None:
         await mark_bot_run_status(
