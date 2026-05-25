@@ -132,28 +132,33 @@ const readStoredChatOrder = (): ChatOrderRule => {
   }
 };
 
-function ChatOrderSelect({
+function ChatOrderControl({
   onChange,
   value,
 }: {
   onChange: (value: ChatOrderRule) => void;
   value: ChatOrderRule;
 }) {
+  const isTimeOrder = value === "time";
+  const nextValue: ChatOrderRule = isTimeOrder ? "name" : "time";
+  const label = isTimeOrder ? "Recent" : "Name";
+  const title = isTimeOrder ? "Sorted by recent activity" : "Sorted by name";
+  const nextTitle = isTimeOrder ? "Sort by name" : "Sort by recent activity";
+
   return (
-    <label className="an-rail-sort" title="Chat order">
-      <span className="sr-only">Chat order</span>
-      <select
-        aria-label="Chat order"
-        className="an-select an-rail-sort-select"
-        value={value}
-        onChange={(event) =>
-          onChange(event.target.value === "name" ? "name" : "time")
-        }
-      >
-        <option value="time">Time</option>
-        <option value="name">Name</option>
-      </select>
-    </label>
+    <button
+      type="button"
+      className="an-rail-sort"
+      title={`${title}. ${nextTitle}`}
+      aria-label={`${title}. ${nextTitle}`}
+      onClick={() => onChange(nextValue)}
+    >
+      <AppIcon
+        name={isTimeOrder ? "clock" : "alphabeticSort"}
+        className="an-rail-sort-icon"
+      />
+      <span className="an-rail-sort-label">{label}</span>
+    </button>
   );
 }
 
@@ -1163,7 +1168,7 @@ export function Sidebar({
         <span>Channels</span>
         <div className="an-rail-section-actions">
           <span className="an-rail-count">{visibleChannels.length}</span>
-          <ChatOrderSelect
+          <ChatOrderControl
             value={chatOrderRule}
             onChange={updateChatOrderRule}
           />
@@ -1277,7 +1282,7 @@ export function Sidebar({
       <div className="an-rail-section-h">
         <span>DMs</span>
         <div className="an-rail-section-actions">
-          <ChatOrderSelect
+          <ChatOrderControl
             value={chatOrderRule}
             onChange={updateChatOrderRule}
           />

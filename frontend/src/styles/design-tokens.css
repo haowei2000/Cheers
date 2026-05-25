@@ -2071,22 +2071,56 @@
 }
 .an-rail-sort {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   min-width: 0;
-}
-.an-rail-sort-select {
-  width: auto;
-  min-width: 70px;
-  height: 24px;
-  padding: 2px 22px 2px 8px;
+  height: 28px;
+  min-width: 74px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in oklab, var(--fg-3) 20%, transparent);
   border-radius: 6px;
-  background-color: var(--bg-0);
-  background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--surface-soft) 72%, transparent), transparent),
+    color-mix(in oklab, var(--bg-0) 90%, var(--surface-soft));
   color: var(--fg-2);
+  cursor: pointer;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0;
-  line-height: 18px;
+  line-height: 1;
   text-transform: none;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #fff 7%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.12);
+  transition:
+    background var(--motion-fast),
+    border-color var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--motion-fast);
+}
+.an-rail-sort:hover {
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border));
+  background: var(--surface-hover);
+  color: var(--fg-1);
+}
+.an-rail-sort:active {
+  transform: translateY(1px);
+}
+.an-rail-sort:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.an-rail-sort-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.an-rail-sort-label {
+  max-width: 46px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .an-personal-files-dropzone {
   position: relative;
@@ -3204,16 +3238,14 @@
 .an-approval-trace-panel {
   margin-top: 4px;
 }
-.an-approval-trace-main {
-  display: grid;
+.an-approval-trace-line {
   grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 5px 8px;
-  overflow: hidden;
+  cursor: default;
 }
-.an-approval-trace-main .an-trace-kind {
+.an-approval-trace-line:hover {
+  background: transparent;
+}
+.an-approval-trace-line .an-trace-kind {
   white-space: nowrap;
 }
 .an-approval-trace-copy {
@@ -3222,11 +3254,6 @@
   align-items: baseline;
   gap: 6px;
   overflow: hidden;
-  color: var(--fg-2);
-  font-size: 11.5px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .an-approval-trace-copy > span {
   min-width: 0;
@@ -3303,7 +3330,7 @@
   opacity: 0.55;
 }
 @media (max-width: 720px) {
-  .an-approval-trace-main {
+  .an-approval-trace-line {
     grid-template-columns: auto auto minmax(0, 1fr) auto;
   }
   .an-approval-trace-meta {
