@@ -90,7 +90,7 @@ jobs:
           if npm view "@haowei0520/bridge-client@${BRIDGE_VERSION}" version >/dev/null 2>&1; then
             echo "@haowei0520/bridge-client@${BRIDGE_VERSION} already exists on npm; skipping publish."
           else
-            npm publish --access public
+            npm publish --access public --ignore-scripts
           fi
 
       - name: Pack bridge-client artifact
@@ -98,7 +98,7 @@ jobs:
         working-directory: packages/agentnexus-bridge-client
         run: |
           set -euo pipefail
-          TARBALL=$(npm pack --silent)
+          TARBALL=$(npm pack --silent --ignore-scripts)
           STABLE="agentnexus-bridge-client.tgz"
           cp "$TARBALL" "$STABLE"
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
@@ -136,7 +136,7 @@ jobs:
         working-directory: packages/agentnexus-acp-connector
         run: |
           set -euo pipefail
-          TARBALL=$(npm pack --silent)
+          TARBALL=$(npm pack --silent --ignore-scripts)
           STABLE="agentnexus-acp-connector.tgz"
           cp "$TARBALL" "$STABLE"
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
@@ -151,7 +151,7 @@ jobs:
           if npm view "@haowei0520/acp-connector@${ACP_VERSION}" version >/dev/null 2>&1; then
             echo "@haowei0520/acp-connector@${ACP_VERSION} already exists on npm; skipping publish."
           else
-            npm publish --access public
+            npm publish --access public --ignore-scripts
           fi
 
       - name: Create GitHub Release
