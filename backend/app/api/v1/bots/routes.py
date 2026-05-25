@@ -49,7 +49,7 @@ logger = logging.getLogger("app.api.v1.bots")
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
-_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+_USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _CONNECTOR_CONTROL_KEY = "connector_control"
 _CONNECTOR_CONTROL_TIMEOUT_MIN_MS = 5_000
 _CONNECTOR_CONTROL_TIMEOUT_MAX_MS = 3_600_000
@@ -90,7 +90,7 @@ def _validate_username(username: str) -> None:
     if not username or not username.strip():
         raise BadRequestError("用户名不能为空")
     if not _USERNAME_RE.match(username.strip()):
-        raise BadRequestError("用户名只能包含字母、数字、下划线、连字符、单引号和中文")
+        raise BadRequestError("Bot @ ID 只能使用小写英文字母、数字、下划线和连字符，且必须以小写字母开头")
 
 
 def _validate_intro(intro: str | None) -> str | None:

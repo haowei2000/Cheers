@@ -11,7 +11,12 @@ import {
   PrimaryButton,
   inputCls,
 } from "../shared/SettingsControls";
-import { BotScopeControl } from "./BotShared";
+import {
+  BOT_MENTION_ID_HINT,
+  BotScopeControl,
+  isValidBotMentionId,
+  normalizeBotMentionId,
+} from "./BotShared";
 import type { BindingType, BotRow, BotScope, ModelItem, TemplateItem } from "./types";
 
 type BotNewConfigTab = "profile" | "runtime";
@@ -69,8 +74,13 @@ export function BotNewPane({
   }, [step, bindingType, authToken]);
 
   const create = async () => {
-    if (!username.trim()) {
-      toast.error("Username is required");
+    const mentionId = normalizeBotMentionId(username);
+    if (!mentionId) {
+      toast.error("Bot @ ID is required");
+      return;
+    }
+    if (!isValidBotMentionId(mentionId)) {
+      toast.error(BOT_MENTION_ID_HINT);
       return;
     }
     if (bindingType === "http" && (!modelId || !templateId)) {
@@ -78,8 +88,8 @@ export function BotNewPane({
       return;
     }
     const body: Record<string, unknown> = {
-      username: username.trim(),
-      display_name: displayName.trim() || username.trim(),
+      username: mentionId,
+      display_name: displayName.trim() || mentionId,
       description: description.trim() || null,
       avatar_url: avatarUrl.trim() || null,
       binding_type: bindingType,
@@ -257,10 +267,13 @@ export function BotNewPane({
           <Field label="Username (the @ handle)">
             <input
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => setUsername(normalizeBotMentionId(e.target.value))}
               className={inputCls}
               placeholder="e.g. helper"
             />
+            <div className="an-rc-sub" style={{ marginTop: 4 }}>
+              {BOT_MENTION_ID_HINT}
+            </div>
           </Field>
           <Field label="Display name">
             <input
@@ -388,7 +401,7 @@ export function BotNewPane({
           >
             Back
           </button>
-          <PrimaryButton onClick={create} disabled={creating || !username.trim()}>
+          <PrimaryButton onClick={create} disabled={creating || !normalizeBotMentionId(username)}>
             {creating ? "Creating..." : "Create"}
           </PrimaryButton>
         </div>

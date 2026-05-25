@@ -15,10 +15,13 @@ import {
   inputCls,
 } from "../shared/SettingsControls";
 import {
+  BOT_MENTION_ID_HINT,
   BotOnlineBadge,
   BotScopeControl,
   botOwnerLabel,
   botScopeLabel,
+  isValidBotMentionId,
+  normalizeBotMentionId,
   normalizeBotScope,
 } from "./BotShared";
 import type {
@@ -112,6 +115,8 @@ export function BotEditPane({
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
+  const [username, setUsername] = useState(bot.username || "");
+  const [usernameTouched, setUsernameTouched] = useState(false);
   const [displayName, setDisplayName] = useState(bot.display_name || "");
   const [description, setDescription] = useState(bot.description || "");
   const [avatarUrl, setAvatarUrl] = useState(bot.avatar_url || "");
@@ -168,6 +173,8 @@ export function BotEditPane({
   const [applyingAcpOptionKey, setApplyingAcpOptionKey] = useState<string | null>(null);
 
   useEffect(() => {
+    setUsername(bot.username || "");
+    setUsernameTouched(false);
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
     setAvatarUrl(bot.avatar_url || "");
@@ -193,6 +200,7 @@ export function BotEditPane({
     bot.model_id,
     bot.scope,
     bot.template_id,
+    bot.username,
   ]);
 
   useEffect(() => {
@@ -227,6 +235,15 @@ export function BotEditPane({
   }, [authToken, bot.bot_id, bot.model_id, bot.template_id, isHttpBot]);
 
   const save = async (opts?: { silent?: boolean }) => {
+    const mentionId = normalizeBotMentionId(username);
+    if (usernameTouched && !mentionId) {
+      toast.error("Bot @ ID is required");
+      return false;
+    }
+    if (usernameTouched && mentionId !== bot.username && !isValidBotMentionId(mentionId)) {
+      toast.error(BOT_MENTION_ID_HINT);
+      return false;
+    }
     if (isHttpBot && (!modelId || !templateId)) {
       toast.error("HTTP bots require a model and template");
       return false;
@@ -240,6 +257,9 @@ export function BotEditPane({
         scope,
         template_id: templateId || null,
       };
+      if (usernameTouched && mentionId !== bot.username) {
+        body.username = mentionId;
+      }
       if (isHttpBot) {
         body.model_id = modelId;
       }
@@ -251,6 +271,7 @@ export function BotEditPane({
       const data = await res.json();
       if (data?.status === "success") {
         if (!opts?.silent) toast.success("Saved");
+        setUsernameTouched(false);
         setConnectionTest(null);
         onUpdated();
         return true;
@@ -817,6 +838,20 @@ export function BotEditPane({
           <>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">Basic information</div>
+          <Field label="Bot @ ID">
+            <input
+              value={username}
+              onChange={(e) => {
+                setUsernameTouched(true);
+                setUsername(normalizeBotMentionId(e.target.value));
+              }}
+              className={inputCls}
+              placeholder="e.g. helper"
+            />
+            <div className="an-rc-sub" style={{ marginTop: 4 }}>
+              {BOT_MENTION_ID_HINT}
+            </div>
+          </Field>
           <Field label="Display name">
             <input
               value={displayName}

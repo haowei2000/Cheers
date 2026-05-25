@@ -106,6 +106,53 @@ async def test_bot_list_and_update_exposes_http_model_template_binding(
 
 
 @pytest.mark.asyncio
+async def test_bot_username_update_requires_lowercase_mention_id(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot = BotAccount(
+        bot_id="mention-id-bot-0001",
+        username="mention_id_bot",
+        display_name="Mention ID Bot",
+        status="online",
+        binding_type="agent_bridge",
+        created_by=TEST_USER_ID,
+    )
+    other = BotAccount(
+        bot_id="mention-id-bot-0002",
+        username="mention_id_other",
+        display_name="Other Mention Bot",
+        status="online",
+        binding_type="agent_bridge",
+        created_by=TEST_USER_ID,
+    )
+    db_session.add_all([bot, other])
+    await db_session.flush()
+
+    invalid_resp = await client.put(
+        f"/api/v1/bots/{bot.bot_id}",
+        json={"username": "BadBot"},
+    )
+    assert invalid_resp.status_code == 400
+
+    duplicate_resp = await client.put(
+        f"/api/v1/bots/{bot.bot_id}",
+        json={"username": other.username},
+    )
+    assert duplicate_resp.status_code == 400
+
+    update_resp = await client.put(
+        f"/api/v1/bots/{bot.bot_id}",
+        json={"username": "mention-id-bot-new"},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["data"]["username"] == "mention-id-bot-new"
+
+    await db_session.refresh(bot)
+    assert bot.username == "mention-id-bot-new"
+
+
+@pytest.mark.asyncio
 async def test_system_admin_can_list_and_rebind_builtin_bot(
     client: AsyncClient,
     db_session: AsyncSession,
