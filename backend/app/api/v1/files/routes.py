@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 import jwt
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -191,6 +191,15 @@ class PresignBody(BaseModel):
         return self
 
 
+class DocumentSetCreateBody(BaseModel):
+    name: str
+    file_ids: list[str] = Field(default_factory=list)
+
+
+class DocumentSetRenameBody(BaseModel):
+    name: str
+
+
 @router.post("/presign", response_model=APIResponse[dict])
 async def request_presign(
     body: PresignBody,
@@ -285,6 +294,227 @@ async def list_channel_files(
         }
         for r in records
     ])
+
+
+@router.get("/by-channel/{channel_id}/document-sets", response_model=APIResponse[dict])
+async def list_channel_document_sets(
+    channel_id: str,
+    auto_classify: bool = Query(default=True),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """List document sets for a channel, auto-grouping similar unassigned files by default."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    if auto_classify:
+        await svc.auto_classify(channel_id, created_by=current_user.user_id)
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.post("/by-channel/{channel_id}/document-sets/auto-classify", response_model=APIResponse[dict])
+async def auto_classify_channel_document_sets(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Run automatic document grouping for a channel."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.auto_classify(channel_id, created_by=current_user.user_id)
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.post("/by-channel/{channel_id}/document-sets", response_model=APIResponse[dict])
+async def create_channel_document_set(
+    channel_id: str,
+    body: DocumentSetCreateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Create a document set and optionally move files into it."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.create_set(
+        channel_id,
+        name=body.name,
+        file_ids=body.file_ids,
+        created_by=current_user.user_id,
+    )
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.patch("/by-channel/{channel_id}/document-sets/{set_id}", response_model=APIResponse[dict])
+async def rename_channel_document_set(
+    channel_id: str,
+    set_id: str,
+    body: DocumentSetRenameBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Rename a document set."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.rename_set(channel_id, set_id, name=body.name)
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.delete("/by-channel/{channel_id}/document-sets/{set_id}", response_model=APIResponse[dict])
+async def delete_channel_document_set(
+    channel_id: str,
+    set_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Delete a document set and keep its files out of automatic grouping."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.delete_set(channel_id, set_id, updated_by=current_user.user_id)
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.post("/by-channel/{channel_id}/document-sets/{set_id}/files/{file_id}", response_model=APIResponse[dict])
+async def move_file_into_channel_document_set(
+    channel_id: str,
+    set_id: str,
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Move a channel file into a document set."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.move_file_into_set(channel_id, set_id, file_id, updated_by=current_user.user_id)
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.delete("/by-channel/{channel_id}/document-sets/{set_id}/files/{file_id}", response_model=APIResponse[dict])
+async def move_file_out_of_channel_document_set(
+    channel_id: str,
+    set_id: str,
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Move a channel file out of a document set."""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.move_file_out_of_set(channel_id, set_id, file_id, updated_by=current_user.user_id)
+    return APIResponse.ok(await svc.list_payload(channel_id))
+
+
+@router.get("/library/document-sets", response_model=APIResponse[dict])
+async def list_library_document_sets(
+    auto_classify: bool = Query(default=True),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """List document sets for the current user's personal file library."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    if auto_classify:
+        await svc.auto_classify_library(current_user)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
+
+
+@router.post("/library/document-sets/auto-classify", response_model=APIResponse[dict])
+async def auto_classify_library_document_sets(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Run automatic document grouping for the current user's personal file library."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.auto_classify_library(current_user)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
+
+
+@router.post("/library/document-sets", response_model=APIResponse[dict])
+async def create_library_document_set(
+    body: DocumentSetCreateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Create a personal file-library document set and optionally move files into it."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.create_library_set(current_user, name=body.name, file_ids=body.file_ids)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
+
+
+@router.patch("/library/document-sets/{set_id}", response_model=APIResponse[dict])
+async def rename_library_document_set(
+    set_id: str,
+    body: DocumentSetRenameBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Rename a personal file-library document set."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.rename_library_set(current_user, set_id, name=body.name)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
+
+
+@router.delete("/library/document-sets/{set_id}", response_model=APIResponse[dict])
+async def delete_library_document_set(
+    set_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Delete a personal file-library document set."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.delete_library_set(current_user, set_id)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
+
+
+@router.post("/library/document-sets/{set_id}/files/{file_id}", response_model=APIResponse[dict])
+async def move_file_into_library_document_set(
+    set_id: str,
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Move a personal file-library item into a document set."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.move_library_file_into_set(current_user, set_id, file_id)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
+
+
+@router.delete("/library/document-sets/{set_id}/files/{file_id}", response_model=APIResponse[dict])
+async def move_file_out_of_library_document_set(
+    set_id: str,
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Move a personal file-library item out of a document set."""
+    from app.services.document_set_service import DocumentSetService
+
+    svc = DocumentSetService(session)
+    await svc.move_library_file_out_of_set(current_user, set_id, file_id)
+    return APIResponse.ok(await svc.list_library_payload(current_user))
 
 
 @router.get("/library", response_model=APIResponse[list])
