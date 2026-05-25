@@ -361,7 +361,13 @@ async def test_streaming_delta_reply(tmp_bot: dict, http_client: httpx.AsyncClie
             }))
             await asyncio.sleep(0.05)
 
-        await ws.send(json.dumps({"type": "done", "msg_id": msg_id}))
+        client_msg_id = f"done-{uuid.uuid4().hex}"
+        await ws.send(json.dumps({"type": "done", "client_msg_id": client_msg_id, "msg_id": msg_id}))
+        ack = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+        assert ack.get("type") == "terminal_ack"
+        assert ack.get("client_msg_id") == client_msg_id
+        assert ack.get("ok") is True
+        assert ack.get("msg_id") == msg_id
         await asyncio.sleep(1)
 
     expected = "".join(chunks)

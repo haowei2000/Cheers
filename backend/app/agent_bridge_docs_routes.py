@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import BadRequestError, UnauthorizedError
 from app.core.responses import APIResponse
@@ -49,6 +50,7 @@ _PLUGIN_FILE_NAME = (
 _PLUGIN_SOURCE_URL = (
     "https://github.com/Grant-Huang/AgentNexus/tree/main/packages/openclaw-channel-agentnexus"
 )
+_DEFAULT_PUBLIC_BASE_URL = "http://localhost"
 
 
 class AgentBridgeRegisterBody(BaseModel):
@@ -90,7 +92,22 @@ class AgentBridgeHelpBody(BaseModel):
     question: str = Field(..., min_length=1, description="Question about AgentNexus Agent Bridge integration or usage")
 
 
+def _normalize_public_base_url(value: str) -> str:
+    base = (value or "").strip().rstrip("/")
+    if not base:
+        return ""
+    if base.startswith(("http://", "https://")):
+        return base
+    return f"https://{base}"
+
+
 def _http_base(request: Request) -> str:
+    configured = _normalize_public_base_url(settings.public_base_url)
+    if configured and (
+        os.getenv("PUBLIC_BASE_URL", "").strip()
+        or configured != _DEFAULT_PUBLIC_BASE_URL
+    ):
+        return configured
     return str(request.base_url).rstrip("/")
 
 
@@ -301,6 +318,7 @@ def _acp_connector_config(
     bot_token: str,
 ) -> dict[str, Any]:
     bridge = _bridge_urls(request)
+    prompt_timeout_ms = max(180_000, int(settings.agent_bridge_timeout_seconds or 600) * 1000 + 60_000)
     return {
         "accounts": {
             account_id: {
@@ -312,8 +330,11 @@ def _acp_connector_config(
                     "command": "<agent-acp-command>",
                     "args": [],
                     "cwd": "$PWD",
+                    "promptTimeoutMs": prompt_timeout_ms,
+                    "agentnexusApprovalMode": "ask",
+                    "agentNativePermissionMode": "ask",
                     "env": {
-                        "OPENAI_API_KEY": "$OPENAI_API_KEY",
+                        "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT",
                     },
                 },
             }

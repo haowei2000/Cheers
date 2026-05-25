@@ -20,7 +20,13 @@ import { randomUUID } from "node:crypto";
 import { ReconnectingClient } from "./reconnect.js";
 import type {
   AttachmentInfo,
+  ConfigOptionsFrame,
+  ConfigOptionSetInbound,
+  ConfigOptionStatusFrame,
   ChannelInfo,
+  ConfigStatusFrame,
+  ConfigUpdateInbound,
+  ConnectorControlConfig,
   ControlInbound,
   DataInbound,
   DeltaFrame,
@@ -29,10 +35,14 @@ import type {
   FileUploadAck,
   FileUploadFrame,
   MessageEvent,
+  PermissionRequestFrame,
+  PermissionRequestOption,
+  PermissionResolutionInbound,
   ReplyFrame,
   SendAck,
   SendFrame,
   SessionUpdateFrame,
+  TerminalAck,
   TraceFrame,
   TriggerMessage,
 } from "./types.js";
@@ -89,6 +99,14 @@ export interface SessionEvents {
    *  done frame will not leave the frontend stuck; done is only useful for
    *  cleaner plugin logs. */
   onCancel?: (msgId: string, reason?: string) => void;
+  /** Server-side AgentNexus connector settings changed. Implementations should
+   *  validate and apply only fields they support, then optionally report status
+   *  with sendConfigStatus(). */
+  onConfigUpdate?: (update: ConfigUpdateInbound) => void | Promise<void>;
+  /** Server-side AgentNexus requested an ACP session configuration option change. */
+  onConfigOptionSet?: (update: ConfigOptionSetInbound) => void | Promise<void>;
+  /** A channel user resolved a previously posted provider permission request. */
+  onPermissionResolution?: (resolution: PermissionResolutionInbound) => void | Promise<void>;
   onError?: (err: unknown) => void;
   onFatal?: (reason: string) => void;
   /** Control/data connection state changes for observability. */
@@ -96,11 +114,13 @@ export interface SessionEvents {
 }
 
 type InflightResolver = (ack: SendAck) => void;
+type DataOpenWaiter = { resolve: (open: boolean) => void; timer: NodeJS.Timeout };
 
 export interface SendResult {
   ok: boolean;
   messageId?: string;
   finalizedPlaceholder?: boolean;
+  permissionResolution?: PermissionResolutionInbound & { outcome?: "selected" | "cancelled" };
   error?: string;
   code?: string;
 }
@@ -123,6 +143,8 @@ export class BotSession {
   private heartbeatTimers: Array<NodeJS.Timeout | null> = [null, null];
   private inflight = new Map<string, { resolve: InflightResolver; timer: NodeJS.Timeout }>();
   private inflightUploads = new Map<string, { resolve: (ack: FileUploadAck) => void; timer: NodeJS.Timeout }>();
+  private inflightTerminals = new Map<string, { resolve: (ack: TerminalAck) => void; timer: NodeJS.Timeout }>();
+  private dataOpenWaiters = new Set<DataOpenWaiter>();
   private stopped = false;
   private readyPromise: Promise<void>;
   private resolveReady!: () => void;
@@ -184,6 +206,7 @@ export class BotSession {
     this.stopped = true;
     this.stopHeartbeat("control");
     this.stopHeartbeat("data");
+    this.resolveDataOpenWaiters(false);
     this.rejectAllInflight("session stopped");
     await Promise.all([this.control.stop(), this.data.stop()]);
   }
@@ -245,6 +268,7 @@ export class BotSession {
             this.membership.byId.set(ch.channel_id, ch);
           }
           this.controlReady = true;
+          this.emitInitialConfig(frame.connector_config);
           this.maybeResolveReady();
           break;
         }
@@ -269,12 +293,64 @@ export class BotSession {
           }
           break;
         }
+        case "config_update": {
+          this.emitConfigUpdate(frame);
+          break;
+        }
+        case "config_option_set": {
+          this.emitConfigOptionSet(frame);
+          break;
+        }
+        case "permission_resolution": {
+          this.emitPermissionResolution(frame);
+          break;
+        }
         case "pong":
           break;
         default:
           // Unknown control frame — keep for forward compat
           break;
       }
+    } catch (err) {
+      this.events.onError?.(err);
+    }
+  }
+
+  private emitInitialConfig(config: ConnectorControlConfig | null | undefined): void {
+    if (!config || !isObject(config.settings)) return;
+    this.emitConfigUpdate({
+      type: "config_update",
+      revision: config.revision ?? null,
+      settings: config.settings,
+      updated_at: config.updated_at ?? null,
+    });
+  }
+
+  private emitConfigUpdate(update: ConfigUpdateInbound): void {
+    try {
+      void Promise.resolve(this.events.onConfigUpdate?.(update)).catch((err) => {
+        this.events.onError?.(err);
+      });
+    } catch (err) {
+      this.events.onError?.(err);
+    }
+  }
+
+  private emitConfigOptionSet(update: ConfigOptionSetInbound): void {
+    try {
+      void Promise.resolve(this.events.onConfigOptionSet?.(update)).catch((err) => {
+        this.events.onError?.(err);
+      });
+    } catch (err) {
+      this.events.onError?.(err);
+    }
+  }
+
+  private emitPermissionResolution(update: PermissionResolutionInbound): void {
+    try {
+      void Promise.resolve(this.events.onPermissionResolution?.(update)).catch((err) => {
+        this.events.onError?.(err);
+      });
     } catch (err) {
       this.events.onError?.(err);
     }
@@ -289,6 +365,7 @@ export class BotSession {
     this.dataEverOpened = true;
     this.dataBlockedUntilReconnect = false;
     this.events.onConnectionChange?.("data", "open");
+    this.resolveDataOpenWaiters(true);
     this.startHeartbeat("data");
     // Resume missed events after reconnect. A failed first event keeps seq=0,
     // so reconnects still need to request replay from the beginning.
@@ -356,6 +433,16 @@ export class BotSession {
           }
           break;
         }
+        case "terminal_ack": {
+          const ack = frame as TerminalAck;
+          const entry = this.inflightTerminals.get(ack.client_msg_id);
+          if (entry) {
+            clearTimeout(entry.timer);
+            this.inflightTerminals.delete(ack.client_msg_id);
+            entry.resolve(ack);
+          }
+          break;
+        }
         case "resume_ack":
           // Phase D: replay has ended; following frames are live events.
           break;
@@ -410,9 +497,9 @@ export class BotSession {
   }
 
   // ============== streaming reply: delta / done / error ==================
-  // Fire-and-forget: the server does not send send_ack for these high-frequency,
-  // fault-tolerant frames. Push directly to data WS and return whether the WS is
-  // online and accepted the write.
+  // Delta remains fire-and-forget because it is high frequency. Terminal frames
+  // include client_msg_id and wait for terminal_ack so callers can tell whether
+  // the server accepted the finalization request.
 
   /** Push a single token / chunk into a streaming reply identified by `msgId`. */
   streamDelta(args: { msgId: string; seq: number; delta: string }): boolean {
@@ -429,22 +516,21 @@ export class BotSession {
   /** End of a streaming reply. Server flushes the buffer + broadcasts
    *  message_done. Optional `fileIds` attaches binary outputs uploaded
    *  during the stream (e.g. images / .md from sendMedia). */
-  streamDone(args: { msgId: string; fileIds?: string[] }): boolean {
-    if (!this.data.isOpen) return false;
-    const frame: DoneFrame = { type: "done", msg_id: args.msgId };
+  streamDone(args: { msgId: string; fileIds?: string[] }): Promise<SendResult> {
+    const frame: DoneFrame = { type: "done", client_msg_id: randomUUID(), msg_id: args.msgId };
     if (args.fileIds && args.fileIds.length > 0) frame.file_ids = args.fileIds;
-    return this.data.send(frame);
+    return this.sendTerminalFrame(frame);
   }
 
   /** Mid-stream error: server finalizes partial with the given message tag. */
-  streamError(args: { msgId: string; message: string }): boolean {
-    if (!this.data.isOpen) return false;
+  streamError(args: { msgId: string; message: string }): Promise<SendResult> {
     const frame: ErrorFrame = {
       type: "error",
+      client_msg_id: randomUUID(),
       msg_id: args.msgId,
       message: args.message,
     };
-    return this.data.send(frame);
+    return this.sendTerminalFrame(frame);
   }
 
   /** Best-effort runtime trace/progress event for a bot reply placeholder. */
@@ -459,6 +545,24 @@ export class BotSession {
     if (!this.data.isOpen) return false;
     const frame: SessionUpdateFrame = { type: "session_update", ...args };
     return this.data.send(frame);
+  }
+
+  /** Report whether a server-pushed connector config update was applied. */
+  sendConfigStatus(status: Omit<ConfigStatusFrame, "type">): boolean {
+    if (!this.control.isOpen) return false;
+    return this.control.send({ type: "config_status", ...status });
+  }
+
+  /** Report connector-discovered configuration choices, such as ACP session options. */
+  sendConfigOptions(options: Omit<ConfigOptionsFrame, "type">): boolean {
+    if (!this.control.isOpen) return false;
+    return this.control.send({ type: "config_options", ...options });
+  }
+
+  /** Report whether an ACP session configuration option change was applied. */
+  sendConfigOptionStatus(status: Omit<ConfigOptionStatusFrame, "type">): boolean {
+    if (!this.control.isOpen) return false;
+    return this.control.send({ type: "config_option_status", ...status });
   }
 
   /** Proactively send a message to a channel, for example a scheduled reminder. */
@@ -478,6 +582,35 @@ export class BotSession {
     });
   }
 
+  /** Ask AgentNexus to post an interactive permission card in a channel. */
+  async requestPermission(args: {
+    channelId: string;
+    requestId: string;
+    body: string;
+    title?: string | null;
+    tool?: string | null;
+    taskId?: string | null;
+    msgId?: string | null;
+    acpSessionId?: string | null;
+    providerSessionKey?: string | null;
+    options?: PermissionRequestOption[];
+  }): Promise<SendResult> {
+    return this.sendFrame<PermissionRequestFrame>({
+      type: "permission_request",
+      client_msg_id: randomUUID(),
+      channel_id: args.channelId,
+      request_id: args.requestId,
+      task_id: args.taskId ?? null,
+      msg_id: args.msgId ?? null,
+      acp_session_id: args.acpSessionId ?? null,
+      provider_session_key: args.providerSessionKey ?? null,
+      title: args.title ?? null,
+      body: args.body,
+      tool: args.tool ?? null,
+      options: args.options ?? [],
+    });
+  }
+
   /** Upload a binary file inline over the data WS. Returns the bridge file_id
    *  on success, which can then be referenced in reply / done / send frames.
    *  No HTTP fallback — pure WS path so the plugin only needs WS connectivity. */
@@ -487,14 +620,35 @@ export class BotSession {
     data: Uint8Array;
     contentType?: string;
   }): Promise<FileUploadAck> {
+    return this.uploadFileWhenConnected(args);
+  }
+
+  private async uploadFileWhenConnected(args: {
+    channelId: string;
+    filename: string;
+    data: Uint8Array;
+    contentType?: string;
+  }): Promise<FileUploadAck> {
     if (!this.data.isOpen) {
-      return Promise.resolve({
+      const connected = await this.waitDataOpen(Math.min(this.sendAckTimeoutMs, 30_000));
+      if (!connected) {
+        return {
+          type: "file_upload_ack",
+          client_file_id: null,
+          ok: false,
+          code: "ws_not_open",
+          error: "data WS not connected",
+        };
+      }
+    }
+    if (!this.data.isOpen) {
+      return {
         type: "file_upload_ack",
         client_file_id: null,
         ok: false,
         code: "ws_not_open",
         error: "data WS not connected",
-      });
+      };
     }
     const clientFileId = randomUUID();
     const dataB64 = Buffer.from(args.data).toString("base64");
@@ -533,7 +687,30 @@ export class BotSession {
     });
   }
 
-  private sendFrame<F extends ReplyFrame | SendFrame>(frame: F): Promise<SendResult> {
+  private waitDataOpen(timeoutMs: number): Promise<boolean> {
+    if (this.data.isOpen) return Promise.resolve(true);
+    if (this.stopped) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const waiter: DataOpenWaiter = {
+        resolve,
+        timer: setTimeout(() => {
+          this.dataOpenWaiters.delete(waiter);
+          resolve(false);
+        }, Math.max(1, timeoutMs)),
+      };
+      this.dataOpenWaiters.add(waiter);
+    });
+  }
+
+  private resolveDataOpenWaiters(open: boolean): void {
+    for (const waiter of Array.from(this.dataOpenWaiters)) {
+      clearTimeout(waiter.timer);
+      this.dataOpenWaiters.delete(waiter);
+      waiter.resolve(open);
+    }
+  }
+
+  private sendFrame<F extends ReplyFrame | SendFrame | PermissionRequestFrame>(frame: F): Promise<SendResult> {
     if (!this.data.isOpen) {
       return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
     }
@@ -552,6 +729,7 @@ export class BotSession {
               ok: true,
               messageId: ack.message_id,
               finalizedPlaceholder: ack.finalized_placeholder,
+              permissionResolution: ack.permission_resolution,
             });
           } else {
             resolve({ ok: false, error: ack.error, code: ack.code });
@@ -563,6 +741,36 @@ export class BotSession {
       if (!sent) {
         clearTimeout(timer);
         this.inflight.delete(frame.client_msg_id);
+        resolve({ ok: false, error: "data WS send failed", code: "ws_send_failed" });
+      }
+    });
+  }
+
+  private sendTerminalFrame<F extends DoneFrame | ErrorFrame>(frame: F): Promise<SendResult> {
+    if (!this.data.isOpen) {
+      return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
+    }
+    const clientMsgId = frame.client_msg_id ?? randomUUID();
+    frame.client_msg_id = clientMsgId;
+    return new Promise<SendResult>((resolve) => {
+      const timer = setTimeout(() => {
+        this.inflightTerminals.delete(clientMsgId);
+        resolve({ ok: false, error: "terminal_ack timeout", code: "ack_timeout" });
+      }, Math.min(this.sendAckTimeoutMs, 30_000));
+      this.inflightTerminals.set(clientMsgId, {
+        resolve: (ack) => {
+          if (ack.ok) {
+            resolve({ ok: true, messageId: ack.msg_id });
+          } else {
+            resolve({ ok: false, error: ack.error, code: ack.code });
+          }
+        },
+        timer,
+      });
+      const sent = this.data.send(frame);
+      if (!sent) {
+        clearTimeout(timer);
+        this.inflightTerminals.delete(clientMsgId);
         resolve({ ok: false, error: "data WS send failed", code: "ws_send_failed" });
       }
     });
@@ -585,6 +793,17 @@ export class BotSession {
       });
     }
     this.inflightUploads.clear();
+    for (const [id, entry] of this.inflightTerminals) {
+      clearTimeout(entry.timer);
+      entry.resolve({
+        type: "terminal_ack",
+        client_msg_id: id,
+        ok: false,
+        code: "session_closed",
+        error: reason,
+      });
+    }
+    this.inflightTerminals.clear();
   }
 
   // =================== heartbeat / close ===================

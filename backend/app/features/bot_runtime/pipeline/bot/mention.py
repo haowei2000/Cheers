@@ -90,6 +90,21 @@ def extract_mentions(text: str, known_space_names: list[str] | None = None) -> l
     return result
 
 
+def extract_all_mentions(text: str) -> list[str]:
+    """Extract @mentions from any position in the message body."""
+    if not text or not text.strip():
+        return []
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in MENTION_PATTERN.finditer(text):
+        name = match.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
+
 async def resolve_user_mentions(
     content: str,
     session: "AsyncSession",
@@ -97,6 +112,32 @@ async def resolve_user_mentions(
 ) -> list[str]:
     """Resolve user mentions."""
     mentioned = extract_mentions(content)
+    if not mentioned:
+        return []
+
+    from sqlalchemy import select
+
+    from app.db.models import ChannelMembership, User
+
+    result = await session.execute(
+        select(User.user_id)
+        .join(ChannelMembership, ChannelMembership.member_id == User.user_id)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_type == "user",
+            User.username.in_(mentioned),
+        )
+    )
+    return [row[0] for row in result.all()]
+
+
+async def resolve_user_mentions_anywhere(
+    content: str,
+    session: "AsyncSession",
+    channel_id: str,
+) -> list[str]:
+    """Resolve user mentions from any position in the message body."""
+    mentioned = extract_all_mentions(content)
     if not mentioned:
         return []
 

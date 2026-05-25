@@ -6,8 +6,10 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -47,14 +49,48 @@ logger = logging.getLogger("app.api.v1.bots")
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
-_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+_USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_CONNECTOR_CONTROL_KEY = "connector_control"
+_CONNECTOR_CONTROL_TIMEOUT_MIN_MS = 5_000
+_CONNECTOR_CONTROL_TIMEOUT_MAX_MS = 3_600_000
+
+
+class ConnectorControlSettingsIn(BaseModel):
+    agentnexusApprovalMode: Literal["ask", "reject", "allow", "cancel"] | None = Field(default=None)
+    agentNativePermissionMode: str | None = Field(default=None, min_length=1, max_length=64)
+    # Legacy alias accepted from older clients; persisted as agentnexusApprovalMode.
+    permissionMode: Literal["ask", "reject", "allow", "cancel"] | None = Field(default=None)
+    requestTimeoutMs: int | None = Field(
+        default=None,
+        ge=_CONNECTOR_CONTROL_TIMEOUT_MIN_MS,
+        le=_CONNECTOR_CONTROL_TIMEOUT_MAX_MS,
+    )
+    promptTimeoutMs: int | None = Field(
+        default=None,
+        ge=_CONNECTOR_CONTROL_TIMEOUT_MIN_MS,
+        le=_CONNECTOR_CONTROL_TIMEOUT_MAX_MS,
+    )
+    cwd: str | None = Field(default=None, min_length=1, max_length=1024)
+    model: str | None = Field(default=None, min_length=1, max_length=128)
+    configOptions: dict[str, str] | None = Field(default=None)
+
+
+class ConnectorControlUpdateIn(BaseModel):
+    settings: ConnectorControlSettingsIn
+
+
+class ConnectorAcpOptionSetIn(BaseModel):
+    sessionId: str | None = Field(default=None, min_length=1, max_length=256)
+    providerSessionKey: str | None = Field(default=None, min_length=1, max_length=1024)
+    configId: str = Field(min_length=1, max_length=256)
+    value: str = Field(min_length=1, max_length=512)
 
 
 def _validate_username(username: str) -> None:
     if not username or not username.strip():
         raise BadRequestError("用户名不能为空")
     if not _USERNAME_RE.match(username.strip()):
-        raise BadRequestError("用户名只能包含字母、数字、下划线、连字符、单引号和中文")
+        raise BadRequestError("Bot @ ID 只能使用小写英文字母、数字、下划线和连字符，且必须以小写字母开头")
 
 
 def _validate_intro(intro: str | None) -> str | None:
@@ -89,6 +125,81 @@ def _connection_fields(bot: BotAccount) -> dict:
         "control_connected": None,
         "data_connected": None,
     }
+
+
+def _connector_control_from_binding_config(binding_config: dict | None) -> dict:
+    if not isinstance(binding_config, dict):
+        return {}
+    control = binding_config.get(_CONNECTOR_CONTROL_KEY)
+    return control if isinstance(control, dict) else {}
+
+
+def _connector_control_settings_from_binding_config(binding_config: dict | None) -> dict:
+    control = _connector_control_from_binding_config(binding_config)
+    settings = control.get("settings")
+    return _normalize_connector_control_settings(dict(settings)) if isinstance(settings, dict) else {}
+
+
+def _normalize_connector_control_settings(settings: dict) -> dict:
+    normalized = dict(settings)
+    legacy_permission_mode = normalized.pop("permissionMode", None)
+    if "agentnexusApprovalMode" not in normalized and legacy_permission_mode in {"ask", "reject", "allow", "cancel"}:
+        normalized["agentnexusApprovalMode"] = legacy_permission_mode
+    return normalized
+
+
+def _next_connector_control_config(
+    binding_config: dict | None,
+    settings_update: dict,
+) -> dict:
+    cfg = dict(binding_config or {})
+    existing = _connector_control_from_binding_config(cfg)
+    settings = _connector_control_settings_from_binding_config(cfg)
+    settings.update(_normalize_connector_control_settings(settings_update))
+    revision = existing.get("revision")
+    try:
+        next_revision: int | str = int(revision or 0) + 1
+    except (TypeError, ValueError):
+        next_revision = f"{datetime.now(timezone.utc).timestamp():.6f}"
+    control: dict = {
+        "revision": next_revision,
+        "settings": settings,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if isinstance(existing.get("last_status"), dict):
+        control["last_status"] = existing["last_status"]
+    if isinstance(existing.get("last_option_status"), dict):
+        control["last_option_status"] = existing["last_option_status"]
+    if isinstance(existing.get("options"), dict):
+        control["options"] = existing["options"]
+    cfg[_CONNECTOR_CONTROL_KEY] = control
+    return cfg
+
+
+def _next_connector_option_request_config(
+    binding_config: dict | None,
+    *,
+    request_id: str,
+    session_id: str | None,
+    provider_session_key: str | None,
+    config_id: str,
+    value: str,
+) -> dict:
+    cfg = dict(binding_config or {})
+    existing = _connector_control_from_binding_config(cfg)
+    control = dict(existing)
+    control["last_option_status"] = {
+        "request_id": request_id,
+        "session_id": session_id,
+        "provider_session_key": provider_session_key,
+        "config_id": config_id,
+        "value": value,
+        "ok": None,
+        "status": "pending",
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+    }
+    cfg[_CONNECTOR_CONTROL_KEY] = control
+    return cfg
 
 
 def _assert_can_test_bot(bot: BotAccount, current_user: User) -> None:
@@ -247,6 +358,8 @@ def _to_simple(
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
+    if can_manage_bot(bot, current_user):
+        d["binding_config"] = getattr(bot, "binding_config", None)
     return d
 
 
@@ -576,13 +689,21 @@ async def quick_connect_openclaw(
             user_template=DEFAULT_USER_TEMPLATE,
             variables=DEFAULT_TEMPLATE_VARIABLES,
             is_builtin=True,
+            scope="everyone",
         )
         session.add(template)
         await session.flush()
-    elif template.user_template == "{{message}}":
-        template.user_template = DEFAULT_USER_TEMPLATE
-        template.variables = DEFAULT_TEMPLATE_VARIABLES
-        await session.flush()
+    else:
+        template_changed = False
+        if template.user_template == "{{message}}":
+            template.user_template = DEFAULT_USER_TEMPLATE
+            template.variables = DEFAULT_TEMPLATE_VARIABLES
+            template_changed = True
+        if getattr(template, "scope", None) != "everyone":
+            template.scope = "everyone"
+            template_changed = True
+        if template_changed:
+            await session.flush()
 
     ai_model = AIModel(
         name=f"openclaw-{agent_id}",
@@ -637,6 +758,117 @@ async def quick_connect_openclaw(
     return APIResponse.ok({
         "bot": _to_full(bot, current_user, ai_model.name, template.name, owner=current_user),
         "probe": {"who_am_i": who_am_i, "skills": skills, "connected": probe_ok},
+    })
+
+
+@router.put("/{bot_id}/connector-control", response_model=APIResponse[dict])
+async def update_bot_connector_control(
+    bot_id: str,
+    body: ConnectorControlUpdateIn,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Update the AgentNexus-managed live connector settings for an Agent Bridge Bot."""
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    if not can_manage_bot(bot, current_user):
+        raise ForbiddenError("无权修改该 Bot")
+    if (bot.binding_type or "http") != "agent_bridge":
+        raise BadRequestError("只有 Agent Bridge Bot 支持 connector control")
+
+    settings_update = body.settings.model_dump(exclude_none=True)
+    if not settings_update:
+        raise BadRequestError("connector control settings 不能为空")
+
+    bot.binding_config = _next_connector_control_config(bot.binding_config, settings_update)
+    session.add(bot)
+    await session.flush()
+    control = _connector_control_from_binding_config(bot.binding_config)
+    frame = {
+        "type": "config_update",
+        "revision": control.get("revision"),
+        "settings": control.get("settings") or {},
+        "updated_at": control.get("updated_at"),
+    }
+    # Commit before notifying the live connector so a fast config_status ack
+    # cannot race and overwrite uncommitted JSON state from another DB session.
+    await session.commit()
+    dispatched = await bot_session_registry.dispatch_control(bot.bot_id, frame)
+    audit.info(
+        "action=bot.connector_control.update actor=%s resource_id=%s fields=%s dispatched=%s",
+        current_user.user_id,
+        bot_id,
+        list(settings_update.keys()),
+        dispatched,
+    )
+    await session.refresh(bot)
+    owner = await session.get(User, bot.created_by) if bot.created_by else None
+    return APIResponse.ok({
+        "bot": _to_full(bot, current_user, owner=owner),
+        "connector_control": control,
+        "dispatched": dispatched,
+    })
+
+
+@router.put("/{bot_id}/connector-control/acp-option", response_model=APIResponse[dict])
+async def set_bot_connector_acp_option(
+    bot_id: str,
+    body: ConnectorAcpOptionSetIn,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Set an ACP session configuration option through the live connector."""
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    if not can_manage_bot(bot, current_user):
+        raise ForbiddenError("无权修改该 Bot")
+    if (bot.binding_type or "http") != "agent_bridge":
+        raise BadRequestError("只有 Agent Bridge Bot 支持 connector control")
+
+    session_id = body.sessionId.strip() if body.sessionId else None
+    provider_session_key = body.providerSessionKey.strip() if body.providerSessionKey else None
+    if not session_id and not provider_session_key:
+        raise BadRequestError("sessionId 或 providerSessionKey 至少需要一个")
+
+    request_id = gen_uuid()
+    config_id = body.configId.strip()
+    value = body.value.strip()
+    bot.binding_config = _next_connector_option_request_config(
+        bot.binding_config,
+        request_id=request_id,
+        session_id=session_id,
+        provider_session_key=provider_session_key,
+        config_id=config_id,
+        value=value,
+    )
+    session.add(bot)
+    await session.flush()
+    control = _connector_control_from_binding_config(bot.binding_config)
+    frame = {
+        "type": "config_option_set",
+        "request_id": request_id,
+        "session_id": session_id,
+        "provider_session_key": provider_session_key,
+        "config_id": config_id,
+        "value": value,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await session.commit()
+    dispatched = await bot_session_registry.dispatch_control(bot.bot_id, frame)
+    audit.info(
+        "action=bot.connector_control.acp_option_set actor=%s resource_id=%s config_id=%s dispatched=%s",
+        current_user.user_id,
+        bot_id,
+        config_id,
+        dispatched,
+    )
+    await session.refresh(bot)
+    owner = await session.get(User, bot.created_by) if bot.created_by else None
+    return APIResponse.ok({
+        "bot": _to_full(bot, current_user, owner=owner),
+        "connector_control": control,
+        "dispatched": dispatched,
+        "request_id": request_id,
     })
 
 

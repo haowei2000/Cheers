@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { MessageMarkdown } from "../MessageMarkdown";
 import { apiFetch } from "../api/client";
@@ -7,12 +7,14 @@ import {
   downloadProtectedFile,
   openProtectedFile,
 } from "../lib/protected-file";
+import type { FileInfo } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 import { Tooltip } from "./Tooltip";
 
 type TextPreviewKind = "html" | "markdown" | "text";
 const HTML_PREVIEW_SANDBOX = "allow-scripts allow-forms allow-popups allow-downloads";
+const KKFILEVIEW_REFRESH_SKEW_MS = 30_000;
 const KKFILEVIEW_EXTS = new Set([
   "doc",
   "docx",
@@ -38,6 +40,11 @@ const KKFILEVIEW_EXTS = new Set([
   "epub",
 ]);
 
+type KkViewerState = {
+  url: string;
+  expiresAtMs: number | null;
+};
+
 function swapFileAction(url: string, action: "preview" | "download" | "content") {
   const [base, query] = url.split("?");
   const next = base.replace(/\/(preview|download|content)$/, `/${action}`);
@@ -61,6 +68,7 @@ export function FilePreviewPanel({
   scopeId,
   source,
   onDeleted,
+  onAttachFile,
   onClose,
   variant = "side",
 }: {
@@ -75,6 +83,7 @@ export function FilePreviewPanel({
   scopeId?: string | null;
   source?: "message" | "memory" | "personal";
   onDeleted?: () => void;
+  onAttachFile?: (file: FileInfo) => void;
   onClose: () => void;
   variant?: "side" | "main";
 }) {
@@ -136,18 +145,40 @@ export function FilePreviewPanel({
   const [binaryPreviewUrl, setBinaryPreviewUrl] = useState<string | null>(null);
   const [binaryLoading, setBinaryLoading] = useState(false);
   const [binaryError, setBinaryError] = useState<string | null>(null);
-  const [kkViewerUrl, setKkViewerUrl] = useState<string | null>(null);
+  const [kkViewer, setKkViewer] = useState<KkViewerState | null>(null);
   const [kkLoading, setKkLoading] = useState(false);
   const [kkError, setKkError] = useState<string | null>(null);
   const [kkFallbackToText, setKkFallbackToText] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const shouldUseKkFileView = isKkFileViewDocument && !kkFallbackToText;
+  const kkViewerUrl = kkViewer?.url ?? null;
   const shouldLoadText =
     !shouldUseKkFileView &&
     !isImage &&
     !isPdf &&
     !isHtml &&
     (isMarkdown || isPlainText || isExtractedPreview);
+
+  const loadKkViewer = useCallback(async (signal?: AbortSignal): Promise<KkViewerState> => {
+    const fileId = extractFileId(previewUrl);
+    if (!fileId) {
+      throw new Error("Could not identify the file preview URL");
+    }
+    const response = await apiFetch(`/files/${encodeURIComponent(fileId)}/kkfileview`, { signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const data = payload?.data ?? payload;
+    if (!data?.enabled || !data?.viewer_url) {
+      throw new Error(data?.reason || "Document preview service is unavailable");
+    }
+    const expiresIn = Number(data.expires_in);
+    return {
+      url: String(data.viewer_url),
+      expiresAtMs: Number.isFinite(expiresIn) && expiresIn > 0
+        ? Date.now() + expiresIn * 1000
+        : null,
+    };
+  }, [previewUrl]);
 
   useEffect(() => {
     setKkFallbackToText(false);
@@ -192,44 +223,31 @@ export function FilePreviewPanel({
 
   useEffect(() => {
     if (!isKkFileViewDocument) {
-      setKkViewerUrl(null);
+      setKkViewer(null);
       setKkError(null);
       setKkLoading(false);
       return;
     }
     if (kkFallbackToText) {
-      setKkViewerUrl(null);
+      setKkViewer(null);
       setKkLoading(false);
       return;
     }
 
-    const fileId = extractFileId(previewUrl);
-    if (!fileId) {
-      setKkError("Could not identify the file preview URL");
-      setKkFallbackToText(true);
-      return;
-    }
-
+    const controller = new AbortController();
     let cancelled = false;
     setKkLoading(true);
     setKkError(null);
-    setKkViewerUrl(null);
-    apiFetch(`/files/${encodeURIComponent(fileId)}/kkfileview`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((payload) => {
-        const data = payload?.data ?? payload;
-        if (!data?.enabled || !data?.viewer_url) {
-          throw new Error(data?.reason || "Document preview service is unavailable");
-        }
+    setKkViewer(null);
+    loadKkViewer(controller.signal)
+      .then((next) => {
         if (cancelled) return;
-        setKkViewerUrl(String(data.viewer_url));
+        setKkViewer(next);
         setKkLoading(false);
       })
       .catch((e) => {
         if (cancelled) return;
+        if (e instanceof DOMException && e.name === "AbortError") return;
         setKkError(e instanceof Error ? e.message : String(e));
         setKkLoading(false);
         setKkFallbackToText(true);
@@ -237,8 +255,34 @@ export function FilePreviewPanel({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [isKkFileViewDocument, kkFallbackToText, previewUrl, shouldUseKkFileView]);
+  }, [isKkFileViewDocument, kkFallbackToText, loadKkViewer]);
+
+  useEffect(() => {
+    if (!shouldUseKkFileView || !kkViewer?.expiresAtMs) return;
+    const delay = Math.max(0, kkViewer.expiresAtMs - Date.now() - KKFILEVIEW_REFRESH_SKEW_MS);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      loadKkViewer()
+        .then((next) => {
+          if (!cancelled) {
+            setKkViewer(next);
+            setKkError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setKkError(e instanceof Error ? e.message : String(e));
+            setKkFallbackToText(true);
+          }
+        });
+    }, delay);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [kkViewer?.expiresAtMs, loadKkViewer, shouldUseKkFileView]);
 
   useEffect(() => {
     if (!isImage && !isPdf && !isHtml) {
@@ -281,12 +325,45 @@ export function FilePreviewPanel({
   };
 
   const handleOpen = () => {
-    if (kkViewerUrl) {
-      window.open(kkViewerUrl, "_blank", "noreferrer");
+    if (shouldUseKkFileView) {
+      const current = kkViewer;
+      if (
+        current?.url &&
+        (!current.expiresAtMs || current.expiresAtMs - Date.now() > KKFILEVIEW_REFRESH_SKEW_MS)
+      ) {
+        window.open(current.url, "_blank", "noreferrer");
+        return;
+      }
+      const opened = window.open("", "_blank", "noreferrer");
+      if (opened) opened.opener = null;
+      loadKkViewer()
+        .then((next) => {
+          setKkViewer(next);
+          setKkError(null);
+          if (opened) opened.location.href = next.url;
+          else window.open(next.url, "_blank", "noreferrer");
+        })
+        .catch((e) => {
+          if (opened) opened.close();
+          setKkError(e instanceof Error ? e.message : String(e));
+        });
       return;
     }
     openProtectedFile(previewUrl).catch((e) => {
       setBinaryError(e instanceof Error ? e.message : String(e));
+    });
+  };
+
+  const handleAttachFile = () => {
+    if (!resolvedFileId) return;
+    onAttachFile?.({
+      file_id: resolvedFileId,
+      original_filename: filename,
+      content_type: contentType ?? undefined,
+      size_bytes: sizeBytes ?? undefined,
+      channel_id: channelId ?? undefined,
+      scope_type: scopeType,
+      scope_id: scopeId,
     });
   };
 
@@ -360,6 +437,18 @@ export function FilePreviewPanel({
               <AppIcon name="externalLink" />
             </button>
           </Tooltip>
+          {resolvedFileId && onAttachFile && (
+            <Tooltip content="Copy to composer" placement="bottom">
+              <button
+                type="button"
+                onClick={handleAttachFile}
+                className="an-file-preview-action"
+                aria-label="Copy to composer"
+              >
+                <AppIcon name="copy" />
+              </button>
+            </Tooltip>
+          )}
           {canDelete && (
             <Tooltip content="Delete file" placement="bottom">
               <button

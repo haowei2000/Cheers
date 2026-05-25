@@ -15,15 +15,89 @@ import {
   inputCls,
 } from "../shared/SettingsControls";
 import {
+  BOT_MENTION_ID_HINT,
   BotOnlineBadge,
   BotScopeControl,
   botOwnerLabel,
   botScopeLabel,
+  isValidBotMentionId,
+  normalizeBotMentionId,
   normalizeBotScope,
 } from "./BotShared";
-import type { BotConnectionTestResult, BotRow, BotScope, ModelItem, TemplateItem } from "./types";
+import type {
+  AgentNativePermissionMode,
+  BotConnectionTestResult,
+  BotRow,
+  BotScope,
+  ConnectorPermissionMode,
+  ModelItem,
+  TemplateItem,
+} from "./types";
 
 type BotSettingsTab = "profile" | "runtime" | "status";
+
+function normalizeConnectorPermissionMode(value: unknown): ConnectorPermissionMode {
+  return value === "ask" || value === "allow" || value === "cancel" || value === "reject" ? value : "ask";
+}
+
+function normalizeAgentNativePermissionMode(value: unknown): AgentNativePermissionMode {
+  return value === "allow" || value === "deny" || value === "ask" ? value : "ask";
+}
+
+function msToSeconds(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(5, Math.round(value / 1000))
+    : fallback;
+}
+
+function secondsToMs(value: number): number {
+  return Math.max(5, Math.round(value)) * 1000;
+}
+
+function safeConnectorText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function connectorOptionTitle(option: { id?: string; name?: string }): string {
+  const name = safeConnectorText(option.name, "");
+  const id = safeConnectorText(option.id, "");
+  if (name && id && name !== id) return `${name} (${id})`;
+  return name || id || "Option";
+}
+
+type ConnectorOptionValue = { id: string; name: string; description?: string | null };
+
+function connectorOptionValues(option: {
+  options?: Array<{ value?: string; id?: string; name?: string; description?: string | null }>;
+  values?: Array<{ id?: string; name?: string; description?: string | null }>;
+}): ConnectorOptionValue[] {
+  const rawValues = Array.isArray(option.values) && option.values.length > 0
+    ? option.values
+    : Array.isArray(option.options)
+      ? option.options
+      : [];
+  const normalized: ConnectorOptionValue[] = [];
+  rawValues.forEach((value) => {
+    const id = safeConnectorText("value" in value ? value.value : undefined, safeConnectorText(value.id, ""));
+    if (!id) return;
+    normalized.push({
+      id,
+      name: safeConnectorText(value.name, id),
+      description: typeof value.description === "string" ? value.description : null,
+    });
+  });
+  return normalized;
+}
+
+function connectorOptionCurrentValue(
+  option: { currentValue?: string | null; currentValueId?: string | null },
+  values: Array<{ id: string }> = [],
+): string {
+  return safeConnectorText(
+    option.currentValue,
+    safeConnectorText(option.currentValueId, safeConnectorText(values[0]?.id, "")),
+  );
+}
 
 function isManagedBotAvatarUrl(value: string): boolean {
   return value.startsWith("/api/v1/avatars/bots/") ||
@@ -41,6 +115,8 @@ export function BotEditPane({
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
+  const [username, setUsername] = useState(bot.username || "");
+  const [usernameTouched, setUsernameTouched] = useState(false);
   const [displayName, setDisplayName] = useState(bot.display_name || "");
   const [description, setDescription] = useState(bot.description || "");
   const [avatarUrl, setAvatarUrl] = useState(bot.avatar_url || "");
@@ -57,16 +133,75 @@ export function BotEditPane({
   const [modelId, setModelId] = useState(bot.model_id || "");
   const [templateId, setTemplateId] = useState(bot.template_id || "");
   const [botTab, setBotTab] = useState<BotSettingsTab>("profile");
+  const connectorControl = bot.binding_config?.connector_control;
+  const connectorSettings = connectorControl?.settings || {};
+  const connectorOptions = connectorControl?.options || null;
+  const discoveredModes = connectorOptions?.modes?.availableModes || [];
+  const discoveredConfigOptions = connectorOptions?.configOptions || [];
+  const discoveredModelOption = discoveredConfigOptions.find((option) => {
+    const id = safeConnectorText(option.id, "").toLowerCase();
+    const name = safeConnectorText(option.name, "").toLowerCase();
+    return id === "model" || name.includes("model");
+  });
+  const discoveredModelValues = discoveredModelOption ? connectorOptionValues(discoveredModelOption) : [];
+  const showConnectorModelOverride = discoveredModelValues.length === 0;
+  const advancedDiscoveredConfigOptions = discoveredConfigOptions.filter((option) => option !== discoveredModelOption);
+  const showLiveAcpDetails = Boolean(
+    connectorOptions && (
+      connectorOptions.agentInfo ||
+      discoveredModes.length > 0 ||
+      advancedDiscoveredConfigOptions.length > 0 ||
+      connectorControl?.last_option_status ||
+      connectorOptions.truncated
+    ),
+  );
+  const [savingConnectorControl, setSavingConnectorControl] = useState(false);
+  const [agentnexusApprovalMode, setAgentnexusApprovalMode] = useState<ConnectorPermissionMode>(
+    normalizeConnectorPermissionMode(connectorSettings.agentnexusApprovalMode ?? connectorSettings.permissionMode),
+  );
+  const [agentNativePermissionMode, setAgentNativePermissionMode] = useState<AgentNativePermissionMode>(
+    normalizeAgentNativePermissionMode(connectorSettings.agentNativePermissionMode),
+  );
+  const [connectorPromptTimeoutSeconds, setConnectorPromptTimeoutSeconds] = useState(
+    msToSeconds(connectorSettings.promptTimeoutMs, 900),
+  );
+  const [connectorRequestTimeoutSeconds, setConnectorRequestTimeoutSeconds] = useState(
+    msToSeconds(connectorSettings.requestTimeoutMs, 120),
+  );
+  const [connectorCwd, setConnectorCwd] = useState(connectorSettings.cwd || "");
+  const [connectorModel, setConnectorModel] = useState(connectorSettings.model || "");
+  const [applyingAcpOptionKey, setApplyingAcpOptionKey] = useState<string | null>(null);
 
   useEffect(() => {
+    setUsername(bot.username || "");
+    setUsernameTouched(false);
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
     setAvatarUrl(bot.avatar_url || "");
     setScope(normalizeBotScope(bot.scope));
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
+    const nextSettings = bot.binding_config?.connector_control?.settings || {};
+    setAgentnexusApprovalMode(
+      normalizeConnectorPermissionMode(nextSettings.agentnexusApprovalMode ?? nextSettings.permissionMode),
+    );
+    setAgentNativePermissionMode(normalizeAgentNativePermissionMode(nextSettings.agentNativePermissionMode));
+    setConnectorPromptTimeoutSeconds(msToSeconds(nextSettings.promptTimeoutMs, 900));
+    setConnectorRequestTimeoutSeconds(msToSeconds(nextSettings.requestTimeoutMs, 120));
+    setConnectorCwd(nextSettings.cwd || "");
+    setConnectorModel(nextSettings.model || "");
     setConnectionTest(null);
-  }, [bot.avatar_url, bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
+  }, [
+    bot.avatar_url,
+    bot.binding_config,
+    bot.bot_id,
+    bot.description,
+    bot.display_name,
+    bot.model_id,
+    bot.scope,
+    bot.template_id,
+    bot.username,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -100,6 +235,15 @@ export function BotEditPane({
   }, [authToken, bot.bot_id, bot.model_id, bot.template_id, isHttpBot]);
 
   const save = async (opts?: { silent?: boolean }) => {
+    const mentionId = normalizeBotMentionId(username);
+    if (usernameTouched && !mentionId) {
+      toast.error("Bot @ ID is required");
+      return false;
+    }
+    if (usernameTouched && mentionId !== bot.username && !isValidBotMentionId(mentionId)) {
+      toast.error(BOT_MENTION_ID_HINT);
+      return false;
+    }
     if (isHttpBot && (!modelId || !templateId)) {
       toast.error("HTTP bots require a model and template");
       return false;
@@ -113,6 +257,9 @@ export function BotEditPane({
         scope,
         template_id: templateId || null,
       };
+      if (usernameTouched && mentionId !== bot.username) {
+        body.username = mentionId;
+      }
       if (isHttpBot) {
         body.model_id = modelId;
       }
@@ -124,6 +271,7 @@ export function BotEditPane({
       const data = await res.json();
       if (data?.status === "success") {
         if (!opts?.silent) toast.success("Saved");
+        setUsernameTouched(false);
         setConnectionTest(null);
         onUpdated();
         return true;
@@ -229,6 +377,79 @@ export function BotEditPane({
       toast.error(message);
     } finally {
       setTestingConnection(false);
+    }
+  };
+
+  const saveConnectorControl = async () => {
+    setSavingConnectorControl(true);
+    try {
+      const settings: Record<string, unknown> = {
+        agentnexusApprovalMode,
+        agentNativePermissionMode,
+        promptTimeoutMs: secondsToMs(connectorPromptTimeoutSeconds),
+        requestTimeoutMs: secondsToMs(connectorRequestTimeoutSeconds),
+      };
+      if (connectorCwd.trim()) settings.cwd = connectorCwd.trim();
+      if (showConnectorModelOverride && connectorModel.trim()) settings.model = connectorModel.trim();
+      const res = await apiFetch(`/bots/${bot.bot_id}/connector-control`, {
+        method: "PUT",
+        token: authToken,
+        body: {
+          settings,
+        },
+      });
+      const data = await res.json();
+      if (data?.status !== "success") {
+        throw new Error(data?.message || data?.detail || "Save failed");
+      }
+      toast.success(data.data?.dispatched ? "Connector settings sent" : "Connector settings saved");
+      onUpdated();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Save failed");
+    } finally {
+      setSavingConnectorControl(false);
+    }
+  };
+
+  const setAcpConfigOption = async (
+    option: { id?: string; name?: string },
+    value: string,
+  ) => {
+    const configId = safeConnectorText(option.id, "");
+    const nextValue = value.trim();
+    const sessionId = safeConnectorText(connectorOptions?.sessionId, "");
+    const providerSessionKey = safeConnectorText(connectorOptions?.providerSessionKey, "");
+    if (!configId || !nextValue) {
+      toast.error("ACP option is incomplete");
+      return;
+    }
+    if (!sessionId && !providerSessionKey) {
+      toast.error("ACP session is not available yet");
+      return;
+    }
+    const key = `${configId}:${nextValue}`;
+    setApplyingAcpOptionKey(key);
+    try {
+      const res = await apiFetch(`/bots/${bot.bot_id}/connector-control/acp-option`, {
+        method: "PUT",
+        token: authToken,
+        body: {
+          sessionId: sessionId || undefined,
+          providerSessionKey: providerSessionKey || undefined,
+          configId,
+          value: nextValue,
+        },
+      });
+      const data = await res.json();
+      if (data?.status !== "success") {
+        throw new Error(data?.message || data?.detail || "ACP option update failed");
+      }
+      toast.success(data.data?.dispatched ? "ACP option sent" : "ACP option saved");
+      onUpdated();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "ACP option update failed");
+    } finally {
+      setApplyingAcpOptionKey(null);
     }
   };
 
@@ -410,6 +631,202 @@ export function BotEditPane({
             </div>
           )}
         </div>
+        {!isHttpBot && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div>
+                <div className="an-rc-title">Connector control</div>
+                <div className="an-rc-sub">Revision {connectorControl?.revision ?? "not set"}</div>
+              </div>
+              {connectorControl?.last_status && (
+                <span className={`an-chip ${connectorControl.last_status.ok ? "green" : "red"}`}>
+                  {connectorControl.last_status.ok ? "Applied" : "Rejected"}
+                </span>
+              )}
+            </div>
+            <Field label="AgentNexus approval handling">
+              <select
+                value={agentnexusApprovalMode}
+                onChange={(e) => setAgentnexusApprovalMode(normalizeConnectorPermissionMode(e.target.value))}
+                className={inputCls}
+              >
+                <option value="ask">Ask owner in chat</option>
+                <option value="reject">Reject</option>
+                <option value="allow">Allow</option>
+                <option value="cancel">Cancel</option>
+              </select>
+            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+              <Field label="Working directory">
+                <input
+                  value={connectorCwd}
+                  onChange={(e) => setConnectorCwd(e.target.value)}
+                  className={inputCls}
+                  placeholder="/tmp/agent-workspace"
+                />
+              </Field>
+              {discoveredModelOption && discoveredModelValues.length > 0 ? (
+                <Field label={connectorOptionTitle(discoveredModelOption)}>
+                  <select
+                    value={connectorOptionCurrentValue(discoveredModelOption, discoveredModelValues)}
+                    onChange={(e) => void setAcpConfigOption(discoveredModelOption, e.target.value)}
+                    disabled={applyingAcpOptionKey?.startsWith(`${safeConnectorText(discoveredModelOption.id, "")}:`)}
+                    className={inputCls}
+                  >
+                    {discoveredModelValues.map((value) => {
+                      return (
+                        <option key={value.id} value={value.id}>
+                          {value.name}{value.id !== value.name ? ` (${value.id})` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </Field>
+              ) : showConnectorModelOverride && (
+                <Field label="Model override">
+                  <input
+                    value={connectorModel}
+                    onChange={(e) => setConnectorModel(e.target.value)}
+                    className={inputCls}
+                    placeholder="gpt-5.5"
+                  />
+                </Field>
+              )}
+            </div>
+            <details>
+              <summary className="an-rc-title" style={{ cursor: "pointer" }}>Advanced connector settings</summary>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: 10 }}>
+                <Field label="Agent native permission mode">
+                  <select
+                    value={agentNativePermissionMode}
+                    onChange={(e) => setAgentNativePermissionMode(normalizeAgentNativePermissionMode(e.target.value))}
+                    className={inputCls}
+                  >
+                    <option value="ask">Ask through ACP</option>
+                    <option value="allow">Allow in agent</option>
+                    <option value="deny">Deny in agent</option>
+                  </select>
+                </Field>
+                <Field label="Prompt timeout (seconds)">
+                  <input
+                    type="number"
+                    min={5}
+                    max={3600}
+                    value={connectorPromptTimeoutSeconds}
+                    onChange={(e) => setConnectorPromptTimeoutSeconds(Number(e.target.value || 0))}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Request timeout (seconds)">
+                  <input
+                    type="number"
+                    min={5}
+                    max={3600}
+                    value={connectorRequestTimeoutSeconds}
+                    onChange={(e) => setConnectorRequestTimeoutSeconds(Number(e.target.value || 0))}
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+            </details>
+            {connectorControl?.last_status?.rejected?.length ? (
+              <div className="an-inline-status" style={{ background: "var(--red-muted)", color: "var(--red)" }}>
+                {connectorControl.last_status.rejected.map((item) => `${item.field || "field"}: ${item.reason || "rejected"}`).join("; ")}
+              </div>
+            ) : null}
+            {showLiveAcpDetails && connectorOptions && (
+              <details>
+                <summary className="an-rc-title" style={{ cursor: "pointer" }}>Live ACP options</summary>
+                <div className="an-inline-status" style={{ background: "var(--surface-soft)", color: "var(--fg-1)", marginTop: 8 }}>
+                <div style={{ fontWeight: 650 }}>
+                  Agent runtime
+                  {connectorOptions.reported_at ? ` · ${new Date(connectorOptions.reported_at).toLocaleString()}` : ""}
+                </div>
+                {connectorOptions.agentInfo && (
+                  <div>
+                    Agent: {safeConnectorText(connectorOptions.agentInfo["name"], "unknown")}
+                    {connectorOptions.agentInfo["version"] ? ` · ${String(connectorOptions.agentInfo["version"])}` : ""}
+                  </div>
+                )}
+                {discoveredModes.length > 0 && (
+                  <div>
+                    Modes: {discoveredModes.map((mode) => {
+                      const id = safeConnectorText(mode.id, "");
+                      const name = safeConnectorText(mode.name, id || "Mode");
+                      const current = id && id === connectorOptions.modes?.currentModeId;
+                      return `${name}${current ? " (current)" : ""}`;
+                    }).join(", ")}
+                  </div>
+                )}
+                {advancedDiscoveredConfigOptions.length > 0 && (
+                  <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                    {advancedDiscoveredConfigOptions.map((option) => {
+                      const configId = safeConnectorText(option.id, "");
+                      const values = connectorOptionValues(option);
+                      const selectValue = connectorOptionCurrentValue(option, values);
+                      const applying = applyingAcpOptionKey?.startsWith(`${configId}:`);
+                      return (
+                        <label
+                          key={configId || connectorOptionTitle(option)}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(120px, 0.9fr) minmax(160px, 1.1fr)",
+                            gap: 8,
+                            alignItems: "center",
+                          }}
+                        >
+                          <span>
+                            {connectorOptionTitle(option)}
+                            {option.description ? <span className="an-rc-sub"> · {option.description}</span> : null}
+                          </span>
+                          <select
+                            value={selectValue}
+                            onChange={(e) => void setAcpConfigOption(option, e.target.value)}
+                            disabled={!configId || values.length === 0 || applying}
+                            className={inputCls}
+                          >
+                            {values.length === 0 ? (
+                              <option value="">No values</option>
+                            ) : (
+                              values.map((value) => {
+                                return (
+                                  <option key={value.id} value={value.id}>
+                                    {value.name}{value.id !== value.name ? ` (${value.id})` : ""}
+                                  </option>
+                                );
+                              })
+                            )}
+                          </select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {connectorControl?.last_option_status && (
+                  <div
+                    style={{
+                      color: connectorControl.last_option_status.ok === false ? "var(--red)" : "var(--fg-2)",
+                    }}
+                  >
+                    Last ACP option: {connectorControl.last_option_status.config_id || "option"}
+                    {connectorControl.last_option_status.value ? `=${connectorControl.last_option_status.value}` : ""}
+                    {connectorControl.last_option_status.ok === true ? " applied" : ""}
+                    {connectorControl.last_option_status.ok === false ? " rejected" : ""}
+                    {connectorControl.last_option_status.status === "pending" ? " pending" : ""}
+                    {connectorControl.last_option_status.error ? ` · ${connectorControl.last_option_status.error}` : ""}
+                  </div>
+                )}
+                {connectorOptions.truncated && <div>Options payload was too large and was truncated.</div>}
+              </div>
+              </details>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton onClick={() => void saveConnectorControl()} disabled={savingConnectorControl}>
+                {savingConnectorControl ? "Saving..." : "Save connector control"}
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <PrimaryButton onClick={() => void save()} disabled={saving}>
             {saving ? "Saving..." : "Save configuration"}
@@ -421,6 +838,20 @@ export function BotEditPane({
           <>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">Basic information</div>
+          <Field label="Bot @ ID">
+            <input
+              value={username}
+              onChange={(e) => {
+                setUsernameTouched(true);
+                setUsername(normalizeBotMentionId(e.target.value));
+              }}
+              className={inputCls}
+              placeholder="e.g. helper"
+            />
+            <div className="an-rc-sub" style={{ marginTop: 4 }}>
+              {BOT_MENTION_ID_HINT}
+            </div>
+          </Field>
           <Field label="Display name">
             <input
               value={displayName}

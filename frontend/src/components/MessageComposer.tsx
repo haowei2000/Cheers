@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
+  DragEvent,
   KeyboardEvent,
   PointerEvent,
   ReactNode,
   RefObject,
 } from "react";
+import {
+  dragEventHasFileReferences,
+  dragEventHasFiles,
+  fileReferencesFromDragEvent,
+  filesFromDragEvent,
+  type FileDragReference,
+} from "../lib/file-drag";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { AppIcon } from "./icons/AppIcon";
@@ -37,9 +45,38 @@ function promptTemplateDisplayName(template?: ComposerPromptTemplate | null): st
   return name;
 }
 
+function promptTemplateDefaultBotLabel(
+  bot?: ComposerPromptTemplate["default_bot"],
+): string {
+  if (!bot) return "";
+  return bot.display_name?.trim() || bot.username || "";
+}
+
+function formatFileSize(bytes?: number | null): string {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileTypeLabel(contentType?: string | null, filename?: string): string {
+  const ct = contentType || "";
+  const ext = (filename?.split(".").pop() || "").toLowerCase();
+  if (ct.includes("pdf") || ext === "pdf") return "PDF";
+  if (ct.includes("wordprocessingml") || ["doc", "docx"].includes(ext)) return "Word";
+  if (ct.includes("spreadsheetml") || ["xls", "xlsx", "csv"].includes(ext)) return "Spreadsheet";
+  if (ct.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "Image";
+  if (ct.startsWith("text/") || ["txt", "md"].includes(ext)) return "Text";
+  return "Files";
+}
+
 export interface ComposerPendingFile {
+  fileId: string;
   name: string;
   previewUrl: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  source?: "upload" | "existing";
 }
 
 export interface ComposerKeychainItem {
@@ -51,6 +88,14 @@ export interface ComposerPromptTemplate {
   template_id: string;
   name: string;
   description?: string | null;
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
   is_builtin?: boolean;
 }
 
@@ -70,6 +115,7 @@ export interface MessageComposerProps {
   showKindSwitcher?: boolean;
   enableKindCycling?: boolean;
   normalOnly?: boolean;
+  beginnerMode?: boolean;
   titleValue?: string;
   titleRef?: RefObject<HTMLInputElement>;
   onTitleChange?: (value: string) => void;
@@ -81,6 +127,8 @@ export interface MessageComposerProps {
   pendingFiles?: ComposerPendingFile[];
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onUploadFiles?: (files: File[]) => void | Promise<void>;
+  onAttachFiles?: (files: FileDragReference[]) => void | Promise<void>;
   keychainEnabled?: boolean;
   keychainOpen?: boolean;
   keychainLoading?: boolean;
@@ -91,6 +139,7 @@ export interface MessageComposerProps {
   promptTemplatesLoading?: boolean;
   selectedPromptTemplateId?: string | null;
   onPromptTemplateChange?: (templateId: string | null) => void;
+  showTemplateDefaultBotTarget?: boolean;
   sendButtonLabel?: string;
   normalHint?: ReactNode;
 }
@@ -104,16 +153,21 @@ type ComposerTextRange = {
   end: number;
 };
 
+type LeadingBotMentionMatch = ComposerTextRange & {
+  username: string;
+};
+
 const MENTION_NAME_BOUNDARY_RE = /^[a-zA-Z0-9_\-'\u4e00-\u9fff]$/;
 
-function findLeadingBotMentionRange(
+function findLeadingBotMentionMatch(
   value: string,
   botUsernames: string[],
-): ComposerTextRange | null {
+): LeadingBotMentionMatch | null {
   const names = [...new Set(botUsernames.filter(Boolean))].sort(
     (a, b) => b.length - a.length,
   );
   if (names.length === 0) return null;
+  const lowerValue = value.toLowerCase();
 
   let pos = 0;
   while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
@@ -121,23 +175,33 @@ function findLeadingBotMentionRange(
   }
   const start = pos;
   let consumed = false;
+  let firstUsername = "";
 
   while (value[pos] === "@") {
     const name = names.find((candidate) => {
       const mention = `@${candidate}`;
-      if (!value.startsWith(mention, pos)) return false;
+      if (!lowerValue.startsWith(mention.toLowerCase(), pos)) return false;
       const nextChar = value[pos + mention.length];
       return !nextChar || !MENTION_NAME_BOUNDARY_RE.test(nextChar);
     });
-    if (!name) break;
-    pos += name.length + 1;
-    consumed = true;
+    if (name) {
+      if (!firstUsername) firstUsername = name;
+      pos += name.length + 1;
+      consumed = true;
+    } else if (consumed) {
+      pos += 1;
+      while (pos < value.length && MENTION_NAME_BOUNDARY_RE.test(value[pos])) {
+        pos += 1;
+      }
+    } else {
+      break;
+    }
     while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
       pos += 1;
     }
   }
 
-  return consumed ? { start, end: pos } : null;
+  return consumed && firstUsername ? { start, end: pos, username: firstUsername } : null;
 }
 
 export function MessageComposer({
@@ -156,6 +220,7 @@ export function MessageComposer({
   showKindSwitcher = true,
   enableKindCycling = true,
   normalOnly = false,
+  beginnerMode = false,
   titleValue = "",
   titleRef,
   onTitleChange,
@@ -167,6 +232,8 @@ export function MessageComposer({
   pendingFiles = [],
   onRemovePendingFile,
   onUploadFile,
+  onUploadFiles,
+  onAttachFiles,
   keychainEnabled = false,
   keychainOpen = false,
   keychainLoading = false,
@@ -177,6 +244,7 @@ export function MessageComposer({
   promptTemplatesLoading = false,
   selectedPromptTemplateId = null,
   onPromptTemplateChange,
+  showTemplateDefaultBotTarget = true,
   sendButtonLabel,
   normalHint,
 }: MessageComposerProps) {
@@ -192,12 +260,21 @@ export function MessageComposer({
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [templateFilter, setTemplateFilter] = useState("");
+  const [selectedTemplateTag, setSelectedTemplateTag] = useState<string | null>(
+    null,
+  );
   const [templateTriggerRange, setTemplateTriggerRange] = useState<{
     start: number;
     end: number;
   } | null>(null);
+  const [mentionPeekVisible, setMentionPeekVisible] = useState(false);
+  const [mentionPeekNonce, setMentionPeekNonce] = useState(0);
   const [textareaHeight, setTextareaHeight] = useState<number | null>(null);
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const fileDragDepthRef = useRef(0);
+  const lastMentionPeekLabelRef = useRef<string | null>(null);
+  const lastBeginnerModeRef = useRef(beginnerMode);
   const actionTriggerRef = useRef<HTMLDivElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const keychainMenuRef = useRef<HTMLDivElement | null>(null);
@@ -216,7 +293,33 @@ export function MessageComposer({
     [promptTemplates, selectedPromptTemplateId],
   );
   const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
+  const selectedPromptTemplateDescription = selectedPromptTemplate?.description?.trim() || "";
+  const selectedPromptTemplateHint = selectedPromptTemplate
+    ? [selectedPromptTemplateName, selectedPromptTemplateDescription]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const selectedPromptTemplateDefaultBotLabel =
+    showTemplateDefaultBotTarget && selectedPromptTemplate?.default_bot
+      ? promptTemplateDefaultBotLabel(selectedPromptTemplate.default_bot)
+      : "";
   const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
+  const canDropFiles = Boolean((onUploadFiles || onAttachFiles) && !disabled);
+  const leadingBotMention = useMemo(
+    () =>
+      findLeadingBotMentionMatch(
+        draftValue,
+        channelBots.map((bot) => bot.username),
+      ),
+    [channelBots, draftValue],
+  );
+  const leadingBotMentionLabel = useMemo(() => {
+    if (!leadingBotMention) return "";
+    const bot = channelBots.find(
+      (item) => item.username.toLowerCase() === leadingBotMention.username.toLowerCase(),
+    );
+    return bot?.display_name?.trim() || bot?.username || leadingBotMention.username;
+  }, [channelBots, leadingBotMention]);
 
   useEffect(() => {
     setDraftValue(value);
@@ -226,6 +329,7 @@ export function MessageComposer({
   const closeTemplateMenu = () => {
     setTemplateMenuOpen(false);
     setTemplateFilter("");
+    setSelectedTemplateTag(null);
     setTemplateTriggerRange(null);
   };
 
@@ -306,13 +410,50 @@ export function MessageComposer({
   const matchedPromptTemplates = useMemo(() => {
     if (!templateMenuOpen) return [];
     const filter = templateFilter.trim().toLowerCase();
-    if (!filter) return promptTemplates;
+    const tagFilter = selectedTemplateTag?.toLowerCase() || "";
     return promptTemplates.filter((template) => {
+      if (
+        tagFilter &&
+        !(template.tags || []).some((tag) => tag.toLowerCase() === tagFilter)
+      ) {
+        return false;
+      }
+      if (!filter) return true;
       const name = promptTemplateDisplayName(template).toLowerCase();
       const description = (template.description ?? "").toLowerCase();
-      return name.includes(filter) || description.includes(filter);
+      const tags = (template.tags || []).join(" ").toLowerCase();
+      const defaultBot = [
+        template.default_bot?.username || "",
+        template.default_bot?.display_name || "",
+      ].join(" ").toLowerCase();
+      return (
+        name.includes(filter) ||
+        description.includes(filter) ||
+        tags.includes(filter) ||
+        defaultBot.includes(filter)
+      );
     });
-  }, [promptTemplates, templateFilter, templateMenuOpen]);
+  }, [promptTemplates, selectedTemplateTag, templateFilter, templateMenuOpen]);
+
+  const promptTemplateTagOptions = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const template of promptTemplates) {
+      for (const rawTag of template.tags || []) {
+        const label = rawTag.trim();
+        if (!label) continue;
+        const key = label.toLowerCase();
+        const existing = counts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(key, { label, count: 1 });
+        }
+      }
+    }
+    return Array.from(counts.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [promptTemplates]);
 
   const insertAtCursor = (snippet: string) => {
     const el = inputRef.current;
@@ -375,7 +516,7 @@ export function MessageComposer({
     const insert = `@${item.username} `;
     const leadingBotMentionRange =
       item.kind === "bot"
-        ? findLeadingBotMentionRange(
+        ? findLeadingBotMentionMatch(
             currentValue,
             channelBots.map((bot) => bot.username),
           )
@@ -390,32 +531,76 @@ export function MessageComposer({
             end: pos,
           });
     replaceTextareaRange(range, insert);
-    setMentionTriggerLabel(item.display_name?.trim() || item.username);
+    setMentionTriggerLabel(
+      item.kind === "bot" ? "" : item.display_name?.trim() || item.username,
+    );
     closeMentionMenu();
   };
 
-  const clearTemplateTriggerText = () => {
-    if (!templateTriggerRange) return;
+  const applyPromptTemplateTextSelection = (
+    template: ComposerPromptTemplate | null,
+  ) => {
     const el = inputRef.current;
     const currentValue = el?.value ?? draftValue;
-    const start = Math.min(templateTriggerRange.start, currentValue.length);
-    const end = Math.min(
-      Math.max(templateTriggerRange.end, start),
-      currentValue.length,
-    );
-    const next = currentValue.slice(0, start) + currentValue.slice(end);
+    const ranges: ComposerTextRange[] = [];
+
+    if (templateTriggerRange) ranges.push(templateTriggerRange);
+    if (showTemplateDefaultBotTarget && template?.default_bot) {
+      const leadingRange = findLeadingBotMentionMatch(
+        currentValue,
+        channelBots.map((bot) => bot.username),
+      );
+      if (leadingRange) ranges.push(leadingRange);
+      setMentionTriggerLabel("");
+    }
+
+    if (ranges.length === 0) return;
+
+    let next = currentValue;
+    let selectionStart = el?.selectionStart ?? currentValue.length;
+    let selectionEnd = el?.selectionEnd ?? selectionStart;
+    const normalizedRanges = ranges
+      .map((range) => {
+        const start = Math.min(range.start, currentValue.length);
+        const end = Math.min(Math.max(range.end, start), currentValue.length);
+        return { start, end };
+      })
+      .filter((range) => range.end > range.start)
+      .sort((a, b) => b.start - a.start);
+
+    for (const { start, end } of normalizedRanges) {
+      next = next.slice(0, start) + next.slice(end);
+      const removedLength = end - start;
+      if (end <= selectionStart) {
+        selectionStart -= removedLength;
+      } else if (start < selectionStart) {
+        selectionStart = start;
+      }
+      if (end <= selectionEnd) {
+        selectionEnd -= removedLength;
+      } else if (start < selectionEnd) {
+        selectionEnd = start;
+      }
+    }
+
+    selectionStart = Math.max(0, Math.min(selectionStart, next.length));
+    selectionEnd = Math.max(selectionStart, Math.min(selectionEnd, next.length));
     setDraftValue(next);
     onValueChange(next);
     requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
-      el.setSelectionRange(start, start);
+      el.setSelectionRange(selectionStart, selectionEnd);
     });
   };
 
   const pickPromptTemplate = (templateId: string | null) => {
+    const nextTemplate = templateId
+      ? promptTemplates.find((template) => template.template_id === templateId) ||
+        null
+      : null;
     onPromptTemplateChange?.(templateId);
-    clearTemplateTriggerText();
+    applyPromptTemplateTextSelection(nextTemplate);
     closeTemplateMenu();
   };
 
@@ -487,11 +672,11 @@ export function MessageComposer({
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
-      !event.nativeEvent.isComposing &&
-      !mentionOpen &&
-      !templateMenuOpen
+      !event.nativeEvent.isComposing
     ) {
       event.preventDefault();
+      if (mentionOpen) closeMentionMenu();
+      if (templateMenuOpen) closeTemplateMenu();
       if (effectiveCanSend) onSend(event.currentTarget.value);
     }
   };
@@ -520,8 +705,75 @@ export function MessageComposer({
     }
   };
 
-  const removePendingFile = (index: number, previewUrl: string | null) => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  const resetFileDragState = () => {
+    fileDragDepthRef.current = 0;
+    setIsFileDragOver(false);
+  };
+
+  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!onUploadFiles) {
+      onUploadFile?.(event);
+      return;
+    }
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    void Promise.resolve(onUploadFiles(files)).catch((error) => {
+      console.error("Failed to upload selected files", error);
+    });
+  };
+
+  const isComposerFileDrag = (event: DragEvent<HTMLDivElement>) =>
+    Boolean(onUploadFiles && dragEventHasFiles(event)) ||
+    Boolean(onAttachFiles && dragEventHasFileReferences(event));
+
+  const handleFileDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDropFiles || !isComposerFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepthRef.current += 1;
+    setIsFileDragOver(true);
+  };
+
+  const handleFileDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDropFiles || !isComposerFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleFileDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDropFiles || !isComposerFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepthRef.current -= 1;
+    if (fileDragDepthRef.current <= 0) {
+      resetFileDragState();
+    }
+  };
+
+  const handleFileDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!isComposerFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resetFileDragState();
+    if (!canDropFiles) return;
+    const fileReferences = fileReferencesFromDragEvent(event);
+    if (fileReferences.length > 0 && onAttachFiles) {
+      void Promise.resolve(onAttachFiles(fileReferences)).catch((error) => {
+        console.error("Failed to attach dropped files", error);
+      });
+    }
+    if (dragEventHasFiles(event) && onUploadFiles) {
+      const files = filesFromDragEvent(event);
+      if (files.length === 0) return;
+      void Promise.resolve(onUploadFiles(files)).catch((error) => {
+        console.error("Failed to upload dropped files", error);
+      });
+    }
+  };
+
+  const removePendingFile = (index: number) => {
     onRemovePendingFile?.(index);
   };
 
@@ -535,6 +787,14 @@ export function MessageComposer({
   const toolbarMenuClass = "an-menu absolute left-0 right-0 bottom-full mb-1";
   const shouldShowKindSwitcher =
     showKindSwitcher && !replyingTo && !normalOnly;
+  const effectivePlaceholder =
+    selectedPromptTemplateDescription && !replyingTo
+      ? `${selectedPromptTemplateDescription}...`
+      : placeholder;
+  const normalComposerHint =
+    selectedPromptTemplateHint ||
+    normalHint ||
+    (beginnerMode ? "Enter sends" : "@ Agent · Tab switches type · Enter sends");
 
   const handleMentionButtonClick = () => {
     setActionMenuOpen(false);
@@ -558,9 +818,14 @@ export function MessageComposer({
     setActionMenuOpen(false);
     onCloseKeychain?.();
     closeMentionMenu();
+    if (templateMenuOpen) {
+      closeTemplateMenu();
+      return;
+    }
     setTemplateFilter("");
+    setSelectedTemplateTag(null);
     setTemplateTriggerRange(null);
-    setTemplateMenuOpen((open) => !open);
+    setTemplateMenuOpen(true);
   };
 
   const handleActionButtonClick = () => {
@@ -571,12 +836,75 @@ export function MessageComposer({
   };
 
   const promptTemplateTriggerLabel = selectedPromptTemplateName || "Skill";
-  const mentionButtonLabel = mentionTriggerLabel || "Agent";
+  const hasMentionButtonSelection = Boolean(
+    leadingBotMentionLabel ||
+      selectedPromptTemplateDefaultBotLabel ||
+      mentionTriggerLabel,
+  );
+  const mentionButtonLabel =
+    leadingBotMentionLabel ||
+    selectedPromptTemplateDefaultBotLabel ||
+    mentionTriggerLabel ||
+    "@";
+  const shouldShowMentionButton = !beginnerMode;
+  const hasUploadControl = Boolean(onUploadFile || onUploadFiles);
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  useEffect(() => {
+    const currentLabel = hasMentionButtonSelection ? mentionButtonLabel : "";
+    const previousLabel = lastMentionPeekLabelRef.current;
+    const modeChanged = lastBeginnerModeRef.current !== beginnerMode;
+    lastMentionPeekLabelRef.current = currentLabel;
+    lastBeginnerModeRef.current = beginnerMode;
+
+    if (!beginnerMode) {
+      setMentionPeekVisible(false);
+      return;
+    }
+    if (
+      previousLabel === null ||
+      modeChanged ||
+      !currentLabel ||
+      currentLabel === previousLabel
+    ) {
+      return;
+    }
+
+    setMentionPeekVisible(true);
+    setMentionPeekNonce((nonce) => nonce + 1);
+    const timer = window.setTimeout(() => setMentionPeekVisible(false), 1700);
+    return () => window.clearTimeout(timer);
+  }, [beginnerMode, hasMentionButtonSelection, mentionButtonLabel]);
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
     setActionMenuOpen(false);
   };
+
+  const renderMentionButton = (extraClassName = "") => (
+    <button
+      type="button"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={handleMentionButtonClick}
+      className={
+        "an-composer-iconbtn is-named-trigger" +
+        (hasMentionButtonSelection ? " is-active" : "") +
+        extraClassName
+      }
+      title="Choose agent or member"
+      aria-label="Choose agent or member"
+    >
+      <span className="an-composer-glyph">@</span>
+      <span
+        className="an-composer-trigger-label"
+        data-i18n-skip={hasMentionButtonSelection ? "" : undefined}
+      >
+        {mentionButtonLabel}
+      </span>
+    </button>
+  );
 
   return (
     <>
@@ -625,10 +953,15 @@ export function MessageComposer({
 
       {pendingFiles.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
-          {pendingFiles.map((file, index) =>
-            file.previewUrl ? (
+          {pendingFiles.map((file, index) => {
+            const meta = [
+              file.source === "existing" ? "Attached" : "Pending send",
+              fileTypeLabel(file.contentType, file.name),
+              formatFileSize(file.sizeBytes),
+            ].filter(Boolean).join(" · ");
+            return file.previewUrl ? (
               <div
-                key={`${file.name}:${index}`}
+                key={`${file.fileId}:${index}`}
                 className="relative group cursor-pointer rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-1)] shadow-sm inline-block"
               >
                 <img
@@ -642,8 +975,8 @@ export function MessageComposer({
                 </div>
                 <button
                   type="button"
-                  onClick={() => removePendingFile(index, file.previewUrl)}
-                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  onClick={() => removePendingFile(index)}
+                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full leading-none items-center justify-center flex opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                   aria-label="Remove attachment"
                   title="Remove attachment"
                 >
@@ -652,30 +985,34 @@ export function MessageComposer({
               </div>
             ) : (
               <div
-                key={`${file.name}:${index}`}
+                key={`${file.fileId}:${index}`}
                 className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-[var(--bg-1)] border border-[var(--border)] rounded-lg shadow-sm max-w-[240px]"
               >
                 <div className="w-9 h-9 rounded-md bg-[var(--accent-muted)] flex items-center justify-center flex-shrink-0">
-                  <FileTypeIcon filename={file.name} size={20} />
+                  <FileTypeIcon
+                    contentType={file.contentType}
+                    filename={file.name}
+                    size={20}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="an-type-label text-[var(--fg-2)] truncate">
                     {file.name}
                   </div>
-                  <div className="an-type-caption text-[var(--fg-3)]">Pending send</div>
+                  <div className="an-type-caption text-[var(--fg-3)] truncate">{meta}</div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => removePendingFile(index, null)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--fg-3)] text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  onClick={() => removePendingFile(index)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--fg-3)] text-white rounded-full leading-none items-center justify-center flex opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                   aria-label="Remove attachment"
                   title="Remove attachment"
                 >
                   <AppIcon name="close" className="w-3 h-3" />
                 </button>
               </div>
-            ),
-          )}
+            );
+          })}
         </div>
       )}
 
@@ -689,9 +1026,24 @@ export function MessageComposer({
                 ? " is-announcement"
                 : !replyingTo && displayKind === "topic"
                   ? " is-topic"
-                  : "")
+                  : "") +
+            (isFileDragOver ? " is-file-drag-over" : "")
           }
+          onDragEnter={handleFileDragEnter}
+          onDragOver={handleFileDragOver}
+          onDragLeave={handleFileDragLeave}
+          onDragEnd={resetFileDragState}
+          onDrop={handleFileDrop}
         >
+          {isFileDragOver && (
+            <div className="an-composer-drop-hint" aria-hidden="true">
+              <span className="an-composer-drop-icon">
+                <AppIcon name="upload" className="w-5 h-5" />
+              </span>
+              <span>Drop files here</span>
+            </div>
+          )}
+
           <div
             className="an-composer-resize"
             onPointerDown={handleResizeDown}
@@ -730,7 +1082,7 @@ export function MessageComposer({
               )}
               {displayKind === "normal" && (
                 <span className="an-composer-kindhead-hint">
-                  {normalHint ?? "@ Agent · Tab switches type · Enter sends"}
+                  {normalComposerHint}
                 </span>
               )}
             </div>
@@ -742,8 +1094,9 @@ export function MessageComposer({
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={effectivePlaceholder}
             className="an-composer-textarea"
+            enterKeyHint="send"
             style={
               textareaHeight !== null
                 ? { height: textareaHeight, maxHeight: textareaHeight }
@@ -754,27 +1107,32 @@ export function MessageComposer({
 
           <div className="an-composer-bar">
             <div className="flex items-center gap-1">
-              {onUploadFile && (
+              {hasUploadControl && (
                 <input
                   ref={fileInputRef}
                   type="file"
+                  multiple
                   accept=".txt,.md,.html,.htm,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.wps,.et,.dps,.ofd,.rtf,.csv,.zip,.rar,.7z,.tar,.gz,.bz2,.xz,.dwg,.dxf,.epub,.pdf,.png,.jpg,.jpeg,.webp,.gif"
                   className="hidden"
-                  onChange={onUploadFile}
+                  onChange={handleFileInputChange}
                 />
               )}
 
-              <button
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={handleMentionButtonClick}
-                className="an-composer-iconbtn is-named-trigger"
-                title="Choose agent or member"
-                aria-label="Choose agent or member"
-              >
-                <span className="an-composer-glyph">@</span>
-                <span className="an-composer-trigger-label">{mentionButtonLabel}</span>
-              </button>
+              {hasUploadControl && (
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={openFilePicker}
+                  className="an-composer-iconbtn is-named-trigger is-upload-trigger"
+                  title="Upload files and images"
+                  aria-label="Upload files and images"
+                >
+                  <AppIcon name="attachment" className="an-composer-upload-icon w-3.5 h-3.5" />
+                  <span className="an-composer-trigger-label">Upload</span>
+                </button>
+              )}
+
+              {shouldShowMentionButton && renderMentionButton()}
 
               {onPromptTemplateChange && (
                 <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
@@ -796,6 +1154,21 @@ export function MessageComposer({
                     <span className="an-composer-glyph">/</span>
                     <span className="an-composer-trigger-label">{promptTemplateTriggerLabel}</span>
                   </button>
+                  {selectedPromptTemplate && (
+                    <button
+                      type="button"
+                      className="an-composer-template-clear-badge"
+                      title="Clear template override"
+                      aria-label="Clear template override"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        pickPromptTemplate(null);
+                      }}
+                    >
+                      <AppIcon name="close" className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -814,6 +1187,12 @@ export function MessageComposer({
                   <AppIcon name="more" className="w-4 h-4" />
                 </button>
               </div>
+
+              {beginnerMode && mentionPeekVisible && hasMentionButtonSelection && (
+                <span key={mentionPeekNonce} className="an-composer-mention-peek-wrap">
+                  {renderMentionButton(" is-mention-peek")}
+                </span>
+              )}
             </div>
 
             <button
@@ -869,7 +1248,28 @@ export function MessageComposer({
 
         {actionMenuOpen && (
           <div ref={actionMenuRef} className={toolbarMenuClass}>
-            <div className="an-menu-head">Composer actions</div>
+            <div className="an-menu-head">
+              {beginnerMode ? "Other options" : "Composer actions"}
+            </div>
+            {beginnerMode && (
+              <button
+                type="button"
+                className={"an-menu-item" + (hasMentionButtonSelection ? " on" : "")}
+                onClick={handleMentionButtonClick}
+              >
+                <span className="an-mi-ico">
+                  <span className="an-composer-glyph">@</span>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Choose agent or member</span>
+                  {hasMentionButtonSelection && (
+                    <span className="an-mi-sub truncate" data-i18n-skip>
+                      {mentionButtonLabel}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )}
             {keychainEnabled && (
               <button
                 type="button"
@@ -883,21 +1283,6 @@ export function MessageComposer({
                   <AppIcon name="key" className="w-3.5 h-3.5" />
                 </span>
                 <span>Insert keychain secret</span>
-              </button>
-            )}
-            {onUploadFile && (
-              <button
-                type="button"
-                className="an-menu-item"
-                onClick={() => {
-                  setActionMenuOpen(false);
-                  fileInputRef.current?.click();
-                }}
-              >
-                <span className="an-mi-ico">
-                  <AppIcon name="attachment" className="w-3.5 h-3.5" />
-                </span>
-                <span>Upload files and images</span>
               </button>
             )}
             <button
@@ -978,6 +1363,40 @@ export function MessageComposer({
                 <span>Clear template override</span>
               </button>
             )}
+            {promptTemplateTagOptions.length > 0 && (
+              <div className="an-composer-template-tags" aria-label="Filter templates by tag">
+                <button
+                  type="button"
+                  className={
+                    "an-composer-template-tag" +
+                    (!selectedTemplateTag ? " is-active" : "")
+                  }
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setSelectedTemplateTag(null)}
+                >
+                  All
+                  <span>{promptTemplates.length}</span>
+                </button>
+                {promptTemplateTagOptions.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className={
+                      "an-composer-template-tag" +
+                      (selectedTemplateTag?.toLowerCase() ===
+                      option.label.toLowerCase()
+                        ? " is-active"
+                        : "")
+                    }
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setSelectedTemplateTag(option.label)}
+                  >
+                    #{option.label}
+                    <span>{option.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {promptTemplatesLoading ? (
               <div className="an-menu-empty">Loading...</div>
             ) : promptTemplates.length === 0 ? (
@@ -1010,6 +1429,27 @@ export function MessageComposer({
                         {template.description}
                       </span>
                     )}
+                    {(template.default_bot || (template.tags && template.tags.length > 0)) && (
+                      <span
+                        className="an-type-caption flex min-w-0 flex-wrap gap-1"
+                        style={{ color: "var(--fg-3)", marginTop: 2 }}
+                      >
+                        {template.default_bot && (
+                          <span className="truncate">
+                            @{promptTemplateDefaultBotLabel(template.default_bot)}
+                          </span>
+                        )}
+                        {(template.tags || []).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-sm border border-[var(--border)] px-1"
+                            style={{ lineHeight: "16px" }}
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
                 </button>
               ))
@@ -1019,7 +1459,7 @@ export function MessageComposer({
 
         {mentionOpen && matchedMentionItems.length > 0 && (
           <ul
-            className={`an-menu absolute left-0 right-0 ${placementClass}`}
+            className={`an-menu an-mention-menu absolute left-0 right-0 ${placementClass}`}
             style={{ maxHeight: 240, overflowY: "auto" }}
             role="listbox"
           >

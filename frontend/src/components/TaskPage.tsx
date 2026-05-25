@@ -1,5 +1,6 @@
 import type { BotTraceEvent, Channel, ChannelBot, Message, AgentBridgeTaskContentData } from "../types";
 import { formatTs } from "../lib/message";
+import { messageBotTraceEvents } from "../lib/bot-trace";
 import { AppIcon } from "./icons/AppIcon";
 import { SessionScopePanel } from "./SessionScopePanel";
 import type { SessionScopeTarget } from "./SessionScopePanel";
@@ -47,7 +48,7 @@ export function TaskPage({
   onOpenSessionScope,
 }: TaskPageProps) {
   const selected = tasks.find((t) => t.msg_id === selectedMsgId) || tasks[0] || null;
-  const traces = selected?._bot_trace || [];
+  const traces = selected ? messageBotTraceEvents(selected) : [];
   const selectedTaskId = selected?.content_data.task_id || selected?.task_id || "";
   const selectedBotId = selected?.content_data.bot_id || selected?.sender_id || "";
 

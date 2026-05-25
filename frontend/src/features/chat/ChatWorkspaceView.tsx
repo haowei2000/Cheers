@@ -248,11 +248,11 @@ export function ChatWorkspaceView({
               <AppIcon name="messageCircle" className="w-10 h-10 text-gray-300" />
             </div>
             <p className="text-gray-700 text-[15px] font-semibold">
-              {isPersonalWorkspace ? "Select a DM or Project" : "Select a channel"}
+              {isPersonalWorkspace ? "Select a DM or Group" : "Select a channel"}
             </p>
             <p className="text-gray-400 text-[13px] mt-1.5">
               {isPersonalWorkspace ? (
-                "Select a DM, file, or Project on the left."
+                "Select a DM, file, or Group on the left."
               ) : (
                 <>
                   Select a channel on the left to start chatting, or{" "}

@@ -24,7 +24,7 @@ export function ChannelMainFrame({
 }: ChannelMainFrameProps) {
   return (
     <main
-      className="flex-1 flex flex-col min-w-0 relative"
+      className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative"
       style={{ background: "var(--bg-0)" }}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}

@@ -42,7 +42,7 @@ def test_find_help_no_match_returns_none() -> None:
 def test_help_context_is_ranked_by_question() -> None:
     context = get_help_context_for_llm("怎么创建项目", limit=1)
 
-    assert "如何创建项目" in context
+    assert "如何创建分组" in context
     assert "技术排查" not in context
 
 
@@ -50,4 +50,4 @@ def test_find_help_entries_respects_limit() -> None:
     entries = find_help_entries("怎么创建项目，怎么加入项目", limit=1)
 
     assert len(entries) == 1
-    assert entries[0].title in {"如何创建项目", "如何加入项目"}
+    assert entries[0].title in {"如何创建分组", "如何加入分组"}

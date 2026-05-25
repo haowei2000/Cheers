@@ -40,14 +40,14 @@ _CLARIFY_PREFIXES = (
 )
 
 _DEFAULT_REPLY_ZH = (
-    "您可以说：怎么创建项目、怎么加入项目、怎么接入外部 Agent、怎么发消息、"
-    "左边没有项目、@ 没反应、怎么安装、报错排查 等，我会根据说明书为您引导。"
-    "也可以直接问项目相关问题，我会结合频道上下文回答。"
+    "您可以说：怎么创建分组、怎么加入分组、怎么接入外部 Agent、怎么发消息、"
+    "左边没有分组、@ 没反应、怎么安装、报错排查 等，我会根据说明书为您引导。"
+    "也可以直接问分组相关问题，我会结合频道上下文回答。"
 )
 _DEFAULT_REPLY_EN = (
-    "You can ask how to create a project, join a project, connect an external Agent, send messages, "
+    "You can ask how to create a group, join a group, connect an external Agent, send messages, "
     "fix an empty left sidebar, troubleshoot @ mentions, install/deploy, or diagnose errors. "
-    "You can also ask project-specific questions and I will answer using the channel context."
+    "You can also ask group-specific questions and I will answer using the channel context."
 )
 
 
@@ -171,7 +171,7 @@ def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None
                 "",
                 "## 记忆维护职责",
                 "",
-                "- 当项目目标、范围、约束或背景变化时调用 update_anchor。",
+                "- 当分组目标、范围、约束或背景变化时调用 update_anchor。",
                 "- 当用户报告进展、阻塞、里程碑或下一步时调用 update_progress。",
                 "- 对重要决策、技术选择和确认计划调用 update_decision。",
                 "- 只有存在具体的新信息需要持久化时才调用记忆工具。",
@@ -208,7 +208,7 @@ def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None
             "",
             "## Memory Maintenance Duties",
             "",
-            "- update_anchor when project goals, scope, constraints, or background change.",
+            "- update_anchor when group goals, scope, constraints, or background change.",
             "- update_progress when the user reports progress, blockers, milestones, or next steps.",
             "- update_decision for important decisions, technology choices, and confirmed plans.",
             "- Call memory tools only when there is concrete new information to persist.",
@@ -369,11 +369,11 @@ def _tool_label(tool_name: str, args: dict, locale: str | None = None) -> str:
         case "call_bot":
             return _t(locale, f"Call @{args.get('username', '?')}", f"调用 @{args.get('username', '?')}")
         case "update_anchor":
-            return _t(locale, "Update project anchor", "更新项目锚点")
+            return _t(locale, "Update group anchor", "更新分组锚点")
         case "update_decision":
             return _t(locale, "Record decision", "记录决策")
         case "update_progress":
-            return _t(locale, "Update project progress", "更新项目进度")
+            return _t(locale, "Update group progress", "更新分组进度")
         case "call_user":
             return _t(locale, f"Call @{args.get('username', '?')}", f"呼叫 @{args.get('username', '?')}")
         case "create_file":
@@ -405,7 +405,7 @@ def _make_tools(ctx: dict, enabled_tool_names: frozenset[str] | set[str] | None 
     @tool
     async def update_anchor(content: str) -> str:
         """
-Update the project anchor memory layer by replacing its content.
+Update the group anchor memory layer by replacing its content.
 
 Args:
     content: Complete replacement content for the anchor layer.
@@ -420,12 +420,12 @@ Args:
             ctx["channel_id"],
             len(content),
         )
-        return _t(locale, "Project anchor updated", "已更新项目锚点")
+        return _t(locale, "Group anchor updated", "已更新分组锚点")
 
     @tool
     async def update_progress(content: str) -> str:
         """
-Update the project progress memory layer by replacing its content.
+Update the group progress memory layer by replacing its content.
 
 Args:
     content: Current progress, completed work, and next steps.
@@ -440,7 +440,7 @@ Args:
             ctx["channel_id"],
             len(content),
         )
-        return _t(locale, "Project progress updated", "已更新项目进度")
+        return _t(locale, "Group progress updated", "已更新分组进度")
 
     @tool
     async def update_decision(content: str) -> str:
@@ -737,7 +737,6 @@ Args:
 
         from app.config import settings
         from app.db.models import Channel, FileRecord
-        from app.services.file_retention import file_expires_at
         from app.services.file_scope_service import FileScopeService
 
         file_id = str(uuid.uuid4())
@@ -771,7 +770,7 @@ Args:
             status="ready",
             uploaded_at=now,
             converted_at=now,
-            expires_at=file_expires_at(now),
+            expires_at=None,
         )
         if db_session:
             db_session.add(record)
@@ -1636,8 +1635,8 @@ class ChannelBotAdapter(BotAdapter):
         system_sections = [
             _t(
                 locale,
-                "You are AgentNexus's built-in intelligent collaboration assistant, responsible for usage guidance, project assistance, and coordination. Reply in English unless the user explicitly asks for another language.",
-                "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。请默认使用中文回复，除非用户明确要求其他语言。",
+                "You are AgentNexus's built-in intelligent collaboration assistant, responsible for usage guidance, group assistance, and coordination. Reply in English unless the user explicitly asks for another language.",
+                "你是 AgentNexus 内置智能协作助手，兼顾使用引导、分组助手、协作协调三个职责。请默认使用中文回复，除非用户明确要求其他语言。",
             ),
             f"=== Context Policy ===\nintent={profile.intent}; tools={','.join(sorted(profile.enabled_tools)) or 'none'}",
         ]

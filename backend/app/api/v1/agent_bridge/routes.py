@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.application.chat.message_assembler import MessageAssembler
 from app.config import resolve_data_dir, settings
 from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
@@ -81,7 +82,8 @@ from app.features.bot_runtime.bot_events.queue import enqueue_bot_event_job
 from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
-from app.services.file_retention import active_file_filter, file_expires_at
+from app.services.file_retention import active_file_filter
+from app.services.file_scope_service import FileScopeService
 
 logger = logging.getLogger("app.api.v1.agent_bridge")
 
@@ -266,7 +268,7 @@ async def refresh_dm_session(
 
 def _validator_http_status(code: str) -> int:
     # Map validator error codes to HTTP statuses.
-    if code in ("file_not_found", "reply_target_not_found"):
+    if code in ("channel_not_found", "file_not_found", "reply_target_not_found"):
         return 404
     return 403
 
@@ -436,6 +438,32 @@ async def _assert_bot_membership(
         )
 
 
+async def _resolve_bot_file_access_channel_id(
+    session: AsyncSession, *, bot_id: str, record: FileRecord,
+) -> str:
+    """Return a channel where this bot can access the file."""
+    channels = (await session.execute(
+        select(Channel)
+        .join(ChannelMembership, ChannelMembership.channel_id == Channel.channel_id)
+        .where(
+            ChannelMembership.member_id == bot_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )).scalars().all()
+    if not channels:
+        raise HTTPException(status_code=403, detail=f"bot {bot_id} 不在任何频道中")
+
+    scope = FileScopeService(session)
+    for channel in channels:
+        if await scope.file_linked_to_channel(file_id=record.file_id, channel=channel):
+            return channel.channel_id
+
+    raise HTTPException(
+        status_code=403,
+        detail=f"bot {bot_id} 无权读取文件 {record.file_id}",
+    )
+
+
 def _file_storage_scope(record: FileRecord) -> str:
     return "generated" if (record.object_key or "").startswith("generated/") else "uploads"
 
@@ -446,14 +474,24 @@ async def _load_bridge_file_body(record: FileRecord) -> bytes:
         if local_path.is_file():
             return local_path.read_bytes()
 
-    from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.base import StorageObjectNotFoundError, StorageObjectRef
     from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
 
     if not is_storage_enabled():
         raise HTTPException(status_code=503, detail="storage not enabled")
     storage = get_storage_service()
     try:
-        obj = await storage.get_object(record.file_id, scope=_file_storage_scope(record))
+        if record.object_key:
+            obj = await storage.get_object_ref(
+                StorageObjectRef(
+                    file_id=record.file_id,
+                    bucket=record.storage_bucket or settings.storage_s3_bucket,
+                    object_key=record.object_key,
+                    filename=record.original_filename,
+                )
+            )
+        else:
+            obj = await storage.get_object(record.file_id, scope=_file_storage_scope(record))
     except StorageObjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="file not found in storage") from exc
     except Exception as exc:
@@ -476,7 +514,9 @@ async def bridge_read_file_content(
     if record is None:
         raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
 
-    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
+    access_channel_id = await _resolve_bot_file_access_channel_id(
+        session, bot_id=bot.bot_id, record=record,
+    )
 
     if is_image_type(record.content_type or ""):
         raise HTTPException(
@@ -488,7 +528,7 @@ async def bridge_read_file_content(
     try:
         attachments = await FilePipelineService().prepare_attachments(
             session,
-            channel_id=record.channel_id,
+            channel_id=access_channel_id,
             file_ids=[file_id],
         )
         await session.commit()
@@ -529,7 +569,7 @@ async def bridge_read_file_binary(
     if record is None:
         raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
 
-    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
+    await _resolve_bot_file_access_channel_id(session, bot_id=bot.bot_id, record=record)
 
     if record.size_bytes and record.size_bytes > _FILE_BINARY_MAX_BYTES:
         raise HTTPException(
@@ -615,7 +655,7 @@ async def bridge_upload_markdown_file(
         status="ready",
         uploaded_at=now,
         converted_at=now,
-        expires_at=file_expires_at(now),
+        expires_at=None,
     )
     session.add(record)
     await session.flush()
@@ -716,7 +756,7 @@ async def bridge_upload_binary_file(
         size_bytes=total,
         status="ready",
         uploaded_at=now,
-        expires_at=file_expires_at(now),
+        expires_at=None,
     )
     session.add(record)
     await session.flush()
@@ -941,6 +981,9 @@ async def bridge_websocket(websocket: WebSocket) -> None:
 _WS_CLOSE_AUTH_FAIL = 4401        # Token missing, mismatched, or revoked.
 _WS_CLOSE_SUPERSEDED = 4402       # A newer connection for the same bot superseded this one.
 _WS_CLOSE_BOT_UNAVAILABLE = 4403  # Invalid binding_type or status != online.
+_CONNECTOR_CONTROL_KEY = "connector_control"
+_CONNECTOR_OPTIONS_MAX_BYTES = 128 * 1024
+_AGENTNEXUS_APPROVAL_MODES = {"ask", "reject", "allow", "cancel"}
 
 
 def _extract_bearer_token(websocket: WebSocket) -> str | None:
@@ -949,6 +992,149 @@ def _extract_bearer_token(websocket: WebSocket) -> str | None:
     if auth.lower().startswith("bearer "):
         return auth[7:].strip() or None
     return websocket.query_params.get("token")
+
+
+def _connector_control_from_bot(bot: BotAccount) -> dict | None:
+    cfg = bot.binding_config if isinstance(bot.binding_config, dict) else {}
+    control = cfg.get(_CONNECTOR_CONTROL_KEY)
+    return control if isinstance(control, dict) else None
+
+
+def _agentnexus_approval_mode_from_bot(bot: BotAccount) -> str:
+    control = _connector_control_from_bot(bot) or {}
+    settings = control.get("settings")
+    if not isinstance(settings, dict):
+        return "ask"
+    raw = settings.get("agentnexusApprovalMode")
+    if not isinstance(raw, str):
+        raw = settings.get("permissionMode")
+    mode = raw.strip() if isinstance(raw, str) else ""
+    return mode if mode in _AGENTNEXUS_APPROVAL_MODES else "ask"
+
+
+def _permission_option_id_for_resolution(options: list[dict], resolution: str) -> str | None:
+    target_prefix = "allow" if resolution == "allow" else "reject"
+    for raw in options:
+        kind = str(raw.get("kind") or "")
+        option_id = raw.get("option_id") or raw.get("optionId") or raw.get("id")
+        if kind.startswith(target_prefix) and isinstance(option_id, str) and option_id:
+            return option_id
+    return None
+
+
+async def _record_connector_config_status(bot_id: str, frame: dict) -> None:
+    """Persist connector-side config application status for Bot settings UI."""
+    from app.db.session import async_session_factory
+
+    status = {
+        "revision": frame.get("revision"),
+        "ok": frame.get("ok") is True,
+        "applied": frame.get("applied") if isinstance(frame.get("applied"), list) else [],
+        "rejected": frame.get("rejected") if isinstance(frame.get("rejected"), list) else [],
+        "error": frame.get("error") if isinstance(frame.get("error"), str) else None,
+        "reported_at": datetime.now(timezone.utc).isoformat(),
+    }
+    async with async_session_factory() as s:
+        bot = await s.get(BotAccount, bot_id)
+        if bot is None:
+            return
+        cfg = dict(bot.binding_config or {})
+        control = cfg.get(_CONNECTOR_CONTROL_KEY)
+        if not isinstance(control, dict):
+            control = {}
+        control = dict(control)
+        current_revision = control.get("revision")
+        incoming_revision = frame.get("revision")
+        if current_revision is not None and str(current_revision) != str(incoming_revision):
+            logger.info(
+                "control_ws: stale config_status ignored bot_id=%s current_revision=%s incoming_revision=%s",
+                bot_id,
+                current_revision,
+                incoming_revision,
+            )
+            return
+        control["last_status"] = status
+        cfg[_CONNECTOR_CONTROL_KEY] = control
+        bot.binding_config = cfg
+        s.add(bot)
+        await s.commit()
+
+
+def _connector_options_from_frame(frame: dict) -> dict | None:
+    options = frame.get("options")
+    if not isinstance(options, dict):
+        return None
+    options = dict(options)
+    options["reported_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        encoded = json.dumps(options, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+    if len(encoded.encode("utf-8")) > _CONNECTOR_OPTIONS_MAX_BYTES:
+        return {
+            "source": options.get("source") if isinstance(options.get("source"), str) else "unknown",
+            "truncated": True,
+            "reported_at": options["reported_at"],
+        }
+    return options
+
+
+async def _record_connector_config_options(bot_id: str, frame: dict) -> None:
+    """Persist connector-discovered runtime options for Bot settings UI."""
+    from app.db.session import async_session_factory
+
+    options = _connector_options_from_frame(frame)
+    if options is None:
+        return
+    async with async_session_factory() as s:
+        bot = await s.get(BotAccount, bot_id)
+        if bot is None:
+            return
+        cfg = dict(bot.binding_config or {})
+        control = cfg.get(_CONNECTOR_CONTROL_KEY)
+        if not isinstance(control, dict):
+            control = {}
+        control = dict(control)
+        control["options"] = options
+        cfg[_CONNECTOR_CONTROL_KEY] = control
+        bot.binding_config = cfg
+        s.add(bot)
+        await s.commit()
+
+
+async def _record_connector_config_option_status(bot_id: str, frame: dict) -> None:
+    """Persist ACP session config option application status for Bot settings UI."""
+    from app.db.session import async_session_factory
+
+    status = {
+        "request_id": frame.get("request_id") if isinstance(frame.get("request_id"), str) else None,
+        "ok": frame.get("ok") is True,
+        "session_id": frame.get("session_id") if isinstance(frame.get("session_id"), str) else None,
+        "provider_session_key": (
+            frame.get("provider_session_key") if isinstance(frame.get("provider_session_key"), str) else None
+        ),
+        "config_id": frame.get("config_id") if isinstance(frame.get("config_id"), str) else None,
+        "value": frame.get("value") if isinstance(frame.get("value"), str) else None,
+        "error": frame.get("error") if isinstance(frame.get("error"), str) else None,
+        "reported_at": datetime.now(timezone.utc).isoformat(),
+    }
+    options = _connector_options_from_frame(frame)
+    async with async_session_factory() as s:
+        bot = await s.get(BotAccount, bot_id)
+        if bot is None:
+            return
+        cfg = dict(bot.binding_config or {})
+        control = cfg.get(_CONNECTOR_CONTROL_KEY)
+        if not isinstance(control, dict):
+            control = {}
+        control = dict(control)
+        control["last_option_status"] = status
+        if options is not None:
+            control["options"] = options
+        cfg[_CONNECTOR_CONTROL_KEY] = control
+        bot.binding_config = cfg
+        s.add(bot)
+        await s.commit()
 
 
 @ws_router.websocket("/ws/agent-bridge/control")
@@ -993,6 +1179,7 @@ async def control_websocket(websocket: WebSocket) -> None:
         "connection_id": sess.connection_id,
         "session_id": sess.session_id,
         "memberships": memberships,
+        "connector_config": _connector_control_from_bot(bot),
     })
     logger.info(
         "control_ws: connected bot_id=%s connection_id=%s memberships=%d",
@@ -1017,6 +1204,25 @@ async def control_websocket(websocket: WebSocket) -> None:
                     "control_ws: ready bot_id=%s plugin_version=%s",
                     bot.bot_id, frame.get("plugin_version"),
                 )
+            elif ftype == "config_status":
+                await _record_connector_config_status(bot.bot_id, frame)
+                logger.info(
+                    "control_ws: config_status bot_id=%s revision=%s ok=%s",
+                    bot.bot_id,
+                    frame.get("revision"),
+                    frame.get("ok"),
+                )
+            elif ftype == "config_options":
+                await _record_connector_config_options(bot.bot_id, frame)
+                logger.info("control_ws: config_options bot_id=%s", bot.bot_id)
+            elif ftype == "config_option_status":
+                await _record_connector_config_option_status(bot.bot_id, frame)
+                logger.info(
+                    "control_ws: config_option_status bot_id=%s request_id=%s ok=%s",
+                    bot.bot_id,
+                    frame.get("request_id"),
+                    frame.get("ok"),
+                )
             # Ignore other frame types.
     except WebSocketDisconnect:
         logger.info("control_ws: disconnected bot_id=%s", bot.bot_id)
@@ -1040,6 +1246,62 @@ async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, co
     })
 
 
+async def _send_send_ack_ok(
+    websocket: WebSocket,
+    client_msg_id: str | None,
+    message_id: str,
+    extra: dict | None = None,
+) -> None:
+    payload = {
+        "type": "send_ack",
+        "client_msg_id": client_msg_id,
+        "ok": True,
+        "message_id": message_id,
+    }
+    if extra:
+        payload.update(extra)
+    await websocket.send_json(payload)
+
+
+async def _send_terminal_ack_err(
+    websocket: WebSocket,
+    client_msg_id: str | None,
+    code: str,
+    detail: str,
+) -> None:
+    if not client_msg_id:
+        await websocket.send_json({"type": "error", "code": code, "detail": detail})
+        return
+    await websocket.send_json({
+        "type": "terminal_ack",
+        "client_msg_id": client_msg_id,
+        "ok": False,
+        "error": detail,
+        "code": code,
+    })
+
+
+async def _send_terminal_ack_ok(
+    websocket: WebSocket,
+    client_msg_id: str | None,
+    *,
+    msg_id: str,
+    job_id: str | None = None,
+) -> None:
+    if not client_msg_id:
+        return
+    payload = {
+        "type": "terminal_ack",
+        "client_msg_id": client_msg_id,
+        "ok": True,
+        "msg_id": msg_id,
+        "queued": True,
+    }
+    if job_id:
+        payload["job_id"] = job_id
+    await websocket.send_json(payload)
+
+
 async def _handle_data_reply(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
@@ -1050,7 +1312,8 @@ async def _handle_data_reply(
         check_files_in_channel,
     )
 
-    client_msg_id = frame.get("client_msg_id")
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
     text = frame.get("text")
     if not isinstance(text, str):
         await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必须是字符串")
@@ -1270,13 +1533,15 @@ async def _handle_data_done(
     from app.features.agent_bridge.streams import stream_registry as _stream_registry
     from app.features.agent_bridge.validators import check_files_in_channel
 
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
     msg_id = frame.get("msg_id") or frame.get("reply_to_msg_id")
     if not isinstance(msg_id, str) or not msg_id:
-        await websocket.send_json({"type": "error", "detail": "done missing msg_id"})
+        await _send_terminal_ack_err(websocket, client_msg_id, "missing_msg_id", "done missing msg_id")
         return
     raw_file_ids = frame.get("file_ids") or []
     if not isinstance(raw_file_ids, list) or not all(isinstance(f, str) for f in raw_file_ids):
-        await websocket.send_json({"type": "error", "detail": "file_ids must be string[]"})
+        await _send_terminal_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids must be string[]")
         return
     file_ids: list[str] = list(raw_file_ids)
     stream_snapshot: dict | None = None
@@ -1293,9 +1558,7 @@ async def _handle_data_done(
                     s, file_ids=file_ids, channel_id=state.channel_id,
                 )
                 if err:
-                    await websocket.send_json({
-                        "type": "error", "code": err[0], "detail": err[1],
-                    })
+                    await _send_terminal_ack_err(websocket, client_msg_id, err[0], err[1])
                     return
         state = await _stream_registry.get(msg_id)
         if state is not None and state.bot_id == bot.bot_id:
@@ -1313,24 +1576,27 @@ async def _handle_data_done(
     }
     if stream_snapshot:
         payload.update(stream_snapshot)
-    await enqueue_bot_event_job(
+    job_id = await enqueue_bot_event_job(
         AGENT_BRIDGE_STREAM_DONE,
         payload,
     )
     if stream_snapshot:
         await _stream_registry.pop(msg_id)
+    await _send_terminal_ack_ok(websocket, client_msg_id, msg_id=msg_id, job_id=job_id)
 
 
 async def _handle_data_error(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
     """Plugin reports a mid-stream error. Finalize partial with error tag."""
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
     msg_id = frame.get("msg_id") or frame.get("reply_to_msg_id")
     err_msg = frame.get("message") or frame.get("detail") or "plugin_error"
     if not isinstance(msg_id, str) or not msg_id:
-        await websocket.send_json({"type": "error", "detail": "error frame missing msg_id"})
+        await _send_terminal_ack_err(websocket, client_msg_id, "missing_msg_id", "error frame missing msg_id")
         return
-    await enqueue_bot_event_job(
+    job_id = await enqueue_bot_event_job(
         AGENT_BRIDGE_STREAM_ERROR,
         {
             "msg_id": msg_id,
@@ -1338,6 +1604,182 @@ async def _handle_data_error(
             "error": str(err_msg),
         },
     )
+    await _send_terminal_ack_ok(websocket, client_msg_id, msg_id=msg_id, job_id=job_id)
+
+
+def _clean_permission_text(value: object, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _normalize_permission_options(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    options: list[dict] = []
+    for raw in value[:20]:
+        if not isinstance(raw, dict):
+            continue
+        option_id = _clean_permission_text(raw.get("option_id") or raw.get("optionId") or raw.get("id"), 256)
+        if not option_id:
+            continue
+        item = {
+            "option_id": option_id,
+            "kind": _clean_permission_text(raw.get("kind"), 64),
+            "name": _clean_permission_text(raw.get("name"), 120) or option_id,
+            "description": _clean_permission_text(raw.get("description"), 500),
+        }
+        options.append({key: value for key, value in item.items() if value is not None})
+    return options
+
+
+async def _handle_data_permission_request(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """Create an interactive permission card in the current channel."""
+    from app.db.session import async_session_factory
+    from app.features.agent_bridge.validators import check_bot_in_channel
+
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
+    channel_id = _clean_permission_text(frame.get("channel_id"), 64)
+    request_id = _clean_permission_text(frame.get("request_id"), 128)
+    body = _clean_permission_text(frame.get("body"), 4000)
+    if not channel_id:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_channel", "channel_id 必填")
+        return
+    if not request_id:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_request_id", "request_id 必填")
+        return
+    if not body:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_body", "body 必填")
+        return
+
+    title = _clean_permission_text(frame.get("title"), 240) or "ACP permission request"
+    task_id = _clean_permission_text(frame.get("task_id"), 64)
+    msg_id = _clean_permission_text(frame.get("msg_id"), 64)
+    owner_payload: dict | None = None
+    ack_extra: dict | None = None
+    notification_delivery = None
+
+    async with async_session_factory() as s:
+        err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
+        if err:
+            await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+            return
+        current_bot = await s.get(BotAccount, bot.bot_id)
+        if current_bot is None:
+            await _send_send_ack_err(websocket, client_msg_id, "bot_not_found", "Bot no longer exists")
+            return
+        if not current_bot.created_by:
+            await _send_send_ack_err(
+                websocket,
+                client_msg_id,
+                "bot_owner_missing",
+                "Bot owner is not configured; permission request cannot be approved",
+            )
+            return
+        owner = await s.get(User, current_bot.created_by) if current_bot.created_by else None
+        if owner is None:
+            await _send_send_ack_err(
+                websocket,
+                client_msg_id,
+                "bot_owner_not_found",
+                "Bot owner no longer exists; permission request cannot be approved",
+            )
+            return
+        owner_payload = {
+            "user_id": owner.user_id,
+            "username": owner.username,
+            "display_name": owner.display_name,
+        }
+
+        options = _normalize_permission_options(frame.get("options"))
+        approval_mode = _agentnexus_approval_mode_from_bot(current_bot)
+        resolved_at: str | None = None
+        selected_option_id: str | None = None
+        resolution: str | None = None
+        auto_outcome: str | None = None
+        if approval_mode != "ask":
+            resolved_at = datetime.now(timezone.utc).isoformat()
+            resolution = "allow" if approval_mode == "allow" else "deny"
+            auto_outcome = "cancelled" if approval_mode == "cancel" else "selected"
+            if auto_outcome == "selected":
+                selected_option_id = _permission_option_id_for_resolution(options, resolution)
+
+        content_data = {
+            "kind": "agent_bridge_permission_request",
+            "source": "acp",
+            "request_id": request_id,
+            "bot_id": current_bot.bot_id,
+            "bot_owner_id": current_bot.created_by,
+            "owner": owner_payload,
+            "title": title,
+            "body": body,
+            "tool": _clean_permission_text(frame.get("tool"), 240),
+            "options": options,
+            "task_id": task_id,
+            "reply_msg_id": msg_id,
+            "acp_session_id": _clean_permission_text(frame.get("acp_session_id"), 256),
+            "provider_session_key": _clean_permission_text(frame.get("provider_session_key"), 1024),
+            "agentnexus_approval_mode": approval_mode,
+            "resolved": approval_mode != "ask",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if resolution:
+            content_data["resolution"] = resolution
+            content_data["resolved_at"] = resolved_at
+            content_data["resolution_source"] = "agentnexus_policy"
+            content_data["resolution_dispatch_status"] = "auto"
+            content_data["selected_option_id"] = selected_option_id
+            content_data["auto_outcome"] = auto_outcome
+        msg = Message(
+            channel_id=channel_id,
+            sender_id=current_bot.bot_id,
+            sender_type="bot",
+            content=body,
+            task_id=task_id,
+            msg_type="permission",
+            content_data={key: value for key, value in content_data.items() if value is not None},
+        )
+        s.add(msg)
+        await s.flush()
+        if approval_mode == "ask":
+            from app.services.notification_service import NotificationService
+
+            notification_delivery = await NotificationService(s).create_permission_approval_delivery(
+                owner,
+                permission_msg=msg,
+                bot=current_bot,
+                title=title,
+            )
+        payload = MessageAssembler.assemble(msg, {})
+        await s.commit()
+        if resolution:
+            ack_extra = {
+                "permission_resolution": {
+                    "type": "permission_resolution",
+                    "request_id": request_id,
+                    "message_id": msg.msg_id,
+                    "resolution": resolution,
+                    "option_id": selected_option_id,
+                    "resolved_by": None,
+                    "resolved_at": resolved_at,
+                    "outcome": auto_outcome,
+                },
+            }
+
+    from app.features.bot_runtime.pipeline.bus import WSEventBus
+    from app.features.bot_runtime.pipeline.events import MessageCreated
+    await WSEventBus(channel_id).publish(MessageCreated(data=payload))
+    if notification_delivery is not None:
+        from app.services.notification_service import NotificationService
+
+        await NotificationService.publish_delivery(notification_delivery)
+    await _send_send_ack_ok(websocket, client_msg_id, msg.msg_id, ack_extra)
 
 
 async def _handle_data_send(
@@ -1506,7 +1948,7 @@ async def _handle_data_file_upload(
             size_bytes=len(raw),
             status="ready",
             uploaded_at=now,
-            expires_at=file_expires_at(now),
+            expires_at=None,
         )
         s.add(record)
         await s.flush()
@@ -1592,6 +2034,8 @@ async def data_websocket(websocket: WebSocket) -> None:
                 await _handle_data_reply(websocket, bot, frame)
             elif ftype == "send":
                 await _handle_data_send(websocket, bot, frame)
+            elif ftype == "permission_request":
+                await _handle_data_permission_request(websocket, bot, frame)
             elif ftype == "delta":
                 await _handle_data_delta(websocket, bot, frame)
             elif ftype == "trace":

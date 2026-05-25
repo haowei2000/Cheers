@@ -25,6 +25,46 @@ Project-specific instructions for AI coding agents working on AgentNexus.
 - `main` 分支只接受来自 `develop` 分支的合并。
 - 禁止将功能分支、修复分支或其他工作分支的 PR 直接合并到 `main`。
 
+## Alembic 迁移纪律（强制）
+
+迁移文件要当作数据库协议变更处理，不要当作普通代码文件处理。
+
+- 每次 merge 或 rebase 后，只要涉及 `backend/alembic/versions/*.py`，必须运行 `cd backend && uv run ./scripts/check_alembic_heads.sh`。如果 Alembic 不是恰好一个 head，CI 必须失败。
+- 多人并行新增 migration 时，必须先 rebase 或 merge 最新 `develop`，再确定新的 `revision` 和 `down_revision`。正确链路应该保持线性，例如 `059 -> 060 -> 061`，不能出现两个独立的 `060`。
+- 修 migration 时，不要只改文件名；必须同步修改文件内部的 `revision` 和 `down_revision`。Alembic 识别的是 Python 变量，不是文件名。
+- 发布前必须同时验证迁移图和空库 SQL 执行：先运行 `uv run ./scripts/check_alembic_heads.sh`，再运行 `uv run alembic upgrade head` 和 `uv run alembic -c alembic_context.ini upgrade head`。
+- 部署排错必须检查真实容器或镜像状态，不要只看宿主机 Git 目录：
+
+```bash
+docker compose run --rm --entrypoint bash backend -lc \
+  "cd /app && /app/.venv/bin/alembic heads --verbose"
+```
+
+- 镜像重建和容器重启不是一回事。后端代码或迁移变更后，必须重建镜像并重建 backend 服务，不能只 `restart`：
+
+```bash
+docker compose build --no-cache backend
+docker compose up -d --force-recreate --no-deps backend
+```
+
+- 不要在服务器上临时创建 `alembic merge` revision。迁移链必须在 repo 中修清楚、commit、push、重建镜像并重新部署。
+- 后端容器内显式使用 `/app/.venv/bin/alembic`；不要假设裸 `alembic` 或 `python -m alembic` 可用。
+
+## ACP Connector 发布顺序（强制）
+
+当 `packages/agentnexus-acp-connector` 有实质性更新时，必须发布新的 `@haowei0520/acp-connector` npm 版本，因为实际部署里同时存在远程机器上的本地 npm 安装版 connector 和容器化的 `opencode-bot`。
+
+必须按以下顺序执行：
+
+1. 在包含 connector 改动的同一个 PR 中，按 semver bump `packages/agentnexus-acp-connector/package.json` 和 `package-lock.json`。
+2. 先将 PR 合并到 `develop`，不要在功能分支上提前打发布 tag。
+3. 基于最新 `develop` 合并提交创建并推送精确 tag：`agentnexus-acp-connector-v<version>`。该 tag 会触发 `.github/workflows/release-acp-connector.yml`，发布 npm 包并创建 GitHub Release。
+4. 从同一个已合并提交重建并推送 `opencode-bot` 镜像，确保容器部署拿到的 connector 代码与 npm 发布版本一致。
+5. 对所有使用本地 npm 安装的机器（包括当前操作本机和远程机器），执行 `npm install -g @haowei0520/acp-connector@<version>`，并重启对应的 connector daemon 或前台进程。
+6. 对容器部署，拉取或部署重建后的 `opencode-bot` 镜像，并重新创建服务。
+
+不要从功能分支或未合并提交打 tag；release workflow 会校验 tag 与当前提交中的 package version 是否一致。
+
 ## Architecture
 
 ### 六层架构
@@ -163,9 +203,8 @@ docker compose up -d
 ```
 
 默认会写入种子数据：
-- 内置模型：Ollama (Llama 3.2)、OpenAI GPT-4o
-- 内置模板：通用助手、代码审查、创意写作
-- 内置 Bot：@助手、@代码审查
+- 内置模板：通用助手
+- 内置 Bot：@Coordinator
 
 如需关闭自动种子数据，设置环境变量 `SEED_DATA=0`。
 
@@ -244,6 +283,20 @@ alembic downgrade -1
 ### 集成测试要求（强制）
 
 **集成测试必须在完整的前后端 Docker Compose 环境中通过，不得仅依赖内存 Mock 或单元级 Fixture。**
+
+#### 测试环境解析（强制）
+
+每次在本地运行后端测试或集成测试前，必须先检查真实 Docker Compose 服务栈和 `.env`，不得凭记忆假设端口：
+
+```bash
+docker compose ps
+docker compose port backend 8000
+docker compose port frontend 80
+docker compose port postgres 5432
+rg -n "^(BACKEND_HOST_PORT|FRONTEND_HOST_PORT|POSTGRES_HOST_PORT|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|TEST_DATABASE_URL)=" .env
+```
+
+`tests/conftest.py` 默认 `TEST_DATABASE_URL` 为 `postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test`。如果真实 Docker Compose 的 Postgres 宿主机端口或 `.env` 中的账号密码不同，要么用匹配的 `POSTGRES_HOST_PORT=5433` 和测试库启动服务栈，要么在测试命令中显式传入真实映射对应的 `TEST_DATABASE_URL`。服务栈被改过之后，禁止在命令或测试记录中硬编码旧端口。
 
 #### 标准集成测试流程
 
@@ -411,7 +464,7 @@ GUIDE_LLM_MODEL=llama3.2
 | 字段 | 说明 |
 |------|------|
 | `template_id` | UUID |
-| `name` | 模板名称（如 "代码审查"） |
+| `name` | 模板名称（如 "通用助手"） |
 | `system_prompt` | 系统提示词 |
 | `user_template` | 用户消息模板，支持 `{{变量}}` 占位符 |
 | `variables` | 变量列表 |
@@ -459,9 +512,9 @@ POST /api/admin/models
 # 2. 先创建模板（如果还没有）
 POST /api/admin/templates
 {
-  "name": "代码审查",
-  "system_prompt": "你是一个专业的代码审查助手...",
-  "user_template": "请审查以下代码：\n```\n{{message}}\n```"
+  "name": "通用助手",
+  "system_prompt": "你是一个有用的 AI 助手。",
+  "user_template": "{{memory}}\n\n{{message}}"
 }
 
 # 3. 创建 Bot

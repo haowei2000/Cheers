@@ -1,11 +1,14 @@
-"""Seed data for workspaces, prompt templates, Bots, and test users."""
+"""Seed data for workspaces, prompt templates, Bots, and the administrator."""
 import asyncio
+import json
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.builtin_defaults import (
+    RETIRED_BUILTIN_TEMPLATE_IDS,
+    TEMPLATE_GENERAL_ID,
     builtin_prompt_templates,
     coordinator_bot_defaults,
     seed_workspace_defaults,
@@ -21,7 +24,12 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from app.db.session import async_session_factory
-from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS, HELPER_BOT_ID
+from app.features.agent_bridge.tokens import token_prefix_of
+from app.features.bot_runtime.builtin_ids import (
+    HELPER_BOT_ID,
+    OPENCODE_BOT_ID,
+    configured_builtin_bot_ids,
+)
 from app.services.auth.password_utils import hash_password, verify_password
 
 # Stable IDs make documentation and scripts easier to reference.
@@ -29,7 +37,22 @@ WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 
-REMOVED_HELP_BOT_IDS = ("bot-guide-001", "bot-guide-helper-001")
+REMOVED_SEEDED_BOT_IDS = (
+    "bot-guide-001",
+    "bot-guide-helper-001",
+    "bot-test-001",
+    "bot-test-helper-001",
+)
+REMOVED_SEEDED_BOT_NAMES = (
+    "testbot",
+    "test-bot",
+    "TestBot",
+    "Test Bot",
+    "测试Bot",
+    "测试 Bot",
+    "测试机器人",
+    "测试助手",
+)
 INSECURE_ADMIN_PASSWORDS = {
     "",
     "admin",
@@ -40,6 +63,7 @@ INSECURE_ADMIN_PASSWORDS = {
     "change-me-admin-password",
     "admin#Nexus2024",
 }
+BOT_TOKEN_PREFIX = "agb_"
 
 
 def _validate_seed_admin_password() -> None:
@@ -81,15 +105,57 @@ async def _template_name_available(session: AsyncSession, template_id: str, name
     return existing is None
 
 
-async def _remove_removed_help_bots(session: AsyncSession) -> bool:
-    """Remove removed help bots."""
+async def _remove_retired_builtin_templates(session: AsyncSession) -> bool:
+    """Remove built-in templates that are no longer part of the default set."""
+    if not RETIRED_BUILTIN_TEMPLATE_IDS:
+        return False
+
     did_write = False
     result = await session.execute(
-        delete(ChannelMembership).where(ChannelMembership.member_id.in_(REMOVED_HELP_BOT_IDS))
+        update(BotAccount)
+        .where(BotAccount.template_id.in_(RETIRED_BUILTIN_TEMPLATE_IDS))
+        .values(template_id=TEMPLATE_GENERAL_ID)
     )
     did_write = did_write or bool(getattr(result, "rowcount", 0))
     result = await session.execute(
-        delete(BotAccount).where(BotAccount.bot_id.in_(REMOVED_HELP_BOT_IDS))
+        update(ChannelMembership)
+        .where(ChannelMembership.template_id.in_(RETIRED_BUILTIN_TEMPLATE_IDS))
+        .values(template_id=TEMPLATE_GENERAL_ID)
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    result = await session.execute(
+        delete(PromptTemplate).where(
+            PromptTemplate.template_id.in_(RETIRED_BUILTIN_TEMPLATE_IDS),
+            PromptTemplate.is_builtin.is_(True),
+        )
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    return did_write
+
+
+async def _remove_removed_seeded_bots(session: AsyncSession) -> bool:
+    """Remove stale seeded guide/test bots."""
+    did_write = False
+    legacy_bot_ids = set(REMOVED_SEEDED_BOT_IDS)
+    result = await session.execute(
+        select(BotAccount.bot_id).where(
+            BotAccount.created_by.is_(None),
+            ~BotAccount.bot_id.in_(configured_builtin_bot_ids()),
+            or_(
+                BotAccount.username.in_(REMOVED_SEEDED_BOT_NAMES),
+                BotAccount.display_name.in_(REMOVED_SEEDED_BOT_NAMES),
+            ),
+        )
+    )
+    legacy_bot_ids.update(result.scalars().all())
+    if not legacy_bot_ids:
+        return False
+    result = await session.execute(
+        delete(ChannelMembership).where(ChannelMembership.member_id.in_(legacy_bot_ids))
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    result = await session.execute(
+        delete(BotAccount).where(BotAccount.bot_id.in_(legacy_bot_ids))
     )
     did_write = did_write or bool(getattr(result, "rowcount", 0))
     return did_write
@@ -128,6 +194,127 @@ async def _seed_helper_bot(session: AsyncSession) -> bool:
     return True
 
 
+def _opencode_bot_token() -> str:
+    token = (settings.opencode_bot_token or "").strip()
+    if not token:
+        raise RuntimeError("OPENCODE_BOT_TOKEN must be set when OPENCODE_BOT_ENABLED=true.")
+    if not token.startswith(BOT_TOKEN_PREFIX):
+        raise RuntimeError("OPENCODE_BOT_TOKEN must start with agb_.")
+    return token
+
+
+def _opencode_bot_intro() -> str:
+    return json.dumps(
+        {
+            "description": settings.opencode_bot_description or "OpenCode ACP coding assistant",
+            "capabilities": [
+                "OpenCode ACP",
+                "AgentNexus Agent Bridge",
+                "OpenAI-compatible API",
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def _sync_agent_bridge_token(bot: BotAccount, token: str) -> bool:
+    did_write = False
+    if not bot.bot_token_hash or not verify_password(token, bot.bot_token_hash):
+        bot.bot_token_hash = hash_password(token)
+        did_write = True
+    prefix = token_prefix_of(token)
+    did_write |= _assign_if_changed(bot, "bot_token_prefix", prefix)
+    if bot.bot_token_rotated_at is None:
+        from datetime import datetime, timezone
+
+        bot.bot_token_rotated_at = datetime.now(timezone.utc)
+        did_write = True
+    return did_write
+
+
+async def _seed_opencode_bot(session: AsyncSession) -> bool:
+    """Seed the optional Docker Compose managed OpenCode ACP Bot."""
+    if not settings.opencode_bot_enabled:
+        return False
+
+    token = _opencode_bot_token()
+    bot_id = (settings.opencode_bot_id or OPENCODE_BOT_ID).strip() or OPENCODE_BOT_ID
+    username = (settings.opencode_bot_username or "opencode").strip() or "opencode"
+    display_name = (settings.opencode_bot_display_name or "OpenCode").strip() or "OpenCode"
+    description = (
+        (settings.opencode_bot_description or "").strip()
+        or "OpenCode ACP coding assistant"
+    )
+    scope = (
+        settings.opencode_bot_scope
+        if settings.opencode_bot_scope in {"private", "friend", "everyone"}
+        else "everyone"
+    )
+
+    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == bot_id))
+    existing = r.scalar_one_or_none()
+    if existing is None:
+        r = await session.execute(select(BotAccount).where(BotAccount.username == username))
+        username_owner = r.scalar_one_or_none()
+        if username_owner is not None:
+            raise RuntimeError(
+                f"OPENCODE_BOT_USERNAME={username!r} is already used by Bot {username_owner.bot_id}; "
+                "set OPENCODE_BOT_USERNAME to a unique value."
+            )
+        existing = BotAccount(
+            bot_id=bot_id,
+            username=username,
+            display_name=display_name,
+            description=description,
+            model_id=None,
+            template_id=None,
+            status="online",
+            scope=scope,
+            intro=_opencode_bot_intro(),
+            created_by=ADMIN_USER_ID,
+            binding_type="agent_bridge",
+            bridge_provider="acp",
+            binding_config={
+                "agent_id": username,
+                "bridge_provider": "acp",
+                "managed_by": "docker_compose_opencode_bot",
+            },
+        )
+        _sync_agent_bridge_token(existing, token)
+        session.add(existing)
+        return True
+
+    did_write = False
+    if existing.username != username:
+        r = await session.execute(select(BotAccount).where(BotAccount.username == username))
+        username_owner = r.scalar_one_or_none()
+        if username_owner is not None and username_owner.bot_id != existing.bot_id:
+            raise RuntimeError(
+                f"OPENCODE_BOT_USERNAME={username!r} is already used by Bot {username_owner.bot_id}; "
+                "set OPENCODE_BOT_USERNAME to a unique value."
+            )
+    did_write |= _assign_if_changed(existing, "username", username)
+    did_write |= _assign_if_changed(existing, "display_name", display_name)
+    did_write |= _assign_if_changed(existing, "description", description)
+    did_write |= _assign_if_changed(existing, "model_id", None)
+    did_write |= _assign_if_changed(existing, "template_id", None)
+    did_write |= _assign_if_changed(existing, "status", "online")
+    did_write |= _assign_if_changed(existing, "scope", scope)
+    did_write |= _assign_if_changed(existing, "intro", _opencode_bot_intro())
+    if not existing.created_by:
+        did_write |= _assign_if_changed(existing, "created_by", ADMIN_USER_ID)
+    did_write |= _assign_if_changed(existing, "binding_type", "agent_bridge")
+    did_write |= _assign_if_changed(existing, "bridge_provider", "acp")
+    binding_config = dict(existing.binding_config or {})
+    binding_config.setdefault("agent_id", username)
+    binding_config.setdefault("bridge_provider", "acp")
+    binding_config["managed_by"] = "docker_compose_opencode_bot"
+    did_write |= _assign_if_changed(existing, "binding_config", binding_config)
+    did_write |= _sync_agent_bridge_token(existing, token)
+    await session.flush()
+    return did_write
+
+
 async def _seed_templates(session: AsyncSession) -> bool:
     """Seed templates."""
     did_write = False
@@ -148,11 +335,13 @@ async def _seed_templates(session: AsyncSession) -> bool:
                     user_template=template_text.user_template,
                     variables=template_text.variables,
                     is_builtin=True,
+                    scope="everyone",
                 )
             )
             did_write = True
             continue
         if template.is_builtin:
+            did_write |= _assign_if_changed(template, "scope", "everyone")
             if await _template_name_available(session, template.template_id, template_text.name):
                 did_write |= _assign_if_changed(template, "name", template_text.name)
             did_write |= _assign_if_changed(template, "description", template_text.description)
@@ -244,7 +433,7 @@ async def _seed_memberships(session: AsyncSession) -> bool:
     # Otherwise duplicate inserts in the same transaction can trigger UniqueViolation and roll back the seed.
     await session.flush()
 
-    default_members = [(bot_id, "bot") for bot_id in BUILTIN_BOT_IDS] + [(ADMIN_USER_ID, "user")]
+    default_members = [(bot_id, "bot") for bot_id in configured_builtin_bot_ids()] + [(ADMIN_USER_ID, "user")]
     for member_id, member_type in default_members:
         r = await session.execute(
             select(ChannelMembership).where(
@@ -287,7 +476,7 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
             .where(
                 Channel.type == "dm",
                 ChannelMembership.member_type == "bot",
-                ChannelMembership.member_id.in_(BUILTIN_BOT_IDS),
+                ChannelMembership.member_id.in_(configured_builtin_bot_ids()),
             )
         )
     ).all()
@@ -303,7 +492,7 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
         )
     ).scalars().all()
     for channel_id in workspace_channel_ids:
-        for bot_id in BUILTIN_BOT_IDS:
+        for bot_id in configured_builtin_bot_ids():
             existing = (
                 await session.execute(
                     select(ChannelMembership).where(
@@ -327,8 +516,10 @@ async def seed(session: AsyncSession) -> bool:
     did_write = False
 
     did_write |= await _seed_templates(session)
-    did_write |= await _remove_removed_help_bots(session)
+    did_write |= await _remove_retired_builtin_templates(session)
+    did_write |= await _remove_removed_seeded_bots(session)
     did_write |= await _seed_helper_bot(session)
+    did_write |= await _seed_opencode_bot(session)
     did_write |= await _seed_workspace_and_users(session)
     did_write |= await _seed_memberships(session)
 
@@ -368,9 +559,11 @@ async def ensure_builtin_bot() -> None:
     """Ensure builtin bot."""
     async with async_session_factory() as session:
         try:
-            await _remove_removed_help_bots(session)
             await _seed_templates(session)
+            await _remove_retired_builtin_templates(session)
+            await _remove_removed_seeded_bots(session)
             await _seed_helper_bot(session)
+            await _seed_opencode_bot(session)
             await _sync_admin_credentials(session)
 
             # Only backfill built-in bots into regular channels; DMs do not automatically receive Coordinator.

@@ -1,10 +1,8 @@
 FROM docker.m.daocloud.io/library/node:20-alpine AS builder
 WORKDIR /app
-COPY package.json ./
-# Using taobao npm mirror for acceleration
-# Update npm and install dependencies with more tolerance for failures
+COPY package*.json ./
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm install --include=dev --legacy-peer-deps || npm install --include=dev
+    npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 

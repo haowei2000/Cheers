@@ -31,6 +31,13 @@ def file_retention_days() -> int:
         return 365
 
 
+def pending_upload_ttl_seconds() -> int:
+    try:
+        return int(getattr(settings, "file_pending_upload_ttl_seconds", 60 * 60) or 0)
+    except (TypeError, ValueError):
+        return 60 * 60
+
+
 def file_expires_at(anchor: datetime | None = None) -> datetime | None:
     """File expires at."""
     days = file_retention_days()
@@ -46,6 +53,17 @@ def is_file_expired(record: FileRecord, now: datetime | None = None) -> bool:
     if record.expires_at is None:
         return False
     return _as_utc(record.expires_at) <= _as_utc(now or utcnow())
+
+
+def is_generated_file_record(record: FileRecord) -> bool:
+    object_key = (record.object_key or "").replace("\\", "/")
+    if object_key.startswith("generated/"):
+        return True
+    for raw_path in (record.original_path, record.md_path):
+        path = (raw_path or "").replace("\\", "/")
+        if path.startswith("generated/") or "/generated/" in path:
+            return True
+    return False
 
 
 def active_file_filter(now: datetime | None = None):
@@ -75,11 +93,45 @@ class FileRetentionService:
         records = list(result.scalars().all())
         deleted_count = 0
         for record in records:
+            if is_generated_file_record(record):
+                record.expires_at = None
+                continue
             if await self._delete_physical_assets(record):
                 await self.session.delete(record)
                 deleted_count += 1
             else:
                 record.last_error = "retention cleanup failed"
+        await self.session.flush()
+        return deleted_count
+
+    async def prune_stale_pending_uploads(self, *, batch_size: int = 200) -> int:
+        ttl = pending_upload_ttl_seconds()
+        if ttl <= 0:
+            return 0
+        cutoff = utcnow() - timedelta(seconds=ttl)
+        result = await self.session.execute(
+            select(FileRecord)
+            .where(
+                FileRecord.status == "pending_upload",
+                FileRecord.uploaded_at.is_(None),
+                FileRecord.created_at <= cutoff,
+            )
+            .order_by(FileRecord.created_at)
+            .limit(max(1, batch_size))
+        )
+        records = list(result.scalars().all())
+        deleted_count = 0
+        for record in records:
+            try:
+                await self._delete_physical_assets(record)
+            except Exception:
+                logger.warning(
+                    "file retention: failed to delete stale pending assets file_id=%s",
+                    record.file_id,
+                    exc_info=True,
+                )
+            await self.session.delete(record)
+            deleted_count += 1
         await self.session.flush()
         return deleted_count
 

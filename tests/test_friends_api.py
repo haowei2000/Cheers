@@ -125,6 +125,7 @@ async def test_friend_request_accept_creates_and_updates_personal_notice(
     assert dms.status_code == 200
     notice = dms.json()["data"][0]
     assert notice["counterparty"]["member_type"] == "system"
+    assert notice["counterparty"]["display_name"] == "通知"
 
     messages = await _request_as(
         db_session,

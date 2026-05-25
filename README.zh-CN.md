@@ -18,7 +18,7 @@
 - [使用说明书](docs/help/使用说明书.md)（总索引）
   - [普通用户使用说明](docs/help/普通用户使用说明.md) · [系统管理说明书](docs/help/系统管理说明书.md) · [安装部署说明](docs/help/安装部署说明.md) · [技术排查Q&A](docs/help/技术排查Q&A.md)
 - [RustFS 对象存储部署说明](docs/help/RustFS对象存储部署说明.md)
-- [Agent Bridge 接入指南](docs/help/AgentBridge接入指南.md)（OpenClaw 与 ACP / Codex ACP）
+- [Agent Bridge 接入指南](docs/help/AgentBridge接入指南.md)（OpenClaw 与 ACP / OpenCode ACP）
 
 **开发 / 设计（`docs/develop/`）**
 
@@ -91,7 +91,7 @@ cp .env.example .env
 docker compose up -d
 
 # 前端: http://localhost:80   API: http://localhost:8000
-# 默认会写入种子数据：默认工作空间、测试项目、内置协作助手（@Coordinator）。打开前端进入「测试项目」，输入 @Coordinator 怎么用 即可获取使用引导。
+# 默认会写入种子数据：默认工作空间、默认项目、一个默认提示词模板、内置协作助手（@Coordinator）。打开前端进入「默认项目」，输入 @Coordinator 怎么用 即可获取使用引导。
 # 若需手动初始化，可设环境变量 SEED_DATA=0 并见 docs/help/安装部署说明.md。
 ```
 

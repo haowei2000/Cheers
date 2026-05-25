@@ -28,6 +28,12 @@ import { parseHelperPayload } from "./lib/helper";
 import { API, API_DOCS_URL, USER_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import { getStoredBeginnerMode, setStoredBeginnerMode } from "./lib/experience";
+import {
+  dragEventHasFiles,
+  filesFromDragEvent,
+  type FileDragReference,
+} from "./lib/file-drag";
+import { messageBotTraceEvents } from "./lib/bot-trace";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
   buildChatPath,
@@ -41,11 +47,13 @@ import {
 } from "./lib/message-window";
 import { upsertMessage } from "./lib/message-store";
 import type {
+  Channel,
   Message,
   ContextData,
   ClarifySchema,
   ClarifyAnswers,
   FileInfo,
+  ChannelBot,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
@@ -60,14 +68,109 @@ type ComposerPromptTemplateOption = {
   template_id: string;
   name: string;
   description?: string | null;
+  tags?: string[];
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
   is_builtin?: boolean;
 };
+
+function preservedBotMentionPrefix(content: string, bots: ChannelBot[]): string {
+  const names = [...new Set(bots.map((bot) => bot.username).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  if (names.length === 0) return "";
+
+  const text = content.trimStart();
+  const picked: string[] = [];
+  const seen = new Set<string>();
+  let index = 0;
+
+  while (text.charAt(index) === "@") {
+    const afterAt = text.slice(index + 1);
+    const name = names.find((candidate) => {
+      if (!afterAt.startsWith(candidate)) return false;
+      const boundary = afterAt.charAt(candidate.length);
+      return !boundary || boundary === "@" || /\s/.test(boundary);
+    });
+    if (!name) break;
+    if (!seen.has(name)) {
+      seen.add(name);
+      picked.push(name);
+    }
+    index += 1 + name.length;
+    while (/\s/.test(text.charAt(index))) index += 1;
+  }
+
+  return picked.length > 0
+    ? `${picked.map((name) => `@${name}`).join(" ")} `
+    : "";
+}
 
 const MainFilePreviewPanel = lazy(() =>
   import("./components/FilePreviewSidebar").then((module) => ({
     default: module.FilePreviewPanel,
   })),
 );
+
+const TASK_TITLE_MAX_LENGTH = 80;
+const PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND = "personal_project_channel";
+
+function normalizeTaskTitleText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, TASK_TITLE_MAX_LENGTH);
+}
+
+function stripLeadingBotMentions(value: string, botUsernames: string[]): string {
+  let text = value.trim();
+  const usernames = Array.from(new Set(botUsernames.filter(Boolean))).sort(
+    (a, b) => b.length - a.length,
+  );
+  let matched = true;
+  while (matched) {
+    matched = false;
+    for (const username of usernames) {
+      const mention = `@${username}`;
+      const lowerText = text.toLowerCase();
+      const lowerMention = mention.toLowerCase();
+      if (lowerText === lowerMention) return "";
+      if (
+        lowerText.startsWith(`${lowerMention} `) ||
+        lowerText.startsWith(`${lowerMention}\t`)
+      ) {
+        text = text.slice(mention.length).trimStart();
+        matched = true;
+        break;
+      }
+    }
+  }
+  return text;
+}
+
+function hasLeadingBotMention(value: string, botUsernames: string[]): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return stripLeadingBotMentions(trimmed, botUsernames) !== trimmed;
+}
+
+function isDefaultTaskTitle(value: string | null | undefined): boolean {
+  return /^(?:task|任务)\s*\d+$/i.test((value || "").trim());
+}
+
+function personalProjectChannelPurpose(
+  channel: Channel,
+  taskTitle: string,
+): string | null {
+  if (!channel.project_id) return null;
+  return JSON.stringify({
+    kind: PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND,
+    project_id: channel.project_id,
+    project_title: channel.project_title || "Group",
+    task_title: taskTitle,
+  });
+}
 
 export default function App() {
   const { isDark, setTheme } = useTheme();
@@ -352,7 +455,8 @@ export default function App() {
     pendingFiles,
     removePendingFile,
     clearPendingFiles,
-    uploadFileObject,
+    attachExistingFiles,
+    uploadFileObjects,
     uploadFile,
   } = usePendingFiles({
     selectedId,
@@ -362,6 +466,26 @@ export default function App() {
   });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
+  const attachFilesToComposer = useCallback(
+    (files: FileDragReference[]) => {
+      if (!selectedId) {
+        toast.error("Select a conversation before attaching files");
+        return;
+      }
+      if (!currentUserId) {
+        setLoginModalOpen(true);
+        toast.error("Sign in before attaching files");
+        return;
+      }
+      if (isSystemDm) {
+        toast.error("Notification conversations cannot send messages directly");
+        return;
+      }
+      attachExistingFiles(files);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [attachExistingFiles, currentUserId, inputRef, isSystemDm, selectedId],
+  );
 
   // Keychain insert popup
   const [keychainPopupOpen, setKeychainPopupOpen] = useState(false);
@@ -438,7 +562,10 @@ export default function App() {
     handleMarkdownImageClick,
     handleMarkdownFileClick,
     renderFileAttachments,
-  } = useFilePreviewController({ onForwardFile: openForwardFile });
+  } = useFilePreviewController({
+    onForwardFile: openForwardFile,
+    onAttachFile: (file) => attachFilesToComposer([file]),
+  });
   // Resizable panel widths.
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
   const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
@@ -468,12 +595,10 @@ export default function App() {
   );
   const uploadPersonalFiles = useCallback(
     async (files: File[]) => {
-      for (const file of files) {
-        await uploadFileObject(file);
-      }
+      await uploadFileObjects(files);
       setFileLibraryRefreshNonce((value) => value + 1);
     },
-    [uploadFileObject],
+    [uploadFileObjects],
   );
   useEffect(() => {
     if (selectedId) setMainFilePreviewPanel(null);
@@ -635,12 +760,19 @@ export default function App() {
     }
   }, [selectedId, setReplyingTo]);
 
+  const refreshFileLibraryForCurrentSpace = useCallback(() => {
+    if (isPersonalWorkspace) {
+      setFileLibraryRefreshNonce((value) => value + 1);
+    }
+  }, [isPersonalWorkspace]);
+
   useChatRealtime({
     selectedId,
     authFetch,
     setContextData,
     setMessageStore,
     setProcessingBots,
+    onFileLibraryChanged: refreshFileLibraryForCurrentSpace,
     reportClientError,
   });
 
@@ -664,7 +796,7 @@ export default function App() {
       return Promise.resolve();
     }
     if (isSystemDm) {
-      toast.error("Friend notification conversations cannot send messages directly");
+      toast.error("Notification conversations cannot send messages directly");
       return Promise.resolve();
     }
     const targetChannelId = selectedId;
@@ -694,6 +826,35 @@ export default function App() {
       });
   };
 
+  const renameTaskChannelFromFirstUserMessage = useCallback(
+    async (channel: Channel, taskTitle: string) => {
+      const purpose = personalProjectChannelPurpose(channel, taskTitle);
+      if (!purpose) return;
+      try {
+        const response = await authFetch(`${API}/channels/${channel.channel_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: taskTitle,
+            purpose,
+          }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || payload?.status === "error" || !payload?.data) {
+          throw new Error(payload?.detail || payload?.message || "Rename task failed");
+        }
+        const updated = payload.data as Channel;
+        setChannels((prev) =>
+          prev.map((item) =>
+            item.channel_id === updated.channel_id ? { ...item, ...updated } : item,
+          ),
+        );
+      } catch (error) {
+        console.warn("Failed to rename task from first user message", error);
+      }
+    },
+    [authFetch, setChannels],
+  );
+
   const send = (draftValue?: string) => {
     const rawContent =
       draftValue ?? inputDraftRef.current ?? inputRef.current?.value ?? input;
@@ -705,7 +866,7 @@ export default function App() {
       return;
     }
     if (isSystemDm) {
-      toast.error("Friend notification conversations cannot send messages directly");
+      toast.error("Notification conversations cannot send messages directly");
       return;
     }
     const targetChannelId = selectedId;
@@ -724,17 +885,6 @@ export default function App() {
         : msgKind === "secret"
           ? "normal"
           : msgKind;
-    const body: Record<string, unknown> = {
-      content,
-      sender_id: currentUserId,
-      sender_type: "user",
-      file_ids: pendingFileIds,
-      mention_bot_ids: botMentionIdsForChannel(targetChannelId),
-      is_secret: isSecretSend,
-      msg_type: effectiveKind,
-    };
-    if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
-    const titleTrim = composerTitle.trim() || null;
     const selectedPromptTemplateIdForSend = selectedPromptTemplateIdRef.current;
     const selectedPromptTemplate = selectedPromptTemplateIdForSend
       ? promptTemplates.find(
@@ -744,6 +894,48 @@ export default function App() {
     if (selectedPromptTemplateIdForSend && !selectedPromptTemplate) {
       setPromptTemplateOverrideId(null);
     }
+    const baseMentionBotIds = botMentionIdsForChannel(targetChannelId);
+    const explicitBotTarget =
+      baseMentionBotIds.length > 0 ||
+      hasLeadingBotMention(
+        content,
+        channelBots.map((bot) => bot.username),
+      );
+    const defaultBotId = selectedPromptTemplate?.default_bot_id || null;
+    const defaultBot = selectedPromptTemplate?.default_bot || null;
+    const defaultBotInChannel = Boolean(
+      defaultBotId && channelBots.some((bot) => bot.member_id === defaultBotId),
+    );
+    if (
+      defaultBotId &&
+      !isDmSelected &&
+      !explicitBotTarget &&
+      !defaultBotInChannel
+    ) {
+      const label =
+        defaultBot?.display_name ||
+        defaultBot?.username ||
+        "the default Bot";
+      toast.error(
+        `Add ${label.startsWith("@") ? label : `@${label}`} to this channel before using this template`,
+      );
+      return;
+    }
+    const effectiveMentionBotIds =
+      defaultBotId && !isDmSelected && !explicitBotTarget && defaultBotInChannel
+        ? [defaultBotId]
+        : baseMentionBotIds;
+    const body: Record<string, unknown> = {
+      content,
+      sender_id: currentUserId,
+      sender_type: "user",
+      file_ids: pendingFileIds,
+      mention_bot_ids: effectiveMentionBotIds,
+      is_secret: isSecretSend,
+      msg_type: effectiveKind,
+    };
+    if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
+    const titleTrim = composerTitle.trim() || null;
     if (effectiveKind === "announcement") {
       body.content_data = {
         pinned_by: currentUserId,
@@ -759,8 +951,36 @@ export default function App() {
         prompt_template_override_name: selectedPromptTemplate.name,
       };
     }
-    resetComposerAfterSend();
-    setPromptTemplateOverrideId(null);
+    const firstUserMessageTaskTitle =
+      !isSecretSend && selectedChannel?.project_task_type === "channel"
+        ? normalizeTaskTitleText(
+            stripLeadingBotMentions(
+              content,
+              channelBots.map((bot) => bot.username),
+            ),
+          )
+        : "";
+    const shouldRenameTaskFromFirstUserMessage =
+      Boolean(
+        selectedChannel &&
+          selectedChannel.channel_id === targetChannelId &&
+          selectedChannel.project_task_type === "channel" &&
+          isDefaultTaskTitle(selectedChannel.task_title || selectedChannel.name) &&
+          firstUserMessageTaskTitle,
+      ) &&
+      !messages.some(
+        (message) => message.sender_type === "user" && !message.is_deleted,
+      );
+    const pendingTaskRename =
+      shouldRenameTaskFromFirstUserMessage && selectedChannel
+        ? {
+            channel: selectedChannel,
+            taskTitle: firstUserMessageTaskTitle,
+          }
+        : null;
+    resetComposerAfterSend({
+      nextInput: preservedBotMentionPrefix(content, channelBots),
+    });
     clearPendingFiles();
     authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
@@ -783,6 +1003,12 @@ export default function App() {
               [d.data.msg_id]: d.data.secret_token,
             }));
           }
+        }
+        if (d.data && pendingTaskRename) {
+          void renameTaskChannelFromFirstUserMessage(
+            pendingTaskRename.channel,
+            pendingTaskRename.taskTitle,
+          );
         }
       })
       .catch(console.error);
@@ -858,7 +1084,6 @@ export default function App() {
     renderMemoryLoadButton,
     renderStopStreamButton,
     renderPartialBadge,
-    renderBotTraceStatus,
     activeAgentBridgeTaskData,
     agentBridgeTaskMessages,
     renderAgentBridgeTaskCard,
@@ -1000,9 +1225,17 @@ export default function App() {
           bot.username === "Helper" ||
           bot.username === "channel bot" ||
           bot.username === "coordinator",
-      ),
+    ),
     [channelBots],
   );
+  const selectedComposerTemplate = useMemo(
+    () =>
+      selectedPromptTemplateId
+        ? promptTemplates.find((template) => template.template_id === selectedPromptTemplateId) || null
+        : null,
+    [promptTemplates, selectedPromptTemplateId],
+  );
+  const selectedComposerTemplateDescription = selectedComposerTemplate?.description?.trim() || "";
   const userById = useMemo(
     () => new Map(channelUsers.map((user) => [user.member_id, user])),
     [channelUsers],
@@ -1013,7 +1246,9 @@ export default function App() {
   const selectedMemoryLoadDetail = selectedDetailMessage
     ? getMemoryLoadDetail(selectedDetailMessage)
     : null;
-  const selectedBotTraceEvents = selectedDetailMessage?._bot_trace || [];
+  const selectedBotTraceEvents = selectedDetailMessage
+    ? messageBotTraceEvents(selectedDetailMessage)
+    : [];
   const messagePreviewText = useCallback((message: Message): string => {
     const raw = parseHelperPayload(message.content || "").text || message.content || "";
     return (
@@ -1346,6 +1581,7 @@ export default function App() {
         open={Boolean(forwardModalState)}
         channels={channels}
         dms={dms}
+        workspaces={workspaces}
         token={authToken}
         workspaceId={forwardWorkspaceId}
         summary={forwardModalState?.summary || ""}
@@ -1358,6 +1594,7 @@ export default function App() {
       />
 
       <ChatShell
+        appInert={loginModalOpen && !currentUser}
         isMobile={isMobile}
         sidebarOpen={sidebarOpen}
         onCloseSidebar={() => setSidebarOpen(false)}
@@ -1394,6 +1631,7 @@ export default function App() {
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
             onUploadPersonalFiles={uploadPersonalFiles}
+            onAttachFilesToComposer={attachFilesToComposer}
             fileLibraryRefreshKey={fileLibraryRefreshNonce}
             onPreloadChannel={preloadChannelMessages}
             onOpenMessage={handleMessageNavigate}
@@ -1401,24 +1639,24 @@ export default function App() {
         }
       >
 
-        <div className="flex-1 flex min-w-0">
+        <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
           <ChannelMainFrame
             selectedId={selectedId}
             isDark={isDark}
             isDraggingOver={isDraggingOver}
             onDragEnter={(e) => {
-              if (!selectedId || !e.dataTransfer.types.includes("Files"))
-                return;
+              if (!selectedId || !dragEventHasFiles(e)) return;
               e.preventDefault();
               dragCounterRef.current += 1;
               if (dragCounterRef.current === 1) setIsDraggingOver(true);
             }}
             onDragOver={(e) => {
-              if (!selectedId) return;
+              if (!selectedId || !dragEventHasFiles(e)) return;
               e.preventDefault();
               e.dataTransfer.dropEffect = "copy";
             }}
-            onDragLeave={() => {
+            onDragLeave={(e) => {
+              if (!dragEventHasFiles(e)) return;
               dragCounterRef.current -= 1;
               if (dragCounterRef.current <= 0) {
                 dragCounterRef.current = 0;
@@ -1426,14 +1664,13 @@ export default function App() {
               }
             }}
             onDrop={async (e) => {
+              if (!dragEventHasFiles(e)) return;
               e.preventDefault();
               dragCounterRef.current = 0;
               setIsDraggingOver(false);
               if (!selectedId) return;
-              const files = Array.from(e.dataTransfer.files);
-              for (const file of files) {
-                await uploadFileObject(file);
-              }
+              const files = filesFromDragEvent(e);
+              if (files.length > 0) await uploadFileObjects(files);
             }}
           >
             {mainFilePreviewPanel && isPersonalWorkspace ? (
@@ -1454,6 +1691,7 @@ export default function App() {
                     setMainFilePreviewPanel(null);
                     setFileLibraryRefreshNonce((value) => value + 1);
                   }}
+                  onAttachFile={(file) => attachFilesToComposer([file])}
                   onClose={() => {
                     setMainFilePreviewPanel(null);
                     setSelectedId(null);
@@ -1525,6 +1763,9 @@ export default function App() {
                 pendingFiles,
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
+                onUploadFiles: uploadFileObjects,
+                onAttachFiles: attachFilesToComposer,
+                beginnerMode,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
@@ -1574,9 +1815,9 @@ export default function App() {
                 renderMemoryLoadButton,
                 renderStopStreamButton,
                 renderPartialBadge,
-                renderBotTraceStatus,
                 renderAgentBridgeTaskCard,
                 renderFileAttachments,
+                onOpenMessage: handleMessageNavigate,
                 activeAgentBridgeTaskData,
                 handleMarkdownImageClick,
                 handleMarkdownFileClick,
@@ -1589,7 +1830,7 @@ export default function App() {
               }}
               forwardSelectionBar={
                 forwardSelectionMode ? (
-                  <div className="absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
+                  <div className="an-forward-selection-bar absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
                     <span className="whitespace-nowrap text-[var(--fg-2)]">
                       Selected {selectedForwardMsgIds.length} items
                     </span>
@@ -1623,7 +1864,7 @@ export default function App() {
                   Boolean((value.trim() && value.trim() !== "@") || pendingFileIds.length > 0),
                 disabled: isSystemDm,
                 placeholder: isSystemDm
-                  ? "Friend notification conversations handle requests and cannot send messages directly..."
+                  ? "Notification conversations collect system updates and cannot send messages directly..."
                   : msgKind === "secret"
                     ? "Enter encrypted content (only bots can read the original)..."
                     : isDmSelected
@@ -1638,6 +1879,7 @@ export default function App() {
                 onCycleKind: cycleMsgKind,
                 showKindSwitcher: !replyingTo && !isDmSelected,
                 enableKindCycling: !replyingTo && !isDmSelected,
+                beginnerMode,
                 titleValue: composerTitle,
                 titleRef: composerTitleRef,
                 onTitleChange: setComposerTitle,
@@ -1648,6 +1890,8 @@ export default function App() {
                 pendingFiles,
                 onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
+                onUploadFiles: uploadFileObjects,
+                onAttachFiles: attachFilesToComposer,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
                 keychainLoading: keychainPopupLoading,
@@ -1658,6 +1902,8 @@ export default function App() {
                 promptTemplatesLoading,
                 selectedPromptTemplateId,
                 onPromptTemplateChange: setPromptTemplateOverrideId,
+                showTemplateDefaultBotTarget: !isDmSelected,
+                normalHint: selectedComposerTemplateDescription || undefined,
               }}
               setMemoryTab={setMemoryTab}
               setPageTopicId={setPageTopicId}
@@ -1683,6 +1929,7 @@ export default function App() {
             onMemoryTabChange={setMemoryTab}
             currentUserId={currentUserId}
             onFilePreview={openFilePreview}
+            onAttachFileToComposer={(file) => attachFilesToComposer([file])}
             onFileDeleted={() => setFileLibraryRefreshNonce((value) => value + 1)}
             onCloseMemory={() => setMemoryTab(null)}
             filePreviewPanel={filePreviewPanel}

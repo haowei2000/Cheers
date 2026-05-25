@@ -21,6 +21,26 @@ This is the English default edition prepared for the open-source documentation s
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
+## Near-Term Plans
+
+### UI
+
+- [ ] Unify UI hover states.
+- [ ] Fix missing Chinese and English localization coverage.
+- [ ] Optimize default options.
+
+### Backend
+
+- [ ] Clean up and organize backend code.
+- [ ] Clarify message queue responsibilities and flow.
+- [ ] Plan remote bot workspace isolation, including per-bot working directories, permission boundaries, cleanup policy, and deployment/runtime safeguards.
+
+### Features
+
+- [ ] DingTalk integration.
+- [ ] iOS app.
+- [ ] Android app.
+
 ## Related Documentation
 
 - [Documentation Home](help/README.md)

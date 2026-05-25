@@ -40,6 +40,36 @@
     0 1px 0 var(--border-focus) inset,
     0 10px 26px var(--shadow);
 }
+.an-composer.is-file-drag-over {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent) inset,
+    0 12px 30px var(--shadow);
+}
+.an-composer-drop-hint {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed color-mix(in oklab, var(--accent) 70%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--bg-1) 86%, var(--accent-muted));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.an-composer-drop-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-muted);
+}
 
 /* ── Per-kind tinting ─────────────────────────────────────────────────────── */
 .an-composer.is-secret {
@@ -366,8 +396,71 @@
 .an-composer-template-menu {
   display: block;
 }
+.an-composer-template-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.an-composer-template-tag {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 8px;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.an-composer-template-tag span {
+  color: inherit;
+  opacity: 0.72;
+  font-weight: 500;
+}
+.an-composer-template-tag:hover,
+.an-composer-template-tag.is-active {
+  border-color: color-mix(in oklab, var(--accent) 54%, var(--border));
+  background: var(--accent-muted);
+  color: var(--accent);
+}
 .an-composer-template-trigger {
   display: block;
+}
+.an-composer-template-trigger:has(.an-composer-template-clear-badge)
+  .an-composer-iconbtn.is-named-trigger {
+  padding-right: 24px;
+}
+.an-composer-template-clear-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--red) 45%, var(--border));
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 2px 6px color-mix(in oklab, var(--shadow) 72%, transparent);
+  cursor: pointer;
+}
+.an-composer-template-clear-badge:hover {
+  background: color-mix(in oklab, var(--red) 84%, #000);
+  color: #fff;
 }
 .an-composer-template-menu.is-open {
   display: block;
@@ -750,6 +843,11 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
 }
 
 @media (max-width: 720px) {
+  .an-chat-composer-dock {
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+  }
   .an-composer-toprow {
     max-width: none;
     margin: 0 4px 6px;
@@ -768,6 +866,9 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   .an-composer {
     max-width: none;
     border-radius: 12px;
+    box-shadow:
+      0 1px 0 var(--border) inset,
+      0 6px 18px color-mix(in oklab, var(--shadow) 72%, transparent);
   }
   .an-composer-kindhead {
     padding: 7px 12px 5px;
@@ -781,7 +882,7 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   .an-composer-textarea {
     padding: 10px 12px 4px;
     font-size: 16px;
-    max-height: 36dvh;
+    max-height: min(36dvh, 240px);
   }
   .an-composer-bar {
     gap: 3px;
@@ -807,9 +908,18 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   .an-composer-bar .an-composer-send {
     height: 34px;
     padding: 0 14px;
+    max-width: 118px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .an-composer-resize {
     height: 6px;
+  }
+  .an-menu.an-mention-menu,
+  .an-composer-template-menu.is-keyboard-open {
+    max-height: min(42dvh, 260px) !important;
+    overscroll-behavior: contain;
   }
   html[data-density="compact"] .an-composer-textarea,
   html[data-density="compact"] .an-composer-title {
@@ -826,5 +936,64 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   }
   .an-composer-bar .an-composer-send {
     padding: 0 12px;
+  }
+}
+
+.an-composer-mention-peek-wrap {
+  display: inline-flex;
+  min-width: 0;
+  overflow: visible;
+}
+.an-composer-bar .an-composer-iconbtn.is-mention-peek,
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-mention-peek {
+  width: auto;
+  min-width: 82px;
+  max-width: min(180px, 34vw);
+  padding: 0 12px;
+  gap: 6px;
+  color: var(--accent);
+  background: var(--accent-muted);
+  animation: an-composer-mention-peek 1.65s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.an-composer-bar .an-composer-iconbtn.is-mention-peek .an-composer-glyph,
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-mention-peek .an-composer-glyph {
+  display: none;
+}
+.an-composer-bar .an-composer-iconbtn.is-mention-peek .an-composer-trigger-label,
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-mention-peek .an-composer-trigger-label {
+  display: inline-block;
+}
+
+@keyframes an-composer-mention-peek {
+  0% {
+    opacity: 0;
+    transform: translateX(-16px) scale(0.94);
+  }
+  18% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  76% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-16px) scale(0.94);
+  }
+}
+
+@media (max-width: 720px) {
+  .an-composer-bar .an-composer-iconbtn.is-mention-peek,
+  html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-mention-peek {
+    max-width: min(46vw, 168px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .an-composer-bar .an-composer-iconbtn.is-mention-peek {
+    animation: none;
+    opacity: 1;
+    transform: none;
   }
 }

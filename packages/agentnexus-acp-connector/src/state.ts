@@ -52,6 +52,20 @@ export class SessionStateStore {
     await write;
   }
 
+  async remove(accountId: string, providerSessionKey: string): Promise<void> {
+    const write = this.writeQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const accountSessions = this.state.sessions[accountId];
+        if (!accountSessions || !accountSessions[providerSessionKey]) return;
+        delete accountSessions[providerSessionKey];
+        if (Object.keys(accountSessions).length === 0) delete this.state.sessions[accountId];
+        await this.save();
+      });
+    this.writeQueue = write.catch(() => undefined);
+    await write;
+  }
+
   private async save(): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;

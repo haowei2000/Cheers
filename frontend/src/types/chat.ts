@@ -5,6 +5,13 @@ export type Workspace = {
    *  auto-provisioned, hosts DMs only). Defaults to "team" server-side. */
   kind?: "team" | "personal";
   avatar_url?: string | null;
+  default_bot_id?: string | null;
+  default_bot?: {
+    bot_id: string;
+    username: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
 };
 
 export type Channel = {
@@ -24,6 +31,7 @@ export type Channel = {
   can_manage?: boolean;
   can_invite_members?: boolean;
   can_add_bots?: boolean;
+  created_at?: string | null;
   /** Count of messages in this channel that the caller has not yet read.
    *  Populated by the channel list endpoints; updated locally on select. */
   unread_count?: number;
@@ -129,7 +137,8 @@ export type Message = {
     | "announcement"
     | "routing"
     | "permission"
-    | "friend_request";
+    | "friend_request"
+    | "notification";
   content_data?: Record<string, unknown> | null;
   file_ids?: string[];
   files?: FileInfo[];
@@ -141,6 +150,7 @@ export type Message = {
   /** True when the bot reply was finalized mid-stream (cancel/error).
    *  Renders a canceled / interrupted badge. */
   is_partial?: boolean;
+  error?: string | null;
   _bot_status?: string;
   _bot_trace?: BotTraceEvent[];
   _agent_bridge_task?: AgentBridgeTaskContentData;

@@ -24,8 +24,8 @@ export function HelpModal({ open, onClose, apiDocsUrl, userDocsUrl }: HelpModalP
         style={{ color: "var(--fg-2)" }}
       >
         <li>@Coordinator how to use this</li>
-        <li>@Coordinator how to create a project</li>
-        <li>@Coordinator how to join a project</li>
+        <li>@Coordinator how to create a group</li>
+        <li>@Coordinator how to join a group</li>
         <li>@Coordinator how to connect Agent Bridge</li>
         <li>@Coordinator entry points</li>
       </ul>

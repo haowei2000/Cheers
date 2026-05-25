@@ -69,7 +69,7 @@ export function ProjectView({
           className="text-center py-10 text-xs"
           style={{ color: "var(--fg-3)" }}
         >
-          No project anchor or progress yet.
+          No group anchor or progress yet.
           <br />
           Click Edit in the top-right to add anchors or progress. They will appear here.
         </div>

@@ -5,8 +5,8 @@ from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
 MEMORY_LAYER_FIELDS = (
-    ("anchor", "Project Anchor"),
-    ("progress", "Project Progress"),
+    ("anchor", "Group Anchor"),
+    ("progress", "Group Progress"),
     ("decisions", "Decision Records"),
     ("files_index", "File Index"),
     ("history", "Conversation History"),

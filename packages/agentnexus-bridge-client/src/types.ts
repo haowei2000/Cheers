@@ -22,6 +22,28 @@ export interface ChannelInfo {
   joined_at?: string | null;
 }
 
+export type ConnectorPermissionMode = "ask" | "reject" | "allow" | "cancel";
+
+export interface ConnectorControlSettings {
+  agentnexusApprovalMode?: ConnectorPermissionMode;
+  agentNativePermissionMode?: string;
+  /** @deprecated Use agentnexusApprovalMode. */
+  permissionMode?: ConnectorPermissionMode;
+  requestTimeoutMs?: number;
+  promptTimeoutMs?: number;
+  cwd?: string;
+  model?: string;
+  configOptions?: Record<string, string>;
+}
+
+export interface ConnectorControlConfig {
+  revision?: number | string | null;
+  settings?: ConnectorControlSettings;
+  updated_at?: string | null;
+  last_status?: Record<string, unknown> | null;
+  options?: Record<string, unknown> | null;
+}
+
 export interface ControlHello {
   type: "hello";
   bot_id: string;
@@ -30,6 +52,7 @@ export interface ControlHello {
   connection_id?: string;
   session_id: string;
   memberships: ChannelInfo[];
+  connector_config?: ConnectorControlConfig | null;
 }
 
 export interface ChannelJoinedEvent {
@@ -58,11 +81,41 @@ export interface CancelInbound {
   reason?: string;
 }
 
+export interface ConfigUpdateInbound {
+  type: "config_update";
+  revision?: number | string | null;
+  settings?: ConnectorControlSettings;
+  updated_at?: string | null;
+}
+
+export interface ConfigOptionSetInbound {
+  type: "config_option_set";
+  request_id: string;
+  session_id?: string | null;
+  provider_session_key?: string | null;
+  config_id: string;
+  value: string;
+  updated_at?: string | null;
+}
+
+export interface PermissionResolutionInbound {
+  type: "permission_resolution";
+  request_id: string;
+  message_id?: string | null;
+  resolution: "allow" | "deny";
+  option_id?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+}
+
 export type ControlInbound =
   | ControlHello
   | ChannelJoinedEvent
   | ChannelLeftEvent
   | CancelInbound
+  | ConfigUpdateInbound
+  | ConfigOptionSetInbound
+  | PermissionResolutionInbound
   | PongFrame
   | { type: "error"; detail?: string };
 
@@ -74,6 +127,32 @@ export interface PingFrame {
 export interface ReadyFrame {
   type: "ready";
   plugin_version?: string;
+}
+
+export interface ConfigStatusFrame {
+  type: "config_status";
+  revision?: number | string | null;
+  ok: boolean;
+  applied?: string[];
+  rejected?: Array<{ field: string; reason: string }>;
+  error?: string;
+}
+
+export interface ConfigOptionsFrame {
+  type: "config_options";
+  options: Record<string, unknown>;
+}
+
+export interface ConfigOptionStatusFrame {
+  type: "config_option_status";
+  request_id?: string | null;
+  ok: boolean;
+  session_id?: string | null;
+  provider_session_key?: string | null;
+  config_id?: string | null;
+  value?: string | null;
+  error?: string | null;
+  options?: Record<string, unknown> | null;
 }
 
 // ============ Data stream ============
@@ -97,6 +176,8 @@ export interface AttachmentInfo {
   content_type?: string | null;
   size_bytes?: number | null;
   summary?: string | null;
+  is_image?: string | boolean | null;
+  image_b64?: string | null;
 }
 
 export interface DataHello {
@@ -142,6 +223,9 @@ export interface SendAckOk {
   ok: true;
   message_id: string;
   finalized_placeholder?: boolean;
+  permission_resolution?: (PermissionResolutionInbound & {
+    outcome?: "selected" | "cancelled";
+  });
 }
 
 export interface SendAckErr {
@@ -180,11 +264,31 @@ export interface FileUploadAckErr {
 
 export type FileUploadAck = FileUploadAckOk | FileUploadAckErr;
 
+export interface TerminalAckOk {
+  type: "terminal_ack";
+  client_msg_id: string;
+  ok: true;
+  msg_id: string;
+  queued?: boolean;
+  job_id?: string;
+}
+
+export interface TerminalAckErr {
+  type: "terminal_ack";
+  client_msg_id: string;
+  ok: false;
+  error: string;
+  code: string;
+}
+
+export type TerminalAck = TerminalAckOk | TerminalAckErr;
+
 export type DataInbound =
   | DataHello
   | MessageEvent
   | SendAck
   | FileUploadAck
+  | TerminalAck
   | ResumeAck
   | PongFrame
   | { type: "error"; detail?: string };
@@ -207,6 +311,28 @@ export interface SendFrame {
   text: string;
   in_reply_to_msg_id?: string | null;
   file_ids?: string[];
+}
+
+export interface PermissionRequestOption {
+  option_id: string;
+  kind?: string;
+  name?: string;
+  description?: string;
+}
+
+export interface PermissionRequestFrame {
+  type: "permission_request";
+  client_msg_id: string;
+  channel_id: string;
+  request_id: string;
+  task_id?: string | null;
+  msg_id?: string | null;
+  acp_session_id?: string | null;
+  provider_session_key?: string | null;
+  title?: string | null;
+  body: string;
+  tool?: string | null;
+  options?: PermissionRequestOption[];
 }
 
 export interface TypingFrame {
@@ -246,7 +372,7 @@ export interface SessionUpdateFrame {
   metadata?: Record<string, unknown>;
 }
 
-// ---- Streaming reply frames (client → server, fire-and-forget, no ack) ----
+// ---- Streaming reply frames (client → server) ----
 
 /** One token / chunk of a streaming bot reply. The server appends `delta`
  *  to the placeholder identified by `msg_id` and broadcasts a
@@ -268,6 +394,7 @@ export interface DeltaFrame {
  *  shows up as a single bot reply, not text + a separate media message. */
 export interface DoneFrame {
   type: "done";
+  client_msg_id?: string;
   msg_id: string;
   file_ids?: string[];
 }
@@ -276,6 +403,7 @@ export interface DoneFrame {
  *  `is_partial=true` and includes `message` in the message_done event. */
 export interface ErrorFrame {
   type: "error";
+  client_msg_id?: string;
   msg_id: string;
   message: string;
 }

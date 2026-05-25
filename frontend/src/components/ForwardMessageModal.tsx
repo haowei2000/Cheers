@@ -1,5 +1,6 @@
+import { useMemo } from "react";
 import toast from "react-hot-toast";
-import type { Channel, DM, SearchSelection } from "../types";
+import type { Channel, DM, SearchSelection, Workspace } from "../types";
 import { Modal, ModalFooter } from "./Modal";
 import { SearchPicker } from "./SearchPicker";
 import { AppIcon } from "./icons/AppIcon";
@@ -8,6 +9,7 @@ import { MemberAvatar, type MemberKind } from "./members";
 interface ForwardMessageModalProps {
   channels: Channel[];
   dms: DM[];
+  workspaces?: Workspace[];
   open: boolean;
   submitting?: boolean;
   summary: string;
@@ -43,6 +45,7 @@ function dmSubLabel(dm: DM): string {
 export function ForwardMessageModal({
   channels,
   dms,
+  workspaces = [],
   open,
   submitting = false,
   summary,
@@ -52,9 +55,30 @@ export function ForwardMessageModal({
   onForwardToChannel,
   onForwardToMember,
 }: ForwardMessageModalProps) {
-  const visibleChannels = workspaceId
-    ? channels.filter((channel) => channel.workspace_id === workspaceId)
-    : channels;
+  const workspaceNameById = useMemo(
+    () =>
+      new Map(
+        workspaces.map((workspace) => [
+          workspace.workspace_id,
+          workspace.kind === "personal" ? "Personal" : workspace.name,
+        ]),
+      ),
+    [workspaces],
+  );
+  const visibleChannels = useMemo(() => {
+    const workspaceRank = (channel: Channel) =>
+      workspaceId && channel.workspace_id === workspaceId ? 0 : 1;
+    return [...channels].sort((a, b) => {
+      const rank = workspaceRank(a) - workspaceRank(b);
+      if (rank !== 0) return rank;
+      const workspaceNameA = workspaceNameById.get(a.workspace_id || "") || "";
+      const workspaceNameB = workspaceNameById.get(b.workspace_id || "") || "";
+      return (
+        workspaceNameA.localeCompare(workspaceNameB) ||
+        channelLabel(a).localeCompare(channelLabel(b))
+      );
+    });
+  }, [channels, workspaceId, workspaceNameById]);
   const visibleDMs = dms;
 
   const handleSearchPick = (selection: SearchSelection) => {
@@ -85,7 +109,7 @@ export function ForwardMessageModal({
         <SearchPicker
           context="global_nav"
           token={token}
-          workspaceId={workspaceId}
+          types={["channels", "users", "bots"]}
           modal
           autoFocus
           limit={8}
@@ -129,6 +153,9 @@ export function ForwardMessageModal({
                       </span>
                       <span className="block truncate text-xs text-[var(--fg-3)]">
                         {channel.type === "private" ? "Private" : "Workspace"}
+                        {channel.workspace_id
+                          ? ` · ${workspaceNameById.get(channel.workspace_id) || "Workspace"}`
+                          : ""}
                       </span>
                     </span>
                   </button>

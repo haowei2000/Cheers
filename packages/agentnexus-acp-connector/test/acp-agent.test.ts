@@ -28,8 +28,8 @@ describe("AcpStdioAgent", () => {
     });
     await agent.start();
     expect(agent.initializeResponse?.protocolVersion).toBe(1);
-    const sessionId = await agent.newSession();
-    const result = await agent.prompt(sessionId, [{ type: "text", text: "hello" }]);
+    const session = await agent.newSession();
+    const result = await agent.prompt(session.sessionId, [{ type: "text", text: "hello" }]);
     expect(result.stopReason).toBe("end_turn");
     expect(updates.join("")).toBe("echo: hello");
     await agent.stop();

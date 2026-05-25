@@ -721,12 +721,12 @@ function terminalSettleMsForOutputFallback(accountId: string | null | undefined,
   return Math.max(0, watcher.finishAfter - now) + watcher.cfg.pollMs + 50;
 }
 
-function finalizeHeldStatusOnlyStream(
+async function finalizeHeldStatusOnlyStream(
   entry: AccountRuntime,
   taskId: string,
   message: string,
   log?: PluginLogger,
-): boolean {
+): Promise<boolean> {
   const slot = pendingStreamByTo.get(taskId);
   if (!slot || slot.cancelled || !slot.placeholderMsgId) return false;
   if (!slot.heldStatusText || hasVisibleStreamPayload(slot)) return false;
@@ -745,24 +745,26 @@ function finalizeHeldStatusOnlyStream(
     seq: slot.seq,
     delta: message,
   });
-  const wroteError = entry.session.streamError({
+  const errorAck = await entry.session.streamError({
     msgId: slot.placeholderMsgId,
     message,
   });
-  log?.warn?.(`agentnexus: finalized held status-only run task=${taskId} wroteDelta=${wroteDelta} wroteError=${wroteError}`);
-  return wroteDelta || wroteError;
+  log?.warn?.(
+    `agentnexus: finalized held status-only run task=${taskId} wroteDelta=${wroteDelta} wroteError=${errorAck.ok}`,
+  );
+  return wroteDelta || errorAck.ok;
 }
 
-function finalizeUndeliveredRun(
+async function finalizeUndeliveredRun(
   target: RunTraceTarget,
   status: string,
   error?: string | null,
   log?: PluginLogger,
-): boolean {
+): Promise<boolean> {
   const entry = sessionRegistry.get(target.accountId);
   if (!entry) return false;
   const message = noDeliverableMessage(status, error);
-  if (finalizeHeldStatusOnlyStream(entry, target.taskId, message, log)) return true;
+  if (await finalizeHeldStatusOnlyStream(entry, target.taskId, message, log)) return true;
 
   const source = entry.lastInboundByTaskId.get(target.taskId)
     ?? entry.replyTargets.get(target.taskId)?.source;
@@ -790,8 +792,10 @@ export function notifyOpenClawRunTerminal(args: {
 
   const delayMs = terminalSettleMsForOutputFallback(target.accountId, target.taskId);
   setTimeout(() => {
-    finalizeUndeliveredRun(target, args.status, args.error, log);
-    runTraceByRunId.delete(args.runId);
+    void finalizeUndeliveredRun(target, args.status, args.error, log)
+      .finally(() => {
+        runTraceByRunId.delete(args.runId);
+      });
   }, delayMs);
 }
 

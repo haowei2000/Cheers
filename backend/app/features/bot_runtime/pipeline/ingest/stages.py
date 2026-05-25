@@ -1,12 +1,13 @@
 """IngestPipeline stages.
 
-Five stages, run in order:
+Six stages, run in order:
 
 1. ValidateStage       — channel exists, file ids resolve
 2. SecretEnvelopeStage — wrap content with placeholder + token if is_secret
 3. PersistStage        — create Message row, ensure topic root, build file_map
 4. EmitStage           — serialize, publish MessageCreated to bus
 5. FanoutUnreadStage   — push channel_new_message to user-scoped WS for unread badges
+6. NotificationFanoutStage — mirror @mentions into the system notification DM
 
 Each stage reads/writes IngestContext. None depend on routes.py; the
 root workflow builder chooses and runs these stages.
@@ -26,6 +27,7 @@ from app.contracts.messages import MessageFileDTO
 from app.core.exceptions import AppError, BadRequestError, NotFoundError
 from app.db.models import Channel, ChannelMembership, FileRecord, Message, User
 from app.db.session import async_session_factory
+from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions_anywhere
 from app.features.bot_runtime.pipeline.bot.topic_context import (
     MSG_TYPE_NORMAL,
     MSG_TYPE_REPLY,
@@ -149,6 +151,19 @@ class PersistStage(Stage[IngestContext]):
         msg_type = ctx.msg_type or (
             MSG_TYPE_REPLY if ctx.in_reply_to_msg_id else MSG_TYPE_NORMAL
         )
+        linked_files_before_persist = False
+        if ctx.file_ids and ctx.sender_type == "user" and ctx.sender_id:
+            user = await ctx.session.get(User, ctx.sender_id)
+            if user is not None:
+                from app.services.file_service import FileService
+
+                ctx.file_ids = await FileService(ctx.session).attach_file_ids_to_channel(
+                    file_ids=ctx.file_ids,
+                    target_channel_id=ctx.channel_id,
+                    current_user=user,
+                    created_by=ctx.sender_id,
+                )
+                linked_files_before_persist = True
         msg = Message(
             channel_id=ctx.channel_id,
             sender_id=ctx.sender_id,
@@ -156,6 +171,7 @@ class PersistStage(Stage[IngestContext]):
             content=ctx.stored_content if ctx.stored_content is not None else ctx.content,
             file_ids=ctx.file_ids,
             mention_bot_ids=ctx.mention_bot_ids,
+            mention_user_ids=await self._mention_user_ids(ctx),
             in_reply_to_msg_id=ctx.in_reply_to_msg_id,
             msg_type=msg_type,
             content_data=ctx.content_data,
@@ -183,7 +199,7 @@ class PersistStage(Stage[IngestContext]):
 
         ctx.msg = msg
 
-        if ctx.file_ids:
+        if ctx.file_ids and not linked_files_before_persist:
             from app.services.file_scope_service import FileScopeService
 
             await FileScopeService(ctx.session).link_files_to_channel(
@@ -208,6 +224,20 @@ class PersistStage(Stage[IngestContext]):
                     status=rec.status,
                     expires_at=rec.expires_at,
                 )
+
+    @staticmethod
+    async def _mention_user_ids(ctx: IngestContext) -> list[str]:
+        explicit = [
+            item
+            for item in (ctx.mention_user_ids or [])
+            if isinstance(item, str) and item
+        ]
+        resolved = await resolve_user_mentions_anywhere(
+            ctx.content,
+            ctx.session,
+            ctx.channel_id,
+        )
+        return list(dict.fromkeys([*explicit, *resolved]))
 
 
 class SerializeStage(Stage[IngestContext]):
@@ -310,3 +340,24 @@ class FanoutUnreadStage(Stage[IngestContext]):
                     exc_info=True,
                 )
         await _publish_unread_events(member_ids, event)
+
+
+class NotificationFanoutStage(Stage[IngestContext]):
+    """Mirror message @mentions into each mentioned user's system notification DM."""
+
+    async def run(self, ctx: IngestContext) -> None:
+        if ctx.skip_fanout or ctx.payload is None:
+            return
+        if ctx.skip_commit:
+            return
+        if not ctx.payload.mention_user_ids:
+            return
+        try:
+            from app.services.notification_service import NotificationService
+
+            await NotificationService.fanout_mentions_for_message_id(ctx.payload.msg_id)
+        except Exception:
+            logger.exception(
+                "notification_fanout: failed to mirror mentions msg_id=%s",
+                ctx.payload.msg_id,
+            )

@@ -19,17 +19,17 @@ class HelpEntry:
 
 HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
     HelpEntry(
-        ("创建项目", "建项目", "新建项目", "怎么建", "如何创建项目"),
-        "如何创建项目",
-        "【前端入口】左侧点击「管理」或频道列表的创建入口，选择工作空间、填写项目/频道名称后点击「创建」。\n\n"
+        ("创建分组", "建分组", "新建分组", "创建项目", "建项目", "新建项目", "怎么建", "如何创建项目", "如何创建分组"),
+        "如何创建分组",
+        "【前端入口】左侧点击创建入口，选择工作空间、填写分组/频道名称后点击「创建」。\n\n"
         "若还没有工作空间，需要先创建或由管理员初始化一个工作空间。也可用 API：POST /api/channels，"
         "body 含 workspace_id、name、type。详见《系统管理说明书》。",
     ),
     HelpEntry(
-        ("加入项目", "怎么加入", "加入频道", "被加进项目"),
-        "如何加入项目",
-        "「加入项目」通常指被加入某个频道/项目的成员列表。请频道管理员在成员管理中添加你，"
-        "或在允许邀请的频道中通过邀请入口加入。加入后左侧频道列表会显示该项目。",
+        ("加入分组", "怎么加入", "加入项目", "加入频道", "被加进分组", "被加进项目"),
+        "如何加入分组",
+        "「加入分组」通常指被加入某个频道/分组的成员列表。请频道管理员在成员管理中添加你，"
+        "或在允许邀请的频道中通过邀请入口加入。加入后左侧列表会显示该分组。",
     ),
     HelpEntry(
         ("拉bot进群", "拉bot", "邀请bot", "加bot到频道", "聊天加bot", "bot不在群里"),
@@ -47,13 +47,13 @@ HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
     ),
     HelpEntry(
         ("发消息", "聊天", "怎么发", "怎么@", "如何@", "at bot", "@"),
-        "在项目里怎么用",
+        "在分组里怎么用",
         "在底部输入框输入文字，点击发送或使用快捷键发送。输入 @ 可选择频道内 Bot 或用户；"
         "上传文件后可随下一条消息一起发送给频道或被 @ 的 Bot。",
     ),
     HelpEntry(
-        ("没有项目", "左边没", "看不到项目", "列表空"),
-        "左侧没有项目",
+        ("没有分组", "没有项目", "左边没", "看不到分组", "看不到项目", "列表空"),
+        "左侧没有分组",
         "通常说明还没有频道，或你没有被加入任何频道。请管理员创建工作空间/频道并把你加入成员列表。",
     ),
     HelpEntry(
@@ -76,22 +76,22 @@ HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
     HelpEntry(
         ("帮助", "怎么用", "不会用", "说明书", "文档", "入口", "功能入口"),
         "使用说明总览",
-        "可以询问：怎么创建项目、怎么加入项目、怎么把 Bot 拉进群、怎么接入外部 Agent、怎么发消息、"
+        "可以询问：怎么创建分组、怎么加入分组、怎么把 Bot 拉进群、怎么接入外部 Agent、怎么发消息、"
         "@ Bot 没反应怎么办、怎么安装部署、报错怎么排查。",
     ),
 )
 
 HELP_ENTRIES_EN: Sequence[HelpEntry] = (
     HelpEntry(
-        ("create workspace", "create project", "create a project", "new workspace", "new project", "create channel"),
-        "How to Create a Project",
-        "Frontend entry: click the create entry in the workspace or channel list, choose the workspace, enter the project/channel name, then click Create.\n\n"
+        ("create workspace", "create group", "create a group", "create project", "create a project", "new workspace", "new group", "new project", "create channel"),
+        "How to Create a Group",
+        "Frontend entry: click the create entry in the workspace or channel list, choose the workspace, enter the group/channel name, then click Create.\n\n"
         "If there is no workspace yet, create one first or ask an administrator to initialize one. API option: POST /api/channels with workspace_id, name, and type in the body. See the system administration guide for details.",
     ),
     HelpEntry(
-        ("join project", "join channel", "added to project", "add me"),
-        "How to Join a Project",
-        "Joining a project usually means being added to a channel/project member list. Ask a channel administrator to add you in member management, or use the invite entry if that channel allows invitations. The project appears in the left channel list after you are added.",
+        ("join group", "join project", "join channel", "added to group", "added to project", "add me"),
+        "How to Join a Group",
+        "Joining a group usually means being added to a channel/group member list. Ask a channel administrator to add you in member management, or use the invite entry if that channel allows invitations. The group appears in the left channel list after you are added.",
     ),
     HelpEntry(
         ("add bot", "invite bot", "bot to channel", "bot not in channel"),
@@ -105,12 +105,12 @@ HELP_ENTRIES_EN: Sequence[HelpEntry] = (
     ),
     HelpEntry(
         ("send message", "chat", "mention", "at bot", "@"),
-        "How to Use a Project",
+        "How to Use a Group",
         "Type text in the bottom composer, then click Send or use the send shortcut. Type @ to choose a Bot or user in the channel. Uploaded files can be sent with the next message to the channel or to mentioned Bots.",
     ),
     HelpEntry(
-        ("no project", "empty list", "cannot see project", "left sidebar empty"),
-        "No Projects in the Sidebar",
+        ("no group", "no project", "empty list", "cannot see group", "cannot see project", "left sidebar empty"),
+        "No Groups in the Sidebar",
         "This usually means no channels exist yet, or you have not been added to any channel. Ask an administrator to create a workspace/channel and add you to the member list.",
     ),
     HelpEntry(
@@ -131,7 +131,7 @@ HELP_ENTRIES_EN: Sequence[HelpEntry] = (
     HelpEntry(
         ("help", "how to use", "manual", "docs", "entry", "feature entry"),
         "Usage Overview",
-        "You can ask how to create a project, join a project, add Bots to a channel, connect an external Agent, send messages, troubleshoot @Bot responses, install/deploy, or diagnose errors.",
+        "You can ask how to create a group, join a group, add Bots to a channel, connect an external Agent, send messages, troubleshoot @Bot responses, install/deploy, or diagnose errors.",
     ),
 )
 

@@ -62,6 +62,12 @@ class PromptTemplateCreate(BaseModel):
     system_prompt: str = Field(..., min_length=1, description="System prompt")
     user_template: str = Field(default=DEFAULT_USER_TEMPLATE, description="User message template using {{variable}} placeholders")
     variables: list[str] = Field(default=DEFAULT_TEMPLATE_VARIABLES, description="Template variable list")
+    tags: list[str] = Field(default_factory=list, description="Free-form template tags")
+    default_bot_id: str | None = Field(default=None, description="Default Bot target for this template")
+    scope: Literal["private", "friend", "everyone"] = Field(
+        default="friend",
+        description="Template visibility: private=self only, friend=self and friends, everyone=all signed-in users",
+    )
 
 
 class PromptTemplateUpdate(BaseModel):
@@ -71,6 +77,22 @@ class PromptTemplateUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, min_length=1)
     user_template: str | None = Field(default=None)
     variables: list[str] | None = Field(default=None)
+    tags: list[str] | None = Field(default=None)
+    default_bot_id: str | None = Field(default=None)
+    scope: Literal["private", "friend", "everyone"] | None = Field(default=None)
+
+
+class PromptTemplateOwnerInResponse(BaseModel):
+    user_id: str
+    username: str
+    display_name: str | None = None
+
+
+class PromptTemplateDefaultBotInResponse(BaseModel):
+    bot_id: str
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
 
 
 class PromptTemplateInResponse(BaseModel):
@@ -83,8 +105,14 @@ class PromptTemplateInResponse(BaseModel):
     system_prompt: str
     user_template: str
     variables: list[str]
+    tags: list[str] = Field(default_factory=list)
+    default_bot_id: str | None = None
+    default_bot: PromptTemplateDefaultBotInResponse | None = None
     is_builtin: bool
+    scope: Literal["private", "friend", "everyone"] = "friend"
     created_by: str | None = None
+    owner: PromptTemplateOwnerInResponse | None = None
+    can_manage: bool = False
     created_at: datetime | None = None
 
 
@@ -254,6 +282,7 @@ class ChannelInResponse(BaseModel):
     can_manage: bool = False
     can_invite_members: bool = False
     can_add_bots: bool = False
+    created_at: datetime | None = None
     # Number of unread messages for the user in this channel, derived from channel_memberships.last_read_at.
     # Remains None for anonymous users or non-members.
     unread_count: int | None = None
@@ -301,6 +330,7 @@ class SearchChannelHit(BaseModel):
     channel_id: str
     name: str
     workspace_id: str
+    workspace_name: str | None = None
     type: str  # Actual values exclude "dm"; DMs are entered through people/bot search.
 
 
@@ -451,8 +481,18 @@ class RoutingContentData(BaseModel):
 
 class PermissionContentData(BaseModel):
     """Permission Content Data schema or model."""
+    kind: str | None = None
+    source: str | None = None
+    request_id: str | None = None
+    bot_id: str | None = None
+    bot_owner_id: str | None = None
+    title: str | None = None
     tool: str | None = None
     body: str | None = None
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    approval_requested: bool = False
+    approval_requested_by: str | None = None
+    approval_requested_at: datetime | None = None
     resolved: bool = False
     resolution: Literal["allow", "deny"] | None = None
     resolved_by: str | None = None
@@ -516,6 +556,7 @@ class MessageCreate(BaseModel):
     sender_type: str = "user"
     file_ids: list[str] = Field(default_factory=list)
     mention_bot_ids: list[str] = Field(default_factory=list)
+    mention_user_ids: list[str] = Field(default_factory=list)
     in_reply_to_msg_id: str | None = None
     content_data: dict[str, Any] | None = None
     msg_type: str | None = None
@@ -557,6 +598,7 @@ class MessageStreamCreate(BaseModel):
     file_id: str | None = None
     file_ids: list[str] = Field(default_factory=list)
     mention_bot_ids: list[str] = Field(default_factory=list)
+    mention_user_ids: list[str] = Field(default_factory=list)
 
 
 # ==================== Message Response Schemas ====================
@@ -623,6 +665,11 @@ AnyMessageInResponse = Annotated[
 class PermissionResolveRequest(BaseModel):
     """Permission Resolve Request schema or model."""
     resolution: Literal["allow", "deny"]
+
+
+class PermissionApprovalRequest(BaseModel):
+    """Permission Approval Request schema or model."""
+    note: str | None = Field(default=None, max_length=500)
 
 
 # Backward-compatible unified response type with all fields.

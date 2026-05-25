@@ -94,7 +94,7 @@ jobs:
           if npm view "@haowei0520/bridge-client@${BRIDGE_VERSION}" version >/dev/null 2>&1; then
             echo "@haowei0520/bridge-client@${BRIDGE_VERSION} already exists on npm; skipping publish."
           else
-            npm publish --access public
+            npm publish --access public --ignore-scripts
           fi
 
       - name: Install dependencies
@@ -132,14 +132,14 @@ jobs:
           if npm view "@haowei0520/openclaw-channel-agentnexus@${PKG_VER}" version >/dev/null 2>&1; then
             echo "@haowei0520/openclaw-channel-agentnexus@${PKG_VER} already exists on npm; skipping publish."
           else
-            npm publish --access public
+            npm publish --access public --ignore-scripts
           fi
 
       - name: Build tarball
         id: pack
         run: |
           set -euo pipefail
-          TARBALL=$(npm pack --silent)
+          TARBALL=$(npm pack --silent --ignore-scripts)
           # Stable filename so consumers can hit /releases/latest/download/<asset>
           STABLE="openclaw-channel-agentnexus.tgz"
           cp "$TARBALL" "$STABLE"

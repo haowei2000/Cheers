@@ -88,11 +88,53 @@ async def test_upload_binary_happy_path(
     assert rec.content_type == "image/png"
     assert rec.size_bytes == len(body)
     assert rec.status == "ready"
+    assert rec.expires_at is None
 
     # The file lands in data_dir/generated/{channel_id}/{file_id}.png.
     on_disk = tmp_path / "generated" / ch_id / f"{data['file_id']}.png"
     assert on_disk.exists()
     assert on_disk.read_bytes() == body
+
+
+@pytest.mark.asyncio
+async def test_upload_markdown_file_is_persistent(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "agent_bridge_enabled", True)
+    monkeypatch.setattr(settings, "agent_bridge_token", "dummy")
+
+    bot_id, ch_id, token = await _seed_bot_in_channel(db_session)
+
+    resp = await client.post(
+        "/api/v1/agent-bridge/files/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "channel_id": ch_id,
+            "filename": "analysis",
+            "content": "# Bot output\n\nGenerated report",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["filename"] == "analysis.md"
+
+    rec = (await db_session.execute(
+        select(FileRecord).where(FileRecord.file_id == data["file_id"])
+    )).scalar_one()
+    assert rec.channel_id == ch_id
+    assert rec.uploader_id == bot_id
+    assert rec.original_filename == "analysis.md"
+    assert rec.content_type == "text/markdown"
+    assert rec.status == "ready"
+    assert rec.expires_at is None
+
+    on_disk = tmp_path / "generated" / ch_id / f"{data['file_id']}.md"
+    assert on_disk.exists()
+    assert on_disk.read_text(encoding="utf-8") == "# Bot output\n\nGenerated report"
 
 
 @pytest.mark.asyncio

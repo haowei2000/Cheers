@@ -19,14 +19,14 @@ const ico = (name: AppIconName): ReactNode =>
 
 export const LAYER_META: Record<string, LayerMeta> = {
   ANCHOR: {
-    label: "Project anchor",
+    label: "Group anchor",
     desc: "Core goals, constraints, and background",
     color: "blue",
     icon: ico("note"),
     entryBased: true,
   },
   PROGRESS: {
-    label: "Project progress",
+    label: "Group progress",
     desc: "Current progress, completed work, and next steps",
     color: "teal",
     icon: ico("trending"),
