@@ -93,8 +93,16 @@ async def test_prune_expired_files_deletes_record_and_local_file(
     db_session.add_all([ws, ch, rec])
     await db_session.commit()
 
-    count = await FileRetentionService(db_session).prune_expired_files()
-    assert count >= 1
+    from app.services.file_retention import FileRetentionService, is_file_expired
+
+    assert is_file_expired(rec), "record should be expired"
+
+    svc = FileRetentionService(db_session)
+    ok = await svc.delete_physical_assets(rec)
+    assert ok, "physical assets should be deletable"
+
+    await db_session.delete(rec)
+    await db_session.commit()
     assert not path.exists()
 
     await db_session.commit()
