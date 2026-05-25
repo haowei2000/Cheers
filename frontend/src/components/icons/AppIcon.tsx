@@ -2,6 +2,7 @@ import type { LucideIcon, LucideProps } from "lucide-react";
 import {
   Archive,
   ArrowLeft,
+  ArrowDownAZ,
   Bell,
   Bot,
   Brain,
@@ -63,6 +64,7 @@ import {
 
 export const appIconMap = {
   admin: Shield,
+  alphabeticSort: ArrowDownAZ,
   announcement: Megaphone,
   archive: Archive,
   arrowLeft: ArrowLeft,
