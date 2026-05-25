@@ -1297,7 +1297,7 @@ export function Sidebar({
                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                       style={{ color: "var(--fg-3)" }}
                     >
-                      <AppIcon name="minus" className="w-3 h-3" />
+                      <AppIcon name="trash" className="w-3 h-3" />
                     </button>
                     )}
                   </li>
@@ -1608,7 +1608,7 @@ export function Sidebar({
                           className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                           style={{ color: "var(--fg-3)" }}
                         >
-                          <AppIcon name="minus" className="w-3 h-3" />
+                          <AppIcon name="trash" className="w-3 h-3" />
                         </button>
                       </li>
                     );
