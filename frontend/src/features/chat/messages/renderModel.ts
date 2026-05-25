@@ -103,6 +103,17 @@ export interface MessageViewModel {
 const ROOT_ONLY_KINDS = new Set(["routing", "permission", "announcement"]);
 const DELETED_MESSAGE_TEXT = "This message was deleted.";
 
+function isResolvedPermissionMessage(message: Message): boolean {
+  if (message.msg_type !== "permission") return false;
+  const contentData = message.content_data;
+  if (!contentData || typeof contentData !== "object") return false;
+  const permissionData = contentData as Record<string, unknown>;
+  return (
+    permissionData.kind === "agent_bridge_permission_request" &&
+    permissionData.resolved === true
+  );
+}
+
 function compareMessagesByCreatedAt(a: Message, b: Message): number {
   const parsedATime = a.created_at ? Date.parse(a.created_at) : 0;
   const parsedBTime = b.created_at ? Date.parse(b.created_at) : 0;
@@ -219,7 +230,9 @@ export function buildChatRenderModel(
     replies.sort(compareMessagesByCreatedAt);
   }
 
-  const topicRoots = messages.filter((message) => !replySet.has(message.msg_id));
+  const topicRoots = messages.filter(
+    (message) => !replySet.has(message.msg_id) && !isResolvedPermissionMessage(message),
+  );
   const renderItems: MessageRenderItem[] = [];
   const lastDayRef = { value: "" };
 
