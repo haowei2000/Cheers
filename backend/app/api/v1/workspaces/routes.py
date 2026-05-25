@@ -10,10 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user, get_session
 from app.core.localization import locale_from_headers
 from app.core.responses import APIResponse
-from app.db.models import User
+from app.db.models import BotAccount, User, Workspace
+from app.services.bot_service import BotService
 from app.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
+
+
+class WorkspaceDefaultBotOut(BaseModel):
+    bot_id: str
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
 
 
 class WorkspaceOut(BaseModel):
@@ -23,6 +31,8 @@ class WorkspaceOut(BaseModel):
     name: str
     kind: str = "team"  # "team" | "personal"
     avatar_url: str | None = None
+    default_bot_id: str | None = None
+    default_bot: WorkspaceDefaultBotOut | None = None
 
 
 class WorkspaceCreateBody(BaseModel):
@@ -34,11 +44,52 @@ class WorkspaceCreateBody(BaseModel):
 class WorkspaceUpdateBody(BaseModel):
     name: str | None = None
     avatar_url: str | None = None
+    default_bot_id: str | None = None
 
 
 class InviteMemberBody(BaseModel):
     identifier: str
     role: Literal["owner", "admin", "member"] = "member"
+
+
+def _default_bot_payload(bot: BotAccount | None) -> WorkspaceDefaultBotOut | None:
+    if not bot:
+        return None
+    return WorkspaceDefaultBotOut(
+        bot_id=bot.bot_id,
+        username=bot.username,
+        display_name=bot.display_name,
+        avatar_url=bot.avatar_url,
+    )
+
+
+async def _workspace_out(
+    session: AsyncSession,
+    workspace: Workspace,
+    current_user: User,
+) -> WorkspaceOut:
+    default_bot = None
+    if workspace.default_bot_id:
+        loaded_default_bot = getattr(workspace, "default_bot", None)
+        default_bot = (
+            loaded_default_bot
+            if loaded_default_bot and loaded_default_bot.bot_id == workspace.default_bot_id
+            else await session.get(BotAccount, workspace.default_bot_id)
+        )
+    visible_default_bot = (
+        default_bot
+        if default_bot and await BotService(session).can_use(default_bot, current_user)
+        else None
+    )
+    default_bot_payload = _default_bot_payload(visible_default_bot)
+    return WorkspaceOut(
+        workspace_id=workspace.workspace_id,
+        name=workspace.name,
+        kind=workspace.kind,
+        avatar_url=workspace.avatar_url,
+        default_bot_id=default_bot_payload.bot_id if default_bot_payload else None,
+        default_bot=default_bot_payload,
+    )
 
 
 @router.get("", response_model=APIResponse[list[WorkspaceOut]])
@@ -49,7 +100,10 @@ async def list_workspaces(
 ) -> APIResponse:
     svc = WorkspaceService(session)
     workspaces = await svc.list_for_user(current_user, locale=locale_from_headers(request.headers))
-    return APIResponse.ok([WorkspaceOut.model_validate(w) for w in workspaces])
+    return APIResponse.ok([
+        await _workspace_out(session, workspace, current_user)
+        for workspace in workspaces
+    ])
 
 
 @router.post("", response_model=APIResponse[WorkspaceOut])
@@ -65,7 +119,7 @@ async def create_workspace(
         avatar_url=body.avatar_url,
         initial_member_ids=body.initial_member_ids,
     )
-    return APIResponse.ok(WorkspaceOut.model_validate(ws))
+    return APIResponse.ok(await _workspace_out(session, ws, current_user))
 
 
 @router.put("/{workspace_id}", response_model=APIResponse[WorkspaceOut])
@@ -82,8 +136,10 @@ async def update_workspace(
         name=body.name,
         avatar_url=body.avatar_url,
         avatar_url_provided="avatar_url" in body.model_fields_set,
+        default_bot_id=body.default_bot_id,
+        default_bot_id_provided="default_bot_id" in body.model_fields_set,
     )
-    return APIResponse.ok(WorkspaceOut.model_validate(ws))
+    return APIResponse.ok(await _workspace_out(session, ws, current_user))
 
 
 @router.delete("/{workspace_id}", response_model=APIResponse[None])

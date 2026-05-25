@@ -122,6 +122,12 @@ class Workspace(Base):
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    default_bot_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("bot_accounts.bot_id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
     # "team" (default, shared workspace with channels) or "personal" (auto-
     # provisioned per user; hosts their DMs).
     kind: Mapped[str] = mapped_column(
@@ -131,6 +137,7 @@ class Workspace(Base):
 
     channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
     memberships: Mapped[list["WorkspaceMembership"]] = relationship("WorkspaceMembership", cascade="all, delete-orphan")
+    default_bot: Mapped[Optional["BotAccount"]] = relationship("BotAccount", lazy="joined")
 
 
 class Channel(Base):
