@@ -1,7 +1,7 @@
 """add document sets
 
-Revision ID: 060
-Revises: 059
+Revision ID: 061
+Revises: 060
 Create Date: 2026-05-25
 """
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "060"
-down_revision = "059"
+revision = "061"
+down_revision = "060"
 branch_labels = None
 depends_on = None
 

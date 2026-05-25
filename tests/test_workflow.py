@@ -58,6 +58,7 @@ def test_normal_message_builds_unified_write_workflow() -> None:
         "CommitStage",
         "EmitStage",
         "FanoutUnreadStage",
+        "NotificationFanoutStage",
     ]
 
 
