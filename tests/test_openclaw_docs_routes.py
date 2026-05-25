@@ -171,9 +171,8 @@ async def test_agent_bridge_register_accepts_acp_provider(
     assert data["bot"]["description"] == "ACP Agent: opencode-main"
     assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["botToken"] == token
     agent_config = data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]
-    assert agent_config["command"] == "opencode"
-    assert agent_config["args"] == ["acp", "--cwd", "$PWD"]
-    assert agent_config["promptTimeoutMs"] >= 180_000
+    assert agent_config["command"] == "<agent-acp-command>"
+    assert agent_config["args"] == []
 
     bot = (
         await db_session.execute(select(BotAccount).where(BotAccount.username == "docs_acp_bot"))

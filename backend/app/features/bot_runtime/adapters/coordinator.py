@@ -154,6 +154,10 @@ def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None
             "- 只基于本提示词包含的上下文回答。若关键信息缺失，明确说明你的假设是什么。",
         ]
         if "call_user" in profile.enabled_tools:
+            rules.append("- 对于文档、代码、配置中未明确说明的信息，禁止编造或假装确定；无法验证时应明确说明“不确定”或“信息不足”。")
+            rules.append("- 信息不足时，优先基于已有上下文继续推进；仅当缺失信息会影响结果正确性、执行安全性或关键决策时，才向用户提问。")
+            rules.append("- 允许对非关键细节采用最小必要假设，但必须明确标注为“假设”，且不得影响核心逻辑、数据正确性或系统行为。")
+            rules.append("- 不得自行假设接口语义、配置含义、业务规则、权限逻辑或环境状态；能从代码、日志、配置或上下文中验证的信息，不要向用户重复确认。")
             rules.append("- call_user 仅在需要关键决策（如授权、选型确认）且已有方案的情况下使用。不要用 call_user 代替回答。")
             rules.append("- 若需要澄清多个问题，必须使用 call_user 的 questions 列表，每个问题单独 prompt 与选项；不要把多个问题塞进一个 prompt。")
         if "call_bot" in profile.enabled_tools:
@@ -172,21 +176,15 @@ def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None
                 "- 对重要决策、技术选择和确认计划调用 update_decision。",
                 "- 只有存在具体的新信息需要持久化时才调用记忆工具。",
             ])
-        if profile.intent == "help":
+        if profile.intent == "general":
             rules.extend([
                 "",
-                "## 帮助回答规则",
+                "## 通用对话规则",
                 "",
-                "- 操作类问题要给出具体 UI 入口和简短编号步骤。",
-                "- 如果帮助上下文没有覆盖精确问题，说明这一点并给出最接近的安全路径。",
-            ])
-        if profile.intent == "project":
-            rules.extend([
-                "",
-                "## 项目对话规则",
-                "",
-                "- 直接给出具体建议、方案或分析，不要用提问代替回答。",
-                "- 如果确实需要更多信息才能给出准确答案，用一句话追问，同时先给出基于现有信息的初步建议。",
+                "- 所有工具随时可用：优先用 search_help_docs 查本地文档，用 web_search 查外部信息。",
+                "- 直接给出最佳答案，如果有疑问先给方案再追问，不要只问不答。",
+                "- 操作类问题给出具体 UI 入口和编号步骤；技术问题给出具体实现或配置。",
+                "- 需要记忆持久化时主动调用 update_*/create_todo 等工具。",
             ])
         return "\n".join(rules)
 
@@ -1084,6 +1082,77 @@ Args:
         logger.info("channel_bot[tool]: web_search query='%s' num=%d", query, num_results)
         return result
 
+    @tool
+    async def search_help_docs(keyword: str) -> str:
+        """Search AgentNexus built-in help documents (docs/help/*.md) by keyword.
+
+        Use this FIRST when the user asks a how-to or configuration question
+        before falling back to web_search. Returns a ranked list of matching
+        documents with excerpts.
+
+        Args:
+            keyword: Search keyword or phrase (Chinese or English).
+        """
+        from app.features.bot_runtime.adapters.help_doc_search import search_help_docs as _search
+
+        results = _search(keyword.strip(), top_n=5)
+        if not results:
+            return _t(
+                locale,
+                f'No local docs matched "{keyword}". Try different keywords or use web_search.',
+                f'本地文档中未找到匹配"{keyword}"的内容，可尝试换关键词或使用 web_search。',
+            )
+        lines = [
+            _t(
+                locale,
+                f"=== Local help docs matching \"{keyword}\" (top {len(results)}) ===",
+                f"=== 本地帮助文档匹配 \"{keyword}\"（共 {len(results)} 条）===",
+            ),
+            "",
+        ]
+        for r in results:
+            lines.append(f"## {r['title']}")
+            lines.append(f"  File: `{r['filename']}`  Score: {r['score']}")
+            lines.append(f"  > {r['snippet']}")
+            lines.append("")
+        lines.append(
+            _t(
+                locale,
+                "To read a full document, call read_help_doc with the filename stem.",
+                "如需读取完整文档，请调用 read_help_doc 并传入文件名（不含 .md 后缀）。",
+            )
+        )
+        return "\n".join(lines)
+
+    @tool
+    async def read_help_doc(filename: str) -> str:
+        """Read the full content of a specific AgentNexus help document.
+
+        Use this after search_help_docs when you need the complete text
+        of a particular document.
+
+        Args:
+            filename: Document filename stem (without .md extension),
+                      e.g. "系统管理说明书" or "AgentBridge接入指南".
+        """
+        from app.features.bot_runtime.adapters.help_doc_search import read_help_doc as _read
+
+        content = _read(filename.strip())
+        if not content:
+            available = []
+            try:
+                from app.features.bot_runtime.adapters.help_doc_search import _HELP_DOCS
+                available = [d.stem for d in _HELP_DOCS]
+            except Exception:
+                pass
+            hint = f" Available: {', '.join(available[:10])}" if available else ""
+            return _t(
+                locale,
+                f'Document "{filename}" not found.{hint}',
+                f'未找到文档"{filename}"。{hint}',
+            )
+        return content
+
     tools = [
         update_anchor,
         update_progress,
@@ -1098,6 +1167,8 @@ Args:
         delete_todo,
         web_fetch,
         web_search,
+        search_help_docs,
+        read_help_doc,
     ]
     if enabled_tool_names is None:
         return tools
