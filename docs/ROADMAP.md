@@ -33,6 +33,7 @@ This is the English default edition prepared for the open-source documentation s
 
 - [ ] Clean up and organize backend code.
 - [ ] Clarify message queue responsibilities and flow.
+- [ ] Plan remote bot workspace isolation, including per-bot working directories, permission boundaries, cleanup policy, and deployment/runtime safeguards.
 
 ### Features
 
