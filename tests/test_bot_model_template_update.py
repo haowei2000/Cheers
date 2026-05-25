@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    AIModel,
     AgentNexusSession,
     AgentNexusSessionBinding,
+    AIModel,
     BotAccount,
     Channel,
     ChannelMembership,
@@ -284,7 +284,9 @@ async def test_delete_bot_removes_agentnexus_sessions_and_memberships(
         member_id=bot.bot_id,
         member_type="bot",
     )
-    db_session.add_all([workspace, channel, bot, session, binding, membership])
+    db_session.add_all([workspace, channel, bot, session])
+    await db_session.flush()
+    db_session.add_all([binding, membership])
     await db_session.flush()
 
     resp = await client.delete(f"/api/v1/bots/{bot.bot_id}")
