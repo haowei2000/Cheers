@@ -3182,6 +3182,10 @@
   gap: 7px;
   min-height: 30px;
   padding: 5px 8px;
+  overflow: hidden;
+}
+.an-approval-trace-main .an-trace-kind {
+  white-space: nowrap;
 }
 .an-approval-trace-copy {
   display: inline-flex;
@@ -3251,6 +3255,7 @@
   background: var(--bg-1);
   color: var(--fg-2);
   cursor: pointer;
+  white-space: nowrap;
 }
 .an-approval-trace-actions button.allow {
   background: transparent;
