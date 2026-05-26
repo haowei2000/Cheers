@@ -139,6 +139,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True    # True=STARTTLS(587); for SSL(465), set False and use smtp_ssl=True.
     smtp_ssl: bool = False       # Use direct SSL, usually on port 465.
 
+    # Optional regex that registration emails must fully match; empty disables the policy.
+    registration_email_pattern: str = ""
 
     # Web search engine: bing_cn, baidu, or duckduckgo.
     web_search_engine: str = "bing_cn"
