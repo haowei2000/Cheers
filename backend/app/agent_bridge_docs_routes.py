@@ -60,7 +60,7 @@ class AgentBridgeRegisterBody(BaseModel):
     bridge_provider: str = Field(
         default="openclaw",
         pattern=r"^[a-zA-Z0-9_-]{1,32}$",
-        description="Agent Bridge provider metadata, e.g. openclaw or acp",
+        description="Agent Bridge provider metadata. Prefer acp; openclaw is legacy/deprecated.",
     )
     account_username: str | None = Field(
         default=None,
@@ -173,24 +173,34 @@ def _plugin_payload(request: Request) -> dict[str, Any]:
         "file_name": _PLUGIN_FILE_NAME,
         "available": plugin_path.is_file(),
         "source_url": _PLUGIN_SOURCE_URL,
+        "deprecated": True,
+        "deprecation_notice": (
+            "OpenClaw plugin links are legacy/deprecated. New deployments should "
+            "use /acp-bridge and migrate to a local ACP-capable agent installed from npm."
+        ),
+        "migration": {
+            "recommended_path": "/acp-bridge",
+            "bridge_provider": "acp",
+            "connector_package": "@haowei0520/acp-connector",
+        },
         "install": {
             "curl": f"curl -L -o /tmp/{_PLUGIN_FILE_NAME} \"{download_url}\"",
             "openclaw": f"openclaw plugins install /tmp/{_PLUGIN_FILE_NAME}",
         },
-        "config_hint": "安装插件后，用 register 响应里的 agent_bridge_config 写入 OpenClaw 配置。",
+        "config_hint": "OpenClaw 配置入口已废弃/遗留；新接入请使用 /acp-bridge 与 ACP 本地 Agent。",
     }
 
 
 def _register_schema() -> dict[str, str]:
     return {
         "username": "必填。AgentNexus 中 @ 使用的 Bot 用户名，必须唯一。",
-        "bridge_provider": "选填。Provider 元数据；ACP connector 使用 acp，OpenClaw 默认 openclaw。",
+        "bridge_provider": "选填。Provider 元数据；推荐使用 acp。openclaw 为废弃/遗留入口，仅用于已有部署维护。",
         "account_username": "选填。AgentNexus 用户名或邮箱；未提供 Bearer token 时必填。",
         "account_password": "选填。AgentNexus 登录密码；未提供 Bearer token 时必填。",
         "display_name": "选填。聊天界面显示名称。",
         "description": "选填。Bot 描述。",
-        "agent_id": "选填。OpenClaw channel plugin 用于路由的 agent id，默认 main。",
-        "gateway": "选填。记录本机 OpenClaw gateway 地址或说明，仅作为 binding_config 元数据。",
+        "agent_id": "选填。Provider agent id，默认 main；ACP 本地 Agent 可用作 account 名称。",
+        "gateway": "选填。记录本机 provider 地址或说明，仅作为 binding_config 元数据。",
         "scope": "选填。private/friend/everyone，默认 private。",
         "channel_id": "选填。注册后自动把 Bot 加入该频道；调用用户必须有添加 Bot 权限。",
         "template_id": "选填。频道派发前用于渲染任务文本的 AgentNexus PromptTemplate。",
@@ -234,7 +244,7 @@ def _answer_help(question: str, request: Request) -> dict[str, Any]:
             "sources": [
                 urls["index"],
                 f"{_http_base(request)}/manual/help/系统管理说明书",
-                f"{_http_base(request)}/manual/help/AgentNexus_接入_OpenClaw_WebSocket_指南",
+                f"{_http_base(request)}/manual/help/AgentBridge接入指南",
             ],
         }
 
@@ -244,8 +254,8 @@ def _answer_help(question: str, request: Request) -> dict[str, Any]:
         "match_score": 0,
         "title": "未找到精确匹配",
         "answer": (
-            "我没有找到精确匹配的帮助条目。OpenClaw 可以先请求 "
-            f"{urls['discovery']} 获取机器可读入口；若要注册 Bot，可在请求体里传 "
+            "我没有找到精确匹配的帮助条目。推荐先打开 /acp-bridge，使用支持 ACP 的本地 Agent。"
+            f"也可以请求 {urls['discovery']} 获取机器可读入口；若要注册 Bot，可在请求体里传 "
             f"account_username/account_password，或使用 Authorization: Bearer <token> 调用 "
             f"{urls['register']}。"
         ),
@@ -466,7 +476,7 @@ async def agent_bridge_discovery(request: Request) -> APIResponse:
 @router.get("/release/{filename}")
 @release_router.get("/release/{filename}")
 async def download_agent_bridge_plugin(filename: str) -> FileResponse:
-    """Download an OpenClaw plugin tarball from AgentNexus/release/."""
+    """Download a legacy/deprecated OpenClaw plugin tarball from AgentNexus/release/."""
     path = _plugin_file_path(filename)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="plugin not found")
@@ -595,8 +605,9 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
                     "AgentNexus is a message routing platform. You do NOT need to write\n"
                     "any code to integrate. Everything is pre-built tools + config files.\n\n"
                     "There are exactly THREE situations. Figure out which one is you:\n\n"
-                    "SITUATION 1 — You are inside OpenClaw.\n"
-                    "  → Go directly to step 2 (PATH A). You need nothing else.\n\n"
+                    "SITUATION 1 — You are starting a new integration.\n"
+                    "  → Use ACP. Install a ready-made ACP-capable local agent from npm,\n"
+                    "    then go to step 2 (PATH B).\n\n"
                     "SITUATION 2 — You ARE a standalone CLI/runtime agent.\n"
                     "  (Codex CLI, Claude Code CLI, or any agent that runs as\n"
                     "  a command-line process.)\n"
@@ -627,6 +638,9 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
                     "  → Check auth: if login this CLI is needed but not done, STOP and\n"
                     "    tell the user to log in.\n"
                     "  → Once ready, go to step 2 (PATH B).\n\n"
+                    "LEGACY SITUATION — You are maintaining an existing OpenClaw deployment.\n"
+                    "  → OpenClaw plugin links are deprecated. Keep them only for\n"
+                    "    maintenance, and plan migration to PATH B (ACP over stdio).\n\n"
                     "── GATE RULE (applies to ALL situations) ──\n\n"
                     "Before moving to ANY next step, the current step's prerequisites\n"
                     "MUST be satisfied. If a prerequisite is missing:\n"
@@ -643,9 +657,9 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
                 "step": 2,
                 "title": "Choose your path",
                 "description": (
-                    "PATH A — You are in Situation 1 (OpenClaw).\n"
-                    "  → Go to step 3.\n\n"
-                    "PATH B — You are in Situation 2 or 3 (ACP over stdio).\n"
+                    "PATH A — Legacy OpenClaw maintenance only.\n"
+                    "  → Go to step 3 only if you already run OpenClaw.\n\n"
+                    "PATH B — Recommended: ACP over stdio.\n"
                     "  → Go to step 6."
                 ),
             },
@@ -653,32 +667,43 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
             # ── PATH A: OpenClaw ──────────────────────────────────────────
             {
                 "step": 3,
-                "title": "[OpenClaw] Download the AgentNexus OpenClaw plugin",
+                "title": "[Deprecated OpenClaw] Download the legacy AgentNexus OpenClaw plugin",
                 "description": (
+                    "DEPRECATED / LEGACY: OpenClaw plugin links are retained only\n"
+                    "for existing deployments. New deployments should use /acp-bridge\n"
+                    "and migrate to a local ACP-capable agent installed from npm.\n\n"
                     "Download the pre-built plugin tarball from AgentNexus:\n"
                     "  GET /release/openclaw-channel-agentnexus.tgz\n\n"
                     "This is a ready-to-use OpenClaw channel plugin.\n"
                     "No code changes needed."
                 ),
                 "provider": "openclaw",
+                "deprecated": True,
+                "migration": "/acp-bridge",
             },
 
             {
                 "step": 4,
-                "title": "[OpenClaw] Register your bot on AgentNexus",
+                "title": "[Deprecated OpenClaw] Register your legacy bot on AgentNexus",
                 "description": (
+                    "DEPRECATED / LEGACY: Prefer bridge_provider=acp for new bots.\n\n"
                     "POST /docs/agent-bridge/register\n"
                     "Set bridge_provider=openclaw.\n"
                     "Authenticate with either account_username+account_password or Bearer token.\n\n"
                     "Save the returned bot_token immediately — it is shown only once."
                 ),
                 "provider": "openclaw",
+                "deprecated": True,
+                "migration": "/acp-bridge",
             },
 
             {
                 "step": 5,
-                "title": "[OpenClaw] Install plugin, apply config, and verify",
+                "title": "[Deprecated OpenClaw] Install plugin, apply config, and verify",
                 "description": (
+                    "DEPRECATED / LEGACY: Use this only to maintain an existing OpenClaw\n"
+                    "deployment. For new work, install an ACP-capable local agent from npm\n"
+                    "and bridge it through @haowei0520/acp-connector.\n\n"
                     "Install the downloaded .tgz into OpenClaw.\n"
                     "Take the agent_bridge_config from the register response\n"
                     "and write it into your OpenClaw configuration.\n\n"
@@ -703,6 +728,8 @@ def _discovery_payload(request: Request) -> dict[str, Any]:
                     "   → If no reply, go to step 11 (Troubleshooting)."
                 ),
                 "provider": "openclaw",
+                "deprecated": True,
+                "migration": "/acp-bridge",
             },
 
             # ── PATH B: ACP ───────────────────────────────────────────────

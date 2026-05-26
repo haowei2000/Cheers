@@ -87,15 +87,28 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
           <span className="w-9 h-9 rounded-xl bg-[#4A154B] flex items-center justify-center flex-shrink-0">
             <AppIcon name="zap" className="w-5 h-5 text-white" />
           </span>
-          <span>Connect OpenClaw</span>
+          <span>Connect OpenClaw (Deprecated)</span>
         </span>
       }
-      description="Enter Gateway URL and token to create a bot and probe its capabilities"
+      description="Legacy OpenClaw quick connect. New deployments should use ACP Bridge."
     >
       <div className="max-h-[70vh] overflow-y-auto">
           {!qcResult ? (
             /* Form. */
             <div className="space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-900">
+                OpenClaw quick connect is deprecated and kept only for existing deployments.
+                For new local agents, use{" "}
+                <a
+                  href="/acp-bridge"
+                  className="font-semibold underline underline-offset-2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  ACP Bridge
+                </a>{" "}
+                and install an ACP-capable agent from npm.
+              </div>
               {qcError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">
                   {qcError}

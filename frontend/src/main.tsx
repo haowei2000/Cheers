@@ -12,6 +12,7 @@ const App = lazy(() => import("./App"));
 const DocsPage = lazy(() => import("./DocsPage"));
 const BulletinPage = lazy(() => import("./BulletinPage"));
 const AuthCallbackPage = lazy(() => import("./AuthCallbackPage"));
+const AcpBridgePage = lazy(() => import("./AcpBridgePage"));
 
 function RouteFallback() {
   return (
@@ -43,6 +44,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/workspaces/:workspaceId/channels/:channelId" element={<App />} />
             <Route path="/auth/dingtalk/callback" element={<AuthCallbackPage />} />
             <Route path="/user-docs" element={<DocsPage />} />
+            <Route path="/acp-bridge" element={<AcpBridgePage />} />
             <Route path="/bulletin" element={<BulletinPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

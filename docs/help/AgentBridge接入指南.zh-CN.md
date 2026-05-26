@@ -2,12 +2,15 @@
 
 > **语言**：中文 | [English](AgentBridge接入指南.md)
 
-本文档说明两类外部 Agent 如何接入 AgentNexus：
+本文档说明外部 Agent 如何接入 AgentNexus：
 
-1. OpenClaw 通过 `@haowei0520/openclaw-channel-agentnexus` 插件接入。
-2. ACP 协议 Agent 通过 `@haowei0520/acp-connector` 接入，并以 OpenCode ACP 为例。
+> **OpenClaw 废弃提醒**
+>
+> 本指南中的 OpenClaw 插件链接和下载入口仅保留给已有部署维护使用，已标记为废弃/遗留路径。新部署请优先打开 `/acp-bridge`，从 npm 安装现成的 ACP agent 包，并迁移到支持 ACP 的本地 Agent，例如 Codex ACP、Claude Agent ACP、OpenCode、Gemini CLI、GitHub Copilot CLI、Qwen Code、Cline、Kilo Code 或 pi ACP。
 
-两种方式都使用 AgentNexus 的 **Agent Bridge Bot**。用户在频道或 DM 中 `@Bot` 后，AgentNexus 通过两条 WebSocket 把任务推给外部 provider，provider 再把流式文本、最终回复和附件回传给 AgentNexus。
+推荐路径：ACP 协议 Agent 通过 `@haowei0520/acp-connector` 接入，并以 OpenCode ACP 为例。
+
+推荐 ACP 路径和遗留 OpenClaw 路径都使用 AgentNexus 的 **Agent Bridge Bot**。用户在频道或 DM 中 `@Bot` 后，AgentNexus 通过两条 WebSocket 把任务推给外部 provider，provider 再把流式文本、最终回复和附件回传给 AgentNexus。
 
 ---
 
@@ -22,7 +25,7 @@ Agent Bridge Bot 是 AgentNexus 中专门给外部 provider 使用的 Bot 账号
 - `binding_type` 必须是 `agent_bridge`，不是旧版 `websocket`。
 - 每个 Bot 有独立 `botToken`；明文只在创建或 rotate 后显示一次。
 - 外部 provider 必须把 Bot 加入目标频道，用户 `@Bot用户名` 才会触发。
-- OpenClaw、ACP Connector 都是 Agent Bridge provider，不需要改 AgentNexus 后端协议。
+- ACP Connector 是推荐的 Agent Bridge provider，不需要改 AgentNexus 后端协议。OpenClaw provider 仅保留为废弃/遗留入口。
 
 ### 1.2 WebSocket 地址
 
@@ -55,7 +58,7 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 说明：
 
 - `AGENT_BRIDGE_TOKEN` 用于 `/api/v1/agent-bridge/*` 这类管理/调试 HTTP 接口。
-- OpenClaw 插件和 ACP Connector 连接两条 WS 时使用的是每个 Bot 自己的 `agb_...` token。
+- ACP Connector 和遗留 OpenClaw 插件连接两条 WS 时使用的是每个 Bot 自己的 `agb_...` token。
 
 ---
 
@@ -67,8 +70,8 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 2. 进入左侧「管理」。
 3. 在 Bot 管理中创建 Bot，绑定类型选择 **Agent Bridge Bot**。
 4. `bridge_provider` 按场景填写：
-   - OpenClaw：`openclaw`
    - ACP / OpenCode ACP：`acp`
+   - OpenClaw：`openclaw`（废弃/遗留，仅用于已有 OpenClaw 部署维护）
 5. 创建后立刻保存弹出的 `agb_...` token。
 6. 把该 Bot 加入要使用的频道。
 
@@ -80,7 +83,7 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
   -d '{
     "username": "my-agent",
     "display_name": "My Agent",
-    "bridge_provider": "openclaw",
+    "bridge_provider": "acp",
     "account_username": "admin",
     "account_password": "<你的登录密码>",
     "agent_id": "main",
@@ -92,14 +95,16 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
 
 ---
 
-## 三、连接 OpenClaw
+## 三、连接 OpenClaw（废弃/遗留）
 
-### 3.1 安装 OpenClaw channel plugin
+> 以下 OpenClaw 链接仅保留给已有部署维护使用。新接入请使用 `/acp-bridge`，迁移到从 npm 安装的、本地运行的 ACP Agent。
+
+### 3.1 安装 OpenClaw channel plugin（仅遗留维护）
 
 公开 npm 包名是 `@haowei0520/openclaw-channel-agentnexus`。如果看到
 `@haowei2000/openclaw-channel-agentnexus`，只有在你自己的私有 npm registry 中确实发布了这个包时才使用；公开 npm registry 上应使用 `@haowei0520`。
 
-推荐从 npm 拉取当前发布包并交给 OpenClaw 安装：
+只有维护已有 OpenClaw 部署时，才从 npm 拉取当前发布包并交给 OpenClaw 安装：
 
 ```bash
 npm pack @haowei0520/openclaw-channel-agentnexus@0.2.4 --pack-destination /tmp
@@ -496,7 +501,7 @@ ACP Connector 支持两条文件回传路径：
 4. `controlUrl` / `dataUrl` 是否能从 provider 所在机器访问。
 5. 后端 `AGENT_BRIDGE_ENABLED` 是否为 `true`。
 
-### 5.2 OpenClaw 显示 loaded 但没有 inbound
+### 5.2 OpenClaw（废弃/遗留）显示 loaded 但没有 inbound
 
 优先看：
 
@@ -539,7 +544,7 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 
 在 AgentNexus 管理界面对 Agent Bridge Bot 执行 rotate token，拿到新的 `agb_...` 后：
 
-- OpenClaw：更新 `~/.openclaw/openclaw.json`，再 `openclaw daemon restart`。
+- OpenClaw（废弃/遗留）：更新 `~/.openclaw/openclaw.json`，再 `openclaw daemon restart`；有维护窗口时建议迁移到 `/acp-bridge` 的 ACP Connector。
 - ACP：更新 `agentnexus-acp.json`，再 `agentnexus-acp-connector restart --name <name>`。
 
 旧 token 会立即失效。
@@ -553,5 +558,5 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 - Agent Bridge HTTP/WS 路由：`backend/app/api/v1/agent_bridge/routes.py`
 - Agent Bridge 机器可读注册页：`backend/app/agent_bridge_docs_routes.py`
 - Agent Bridge Bot 适配器：`backend/app/features/bot_runtime/adapters/agent_bridge_bot.py`
-- OpenClaw 插件包：`packages/openclaw-channel-agentnexus/`
+- OpenClaw 插件包（废弃/遗留）：`packages/openclaw-channel-agentnexus/`
 - ACP Connector：`packages/agentnexus-acp-connector/`

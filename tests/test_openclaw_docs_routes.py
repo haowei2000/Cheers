@@ -31,7 +31,11 @@ async def test_openclaw_discovery_exposes_docs_namespace(client: AsyncClient) ->
     assert data["plugin"]["download_url"].endswith(
         "/release/openclaw-channel-agentnexus.tgz"
     )
+    assert data["plugin"]["deprecated"] is True
+    assert data["plugin"]["migration"]["recommended_path"] == "/acp-bridge"
+    assert data["plugin"]["migration"]["bridge_provider"] == "acp"
     assert "openclaw plugins install" in data["plugin"]["install"]["openclaw"]
+    assert "推荐使用 acp" in body_schema["bridge_provider"]
 
 
 @pytest.mark.asyncio
@@ -78,6 +82,7 @@ async def test_openclaw_help_answers_question(client: AsyncClient) -> None:
     data = resp.json()["data"]
     assert data["matched"] is True
     assert "OpenClaw" in data["answer"]
+    assert "/acp-bridge" in data["answer"]
     assert "/docs/agent-bridge/register" in data["answer"]
 
 
@@ -121,7 +126,12 @@ async def test_openclaw_register_creates_websocket_bot(
     assert data["plugin"]["download_url"].endswith(
         "/release/openclaw-channel-agentnexus.tgz"
     )
-    assert data["agent_bridge_config"]["channels"]["agentnexus"]["accounts"][0]["botToken"] == token
+    assert data["plugin"]["deprecated"] is True
+    assert (
+        data["agent_bridge_config"]["channels"]["agentnexus"]["accounts"][0]["botToken"]
+        == token
+    )
+    assert data["acp_connector_config"]["accounts"]["docs_oc_bot"]["botToken"] == token
     assert data["agentnexus_auth"]["method"] == "account_password"
     assert data["agentnexus_auth"]["access_token"]
 
