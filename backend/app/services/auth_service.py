@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, UnauthorizedError
 from app.db.models import EmailCode, Friendship, KeychainItem, User
 from app.repositories.user_repo import UserRepository
@@ -19,6 +20,44 @@ from app.services.auth.password_utils import verify_password as _verify_password
 _OTP_COOLDOWN_SECONDS = 60
 _OTP_EXPIRE_MINUTES = 10
 _OTP_VALID_PURPOSES = {"register", "reset_password", "change_password"}
+
+
+def _normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
+def _validate_required_email(email: str | None) -> str:
+    normalized = _normalize_email(email)
+    if not normalized or "@" not in normalized:
+        raise BadRequestError("邮箱格式不正确")
+    return normalized
+
+
+def _registration_email_pattern() -> str:
+    return settings.registration_email_pattern.strip()
+
+
+def _validate_registration_email_pattern(email: str) -> None:
+    pattern = _registration_email_pattern()
+    if not pattern:
+        return
+    try:
+        matched = re.fullmatch(pattern, email, flags=re.IGNORECASE)
+    except re.error as exc:
+        raise BadRequestError("注册邮箱规则配置无效，请联系管理员") from exc
+    if not matched:
+        raise BadRequestError("注册邮箱不符合要求")
+
+
+def _prepare_registration_email(email: str | None) -> str | None:
+    normalized = _normalize_email(email)
+    if not normalized:
+        if _registration_email_pattern():
+            raise BadRequestError("注册邮箱不能为空")
+        return None
+    normalized = _validate_required_email(normalized)
+    _validate_registration_email_pattern(normalized)
+    return normalized
 
 
 def _validate_password(password: str) -> None:
@@ -41,9 +80,9 @@ class AuthService:
         """Send verification code."""
         if purpose not in _OTP_VALID_PURPOSES:
             raise BadRequestError("无效的 purpose")
-        email = email.strip().lower()
-        if not email or "@" not in email:
-            raise BadRequestError("邮箱格式不正确")
+        email = _validate_required_email(email)
+        if purpose == "register":
+            _validate_registration_email_pattern(email)
 
         existing = await self.user_repo.get_by_email(email)
         if purpose == "register" and existing:
@@ -105,6 +144,7 @@ class AuthService:
         if not username:
             raise BadRequestError("用户名不能为空")
         _validate_password(password)
+        email = _prepare_registration_email(email)
         if await self.user_repo.get_by_username(username):
             raise ConflictError(f"用户名 '{username}' 已被注册")
         if email:
