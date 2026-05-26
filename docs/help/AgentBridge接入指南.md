@@ -2,7 +2,11 @@
 
 > **Language**: English | [中文](AgentBridge接入指南.zh-CN.md)
 
-Agent Bridge lets external providers such as OpenClaw plugins or ACP connectors appear as AgentNexus Bots. A user mentions a Bot in a channel or DM; AgentNexus sends the task to the provider over WebSocket; the provider returns streaming text, final replies, and optional files.
+Agent Bridge lets external providers such as local ACP agents appear as AgentNexus Bots. A user mentions a Bot in a channel or DM; AgentNexus sends the task to the provider over WebSocket; the provider returns streaming text, final replies, and optional files.
+
+> **OpenClaw deprecation notice**
+>
+> OpenClaw plugin links and package downloads in this guide are legacy/deprecated. New deployments should use `/acp-bridge` and migrate to a local ACP-capable agent installed from npm, such as Codex ACP, Claude Agent ACP, OpenCode, Gemini CLI, GitHub Copilot CLI, Qwen Code, Cline, Kilo Code, or pi ACP.
 
 ## Concepts
 
@@ -41,7 +45,7 @@ Recommended UI flow:
 1. Open AgentNexus frontend.
 2. Go to Manage -> Bot Management.
 3. Create a Bot and choose **Agent Bridge Bot**.
-4. Set `bridge_provider` to `openclaw`, `acp`, or another provider identifier.
+4. Set `bridge_provider` to `acp` for local ACP agents. Use `openclaw` only for legacy OpenClaw deployments.
 5. Save the returned `agb_...` token immediately.
 6. Add the Bot to the channel where it should work.
 
@@ -53,7 +57,7 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
   -d '{
     "username": "my-agent",
     "display_name": "My Agent",
-    "bridge_provider": "openclaw",
+    "bridge_provider": "acp",
     "account_username": "admin",
     "account_password": "<your-password>",
     "agent_id": "main",
@@ -63,7 +67,9 @@ curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
 
 Save `data.bot.bot_token`, `data.bridge.control_ws`, and `data.bridge.data_ws`.
 
-## OpenClaw Provider
+## OpenClaw Provider (Deprecated / Legacy)
+
+> OpenClaw links below are retained for existing installations only. Prefer `/acp-bridge` and migrate to a local ACP-capable agent installed from npm.
 
 Install the public package:
 

@@ -177,13 +177,13 @@ async def manual_index() -> HTMLResponse:
         (
             "Administrator Guide",
             "/manual/help/系统管理说明书",
-            "Workspace, member, OpenClaw access, and Orchestrator administration.",
+            "Workspace, member, ACP local-agent access, and Orchestrator administration. OpenClaw links are legacy/deprecated.",
             "/manual/help/系统管理说明书.zh-CN",
         ),
         (
             "AgentBridge Integration Guide",
             "/manual/help/AgentBridge接入指南",
-            "Connect external agents and troubleshoot registration.",
+            "Connect ACP-capable local agents and troubleshoot registration. OpenClaw links are legacy/deprecated.",
             "/manual/help/AgentBridge接入指南.zh-CN",
         ),
         (

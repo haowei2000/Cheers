@@ -42,8 +42,8 @@ HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
         "如何接入外部 Agent",
         "外部 Agent 可通过 `/docs/agent-bridge/discovery` 获取发现信息，通过 `/docs/agent-bridge/register` 注册为 Agent Bridge Bot。"
         "注册成功后会返回 bot_token、controlUrl、dataUrl 和 provider 配置片段。"
-        "支持 OpenClaw 插件和 ACP Connector 两种接入方式：OpenClaw 插件包可从 `/release/openclaw-channel-agentnexus.tgz` 下载；"
-        "ACP 协议 Agent（如 Codex ACP）通过 `@haowei0520/acp-connector` 接入。详见《Agent Bridge 接入指南》。",
+        "推荐使用 ACP Connector：从 npm 安装支持 ACP 的本地 Agent 包，再通过 `@haowei0520/acp-connector` 接入。"
+        "OpenClaw 插件下载链接为废弃/遗留入口，仅保留给已有部署维护使用。详见 `/acp-bridge` 和《Agent Bridge 接入指南》。",
     ),
     HelpEntry(
         ("发消息", "聊天", "怎么发", "怎么@", "如何@", "at bot", "@"),
@@ -101,7 +101,7 @@ HELP_ENTRIES_EN: Sequence[HelpEntry] = (
     HelpEntry(
         ("agent bridge", "openclaw", "acp", "acp-connector", "acp connector", "connect agent", "register bot", "external agent"),
         "How to Connect an External Agent",
-        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. Two integration methods are supported: OpenClaw plugin (package at `/release/openclaw-channel-agentnexus.tgz`) and ACP Connector for ACP protocol agents such as Codex ACP. See the Agent Bridge guide for details.",
+        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. The recommended path is ACP Connector: install an ACP-capable local agent from npm, then bridge it with `@haowei0520/acp-connector`. OpenClaw plugin links are legacy/deprecated and retained only for existing deployments. See `/acp-bridge` and the Agent Bridge guide for details.",
     ),
     HelpEntry(
         ("send message", "chat", "mention", "at bot", "@"),
