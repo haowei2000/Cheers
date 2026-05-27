@@ -2,9 +2,11 @@ export const BEGINNER_MODE_KEY = "agentnexus-beginner-mode";
 
 export function getStoredBeginnerMode(): boolean {
   try {
-    return localStorage.getItem(BEGINNER_MODE_KEY) === "1";
+    const stored = localStorage.getItem(BEGINNER_MODE_KEY);
+    if (stored === null) return true;
+    return stored === "1";
   } catch {
-    return false;
+    return true;
   }
 }
 

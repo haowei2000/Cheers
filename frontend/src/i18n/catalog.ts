@@ -9,7 +9,7 @@ export type LanguageOption = {
 };
 
 export const LANGUAGE_STORAGE_KEY = "agentnexus.language";
-export const DEFAULT_LANGUAGE: AppLanguage = "en";
+export const DEFAULT_LANGUAGE: AppLanguage = "zh-CN";
 
 export const LANGUAGE_OPTIONS: LanguageOption[] = [
   { code: "en", label: "English", nativeLabel: "English", targetLanguage: "en", mode: "curated" },

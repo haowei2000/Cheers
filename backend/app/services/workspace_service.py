@@ -100,13 +100,31 @@ class WorkspaceService:
         locale = normalize_locale(locale)
         existing = await self.get_personal_workspace(user)
         if existing:
+            await self._ensure_personal_default_bot(existing)
             await self._ensure_personal_helper_dm(user, existing, locale=locale)
             return existing
         ws = await self.repo.create("Personal", kind=PERSONAL_WORKSPACE_KIND)
         await self.repo.add_member(ws.workspace_id, user.user_id, role="owner")
+        await self._ensure_personal_default_bot(ws)
         await self.session.flush()
         await self._ensure_personal_helper_dm(user, ws, locale=locale)
         return ws
+
+    async def _ensure_personal_default_bot(self, workspace: Workspace) -> None:
+        if workspace.kind != PERSONAL_WORKSPACE_KIND:
+            return
+        if workspace.default_bot_id:
+            return
+        helper_exists = (
+            await self.session.execute(
+                select(BotAccount.bot_id).where(BotAccount.bot_id == HELPER_BOT_ID)
+            )
+        ).scalar_one_or_none()
+        if not helper_exists:
+            return
+        workspace.default_bot_id = HELPER_BOT_ID
+        self.session.add(workspace)
+        await self.session.flush()
 
     async def _ensure_personal_helper_dm(self, user: User, workspace: Workspace, *, locale: str | None = None) -> None:
         helper_exists = (
