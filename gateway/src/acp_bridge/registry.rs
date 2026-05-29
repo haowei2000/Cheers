@@ -8,19 +8,21 @@ use uuid::Uuid;
 
 // ── Trait 定义（可替换实现的接口）────────────────────────────────────────────
 
-/// 向 bot 连接派发任务 / 发送数据帧的接口。
-///
-/// 本期实现：InProcessBotLocator（进程内 DashMap）。
-/// 未来多实例：换成一致性哈希 + 跨实例路由，只换这里。
+/// 【业务层接口】向 bot 派发任务 / 发送数据帧。
+/// 单实例：InProcessBotLocator。多实例：RedisBotLocator。
 #[async_trait]
 pub trait BotLocator: Send + Sync {
-    /// 通过 control WS 向 bot 派发 task 帧。
-    /// 返回 false 表示 bot 不在线。
     async fn dispatch_task(&self, bot_id: Uuid, task: Value) -> bool;
-
-    /// 通过 data WS 向 bot 发送数据帧（resource_res、permission_request 等）。
-    /// 返回 false 表示 bot 不在线。
     async fn send_data(&self, bot_id: Uuid, frame: Value) -> bool;
+}
+
+/// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
+/// 只有 transport/ws/acp_bridge.rs 使用。
+/// 单实例：InProcessBotLocator。多实例：RedisBotRegistry。
+pub trait BotRegistry: Send + Sync {
+    fn bind_control(&self, bot_id: Uuid, conn_id: Uuid, task_tx: mpsc::Sender<Value>);
+    fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>);
+    fn unbind(&self, bot_id: Uuid);
 }
 
 // ── Bot 会话（单 bot 的连接状态）─────────────────────────────────────────────
@@ -48,36 +50,6 @@ impl InProcessBotLocator {
         })
     }
 
-    /// bot control WS 连接时注册。新连接 supersede 旧连接。
-    pub fn bind_control(
-        &self,
-        bot_id: Uuid,
-        connection_id: Uuid,
-        control_tx: mpsc::Sender<Value>,
-    ) -> Option<BotSession> {
-        self.sessions.insert(
-            bot_id,
-            BotSession {
-                bot_id,
-                connection_id,
-                control_tx,
-                data_tx: None,
-            },
-        )
-    }
-
-    /// bot data WS 连接时绑定（control 必须已经连上）。
-    pub fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
-        if let Some(mut session) = self.sessions.get_mut(&bot_id) {
-            session.data_tx = Some(data_tx);
-        }
-    }
-
-    /// bot 断线时移除。
-    pub fn unbind(&self, bot_id: Uuid) {
-        self.sessions.remove(&bot_id);
-    }
-
     /// 查询 bot 是否在线（control + data 都已连接）。
     pub fn is_online(&self, bot_id: Uuid) -> bool {
         self.sessions
@@ -92,6 +64,27 @@ impl Default for InProcessBotLocator {
         Self {
             sessions: DashMap::new(),
         }
+    }
+}
+
+impl BotRegistry for InProcessBotLocator {
+    fn bind_control(&self, bot_id: Uuid, conn_id: Uuid, task_tx: mpsc::Sender<Value>) {
+        self.sessions.insert(bot_id, BotSession {
+            bot_id,
+            connection_id: conn_id,
+            control_tx: task_tx,
+            data_tx: None,
+        });
+    }
+
+    fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
+        if let Some(mut s) = self.sessions.get_mut(&bot_id) {
+            s.data_tx = Some(data_tx);
+        }
+    }
+
+    fn unbind(&self, bot_id: Uuid) {
+        self.sessions.remove(&bot_id);
     }
 }
 

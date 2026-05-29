@@ -4,7 +4,7 @@ use sqlx::PgPool;
 
 use crate::{
     acp_bridge::{
-        registry::{BotLocator, InProcessBotLocator},
+        registry::{BotLocator, BotRegistry},
         stream::StreamRegistry,
     },
     config::Config,
@@ -34,9 +34,8 @@ pub struct AppState {
 
     /// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
     /// - 只有 transport/ws/acp_bridge.rs 用这个（bind_control / bind_data）。
-    /// - 这些是进程内特有操作，故不进 BotLocator trait。
-    /// - 多实例迁移时：删除此字段，WS handler 改为往 Redis 写连接元信息。
-    pub bot_registry: Arc<InProcessBotLocator>,
+    /// - 单实例：InProcessBotLocator。多实例：RedisBotRegistry。
+    pub bot_registry: Arc<dyn BotRegistry>,
 
     /// delta/done 回流注册表（msg_id → StreamEntry）。
     pub stream_registry: Arc<StreamRegistry>,
