@@ -26,11 +26,16 @@ pub struct AppState {
     /// 浏览器 WS 连接管理器（subscribe/unsubscribe + 成员资格缓存）。
     pub conn_manager: Arc<ConnectionManager>,
 
-    /// 向 bot 派发任务 / 发送数据帧（trait object，未来可换 Redis 实现）。
+    /// 【业务层接口】向 bot 派发任务 / 发送数据帧。
+    /// - dispatcher、domain 层只用这个，不感知底层实现。
+    /// - 单实例：指向同一个 InProcessBotLocator 实例。
+    /// - 多实例迁移：换成 RedisOrNatsBotLocator，此字段签名不变，其余代码零改动。
     pub bot_locator: Arc<dyn BotLocator>,
 
-    /// 本期进程内实现，直接暴露 bind_control/bind_data 给 WS handler。
-    /// 未来多实例时这个字段去掉，bind 操作通过总线完成。
+    /// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
+    /// - 只有 transport/ws/acp_bridge.rs 用这个（bind_control / bind_data）。
+    /// - 这些是进程内特有操作，故不进 BotLocator trait。
+    /// - 多实例迁移时：删除此字段，WS handler 改为往 Redis 写连接元信息。
     pub bot_registry: Arc<InProcessBotLocator>,
 
     /// delta/done 回流注册表（msg_id → StreamEntry）。
