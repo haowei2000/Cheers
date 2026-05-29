@@ -171,7 +171,52 @@ connector 拨 control + data (botToken)
 
 ---
 
-## 8. 与既有契约的衔接
+## 8. 回流关联：(bot+session) 的输出怎么回到正确频道
+
+**关联键是 `msg_id`（占位消息 id），不是 channel_id、更不是 session_key。**
+
+现状链路（`streams.py` 的 `StreamRegistry`：`msg_id → {bot_id, channel_id, task_id}`）：
+
+```
+1. worker 跑 pipeline → 在目标 channel 建【占位 Message】
+   (msg_id, channel_id, sender=bot, is_partial=true)
+   → stream_registry.register(msg_id, bot_id, channel_id)
+   → dispatch 给 connector 时带 msg_id
+2. 远程 agent 流式输出 → connector 发 delta{msg_id, seq, delta} / done{msg_id}
+3. bridge_apply_delta(msg_id) → registry.get(msg_id) → 取 channel_id → 广播
+```
+
+- **`session_key` 不参与回流路由**：它只用于本地 ACP agent 隔离上下文。回流完全靠 `msg_id`——端到端关联令牌。
+- **「哪个频道」的持久真相 = PG `Message.channel_id`**：现有 delta handler 的恢复路径，registry 缺失时 `s.get(Message, msg_id)` 重建 stream。
+
+### 8.1 新架构的跨进程问题（关键）
+
+> 占位 Message 由 **worker** 创建，但 delta 回流到**持有 connector 的 Bridge 实例**——**不同进程**。
+> Bridge 收到 delta 时，其进程内 `StreamRegistry` 没有该 msg_id。
+
+**解法**：dispatch 时由 worker 把 `channel_id` 直接带给 Bridge（worker 刚建占位，channel_id 现成）：
+
+```
+dispatch payload (worker→Bridge):  { bot_id, channel_id, msg_id, scope, ... }
+Bridge 收到 delta{msg_id, seq} →
+  用 dispatch 带下来的 msg_id→channel_id 映射（进程内，同 bot 同实例够用）
+  PG Message.channel_id 兜底（connector 重连重放时）
+  → publish NATS rt.stream.{channel_id}.{msg_id}  → Gateway fan-out（WIRE §8）
+```
+
+- channel_id **不靠 Bridge 反查 session**，由 worker dispatch 时带下来；PG 仅作重连兜底。
+- ACP 的 `delta` 帧**已自带 seq** → 与 [WIRE §5](./WIRE_PROTOCOL.md) 客户端去重天然对齐，无需额外改造。
+
+### 8.2 cancel 也要跨进程
+
+现状 cancel 靠进程内 `StreamState.cancel_event` / `producer_task.cancel()`。新架构中取消请求（来自 REST/用户）需经 NATS 发到**持有 connector 的 Bridge 实例**（dispatch 的反向）：
+
+```
+REST 取消 → NATS acp.cancel.{bot_id}（按 presence 路由到 owner 实例）
+          → Bridge 在该 msg_id 的 StreamState 触发 cancel → 通知本地 agent
+```
+
+## 9. 与既有契约的衔接
 
 - 输出仍经 EventBus → NATS `rt.stream.*` / `rt.channel.*`（[WIRE §8](./WIRE_PROTOCOL.md)）→ Gateway → 浏览器，客户端线协议零差异。
 - worker↔Bridge 的 dispatch 用 RS256 service token（[WIRE §6.1](./WIRE_PROTOCOL.md)）。
@@ -179,14 +224,17 @@ connector 拨 control + data (botToken)
 
 ---
 
-## 9. 迁移要点（接 Phase 2）
+## 10. 迁移要点（接 Phase 2）
 
 | 改动 | 说明 |
 |------|------|
 | presence 注册表 | 新增 NATS KV 读写 + TTL；bind/unbind 处接入 |
 | 跨实例 supersede | 订阅 `acp.supersede.{bot_id}`，关本地 stale 连接 |
 | 一致性哈希入口 | Bridge 前置路由按 bot_id；connector 携带路由键 |
+| dispatch 带 channel_id | worker→Bridge 的 dispatch payload 带 `{channel_id, msg_id}`，回流无需反查 |
+| cancel 跨进程 | REST 取消经 `acp.cancel.{bot_id}` 路由到 owner 实例触发 StreamState cancel |
 | 文件独立 lane | `file_upload` 帧改为引用 + REST/S3 旁路 |
 | 并发调度器 | 每 bot `max_concurrent_sessions` + 队列 |
 | seq 计数器 | 维持「进程内缓存 + DB bootstrap」，failover 自动重 bootstrap |
+| StreamRegistry | 降级为单实例内 buffer/cancel 协调；跨进程真相是 PG `Message.channel_id` |
 | event_log / session 绑定 | **不动**（已 DB-backed，天然支持多实例） |
