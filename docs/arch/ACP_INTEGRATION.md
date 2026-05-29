@@ -1,11 +1,11 @@
 # AgentNexus ACP 接入设计（外部 Agent / Agent Bridge）
 
-> 版本：v0.1 设计草稿
+> 版本：v0.2
 > 分支：`break/rust-gateway-arch`
-> 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [TASK_DELIVERY](./TASK_DELIVERY.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
+> 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
 
 本文确定 **ACP 协议 / ACP connector**（外部 Agent，如 OpenCode 等本地 stdio agent）
-在 Rust Gateway + Python Worker 新架构下的位置。
+以及**内置 Agent Service** 在 Rust Backend 架构下的位置。
 
 ---
 
@@ -13,15 +13,16 @@
 
 | 维度 | 决策 | 理由 |
 |------|------|------|
-| ACP 反向 WS 终结点 | **独立 Agent Bridge 服务（Python）** | 有状态、连接亲和，scaling 轴 = connector 数，独立于 LLM 吞吐 |
-| 是否进 Rust Gateway | **否** | ACP 是快变 Agent 执行层（JSON-RPC/会话/文件分块），非哑数据平面 |
-| Worker→Bridge 通信 | **NATS request/reply**，按 `bot_id` 路由到持有 connector 的实例 | 解决多副本下的连接黏性 |
-| connector 鉴权 | **botToken（agb_）在 Bridge 验**，维持现状 | Rust Gateway 不参与 agent-bridge 连接 |
-| 客户端侧线协议 | **不变** | ACP 输出经同一 EventBus → NATS → Gateway → 浏览器 |
+| Rust Backend 职责 | **全量**：REST API + WS Gateway + Agent Bridge 协议 | 单一 Rust 进程，内部模块边界分明 |
+| 内置 Agent 定位 | **独立 Python 服务，走 Agent Bridge 协议** | 和外置 ACP bot 零区别，零特权 |
+| 资源访问 | **统一 `resource_req/res` 协议**（data channel） | bot 通过协议访问平台资源，不直连 DB |
+| connector 鉴权 | **botToken（agb_）在 Rust Backend 验** | 统一鉴权入口 |
+| 客户端线协议 | **不变** | Bot 输出经 Rust Backend realtime fan-out → 浏览器 |
+| NATS | **不需要** | Rust Backend 单进程处理所有 WS/REST，无需消息总线 |
 
 ---
 
-## 1. 现状
+## 1. 现状（不变）
 
 ### 形态
 ACP connector 跑在**开发者机器/私有环境**，拉起本地 ACP stdio agent（OpenCode、Claude 兼容），
@@ -33,101 +34,166 @@ ACP connector 跑在**开发者机器/私有环境**，拉起本地 ACP stdio ag
 | 端点 | 用途 |
 |------|------|
 | `/ws/agent-bridge/control` | connector 生命周期、会话握手、心跳 |
-| `/ws/agent-bridge/data` | 消息/文件分块/流式输出 |
-| `/ws/agent-bridge/dispatch` | 派发/调试流 |
+| `/ws/agent-bridge/data` | 消息/文件分块/流式输出/资源访问 |
+| `/ws/agent-bridge/dispatch` | 派发/调试流（legacy） |
 
 ### 关键内部结构
-- **`BridgeDispatcher`**（`dispatcher.py`）：**进程内** pub/sub。connector 按 `bot_id` 订阅，事件经 `asyncio.Queue` 派发。对应客户端侧的 `ws_manager`，但面向 connector。
-- **`session_map.py`（968 行）**：复用 provider session key，保持 ACP 会话上下文（**有状态**，最大的文件）。
-- **`service.py`（632 行）**：dispatch/event_log/pending/file 处理。
+- **`BridgeDispatcher`**（`dispatcher.py`）：进程内 pub/sub。connector 按 `bot_id` 订阅。
+- **`session_map.py`**：复用 provider session key，保持 ACP 会话上下文（有状态）。
+- **`service.py`**：dispatch/event_log/pending/file 处理。
 - **鉴权**：`botToken`（agb_xxx）→ `bot_accounts.bot_token_hash`（哈希存储）。
-- **内部触发侧**：`adapters/agent_bridge_bot.py`——pipeline 选中 agent_bridge 类型 bot 时，向 BridgeDispatcher 投递，connector 的 WS handler 取走 → 本地 agent → data WS 流式回传 → reply handler 落定消息。
-
-### 单进程隐含假设
-`BridgeDispatcher` 是进程内队列。单进程天然 work；**多副本后**：connector 反向连到某一个进程，而 task 可能被另一 worker 消费 → 出现「**connector 连接黏性**」问题。
 
 ---
 
-## 2. 定位：ACP = 另一种 task executor，留在 Python
-
-内部 bot 与外部 ACP bot 是镜像关系：
-
-| | 内部 bot | 外部 ACP bot |
-|--|---------|-------------|
-| 执行 | worker 内调 LLM adapter | 路由到持有 connector 的 Bridge → 本地 agent |
-| 状态 | 无（每次 rehydrate） | 有（ACP session 复用） |
-| 输出 | EventBus → NATS | 同上（经 Bridge 转回 worker 的 EventBus） |
-
-> **ACP 反向 WS 不进 Rust Gateway**：Gateway 只做浏览器侧哑 fan-out（[WIRE_PROTOCOL](./WIRE_PROTOCOL.md)）。
-> ACP 的 JSON-RPC / 会话映射 / 文件分块是 ~2500 行快变 Python 逻辑，属于我们明确要留在 Python 的 Agent 层。
-> 在 Rust 重写它 = 违背「Agent 层留 Python」原则。
-
----
-
-## 3. 目标拓扑
+## 2. 目标架构
 
 ```
-                         Browser
-                            │ WS (浏览器侧)
-                            ▼
-                   ┌─────────────────┐
-                   │  Rust Gateway    │  (与 ACP 无关)
-                   └────────┬─────────┘
-                            │ NATS rt.* (输出回浏览器)
-        ┌───────────────────┼───────────────────────┐
-        ▼                   ▼                         │
-┌──────────────┐   ┌──────────────────┐              │
-│ Python REST  │   │ Python Agent      │              │
-│ API          │   │ Workers (无状态)   │              │
-│ 触发 task     │   │ run pipeline 选 bot│              │
-└──────┬───────┘   │  ├ 内部 bot:调 LLM │              │
-       │ NATS task │  └ ACP bot:NATS    │              │
-       └──────────▶│     request/reply  │              │
-                   └─────────┬──────────┘              │
-                             │ agentnexus.acp.dispatch.{bot_id}
-                             ▼                          │
-                   ┌──────────────────────┐            │
-                   │ Agent Bridge 服务      │────────────┘
-                   │ (Python, 有状态)        │  输出 → NATS rt.*
-                   │  · BridgeDispatcher    │
-                   │  · session_map         │
-                   │  · botToken 验证        │
-                   │  · control/data/dispatch WS
-                   └──────────┬─────────────┘
-                              ↕ 反向 WS (control/data)
-                   ┌──────────────────────┐
-                   │  ACP Connector (开发机) │
-                   └──────────┬─────────────┘
-                              ↕ stdio
-                   ┌──────────────────────┐
-                   │  本地 ACP agent        │
-                   └──────────────────────┘
+Browser / Mobile
+  │ WS + REST（同一端口）
+  ▼
+┌──────────────────────────────────────────────────────────┐
+│                    Rust Backend                           │
+│                                                           │
+│  ┌─ transport ──────────────────────────────────────────┐ │
+│  │  /api/v1/*  → REST handlers                           │ │
+│  │  /ws/*      → WS handlers                             │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                           │
+│  ┌─ domain ─────────────────────────────────────────────┐ │
+│  │  channels / messages / bots / files / memory / ...    │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                           │
+│  ┌─ realtime ───────────────────────────────────────────┐ │
+│  │  WS 连接管理 + fan-out（浏览器侧）                      │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                                           │
+│  ┌─ agent_bridge ───────────────────────────────────────┐ │
+│  │  bot 注册 / 任务派发 / delta 转发                       │ │
+│  │  resource API（bot 通过协议访问平台资源）                  │ │
+│  └──────────────────────────────────────────────────────┘ │
+└──────┬──────────────────────────────┬────────────────────┘
+       │ Agent Bridge WS              │ Agent Bridge WS
+       │ (control + data)             │ (control + data)
+       ▼                              ▼
+┌──────────────────┐    ┌──────────────────────────┐
+│  外置 ACP Bot     │    │  内置 Agent Service       │
+│  (第三方 connector)│    │  (Python)                 │
+│                   │    │  · HttpBotAdapter (LLM)   │
+│  同一套协议        │    │  · Coordinator            │
+│  同一套契约        │    │  · Helper / HelpBot       │
+│  零特权           │    │  · Memory / RAG           │
+└──────────────────┘    │  同一套协议，零特权          │
+                         └──────────────────────────┘
+```
+
+**关键变化**：
+- 没有独立的 Agent Bridge 服务 — **Rust Backend 直接管理所有 bot 连接**
+- 没有 Python Worker — **Agent Service 替代**，走 Agent Bridge 协议
+- 没有 NATS — **WS 直连**，Rust Backend 进程内 fan-out
+
+---
+
+## 3. 内置 Agent = 普通 ACP Bot
+
+这是架构的核心决策：**内置 bot 和外置 bot 走完全一样的协议，零特权**。
+
+### 3.1 对比
+
+| 维度 | 旧架构（内置 bot） | 新架构（内置 Agent Service） |
+|------|-------------------|---------------------------|
+| 接入方式 | 进程内直接调用 | Agent Bridge WS（control + data） |
+| 数据库访问 | 直连 PostgreSQL | **通过 `resource_req` 协议访问** |
+| 任务触发 | `asyncio.create_task(run_bot)` | Rust Backend 通过 control WS 派发 |
+| 流式输出 | EventBus → WS 直接广播 | data WS `delta` → Rust Backend fan-out |
+| 文件访问 | 直接读写 S3 | **通过 `channel.files` resource 协议** |
+| 记忆访问 | 直接读写 DB | **通过 `channel.memory` resource 协议** |
+| 部署 | 和 REST API 同进程 | 独立容器 |
+| 扩容 | 和 REST API 绑定 | 独立扩容 |
+
+### 3.2 Agent Service 内部结构
+
+```python
+agent_service/
+├── main.py                     ← 入口: 连接 Agent Bridge
+├── provider.py                 ← ACP provider: 注册、接收任务、回传结果
+├── resources.py                ← ResourceClient: 通过 resource_req 访问平台资源
+├── adapters/
+│   ├── http_bot.py             ← 调 LLM API (OpenAI 兼容，流式 SSE)
+│   ├── coordinator.py          ← 多 bot 协调
+│   ├── helper.py               ← 辅助 bot
+│   └── help_bot.py             ← 文档 bot
+├── memory/                     ← 记忆管理 (通过 resource API 读写)
+├── tools/                      ← 工具调用 (web search, fetch)
+└── config.py                   ← bot_token, backend_ws_url
+```
+
+### 3.3 Agent Service 的任务执行流程
+
+```
+用户发消息 → Rust Backend 持久化 → 判断需要触发 bot
+  │
+  ▼
+Rust Backend 通过 control WS 派发任务给 Agent Service:
+  { type: "task", task_id, channel_id, msg_id, ... }
+  │
+  ▼
+Agent Service 收到任务:
+  ├─ resource_req: channel.context  (查频道上下文)
+  │   └─ resource_res: {info, members, recent_messages, memory}
+  │
+  ├─ resource_req: channel.files    (查频道文件)
+  │   └─ resource_res: {files: [...]}
+  │
+  ├─ 调 LLM API (流式)
+  │   ├─ data WS: delta(msg_id, seq:0, "...")
+  │   │   └─ Rust Backend → realtime fan-out → 浏览器
+  │   ├─ data WS: delta(msg_id, seq:1, "...")
+  │   └─ ...
+  │
+  ├─ resource_req: channel.memory.update (写入记忆)
+  │   └─ resource_res: {entries: [...]}
+  │
+  └─ data WS: done(msg_id, content="完整内容")
+      └─ Rust Backend → DB 更新 → realtime fan-out → 浏览器
 ```
 
 ---
 
-## 4. connector 连接黏性解决方案
+## 4. 外置 ACP Bot 的处理
 
-**问题**：bot 类型在 task publish 时未知（REST 触发时还没选 bot，`run_bot_pipeline` 内部才选）。
-所以路由必然是「worker 跑 pipeline → 选中 bot → 若 agent_bridge 类型 → 找到持有该 connector 的 Bridge 实例」。
+外置 ACP bot 和内置 Agent Service **共享同一个 Agent Bridge 入口**：
 
-**方案**：
+```
+/ws/agent-bridge/control   ← 所有 bot 都连这里
+/ws/agent-bridge/data      ← 所有 bot 都连这里
+```
 
-1. **连接注册**：Agent Bridge 实例在 connector 接入时，往 **NATS KV**（或 Redis）注册
-   `bot_id → bridge_instance_id`，断开时注销。
-2. **定向派发**：worker 选中 ACP bot 后，按 `bot_id` 查注册表，向持有实例的专属 subject
-   发 NATS **request/reply**：
-   ```
-   agentnexus.acp.dispatch.{bot_id}      # 持有该 connector 的 Bridge 实例独占订阅
-   ```
-3. **流式回传**：Bridge 收到本地 agent 的流式输出，按 [WIRE_PROTOCOL §8](./WIRE_PROTOCOL.md) publish 到
-   `rt.stream.{channel_id}.{msg_id}` / `rt.channel.{channel_id}`——与内部 bot 输出**走同一条路**，
-   客户端线协议零差异。
-4. **connector 不在线**：注册表查不到 → worker 发 `bot_pipeline_error` 帧（现有行为），
-   或按策略落 DLQ（[TASK_DELIVERY §7](./TASK_DELIVERY.md)）。
+Rust Backend 的 `agent_bridge::registry` 按 `bot_id` 区分，协议完全一样。
 
-> Agent Bridge 多副本时，每个 connector 仍只连一个实例；注册表保证 dispatch 精确到达。
-> 这与客户端侧「Gateway 动态订阅」是镜像设计。
+### 4.1 外置 bot 现有能力（保持不变）
+
+| 能力 | 帧类型 | 说明 |
+|------|--------|------|
+| 接收任务 | control WS `task` | 触发执行 |
+| 流式回复 | data WS `delta` + `done` | 流式输出 |
+| 直接发消息 | data WS `send` | 主动创建消息 |
+| 上传文件 | data WS `file_upload` | 文件上传 |
+| 权限请求 | data WS `permission_request` | 交互式权限卡 |
+| 断线重放 | data WS `resume` | 遗漏事件重放 |
+
+### 4.2 外置 bot 新增能力（resource 协议）
+
+通过 [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md)，外置 bot 也能：
+
+| 能力 | resource | 说明 |
+|------|----------|------|
+| 查询频道成员 | `channel.members` | 知道谁在频道里 |
+| 查询历史消息 | `channel.messages` | 读取上下文 |
+| 查询/上传文件 | `channel.files` / `channel.files.create` | 统一文件操作 |
+| 读写记忆 | `channel.memory` / `channel.memory.update` | 访问频道记忆层 |
+| 聚合上下文 | `channel.context` | 一次取多维信息 |
+
+**这是统一契约的自然红利** — 内置 bot 能做的事，外置 bot 也能做（受权限约束）。
 
 ---
 
@@ -135,45 +201,68 @@ ACP connector 跑在**开发者机器/私有环境**，拉起本地 ACP stdio ag
 
 | 连接 | 鉴权 | 由谁 |
 |------|------|------|
-| connector → Bridge（control/data） | `botToken`（agb_）比对 `bot_token_hash` | **Agent Bridge 服务**（维持现状） |
-| worker ↔ Bridge（NATS dispatch） | RS256 service token（[WIRE §6.1](./WIRE_PROTOCOL.md)） | 双方校验 `aud` |
-| 浏览器 → Gateway | 首帧 auth + RS256（与 ACP 无关） | Rust Gateway |
+| bot → Rust Backend（control/data WS） | `botToken`（agb_）比对 `bot_token_hash` | **Rust Backend**（统一鉴权入口） |
+| 浏览器 → Rust Backend（WS） | 首帧 auth + RS256 | **Rust Backend** |
+| 浏览器 → Rust Backend（REST） | Bearer JWT RS256 | **Rust Backend** |
 
-Rust Gateway **完全不参与** agent-bridge 连接，botToken 验证逻辑不动。
+所有鉴权集中在 Rust Backend。botToken 验证逻辑从 Python 移植到 Rust。
 
 ---
 
 ## 6. 文件流（inbound / outbound）
 
-- **inbound**（用户附件 → 本地 agent）：经 data WS 传递（现有路径保留）。
-- **outbound**（agent 生成文件 → AgentNexus）：connector 上传 → Python file service → S3（现有路径）。
-- 文件是数据平面到对象存储，**与 Rust Gateway 无关**，留在 Python。
+### 现有路径（保持不变）
+- **inbound**（用户附件 → bot）：经 data WS `file_upload` 帧传递。
+- **outbound**（bot 生成文件 → 平台）：data WS `file_upload` 或 resource `channel.files.create`。
+
+### 新增路径（resource 协议）
+- **批量查询**：`channel.files` — 列出频道所有文件。
+- **读取内容**：`channel.files.read` — 读取文件文本/二进制内容。
+- **分块传输**：大文件通过 `resource_chunk` 帧分块传输，不阻塞其他会话。
 
 ---
 
 ## 7. 迁移与模块归属
 
-| 现有模块 | 去向 |
-|---------|------|
-| `app/features/agent_bridge/*`（~2500 行） | **整体搬迁到 Agent Bridge 服务**，逻辑基本不改 |
-| `app/api/v1/agent_bridge/routes.py`（3 个 WS 端点） | Agent Bridge 服务 |
-| `adapters/agent_bridge_bot.py` | 改为「NATS request/reply 到 Bridge」替代进程内 BridgeDispatcher 调用 |
-| `BridgeDispatcher`（进程内队列） | 保留在 Bridge 服务内（单实例内仍是进程内派发）；跨实例靠 §4 注册表 |
+| 现有模块 | 去向 | 改动 |
+|---------|------|------|
+| `app/features/agent_bridge/*` | **移植到 Rust Backend** (`agent_bridge/` 模块) | Rust 重写，协议不变 |
+| `app/api/v1/agent_bridge/routes.py` | **移植到 Rust Backend** (`transport/ws/agent_bridge.rs`) | Rust 重写 |
+| `app/features/bot_runtime/adapters/` | **搬到 Agent Service** | 改用 resource_req 访问平台 |
+| `app/features/bot_runtime/pipeline/` | **搬到 Agent Service** | EventBus sink 改为 data WS 帧 |
+| `app/features/memory/` | **搬到 Agent Service** | 改用 resource_req 读写记忆 |
+| `app/features/agent_bridge/registry.py` | **移植到 Rust** (`agent_bridge/registry.rs`) | 内存结构用 Rust |
 
-**阶段**（接 [REFACTOR_PLAN](./REFACTOR_PLAN.md)）：
-- **Phase 2**：剥离 Agent Worker 时，同步把 agent_bridge 抽成独立 Agent Bridge 服务；
-  `agent_bridge_bot` adapter 改 NATS 调用；建 connector 注册表（NATS KV）。
-- **Phase 3**：旧的进程内直连 BridgeDispatcher 调用路径下线。
+### 阶段（接 REFACTOR_PLAN）
 
-> SSE 退场（[WIRE §0](./WIRE_PROTOCOL.md)）对 ACP 的影响：agent_bridge 现有的**每请求 SSE** 输出，
-> 切换为经 EventBus → NATS rt.* → Gateway 的 WS 流式（与内部 bot 统一）。
+| Phase | 动作 |
+|-------|------|
+| **0** | 协议定稿（resource_req/res）；Python 侧内置 bot 改走 Agent Bridge 协议（在现有 Python 单体内做） |
+| **1** | Rust Backend PoC：实现 auth + WS + agent_bridge（含 resource API）；Agent Service 独立部署 |
+| **2** | Rust Backend 全量：迁移剩余 REST 端点；旧 Python REST API 下线 |
+| **3** | 优化：Agent Service 独立扩容；resource API 限流/审计 |
+
+**Phase 0 的关键**：不需要 Rust。在现有 Python 单体内，把内置 bot 从"进程内直接调用"改成"走 Agent Bridge WS 协议"。这一步验证了协议的完整性，也为后续 Rust 重写铺路。
 
 ---
 
-## 8. 为什么不是 Rust / 为什么独立服务
+## 8. 为什么是这个架构
 
-| 备选 | 否决理由 |
-|------|---------|
-| ACP WS 进 Rust Gateway | session_map/JSON-RPC/文件分块是快变 Python Agent 逻辑，Rust 重写违背分层原则 |
-| ACP 折进 Agent Worker | 把有状态连接亲和与无状态 LLM 吞吐耦合，两者 scaling 轴冲突 |
-| **独立 Agent Bridge 服务**（采纳） | scaling 轴 = connector 数；~2500 行整体搬迁、改动小；与无状态 worker 清晰隔离 |
+| 决策 | 理由 |
+|------|------|
+| **Rust Backend 全量**（Gateway + REST 合一） | 消除 NATS 依赖；单一进程管理所有连接和数据；内部模块边界分明 |
+| **内置 Agent 走 Agent Bridge 协议** | 内置/外置零区别；Agent Service 可独立部署/扩容/替换 |
+| **bot 通过 resource 协议访问资源** | 不直连 DB；权限集中管控；可审计；外置 bot 也能用 |
+| **不把 Agent 逻辑放 Rust** | LLM 生态（Python）+ 快速迭代 + 人才成本 |
+
+---
+
+## 9. 与既有文档的衔接
+
+| 文档 | 关系 |
+|------|------|
+| [ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) | 总览，本文件的上层 |
+| [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) | 资源访问协议，bot 访问平台资源的契约 |
+| [WIRE_PROTOCOL](./WIRE_PROTOCOL.md) | 浏览器 ↔ Rust Backend 的实时线协议（输出侧） |
+| [TASK_DELIVERY](./TASK_DELIVERY.md) | 任务投递契约（简化：Rust Backend 直接派发，无需 NATS） |
+| [ACP_CONNECTION_MODEL](./ACP_CONNECTION_MODEL.md) | 连接模型深挖（单连接多 session、重连重放） |

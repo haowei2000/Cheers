@@ -141,6 +141,6 @@ effective_config  →  adapter / pipeline
 
 ## 8. 与重构主线的关系
 
-- 本设计属于 **Agent Worker（Python）** 范畴：`build_effective_bot_config()` 在 worker rehydrate 上下文（见 [TASK_DELIVERY.md](./TASK_DELIVERY.md) §5）时调用，产出喂给 adapter。
-- 与 Rust Gateway / 线协议无关——配置解析全在 Python 侧。
-- 频道覆盖的 JSONB 列是一次 Alembic 迁移；实现时机随 Agent Worker 剥离（Phase 2）。
+- 本设计属于 **Python Agent Service** 范畴：`build_effective_bot_config()` 在 Agent Service rehydrate 上下文（见 [TASK_DELIVERY.md](./TASK_DELIVERY.md) §5）时调用，产出喂给 adapter。
+- 与 Rust Backend / 线协议无关——配置解析全在 Python 侧。
+- 频道覆盖的 JSONB 列是一次 Alembic 迁移；实现时机随 Agent Service 剥离（Phase 2）。
