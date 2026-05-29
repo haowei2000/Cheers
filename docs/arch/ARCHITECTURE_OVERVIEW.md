@@ -117,6 +117,7 @@ Browser / Mobile
 | bot 资源访问（读） | `resource_req/res`，仅需频道成员 | AGENT_BRIDGE_RESOURCE §3.4 |
 | bot 资源访问（写） | `resource_req/res`，频道成员 **+ Grant**（按 trust_level） | AGENT_BRIDGE_RESOURCE §3.4 / BOT_PERMISSION §5.3 |
 | bot 权限 | ACP RBAC（Grant + 覆盖 + 审批）；trust_level 枚举 `system>trusted>standard>untrusted` | BOT_PERMISSION |
+| **写后投递（Write-Before-Deliver）** | **终态帧必须先落 PG，再 fan-out**；流式帧（delta）直接 fan-out 不落库，靠 `message_done` 全量自愈 | WIRE §4.2 |
 | 实时传输模型 | 单实例进程内 fan-out（无 NATS）；fan-out/locator 抽象为 trait | WIRE §8 / 部署模型 |
 | E2EE | **本期不做**（仅层级 A：TLS+落盘+设备认证） | SECURITY / E2EE_NOTES |
 | bot 任务投递 | Backend → control WS task 帧 → Agent Service | TASK_DELIVERY v2 |

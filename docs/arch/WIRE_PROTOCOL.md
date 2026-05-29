@@ -133,6 +133,55 @@
 | `cancel` / `permission_resolution` | 控制 | 否 | 现有形状 |
 | `channel_new_message` | user 流 · 可丢 | 否 | 跨频道未读提醒 |
 
+### 4.2 写后投递原则（Write-Before-Deliver）
+
+> **核心规则：终态帧必须先持久化到 PG，再 fan-out 给客户端。流式帧直接 fan-out，不落库。**
+
+这是 Slack、Discord 等工业级消息系统的共识做法：
+
+```
+用户发消息（REST POST）
+  ├─ domain 写 PG → 成功                  ← 先落库
+  └─ realtime::fanout::broadcast()        ← 再投递
+
+bot done 帧到达
+  ├─ domain 更新 Message 记录（is_partial=false）← 先落库
+  └─ realtime::fanout::broadcast()        ← 再投递
+
+bot delta 帧到达（message_stream）
+  └─ realtime::fanout::broadcast()        ← 直接投递，不写 PG
+```
+
+**为什么这样设计：**
+
+| 问题 | 先投递后落库 | 先落库再投递 |
+|------|------------|------------|
+| 断线重连补齐 | ❌ 客户端丢失消息 | ✅ REST 拉全量从 PG 补 |
+| 服务崩溃恢复 | ❌ 内存状态丢失 | ✅ PG 是真相来源 |
+| 消息顺序保证 | ❌ 网络抖动导致乱序落库 | ✅ PG 写入顺序即权威顺序 |
+| 投递失败处理 | 状态不一致 | PG 有记录，可重试投递 |
+
+**流式帧为什么可以不落库：**
+
+`message_stream`（delta）是中间过程，`message_done` 才是终态。终态帧带完整 `content`，客户端收到后直接覆盖对齐。因此 delta 丢失是**可自愈**的：
+
+```
+客户端收到: delta(seq0) delta(seq1) [seq2 丢失] message_done(全量)
+结果: 显示正确的完整内容，seq2 的缺口被 message_done 覆盖
+```
+
+这让 delta 通道可以是 best-effort，降低了实时层的实现复杂度。
+
+**两层分层表（实现时以此为准）：**
+
+| 分层 | 帧类型 | 落库？ | 背压满时行为 | 断线恢复方式 |
+|------|--------|--------|-------------|-------------|
+| **终态层（不可丢）** | `message` `message_done` `message_deleted` | ✅ 先落库 | 关闭连接（4408），客户端重连 | REST 拉全量补齐 |
+| **流式层（可丢）** | `message_stream` `bot_trace` `bot_processing` | ❌ 不落库 | 丢弃中间帧 | `message_done` 全量覆盖 |
+| **控制层（ephemeral）** | `error` `cancel` `permission_resolution` | ❌ | 丢弃 | 重新触发操作 |
+
+> 与 §7（背压）和 §8.1（实时层不持久化）是同一设计的不同切面：背压策略是这个原则在"队列满"场景下的体现；§8.1 的"不持久化在实时层"是这个原则的实现约束。
+
 ---
 
 ## 5. 流式顺序与去重

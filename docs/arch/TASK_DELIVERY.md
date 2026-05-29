@@ -89,10 +89,11 @@
    ├─ resource_req: channel.context (查频道上下文)
    ├─ 调 LLM API (流式)
    ├─ data WS: delta(msg_id, seq, content) × N
-   │   └─ Backend → stream → realtime fanout → 浏览器
+   │   └─ Backend → realtime fanout → 浏览器          ← 流式层：直接 fan-out，不落库
    ├─ resource_req: channel.memory.update (写记忆，可能触发审批)
    └─ data WS: done(msg_id, content)
-       └─ Backend → DB 更新 → realtime fanout → 浏览器
+       └─ Backend → DB 更新（is_partial=false）→ realtime fanout → 浏览器
+          ↑ 终态层：先落库再 fan-out（写后投递，见 WIRE §4.2）
 ```
 
 ### 3.2 占位 Message
