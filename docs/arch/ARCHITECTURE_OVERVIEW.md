@@ -8,6 +8,7 @@
 > - [TASK_DELIVERY.md](./TASK_DELIVERY.md) —— Agent 任务投递契约 v1（REST → NATS → Worker）
 > - [BOT_CONFIG_LAYERING.md](./BOT_CONFIG_LAYERING.md) —— Bot 配置分级设计（不考虑多租户）
 > - [ACP_INTEGRATION.md](./ACP_INTEGRATION.md) —— ACP 外部 Agent 接入设计（独立 Agent Bridge 服务）
+> - [ACP_CONNECTION_MODEL.md](./ACP_CONNECTION_MODEL.md) —— ACP 连接模型深挖（单连接多 session、多实例、重连重放、并发）
 
 ---
 
@@ -128,7 +129,7 @@ agentnexus.acp.dispatch.{bot_id}      派发给持有 connector 的 Bridge (见 
 | 4 | **streaming `seq` 与 worker ownership** —— 同消息被多 worker 重投会 seq 冲突 | ✅ 由 TASK_DELIVERY §4 的 claim 持有者拥有 seq 解决 |
 | 5 | **claim 部分副作用** —— worker 中途崩溃后接管重跑的 bot 回复去重，按 `(trigger_msg_id, bot_id)` 确定性 id upsert | 🔧 Phase 2 实现细节 |
 | 6 | **ACP connector 连接黏性** —— 多副本下 task 经 `acp.dispatch.{bot_id}` 精确到达持有 connector 的 Bridge 实例 | ✅ 由 ACP_INTEGRATION §4 的 NATS KV 注册表解决 |
-| 7 | **Agent Bridge 实例 HA** —— connector 重连/Bridge 故障转移、session_map 状态恢复 | 🔶 留意（Phase 4） |
+| 7 | **Agent Bridge 实例 HA / 连接模型** —— 单连接多 session、多实例亲和、重连重放、并发 | ✅ 已定稿 → ACP_CONNECTION_MODEL.md |
 
 ---
 
