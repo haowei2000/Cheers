@@ -7,6 +7,7 @@
 > - [WIRE_PROTOCOL.md](./WIRE_PROTOCOL.md) —— 实时线协议 v1（客户端 ↔ Gateway ↔ NATS ↔ Worker）
 > - [TASK_DELIVERY.md](./TASK_DELIVERY.md) —— Agent 任务投递契约 v1（REST → NATS → Worker）
 > - [BOT_CONFIG_LAYERING.md](./BOT_CONFIG_LAYERING.md) —— Bot 配置分级设计（不考虑多租户）
+> - [ACP_INTEGRATION.md](./ACP_INTEGRATION.md) —— ACP 外部 Agent 接入设计（独立 Agent Bridge 服务）
 
 ---
 
@@ -42,12 +43,22 @@ Browser
 │ Python Agent Workers     │      │ Python REST API        │
 │ · Agent 编排 / 工具调用    │      │ · CRUD / 鉴权(RS256签) │
 │ · RAG / LLM 流式          │      │ · 文件 / 触发 task      │
-│ (独立进程,可水平扩容)      │      │ (FastAPI,职责收窄)     │
+│ (无状态,可水平扩容)        │      │ (FastAPI,职责收窄)     │
 └──────────┬──────────────┘      └──────────┬────────────┘
-           └────────────┬───────────────────┘
+           │ NATS acp.dispatch.{bot_id}      │
+           ▼                                 │
+┌─────────────────────────┐                  │
+│ Python Agent Bridge 服务  │                  │
+│ · ACP connector 反向 WS   │                  │
+│ · session_map / 有状态     │                  │
+│ (scaling 轴=connector 数) │                  │
+└──────────┬──────────────┘                  │
+           └────────────┬────────────────────┘
                         ▼
         PostgreSQL + Redis + S3 + (未来 Vector DB)
 ```
+
+> ACP 外部 Agent 接入详见 [ACP_INTEGRATION.md](./ACP_INTEGRATION.md)。
 
 ---
 
@@ -55,8 +66,9 @@ Browser
 
 | 层 | 语言 | 拿走的现有模块 |
 |----|------|--------------|
-| **Gateway** | Rust | `api/v1/ws/` + `services/realtime_broker.py` + `services/ws_service.py` |
-| **Agent Worker** | Python | `features/agent_bridge/` + `features/bot_runtime/` + `features/memory/` + `tools/` |
+| **Gateway** | Rust | `api/v1/ws/` + `services/realtime_broker.py` + `services/ws_service.py`（仅浏览器侧） |
+| **Agent Worker** | Python | `features/bot_runtime/` + `features/memory/` + `tools/`（无状态，可扩容） |
+| **Agent Bridge** | Python | `features/agent_bridge/` + `api/v1/agent_bridge/`（ACP connector 反向 WS，有状态） |
 | **REST API** | Python | `channels` / `messages` / `dms` / `bots` / `files` / `auth` / `admin` / `search`（保留，职责收窄） |
 | **共用** | — | PostgreSQL + Alembic；JWT（Python 私钥签发 / Gateway 公钥验证） |
 
@@ -89,6 +101,7 @@ agentnexus.rt.channel.{id}            终态帧 · durable (JetStream)
 agentnexus.rt.user.{id}               用户通知 · best-effort
 agentnexus.rt.stream.{id}.{msg_id}    流式 delta · best-effort
 agentnexus.task.{ws}.{channel}        触发 Agent · WorkQueue (见 TASK_DELIVERY)
+agentnexus.acp.dispatch.{bot_id}      派发给持有 connector 的 Bridge (见 ACP_INTEGRATION)
 ```
 
 ---
@@ -99,7 +112,7 @@ agentnexus.task.{ws}.{channel}        触发 Agent · WorkQueue (见 TASK_DELIVE
 |-------|------|---------|
 | **0** | 准备 | 引入 NATS；REST/Worker 双写 Redis+NATS；补齐集成测试基线；生成 RS256 密钥对 |
 | **1** | Gateway 搭建 | Rust WS 接入 + 房间管理 + NATS 订阅；灰度切 10% WS 流量 |
-| **2** | Worker 剥离 | Agent Worker 独立容器化；REST 改 `nats.publish(task)` 触发；replicas≥2 |
+| **2** | Worker 剥离 | Agent Worker 独立容器化；REST 改 `nats.publish(task)` 触发；replicas≥2；**agent_bridge 抽成独立 Agent Bridge 服务**（ACP_INTEGRATION §7） |
 | **3** | 切流下线 | Gateway 全量承接 WS；下线旧 Python ws/SSE；Redis 仅留 cache |
 | **4** | 稳定优化 | 限流调优、OpenTelemetry 全链路追踪、JWT evict 主动失效、Vector DB 评估 |
 
@@ -114,6 +127,8 @@ agentnexus.task.{ws}.{channel}        触发 Agent · WorkQueue (见 TASK_DELIVE
 | 3 | **Phase 0 双写一致性** —— Redis(at-most-once) 与 NATS(at-least-once) 并行，前端去重需先于切流上线 | 🔶 留意 |
 | 4 | **streaming `seq` 与 worker ownership** —— 同消息被多 worker 重投会 seq 冲突 | ✅ 由 TASK_DELIVERY §4 的 claim 持有者拥有 seq 解决 |
 | 5 | **claim 部分副作用** —— worker 中途崩溃后接管重跑的 bot 回复去重，按 `(trigger_msg_id, bot_id)` 确定性 id upsert | 🔧 Phase 2 实现细节 |
+| 6 | **ACP connector 连接黏性** —— 多副本下 task 经 `acp.dispatch.{bot_id}` 精确到达持有 connector 的 Bridge 实例 | ✅ 由 ACP_INTEGRATION §4 的 NATS KV 注册表解决 |
+| 7 | **Agent Bridge 实例 HA** —— connector 重连/Bridge 故障转移、session_map 状态恢复 | 🔶 留意（Phase 4） |
 
 ---
 
