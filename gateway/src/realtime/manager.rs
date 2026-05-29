@@ -1,17 +1,44 @@
 use std::{sync::Arc, time::Duration};
 
-use dashmap::DashMap;
 use lru::LruCache;
 use sqlx::PgPool;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
-use super::fanout::{InProcessFanout, WireFrame};
+use super::fanout::WireFrame;
+
+// ── 连接注册接口（让 ConnectionManager 不直接依赖 InProcessFanout）────────────
+
+/// 本地连接注册的抽象接口。
+/// InProcessFanout 和 RedisFanout 都实现这个接口。
+pub trait LocalRegistry: Send + Sync {
+    fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
+    fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid);
+    fn deregister_user(&self, user_id: Uuid, conn_id: Uuid);
+}
+
+// ── InProcessFanout 实现 LocalRegistry ───────────────────────────────────────
+
+use super::fanout::InProcessFanout;
+
+impl LocalRegistry for InProcessFanout {
+    fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+        InProcessFanout::register_user(self, user_id, conn_id, tx);
+    }
+    fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+        InProcessFanout::subscribe_channel(self, channel_id, conn_id, tx);
+    }
+    fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
+        InProcessFanout::unsubscribe_channel(self, channel_id, conn_id);
+    }
+    fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
+        InProcessFanout::deregister_user(self, user_id, conn_id);
+    }
+}
 
 // ── 成员资格缓存 ──────────────────────────────────────────────────────────────
 
-/// 进程内短 TTL 缓存，避免每次 subscribe 帧都查 PG。
-/// key = (user_id, channel_id)，value = (is_member, expires_at)
 struct MembershipCache {
     inner: Mutex<LruCache<(Uuid, Uuid), (bool, tokio::time::Instant)>>,
     ttl: Duration,
@@ -20,9 +47,7 @@ struct MembershipCache {
 impl MembershipCache {
     fn new(ttl_secs: u64) -> Self {
         Self {
-            inner: Mutex::new(LruCache::new(
-                std::num::NonZeroUsize::new(4096).unwrap(),
-            )),
+            inner: Mutex::new(LruCache::new(std::num::NonZeroUsize::new(4096).unwrap())),
             ttl: Duration::from_secs(ttl_secs),
         }
     }
@@ -43,7 +68,6 @@ impl MembershipCache {
         cache.put(key, (is_member, tokio::time::Instant::now() + self.ttl));
     }
 
-    /// 成员变更时主动失效（踢人/退群即时生效）。
     pub async fn evict(&self, user_id: Uuid, channel_id: Uuid) {
         let mut cache = self.inner.lock().await;
         cache.pop(&(user_id, channel_id));
@@ -52,43 +76,45 @@ impl MembershipCache {
 
 // ── ConnectionManager ─────────────────────────────────────────────────────────
 
-/// 浏览器 WS 连接管理器。
-///
-/// 职责：
-/// - 维护 conn_id → 发送队列
-/// - 处理 subscribe/unsubscribe，含成员资格缓存
-/// - 成员变更时主动失效缓存（同进程内调用）
 pub struct ConnectionManager {
-    fanout: Arc<InProcessFanout>,
+    registry: Arc<dyn LocalRegistry>,
     membership_cache: MembershipCache,
     db: PgPool,
 }
 
 impl ConnectionManager {
+    /// 单实例：直接用 InProcessFanout。
     pub fn new(fanout: Arc<InProcessFanout>, db: PgPool) -> Arc<Self> {
         Arc::new(Self {
-            fanout,
-            membership_cache: MembershipCache::new(45), // TTL 45s
+            registry: fanout,
+            membership_cache: MembershipCache::new(45),
             db,
         })
     }
 
-    /// 浏览器连接建立：注册 user 级发送端。
-    pub fn on_connect(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        self.fanout.register_user(user_id, conn_id, tx);
+    /// 多实例：用 RedisFanout（它实现了 LocalRegistry 委托给内部 local）。
+    pub fn new_with_redis(
+        fanout: Arc<crate::realtime::redis_fanout::RedisFanout>,
+        db: PgPool,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            registry: fanout,
+            membership_cache: MembershipCache::new(45),
+            db,
+        })
     }
 
-    /// 浏览器断线：清理所有订阅 + user 注册。
+    pub fn on_connect(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+        self.registry.register_user(user_id, conn_id, tx);
+    }
+
     pub fn on_disconnect(&self, user_id: Uuid, conn_id: Uuid, subscribed: &[Uuid]) {
         for &channel_id in subscribed {
-            self.fanout.unsubscribe_channel(channel_id, conn_id);
+            self.registry.unsubscribe_channel(channel_id, conn_id);
         }
-        self.fanout.deregister_user(user_id, conn_id);
+        self.registry.deregister_user(user_id, conn_id);
     }
 
-    /// 处理 subscribe 帧：验成员资格（缓存 + PG），注册 channel 订阅。
-    ///
-    /// 返回 Ok(()) 表示订阅成功，Err 含关闭原因。
     pub async fn subscribe(
         &self,
         user_id: Uuid,
@@ -105,33 +131,23 @@ impl ConnectionManager {
             return Err("not a channel member");
         }
 
-        self.fanout.subscribe_channel(channel_id, conn_id, tx);
+        self.registry.subscribe_channel(channel_id, conn_id, tx);
         Ok(())
     }
 
-    /// 处理 unsubscribe 帧。
     pub fn unsubscribe(&self, conn_id: Uuid, channel_id: Uuid) {
-        self.fanout.unsubscribe_channel(channel_id, conn_id);
+        self.registry.unsubscribe_channel(channel_id, conn_id);
     }
 
-    /// 成员被踢出频道时主动失效缓存（由 domain 层调用）。
     pub async fn evict_membership(&self, user_id: Uuid, channel_id: Uuid) {
         self.membership_cache.evict(user_id, channel_id).await;
     }
 
-    // ── 私有：成员资格检查 ────────────────────────────────────────────────────
-
-    async fn check_membership(
-        &self,
-        user_id: Uuid,
-        channel_id: Uuid,
-    ) -> Result<bool, sqlx::Error> {
-        // 1. 缓存命中
+    async fn check_membership(&self, user_id: Uuid, channel_id: Uuid) -> Result<bool, sqlx::Error> {
         if let Some(cached) = self.membership_cache.get((user_id, channel_id)).await {
             return Ok(cached);
         }
-
-        // 2. 查 PG
+        use sqlx::Row;
         let row = sqlx::query(
             "SELECT EXISTS(
                 SELECT 1 FROM channel_memberships
@@ -143,12 +159,8 @@ impl ConnectionManager {
         .fetch_one(&self.db)
         .await?;
 
-        use sqlx::Row;
         let is_member: bool = row.try_get("is_member").unwrap_or(false);
-
-        // 3. 写缓存
         self.membership_cache.set((user_id, channel_id), is_member).await;
-
         Ok(is_member)
     }
 }

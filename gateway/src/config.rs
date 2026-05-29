@@ -13,6 +13,9 @@ pub struct Config {
     // 迁移窗口期间同时接受旧 HS256 token 的密钥（可选）
     pub jwt_legacy_hs256_secret: Option<String>,
 
+    // Redis
+    pub redis_url: String,
+
     // S3 / RustFS
     pub s3_endpoint: String,
     pub s3_bucket: String,
@@ -42,7 +45,9 @@ impl Config {
             jwt_public_key_pem: require("JWT_PUBLIC_KEY"),
             jwt_legacy_hs256_secret: env::var("JWT_SECRET_KEY").ok(),
 
-            s3_endpoint: require("S3_ENDPOINT"),
+            redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
+
+        s3_endpoint: require("S3_ENDPOINT"),
             s3_bucket: env::var("S3_BUCKET").unwrap_or_else(|_| "agentnexus".into()),
             s3_access_key: require("S3_ACCESS_KEY"),
             s3_secret_key: require("S3_SECRET_KEY"),
