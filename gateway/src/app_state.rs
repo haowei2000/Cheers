@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use crate::{
     acp_bridge::registry::BotLocator,
     config::Config,
-    realtime::fanout::Fanout,
+    realtime::{fanout::Fanout, manager::ConnectionManager},
 };
 
 /// 所有 axum handler 通过 `State(state): State<AppState>` 拿到这个。
@@ -18,12 +18,11 @@ pub struct AppState {
     pub config: Arc<Config>,
 
     /// 广播给浏览器连接的 fan-out 实现。
-    /// 本期：InProcessFanout（进程内 DashMap）。
-    /// 未来多实例：换成 RedisFanout，只改 main.rs 里的初始化。
     pub fanout: Arc<dyn Fanout>,
 
+    /// 浏览器 WS 连接管理器（subscribe/unsubscribe + 成员资格缓存）。
+    pub conn_manager: Arc<ConnectionManager>,
+
     /// 向 bot 派发任务 / 发送数据帧的实现。
-    /// 本期：InProcessBotLocator（进程内 DashMap）。
-    /// 未来多实例：换成跨实例路由实现。
     pub bot_locator: Arc<dyn BotLocator>,
 }
