@@ -139,3 +139,4 @@ agentnexus.acp.dispatch.{bot_id}      派发给持有 connector 的 Bridge (见 
 - 数据库迁移（继续 PostgreSQL + Alembic）
 - 认证方案替换（继续 JWT，仅 HS256→RS256）
 - 多租户隔离模型变更（现有 workspace 模型不变）
+- **端到端加密（E2EE）** —— 本次按层级 A（TLS+静态加密）推进；真 E2EE（B/C）搁置为未来计划，可行性分析见 [E2EE_NOTES.md](./E2EE_NOTES.md)。设计上保留兼容（Gateway 哑管道、msg_id/seq 元数据关联不阻碍将来上 E2EE）
