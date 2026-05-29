@@ -52,6 +52,23 @@ fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
+/// WS handler 直接调用（不经过 axum middleware）。
+pub fn verify_token(
+    token: &str,
+    state: &crate::app_state::AppState,
+) -> Result<Claims, &'static str> {
+    verify_rs256(token, &state.config.jwt_public_key_pem)
+        .or_else(|_| {
+            state
+                .config
+                .jwt_legacy_hs256_secret
+                .as_deref()
+                .ok_or("no hs256 secret")
+                .and_then(|s| verify_hs256(token, s).map_err(|_| "invalid hs256 token"))
+        })
+        .map_err(|_| "invalid or expired token")
+}
+
 fn verify_rs256(token: &str, public_key_pem: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     let key = DecodingKey::from_rsa_pem(public_key_pem.as_bytes())?;
     let mut validation = Validation::new(Algorithm::RS256);

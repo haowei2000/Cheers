@@ -15,7 +15,7 @@ mod transport;
 
 use app_state::AppState;
 use config::Config;
-use realtime::fanout::InProcessFanout;
+use realtime::{fanout::InProcessFanout, manager::ConnectionManager};
 use acp_bridge::registry::InProcessBotLocator;
 
 #[tokio::main]
@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
 
     // ── 进程内 fan-out 和 bot 定位器（本期单实例实现）──────────────────────
     let fanout = InProcessFanout::new();
+    let conn_manager = ConnectionManager::new(fanout.clone(), db.clone());
     let bot_locator = InProcessBotLocator::new();
 
     // ── 全局共享状态 ───────────────────────────────────────────────────────
@@ -47,12 +48,14 @@ async fn main() -> anyhow::Result<()> {
         db,
         config: config.clone(),
         fanout,
+        conn_manager,
         bot_locator,
     };
 
     // ── 路由组装 ──────────────────────────────────────────────────────────
     let app = Router::new()
         .route("/health", get(health))
+        .route("/ws", get(transport::ws::browser::ws_handler))
         .with_state(state);
 
     // ── 启动服务器 ────────────────────────────────────────────────────────

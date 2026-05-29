@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::frame::WireFrame;
+pub use super::frame::WireFrame;
 
 // ── Trait 定义（可替换实现的接口）────────────────────────────────────────────
 
