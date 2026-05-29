@@ -6,6 +6,7 @@
 > - [REFACTOR_PLAN.md](./REFACTOR_PLAN.md) —— 模块迁移、目录结构、阶段计划、风险
 > - [WIRE_PROTOCOL.md](./WIRE_PROTOCOL.md) —— 实时线协议 v1（客户端 ↔ Gateway ↔ NATS ↔ Worker）
 > - [TASK_DELIVERY.md](./TASK_DELIVERY.md) —— Agent 任务投递契约 v1（REST → NATS → Worker）
+> - [BOT_CONFIG_LAYERING.md](./BOT_CONFIG_LAYERING.md) —— Bot 配置分级设计（不考虑多租户）
 
 ---
 
