@@ -5,6 +5,7 @@
 > 本文是架构重构的**索引入口**。细则见：
 > - [REFACTOR_PLAN.md](./REFACTOR_PLAN.md) —— 模块迁移、目录结构、阶段计划、风险
 > - [WIRE_PROTOCOL.md](./WIRE_PROTOCOL.md) —— 实时线协议 v1（客户端 ↔ Gateway ↔ NATS ↔ Worker）
+> - [TASK_DELIVERY.md](./TASK_DELIVERY.md) —— Agent 任务投递契约 v1（REST → NATS → Worker）
 
 ---
 
@@ -86,7 +87,7 @@ Browser
 agentnexus.rt.channel.{id}            终态帧 · durable (JetStream)
 agentnexus.rt.user.{id}               用户通知 · best-effort
 agentnexus.rt.stream.{id}.{msg_id}    流式 delta · best-effort
-agentnexus.task.{ws}.{channel}        触发 Agent ← 下一个待钉契约
+agentnexus.task.{ws}.{channel}        触发 Agent · WorkQueue (见 TASK_DELIVERY)
 ```
 
 ---
@@ -107,10 +108,11 @@ agentnexus.task.{ws}.{channel}        触发 Agent ← 下一个待钉契约
 
 | # | 事项 | 状态 |
 |---|------|------|
-| 1 | **`task.{ws}.{channel}` 投递契约** —— worker 怎么拿上下文 / ack / 重试 / 单消息单 worker 幂等 | ⏳ 下一个要钉 |
+| 1 | **`task.{ws}.{channel}` 投递契约** —— worker 怎么拿上下文 / ack / 重试 / 单消息单 worker 幂等 | ✅ 已定稿 → TASK_DELIVERY.md |
 | 2 | token 里**无 workspace_id** —— 工作区级限流/隔离若要在 Gateway 做需重新评估 | 🔶 留意 |
 | 3 | **Phase 0 双写一致性** —— Redis(at-most-once) 与 NATS(at-least-once) 并行，前端去重需先于切流上线 | 🔶 留意 |
-| 4 | **streaming `seq` 与 worker ownership** —— 同消息被多 worker 重投会 seq 冲突，由 #1 的幂等设计解决 | 🔗 依赖 #1 |
+| 4 | **streaming `seq` 与 worker ownership** —— 同消息被多 worker 重投会 seq 冲突 | ✅ 由 TASK_DELIVERY §4 的 claim 持有者拥有 seq 解决 |
+| 5 | **claim 部分副作用** —— worker 中途崩溃后接管重跑的 bot 回复去重，按 `(trigger_msg_id, bot_id)` 确定性 id upsert | 🔧 Phase 2 实现细节 |
 
 ---
 
