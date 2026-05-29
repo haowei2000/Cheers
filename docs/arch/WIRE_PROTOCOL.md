@@ -132,7 +132,9 @@
 **问题**：NATS at-least-once + 多 worker 会导致 delta 帧乱序、重复。
 
 **协议规则**：
-1. Worker 为每条被流式输出的消息维护单调 `seq`，从 `0` 起，对每个新 `msg_id` 重置。
+1. **seq 由服务端权威方盖戳**，对每个新 `msg_id` 从 `0` 起单调递增：
+   - 内部 bot：worker（持 claim 的 owner，[TASK_DELIVERY §4](./TASK_DELIVERY.md)）盖戳。
+   - 外部 ACP bot：持 connector 的 **Bridge 实例盖戳，不透传 connector 自报的 seq**（[ACP_CONNECTION_MODEL §8.3 R2](./ACP_CONNECTION_MODEL.md)）——外部 agent 不可信，乱报 seq 会击穿客户端去重。
 2. 仅**流式分层帧**（`message_stream`、可选 `bot_trace`）带 `seq`。终态帧不带。
 3. 客户端对每个 `msg_id` 记录已见最大 `seq`，**丢弃 `seq ≤ 已见最大值** 的帧（去重），并按 seq 顺序应用 delta。
 4. 若客户端检测到 seq 跳号（漏帧），**不阻塞**——因为 `message_done` 带全量 `content`，到达时直接覆盖对齐。

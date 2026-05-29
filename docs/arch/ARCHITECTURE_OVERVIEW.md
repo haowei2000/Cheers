@@ -127,9 +127,10 @@ agentnexus.acp.dispatch.{bot_id}      派发给持有 connector 的 Bridge (见 
 | 2 | token 里**无 workspace_id** —— 工作区级限流/隔离若要在 Gateway 做需重新评估 | 🔶 留意 |
 | 3 | **Phase 0 双写一致性** —— Redis(at-most-once) 与 NATS(at-least-once) 并行，前端去重需先于切流上线 | 🔶 留意 |
 | 4 | **streaming `seq` 与 worker ownership** —— 同消息被多 worker 重投会 seq 冲突 | ✅ 由 TASK_DELIVERY §4 的 claim 持有者拥有 seq 解决 |
-| 5 | **claim 部分副作用** —— worker 中途崩溃后接管重跑的 bot 回复去重，按 `(trigger_msg_id, bot_id)` 确定性 id upsert | 🔧 Phase 2 实现细节 |
+| 5 | **claim 部分副作用 / 确定性占位 id** —— `(trigger_msg_id, bot_id)` 派生占位 id，重跑 upsert 而非新建（防重复气泡） | ✅ 定为规则 ACP_CONNECTION_MODEL §8.3 R3（Phase 2 落地） |
 | 6 | **ACP connector 连接黏性** —— 多副本下 task 经 `acp.dispatch.{bot_id}` 精确到达持有 connector 的 Bridge 实例 | ✅ 由 ACP_INTEGRATION §4 的 NATS KV 注册表解决 |
 | 7 | **Agent Bridge 实例 HA / 连接模型** —— 单连接多 session、多实例亲和、重连重放、并发 | ✅ 已定稿 → ACP_CONNECTION_MODEL.md |
+| 8 | **ACP 回流信任边界** —— 不盲信 connector 自报 msg_id/seq/channel_id：R1 所有权校验(PG 裁决) + R2 seq 服务端盖戳 + R4 finalize 守卫 | ✅ 定为规则 ACP_CONNECTION_MODEL §8.3 |
 
 ---
 

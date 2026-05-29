@@ -135,7 +135,8 @@ CREATE TABLE bot_task_claims (
 worker 若在「已持久化部分 bot 消息」后、`status='done'` 前崩溃，接管重跑会产生重复回复。缓解：
 
 > bot 回复持久化按 **`(trigger_msg_id, bot_id)` 确定性 id** upsert，重跑覆盖而非新增。
-> —— Phase 2 实现细节，随 pipeline 迁移落地。
+> —— 同 [ACP_CONNECTION_MODEL §8.3 R3](./ACP_CONNECTION_MODEL.md)（占位 id 确定性派生），
+> 内部 bot 与外部 ACP bot 共用同一规则；Phase 2 随 pipeline 迁移落地。
 
 ---
 
