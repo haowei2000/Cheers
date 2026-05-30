@@ -1,0 +1,33 @@
+{
+  "name": "@haowei0520/agentnexus-mcp-server",
+  "version": "0.1.0",
+  "description": "Local stdio MCP server that exposes AgentNexus channel resources (messages, members, files, memory, context) to a co-located ACP agent. Tool calls are relayed to the Agent Bridge resource protocol through the connector's existing data WebSocket.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agentnexus-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}
