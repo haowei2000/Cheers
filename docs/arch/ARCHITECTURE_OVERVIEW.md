@@ -15,6 +15,7 @@
 > - [FILE_STORAGE.md](./FILE_STORAGE.md) —— 文件存储与权限（S3 存储、scope link、Agent 文件交互）
 > - [E2EE_NOTES.md](./E2EE_NOTES.md) —— 端到端加密可行性分析（搁置/未来计划）
 > - [context-and-environment.md](./context-and-environment.md) —— 上下文与 Environment 架构（会话/记忆/Environment 三分、记忆即文件系统、Environment 即插件；v1 声明式渲染，预留代码插件升级路径）
+> - [DECENTRALIZED_MESH.md](./DECENTRALIZED_MESH.md) —— 去中心化 Bot 网格（去调度层、channel_seq 事件时钟、两类资源一致性、频道操作日志、Bot@Bot 任务链与取消、可选预算）
 
 ---
 
