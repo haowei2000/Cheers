@@ -1,0 +1,84 @@
+/// DB 表对应的 Rust 结构体。
+/// 只做数据载体，不含业务逻辑。
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+// ── User ──────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub hashed_password: String,
+    pub role: String, // "user" | "admin"
+    pub avatar_url: Option<String>,
+}
+
+// ── Channel ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Channel {
+    pub id: String,
+    pub name: String,
+    pub channel_type: String, // "public" | "private" | "dm"
+    pub workspace_id: Option<String>,
+    pub topic: Option<String>,
+    pub auto_assist: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+// ── Message ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Message {
+    pub id: String,
+    pub channel_id: String,
+    pub sender_type: String, // "user" | "bot" | "system"
+    pub sender_id: Option<String>,
+    pub sender_name: Option<String>,
+    pub content: Option<String>,
+    pub msg_type: Option<String>,
+    pub is_partial: bool,
+    pub is_deleted: Option<bool>,
+    pub reply_to_msg_id: Option<String>,
+    pub file_ids: Vec<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub edited_at: Option<DateTime<Utc>>,
+}
+
+// ── DTO（API 响应用）─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageDto {
+    pub msg_id: String,
+    pub channel_id: String,
+    pub sender_type: String,
+    pub sender_id: Option<String>,
+    pub sender_name: Option<String>,
+    pub content: String,
+    pub msg_type: String,
+    pub is_partial: bool,
+    pub reply_to_msg_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl MessageDto {
+    pub fn from_row(row: &sqlx::postgres::PgRow) -> Self {
+        use sqlx::Row;
+        Self {
+            msg_id: row.try_get("id").unwrap_or_default(),
+            channel_id: row.try_get("channel_id").unwrap_or_default(),
+            sender_type: row.try_get("sender_type").unwrap_or_default(),
+            sender_id: row.try_get("sender_id").ok(),
+            sender_name: row.try_get("sender_name").ok(),
+            content: row.try_get("content").unwrap_or_default(),
+            msg_type: row.try_get("msg_type").unwrap_or_else(|_| "text".to_string()),
+            is_partial: row.try_get("is_partial").unwrap_or(false),
+            reply_to_msg_id: row.try_get("reply_to_msg_id").ok(),
+            created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
+        }
+    }
+}
