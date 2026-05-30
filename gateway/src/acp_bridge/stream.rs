@@ -153,9 +153,7 @@ pub async fn handle_done(
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
     sqlx::query(
-        "UPDATE messages
-         SET content = $1, is_partial = FALSE, updated_at = NOW()
-         WHERE id = $2",
+        "UPDATE messages SET content = $1, is_partial = FALSE WHERE msg_id = $2",
     )
     .bind(content)
     .bind(msg_id.to_string())
@@ -198,7 +196,7 @@ pub async fn handle_send(
 
     // 先落库
     sqlx::query(
-        "INSERT INTO messages (id, channel_id, sender_type, sender_id, content, is_partial)
+        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial)
          VALUES ($1, $2, 'bot', $3, $4, FALSE)",
     )
     .bind(msg_id.to_string())
@@ -233,7 +231,7 @@ async fn verify_ownership(
 
     let row = sqlx::query(
         "SELECT channel_id, sender_id, is_partial, content
-         FROM messages WHERE id = $1",
+         FROM messages WHERE msg_id = $1",
     )
     .bind(msg_id.to_string())
     .fetch_optional(db)

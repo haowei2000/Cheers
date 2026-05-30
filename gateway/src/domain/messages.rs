@@ -78,8 +78,8 @@ pub async fn create_message(
 
     sqlx::query(
         "INSERT INTO messages
-            (id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, is_deleted, reply_to_msg_id, created_at)
+            (msg_id, channel_id, sender_type, sender_id, content, msg_type,
+             is_partial, is_deleted, in_reply_to_msg_id, created_at)
          VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7)",
     )
     .bind(msg_id.to_string())
@@ -211,14 +211,15 @@ pub async fn list_messages(
 
     let rows = if let Some(before_id) = before {
         sqlx::query(
-            "SELECT m.id, m.channel_id, m.sender_type, m.sender_id,
+            "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
                     u.display_name AS sender_name,
-                    m.content, m.msg_type, m.is_partial, m.reply_to_msg_id, m.created_at
+                    m.content, m.msg_type, m.is_partial,
+                    m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
              FROM messages m
-             LEFT JOIN users u ON m.sender_type = 'user' AND u.id = m.sender_id
+             LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
              WHERE m.channel_id = $1
                AND m.is_partial = FALSE
-               AND m.created_at < (SELECT created_at FROM messages WHERE id = $2)
+               AND m.created_at < (SELECT created_at FROM messages WHERE msg_id = $2)
              ORDER BY m.created_at DESC
              LIMIT $3",
         )
@@ -230,11 +231,12 @@ pub async fn list_messages(
         .map_err(AppError::Db)?
     } else {
         sqlx::query(
-            "SELECT m.id, m.channel_id, m.sender_type, m.sender_id,
+            "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
                     u.display_name AS sender_name,
-                    m.content, m.msg_type, m.is_partial, m.reply_to_msg_id, m.created_at
+                    m.content, m.msg_type, m.is_partial,
+                    m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
              FROM messages m
-             LEFT JOIN users u ON m.sender_type = 'user' AND u.id = m.sender_id
+             LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
              WHERE m.channel_id = $1 AND m.is_partial = FALSE
              ORDER BY m.created_at DESC
              LIMIT $2",

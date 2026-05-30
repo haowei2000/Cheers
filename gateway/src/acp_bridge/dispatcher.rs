@@ -132,7 +132,7 @@ async fn check_idempotency(db: &PgPool, placeholder_id: Uuid) -> IdempotencyStat
     use sqlx::Row;
 
     match sqlx::query(
-        "SELECT is_partial, content FROM messages WHERE id = $1",
+        "SELECT is_partial, content FROM messages WHERE msg_id = $1",
     )
     .bind(placeholder_id.to_string())
     .fetch_optional(db)
@@ -159,9 +159,9 @@ async fn create_placeholder(
     bot_id: Uuid,
 ) -> Result<(), String> {
     sqlx::query(
-        "INSERT INTO messages (id, channel_id, sender_type, sender_id, content, is_partial)
+        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial)
          VALUES ($1, $2, 'bot', $3, '', TRUE)
-         ON CONFLICT (id) DO NOTHING",
+         ON CONFLICT (msg_id) DO NOTHING",
     )
     .bind(placeholder_id.to_string())
     .bind(channel_id.to_string())
@@ -175,7 +175,7 @@ async fn create_placeholder(
 async fn mark_placeholder_failed(db: &PgPool, placeholder_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE messages SET is_partial = FALSE, content = '[bot offline]'
-         WHERE id = $1 AND is_partial = TRUE",
+         WHERE msg_id = $1 AND is_partial = TRUE",
     )
     .bind(placeholder_id.to_string())
     .execute(db)

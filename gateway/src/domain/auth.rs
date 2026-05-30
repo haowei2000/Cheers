@@ -45,7 +45,7 @@ pub async fn authenticate(
     password: &str,
 ) -> Result<AuthUser, AppError> {
     let row = sqlx::query(
-        "SELECT id, hashed_password, display_name, role
+        "SELECT user_id, password_hash, display_name, role
          FROM users
          WHERE username = $1 OR email = $1
          LIMIT 1",
@@ -56,7 +56,7 @@ pub async fn authenticate(
     .map_err(AppError::Db)?
     .ok_or_else(|| AppError::Unauthorized("invalid credentials".into()))?;
 
-    let hashed: String = row.try_get("hashed_password").map_err(AppError::Db)?;
+    let hashed: String = row.try_get("password_hash").map_err(AppError::Db)?;
 
     // Python passlib 使用 bcrypt（$2b$ 前缀）
     let ok = bcrypt::verify(password, &hashed)
@@ -67,7 +67,7 @@ pub async fn authenticate(
     }
 
     Ok(AuthUser {
-        id: row.try_get("id").map_err(AppError::Db)?,
+        id: row.try_get("user_id").map_err(AppError::Db)?,
         display_name: row.try_get("display_name").ok(),
         role: row.try_get("role").unwrap_or_else(|_| "user".to_string()),
     })
