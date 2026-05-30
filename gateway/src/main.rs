@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use axum::{Router, routing::get};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -76,12 +75,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // ── 路由组装 ──────────────────────────────────────────────────────────
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/ws", get(transport::ws::browser::ws_handler))
-        .route("/ws/acp-bridge/control", get(transport::ws::acp_bridge::control_handler))
-        .route("/ws/acp-bridge/data", get(transport::ws::acp_bridge::data_handler))
-        .with_state(state);
+    let app = transport::router::build(state);
 
     // ── 启动服务器 ────────────────────────────────────────────────────────
     let addr = format!("0.0.0.0:{}", config.port);
@@ -90,8 +84,4 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-async fn health() -> &'static str {
-    "ok"
 }

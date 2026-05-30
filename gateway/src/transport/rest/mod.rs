@@ -1,5 +1,4 @@
-// Phase 1 逐步填充各 REST 模块。
-// pub mod auth;
-// pub mod channels;
-// pub mod messages;
+pub mod auth;
+pub mod messages;
+// pub mod channels;  — Phase 1 继续补充
 // pub mod bots;
