@@ -1,4 +1,8 @@
 pub mod auth;
+pub mod bots;
+pub mod channels;
+pub mod files;
+pub mod friends;
 pub mod messages;
-// pub mod channels;  — Phase 1 继续补充
-// pub mod bots;
+pub mod mcp;
+pub mod workspaces;

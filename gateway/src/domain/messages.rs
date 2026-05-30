@@ -62,7 +62,7 @@ pub async fn create_message(
 
     // ── 2. 查发送者名字（用于 DTO）───────────────────────────────────────
     let sender_name: Option<String> = sqlx::query(
-        "SELECT display_name FROM users WHERE id = $1",
+        "SELECT display_name FROM users WHERE user_id = $1",
     )
     .bind(params.user_id.to_string())
     .fetch_optional(db)
@@ -162,7 +162,7 @@ async fn resolve_bot_triggers(db: &PgPool, channel_id: Uuid, _content: &str) -> 
     let rows = sqlx::query(
         "SELECT cm.member_id
          FROM channel_memberships cm
-         JOIN bot_accounts ba ON ba.id = cm.member_id
+         JOIN bot_accounts ba ON ba.bot_id = cm.member_id
          WHERE cm.channel_id = $1
            AND cm.member_type = 'bot'
            AND ba.status = 'online'",
