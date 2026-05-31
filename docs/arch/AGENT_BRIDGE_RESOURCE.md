@@ -261,15 +261,23 @@ resource 分**读 / 写**两类，授权强度不同：
         "is_deleted": <bool>
       }
     ],
-    "has_more": <bool>
+    "meta": {
+      "has_more_before": <bool>,
+      "has_more_after": <bool>,
+      "has_more": <bool>,
+      "anchor_found": <bool>,
+      "limit": <int>
+    }
   }
 }
 ```
 
 **注意**：
 - `secret` 类型消息在此端点中以加密形式返回（和 REST API 行为一致）。
-- `before` 和 `after` 互斥，同时提供时 `after` 被忽略。
-- 按 `created_at` 升序返回（最旧在前）。
+- `before` 和 `after` 互斥，不能同时提供。
+- `before`（或 `before_id` / `around_id`）向更早方向分页。
+- `after` 向更新方向分页（适配增量拉新）。
+- 按 `created_at` / `msg_id` 稳定排序，返回给调用方为时间升序（最旧在前）。
 
 **权限**：bot 必须是该 channel 的成员。
 
