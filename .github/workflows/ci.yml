@@ -32,7 +32,7 @@ jobs:
         with:
           filters: |
             gateway:
-              - "gateway/**"
+              - "server/**"
               - ".github/workflows/ci.yml"
             frontend:
               - "frontend/**"
@@ -53,7 +53,7 @@ jobs:
     if: needs.changes.outputs.gateway == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
       run:
-        working-directory: gateway
+        working-directory: server
 
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: gateway
+          workspaces: server
 
       - name: Build
         run: cargo build

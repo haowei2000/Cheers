@@ -33,7 +33,7 @@ jobs:
         with:
           filters: |
             gateway:
-              - "gateway/**"
+              - "server/**"
               - "docker-compose.yml.template"
               - ".github/workflows/cd.yml"
             frontend:
@@ -85,7 +85,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ./gateway
+          context: ./server
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

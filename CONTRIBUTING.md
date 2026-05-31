@@ -13,7 +13,7 @@ Thank you for your willingness to participate in AgentNexus. The project mainly 
 ## Development environment
 
 Gateway (Rust backend):```bash
-cd gateway
+cd server
 cargo run   # runs sqlx migrations on startup
 ```
 front end:```bash
@@ -31,7 +31,7 @@ Please modify the default password and key in `.env` before running it for the f
 ## Check before submission
 
 Run based on change scope:```bash
-cd gateway && cargo build && cargo test
+cd server && cargo build && cargo test
 cd frontend && npm run build
 ```
 npm package changes also require running `npm run lint`, `npm test`, and `npm run build` in the corresponding package directory.
@@ -47,7 +47,7 @@ The release workflow will rewrite the dependency to the published npm version be
 
 - Describe the motivation for the change, core solutions and test results.
 - Synchronously update documentation when it comes to API, configuration, deployment or user flows.
-- Add a new sequential sqlx migration (`gateway/migrations/<NNNN>_<desc>.sql`) for database structure changes; never edit an already-applied migration.
+- Add a new sequential sqlx migration (`server/migrations/<NNNN>_<desc>.sql`) for database structure changes; never edit an already-applied migration.
 - Do not submit `.env`, databases, logs, uploaded files, private keys, tokens or production configurations.
 
 ## Security issues

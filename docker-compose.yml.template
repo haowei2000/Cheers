@@ -1,7 +1,7 @@
 services:
   gateway:
     build:
-      context: ./gateway
+      context: ./server
     restart: unless-stopped
     ports:
       - "${GATEWAY_HOST_PORT:-8000}:8000"

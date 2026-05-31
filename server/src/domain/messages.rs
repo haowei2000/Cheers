@@ -1,0 +1,259 @@
+/// 消息领域逻辑。
+///
+/// 核心流程（写后投递原则）：
+///   1. 验成员资格
+///   2. INSERT message → PG
+///   3. fanout::broadcast（终态帧，先落库再投递）
+///   4. 解析 bot 触发条件
+///   5. 对每个触发的 bot 调 dispatcher::dispatch
+use std::sync::Arc;
+
+use chrono::Utc;
+use serde_json::json;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::{
+    errors::AppError,
+    gateway::{
+        dispatcher::{self, DispatchParams},
+        realtime::{fanout::Fanout, frame::WireFrame},
+        registry::BotLocator,
+        stream::StreamRegistry,
+    },
+    infra::db::models::MessageDto,
+};
+
+// ── create_message ────────────────────────────────────────────────────────────
+
+pub struct CreateMessageParams {
+    pub user_id: Uuid,
+    pub channel_id: Uuid,
+    pub content: String,
+    pub msg_type: Option<String>,
+    pub reply_to_msg_id: Option<Uuid>,
+}
+
+pub async fn create_message(
+    db: &PgPool,
+    fanout: &Arc<dyn Fanout>,
+    stream_registry: &StreamRegistry,
+    bot_locator: &Arc<dyn BotLocator>,
+    params: CreateMessageParams,
+) -> Result<MessageDto, AppError> {
+    // ── 1. 验成员资格 ─────────────────────────────────────────────────────
+    let is_member = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
+        ) AS ok",
+    )
+    .bind(params.channel_id.to_string())
+    .bind(params.user_id.to_string())
+    .fetch_one(db)
+    .await
+    .map_err(AppError::Db)?
+    .try_get::<bool, _>("ok")
+    .unwrap_or(false);
+
+    if !is_member {
+        return Err(AppError::Forbidden("not a channel member".into()));
+    }
+
+    // ── 2. 查发送者名字（用于 DTO）───────────────────────────────────────
+    let sender_name: Option<String> = sqlx::query(
+        "SELECT display_name FROM users WHERE user_id = $1",
+    )
+    .bind(params.user_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get("display_name").ok());
+
+    // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
+    let msg_id = Uuid::new_v4();
+    let msg_type = params.msg_type.as_deref().unwrap_or("text");
+    let now = Utc::now();
+
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, msg_type,
+             is_partial, is_deleted, in_reply_to_msg_id, created_at)
+         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7)",
+    )
+    .bind(msg_id.to_string())
+    .bind(params.channel_id.to_string())
+    .bind(params.user_id.to_string())
+    .bind(&params.content)
+    .bind(msg_type)
+    .bind(params.reply_to_msg_id.map(|id| id.to_string()))
+    .bind(now)
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    let dto = MessageDto {
+        msg_id: msg_id.to_string(),
+        channel_id: params.channel_id.to_string(),
+        sender_type: "user".into(),
+        sender_id: Some(params.user_id.to_string()),
+        sender_name: sender_name.clone(),
+        content: params.content.clone(),
+        msg_type: msg_type.to_string(),
+        is_partial: false,
+        reply_to_msg_id: params.reply_to_msg_id.map(|id| id.to_string()),
+        created_at: now,
+    };
+
+    // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
+    let wire = WireFrame::channel(
+        params.channel_id,
+        "message",
+        json!({
+            "msg_id": dto.msg_id,
+            "channel_id": dto.channel_id,
+            "sender_type": "user",
+            "sender_id": params.user_id,
+            "sender_name": sender_name,
+            "content": dto.content,
+            "msg_type": dto.msg_type,
+            "is_partial": false,
+            "created_at": now,
+        }),
+    );
+    fanout.broadcast_channel(params.channel_id, wire).await;
+
+    // ── 5. 解析 bot 触发，派发 task ───────────────────────────────────
+    // mesh step 2: mentions 将由 create_message 事务内解析传入；
+    // 骨架阶段暂传空 slice，step 2 实现时替换为事务内解析结果。
+    let mentions: Vec<crate::domain::mentions::Mention> = vec![];
+    let bots = resolve_bot_triggers(db, params.channel_id, &mentions).await;
+    for bot_id in bots {
+        let result = dispatcher::dispatch(
+            db,
+            fanout,
+            stream_registry,
+            bot_locator,
+            DispatchParams {
+                trigger_msg_id: msg_id,
+                bot_id,
+                channel_id: params.channel_id,
+                session_id: None,
+            },
+        )
+        .await;
+
+        if let dispatcher::DispatchResult::DbError(e) = result {
+            tracing::warn!(bot_id = %bot_id, err = e, "dispatch failed");
+        }
+    }
+
+    Ok(dto)
+}
+
+// ── Bot 触发解析（mesh step 2）────────────────────────────────────────────────
+
+/// 判断哪些 bot 应该响应这条消息（去中心化网格路由）。
+///
+/// 目标规则（DECENTRALIZED_MESH §2）：
+///   1. 从 `mentions`（写入时已解析）中取 type=bot 的成员。
+///   2. 若无 @bot mention，回落 `channels.default_bot_id`（覆盖 workspace 级）。
+///   3. 返回空 → 静默（消息仍记录）。
+///
+/// `mentions` 由 `create_message` 在消息事务内解析后传入，无额外查询。
+///
+/// mesh step 2 完成前此函数保留 TODO 骨架；step 3 的事务改造届时一并接入。
+async fn resolve_bot_triggers(
+    db: &PgPool,
+    channel_id: Uuid,
+    mentions: &[crate::domain::mentions::Mention],
+) -> Vec<Uuid> {
+    use crate::domain::mentions::MemberType;
+
+    // 1. 从已解析的 mentions 取 bot
+    let mentioned_bots: Vec<Uuid> = mentions
+        .iter()
+        .filter(|m| m.member_type == MemberType::Bot)
+        .map(|m| m.member_id)
+        .collect();
+
+    if !mentioned_bots.is_empty() {
+        return mentioned_bots;
+    }
+
+    // 2. 无 @bot → 回落 channels.default_bot_id
+    todo!("mesh step 2: SELECT default_bot_id FROM channels WHERE channel_id=$1; return vec![id] or vec![]")
+}
+
+// ── list_messages ─────────────────────────────────────────────────────────────
+
+pub async fn list_messages(
+    db: &PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    before: Option<String>,
+    limit: i64,
+) -> Result<Vec<MessageDto>, AppError> {
+    // 成员校验
+    let is_member = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2
+        ) AS ok",
+    )
+    .bind(channel_id.to_string())
+    .bind(user_id.to_string())
+    .fetch_one(db)
+    .await
+    .map_err(AppError::Db)?
+    .try_get::<bool, _>("ok")
+    .unwrap_or(false);
+
+    if !is_member {
+        return Err(AppError::Forbidden("not a channel member".into()));
+    }
+
+    let rows = if let Some(before_id) = before {
+        sqlx::query(
+            "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+                    u.display_name AS sender_name,
+                    m.content, m.msg_type, m.is_partial,
+                    m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
+             FROM messages m
+             LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+             WHERE m.channel_id = $1
+               AND m.is_partial = FALSE
+               AND m.created_at < (SELECT created_at FROM messages WHERE msg_id = $2)
+             ORDER BY m.created_at DESC
+             LIMIT $3",
+        )
+        .bind(channel_id.to_string())
+        .bind(before_id)
+        .bind(limit)
+        .fetch_all(db)
+        .await
+        .map_err(AppError::Db)?
+    } else {
+        sqlx::query(
+            "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+                    u.display_name AS sender_name,
+                    m.content, m.msg_type, m.is_partial,
+                    m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
+             FROM messages m
+             LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+             WHERE m.channel_id = $1 AND m.is_partial = FALSE
+             ORDER BY m.created_at DESC
+             LIMIT $2",
+        )
+        .bind(channel_id.to_string())
+        .bind(limit)
+        .fetch_all(db)
+        .await
+        .map_err(AppError::Db)?
+    };
+
+    let mut msgs: Vec<MessageDto> = rows.iter().map(MessageDto::from_row).collect();
+    msgs.reverse(); // 按时间升序返回
+    Ok(msgs)
+}

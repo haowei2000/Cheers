@@ -68,7 +68,7 @@ cp .env.example .env
 docker compose up -d postgres redis rustfs kkfileview
 
 # Rust gateway (runs sqlx migrations on startup)
-cd gateway
+cd server
 cargo run
 ```
 
@@ -94,7 +94,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 - Work branches must target `develop`.
 - `main` only accepts merges from `develop`.
-- Run `cd gateway && cargo build && cargo test` and the frontend build before submitting.
+- Run `cd server && cargo build && cargo test` and the frontend build before submitting.
 - Report security issues privately according to [SECURITY.md](SECURITY.md).
 
 ## License

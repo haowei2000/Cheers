@@ -24,13 +24,13 @@ This is the English default edition prepared for the open-source documentation s
 ## Stack & Tests
 
 The platform is **external-agent-first** (no Python service): the **Rust gateway**
-(`gateway/`) is the only backend, the **React frontend** (`frontend/`) is kept, and
+(`server/`) is the only backend, the **React frontend** (`frontend/`) is kept, and
 agents connect externally (`packages/agentnexus-mcp-server` is the standard bridge). See
 [docs/arch/ARCHITECTURE_OVERVIEW.md](docs/arch/ARCHITECTURE_OVERVIEW.md).
 
 ```bash
 # Gateway unit/build checks
-cd gateway && cargo build && cargo test
+cd server && cargo build && cargo test
 
 # Full stack (Docker Compose: gateway + frontend + postgres + redis + rustfs)
 cp docker-compose.yml.template docker-compose.yml

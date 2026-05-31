@@ -23,7 +23,7 @@ This is the English default edition prepared for the open-source documentation s
 
 ## sqlx Migration Discipline (Mandatory)
 
-The gateway uses sqlx migrations (`gateway/migrations/<NNNN>_<desc>.sql`), run
+The gateway uses sqlx migrations (`server/migrations/<NNNN>_<desc>.sql`), run
 automatically on startup (`main.rs: sqlx::migrate!`). Treat them as database protocol
 changes, not ordinary source files.
 
@@ -38,7 +38,7 @@ changes, not ordinary source files.
   re-run migration is safe. Note Postgres does **not** support `ADD CONSTRAINT IF NOT
   EXISTS` — put constraints inline in `CREATE TABLE`.
 - **ids are `VARCHAR(36)`**, matching the baseline (not `UUID`); keep FKs consistent.
-- **Verify from an empty DB** before release: `cd gateway && cargo build` embeds the
+- **Verify from an empty DB** before release: `cd server && cargo build` embeds the
   migrations; start a clean Postgres and let the gateway run them on boot, or
   `sqlx migrate run` against a scratch database.
 - After a gateway code or migration change, **rebuild and recreate** the service (do not
@@ -66,14 +66,14 @@ Do not tag from a feature branch or before the PR is merged; the release workflo
 
 ## Stack & Tests
 
-External-agent-first: the **Rust gateway** (`gateway/`) is the only backend, the
+External-agent-first: the **Rust gateway** (`server/`) is the only backend, the
 **React frontend** (`frontend/`) is kept, agents connect externally
 (`packages/agentnexus-mcp-server` is the standard bridge). See
 [docs/arch/ARCHITECTURE_OVERVIEW.md](docs/arch/ARCHITECTURE_OVERVIEW.md).
 
 ```bash
 # Gateway unit/build checks
-cd gateway && cargo build && cargo test
+cd server && cargo build && cargo test
 
 # Full stack (gateway + frontend + postgres + redis + rustfs)
 cp docker-compose.yml.template docker-compose.yml
