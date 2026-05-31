@@ -21,6 +21,17 @@ This is the English default edition prepared for the open-source documentation s
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
+## Problem-First Fixing (Required)
+
+- Do **not** add temporary compatibility placeholders to pass compilation (for example, fake
+  arguments like `_after`, `_after_limit`, `TODO` defaults, or hardcoded branches) without
+  first fixing the real contract mismatch.
+- When behavior contracts disagree (for example API and resource responses, or pagination
+  shapes), resolve the root cause in the actual caller/producer path first, then align both
+  sides to one explicit shape.
+- Changes must be traceable: state the the root cause, the chosen direction, and why the
+  compatibility shim (if any) is no longer needed.
+
 ## sqlx Migration Discipline (Mandatory)
 
 The gateway uses sqlx migrations (`server/migrations/<NNNN>_<desc>.sql`), run

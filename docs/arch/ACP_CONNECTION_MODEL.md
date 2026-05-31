@@ -13,7 +13,7 @@
 | 维度 | 决策 | 理由 |
 |------|------|------|
 | 连接粒度 | **每 bot 单连接**（control + data），新连接 supersede 旧 | 现状如此；session 是其下子维度 |
-| session 复用 | 单条 data WS 上按 `channel_id`/scope 标签**多路复用** N 会话 | 会话隔离靠 PG 的 scope→session_key 绑定 |
+| session 复用 | 单条 data WS 上按 `workspace`/scope 标签**多路复用** N 会话 | 会话隔离靠 PG 的 scope→session_key 绑定 |
 | 连接管理 | **Rust Backend 统一管理**（单进程，无跨实例问题） | 合并 Gateway + REST，无 NATS |
 | 重连重放 | event_log（PG，已有 seq + resume） | 已持久，重连即可重放 |
 | HOL 阻塞 | **文件传输分独立 lane**（resource 分块） | 大文件不阻塞会话流式 |
@@ -47,17 +47,34 @@
   - `algorithm`：`AES-256-GCM` 或 `ChaCha20-Poly1305`
   - `enabled=false` 时不进行加密；`allow_plaintext_fallback=true` 时可回退明文。
 
+### 可选能力签名鉴权（acp_capability）
+
+- 新增配置：`acp_security.require_capability`。
+- 开启后，data 侧以下帧必须带 `acp_capability` envelope：`send/delta/done/resource_req/session_update/permission_request`。
+- 网关按 `acp_capability_delegations` 鉴权：
+  - 查找 delegation
+  - 校验签名（Ed25519）和时戳窗口（±5 分钟）
+  - 校验 scope/action/resource
+  - 校验 `nonce` 重放与 `max_uses`
+  - 通过后才继续处理；失败返回 `CAPABILITY_DENIED`
+- management API 已落地：
+  - `GET /api/v1/bots/:bot_id/capability-delegations`
+  - `POST /api/v1/bots/:bot_id/capability-delegations`
+  - `DELETE /api/v1/bots/:bot_id/capability-delegations/:delegation_id`
+- 与 E2EE 解耦：该特性解决“动作/资源”鉴权，未要求加密 payload。
+
 ### session 多路复用（一个 bot 同时处理多会话）
 
 ```
 路由层级：
   bot_id ──→ Rust Backend（唯一连接管理方）
-    └─ scope (channel / DM / topic) ──→ provider_session_key   (PG: AgentNexusSessionBinding)
+    └─ scope (workspace) ──→ provider_session_key   (PG: AgentNexusSessionBinding)
          └─ data WS 每帧带 channel_id ──→ demux 到对应会话
 ```
 
-- `_primary_scope(trigger)` → `(scope_type, scope_id)`：DM→dm scope、topic→topic_id、否则→channel_id。
-- `build_provider_session_key(provider_agent_id, provider_account_id, session_id)` → 稳定 key，本地 agent 据此隔离每会话上下文。
+- `_primary_scope(trigger)` → `(scope_type, scope_id)`：默认→workspace scope，用于本地 ACP 上下文隔离。
+- `build_provider_session_key(workspace_id, bot_id)` → 稳定 key，本地 agent 据此隔离每会话上下文。当前实现默认：
+  `agentnexus:workspace:{workspace_id}:bot:{bot_id}`。
 - 单条 data WS 是**多路复用隧道**；`channel_id` 是 demux 维度。**session 不是新的连接层，是 bot 之下的子维度。**
 
 > **「session」二义辨析（两个不同概念，勿混）**：
@@ -68,6 +85,11 @@
 > 二者**不是同一个 id**：前者是 demux/上下文维度，后者是权限/生命周期维度。task 帧里的 `session_id` 指**后者**（AgentNexusSession）。grant 的 `scope=session` 校验的也是后者。
 
 ---
+
+> 会话身份绑定（实现规则）：
+> - `provider_session_key` 由 `workspace + bot_id` 派生并入库为 `acquire_scope_session` 的会话键。
+> - `delta/done` 会先尝试 task 帧里的 `session_id`，再回退到 `msg_id` 注册的 `stream entry session_id`，最后回退 `provider_session_key` / `provider_session_id` 查表。
+> - `session_id` 与 stream entry 冲突时，以 stream entry 为准，避免可伪造 `session_id` 影响会话生命周期追踪。
 
 ## 2. 新架构下的连接拓扑
 

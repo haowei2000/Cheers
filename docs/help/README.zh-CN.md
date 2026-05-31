@@ -24,6 +24,7 @@
 - 主业务库与 Context Store 默认使用 PostgreSQL。
 - Redis、RustFS、kkFileView 由 Docker Compose 一并启动。
 - 生产环境必须替换 `.env` 中所有 `change-me` 和本地开发密钥。
+- 生产部署建议使用 `docker-compose.production.tls.yml`（Caddy + HTTPS + 限定 CORS）并在 `.env` 中配置 `APP_DOMAIN`、`CORS_ALLOWED_ORIGINS` 和 `TLS_*`。
 
 ## 相关入口
 

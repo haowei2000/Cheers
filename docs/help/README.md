@@ -25,6 +25,7 @@ This directory contains user-facing, administrator-facing, and operations-facing
 - Backend API: `http://localhost:8000`
 - Main database and Context Store: PostgreSQL
 - Redis, RustFS, and kkFileView are started by Docker Compose
+- For public deployment, use `docker-compose.production.tls.yml` (Caddy + HTTPS + strict `CORS_ALLOWED_ORIGINS`) with `APP_DOMAIN` and `TLS_*` configured in `.env`.
 - Built-in assistant username: `Coordinator`
 - Chinese versions are available next to each document as `*.zh-CN.md`
 

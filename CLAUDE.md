@@ -21,6 +21,15 @@ This is the English default edition prepared for the open-source documentation s
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
+## Problem-First Fixing (Required)
+
+- Do **not** use temporary compatibility placeholders to hide real API/domain mismatches
+  (for example adding unused arguments like `_after`, `_after_limit`, or returning fallback
+  fields only to keep old callers from breaking).
+- When contracts differ (pagination, response shape, status format, etc.), fix the source of truth
+  first and make both ends follow the same protocol.
+- Prefer an explicit migration plan (deprecation + removal window) over silent shims.
+
 ## Stack & Tests
 
 The platform is **external-agent-first** (no Python service): the **Rust gateway**
