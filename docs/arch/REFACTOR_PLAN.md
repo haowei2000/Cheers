@@ -331,12 +331,15 @@ services:
 - [x] Redis Fanout + BotRegistry
 - [x] REST 核心端点（bots / channels / files / friends / mcp / workspaces）
 - [x] sqlx 迁移文件（baseline + permission）
-- [ ] 去中心化网格 schema（`channel_seq`, `default_bot_id`, `task_chains`, `channel_operations`, `memory_files`）
-- [ ] 重写 `resolve_bot_triggers`：all-online-bots → `@mention` + `default_bot`
-- [ ] Bot@Bot 重入 + chain 传播 + 派发门
-- [ ] `cancel_chain`
-- [ ] Resource 层：`since_seq` / index / `channel.activity.read` / `fs.*`
-- [ ] Environment 动态 tool 注册（资源分发器从静态 `match` 升级为注册表）
+- [ ] **(1) 网格 schema**：加 `channels.next_seq`/`default_bot_id`、`messages.channel_seq`、`message_mentions`(join 表)、`task_chains`+chain 列、`channel_operations`、`memory_files`；**DROP** `memory_entries` 和 `mention_bot_ids`/`mention_user_ids`；ids 一律 `VARCHAR(36)`
+- [ ] **(2) 重写 `resolve_bot_triggers`**（行为反转，不依赖 seq）：写入时解析 `@`→`message_mentions`，读它 + 回落 `default_bot_id`（覆盖 workspace 级）。完成此步系统即去中心化
+- [ ] **(3) `channel_seq` 分配**：`create_message` 改成事务（现状是裸 INSERT）；双路径——用户消息 INSERT 时分配、bot 占位 finalize 时分配
+- [ ] **(4)** Bot@Bot 重入 + chain 传播 + 派发门
+- [ ] **(5)** `cancel_chain`
+- [ ] **(6)** Resource 层：`since_seq` / index / `channel.activity.read` / `fs.*`（旧 `memory.*` 退场）
+- [ ] **(7)** Environment 动态 tool 注册（资源分发器从静态 `match` 升级为注册表）
+
+> 顺序见 [DECENTRALIZED_MESH §11](./DECENTRALIZED_MESH.md)：行为反转(2)提到 seq(3)之前；greenfield 空表无需 backfill。
 
 **收尾**
 - [ ] 旧 Python 单体整体下线（旧 REST API + 旧 bot_runtime + 旧 agent_bridge routes）
@@ -352,9 +355,8 @@ services:
 
 ### Phase 3：优化（持续）
 
-- [ ] Agent Service 独立扩容（多身份分片，见 [BUILTIN_AGENT §6](./BUILTIN_AGENT.md)）
 - [ ] OpenTelemetry 全链路追踪
-- [ ] resource API 限流/审计日志
+- [ ] resource API 限流/审计日志（agent 扩容是用户侧的事——平台只负责限流，见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)）
 - [ ] Vector DB 评估（pgvector 或 Qdrant）
 
 ---

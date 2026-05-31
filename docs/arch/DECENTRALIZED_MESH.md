@@ -80,12 +80,26 @@ UPDATE channels SET next_seq = next_seq + 1 WHERE channel_id = $c RETURNING next
 -- then write the returned seq onto the row
 ```
 
+> **Requires `create_message` to become transactional.** The current Rust
+> `domain/messages.rs::create_message` is a standalone `INSERT` followed by fanout
+> (no transaction). Gap-free allocation needs `BEGIN; UPDATE channels … RETURNING;
+> INSERT messages (… channel_seq …); COMMIT;` **before** the fanout — the seq must be
+> on the row and in the wire frame. This is a structural change, not a column add.
+
+**Two allocation paths — by message origin:**
+- **User messages are born final** (`is_partial = FALSE` at INSERT, see
+  `messages.rs`) → allocate `channel_seq` **at INSERT**, in the same transaction.
+- **Bot placeholders are born partial** → allocate `channel_seq` **at finalize**
+  (`is_partial` TRUE→FALSE), so abandoned streaming placeholders never consume a seq.
+
 - Rollback releases the increment → **no gaps**.
-- Allocated at **finalize** (`is_partial` TRUE→FALSE), so abandoned streaming
-  placeholders never consume a seq → **no gaps**.
 - A global `BIGSERIAL` is **wrong**: its value order can differ from commit order,
   so an incremental `> cursor` read could permanently skip a late-committing lower
   seq. The per-channel row lock serializes writes and prevents this.
+- **Greenfield: no backfill.** Empty tables satisfy gap-free trivially; `next_seq`
+  starts at 0 and no existing rows need `channel_seq` assigned. The active-recovery /
+  high-water reconcile machinery (§4) is a multi-instance / live-fan-out concern, not
+  a v1 migration step.
 
 > **Three distinct seqs — do not conflate:**
 > - WIRE `seq` — per-`msg_id`, 0-based, streaming delta dedup (frame layer).
@@ -192,13 +206,15 @@ but **must be recorded** in the channel.
   not a thin pointer index.
 
 ```sql
+-- NOTE: VARCHAR(36) throughout to match the baseline schema (channels.channel_id,
+-- bot/user ids are all VARCHAR(36), not UUID). Using UUID here would break the FK.
 CREATE TABLE channel_operations (
-    id           UUID PRIMARY KEY,
-    channel_id   UUID NOT NULL,
+    id           VARCHAR(36) PRIMARY KEY,
+    channel_id   VARCHAR(36) NOT NULL REFERENCES channels(channel_id),
     channel_seq  BIGINT NOT NULL,        -- from the same channels.next_seq counter
     op_type      TEXT NOT NULL,          -- fs.write | fs.rm | file.upload | member.join | chain.cancelled ...
-    actor_type   TEXT NOT NULL,          -- bot | user | system
-    actor_id     UUID,
+    actor_type   VARCHAR(16) NOT NULL,   -- bot | user | system
+    actor_id     VARCHAR(36),
     target_ref   TEXT,                   -- path / file_id / member_id
     payload      JSONB,
     created_at   TIMESTAMPTZ DEFAULT now()
@@ -359,14 +375,23 @@ Bot@Bot re-entry on finalize (absent in Rust — it lived in the Python
 
 ## 11. Implementation sequence
 
-Each step is independently testable.
+Each step is independently testable. Ordered so the **behavioral reversal lands
+first** (fewest dependencies, highest value) and pure infra follows.
 
-1. **Migrations first** — `channels.next_seq` + `default_bot_id`, `messages.channel_seq`,
-   `task_chains`, `channel_operations`, `memory_files`. Lock the schema.
-2. **`channel_seq` allocation** in `create_message` and the finalize path — the
-   coordinate everything else builds on.
-3. **Rewrite `resolve_bot_triggers`** — all-online-bots → `@mention` + `default_bot`.
-   This flips the system to the decentralized mesh (the key behavioral change).
+1. **Migrations first — lock the schema.** Add: `channels.next_seq` +
+   `channels.default_bot_id`; `messages.channel_seq`; `message_mentions` (the @mention
+   join table, §2 / [context-and-environment §5.2](./context-and-environment.md));
+   `task_chains` + chain columns; `channel_operations`; `memory_files`. **DROP**:
+   `memory_entries` (the old layer model — clean rebuild, not coexistence) and the
+   legacy `mention_bot_ids` / `mention_user_ids` columns. All ids `VARCHAR(36)` to
+   match baseline.
+2. **Rewrite `resolve_bot_triggers`** — all-online-bots → parse `@` into
+   `message_mentions` at write time + read it / fall back to `channels.default_bot_id`
+   (overrides `workspaces.default_bot_id`). **This is the key behavioral reversal and
+   needs no `channel_seq`** — it flips the system to the decentralized mesh on its own.
+3. **`channel_seq` allocation** — make `create_message` transactional (see §3: it is
+   currently a standalone INSERT) and allocate on the two paths (user message at
+   INSERT, bot placeholder at finalize). The coordinate everything below builds on.
 4. **Bot@Bot re-entry + chain propagation + dispatch gate** — on reply finalize,
    re-run `@`-resolution → dispatch next hops with `chain_id` and status gate.
 5. **`cancel_chain`** — flip status + fan-out the existing cancel frame.
@@ -374,8 +399,9 @@ Each step is independently testable.
    `memory_files` (old `memory.*` retires).
 7. **Environment dynamic tools** — upgrade the resource static `match` to a registry.
 
-Steps 1–3 are foundation + the core behavioral reversal; after them the system is
-already decentralized. 4–7 complete the capability set.
+Steps 1–2 already make the system decentralized (routing is the reversal; it does not
+depend on `channel_seq`). Step 3 lays the ordering/recovery coordinate that 4 and 6
+build on. 4–7 complete the capability set.
 
 ---
 
