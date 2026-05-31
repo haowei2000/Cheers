@@ -1,3 +1,9 @@
+//! AgentNexus backend entrypoint.
+//!
+//! Builds runtime dependencies (config, database pool, Redis, gateway registries),
+//! initializes tracing, applies migrations, and starts the Axum server
+//! that exposes REST and WebSocket routes.
+
 use std::sync::Arc;
 
 use tracing::info;
@@ -18,6 +24,15 @@ use config::Config;
 use gateway::realtime::manager::ConnectionManager;
 use gateway::stream::StreamRegistry;
 
+/// Start the HTTP/WebSocket gateway service.
+///
+/// Runtime flow:
+/// 1. Initialize tracing/logging.
+/// 2. Load configuration from environment.
+/// 3. Build database pool and run migrations.
+/// 4. Connect to Redis and initialize gateway components.
+/// 5. Compose shared application state.
+/// 6. Build router and start Axum listener.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -25,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Bootstrap in startup order: config -> db -> migrations -> redis -> gateway services.
     let config = Arc::new(Config::from_env());
     info!(port = config.port, "starting server");
 

@@ -34,6 +34,10 @@ pub async fn send_message(
         .parse()
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
 
+    if body.content.trim().is_empty() {
+        return Err(AppError::BadRequest("content cannot be empty".into()));
+    }
+
     let dto = messages::create_message(
         &state.db,
         &state.fanout,

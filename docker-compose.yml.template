@@ -69,7 +69,16 @@ services:
   # db-migrate 服务已移除：gateway 启动时自动跑 sqlx 迁移（main.rs: sqlx::migrate!）。
 
   frontend:
-    build: ./frontend
+    env_file:
+      - .env
+    build:
+      context: ./frontend
+      args:
+        VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET:-http://gateway:8000}
+        VITE_WS_PROXY_TARGET: ${VITE_WS_PROXY_TARGET:-ws://gateway:8000}
+        VITE_PUBLIC_BASE_PATH: ${VITE_PUBLIC_BASE_PATH:-/}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_ENABLE_MERMAID: ${VITE_ENABLE_MERMAID:-1}
     restart: unless-stopped
     ports:
       - "${FRONTEND_HOST_PORT:-80}:80"
