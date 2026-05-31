@@ -104,6 +104,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::send_message).get(api::messages::list_messages),
         )
         .route(
+            "/api/v1/channels/:channel_id/messages/:msg_id/cancel-chain",
+            post(api::messages::cancel_message_chain),
+        )
+        .route(
             "/api/v1/bots",
             get(api::bots::list_bots).post(api::bots::create_bot),
         )
