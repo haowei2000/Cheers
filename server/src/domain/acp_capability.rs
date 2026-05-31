@@ -25,6 +25,7 @@ pub struct CapabilityDecisionContext {
     pub delegation_id: String,
     pub delegation_scope_type: String,
     pub delegation_scope_id: Option<String>,
+    pub request_id: Option<String>,
     pub action: String,
     pub frame_type: String,
     pub resource: Option<String>,
@@ -142,6 +143,7 @@ fn build_decision_context(
     frame_type: &str,
     action: &str,
     resource: Option<&str>,
+    request_id: Option<&str>,
     locator: Option<&SessionLocator>,
     session_context: Option<&SessionContext>,
 ) -> CapabilityDecisionContext {
@@ -149,6 +151,7 @@ fn build_decision_context(
         delegation_id: delegation.delegation_id.to_string(),
         delegation_scope_type: delegation.scope_type.clone(),
         delegation_scope_id: delegation.scope_id.clone(),
+        request_id: request_id.map(ToString::to_string),
         action: action.to_string(),
         frame_type: frame_type.to_string(),
         resource: resource.map(ToString::to_string),
@@ -503,6 +506,7 @@ fn verify_scope_with_context(
     action: &str,
     frame: &Value,
     resource: Option<&str>,
+    request_id: Option<&str>,
     session_context: Option<&SessionContext>,
     locator: Option<&SessionLocator>,
 ) -> Result<(), CapabilityError> {
@@ -512,6 +516,7 @@ fn verify_scope_with_context(
         frame_type,
         action,
         resource,
+        request_id,
         locator,
         session_context,
     );
@@ -604,6 +609,7 @@ async fn verify_scope(
     frame: &Value,
     action: &str,
     resource: Option<&str>,
+    request_id: Option<&str>,
 ) -> Result<(), CapabilityError> {
     let locator = extract_session_locator(frame);
     let frame_type = extract_frame_type(frame);
@@ -612,6 +618,7 @@ async fn verify_scope(
         frame_type,
         action,
         resource,
+        request_id,
         locator.as_ref(),
         None,
     );
@@ -639,6 +646,7 @@ async fn verify_scope(
         frame_type,
         action,
         resource,
+        request_id,
         session_context.as_ref(),
         locator.as_ref(),
     )
@@ -781,6 +789,61 @@ async fn consume_nonce_and_bump(
     Ok(())
 }
 
+pub async fn log_capability_reject(
+    db: &PgPool,
+    bot_id: &Uuid,
+    provider_account_id: &str,
+    frame_type: &str,
+    reason: &str,
+    action: Option<&str>,
+    resource: Option<&str>,
+    context: Option<&CapabilityDecisionContext>,
+) -> sqlx::Result<()> {
+    let delegation_id = context.and_then(|ctx| Some(ctx.delegation_id.as_str()));
+    let decision_scope_type = context.and_then(|ctx| Some(ctx.delegation_scope_type.as_str()));
+    let decision_scope_id = context.and_then(|ctx| ctx.delegation_scope_id.as_deref());
+    let request_id = context.and_then(|ctx| ctx.request_id.as_deref());
+    let action = action.or_else(|| context.map(|ctx| ctx.action.as_str()));
+    let resource = resource.or_else(|| context.and_then(|ctx| ctx.resource.as_deref()));
+    let request_session_id = context.and_then(|ctx| ctx.request_session_id.as_deref());
+    let resolved_session_id = context.and_then(|ctx| ctx.resolved_session_id.as_deref());
+    let resolved_session_status = context.and_then(|ctx| ctx.resolved_session_status.as_deref());
+    let resolved_session_scope_type = context.and_then(|ctx| ctx.resolved_session_scope_type.as_deref());
+    let resolved_session_scope_id = context.and_then(|ctx| ctx.resolved_session_scope_id.as_deref());
+    let session_locator_source = context.and_then(|ctx| ctx.session_locator_source.as_deref());
+    let session_locator_value = context.and_then(|ctx| ctx.session_locator_value.as_deref());
+
+    sqlx::query(
+        "INSERT INTO acp_capability_reject_logs (
+            bot_id, provider_account_id, delegation_id, decision_scope_type, decision_scope_id,
+            frame_type, action, request_id, request_session_id, resolved_session_id, resolved_session_status,
+            resolved_session_scope_type, resolved_session_scope_id, session_locator_source, session_locator_value,
+            resource, decision_reason
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+    )
+    .bind(bot_id.to_string())
+    .bind(provider_account_id)
+    .bind(delegation_id)
+    .bind(decision_scope_type)
+    .bind(decision_scope_id)
+    .bind(frame_type)
+    .bind(action)
+    .bind(request_id)
+    .bind(request_session_id)
+    .bind(resolved_session_id)
+    .bind(resolved_session_status)
+    .bind(resolved_session_scope_type)
+    .bind(resolved_session_scope_id)
+    .bind(session_locator_source)
+    .bind(session_locator_value)
+    .bind(resource)
+    .bind(reason)
+    .execute(db)
+    .await
+    .map(|_| ())
+}
+
 pub async fn authorize_data_frame(
     db: &PgPool,
     bot_id: &Uuid,
@@ -795,6 +858,7 @@ pub async fn authorize_data_frame(
     let envelope = parse_envelope(frame)?;
     let action = frame_action(frame_type)
         .ok_or_else(|| CapabilityError::Denied("unsupported frame type".into()))?;
+    let request_id = envelope.request_id.as_deref();
 
     if (now_epoch() - envelope.ts_secs).abs() > CAPABILITY_CLOCK_TOLERANCE_SECS {
         return Err(CapabilityError::Denied("timestamp too far from wall clock".into()));
@@ -815,6 +879,7 @@ pub async fn authorize_data_frame(
         frame,
         action,
         resource.as_deref(),
+        request_id,
     )
     .await?;
 

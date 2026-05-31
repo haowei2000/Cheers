@@ -194,6 +194,34 @@ async fn handle_data(mut socket: WebSocket, state: AppState) {
                                     )
                                         .await
                                 {
+                                    let frame_type = frame
+                                        .get("type")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("unknown");
+                                    let decision_context = err.decision_context();
+                                    let action = decision_context.map(|ctx| ctx.action.as_str());
+                                    let resource = decision_context.and_then(|ctx| ctx.resource.as_deref());
+
+                                    let _ = acp_capability::log_capability_reject(
+                                        &state.db,
+                                        &bot.bot_id,
+                                        &bot.provider_account_id,
+                                        frame_type,
+                                        &err.to_string(),
+                                        action,
+                                        resource,
+                                        decision_context,
+                                    )
+                                    .await
+                                    .inspect_err(|log_err| {
+                                        tracing::warn!(
+                                            bot_id = %bot.bot_id,
+                                            frame_type = frame_type,
+                                            err = %log_err,
+                                            "failed to persist capability reject log"
+                                        );
+                                    });
+
                                     if let Some(ctx) = err.decision_context() {
                                         tracing::warn!(
                                             bot_id = %bot.bot_id,
