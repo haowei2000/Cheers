@@ -49,9 +49,38 @@ export class AgentNexusClient {
   members(channelId?: string) {
     return this.call("channel.members", { channel_id: this.resolveChannel(channelId) });
   }
-  readMessages(args: { channelId?: string; limit?: number }) {
+  readMessages(args: {
+    channelId?: string;
+    limit?: number;
+    before?: string;
+    after?: string;
+    sinceSeq?: number;
+  }) {
     return this.call("channel.messages", {
       channel_id: this.resolveChannel(args.channelId),
+      limit: args.limit,
+      before: args.before,
+      after: args.after,
+      since_seq: args.sinceSeq,
+    });
+  }
+  messagesIndex(args: { channelId?: string }) {
+    return this.call("channel.messages.index", {
+      channel_id: this.resolveChannel(args.channelId),
+    });
+  }
+  messagesBySeq(args: { channelId?: string; minSeq: number; maxSeq?: number; limit?: number }) {
+    return this.call("channel.messages.by-seq", {
+      channel_id: this.resolveChannel(args.channelId),
+      min_seq: args.minSeq,
+      max_seq: args.maxSeq,
+      limit: args.limit,
+    });
+  }
+  readActivity(args: { channelId?: string; sinceSeq?: number; limit?: number }) {
+    return this.call("channel.activity.read", {
+      channel_id: this.resolveChannel(args.channelId),
+      since_seq: args.sinceSeq,
       limit: args.limit,
     });
   }
@@ -105,6 +134,71 @@ export class AgentNexusClient {
       layer: args.layer,
       mode: args.mode ?? "replace",
       entries: args.entries,
+    });
+  }
+
+  // ── fs.* workspace (membership read, Grant-gated writes) ────────────────
+  fsLs(args: { channelId?: string; path?: string }) {
+    return this.call("fs.ls", {
+      channel_id: this.resolveChannel(args.channelId),
+      path: args.path ?? "",
+    });
+  }
+  fsRead(args: { channelId?: string; path: string }) {
+    return this.call("fs.read", {
+      channel_id: this.resolveChannel(args.channelId),
+      path: args.path,
+    });
+  }
+  fsWrite(args: {
+    channelId?: string;
+    path: string;
+    content: string;
+    ifVersion?: number;
+    isDir?: boolean;
+  }) {
+    return this.call("fs.write", {
+      channel_id: this.resolveChannel(args.channelId),
+      path: args.path,
+      content: args.content,
+      if_version: args.ifVersion,
+      is_dir: args.isDir,
+    });
+  }
+  fsEdit(args: {
+    channelId?: string;
+    path: string;
+    oldString: string;
+    newString: string;
+    ifVersion?: number;
+  }) {
+    return this.call("fs.edit", {
+      channel_id: this.resolveChannel(args.channelId),
+      path: args.path,
+      old_string: args.oldString,
+      new_string: args.newString,
+      if_version: args.ifVersion,
+    });
+  }
+  fsAppend(args: { channelId?: string; path: string; content: string }) {
+    return this.call("fs.append", {
+      channel_id: this.resolveChannel(args.channelId),
+      path: args.path,
+      content: args.content,
+    });
+  }
+  fsRm(args: { channelId?: string; path: string; recursive?: boolean }) {
+    return this.call("fs.rm", {
+      channel_id: this.resolveChannel(args.channelId),
+      path: args.path,
+      recursive: args.recursive,
+    });
+  }
+  fsMv(args: { channelId?: string; from: string; to: string }) {
+    return this.call("fs.mv", {
+      channel_id: this.resolveChannel(args.channelId),
+      from: args.from,
+      to: args.to,
     });
   }
 }
