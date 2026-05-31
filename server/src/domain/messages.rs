@@ -16,7 +16,10 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    domain::{mentions, sessions},
+    domain::{
+        mentions::{self, MentionParseError},
+        sessions,
+    },
     errors::AppError,
     gateway::{
         dispatcher::{self, DispatchParams},
@@ -83,8 +86,10 @@ pub async fn create_message(
             .and_then(|r| r.try_get("display_name").ok());
 
     // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
-    let mentions = mentions::parse(db, params.channel_id, &params.content).await;
-    debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mentions parsed");
+    let mentions = mentions::parse_human_tokens(db, params.channel_id, &params.content)
+        .await
+        .map_err(mention_parse_error_to_app)?;
+    debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mention tokens scanned");
     let msg_id = Uuid::new_v4();
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
@@ -363,9 +368,7 @@ async fn validate_file_ids(
 ///   2. 若无 @bot mention，回落 `channels.default_bot_id`（覆盖 workspace 级）。
 ///   3. 返回空 → 静默（消息仍记录）。
 ///
-/// `mentions` 由 `create_message` 在消息事务内解析后传入，无额外查询。
-///
-/// mesh step 2 完成前此函数保留 TODO 骨架；step 3 的事务改造届时一并接入。
+/// `mentions` 由 `create_message` 在消息事务内写入前扫描并验证，无额外查询。
 async fn resolve_bot_triggers(
     db: &PgPool,
     channel_id: Uuid,
@@ -390,8 +393,14 @@ async fn resolve_bot_triggers(
     match sqlx::query(
         "SELECT COALESCE(c.default_bot_id, w.default_bot_id) AS default_bot_id
          FROM channels c
-         JOIN workspaces w ON w.workspace_id = c.workspace_id
-         WHERE c.channel_id = $1",
+         LEFT JOIN workspaces w ON w.workspace_id = c.workspace_id
+         JOIN channel_memberships cm
+           ON cm.channel_id = c.channel_id
+          AND cm.member_type = 'bot'
+          AND cm.member_id = COALESCE(c.default_bot_id, w.default_bot_id)
+         WHERE c.channel_id = $1
+           AND COALESCE(c.default_bot_id, w.default_bot_id) IS NOT NULL
+         LIMIT 1",
     )
     .bind(channel_id.to_string())
     .fetch_optional(db)
@@ -402,6 +411,13 @@ async fn resolve_bot_triggers(
             _ => vec![],
         },
         _ => vec![],
+    }
+}
+
+fn mention_parse_error_to_app(error: MentionParseError) -> AppError {
+    match error {
+        MentionParseError::Db(error) => AppError::Db(error),
+        other => AppError::BadRequest(other.to_string()),
     }
 }
 

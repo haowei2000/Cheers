@@ -16,9 +16,9 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::sessions,
+    domain::{mentions, sessions},
     gateway::realtime::{fanout::Fanout, frame::WireFrame},
-    infra::db::models::MESSAGE_SCHEMA_VERSION,
+    infra::db::models::{MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
 // ── StreamEntry ───────────────────────────────────────────────────────────────
@@ -161,6 +161,9 @@ pub async fn handle_done(
 
     // R1: 所有权校验
     let channel_id = verify_ownership(db, bot_id, msg_id).await?;
+    let normalized = mentions::normalize_bot_content(db, channel_id, content)
+        .await
+        .map_err(mention_parse_error_to_static)?;
 
     // R4: 标记 finalize（先在内存里标记，防止并发 delta 继续写入）
     if let Some(mut entry) = registry.entries.get_mut(&msg_id) {
@@ -171,6 +174,7 @@ pub async fn handle_done(
     }
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
+    let mut tx = db.begin().await.map_err(|_| "db error")?;
     let details = sqlx::query(
         "UPDATE messages
          SET content = $1,
@@ -179,13 +183,18 @@ pub async fn handle_done(
          WHERE msg_id = $3
          RETURNING channel_id, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
     )
-    .bind(content)
+    .bind(&normalized.content)
     .bind(done_file_ids)
     .bind(msg_id.to_string())
-    .fetch_optional(db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|_| "db error")?
     .ok_or("message not found")?;
+    mentions::replace_batch(&mut tx, msg_id, &normalized.mentions)
+        .await
+        .map_err(|_| "db error")?;
+    tx.commit().await.map_err(|_| "db error")?;
+
     let channel_id = details
         .try_get::<String, _>("channel_id")
         .map_err(|_| "invalid channel_id")?
@@ -212,12 +221,12 @@ pub async fn handle_done(
             "channel_id": channel_id,
             "sender_type": "bot",
             "sender_id": bot_id,
-            "content": content,
+            "content": &normalized.content,
             "msg_type": msg_type,
             "is_partial": false,
             "reply_to_msg_id": reply_to_msg_id,
             "file_ids": file_ids,
-            "mentions": [],
+            "mentions": mention_dtos(&normalized.mentions),
             "files": [],
         }),
     );
@@ -371,8 +380,12 @@ pub async fn handle_send(
         .unwrap_or("text");
     let file_ids = parse_file_ids(frame.get("file_ids"));
     let msg_id = Uuid::new_v4();
+    let normalized = mentions::normalize_bot_content(db, channel_id, content)
+        .await
+        .map_err(mention_parse_error_to_static)?;
 
     // 先落库
+    let mut tx = db.begin().await.map_err(|_| "db error")?;
     sqlx::query(
         "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, file_ids)
          VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6)",
@@ -380,12 +393,16 @@ pub async fn handle_send(
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
     .bind(bot_id.to_string())
-    .bind(content)
+    .bind(&normalized.content)
     .bind(msg_type)
     .bind(serde_json::json!(file_ids.clone()))
-    .execute(db)
+    .execute(&mut *tx)
     .await
     .map_err(|_| "db error")?;
+    mentions::insert_batch(&mut tx, msg_id, &normalized.mentions)
+        .await
+        .map_err(|_| "db error")?;
+    tx.commit().await.map_err(|_| "db error")?;
 
     // 再 fan-out
     let wire = WireFrame::channel(
@@ -397,17 +414,36 @@ pub async fn handle_send(
             "channel_id": channel_id,
             "sender_type": "bot",
             "sender_id": bot_id,
-            "content": content,
+            "content": &normalized.content,
             "msg_type": msg_type,
             "is_partial": false,
             "file_ids": file_ids,
-            "mentions": [],
+            "mentions": mention_dtos(&normalized.mentions),
             "files": [],
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
     Ok(())
+}
+
+fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {
+    match error {
+        mentions::MentionParseError::Db(_) => "db error",
+        mentions::MentionParseError::InvalidMember { .. } => "invalid mention",
+    }
+}
+
+fn mention_dtos(mentions: &[mentions::Mention]) -> Vec<MessageMention> {
+    mentions
+        .iter()
+        .map(|mention| MessageMention {
+            member_id: mention.member_id.to_string(),
+            member_type: mention.member_type.as_str().to_string(),
+            username: None,
+            display_name: None,
+        })
+        .collect()
 }
 
 fn parse_file_ids(value: Option<&Value>) -> Vec<String> {

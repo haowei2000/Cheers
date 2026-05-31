@@ -4,8 +4,8 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::messages as domain_messages,
-    infra::db::models::{MessageDto, MessageFileRef, MESSAGE_SCHEMA_VERSION},
+    domain::{mentions, messages as domain_messages},
+    infra::db::models::{MessageDto, MessageFileRef, MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
 use super::{check_bot_in_channel, check_write_permission, ResourceResult};
@@ -124,7 +124,7 @@ pub async fn handle_create(
     .await?;
 
     let msg_id = Uuid::new_v4();
-    let content = params
+    let raw_content = params
         .get("content")
         .and_then(|v| v.as_str())
         .unwrap_or("")
@@ -141,7 +141,14 @@ pub async fn handle_create(
         .map(|v| v.to_string());
     let file_ids = parse_file_ids(params.get("file_ids"));
     let now = Utc::now();
+    let normalized = mentions::normalize_bot_content(db, channel_id, &raw_content)
+        .await
+        .map_err(resource_mention_error)?;
 
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     sqlx::query(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -151,19 +158,26 @@ pub async fn handle_create(
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
     .bind(bot_id.to_string())
-    .bind(&content)
+    .bind(&normalized.content)
     .bind(&msg_type)
     .bind(&reply_to_msg_id)
     .bind(&serde_json::json!(file_ids.clone()))
     .bind(now)
-    .execute(db)
+    .execute(&mut *tx)
     .await
     .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    mentions::insert_batch(&mut tx, msg_id, &normalized.mentions)
+        .await
+        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    tx.commit()
+        .await
+        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
 
     let files = load_message_file_refs(db, &file_ids)
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
 
+    let mention_dtos = mention_dtos(&normalized.mentions);
     let dto = MessageDto {
         v: MESSAGE_SCHEMA_VERSION,
         msg_id: msg_id.to_string(),
@@ -171,12 +185,12 @@ pub async fn handle_create(
         sender_type: "bot".into(),
         sender_id: Some(bot_id.to_string()),
         sender_name: None,
-        content,
+        content: normalized.content,
         msg_type,
         is_partial: false,
         reply_to_msg_id,
         file_ids,
-        mentions: Vec::new(),
+        mentions: mention_dtos,
         files,
         created_at: now,
     };
@@ -198,6 +212,25 @@ pub async fn handle_create(
             "created_at": now,
         })
     }))
+}
+
+fn resource_mention_error(error: mentions::MentionParseError) -> (String, String) {
+    match error {
+        mentions::MentionParseError::Db(_) => super::resource_error("INTERNAL_ERROR", "db error"),
+        other => super::resource_error("INVALID_PARAMS", &other.to_string()),
+    }
+}
+
+fn mention_dtos(mentions: &[mentions::Mention]) -> Vec<MessageMention> {
+    mentions
+        .iter()
+        .map(|mention| MessageMention {
+            member_id: mention.member_id.to_string(),
+            member_type: mention.member_type.as_str().to_string(),
+            username: None,
+            display_name: None,
+        })
+        .collect()
 }
 
 fn parse_file_ids(value: Option<&Value>) -> Vec<String> {
