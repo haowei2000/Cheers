@@ -125,7 +125,10 @@ pub async fn create_message(
     fanout.broadcast_channel(params.channel_id, wire).await;
 
     // ── 5. 解析 bot 触发，派发 task ───────────────────────────────────
-    let bots = resolve_bot_triggers(db, params.channel_id, &params.content).await;
+    // mesh step 2: mentions 将由 create_message 事务内解析传入；
+    // 骨架阶段暂传空 slice，step 2 实现时替换为事务内解析结果。
+    let mentions: Vec<crate::domain::mentions::Mention> = vec![];
+    let bots = resolve_bot_triggers(db, params.channel_id, &mentions).await;
     for bot_id in bots {
         let result = dispatcher::dispatch(
             db,
@@ -149,36 +152,38 @@ pub async fn create_message(
     Ok(dto)
 }
 
-// ── Bot 触发解析 ──────────────────────────────────────────────────────────────
+// ── Bot 触发解析（mesh step 2）────────────────────────────────────────────────
 
-/// 判断哪些 bot 应该响应这条消息。
+/// 判断哪些 bot 应该响应这条消息（去中心化网格路由）。
 ///
-/// 当前规则（Phase 1 简化版）：
-/// - 频道内所有 bot 成员
-/// - 且 bot status = 'online'（有连接的 bot 才触发）
+/// 目标规则（DECENTRALIZED_MESH §2）：
+///   1. 从 `mentions`（写入时已解析）中取 type=bot 的成员。
+///   2. 若无 @bot mention，回落 `channels.default_bot_id`（覆盖 workspace 级）。
+///   3. 返回空 → 静默（消息仍记录）。
 ///
-/// TODO Phase 2: auto_assist 开关、@mention 检测、coordinator 路由
-async fn resolve_bot_triggers(db: &PgPool, channel_id: Uuid, _content: &str) -> Vec<Uuid> {
-    let rows = sqlx::query(
-        "SELECT cm.member_id
-         FROM channel_memberships cm
-         JOIN bot_accounts ba ON ba.bot_id = cm.member_id
-         WHERE cm.channel_id = $1
-           AND cm.member_type = 'bot'
-           AND ba.status = 'online'",
-    )
-    .bind(channel_id.to_string())
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+/// `mentions` 由 `create_message` 在消息事务内解析后传入，无额外查询。
+///
+/// mesh step 2 完成前此函数保留 TODO 骨架；step 3 的事务改造届时一并接入。
+async fn resolve_bot_triggers(
+    db: &PgPool,
+    channel_id: Uuid,
+    mentions: &[crate::domain::mentions::Mention],
+) -> Vec<Uuid> {
+    use crate::domain::mentions::MemberType;
 
-    rows.iter()
-        .filter_map(|r| {
-            r.try_get::<String, _>("member_id")
-                .ok()
-                .and_then(|s| s.parse().ok())
-        })
-        .collect()
+    // 1. 从已解析的 mentions 取 bot
+    let mentioned_bots: Vec<Uuid> = mentions
+        .iter()
+        .filter(|m| m.member_type == MemberType::Bot)
+        .map(|m| m.member_id)
+        .collect();
+
+    if !mentioned_bots.is_empty() {
+        return mentioned_bots;
+    }
+
+    // 2. 无 @bot → 回落 channels.default_bot_id
+    todo!("mesh step 2: SELECT default_bot_id FROM channels WHERE channel_id=$1; return vec![id] or vec![]")
 }
 
 // ── list_messages ─────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
+pub mod activity;
 pub mod channel_info;
 pub mod context;
 pub mod files;
+pub mod fs;
 pub mod members;
 pub mod memory;
 pub mod messages;
@@ -20,18 +22,31 @@ pub async fn dispatch(db: &PgPool, bot_id: Uuid, frame: &Value) -> Value {
 
     let result = match resource {
         // ── 读操作（仅需频道成员，不走 Grant）────────────────────────────
-        "channel.info"       => channel_info::handle(db, bot_id, &params).await,
-        "channel.members"    => members::handle(db, bot_id, &params).await,
-        "channel.messages"   => messages::handle_read(db, bot_id, &params).await,
-        "channel.files"      => files::handle_list(db, bot_id, &params).await,
-        "channel.files.read" => files::handle_read(db, bot_id, &params).await,
-        "channel.memory"     => memory::handle_read(db, bot_id, &params).await,
-        "channel.context"    => context::handle(db, bot_id, &params).await,
+        "channel.info"            => channel_info::handle(db, bot_id, &params).await,
+        "channel.members"         => members::handle(db, bot_id, &params).await,
+        "channel.messages"        => messages::handle_read(db, bot_id, &params).await,
+        "channel.files"           => files::handle_list(db, bot_id, &params).await,
+        "channel.files.read"      => files::handle_read(db, bot_id, &params).await,
+        "channel.memory"          => memory::handle_read(db, bot_id, &params).await,
+        "channel.context"         => context::handle(db, bot_id, &params).await,
+
+        // ── mesh step 6：新增读操作 ───────────────────────────────────────
+        "channel.activity.read"     => activity::handle_read(db, bot_id, &params).await,
+        "channel.messages.index"    => activity::handle_index(db, bot_id, &params).await,
+        "fs.ls"                     => fs::handle_ls(db, bot_id, &params).await,
+        "fs.read"                   => fs::handle_read(db, bot_id, &params).await,
 
         // ── 写操作（频道成员 + Grant）────────────────────────────────────
-        "channel.messages.create" => messages::handle_create(db, bot_id, &params).await,
-        "channel.files.create"    => files::handle_create(db, bot_id, &params).await,
-        "channel.memory.update"   => memory::handle_update(db, bot_id, &params).await,
+        "channel.messages.create"   => messages::handle_create(db, bot_id, &params).await,
+        "channel.files.create"      => files::handle_create(db, bot_id, &params).await,
+        "channel.memory.update"     => memory::handle_update(db, bot_id, &params).await,
+
+        // ── mesh step 6：新增写操作（fs.*）───────────────────────────────
+        "fs.write"                  => fs::handle_write(db, bot_id, &params).await,
+        "fs.edit"                   => fs::handle_edit(db, bot_id, &params).await,
+        "fs.append"                 => fs::handle_append(db, bot_id, &params).await,
+        "fs.rm"                     => fs::handle_rm(db, bot_id, &params).await,
+        "fs.mv"                     => fs::handle_mv(db, bot_id, &params).await,
 
         _ => Err(resource_error("UNKNOWN_RESOURCE", format!("unknown resource: {resource}"))),
     };
