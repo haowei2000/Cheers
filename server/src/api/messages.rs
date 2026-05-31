@@ -22,6 +22,8 @@ pub struct SendMessageRequest {
     pub content: String,
     pub msg_type: Option<String>,
     pub reply_to_msg_id: Option<Uuid>,
+    #[serde(default)]
+    pub file_ids: Vec<String>,
 }
 
 pub async fn send_message(
@@ -41,6 +43,7 @@ pub async fn send_message(
         user_id = %user_id,
         msg_type = body.msg_type.as_deref().unwrap_or("text"),
         has_reply_to = body.reply_to_msg_id.is_some(),
+        attachment_file_count = body.file_ids.len(),
         content_len = body.content.len(),
         "send_message request validated"
     );
@@ -60,6 +63,7 @@ pub async fn send_message(
             content: body.content,
             msg_type: body.msg_type,
             reply_to_msg_id: body.reply_to_msg_id,
+            file_ids: body.file_ids,
         },
     )
     .await?;

@@ -2,6 +2,7 @@
 /// 只做数据载体，不含业务逻辑。
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 // ── User ──────────────────────────────────────────────────────────────────────
@@ -62,6 +63,7 @@ pub struct MessageDto {
     pub msg_type: String,
     pub is_partial: bool,
     pub reply_to_msg_id: Option<String>,
+    pub file_ids: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -78,6 +80,14 @@ impl MessageDto {
             msg_type: row.try_get("msg_type").unwrap_or_else(|_| "text".to_string()),
             is_partial: row.try_get("is_partial").unwrap_or(false),
             reply_to_msg_id: row.try_get("reply_to_msg_id").ok(),
+            file_ids: match row.try_get::<Vec<String>, _>("file_ids") {
+                Ok(ids) => ids,
+                Err(_) => row
+                    .try_get::<Value, _>("file_ids")
+                    .ok()
+                    .and_then(|value| serde_json::from_value(value).ok())
+                    .unwrap_or_default(),
+            },
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
         }
     }
