@@ -1,3 +1,10 @@
+//! HTTP and WebSocket route construction for the Axum application.
+//!
+//! The router is intentionally split into three groups:
+//! - `public`: endpoints available before authentication (health/login).
+//! - `authed`: endpoints requiring JWT middleware.
+//! - `ws_routes`: WebSocket upgrade and ACP bridge endpoints.
+
 use axum::{
     middleware,
     routing::{delete, get, patch, post},
@@ -12,12 +19,24 @@ use crate::{
 };
 
 pub fn build(state: AppState) -> Router {
+    // Keep CORS policy explicit at the top-level router so every grouped route
+    // shares a consistent browser/API access policy.
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let authed = Router::new()
+    Router::new()
+        .merge(build_public_routes())
+        .merge(build_authed_routes(state.clone()))
+        .merge(build_ws_routes())
+        .layer(cors)
+        .with_state(state)
+}
+
+fn build_authed_routes(state: AppState) -> Router {
+    // Routes under this branch all require JWT authentication.
+    Router::new()
         .route("/api/v1/workspaces", get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace))
         .route("/api/v1/workspaces/:workspace_id", patch(api::workspaces::update_workspace).delete(api::workspaces::delete_workspace))
         .route("/api/v1/workspaces/:workspace_id/invite", post(api::workspaces::invite_workspace_member))
@@ -40,22 +59,23 @@ pub fn build(state: AppState) -> Router {
         .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route("/api/v1/mcp/parse-claude-config", post(api::mcp::parse_claude_config))
         .layer(middleware::from_fn_with_state(state.clone(), jwt_auth));
+}
 
-    let public = Router::new()
+fn build_public_routes() -> Router {
+    // Public endpoints used before token acquisition.
+    Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login));
+}
 
+fn build_ws_routes() -> Router {
+    // WebSocket endpoints are attached without JWT middleware; each handler
+    // performs its own protocol-level validation where required.
     let ws_routes = Router::new()
         .route("/ws", get(ws::browser::ws_handler))
         .route("/ws/acp-bridge/control", get(ws::acp_bridge::control_handler))
         .route("/ws/acp-bridge/data", get(ws::acp_bridge::data_handler));
-
-    Router::new()
-        .merge(public)
-        .merge(authed)
-        .merge(ws_routes)
-        .layer(cors)
-        .with_state(state)
+    ws_routes
 }
 
 async fn health() -> &'static str {
