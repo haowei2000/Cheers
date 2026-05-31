@@ -34,6 +34,7 @@ pub struct CreateMessageParams {
     pub content: String,
     pub msg_type: Option<String>,
     pub reply_to_msg_id: Option<Uuid>,
+    pub file_ids: Vec<String>,
 }
 
 pub async fn create_message(
@@ -44,6 +45,11 @@ pub async fn create_message(
     params: CreateMessageParams,
 ) -> Result<MessageDto, AppError> {
     info!(user_id = %params.user_id, channel_id = %params.channel_id, "create_message start");
+
+    let file_ids = normalize_file_ids(&params.file_ids);
+    if !file_ids.is_empty() {
+        validate_file_ids(db, params.user_id, params.channel_id, &file_ids).await?;
+    }
 
     // ── 1. 验成员资格 ─────────────────────────────────────────────────────
     let is_member = sqlx::query(
@@ -88,15 +94,16 @@ pub async fn create_message(
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, is_deleted, in_reply_to_msg_id, created_at)
-         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7)",
+             is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at)
+         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8)",
     )
     .bind(msg_id.to_string())
     .bind(params.channel_id.to_string())
-    .bind(params.user_id.to_string())
+        .bind(params.user_id.to_string())
         .bind(&params.content)
         .bind(msg_type)
         .bind(params.reply_to_msg_id.map(|id| id.to_string()))
+        .bind(json!(file_ids.clone()))
         .bind(now)
         .execute(&mut tx)
         .await
@@ -119,6 +126,7 @@ pub async fn create_message(
         msg_type: msg_type.to_string(),
         is_partial: false,
         reply_to_msg_id: params.reply_to_msg_id.map(|id| id.to_string()),
+        file_ids: file_ids.clone(),
         created_at: now,
     };
 
@@ -135,6 +143,7 @@ pub async fn create_message(
             "content": dto.content,
             "msg_type": dto.msg_type,
             "is_partial": false,
+            "file_ids": &dto.file_ids,
             "created_at": now,
         }),
     );
@@ -166,6 +175,60 @@ pub async fn create_message(
 
     info!(message_id = %msg_id, "create_message complete");
     Ok(dto)
+}
+
+fn normalize_file_ids(file_ids: &[String]) -> Vec<String> {
+    let mut normalized: Vec<String> = Vec::new();
+    for raw in file_ids {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !normalized.iter().any(|existing| existing == trimmed) {
+            normalized.push(trimmed.to_string());
+        }
+    }
+    normalized
+}
+
+async fn validate_file_ids(
+    db: &PgPool,
+    uploader_id: Uuid,
+    channel_id: Uuid,
+    file_ids: &[String],
+) -> Result<(), AppError> {
+    for file_id in file_ids {
+        let status = sqlx::query(
+            "SELECT status
+             FROM file_records
+             WHERE file_id = $1 AND channel_id = $2 AND uploader_id = $3",
+        )
+        .bind(file_id)
+        .bind(channel_id.to_string())
+        .bind(uploader_id.to_string())
+        .fetch_optional(db)
+        .await
+        .map_err(AppError::Db)?
+        .and_then(|row| row.try_get::<Option<String>, _>("status").ok().flatten());
+
+        match status {
+            Some(status) if status == "uploaded" => {}
+            Some(status) => {
+                return Err(AppError::BadRequest(format!(
+                    "file_id {} is not ready (status={})",
+                    file_id, status
+                )));
+            }
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "invalid or inaccessible file_id {}",
+                    file_id
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ── Bot 触发解析（mesh step 2）────────────────────────────────────────────────
@@ -251,7 +314,7 @@ pub async fn list_messages(
         sqlx::query(
             "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
                     u.display_name AS sender_name,
-                    m.content, m.msg_type, m.is_partial,
+                    m.content, m.msg_type, m.is_partial, m.file_ids,
                     m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
              FROM messages m
              LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
@@ -271,7 +334,7 @@ pub async fn list_messages(
         sqlx::query(
             "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
                     u.display_name AS sender_name,
-                    m.content, m.msg_type, m.is_partial,
+                    m.content, m.msg_type, m.is_partial, m.file_ids,
                     m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
              FROM messages m
              LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
