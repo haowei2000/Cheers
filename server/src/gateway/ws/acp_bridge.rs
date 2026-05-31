@@ -194,12 +194,32 @@ async fn handle_data(mut socket: WebSocket, state: AppState) {
                                     )
                                         .await
                                 {
-                                    tracing::warn!(
-                                        bot_id = %bot.bot_id,
-                                        frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("unknown"),
-                                        err = %err,
-                                        "data frame rejected by capability check"
-                                    );
+                                    if let Some(ctx) = err.decision_context() {
+                                        tracing::warn!(
+                                            bot_id = %bot.bot_id,
+                                            frame_type = %ctx.frame_type,
+                                            action = %ctx.action,
+                                            scope_type = %ctx.delegation_scope_type,
+                                            scope_id = ctx.delegation_scope_id.as_deref().unwrap_or("none"),
+                                            request_session_id = ctx.request_session_id.as_deref().unwrap_or("none"),
+                                            resolved_session_id = ctx.resolved_session_id.as_deref().unwrap_or("none"),
+                                            resolved_session_status = ctx.resolved_session_status.as_deref().unwrap_or("none"),
+                                            resolved_scope_type = ctx.resolved_session_scope_type.as_deref().unwrap_or("none"),
+                                            resolved_scope_id = ctx.resolved_session_scope_id.as_deref().unwrap_or("none"),
+                                            session_locator_source = ctx.session_locator_source.as_deref().unwrap_or("missing"),
+                                            session_locator_value = ctx.session_locator_value.as_deref().unwrap_or("none"),
+                                            resource = ctx.resource.as_deref().unwrap_or("none"),
+                                            detail = %err,
+                                            "data frame rejected by capability check"
+                                        );
+                                    } else {
+                                        tracing::warn!(
+                                            bot_id = %bot.bot_id,
+                                            frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("unknown"),
+                                            err = %err,
+                                            "data frame rejected by capability check"
+                                        );
+                                    }
                                     let _ = ws_send(
                                         &mut socket,
                                         &json!({

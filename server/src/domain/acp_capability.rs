@@ -20,6 +20,23 @@ pub const CAPABILITY_SCOPE_SESSION: &str = "session";
 pub const CAPABILITY_SCOPE_USER: &str = "user";
 const CAPABILITY_SESSION_PROVIDER: &str = "acp";
 
+#[derive(Debug, Clone)]
+pub struct CapabilityDecisionContext {
+    pub delegation_id: String,
+    pub delegation_scope_type: String,
+    pub delegation_scope_id: Option<String>,
+    pub action: String,
+    pub frame_type: String,
+    pub resource: Option<String>,
+    pub request_session_id: Option<String>,
+    pub resolved_session_id: Option<String>,
+    pub resolved_session_status: Option<String>,
+    pub resolved_session_scope_type: Option<String>,
+    pub resolved_session_scope_id: Option<String>,
+    pub session_locator_source: Option<String>,
+    pub session_locator_value: Option<String>,
+}
+
 #[derive(Debug)]
 struct CapabilityEnvelope {
     delegation_id: String,
@@ -49,13 +66,6 @@ struct DelegationRecord {
 }
 
 #[derive(Debug)]
-enum SessionLocator {
-    SessionId(Uuid),
-    ProviderSessionKey(String),
-    ProviderSessionId(String),
-}
-
-#[derive(Debug)]
 struct SessionContext {
     session_id: Uuid,
     status: String,
@@ -68,6 +78,10 @@ struct SessionContext {
 pub enum CapabilityError {
     InvalidSignature(String),
     Denied(String),
+    DeniedWithContext {
+        message: String,
+        context: CapabilityDecisionContext,
+    },
 }
 
 impl std::fmt::Display for CapabilityError {
@@ -75,7 +89,76 @@ impl std::fmt::Display for CapabilityError {
         match self {
             Self::InvalidSignature(msg) => write!(f, "{msg}"),
             Self::Denied(msg) => write!(f, "{msg}"),
+            Self::DeniedWithContext { message, .. } => write!(f, "{message}"),
         }
+    }
+}
+
+impl CapabilityError {
+    pub fn decision_context(&self) -> Option<&CapabilityDecisionContext> {
+        match self {
+            Self::DeniedWithContext { context, .. } => Some(context),
+            _ => None,
+        }
+    }
+}
+
+fn denied_with_context(
+    message: impl Into<String>,
+    context: CapabilityDecisionContext,
+) -> CapabilityError {
+    CapabilityError::DeniedWithContext {
+        message: message.into(),
+        context,
+    }
+}
+
+#[derive(Debug, Clone)]
+enum SessionLocator {
+    SessionId(Uuid),
+    ProviderSessionKey(String),
+    ProviderSessionId(String),
+}
+
+impl SessionLocator {
+    fn source(&self) -> &'static str {
+        match self {
+            Self::SessionId(_) => "session_id",
+            Self::ProviderSessionKey(_) => "provider_session_key",
+            Self::ProviderSessionId(_) => "provider_session_id",
+        }
+    }
+
+    fn value(&self) -> String {
+        match self {
+            Self::SessionId(value) => value.to_string(),
+            Self::ProviderSessionKey(value) | Self::ProviderSessionId(value) => value.clone(),
+        }
+    }
+}
+
+fn build_decision_context(
+    delegation: &DelegationRecord,
+    frame_type: &str,
+    action: &str,
+    resource: Option<&str>,
+    locator: Option<&SessionLocator>,
+    session_context: Option<&SessionContext>,
+) -> CapabilityDecisionContext {
+    CapabilityDecisionContext {
+        delegation_id: delegation.delegation_id.to_string(),
+        delegation_scope_type: delegation.scope_type.clone(),
+        delegation_scope_id: delegation.scope_id.clone(),
+        action: action.to_string(),
+        frame_type: frame_type.to_string(),
+        resource: resource.map(ToString::to_string),
+        request_session_id: delegation.session_id.clone(),
+        resolved_session_id: session_context.map(|ctx| ctx.session_id.to_string()),
+        resolved_session_status: session_context.map(|ctx| ctx.status.clone()),
+        resolved_session_scope_type: session_context.and_then(|ctx| ctx.current_scope_type.clone()),
+        resolved_session_scope_id: session_context.and_then(|ctx| ctx.current_scope_id.clone()),
+        session_locator_source: locator.map(SessionLocator::source).map(ToString::to_string),
+        session_locator_value: locator.map(|loc| loc.value()),
     }
 }
 
@@ -405,17 +488,6 @@ async fn resolve_active_session(
     })
 }
 
-async fn resolve_session_context(
-    db: &PgPool,
-    bot_id: &Uuid,
-    provider_account_id: &str,
-    frame: &Value,
-) -> Result<SessionContext, CapabilityError> {
-    let locator = extract_session_locator(frame)
-        .ok_or_else(|| CapabilityError::Denied("missing session context".into()))?;
-    resolve_active_session(db, bot_id, provider_account_id, locator).await
-}
-
 fn extract_resource(frame: &Value) -> Option<String> {
     frame
         .get("resource")
@@ -423,6 +495,105 @@ fn extract_resource(frame: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
+}
+
+fn verify_scope_with_context(
+    delegation: &DelegationRecord,
+    frame_type: &str,
+    action: &str,
+    frame: &Value,
+    resource: Option<&str>,
+    session_context: Option<&SessionContext>,
+    locator: Option<&SessionLocator>,
+) -> Result<(), CapabilityError> {
+    let scope_id = delegation.scope_id.clone().unwrap_or_default();
+    let context = build_decision_context(
+        delegation,
+        frame_type,
+        action,
+        resource,
+        locator,
+        session_context,
+    );
+
+    match delegation.scope_type.as_str() {
+        CAPABILITY_SCOPE_GLOBAL => Ok(()),
+        CAPABILITY_SCOPE_CHANNEL => {
+            let frame_scope = extract_channel_id(frame).ok_or_else(|| {
+                denied_with_context("channel-scoped delegation requires channel_id", context.clone())
+            })?;
+            if frame_scope == scope_id {
+                return Ok(());
+            }
+            Err(denied_with_context("channel scope mismatch", context))
+        }
+        CAPABILITY_SCOPE_SESSION => {
+            let expected_session_id = delegation
+                .session_id
+                .as_deref()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or_else(|| {
+                    denied_with_context(
+                        "session-scoped delegation missing session_id",
+                        context.clone(),
+                    )
+                })?;
+
+            let session_context = session_context
+                .ok_or_else(|| denied_with_context("session context is required for session scope", context.clone()))?;
+            if session_context.session_id != expected_session_id {
+                return Err(denied_with_context("session scope mismatch", context));
+            }
+            if !is_session_active(&session_context.status) {
+                return Err(denied_with_context("session is not active", context));
+            }
+            Ok(())
+        }
+        CAPABILITY_SCOPE_USER => {
+            if delegation.delegated_to.is_none() {
+                return Err(denied_with_context(
+                    "user-scoped delegation has no target",
+                    context,
+                ));
+            }
+            if action == "resource_req" {
+                if let Some(res) = resource {
+                    if !resource_allowed(&delegation.allowed_resources, res) {
+                        return Err(denied_with_context(
+                            "resource denied by user-scoped delegation",
+                            context,
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        }
+        CAPABILITY_SCOPE_WORKSPACE => {
+            if scope_id.trim().is_empty() {
+                return Err(denied_with_context(
+                    "workspace-scoped delegation missing scope_id",
+                    context,
+                ));
+            }
+            let session_context = session_context.ok_or_else(|| {
+                denied_with_context("workspace scope requires session context", context.clone())
+            })?;
+            if session_context.current_scope_type.as_deref() != Some(CAPABILITY_SCOPE_WORKSPACE) {
+                return Err(denied_with_context(
+                    "session is not in workspace scope",
+                    context,
+                ));
+            }
+            if session_context.current_scope_id.as_deref() != Some(scope_id.as_str()) {
+                return Err(denied_with_context("workspace scope mismatch", context));
+            }
+            Ok(())
+        }
+        _ => Err(denied_with_context(
+            format!("unsupported scope_type {}", delegation.scope_type),
+            context,
+        )),
+    }
 }
 
 async fn verify_scope(
@@ -434,73 +605,43 @@ async fn verify_scope(
     action: &str,
     resource: Option<&str>,
 ) -> Result<(), CapabilityError> {
-    let scope_id = delegation.scope_id.clone().unwrap_or_default();
-    match delegation.scope_type.as_str() {
-        CAPABILITY_SCOPE_GLOBAL => Ok(()),
-        "channel" => {
-            let frame_scope = extract_channel_id(frame).ok_or_else(|| {
-                CapabilityError::Denied("channel-scoped delegation requires channel_id".into())
-            })?;
+    let locator = extract_session_locator(frame);
+    let frame_type = extract_frame_type(frame);
+    let base_context = build_decision_context(
+        delegation,
+        frame_type,
+        action,
+        resource,
+        locator.as_ref(),
+        None,
+    );
 
-            if frame_scope == scope_id {
-                return Ok(());
-            }
-            Err(CapabilityError::Denied("channel scope mismatch".into()))
-        }
-        CAPABILITY_SCOPE_SESSION => {
-            let expected_session_id = delegation
-                .session_id
-                .as_deref()
-                .and_then(|value| Uuid::parse_str(value).ok())
-                .ok_or_else(|| {
-                    CapabilityError::Denied("session-scoped delegation missing session_id".into())
-                })?;
-
-            let context = resolve_session_context(db, bot_id, provider_account_id, frame).await?;
-            if context.session_id != expected_session_id {
-                return Err(CapabilityError::Denied("session scope mismatch".into()));
-            }
-            Ok(())
-        }
-        CAPABILITY_SCOPE_USER => {
-            if delegation.delegated_to.is_none() {
-                return Err(CapabilityError::Denied(
-                    "user-scoped delegation has no target".into(),
-                ));
-            }
-            if action == "resource_req" {
-                if let Some(res) = resource {
-                    if !resource_allowed(&delegation.allowed_resources, res) {
-                        return Err(CapabilityError::Denied(
-                            "resource denied by user-scoped delegation".into(),
-                        ));
-                    }
-                }
-            }
-            Ok(())
-        }
-        CAPABILITY_SCOPE_WORKSPACE => {
-            if scope_id.trim().is_empty() {
-                return Err(CapabilityError::Denied(
-                    "workspace-scoped delegation missing scope_id".into(),
-                ));
-            }
-            let context = resolve_session_context(db, bot_id, provider_account_id, frame).await?;
-            if context.current_scope_type.as_deref() != Some(CAPABILITY_SCOPE_WORKSPACE) {
-                return Err(CapabilityError::Denied(
-                    "session is not in workspace scope".into(),
-                ));
-            }
-            if context.current_scope_id.as_deref() != Some(scope_id.as_str()) {
-                return Err(CapabilityError::Denied("workspace scope mismatch".into()));
-            }
-            Ok(())
-        }
-        _ => Err(CapabilityError::Denied(format!(
-            "unsupported scope_type {}",
-            delegation.scope_type
-        ))),
+    let mut session_context = None;
+    if matches!(
+        delegation.scope_type.as_str(),
+        CAPABILITY_SCOPE_SESSION | CAPABILITY_SCOPE_WORKSPACE
+    ) {
+        let locator = locator
+            .as_ref()
+            .ok_or_else(|| denied_with_context("missing session context", base_context.clone()))?;
+        session_context = Some(
+            resolve_active_session(db, bot_id, provider_account_id, locator.clone())
+                .await
+                .map_err(|err| match err {
+                    CapabilityError::Denied(msg) => denied_with_context(msg, base_context.clone()),
+                    other => other,
+                })?,
+        );
     }
+
+    verify_scope_with_context(
+        delegation,
+        frame_type,
+        action,
+        resource,
+        session_context.as_ref(),
+        locator.as_ref(),
+    )
 }
 
 fn verify_signature(
@@ -662,6 +803,7 @@ pub async fn authorize_data_frame(
     let delegation_id = Uuid::parse_str(&envelope.delegation_id)
         .map_err(|_| CapabilityError::Denied("invalid delegation id".into()))?;
     let delegation = load_delegation(db, bot_id, &delegation_id.to_string()).await?;
+    let resource = extract_resource(frame);
 
     validate_public_key(&delegation.algorithm, &delegation.public_key)?;
     verify_signature(&delegation, frame_type, &envelope, frame)?;
@@ -672,7 +814,7 @@ pub async fn authorize_data_frame(
         &delegation,
         frame,
         action,
-        extract_resource(frame).as_deref(),
+        resource.as_deref(),
     )
     .await?;
 
@@ -684,7 +826,6 @@ pub async fn authorize_data_frame(
         )));
     }
 
-    let resource = extract_resource(frame);
     if action == "resource_req" {
         let resource = resource.clone().ok_or_else(|| CapabilityError::Denied("missing resource".into()))?;
         if !resource_allowed(&delegation.allowed_resources, &resource) {
@@ -718,5 +859,291 @@ pub fn map_app_error(err: CapabilityError) -> AppError {
     match err {
         CapabilityError::InvalidSignature(message) => AppError::Unauthorized(message),
         CapabilityError::Denied(message) => AppError::Forbidden(message),
+        CapabilityError::DeniedWithContext { message, .. } => AppError::Forbidden(message),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_delegation(
+        scope_type: &str,
+        scope_id: Option<&str>,
+        session_id: Option<&str>,
+        delegated_to: Option<&str>,
+        allowed_resources: Vec<&str>,
+    ) -> DelegationRecord {
+        DelegationRecord {
+            delegation_id: Uuid::new_v4(),
+            bot_id: Uuid::new_v4(),
+            scope_type: scope_type.to_string(),
+            scope_id: scope_id.map(str::to_string),
+            session_id: session_id.map(str::to_string),
+            allowed_actions: vec!["send".to_string(), "stream".to_string(), "resource_req".to_string()],
+            allowed_resources: allowed_resources
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            max_uses: None,
+            use_count: 0,
+            expires_at: None,
+            public_key: "test".into(),
+            algorithm: CAPABILITY_SUPPORTED_ALGORITHM.to_string(),
+            delegated_to: delegated_to.map(str::to_string),
+            status: "active".into(),
+            revoked: false,
+        }
+    }
+
+    fn make_session_context(
+        session_id: &str,
+        status: &str,
+        scope_type: Option<&str>,
+        scope_id: Option<&str>,
+    ) -> SessionContext {
+        SessionContext {
+            session_id: Uuid::parse_str(session_id).unwrap(),
+            status: status.to_string(),
+            current_scope_type: scope_type.map(str::to_string),
+            current_scope_id: scope_id.map(str::to_string),
+            provider_session_key: Some("provider-session-key".into()),
+        }
+    }
+
+    struct VerifyScopeCase {
+        name: &'static str,
+        delegation: DelegationRecord,
+        frame_type: &'static str,
+        action: &'static str,
+        frame: Value,
+        resource: Option<&'static str>,
+        locator: Option<SessionLocator>,
+        session_context: Option<SessionContext>,
+        expected_err: Option<&'static str>,
+    }
+
+    #[test]
+    fn test_verify_scope_table_driven() {
+        let ws = Uuid::new_v4().to_string();
+        let ch = Uuid::new_v4().to_string();
+        let sid = Uuid::new_v4().to_string();
+        let sid2 = Uuid::new_v4().to_string();
+
+        let cases = vec![
+            VerifyScopeCase {
+                name: "global scope passes",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_GLOBAL,
+                    None,
+                    None,
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"channel_id":"any"}),
+                resource: None,
+                locator: None,
+                session_context: None,
+                expected_err: None,
+            },
+            VerifyScopeCase {
+                name: "channel scope passes",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_CHANNEL,
+                    Some("c-1"),
+                    None,
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"channel_id":"c-1"}),
+                resource: None,
+                locator: None,
+                session_context: None,
+                expected_err: None,
+            },
+            VerifyScopeCase {
+                name: "channel scope mismatch",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_CHANNEL,
+                    Some("c-1"),
+                    None,
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"channel_id":"c-2"}),
+                resource: None,
+                locator: None,
+                session_context: None,
+                expected_err: Some("channel scope mismatch"),
+            },
+            VerifyScopeCase {
+                name: "session scope passes",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_SESSION,
+                    None,
+                    Some(&sid),
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"provider_session_key":"k-1"}),
+                resource: None,
+                locator: Some(SessionLocator::ProviderSessionKey("k-1".to_string())),
+                session_context: Some(make_session_context(&sid, sessions::SESSION_STATUS_ACTIVE, Some("channel"), Some(&ch))),
+                expected_err: None,
+            },
+            VerifyScopeCase {
+                name: "session scope mismatch",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_SESSION,
+                    None,
+                    Some(&sid),
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"provider_session_key":"k-1"}),
+                resource: None,
+                locator: Some(SessionLocator::ProviderSessionKey("k-1".to_string())),
+                session_context: Some(make_session_context(&sid2, sessions::SESSION_STATUS_ACTIVE, Some("channel"), Some(&ch))),
+                expected_err: Some("session scope mismatch"),
+            },
+            VerifyScopeCase {
+                name: "session scope missing context",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_SESSION,
+                    None,
+                    Some(&sid),
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"provider_session_key":"k-1"}),
+                resource: None,
+                locator: Some(SessionLocator::ProviderSessionKey("k-1".to_string())),
+                session_context: None,
+                expected_err: Some("session context is required"),
+            },
+            VerifyScopeCase {
+                name: "workspace scope passes",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_WORKSPACE,
+                    Some("ws-1"),
+                    None,
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"provider_session_key":"k-1"}),
+                resource: None,
+                locator: Some(SessionLocator::ProviderSessionKey("k-1".to_string())),
+                session_context: Some(make_session_context(&ws, sessions::SESSION_STATUS_BUSY, Some("workspace"), Some("ws-1"))),
+                expected_err: None,
+            },
+            VerifyScopeCase {
+                name: "workspace scope mismatch",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_WORKSPACE,
+                    Some("ws-1"),
+                    None,
+                    None,
+                    vec![],
+                ),
+                frame_type: "send",
+                action: "send",
+                frame: json!({"provider_session_key":"k-1"}),
+                resource: None,
+                locator: Some(SessionLocator::ProviderSessionKey("k-1".to_string())),
+                session_context: Some(make_session_context(&ws, sessions::SESSION_STATUS_BUSY, Some("workspace"), Some("ws-2"))),
+                expected_err: Some("workspace scope mismatch"),
+            },
+            VerifyScopeCase {
+                name: "user scope denied without target",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_USER,
+                    None,
+                    None,
+                    None,
+                    vec![],
+                ),
+                frame_type: "resource_req",
+                action: "resource_req",
+                frame: json!({"resource":"channel.files.list"}),
+                resource: Some("channel.files.list"),
+                locator: None,
+                session_context: None,
+                expected_err: Some("user-scoped delegation has no target"),
+            },
+            VerifyScopeCase {
+                name: "user scope resource denied",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_USER,
+                    None,
+                    None,
+                    Some("user-b"),
+                    vec!["channel.files.read:*"],
+                ),
+                frame_type: "resource_req",
+                action: "resource_req",
+                frame: json!({"resource":"channel.files.write"}),
+                resource: Some("channel.files.write"),
+                locator: None,
+                session_context: None,
+                expected_err: Some("resource denied by user-scoped delegation"),
+            },
+            VerifyScopeCase {
+                name: "user scope resource allowed",
+                delegation: make_delegation(
+                    CAPABILITY_SCOPE_USER,
+                    None,
+                    None,
+                    Some("user-b"),
+                    vec!["channel.files.*"],
+                ),
+                frame_type: "resource_req",
+                action: "resource_req",
+                frame: json!({"resource":"channel.files.write"}),
+                resource: Some("channel.files.write"),
+                locator: None,
+                session_context: None,
+                expected_err: None,
+            },
+        ];
+
+        for case in cases {
+            let result = verify_scope_with_context(
+                &case.delegation,
+                case.frame_type,
+                case.action,
+                &case.frame,
+                case.resource,
+                case.session_context.as_ref(),
+                case.locator.as_ref(),
+            );
+            if let Some(expected_err) = case.expected_err {
+                let err = result
+                    .unwrap_err();
+                assert!(
+                    err.to_string().contains(expected_err),
+                    "{name}: expect '{expected_err}', got '{err}'",
+                    name = case.name
+                );
+            } else {
+                if let Err(err) = result {
+                    panic!("{name}: expected ok, got '{err}'", name = case.name);
+                }
+            }
+        }
     }
 }
