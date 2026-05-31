@@ -338,15 +338,9 @@ services:
 - [ ] Resource 层：`since_seq` / index / `channel.activity.read` / `fs.*`
 - [ ] Environment 动态 tool 注册（资源分发器从静态 `match` 升级为注册表）
 
-**新 Python Agent Service**（从零写，见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)）
-- [ ] 通用 agent runtime loop（task → resource_req → LLM → delta/done；无 per-bot 分支）
-- [ ] 数据驱动的身份加载（读 bot_accounts，每身份一条 WS 连接，启动时全部 boot-connect）
-- [ ] ResourceClient（resource_req/res）
-- [ ] MCP stdio 集成（`packages/agentnexus-mcp-server/`）
-- [ ] 默认 Environment 模板 seed（替代旧硬编码 anchor/progress 层）
-
 **收尾**
 - [ ] 旧 Python 单体整体下线（旧 REST API + 旧 bot_runtime + 旧 agent_bridge routes）
+- [ ] `agentnexus-mcp-server` 验证可作为标准接入桥（Claude / Codex 端到端测试）
 - [ ] 集成测试基线通过（见 CLAUDE.md：需 Docker Compose 全栈）
 
 ### Phase 2：网格能力全量 + 全量 REST

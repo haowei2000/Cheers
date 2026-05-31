@@ -4,8 +4,8 @@
 > 分支：`break/rust-gateway-arch`
 > 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
 
-本文确定 **ACP 协议 / ACP connector**（外部 Agent，如 OpenCode 等本地 stdio agent）
-以及**内置 Agent Service** 在 Rust Backend 架构下的位置。
+本文确定 **ACP 协议 / ACP connector**（外部 Agent，如 OpenCode、Claude、Codex 等）
+在 Rust Backend 架构下的接入设计。**平台无内置 Agent Service**；见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)。
 
 ---
 
@@ -14,7 +14,8 @@
 | 维度 | 决策 | 理由 |
 |------|------|------|
 | Rust Backend 职责 | **全量**：REST API + WS Gateway + Agent Bridge 协议 | 单一 Rust 进程，内部模块边界分明 |
-| 内置 Agent 定位 | **独立 Python 服务，走 Agent Bridge 协议** | 和外置 ACP bot 零区别，零特权 |
+| 内置 Agent | **无**——平台外接优先，无内置 runtime | Intelligence 来自用户自己连接的外部 ACP Agent |
+| MCP Agent 接入 | **`agentnexus-mcp-server`（stdio）** 作为标准桥 | MCP ↔ Agent Bridge 翻译；agent 和 server 本地共存 |
 | 资源访问 | **统一 `resource_req/res` 协议**（data channel） | bot 通过协议访问平台资源，不直连 DB |
 | connector 鉴权 | **botToken（agb_）在 Rust Backend 验** | 统一鉴权入口 |
 | 客户端线协议 | **不变** | Bot 输出经 Rust Backend realtime fan-out → 浏览器 |
@@ -95,84 +96,53 @@ Browser / Mobile
 
 ---
 
-## 3. 内置 Agent = 普通 ACP Bot
+## 3. 外置 Agent 接入
 
-这是架构的核心决策：**内置 bot 和外置 bot 走完全一样的协议，零特权**。
+**平台无内置 Agent Service。** 所有 bot 都是外置 agent，通过 Agent Bridge WS 连接。
+接入方式有两种，协议完全一样。
 
-### 3.1 对比
+### 3.1 接入方式对比
 
-| 维度 | 旧架构（内置 bot） | 新架构（内置 Agent Service） |
-|------|-------------------|---------------------------|
-| 接入方式 | 进程内直接调用 | Agent Bridge WS（control + data） |
-| 数据库访问 | 直连 PostgreSQL | **通过 `resource_req` 协议访问** |
-| 任务触发 | `asyncio.create_task(run_bot)` | Rust Backend 通过 control WS 派发 |
-| 流式输出 | EventBus → WS 直接广播 | data WS `delta` → Rust Backend fan-out |
-| 文件访问 | 直接读写 S3 | **通过 `channel.files` resource 协议** |
-| 记忆访问 | 直接读写 DB | **通过 `channel.memory` resource 协议** |
-| 部署 | 和 REST API 同进程 | 独立容器 |
-| 扩容 | 和 REST API 绑定 | 独立扩容 |
+| 维度 | ACP connector（直连） | agentnexus-mcp-server（MCP 桥） |
+|------|----------------------|-------------------------------|
+| 适用 agent | OpenCode 等原生 ACP agent | Claude / Codex / Cursor 等 MCP agent |
+| 本地组件 | connector + 可选 Daemon | agentnexus-mcp-server（stdio） |
+| Agent Bridge | connector 直接持有 WS | mcp-server 通过 connector IPC 转发 |
+| 资源访问 | `resource_req` on data WS | MCP tool call → IPC → `resource_req` |
+| 部署 | 用户本地 | 用户本地，和 agent 共存 |
 
-### 3.2 Agent Service 内部结构
-
-> 见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)：**没有 `adapters/`，没有 per-bot 类**。
-> 一份通用 runtime 服务所有内置身份;身份由数据 seed,行为由 Environment 模板决定。
-> 旧的 `coordinator/helper/help_bot` 已删除(Coordinator 被网格的 `@mention` 路由替代)。
-
-```python
-agent_service/
-├── main.py                     ← 入口: 为每个 seed 的身份各开一条 Agent Bridge 连接
-├── runtime.py                  ← 唯一的通用 agent loop（task → 拉上下文 → LLM → delta/done，无 per-bot 分支）
-├── resources.py                ← ResourceClient: 通过 resource_req 访问平台资源
-├── identities.py               ← 从数据加载身份（bot_account: token / trust=system），非代码
-├── memory/                     ← 记忆访问 (通过 resource API / fs.* 读写)
-├── tools/                      ← 确定性动作 / 工具调用 (web search, fetch；非 bot)
-└── config.py                   ← backend_ws_url 等
-```
-
-### 3.3 Agent Service 的任务执行流程
+### 3.2 任务执行流程（通用，适用所有外置 agent）
 
 ```
-用户发消息 → Rust Backend 持久化 → 判断需要触发 bot
+用户发消息 → Rust Backend 持久化 → 网格路由（@mention / default_bot_id）
   │
   ▼
-Rust Backend 通过 control WS 派发任务给 Agent Service:
-  { type: "task", task_id, channel_id, msg_id, ... }
+Rust Backend 通过 control WS 派发 task 帧给对应 bot:
+  { type: "task", task_id, channel_id, msg_id, trigger_seq, ... }
   │
   ▼
-Agent Service 收到任务:
-  ├─ resource_req: channel.context  (查频道上下文)
-  │   └─ resource_res: {info, members, recent_messages, memory}
-  │
-  ├─ resource_req: channel.files    (查频道文件)
-  │   └─ resource_res: {files: [...]}
-  │
-  ├─ 调 LLM API (流式)
-  │   ├─ data WS: delta(msg_id, seq:0, "...")
-  │   │   └─ Rust Backend → realtime fan-out → 浏览器
-  │   ├─ data WS: delta(msg_id, seq:1, "...")
+外置 agent（OpenCode / Claude via mcp-server / 任何 ACP bot）收到任务:
+  ├─ resource_req: channel.context  → resource_res: {messages, memory, members}
+  ├─ resource_req: channel.files    → resource_res: {files: [...]}
+  ├─ 调本地 LLM（流式）
+  │   ├─ data WS: delta(msg_id, seq:0, "...")  → Rust fan-out → 浏览器
   │   └─ ...
-  │
-  ├─ resource_req: channel.memory.update (写入记忆)
-  │   └─ resource_res: {entries: [...]}
-  │
-  └─ data WS: done(msg_id, content="完整内容")
-      └─ Rust Backend → DB 更新 → realtime fan-out → 浏览器
+  ├─ resource_req: fs.write / channel.memory.update（写记忆，需 Grant）
+  └─ data WS: done(msg_id)  → Rust Backend → DB finalize → fan-out → 浏览器
 ```
 
 ---
 
-## 4. 外置 ACP Bot 的处理
+## 4. ACP Bot 能力
 
-外置 ACP bot 和内置 Agent Service **共享同一个 Agent Bridge 入口**：
+所有外置 bot 共享同一个 Agent Bridge 入口，Rust Backend 的 `agent_bridge::registry` 按 `bot_id` 区分：
 
 ```
 /ws/agent-bridge/control   ← 所有 bot 都连这里
 /ws/agent-bridge/data      ← 所有 bot 都连这里
 ```
 
-Rust Backend 的 `agent_bridge::registry` 按 `bot_id` 区分，协议完全一样。
-
-### 4.1 外置 bot 现有能力（保持不变）
+### 4.1 基础能力
 
 | 能力 | 帧类型 | 说明 |
 |------|--------|------|

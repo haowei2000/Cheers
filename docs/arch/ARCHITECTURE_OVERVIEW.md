@@ -36,6 +36,9 @@
 
 ## 二、目标拓扑
 
+> **外接优先，无内置 runtime。** 平台侧只有 Rust Backend，无 Python 服务。
+> Intelligence 完全来自用户自己连接的外部 ACP Agent。见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)。
+
 ```
 Browser / Mobile
   │ WS + REST（同一端口 :8000）
@@ -50,35 +53,33 @@ Browser / Mobile
 │  └─ DB / S3 / SMTP / JWT                                 │
 └──────────┬───────────────────────────────────────────────┘
            │ Agent Bridge WS (control + data)
-           ▼
-┌──────────────────────────────────────────────────────────┐
-│              Python Agent Service                          │
-│  ├─ 一份通用 ACP Agent runtime（无内置 bot 类、无 per-bot 分支）│
-│  │    身份由数据 seed（≥1 个 bot_account, trust=system）       │
-│  ├─ 行为来自 Environment 模板（seed + convention prompt）      │
-│  ├─ Memory / RAG · LLM 调用（流式）                          │
-│  └─ 走 Agent Bridge 协议，和外置 ACP bot 零区别（见 BUILTIN_AGENT）│
-└──────────────────────────────────────────────────────────┘
+    ┌──────┴──────────────────────────────────┐
+    ▼                                         ▼
+┌───────────────────────┐     ┌───────────────────────────────┐
+│  外置 ACP Agent        │     │  agentnexus-mcp-server (stdio) │
+│  OpenCode / Codex /   │     │  MCP ↔ Agent Bridge 桥         │
+│  任何 ACP connector   │     │  (Claude / Codex / Cursor 等)   │
+└───────────────────────┘     └───────────────────────────────┘
 ```
 
 **关键决策**：
 - **没有独立的 Gateway**：Gateway + REST API 合并为一个 Rust Backend
 - **没有 NATS**：WS 直连，不需要消息总线（单实例前提，见下文部署模型）
 - **没有 Python REST API**：所有 REST 端点迁移到 Rust
-- **内置 bot = 外置 bot**：走同一套 Agent Bridge + resource 协议 + ACP 权限
+- **没有内置 Python Agent Service**：平台不提供内置 runtime；bot 全部来自外部连接
+- **`agentnexus-mcp-server`** 是 MCP 能力 agent 接入平台的标准桥，非独立服务
 
-> **外置 ACP bot 的本地形态**：外置 bot 通过本地 **Daemon（事件网关）** 接入——Daemon 负责本地事件过滤、设备认证、本地文件白名单（见 [BOT_PERMISSION](./BOT_PERMISSION.md) / [SECURITY](./SECURITY.md)）。**内置 Agent Service 无 Daemon**（无本地文件、无设备认证），用 botToken 直连，默认 `trust_level=system`。所以「内置=外置零区别」是指**Agent Bridge + resource 协议层零区别**；在设备认证 / 本地资源 / trust_level 上二者本就不同。
+> **外置 ACP bot 的本地形态**：外置 bot 通过本地 **Daemon（事件网关）** 接入——Daemon 负责本地事件过滤、设备认证、本地文件白名单（见 [BOT_PERMISSION](./BOT_PERMISSION.md) / [SECURITY](./SECURITY.md)）。
 
 ```
-（含外置 Daemon 的完整接入形态）
-┌─ 用户本地 ─────────────────┐        ┌─ 平台云端 ──────────────────┐
-│ Local ACP Agent            │        │  Rust Backend（单实例）      │
-│   └ Local Daemon(事件网关) │──WSS──▶│   transport/domain/realtime  │
-│      · 事件过滤 · 设备认证  │        │   /agent_bridge              │
-└────────────────────────────┘        │                              │
-┌─ 平台云端 ─────────────────┐        │  Python Agent Service        │
-│ 内置 Agent Service(无Daemon)│──WS──▶ │  (内置 bot, trust=system)    │
-└────────────────────────────┘        └──────────────────────────────┘
+（外置 agent 完整接入形态）
+┌─ 用户本地 ──────────────────────────┐     ┌─ 平台云端 ──────────────┐
+│  Claude / Codex / OpenCode          │     │  Rust Backend（单实例）  │
+│    │ MCP stdio                       │     │  transport/domain/       │
+│    ▼                                │     │  realtime/agent_bridge   │
+│  agentnexus-mcp-server              │     │                          │
+│    │ 或直接 ACP connector + Daemon   │─WSS▶│                          │
+└────────────────────────────────────┘     └──────────────────────────┘
 ```
 
 ---
