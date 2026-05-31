@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{mentions, messages as domain_messages},
+    domain::{channel_seq, mentions, messages as domain_messages},
     infra::db::models::{MessageDto, MessageFileRef, MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
@@ -74,6 +74,7 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
                     "v": MESSAGE_SCHEMA_VERSION,
                     "msg_id": "",
                     "channel_id": channel_id.to_string(),
+                    "channel_seq": null,
                     "sender_type": "system",
                     "content": "",
                     "msg_type": "text",
@@ -149,11 +150,14 @@ pub async fn handle_create(
         .begin()
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+        .await
+        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     sqlx::query(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-          is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at)
-         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, FALSE, $6, $7, $8)",
+          is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq)
+         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9)",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
@@ -163,6 +167,7 @@ pub async fn handle_create(
     .bind(&reply_to_msg_id)
     .bind(&serde_json::json!(file_ids.clone()))
     .bind(now)
+    .bind(channel_seq)
     .execute(&mut *tx)
     .await
     .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
@@ -182,6 +187,7 @@ pub async fn handle_create(
         v: MESSAGE_SCHEMA_VERSION,
         msg_id: msg_id.to_string(),
         channel_id: channel_id.to_string(),
+        channel_seq: Some(channel_seq),
         sender_type: "bot".into(),
         sender_id: Some(bot_id.to_string()),
         sender_name: None,
@@ -200,6 +206,7 @@ pub async fn handle_create(
             "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": msg_id.to_string(),
             "channel_id": channel_id.to_string(),
+            "channel_seq": channel_seq,
             "sender_type": "bot",
             "sender_id": bot_id.to_string(),
             "content": "",

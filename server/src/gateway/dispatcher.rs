@@ -8,20 +8,21 @@
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use super::{
     registry::BotLocator,
     stream::{StreamEntry, StreamRegistry},
 };
-use crate::domain::sessions;
+use crate::domain::{channel_seq, sessions};
 use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
 use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
 /// 派发参数。
 pub struct DispatchParams {
     pub trigger_msg_id: Uuid,
+    pub trigger_seq: i64,
     pub bot_id: Uuid,
     pub channel_id: Uuid,
     pub provider_session_key: String,
@@ -83,6 +84,8 @@ pub async fn dispatch(
         json!({
             "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": placeholder_id,
+            "channel_id": params.channel_id,
+            "channel_seq": null,
             "sender_id": params.bot_id,
             "sender_type": "bot",
             "content": "",
@@ -101,6 +104,7 @@ pub async fn dispatch(
         task_id,
         params.channel_id,
         params.trigger_msg_id,
+        params.trigger_seq,
         placeholder_id,
         &params.provider_session_key,
         params.session_id,
@@ -110,7 +114,28 @@ pub async fn dispatch(
 
     if !delivered {
         // bot 不在线：清理占位（或标记为失败，让前端看到错误提示）
-        let _ = mark_placeholder_failed(db, placeholder_id).await;
+        if let Ok(Some(failed)) = mark_placeholder_failed(db, placeholder_id).await {
+            let done = WireFrame::channel(
+                failed.channel_id,
+                "message_done",
+                json!({
+                    "v": MESSAGE_SCHEMA_VERSION,
+                    "msg_id": placeholder_id,
+                    "channel_id": failed.channel_id,
+                    "channel_seq": failed.channel_seq,
+                    "sender_id": params.bot_id,
+                    "sender_type": "bot",
+                    "content": "[bot offline]",
+                    "msg_type": "text",
+                    "is_partial": false,
+                    "reply_to_msg_id": null,
+                    "file_ids": [],
+                    "mentions": [],
+                    "files": [],
+                }),
+            );
+            fanout.broadcast_channel(failed.channel_id, done).await;
+        }
         registry.remove(placeholder_id);
         if let Some(session_id) = params.session_id {
             let _ = sessions::finalize_session(db, session_id).await;
@@ -143,8 +168,6 @@ enum IdempotencyState {
 }
 
 async fn check_idempotency(db: &PgPool, placeholder_id: Uuid) -> IdempotencyState {
-    use sqlx::Row;
-
     match sqlx::query("SELECT is_partial, content FROM messages WHERE msg_id = $1")
         .bind(placeholder_id.to_string())
         .fetch_optional(db)
@@ -184,21 +207,60 @@ async fn create_placeholder(
     .map_err(|e| e.to_string())
 }
 
-async fn mark_placeholder_failed(db: &PgPool, placeholder_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE messages SET is_partial = FALSE, content = '[bot offline]'
-         WHERE msg_id = $1 AND is_partial = TRUE",
+struct FailedPlaceholder {
+    channel_id: Uuid,
+    channel_seq: i64,
+}
+
+async fn mark_placeholder_failed(
+    db: &PgPool,
+    placeholder_id: Uuid,
+) -> Result<Option<FailedPlaceholder>, sqlx::Error> {
+    let Some(channel_id) = sqlx::query(
+        "SELECT channel_id
+         FROM messages
+         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
     )
     .bind(placeholder_id.to_string())
-    .execute(db)
-    .await
-    .map(|_| ())
+    .fetch_optional(db)
+    .await?
+    .and_then(|row| row.try_get::<String, _>("channel_id").ok())
+    .and_then(|raw| raw.parse::<Uuid>().ok()) else {
+        return Ok(None);
+    };
+
+    let mut tx = db.begin().await?;
+    let seq = channel_seq::allocate(&mut tx, channel_id).await?;
+    let result = sqlx::query(
+        "UPDATE messages
+         SET is_partial = FALSE,
+             content = '[bot offline]',
+             channel_seq = $2
+         WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
+    )
+    .bind(placeholder_id.to_string())
+    .bind(seq)
+    .execute(&mut *tx)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+
+    tx.commit().await?;
+
+    Ok(Some(FailedPlaceholder {
+        channel_id,
+        channel_seq: seq,
+    }))
 }
 
 fn build_task_frame(
     task_id: Uuid,
     channel_id: Uuid,
     msg_id: Uuid,
+    trigger_seq: i64,
     placeholder_msg_id: Uuid,
     provider_session_key: &str,
     session_id: Option<Uuid>,
@@ -208,6 +270,7 @@ fn build_task_frame(
         "task_id": task_id,
         "channel_id": channel_id,
         "msg_id": msg_id,
+        "trigger_seq": trigger_seq,
         "placeholder_msg_id": placeholder_msg_id,
         "provider_session_key": provider_session_key,
         "trigger": "user_message",

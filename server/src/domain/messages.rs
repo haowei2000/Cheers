@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
+        channel_seq,
         mentions::{self, MentionParseError},
         sessions,
     },
@@ -96,12 +97,15 @@ pub async fn create_message(
     let workspace_id = resolve_channel_workspace_id(db, params.channel_id).await?;
 
     let mut tx = db.begin().await.map_err(AppError::Db)?;
+    let seq = channel_seq::allocate(&mut tx, params.channel_id)
+        .await
+        .map_err(AppError::Db)?;
 
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at)
-         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8)",
+             is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq)
+         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9)",
     )
     .bind(msg_id.to_string())
     .bind(params.channel_id.to_string())
@@ -111,6 +115,7 @@ pub async fn create_message(
     .bind(params.reply_to_msg_id.map(|id| id.to_string()))
     .bind(json!(file_ids.clone()))
     .bind(now)
+    .bind(seq)
     .execute(&mut *tx)
     .await
     .map_err(AppError::Db)?;
@@ -126,6 +131,7 @@ pub async fn create_message(
         v: MESSAGE_SCHEMA_VERSION,
         msg_id: msg_id.to_string(),
         channel_id: params.channel_id.to_string(),
+        channel_seq: Some(seq),
         sender_type: "user".into(),
         sender_id: Some(params.user_id.to_string()),
         sender_name: sender_name.clone(),
@@ -155,6 +161,7 @@ pub async fn create_message(
             "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": dto.msg_id,
             "channel_id": dto.channel_id,
+            "channel_seq": dto.channel_seq,
             "sender_type": "user",
             "sender_id": params.user_id,
             "sender_name": sender_name,
@@ -206,6 +213,7 @@ pub async fn create_message(
             bot_locator,
             DispatchParams {
                 trigger_msg_id: msg_id,
+                trigger_seq: seq,
                 bot_id,
                 channel_id: params.channel_id,
                 provider_session_key,
@@ -502,7 +510,7 @@ pub async fn list_channel_messages(
             if let Some((created_at, anchor_msg_id)) = anchor {
                 let rows = sqlx::query(
                     "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            u.display_name AS sender_name,
+                            m.channel_seq, u.display_name AS sender_name,
                             m.content, m.msg_type, m.is_partial, m.file_ids,
                             m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
                      FROM messages m
@@ -527,7 +535,7 @@ pub async fn list_channel_messages(
             } else {
                 let rows = sqlx::query(
                     "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            u.display_name AS sender_name,
+                            m.channel_seq, u.display_name AS sender_name,
                             m.content, m.msg_type, m.is_partial, m.file_ids,
                             m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
                      FROM messages m
@@ -566,7 +574,7 @@ pub async fn list_channel_messages(
             if let Some((created_at, anchor_msg_id)) = anchor {
                 let rows = sqlx::query(
                     "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            u.display_name AS sender_name,
+                            m.channel_seq, u.display_name AS sender_name,
                             m.content, m.msg_type, m.is_partial, m.file_ids,
                             m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
                      FROM messages m
@@ -595,7 +603,7 @@ pub async fn list_channel_messages(
         (None, None) => {
             let rows = sqlx::query(
                 "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                        u.display_name AS sender_name,
+                        m.channel_seq, u.display_name AS sender_name,
                         m.content, m.msg_type, m.is_partial, m.file_ids,
                         m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
                  FROM messages m

@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{mentions, sessions},
+    domain::{channel_seq, mentions, sessions},
     gateway::realtime::{fanout::Fanout, frame::WireFrame},
     infra::db::models::{MessageMention, MESSAGE_SCHEMA_VERSION},
 };
@@ -175,14 +175,19 @@ pub async fn handle_done(
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
     let mut tx = db.begin().await.map_err(|_| "db error")?;
+    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+        .await
+        .map_err(|_| "db error")?;
     let details = sqlx::query(
         "UPDATE messages
-         SET content = $1,
+         SET channel_seq = $1,
+             content = $2,
              is_partial = FALSE,
-             file_ids = COALESCE($2::jsonb, file_ids)
-         WHERE msg_id = $3
-         RETURNING channel_id, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
+             file_ids = COALESCE($3::jsonb, file_ids)
+         WHERE msg_id = $4 AND is_partial = TRUE AND channel_seq IS NULL
+         RETURNING channel_id, channel_seq, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
     )
+    .bind(channel_seq)
     .bind(&normalized.content)
     .bind(done_file_ids)
     .bind(msg_id.to_string())
@@ -200,6 +205,9 @@ pub async fn handle_done(
         .map_err(|_| "invalid channel_id")?
         .parse()
         .map_err(|_| "invalid channel_id")?;
+    let channel_seq = details
+        .try_get::<i64, _>("channel_seq")
+        .map_err(|_| "db error")?;
     let file_ids = details
         .try_get::<Vec<String>, _>("file_ids")
         .ok()
@@ -219,6 +227,7 @@ pub async fn handle_done(
             "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": msg_id,
             "channel_id": channel_id,
+            "channel_seq": channel_seq,
             "sender_type": "bot",
             "sender_id": bot_id,
             "content": &normalized.content,
@@ -386,9 +395,14 @@ pub async fn handle_send(
 
     // 先落库
     let mut tx = db.begin().await.map_err(|_| "db error")?;
+    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+        .await
+        .map_err(|_| "db error")?;
     sqlx::query(
-        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, file_ids)
-         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6)",
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, msg_type,
+             is_partial, file_ids, channel_seq)
+         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7)",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
@@ -396,6 +410,7 @@ pub async fn handle_send(
     .bind(&normalized.content)
     .bind(msg_type)
     .bind(serde_json::json!(file_ids.clone()))
+    .bind(channel_seq)
     .execute(&mut *tx)
     .await
     .map_err(|_| "db error")?;
@@ -412,6 +427,7 @@ pub async fn handle_send(
             "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": msg_id,
             "channel_id": channel_id,
+            "channel_seq": channel_seq,
             "sender_type": "bot",
             "sender_id": bot_id,
             "content": &normalized.content,
