@@ -19,6 +19,7 @@
 | HOL 阻塞 | **文件传输分独立 lane**（resource 分块） | 大文件不阻塞会话流式 |
 | 并发控制 | **Backend 按 bot 限并发 + 排队** | 单连接吞吐有限，防一个重会话饿死其他 |
 | 资源访问 | **`resource_req/res` 协议**（data channel） | bot 通过协议访问平台资源，不直连 DB |
+| 可选 E2EE 协商 | **`binding_config.acp_security` 在 hello 携带**，默认 `enabled=false` | 控制面先行，当前不强制 payload 加密 |
 
 ---
 
@@ -31,8 +32,17 @@
 | `/ws/agent-bridge/control` | 生命周期、配置同步、健康 | `hello`(成员快照/connector_config)、ping、ready、config_* |
 | `/ws/agent-bridge/data` | agent I/O + 文件 + 资源访问 | `hello`(last_event_seq)、send、reply、delta、done、file_upload、resume、**resource_req/res** |
 
-- **鉴权**：bearer `botToken`（agb_）→ `resolve_bot_by_token` → 校验 `bot.status=="online"`。
+- **鉴权**：bearer `botToken`（agb_）→ `resolve_bot_by_token` → 校验 `bot.status=="online"`。`resolve_bot_by_token` 同时解析 `binding_config.acp_security` 并在 `hello` 中回传给 connector。
 - **单 bot 单活动连接**：新连接 supersede 旧连接（close code SUPERSEDED）。
+
+### 可选 E2EE 能力下发
+
+- Bot 创建时可携带 `acp_security`（`enabled`、`mode`、`algorithm`、`allow_plaintext_fallback`），网关会归一化后写入 `bot_accounts.binding_config.acp_security`。
+- control/data `hello` 帧都可透出该字段，connector 以此决定是否尝试做端到端加密，当前实现只支持协商字段，不处理加密 payload。
+- 建议约定：
+  - `mode`：`X25519-ECDH`（初始）
+  - `algorithm`：`AES-256-GCM` 或 `ChaCha20-Poly1305`
+  - `enabled=false` 时不进行加密；`allow_plaintext_fallback=true` 时可回退明文。
 
 ### session 多路复用（一个 bot 同时处理多会话）
 

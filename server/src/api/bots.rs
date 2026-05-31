@@ -1,10 +1,21 @@
 use axum::{extract::{Path, State}, Extension, Json};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{app_state::AppState, errors::AppError, api::middleware::Claims};
+
+#[derive(Deserialize)]
+pub struct BotAcpSecurityConfig {
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub algorithm: Option<String>,
+    #[serde(default)]
+    pub allow_plaintext_fallback: Option<bool>,
+}
 
 #[derive(Deserialize)]
 pub struct BotCreateRequest {
@@ -22,6 +33,7 @@ pub struct BotCreateRequest {
     pub binding_type: Option<String>,
     pub bridge_provider: Option<String>,
     pub binding_config: Option<Value>,
+    pub acp_security: Option<BotAcpSecurityConfig>,
 }
 
 pub async fn list_bots(
@@ -30,7 +42,7 @@ pub async fn list_bots(
 ) -> Result<Json<Vec<Value>>, AppError> {
     let rows = sqlx::query(
         "SELECT bot_id, username, display_name, description, avatar_url, status, scope,
-                binding_type, bridge_provider, model_id, template_id, intro, created_at
+                binding_type, bridge_provider, model_id, template_id, intro, binding_config, created_at
          FROM bot_accounts
          ORDER BY username",
     )
@@ -49,6 +61,7 @@ pub async fn list_bots(
         "model_id": r.try_get::<String, _>("model_id").ok(),
         "template_id": r.try_get::<String, _>("template_id").ok(),
         "intro": r.try_get::<String, _>("intro").ok(),
+        "binding_config": r.try_get::<Value, _>("binding_config").ok(),
     })).collect()))
 }
 
@@ -60,6 +73,7 @@ pub async fn create_bot(
     if body.username.trim().is_empty() {
         return Err(AppError::BadRequest("username is required".into()));
     }
+    let binding_config = normalize_binding_config(body.binding_config, body.acp_security)?;
     let bot_id = body.bot_id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let status = body.status.unwrap_or_else(|| "online".into());
     let scope = body.scope.unwrap_or_else(|| "friend".into());
@@ -67,12 +81,12 @@ pub async fn create_bot(
     let bridge_provider = body.bridge_provider.unwrap_or_else(|| "generic".into());
     let row = sqlx::query(
         "INSERT INTO bot_accounts
-            (bot_id, username, display_name, description, avatar_url, model_id, template_id,
+         (bot_id, username, display_name, description, avatar_url, model_id, template_id,
              custom_system_prompt, status, scope, intro, binding_type, bridge_provider,
              binding_config, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING bot_id, username, display_name, description, avatar_url, status, scope,
-                   binding_type, bridge_provider, model_id, template_id, intro",
+                   binding_type, bridge_provider, model_id, template_id, intro, binding_config",
     )
     .bind(&bot_id)
     .bind(body.username.trim())
@@ -83,14 +97,14 @@ pub async fn create_bot(
     .bind(body.template_id)
     .bind(body.custom_system_prompt)
     .bind(status)
-    .bind(scope)
-    .bind(body.intro)
-    .bind(binding_type)
-    .bind(bridge_provider)
-    .bind(body.binding_config)
-    .bind(&claims.sub)
-    .fetch_one(&state.db)
-    .await?;
+        .bind(scope)
+        .bind(body.intro)
+        .bind(binding_type)
+        .bind(bridge_provider)
+        .bind(binding_config)
+        .bind(&claims.sub)
+        .fetch_one(&state.db)
+        .await?;
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
         "username": row.try_get::<String, _>("username").unwrap_or_default(),
@@ -104,7 +118,43 @@ pub async fn create_bot(
         "model_id": row.try_get::<String, _>("model_id").ok(),
         "template_id": row.try_get::<String, _>("template_id").ok(),
         "intro": row.try_get::<String, _>("intro").ok(),
+        "binding_config": row.try_get::<Value, _>("binding_config").ok(),
     })))
+}
+
+fn normalize_binding_config(
+    binding_config: Option<Value>,
+    acp_security: Option<BotAcpSecurityConfig>,
+) -> Result<Option<Value>, AppError> {
+    let mut merged = match binding_config {
+        Some(Value::Object(map)) => map,
+        Some(Value::Null) => Map::new(),
+        Some(_) => {
+            return Err(AppError::BadRequest("binding_config must be a JSON object".into()));
+        }
+        None => Map::new(),
+    };
+
+    if let Some(sec) = acp_security {
+        let algorithm = sec.algorithm.unwrap_or_else(|| "AES-256-GCM".into());
+        let mode = sec.mode.unwrap_or_else(|| "X25519-ECDH".into());
+        let mut sec_obj = Map::new();
+        sec_obj.insert("enabled".into(), Value::Bool(sec.enabled));
+        sec_obj.insert("mode".into(), Value::String(mode));
+        sec_obj.insert("algorithm".into(), Value::String(algorithm));
+
+        if let Some(allow_plaintext_fallback) = sec.allow_plaintext_fallback {
+            sec_obj.insert("allow_plaintext_fallback".into(), Value::Bool(allow_plaintext_fallback));
+        }
+
+        merged.insert("acp_security".into(), Value::Object(sec_obj));
+    }
+
+    if merged.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(Value::Object(merged)))
 }
 
 pub async fn get_bot_status(

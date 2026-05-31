@@ -11,7 +11,7 @@
 > - [BOT_CONFIG_LAYERING.md](./BOT_CONFIG_LAYERING.md) —— Bot 配置分级设计
 > - [ACP_INTEGRATION.md](./ACP_INTEGRATION.md) —— ACP 接入设计（内置/外置 bot 统一协议）
 > - [ACP_CONNECTION_MODEL.md](./ACP_CONNECTION_MODEL.md) —— ACP 连接模型（单连接多 session、重连重放）
-> - [SECURITY.md](./SECURITY.md) —— 安全架构（传输安全、设备认证；E2EE 为未来计划）
+> - [SECURITY.md](./SECURITY.md) —— 安全架构（传输安全、设备认证；bot 级 ACP 端点 E2EE 为可选）
 > - [FILE_STORAGE.md](./FILE_STORAGE.md) —— 文件存储与权限（S3 存储、scope link、Agent 文件交互）
 > - [E2EE_NOTES.md](./E2EE_NOTES.md) —— 端到端加密可行性分析（搁置/未来计划）
 > - [context-and-environment.md](./context-and-environment.md) —— 上下文与 Environment 架构（会话/记忆/Environment 三分、记忆即文件系统、Environment 即插件；v1 声明式渲染，预留代码插件升级路径）
@@ -125,7 +125,7 @@ Browser / Mobile
 | bot 权限 | ACP RBAC（Grant + 覆盖 + 审批）；trust_level 枚举 `system>trusted>standard>untrusted` | BOT_PERMISSION |
 | **写后投递（Write-Before-Deliver）** | **终态帧必须先落 PG，再 fan-out**；流式帧（delta）直接 fan-out 不落库，靠 `message_done` 全量自愈 | WIRE §4.2 |
 | 实时传输模型 | 单实例进程内 fan-out（无 NATS）；fan-out/locator 抽象为 trait | WIRE §8 / 部署模型 |
-| E2EE | **本期不做**（仅层级 A：TLS+落盘+设备认证） | SECURITY / E2EE_NOTES |
+| E2EE | **默认关闭；按 bot 配置可选开启。当前仅“配置+握手”入链，数据内容加密未全面落地** | SECURITY / E2EE_NOTES / BOT_CONFIG_LAYERING |
 | bot 任务投递 | Backend → control WS task 帧 → Agent Service | TASK_DELIVERY v2 |
 | bot 输出回传 | data WS delta/done → Backend → 浏览器 fan-out | ACP_CONNECTION_MODEL |
 | 内置 vs 外置 | **零区别**，同一套协议 | ACP_INTEGRATION |
@@ -151,7 +151,7 @@ Browser / Mobile
 | 1 | **resource 协议** — bot 通过协议访问平台资源 | ✅ 已定稿 → AGENT_BRIDGE_RESOURCE.md |
 | 2 | **ACP 权限模型** — Grant + 覆盖 + 审批；资源写走 Grant | ✅ 已定稿 → BOT_PERMISSION.md |
 | 3 | **任务投递** — Backend 直接通过 Agent Bridge WS 派发 | ✅ 已定稿 → TASK_DELIVERY v2 |
-| 4 | **E2EE 范围** — 本期仅层级 A，不做 E2EE | ✅ 已定调 → SECURITY / E2EE_NOTES |
+| 4 | **E2EE 范围** — 默认仅层级 A；ACP 端点 E2EE 改为 bot 可选能力（`binding_config.acp_security`），当前先落地控制面（握手元数据） | ✅ 已定调 → SECURITY / E2EE_NOTES / BOT_CONFIG_LAYERING |
 | 5 | **部署模型** — 单实例 + fan-out/locator trait 预留 | ✅ 已定调 → 部署模型节 |
 | 6 | **trust_level 枚举** — `system>trusted>standard>untrusted` | ✅ 已统一 → BOT_PERMISSION §7 |
 | 7 | **token 里无 workspace_id** — 工作区级 / 全局限流需另想办法（resource 限流目前只有 per-bot） | 🔶 留意 |

@@ -20,6 +20,7 @@
 | 文件传输 | 流式分块（data channel） | 大文件不走 HTTP，不阻塞 WS |
 | 内置 vs 外置 | **协议完全一样，零特权** | 内置 Agent Service 和外置 ACP bot 走同一套 |
 | 现有 HTTP 文件端点 | **保留，resource 协议是并行通道** | 向后兼容；HTTP 适合简单场景 |
+| E2EE 配置 | 通过 hello 下发 `acp_security` 元数据 | 当前仅协商，不做 payload 层加解密 |
 
 ---
 
@@ -63,7 +64,12 @@
   "v": 1,                        // 协议版本，缺省视为 1
   "req_id": "<string>",          // 客户端生成，唯一，用于关联 response
   "resource": "<string>",        // 资源标识符，见 §4
-  "params": { ... }              // 资源特定参数，见 §4
+  "params": { ... },             // 资源特定参数，见 §4
+  // 或发送加密 envelope（在 acp_security 协商通过后可选）
+  "encrypted": true,
+  "ciphertext": "<base64>",
+  "nonce": "<base64>",
+  "tag": "<base64>"
 }
 ```
 
@@ -73,6 +79,9 @@
 - `params`：每个 resource 定义自己的参数结构。
 
 > **Capability 协商**：bot 在 control channel `hello` 时可上报 `supported_resources: [...]`，Backend 据此判断该 connector 能用哪些 resource；未上报则按全集尝试，遇不支持的帧 bot 自行忽略。这让新增 resource 不必要求所有 connector 同步升级。
+
+> **可选端到端加密（当前状态）**：若 connector 已收到 `hello.acp_security` 且 `enabled=true`，可用该握手信息决定是否发送加密 envelope；当前网关只透传配置，不对 `encrypted` 字段做解密与验签，resource 仍按明文解析执行。  
+> 建议的握手值：`mode: X25519-ECDH`、`algorithm: AES-256-GCM | ChaCha20-Poly1305`、`allow_plaintext_fallback`。
 
 ### 3.2 Response（Backend → Bot）
 
