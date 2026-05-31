@@ -16,8 +16,11 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{channel_seq, mentions, sessions},
-    gateway::realtime::{fanout::Fanout, frame::WireFrame},
+    domain::{chains, channel_seq, mentions, sessions},
+    gateway::{
+        realtime::{fanout::Fanout, frame::WireFrame},
+        registry::BotLocator,
+    },
     infra::db::models::{MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
@@ -137,6 +140,7 @@ pub async fn handle_done(
     registry: &StreamRegistry,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
+    bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
     provider_account_id: &str,
     frame: &Value,
@@ -199,6 +203,17 @@ pub async fn handle_done(
         .await
         .map_err(|_| "db error")?;
     tx.commit().await.map_err(|_| "db error")?;
+    let chain_context = match chains::mark_reply_finalized(db, msg_id).await {
+        Ok(context) => context,
+        Err(e) => {
+            tracing::warn!(
+                msg_id = %msg_id,
+                err = %e,
+                "bot reply finalized but chain bookkeeping failed"
+            );
+            None
+        }
+    };
 
     let channel_id = details
         .try_get::<String, _>("channel_id")
@@ -243,6 +258,31 @@ pub async fn handle_done(
 
     // 清理注册表
     registry.remove(msg_id);
+
+    if let Some(chain_context) = chain_context {
+        if let Err(e) = chains::on_bot_reply_finalized(
+            db,
+            fanout,
+            registry,
+            bot_locator,
+            chain_context.chain_id,
+            chain_context.parent_task_id,
+            chain_context.parent_depth,
+            msg_id,
+            channel_seq,
+            channel_id,
+            &normalized.mentions,
+        )
+        .await
+        {
+            tracing::warn!(
+                chain_id = %chain_context.chain_id,
+                msg_id = %msg_id,
+                err = %e,
+                "bot reply chain re-entry failed"
+            );
+        }
+    }
 
     if let Some(session_id) = session_id {
         if let Some(entry_session_id) = entry_session_id {
