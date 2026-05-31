@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
-    gateway::stream::{handle_delta, handle_done, handle_send},
+    gateway::stream::{handle_delta, handle_done, handle_send, handle_session_update},
     infra::crypto::hash_bot_token,
     resource,
 };
@@ -32,6 +32,7 @@ const CLOSE_SUPERSEDED: u16 = 4402;
 #[derive(Debug, Clone)]
 struct BotInfo {
     bot_id: Uuid,
+    provider_account_id: String,
     username: String,
     display_name: Option<String>,
     /// 可选的 ACP 安全配置快照（目前仅回显，不强制加解密）。
@@ -71,6 +72,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
         "bot_username": bot.username,
         "bot_display_name": bot.display_name,
         "connection_id": connection_id,
+        "session_id": connection_id,
         "memberships": memberships,
     });
     if let Some(acp_security) = &bot.acp_security {
@@ -161,6 +163,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState) {
         "stream": "data",
         "bot_id": bot.bot_id,
         "connection_id": connection_id,
+        "session_id": connection_id,
         "last_event_seq": 0,
     });
     if let Some(acp_security) = &bot.acp_security {
@@ -213,12 +216,13 @@ async fn handle_data_frame(
 
     match ftype {
         // ── 流式输出（写后投递）────────────────────────────────────────────
-        "delta" => {
+            "delta" => {
             if let Err(e) = handle_delta(
                 &state.stream_registry,
                 &state.fanout,
                 &state.db,
                 bot.bot_id,
+                &bot.provider_account_id,
                 frame,
             )
             .await
@@ -234,6 +238,7 @@ async fn handle_data_frame(
                 &state.fanout,
                 &state.db,
                 bot.bot_id,
+                &bot.provider_account_id,
                 frame,
             )
             .await
@@ -259,6 +264,12 @@ async fn handle_data_frame(
         // ── 审批请求（转发给频道内用户）─────────────────────────────────────
         "permission_request" => {
             // TODO: fan-out permission_request 帧给频道内用户
+        }
+        "session_update" => {
+            if let Err(e) = handle_session_update(&state.db, bot.bot_id, &bot.provider_account_id, frame).await {
+                tracing::warn!(bot_id = %bot.bot_id, err = e, "session_update rejected");
+                let _ = ws_send(socket, &json!({ "type": "error", "detail": e })).await;
+            }
         }
 
         "ping" => {
@@ -349,13 +360,59 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Option<BotInfo> {
         return None;
     }
 
+    let bot_id = row.try_get::<String, _>("bot_id").ok()?.parse().ok()?;
     let binding_config = row.try_get::<Option<Value>, _>("binding_config").ok().flatten();
+    let provider_account_id = resolve_bot_provider_account_id(binding_config.as_ref())
+        .unwrap_or_else(|| bot_id.to_string());
     Some(BotInfo {
-        bot_id: row.try_get::<String, _>("bot_id").ok()?.parse().ok()?,
+        bot_id,
+        provider_account_id,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),
         acp_security: resolve_bot_acp_security(binding_config),
     })
+}
+
+fn resolve_bot_provider_account_id(binding_config: Option<&Value>) -> Option<String> {
+    let top = binding_config?;
+
+    fn trim_or_none(value: &Value) -> Option<String> {
+        let value = value.as_str()?.trim();
+        if value.is_empty() {
+            return None;
+        }
+        Some(value.to_string())
+    }
+
+    if let Some(acp) = top.get("acp").and_then(Value::as_object) {
+        for key in [
+            "provider_account_id",
+            "provider_account",
+            "account_id",
+            "account",
+            "agent_id",
+            "id",
+        ] {
+            if let Some(v) = acp.get(key).and_then(trim_or_none) {
+                return Some(v);
+            }
+        }
+    }
+
+    for key in [
+        "provider_account_id",
+        "provider_account",
+        "account_id",
+        "account",
+        "agent_id",
+        "id",
+    ] {
+        if let Some(v) = top.get(key).and_then(trim_or_none) {
+            return Some(v);
+        }
+    }
+
+    None
 }
 
 fn resolve_bot_acp_security(binding_config: Option<Value>) -> Option<Value> {

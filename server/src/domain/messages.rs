@@ -171,14 +171,16 @@ pub async fn create_message(
     info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
     for bot_id in bots {
         let provider_session_key = provider_session_key_for_bot_workspace(workspace_id, bot_id);
-        let provider_account_id = bot_id.to_string();
+        let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
+            .await
+            .unwrap_or_else(|_| bot_id.to_string());
         let session = sessions::acquire_scope_session(
             db,
             bot_id,
             &provider_account_id,
             &provider_session_key,
-            sessions::SESSION_SCOPE_CHANNEL,
-            &params.channel_id.to_string(),
+            sessions::SESSION_SCOPE_WORKSPACE,
+            &workspace_id.to_string(),
             None,
             "primary",
         )
@@ -219,6 +221,61 @@ pub async fn create_message(
 
 fn provider_session_key_for_bot_workspace(workspace_id: Uuid, bot_id: Uuid) -> String {
     format!("agentnexus:workspace:{workspace_id}:bot:{bot_id}")
+}
+
+async fn resolve_provider_account_id_for_bot(db: &PgPool, bot_id: Uuid) -> Result<String, AppError> {
+    let binding_config = sqlx::query(
+        "SELECT binding_config FROM bot_accounts WHERE bot_id = $1",
+    )
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .and_then(|row| row.try_get::<Option<serde_json::Value>, _>("binding_config").ok())
+    .ok_or(AppError::NotFound)?;
+
+    let value = binding_config.ok_or(AppError::NotFound)?;
+    resolve_provider_account_id_from_binding_config(&value).ok_or(AppError::NotFound)
+}
+
+fn resolve_provider_account_id_from_binding_config(binding_config: &serde_json::Value) -> Option<String> {
+    fn trim_or_none(value: &serde_json::Value) -> Option<String> {
+        let value = value.as_str()?.trim();
+        if value.is_empty() {
+            return None;
+        }
+        Some(value.to_string())
+    }
+
+    if let Some(acp) = binding_config.get("acp").and_then(serde_json::Value::as_object) {
+        for key in [
+            "provider_account_id",
+            "provider_account",
+            "account_id",
+            "account",
+            "agent_id",
+            "id",
+        ] {
+            if let Some(v) = acp.get(key).and_then(trim_or_none) {
+                return Some(v);
+            }
+        }
+    }
+
+    for key in [
+        "provider_account_id",
+        "provider_account",
+        "account_id",
+        "account",
+        "agent_id",
+        "id",
+    ] {
+        if let Some(v) = binding_config.get(key).and_then(trim_or_none) {
+            return Some(v);
+        }
+    }
+
+    None
 }
 
 async fn resolve_channel_workspace_id(db: &PgPool, channel_id: Uuid) -> Result<Uuid, AppError> {

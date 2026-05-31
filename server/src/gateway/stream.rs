@@ -35,6 +35,8 @@ pub struct StreamEntry {
     pub channel_id: Uuid,
     /// task id
     pub task_id: Uuid,
+    /// 任务 session（AgentNexusSession.id）——用于会话生命周期更新
+    pub session_id: Option<Uuid>,
     /// 是否已 finalize（R4 守卫：finalize 后拒绝迟到 delta）
     pub finalized: bool,
 }
@@ -90,6 +92,7 @@ pub async fn handle_delta(
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_id: Uuid,
+    provider_account_id: &str,
     frame: &Value,
 ) -> Result<(), &'static str> {
     let msg_id: Uuid = frame
@@ -98,23 +101,11 @@ pub async fn handle_delta(
         .and_then(|s| s.parse().ok())
         .ok_or("missing msg_id")?;
     let delta = frame.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-    if let Some(session_id) = extract_session_id(frame) {
-        if let Err(e) = sessions::touch_session(db, session_id).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-        }
-    } else if let Some(provider_session_key) = extract_provider_session_key(frame) {
-        if let Ok(session_id) = sessions::resolve_session_id_by_key(db, &bot_id.to_string(), bot_id, &provider_session_key).await {
-            if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
-        }
-    }
+    let entry = registry.entries.get(&msg_id).ok_or("stream not registered")?;
+    mark_session_alive(db, bot_id, provider_account_id, frame, Some(entry.session_id)).await;
 
     // R1: 所有权校验 —— 以 PG 为准，不信任内存注册表
     let channel_id = verify_ownership(db, bot_id, msg_id).await?;
-
-    // R3: 占位必须在注册表里（dispatcher 负责注册）
-    let entry = registry.entries.get(&msg_id).ok_or("stream not registered")?;
 
     // R4: finalize 守卫
     if entry.finalized {
@@ -144,6 +135,7 @@ pub async fn handle_done(
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_id: Uuid,
+    provider_account_id: &str,
     frame: &Value,
 ) -> Result<(), &'static str> {
     let msg_id: Uuid = frame
@@ -153,8 +145,16 @@ pub async fn handle_done(
         .ok_or("missing msg_id")?;
     let session_id = extract_session_id(frame);
     let provider_session_key = extract_provider_session_key(frame);
+    let provider_session_id = extract_provider_session_id(frame);
+    let entry_session_id = registry
+        .entries
+        .get(&msg_id)
+        .and_then(|entry| entry.session_id);
+    mark_session_alive(db, bot_id, provider_account_id, frame, entry_session_id).await;
 
     let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let done_file_ids = parse_file_ids(frame.get("file_ids"));
+    let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
 
     // R1: 所有权校验
     let channel_id = verify_ownership(db, bot_id, msg_id).await?;
@@ -168,25 +168,26 @@ pub async fn handle_done(
     }
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
-    sqlx::query(
-        "UPDATE messages SET content = $1, is_partial = FALSE WHERE msg_id = $2",
+    let details = sqlx::query(
+        "UPDATE messages
+         SET content = $1,
+             is_partial = FALSE,
+             file_ids = COALESCE($2::jsonb, file_ids)
+         WHERE msg_id = $3
+         RETURNING channel_id, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
     )
     .bind(content)
-    .bind(msg_id.to_string())
-    .execute(db)
-    .await
-    .map_err(|_| "db error")?;
-
-    // ── 再 fan-out 终态帧 ────────────────────────────────────────────────────
-    let details = sqlx::query(
-        "SELECT channel_id, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id
-         FROM messages WHERE msg_id = $1",
-    )
+    .bind(done_file_ids)
     .bind(msg_id.to_string())
     .fetch_optional(db)
     .await
     .map_err(|_| "db error")?
     .ok_or("message not found")?;
+    let channel_id = details
+        .try_get::<String, _>("channel_id")
+        .map_err(|_| "invalid channel_id")?
+        .parse()
+        .map_err(|_| "invalid channel_id")?;
     let file_ids = details
         .try_get::<Vec<String>, _>("file_ids")
         .ok()
@@ -220,16 +221,98 @@ pub async fn handle_done(
     registry.remove(msg_id);
 
     if let Some(session_id) = session_id {
-        if let Err(e) = sessions::finalize_session(db, session_id).await {
+        if let Some(entry_session_id) = entry_session_id {
+            if entry_session_id != session_id {
+                tracing::warn!(
+                    bot_id = %bot_id,
+                    msg_id = %msg_id,
+                    expected = %entry_session_id,
+                    got = %session_id,
+                    "session mismatch: explicit session_id differs from stream entry"
+                );
+                if let Err(e) = sessions::finalize_session(db, entry_session_id).await {
+                    tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
+                }
+            } else if let Err(e) = sessions::finalize_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
+            }
+        } else if let Err(e) = sessions::finalize_session(db, session_id).await {
+            tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
+        }
+    } else if let Some(entry_session_id) = entry_session_id {
+        if let Err(e) = sessions::finalize_session(db, entry_session_id).await {
             tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
         }
     } else if let Some(provider_session_key) = provider_session_key {
-        if let Ok(session_id) = sessions::resolve_session_id_by_key(db, &bot_id.to_string(), bot_id, &provider_session_key).await {
+        if let Ok(session_id) = sessions::resolve_session_id_by_key(
+            db,
+            bot_id,
+            provider_account_id,
+            &provider_session_key,
+        )
+        .await
+        {
+            if let Err(e) = sessions::finalize_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
+            }
+        }
+    } else if let Some(provider_session_id) = provider_session_id {
+        if let Ok(session_id) = sessions::resolve_session_id_by_provider_id(
+            db,
+            bot_id,
+            provider_account_id,
+            &provider_session_id,
+        )
+        .await
+        {
             if let Err(e) = sessions::finalize_session(db, session_id).await {
                 tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
             }
         }
     }
+
+    Ok(())
+}
+
+/// 处理 bot 上报的 session_update 帧（provider_session_id / metadata）。
+pub async fn handle_session_update(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    frame: &Value,
+) -> Result<(), &'static str> {
+    let provider_session_key = frame
+        .get("provider_session_key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let provider_session_id = frame
+        .get("provider_session_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
+    let metadata = frame.get("metadata").and_then(|value| {
+        if value.is_object() {
+            Some(value.clone())
+        } else {
+            None
+        }
+    });
+    if provider_session_key.is_none() && provider_session_id.is_none() && metadata.is_none() {
+        return Err("session_update missing provider_session_key, provider_session_id, and metadata");
+    }
+
+    sessions::apply_session_update(
+        db,
+        bot_id,
+        provider_account_id,
+        provider_session_key,
+        provider_session_id,
+        metadata,
+    )
+    .await
+    .map_err(|_| "session_update failed")?;
 
     Ok(())
 }
@@ -246,6 +329,15 @@ fn extract_provider_session_key(frame: &Value) -> Option<String> {
         .get("provider_session_key")
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string)
+}
+
+fn extract_provider_session_id(frame: &Value) -> Option<String> {
+    frame
+        .get("provider_session_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
 }
 
 /// 处理 bot 主动发新消息（send 帧）。
@@ -322,6 +414,74 @@ fn parse_file_ids(value: Option<&Value>) -> Vec<String> {
         }
     }
     file_ids
+}
+
+/// 基于 delta / done / session_update 附带上下文，触发会话活性更新。
+async fn mark_session_alive(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    frame: &Value,
+    stream_entry_session_id: Option<Uuid>,
+) {
+    if let Some(session_id) = extract_session_id(frame) {
+        if let Some(entry_session_id) = stream_entry_session_id {
+            if entry_session_id != session_id {
+                tracing::warn!(
+                    bot_id = %bot_id,
+                    expected = %entry_session_id,
+                    got = %session_id,
+                    "session mismatch: explicit session_id differs from stream entry"
+                );
+                if let Err(e) = sessions::touch_session(db, entry_session_id).await {
+                    tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+                }
+            } else if let Err(e) = sessions::touch_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+            }
+        } else if let Err(e) = sessions::touch_session(db, session_id).await {
+            tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+        }
+        return;
+    }
+
+    if let Some(session_id) = stream_entry_session_id {
+        if let Err(e) = sessions::touch_session(db, session_id).await {
+            tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+        }
+        return;
+    }
+
+    if let Some(provider_session_key) = extract_provider_session_key(frame) {
+        if let Ok(session_id) = sessions::resolve_session_id_by_key(
+            db,
+            bot_id,
+            provider_account_id,
+            &provider_session_key,
+        )
+        .await
+        {
+            if let Err(e) = sessions::touch_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+            }
+        }
+        return;
+    }
+
+    if let Some(provider_session_id) = extract_provider_session_id(frame) {
+        if let Ok(session_id) = sessions::resolve_session_id_by_provider_id(
+            db,
+            bot_id,
+            provider_account_id,
+            &provider_session_id,
+        )
+        .await
+        {
+            if let Err(e) = sessions::touch_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+            }
+        }
+    }
 }
 
 // ── R1 所有权校验（以 PG 为准）───────────────────────────────────────────────

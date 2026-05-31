@@ -49,7 +49,12 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
     }))
 }
 
-pub async fn handle_update(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_update(
+    db: &PgPool,
+    bot_id: Uuid,
+    params: &Value,
+    session_id: Option<&str>,
+) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
@@ -62,7 +67,7 @@ pub async fn handle_update(db: &PgPool, bot_id: Uuid, params: &Value) -> Resourc
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "layer required"))?
         .to_string();
 
-    check_write_permission(db, bot_id, channel_id, "channel:memory", "write").await?;
+    check_write_permission(db, bot_id, channel_id, "channel:memory", "write", session_id).await?;
 
     let mode = params.get("mode").and_then(|v| v.as_str()).unwrap_or("replace");
     let entries = params

@@ -19,6 +19,10 @@ pub async fn dispatch(db: &PgPool, bot_id: Uuid, frame: &Value) -> Value {
     let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
     let resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
     let params = frame.get("params").cloned().unwrap_or(Value::Null);
+    let session_id = frame
+        .get("session_id")
+        .or_else(|| params.get("session_id"))
+        .and_then(|v| v.as_str());
 
     let result = match resource {
         // ── 读操作（仅需频道成员，不走 Grant）────────────────────────────
@@ -37,16 +41,16 @@ pub async fn dispatch(db: &PgPool, bot_id: Uuid, frame: &Value) -> Value {
         "fs.read"                   => fs::handle_read(db, bot_id, &params).await,
 
         // ── 写操作（频道成员 + Grant）────────────────────────────────────
-        "channel.messages.create"   => messages::handle_create(db, bot_id, &params).await,
-        "channel.files.create"      => files::handle_create(db, bot_id, &params).await,
-        "channel.memory.update"     => memory::handle_update(db, bot_id, &params).await,
+        "channel.messages.create"   => messages::handle_create(db, bot_id, &params, session_id).await,
+        "channel.files.create"      => files::handle_create(db, bot_id, &params, session_id).await,
+        "channel.memory.update"     => memory::handle_update(db, bot_id, &params, session_id).await,
 
         // ── mesh step 6：新增写操作（fs.*）───────────────────────────────
-        "fs.write"                  => fs::handle_write(db, bot_id, &params).await,
-        "fs.edit"                   => fs::handle_edit(db, bot_id, &params).await,
-        "fs.append"                 => fs::handle_append(db, bot_id, &params).await,
-        "fs.rm"                     => fs::handle_rm(db, bot_id, &params).await,
-        "fs.mv"                     => fs::handle_mv(db, bot_id, &params).await,
+        "fs.write"                  => fs::handle_write(db, bot_id, &params, session_id).await,
+        "fs.edit"                   => fs::handle_edit(db, bot_id, &params, session_id).await,
+        "fs.append"                 => fs::handle_append(db, bot_id, &params, session_id).await,
+        "fs.rm"                     => fs::handle_rm(db, bot_id, &params, session_id).await,
+        "fs.mv"                     => fs::handle_mv(db, bot_id, &params, session_id).await,
 
         _ => Err(resource_error("UNKNOWN_RESOURCE", format!("unknown resource: {resource}"))),
     };
@@ -123,6 +127,7 @@ pub async fn check_write_permission(
     channel_id: Uuid,
     resource: &str,
     action: &str,
+    session_id: Option<&str>,
 ) -> Result<(), (String, String)> {
     // 1. 频道成员检查
     check_bot_in_channel(db, bot_id, channel_id).await?;
@@ -137,6 +142,7 @@ pub async fn check_write_permission(
         None,
         None,
         None,
+        session_id,
     )
     .await
     .map_err(|_| resource_error("INTERNAL_ERROR", "permission check failed"))?;

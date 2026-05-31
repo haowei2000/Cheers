@@ -1,4 +1,5 @@
 use chrono::Utc;
+use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -235,21 +236,21 @@ pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppEr
 
 pub async fn resolve_session_id_by_key(
     db: &PgPool,
-    provider_account_id: &str,
     bot_id: Uuid,
+    provider_account_id: &str,
     provider_session_key: &str,
 ) -> Result<Uuid, AppError> {
     sqlx::query(
         "SELECT session_id FROM agentnexus_sessions
-         WHERE bot_id = $1
-           AND provider = $2
-           AND provider_account_id = $3
+         WHERE provider = $1
+           AND provider_account_id = $2
+           AND bot_id = $3
            AND provider_session_key = $4
          LIMIT 1",
     )
-    .bind(bot_id.to_string())
     .bind(PROVIDER)
     .bind(provider_account_id)
+    .bind(bot_id.to_string())
     .bind(provider_session_key)
     .fetch_optional(db)
     .await
@@ -257,4 +258,109 @@ pub async fn resolve_session_id_by_key(
     .and_then(|row| row.try_get::<String, _>("session_id").ok())
     .and_then(|value| Uuid::parse_str(&value).ok())
     .ok_or_else(|| AppError::NotFound)
+}
+
+pub async fn resolve_session_id_by_provider_id(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    provider_session_id: &str,
+) -> Result<Uuid, AppError> {
+    sqlx::query(
+        "SELECT session_id FROM agentnexus_sessions
+         WHERE provider = $1
+           AND provider_account_id = $2
+           AND bot_id = $3
+           AND provider_session_id = $4
+         ORDER BY updated_at DESC
+         LIMIT 1",
+    )
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(bot_id.to_string())
+    .bind(provider_session_id)
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .and_then(|row| row.try_get::<String, _>("session_id").ok())
+    .and_then(|value| Uuid::parse_str(&value).ok())
+    .ok_or_else(|| AppError::NotFound)
+}
+
+async fn resolve_session_id(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    provider_session_key: Option<&str>,
+    provider_session_id: Option<&str>,
+) -> Result<Uuid, AppError> {
+    if let Some(provider_session_key) = provider_session_key {
+        if let Ok(session_id) = resolve_session_id_by_key(
+            db,
+            bot_id,
+            provider_account_id,
+            provider_session_key,
+        )
+        .await
+        {
+            return Ok(session_id);
+        }
+    }
+    if let Some(provider_session_id) = provider_session_id {
+        resolve_session_id_by_provider_id(
+            db,
+            bot_id,
+            provider_account_id,
+            provider_session_id,
+        )
+        .await
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+pub async fn apply_session_update(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    provider_session_key: Option<&str>,
+    provider_session_id: Option<String>,
+    metadata: Option<Value>,
+) -> Result<Uuid, AppError> {
+    let session_id = resolve_session_id(
+        db,
+        bot_id,
+        provider_account_id,
+        provider_session_key,
+        provider_session_id.as_deref(),
+    )
+    .await?;
+    let now = Utc::now();
+    let metadata_json = metadata.map(|value| value.to_string());
+
+    let updated: String = sqlx::query_scalar(
+        "UPDATE agentnexus_sessions
+         SET provider_session_id = COALESCE($1, provider_session_id),
+             metadata = CASE
+                WHEN $2 IS NULL THEN metadata
+                WHEN jsonb_typeof($2::jsonb) = 'object' THEN COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+                ELSE metadata
+             END,
+             status = $3,
+             last_used_at = $4,
+             updated_at = $4
+         WHERE session_id = $5
+         RETURNING session_id",
+    )
+    .bind(provider_session_id)
+    .bind(metadata_json)
+    .bind(SESSION_STATUS_BUSY)
+    .bind(now)
+    .bind(session_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .ok_or_else(|| AppError::NotFound)?;
+
+    Uuid::parse_str(&updated).map_err(|_| AppError::Internal("invalid session_id".into()))
 }

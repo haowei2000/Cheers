@@ -97,14 +97,19 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
     }))
 }
 
-pub async fn handle_create(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_create(
+    db: &PgPool,
+    bot_id: Uuid,
+    params: &Value,
+    session_id: Option<&str>,
+) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
 
-    check_write_permission(db, bot_id, channel_id, "channel:files", "create").await?;
+    check_write_permission(db, bot_id, channel_id, "channel:files", "create", session_id).await?;
 
     // TODO: 实际写入 S3（Phase 2）
     let file_id = Uuid::new_v4().to_string();
