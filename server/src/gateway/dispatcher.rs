@@ -15,7 +15,7 @@ use super::{
     registry::BotLocator,
     stream::{StreamEntry, StreamRegistry},
 };
-use crate::domain::{channel_seq, sessions};
+use crate::domain::{chains, channel_seq, sessions};
 use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
 use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
@@ -25,6 +25,9 @@ pub struct DispatchParams {
     pub trigger_seq: i64,
     pub bot_id: Uuid,
     pub channel_id: Uuid,
+    pub chain_id: Option<Uuid>,
+    pub parent_task_id: Option<Uuid>,
+    pub depth: i32,
     pub provider_session_key: String,
     pub session_id: Option<Uuid>,
 }
@@ -37,6 +40,8 @@ pub enum DispatchResult {
     AlreadyInProgress,
     /// bot 不在线。
     BotOffline,
+    /// 任务链已暂停或取消，派发门阻止下一跳。
+    ChainBlocked,
     /// 数据库错误。
     DbError(String),
 }
@@ -62,10 +67,12 @@ pub async fn dispatch(
 
     // ── 创建占位 Message（先落库）────────────────────────────────────────────
     let task_id = Uuid::new_v4();
-
-    if let Err(e) = create_placeholder(db, placeholder_id, params.channel_id, params.bot_id).await {
-        return DispatchResult::DbError(e);
-    }
+    let dispatch_record = match create_dispatch_records(db, placeholder_id, task_id, &params).await
+    {
+        Ok(DispatchRecordOutcome::Created(record)) => record,
+        Ok(DispatchRecordOutcome::ChainBlocked) => return DispatchResult::ChainBlocked,
+        Err(e) => return DispatchResult::DbError(e),
+    };
 
     // ── 注册 StreamEntry ─────────────────────────────────────────────────────
     registry.register(StreamEntry {
@@ -105,6 +112,9 @@ pub async fn dispatch(
         params.channel_id,
         params.trigger_msg_id,
         params.trigger_seq,
+        dispatch_record.chain_id,
+        params.parent_task_id,
+        params.depth,
         placeholder_id,
         &params.provider_session_key,
         params.session_id,
@@ -136,6 +146,7 @@ pub async fn dispatch(
             );
             fanout.broadcast_channel(failed.channel_id, done).await;
         }
+        let _ = chains::mark_run_failed(db, placeholder_id, "bot offline").await;
         registry.remove(placeholder_id);
         if let Some(session_id) = params.session_id {
             let _ = sessions::finalize_session(db, session_id).await;
@@ -158,6 +169,15 @@ fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
     let namespace = Uuid::NAMESPACE_DNS;
     let name = format!("{trigger_msg_id}:{bot_id}");
     Uuid::new_v5(&namespace, name.as_bytes())
+}
+
+struct DispatchRecord {
+    chain_id: Uuid,
+}
+
+enum DispatchRecordOutcome {
+    Created(DispatchRecord),
+    ChainBlocked,
 }
 
 enum IdempotencyState {
@@ -187,24 +207,83 @@ async fn check_idempotency(db: &PgPool, placeholder_id: Uuid) -> IdempotencyStat
     }
 }
 
-async fn create_placeholder(
+async fn create_dispatch_records(
     db: &PgPool,
     placeholder_id: Uuid,
-    channel_id: Uuid,
-    bot_id: Uuid,
-) -> Result<(), String> {
+    task_id: Uuid,
+    params: &DispatchParams,
+) -> Result<DispatchRecordOutcome, String> {
+    let mut tx = db.begin().await.map_err(|e| e.to_string())?;
+    let chain_id = match params.chain_id {
+        Some(chain_id) => {
+            let active = chains::is_active_in_tx(&mut tx, chain_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !active {
+                tx.rollback().await.map_err(|e| e.to_string())?;
+                return Ok(DispatchRecordOutcome::ChainBlocked);
+            }
+            chain_id
+        }
+        None => chains::create_in_tx(&mut tx, params.channel_id, task_id, params.trigger_msg_id)
+            .await
+            .map_err(|e| e.to_string())?,
+    };
+
     sqlx::query(
-        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial)
-         VALUES ($1, $2, 'bot', $3, '', TRUE)
+        "INSERT INTO messages
+            (msg_id, task_id, channel_id, sender_type, sender_id, content, is_partial)
+         VALUES ($1, $2, $3, 'bot', $4, '', TRUE)
          ON CONFLICT (msg_id) DO NOTHING",
     )
     .bind(placeholder_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .execute(db)
+    .bind(task_id.to_string())
+    .bind(params.channel_id.to_string())
+    .bind(params.bot_id.to_string())
+    .execute(&mut *tx)
     .await
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO agent_tasks (
+            task_id, channel_id, bot_id, trigger_msg_id, response_msg_id,
+            chain_id, parent_task_id, depth
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (task_id) DO NOTHING",
+    )
+    .bind(task_id.to_string())
+    .bind(params.channel_id.to_string())
+    .bind(params.bot_id.to_string())
+    .bind(params.trigger_msg_id.to_string())
+    .bind(placeholder_id.to_string())
+    .bind(chain_id.to_string())
+    .bind(params.parent_task_id.map(|id| id.to_string()))
+    .bind(params.depth)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO bot_runs (
+            bot_run_id, task_id, channel_id, trigger_msg_id, bot_id,
+            placeholder_msg_id, status, last_event_type, chain_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, 'dispatched', 'task', $7)
+         ON CONFLICT (placeholder_msg_id) DO NOTHING",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(task_id.to_string())
+    .bind(params.channel_id.to_string())
+    .bind(params.trigger_msg_id.to_string())
+    .bind(params.bot_id.to_string())
+    .bind(placeholder_id.to_string())
+    .bind(chain_id.to_string())
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(DispatchRecordOutcome::Created(DispatchRecord { chain_id }))
 }
 
 struct FailedPlaceholder {
@@ -261,19 +340,31 @@ fn build_task_frame(
     channel_id: Uuid,
     msg_id: Uuid,
     trigger_seq: i64,
+    chain_id: Uuid,
+    parent_task_id: Option<Uuid>,
+    depth: i32,
     placeholder_msg_id: Uuid,
     provider_session_key: &str,
     session_id: Option<Uuid>,
 ) -> Value {
+    let trigger = if parent_task_id.is_some() {
+        "bot_message"
+    } else {
+        "user_message"
+    };
+
     json!({
         "type": "task",
         "task_id": task_id,
         "channel_id": channel_id,
         "msg_id": msg_id,
         "trigger_seq": trigger_seq,
+        "chain_id": chain_id,
+        "parent_task_id": parent_task_id,
+        "depth": depth,
         "placeholder_msg_id": placeholder_msg_id,
         "provider_session_key": provider_session_key,
-        "trigger": "user_message",
+        "trigger": trigger,
         "session_id": session_id,
         "enqueued_at": chrono::Utc::now().to_rfc3339(),
     })

@@ -310,6 +310,7 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 &state.stream_registry,
                 &state.fanout,
                 &state.db,
+                &state.bot_locator,
                 bot.bot_id,
                 &bot.provider_account_id,
                 frame,
