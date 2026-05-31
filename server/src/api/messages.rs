@@ -5,13 +5,17 @@ use axum::{
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use tracing::info;
 use uuid::Uuid;
 
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
-    domain::messages::{self, CreateMessageParams},
+    domain::{
+        chains,
+        messages::{self, CreateMessageParams},
+    },
     errors::AppError,
 };
 
@@ -93,6 +97,14 @@ pub struct ListMessagesQuery {
     pub limit: i64,
 }
 
+#[derive(Serialize)]
+pub struct CancelChainResponse {
+    pub chain_id: String,
+    pub status_changed: bool,
+    pub cancel_targets: usize,
+    pub delivered: usize,
+}
+
 fn default_limit() -> i64 {
     50
 }
@@ -136,4 +148,80 @@ pub async fn list_messages(
             "limit": limit,
         },
     })))
+}
+
+// ── POST /api/v1/channels/{channel_id}/messages/{msg_id}/cancel-chain ───────
+
+pub async fn cancel_message_chain(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, msg_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<CancelChainResponse>, AppError> {
+    info!(
+        path = "POST /api/v1/channels/:channel_id/messages/:msg_id/cancel-chain",
+        channel_id = %channel_id,
+        msg_id = %msg_id,
+        "handling cancel_message_chain"
+    );
+
+    let user_id: Uuid = claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
+    ensure_channel_member(&state, channel_id, user_id, &claims.role).await?;
+
+    let chain_id = chains::resolve_chain_id_for_message(&state.db, channel_id, msg_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let cancel_result = chains::cancel(&state.db, chain_id, user_id).await?;
+
+    let mut delivered = 0usize;
+    for (placeholder_msg_id, bot_id) in &cancel_result.targets {
+        let frame = serde_json::json!({
+            "type": "cancel",
+            "msg_id": placeholder_msg_id,
+            "reason": "chain_cancelled",
+            "chain_id": chain_id,
+        });
+        if state.bot_locator.dispatch_task(*bot_id, frame).await {
+            delivered += 1;
+        }
+    }
+
+    Ok(Json(CancelChainResponse {
+        chain_id: chain_id.to_string(),
+        status_changed: cancel_result.status_changed,
+        cancel_targets: cancel_result.targets.len(),
+        delivered,
+    }))
+}
+
+async fn ensure_channel_member(
+    state: &AppState,
+    channel_id: Uuid,
+    user_id: Uuid,
+    role: &str,
+) -> Result<(), AppError> {
+    if matches!(role, "system_admin" | "admin") {
+        return Ok(());
+    }
+
+    let ok = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
+        ) AS ok",
+    )
+    .bind(channel_id.to_string())
+    .bind(user_id.to_string())
+    .fetch_one(&state.db)
+    .await?
+    .try_get::<bool, _>("ok")
+    .unwrap_or(false);
+
+    if ok {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("not a channel member".into()))
+    }
 }
