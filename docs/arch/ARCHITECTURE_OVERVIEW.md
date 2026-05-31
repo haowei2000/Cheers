@@ -16,6 +16,7 @@
 > - [E2EE_NOTES.md](./E2EE_NOTES.md) —— 端到端加密可行性分析（搁置/未来计划）
 > - [context-and-environment.md](./context-and-environment.md) —— 上下文与 Environment 架构（会话/记忆/Environment 三分、记忆即文件系统、Environment 即插件；v1 声明式渲染，预留代码插件升级路径）
 > - [DECENTRALIZED_MESH.md](./DECENTRALIZED_MESH.md) —— 去中心化 Bot 网格（去调度层、channel_seq 事件时钟、两类资源一致性、频道操作日志、Bot@Bot 任务链与取消、可选预算）
+> - [BUILTIN_AGENT.md](./BUILTIN_AGENT.md) —— 内置 Agent：删光所有内置 bot 类，改为**一份通用 runtime**（代码只写一次、无 per-bot 分支）；身份是**数据**（seed 的 bot_account，≥1 个保住网格多 peer）；行为是 Environment 模板；确定性逻辑下沉成 tool 而非 bot
 
 ---
 
@@ -52,10 +53,11 @@ Browser / Mobile
            ▼
 ┌──────────────────────────────────────────────────────────┐
 │              Python Agent Service                          │
-│  ├─ 内置 bot（HttpBot, Coordinator, Helper, HelpBot）       │
-│  ├─ Memory / RAG                                          │
-│  ├─ LLM 调用（流式 SSE）                                    │
-│  └─ 走 Agent Bridge 协议，和外置 ACP bot 零区别              │
+│  ├─ 一份通用 ACP Agent runtime（无内置 bot 类、无 per-bot 分支）│
+│  │    身份由数据 seed（≥1 个 bot_account, trust=system）       │
+│  ├─ 行为来自 Environment 模板（seed + convention prompt）      │
+│  ├─ Memory / RAG · LLM 调用（流式）                          │
+│  └─ 走 Agent Bridge 协议，和外置 ACP bot 零区别（见 BUILTIN_AGENT）│
 └──────────────────────────────────────────────────────────┘
 ```
 

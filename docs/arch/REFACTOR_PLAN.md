@@ -73,9 +73,9 @@ Browser / Mobile
            ▼
 ┌──────────────────────────────────────────────────────────┐
 │              Python Agent Service                          │
-│  ├─ 内置 bot（HttpBot, Coordinator, Helper, HelpBot）       │
-│  ├─ Memory / RAG                                          │
-│  ├─ LLM 调用（流式 SSE）                                    │
+│  ├─ 一份通用 ACP Agent runtime（无 bot 类，身份由数据 seed）   │
+│  ├─ 行为来自 Environment 模板（见 BUILTIN_AGENT.md）          │
+│  ├─ Memory / RAG · LLM 调用（流式）                          │
 │  └─ 走 Agent Bridge 协议，和外置 ACP bot 零区别              │
 └──────────────────────────────────────────────────────────┘
 ```
