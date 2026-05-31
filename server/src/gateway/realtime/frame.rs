@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-/// 发给浏览器的标准外层信封（WIRE_PROTOCOL v2 §4）。
+/// 发给浏览器的标准外层信封（WIRE_FRAME v1 §4）。
 /// `data` 字段对实时层完全不透明，原样转发。
+/// 消息体自身可携带 schema 版本（如 MESSAGE_SCHEMA_VERSION）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireFrame {
     /// 协议版本，固定为 1。
@@ -37,9 +38,11 @@ pub enum FrameScope {
 }
 
 impl WireFrame {
+    const FRAME_VERSION: u8 = 1;
+
     pub fn channel(channel_id: Uuid, frame_type: impl Into<String>, data: Value) -> Self {
         Self {
-            v: 1,
+            v: Self::FRAME_VERSION,
             scope: FrameScope::Channel,
             channel_id: Some(channel_id),
             frame_type: frame_type.into(),
@@ -55,7 +58,7 @@ impl WireFrame {
         data: Value,
     ) -> Self {
         Self {
-            v: 1,
+            v: Self::FRAME_VERSION,
             scope: FrameScope::Channel,
             channel_id: Some(channel_id),
             frame_type: frame_type.into(),
@@ -66,7 +69,7 @@ impl WireFrame {
 
     pub fn user(frame_type: impl Into<String>, data: Value) -> Self {
         Self {
-            v: 1,
+            v: Self::FRAME_VERSION,
             scope: FrameScope::User,
             channel_id: None,
             frame_type: frame_type.into(),

@@ -15,6 +15,8 @@ pub struct BotAcpSecurityConfig {
     pub algorithm: Option<String>,
     #[serde(default)]
     pub allow_plaintext_fallback: Option<bool>,
+    #[serde(default)]
+    pub require_capability: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -143,9 +145,14 @@ fn normalize_binding_config(
         sec_obj.insert("mode".into(), Value::String(mode));
         sec_obj.insert("algorithm".into(), Value::String(algorithm));
 
-        if let Some(allow_plaintext_fallback) = sec.allow_plaintext_fallback {
+    if let Some(allow_plaintext_fallback) = sec.allow_plaintext_fallback {
             sec_obj.insert("allow_plaintext_fallback".into(), Value::Bool(allow_plaintext_fallback));
         }
+
+        sec_obj.insert(
+            "require_capability".into(),
+            Value::Bool(sec.require_capability.unwrap_or(false)),
+        );
 
         merged.insert("acp_security".into(), Value::Object(sec_obj));
     }

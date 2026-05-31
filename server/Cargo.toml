@@ -64,9 +64,12 @@ futures-util = "0.3"
 sha2    = "0.10"
 hex     = "0.4"
 bcrypt  = "0.15"
+base64  = "0.22"
+ed25519-dalek = "1"
 
 # ── S3 ────────────────────────────────────────────────────────────────────────
 aws-sdk-s3 = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

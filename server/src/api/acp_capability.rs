@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State, Extension, Query},
+    extract::{Extension, Path, Query, State},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -58,6 +58,72 @@ pub struct DelegationItem {
 pub struct DelegationListQuery {
     #[serde(default)]
     pub include_inactive: bool,
+}
+
+#[derive(Deserialize)]
+pub struct CapabilityRejectLogQuery {
+    pub delegation_id: Option<String>,
+    pub start_at: Option<String>,
+    pub end_at: Option<String>,
+    #[serde(default = "default_page")]
+    pub page: i64,
+    #[serde(default = "default_reject_log_limit")]
+    pub limit: i64,
+}
+
+#[derive(Deserialize)]
+pub struct CapabilityRejectLogAdminQuery {
+    pub bot_id: Option<String>,
+
+    #[serde(flatten)]
+    pub filters: CapabilityRejectLogQuery,
+}
+
+#[derive(Serialize)]
+pub struct CapabilityRejectLogMeta {
+    pub total: i64,
+    pub page: i64,
+    pub limit: i64,
+    pub has_more: bool,
+    pub next_page: Option<i64>,
+    pub previous_page: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct CapabilityRejectLogPage {
+    pub items: Vec<CapabilityRejectLogItem>,
+    pub meta: CapabilityRejectLogMeta,
+}
+
+struct RejectLogListParams {
+    delegation_id: Option<String>,
+    start_at: Option<DateTime<Utc>>,
+    end_at: Option<DateTime<Utc>>,
+    page: i64,
+    limit: i64,
+}
+
+#[derive(Serialize)]
+pub struct CapabilityRejectLogItem {
+    pub log_id: i64,
+    pub bot_id: String,
+    pub provider_account_id: String,
+    pub delegation_id: Option<String>,
+    pub decision_scope_type: Option<String>,
+    pub decision_scope_id: Option<String>,
+    pub frame_type: String,
+    pub action: Option<String>,
+    pub request_id: Option<String>,
+    pub request_session_id: Option<String>,
+    pub resolved_session_id: Option<String>,
+    pub resolved_session_status: Option<String>,
+    pub resolved_session_scope_type: Option<String>,
+    pub resolved_session_scope_id: Option<String>,
+    pub session_locator_source: Option<String>,
+    pub session_locator_value: Option<String>,
+    pub resource: Option<String>,
+    pub decision_reason: String,
+    pub created_at: DateTime<Utc>,
 }
 
 pub async fn list_delegations(
@@ -128,6 +194,123 @@ pub async fn list_delegations(
     }
 
     Ok(Json(items))
+}
+
+pub async fn list_reject_logs(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<Uuid>,
+    Query(query): Query<CapabilityRejectLogQuery>,
+) -> Result<Json<CapabilityRejectLogPage>, AppError> {
+    ensure_bot_owner_or_admin(&state.db, &bot_id, &claims).await?;
+
+    let params = parse_reject_log_query(query)?;
+    let page = list_reject_logs_by_filter(
+        &state.db,
+        Some(bot_id.as_str()),
+        &params,
+    )
+    .await?;
+
+    Ok(Json(page))
+}
+
+pub async fn list_reject_logs_admin(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Query(query): Query<CapabilityRejectLogAdminQuery>,
+) -> Result<Json<CapabilityRejectLogPage>, AppError> {
+    if !matches!(claims.role.as_str(), "admin" | "system_admin") {
+        return Err(AppError::Forbidden("only admin can query cross-bot rejection logs".into()));
+    }
+
+    let bot_id = parse_optional_uuid(query.bot_id, "bot_id")?;
+    let params = parse_reject_log_query(query.filters)?;
+    let page = list_reject_logs_by_filter(&state.db, bot_id.as_deref(), &params).await?;
+
+    Ok(Json(page))
+}
+
+async fn list_reject_logs_by_filter(
+    db: &PgPool,
+    bot_id: Option<&str>,
+    params: &RejectLogListParams,
+) -> Result<CapabilityRejectLogPage, AppError> {
+    let fetch_limit = params.limit + 1;
+    let offset = (params.page - 1) * params.limit;
+
+    let rows = sqlx::query(
+        "SELECT log_id, bot_id, provider_account_id, delegation_id, decision_scope_type, decision_scope_id,
+                frame_type, action, request_id, request_session_id, resolved_session_id,
+                resolved_session_status, resolved_session_scope_type, resolved_session_scope_id,
+                session_locator_source, session_locator_value, resource, decision_reason, created_at
+         FROM acp_capability_reject_logs
+         WHERE ($1::VARCHAR(36) IS NULL OR bot_id = $1)
+           AND ($2::VARCHAR(36) IS NULL OR delegation_id = $2)
+           AND ($3::timestamptz IS NULL OR created_at >= $3)
+           AND ($4::timestamptz IS NULL OR created_at <= $4)
+         ORDER BY created_at DESC, log_id DESC
+         LIMIT $5 OFFSET $6",
+    )
+    .bind(bot_id)
+    .bind(params.delegation_id.as_deref())
+    .bind(params.start_at.clone())
+    .bind(params.end_at.clone())
+    .bind(fetch_limit)
+    .bind(offset)
+    .fetch_all(db)
+    .await?;
+
+    let mut items = Vec::with_capacity(rows.len().min(params.limit as usize));
+    for row in rows {
+        items.push(CapabilityRejectLogItem {
+            log_id: row.try_get("log_id").unwrap_or_default(),
+            bot_id: row.try_get("bot_id").unwrap_or_default(),
+            provider_account_id: row.try_get("provider_account_id").unwrap_or_default(),
+            delegation_id: row.try_get("delegation_id").ok(),
+            decision_scope_type: row.try_get("decision_scope_type").ok(),
+            decision_scope_id: row.try_get("decision_scope_id").ok(),
+            frame_type: row.try_get("frame_type").unwrap_or_default(),
+            action: row.try_get("action").ok(),
+            request_id: row.try_get("request_id").ok(),
+            request_session_id: row.try_get("request_session_id").ok(),
+            resolved_session_id: row.try_get("resolved_session_id").ok(),
+            resolved_session_status: row.try_get("resolved_session_status").ok(),
+            resolved_session_scope_type: row.try_get("resolved_session_scope_type").ok(),
+            resolved_session_scope_id: row.try_get("resolved_session_scope_id").ok(),
+            session_locator_source: row.try_get("session_locator_source").ok(),
+            session_locator_value: row.try_get("session_locator_value").ok(),
+            resource: row.try_get("resource").ok(),
+            decision_reason: row.try_get("decision_reason").unwrap_or_default(),
+            created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
+        });
+    }
+
+    let has_more = items.len() as i64 > params.limit;
+    if has_more {
+        items.truncate(params.limit as usize);
+    }
+
+    let total = count_reject_logs(
+        db,
+        bot_id,
+        params.delegation_id.as_deref(),
+        params.start_at.clone(),
+        params.end_at.clone(),
+    )
+    .await?;
+
+    Ok(CapabilityRejectLogPage {
+        items,
+        meta: CapabilityRejectLogMeta {
+            total,
+            page: params.page,
+            limit: params.limit,
+            has_more,
+            next_page: if has_more { Some(params.page + 1) } else { None },
+            previous_page: if params.page > 1 { Some(params.page - 1) } else { None },
+        },
+    })
 }
 
 pub async fn create_delegation(
@@ -343,4 +526,87 @@ async fn ensure_bot_owner_or_admin(
     }
 
     Err(AppError::Forbidden("only bot owner or admin can manage capability delegations".into()))
+}
+
+fn default_page() -> i64 {
+    1
+}
+
+fn default_reject_log_limit() -> i64 {
+    50
+}
+
+fn parse_reject_log_query(query: CapabilityRejectLogQuery) -> Result<RejectLogListParams, AppError> {
+    let delegation_id = trim_optional(query.delegation_id);
+    let start_at = parse_rfc3339_datetime(query.start_at.as_deref(), "start_at")?;
+    let end_at = parse_rfc3339_datetime(query.end_at.as_deref(), "end_at")?;
+    if let (Some(start), Some(end)) = (start_at.as_ref(), end_at.as_ref()) {
+        if start > end {
+            return Err(AppError::BadRequest("start_at must be <= end_at".into()));
+        }
+    }
+
+    Ok(RejectLogListParams {
+        delegation_id,
+        start_at,
+        end_at,
+        page: query.page.max(1),
+        limit: query.limit.clamp(1, 200),
+    })
+}
+
+fn parse_rfc3339_datetime(
+    value: Option<&str>,
+    field_name: &str,
+) -> Result<Option<DateTime<Utc>>, AppError> {
+    match value {
+        Some(raw) => {
+            let raw = raw.trim();
+            if raw.is_empty() {
+                return Ok(None);
+            }
+            let dt = DateTime::parse_from_rfc3339(raw)
+                .map_err(|_| AppError::BadRequest(format!("{field_name} must be RFC3339 datetime")))?;
+            Ok(Some(dt.with_timezone(&Utc)))
+        }
+        None => Ok(None),
+    }
+}
+
+async fn count_reject_logs(
+    db: &PgPool,
+    bot_id: Option<&str>,
+    delegation_id: Option<&str>,
+    start_at: Option<DateTime<Utc>>,
+    end_at: Option<DateTime<Utc>>,
+) -> Result<i64, AppError> {
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)::bigint
+         FROM acp_capability_reject_logs
+         WHERE ($1::VARCHAR(36) IS NULL OR bot_id = $1)
+           AND ($2::VARCHAR(36) IS NULL OR delegation_id = $2)
+           AND ($3::timestamptz IS NULL OR created_at >= $3)
+           AND ($4::timestamptz IS NULL OR created_at <= $4)",
+    )
+    .bind(bot_id)
+    .bind(delegation_id)
+    .bind(start_at)
+    .bind(end_at)
+    .fetch_one(db)
+    .await?;
+    Ok(total)
+}
+
+fn parse_optional_uuid(raw: Option<String>, field_name: &str) -> Result<Option<String>, AppError> {
+    raw.map(|value| {
+        let value = value.trim();
+        if value.is_empty() {
+            Ok::<Option<String>, AppError>(None)
+        } else {
+            Uuid::parse_str(value)
+                .map(|uuid| Some(uuid.to_string()))
+                .map_err(|_| AppError::BadRequest(format!("{field_name} must be UUID")))
+        }
+    })
+    .transpose()?
 }

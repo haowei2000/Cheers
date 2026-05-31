@@ -44,6 +44,25 @@ export interface ConnectorControlConfig {
   options?: Record<string, unknown> | null;
 }
 
+export interface AcpSecurityHello {
+  enabled?: boolean;
+  mode?: string;
+  algorithm?: string;
+  require_capability?: boolean;
+  allow_plaintext_fallback?: boolean;
+  phase?: string;
+}
+
+export interface AcpCapabilityEnvelope {
+  delegation_id: string;
+  ts: number;
+  nonce: string;
+  signature: string;
+  request_id?: string;
+  algorithm?: string;
+  kid?: string;
+}
+
 export interface ControlHello {
   type: "hello";
   bot_id: string;
@@ -52,6 +71,7 @@ export interface ControlHello {
   connection_id?: string;
   session_id: string;
   memberships: ChannelInfo[];
+  acp_security?: AcpSecurityHello | null;
   connector_config?: ConnectorControlConfig | null;
 }
 
@@ -187,11 +207,13 @@ export interface DataHello {
   connection_id?: string;
   session_id: string;
   last_event_seq: number;
+  acp_security?: AcpSecurityHello | null;
 }
 
 export interface AgentNexusSessionRef {
   id?: string;
   provider_session_key?: string;
+  provider_session_id?: string;
   provider_account_id?: string;
   provider_agent_id?: string;
   primary_scope_type?: string;
@@ -215,6 +237,7 @@ export interface MessageEvent {
   binding_config?: Record<string, unknown>;
   session?: AgentNexusSessionRef;
   provider_session_key?: string;
+  provider_session_id?: string;
 }
 
 export interface SendAckOk {
@@ -304,6 +327,10 @@ export interface ReplyFrame {
   channel_id?: string | null;
   text: string;
   file_ids?: string[];
+  session_id?: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 export interface SendFrame {
@@ -313,6 +340,10 @@ export interface SendFrame {
   text: string;
   in_reply_to_msg_id?: string | null;
   file_ids?: string[];
+  session_id?: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 export interface PermissionRequestOption {
@@ -331,10 +362,13 @@ export interface PermissionRequestFrame {
   msg_id?: string | null;
   acp_session_id?: string | null;
   provider_session_key?: string | null;
+  provider_session_id?: string;
+  session_id?: string;
   title?: string | null;
   body: string;
   tool?: string | null;
   options?: PermissionRequestOption[];
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 export interface TypingFrame {
@@ -352,6 +386,9 @@ export interface TraceFrame {
   channel_id?: string;
   run_id?: string;
   session_key?: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+  session_id?: string;
   stream: string;
   seq?: number;
   ts?: number;
@@ -372,6 +409,7 @@ export interface SessionUpdateFrame {
   provider_session_key?: string;
   provider_session_id?: string;
   metadata?: Record<string, unknown>;
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 // ---- Streaming reply frames (client → server) ----
@@ -385,6 +423,10 @@ export interface DeltaFrame {
   /** Monotonic per-stream sequence; out-of-order frames are dropped server-side. */
   seq: number;
   delta: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+  session_id?: string;
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 /** End of a streaming reply. Server flushes the buffer to the placeholder
@@ -403,6 +445,10 @@ export interface DoneFrame {
   msg_id: string;
   file_ids?: string[];
   content?: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+  session_id?: string;
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 /** Plugin reports a mid-stream error. Server finalizes the placeholder with
@@ -412,6 +458,10 @@ export interface ErrorFrame {
   client_msg_id?: string;
   msg_id: string;
   message: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+  session_id?: string;
+  acp_capability?: AcpCapabilityEnvelope;
 }
 
 /** In-band binary upload over the data WS (avoids the HTTP

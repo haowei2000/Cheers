@@ -21,6 +21,8 @@ pub struct Config {
     pub s3_bucket: String,
     pub s3_access_key: String,
     pub s3_secret_key: String,
+    pub s3_region: String,
+    pub cors_allowed_origins: Option<String>,
 
     // SMTP（可选，不配置则不发邮件）
     pub smtp_host: Option<String>,
@@ -47,10 +49,18 @@ impl Config {
 
             redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
 
-        s3_endpoint: require("S3_ENDPOINT"),
-            s3_bucket: env::var("S3_BUCKET").unwrap_or_else(|_| "agentnexus".into()),
-            s3_access_key: require("S3_ACCESS_KEY"),
-            s3_secret_key: require("S3_SECRET_KEY"),
+            s3_endpoint: require_any(&["S3_ENDPOINT", "STORAGE_S3_ENDPOINT"]),
+            s3_bucket: env::var("S3_BUCKET")
+                .or_else(|_| env::var("STORAGE_S3_BUCKET"))
+                .unwrap_or_else(|_| "agentnexus".into()),
+            s3_access_key: require_any(&["S3_ACCESS_KEY", "STORAGE_S3_ACCESS_KEY"]),
+            s3_secret_key: require_any(&["S3_SECRET_KEY", "STORAGE_S3_SECRET_KEY"]),
+            s3_region: env::var("S3_REGION")
+                .or_else(|_| env::var("STORAGE_S3_REGION"))
+                .unwrap_or_else(|_| "us-east-1".into()),
+            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
 
             smtp_host: env::var("SMTP_HOST").ok(),
             smtp_port: env::var("SMTP_PORT")
@@ -65,4 +75,16 @@ impl Config {
 
 fn require(key: &str) -> String {
     env::var(key).unwrap_or_else(|_| panic!("missing required env var: {key}"))
+}
+
+fn require_any(keys: &[&str]) -> String {
+    for &k in keys {
+        if let Ok(v) = env::var(k) {
+            if !v.trim().is_empty() {
+                return v;
+            }
+        }
+    }
+
+    panic!("missing required env var, set one of: {}", keys.join(", "));
 }

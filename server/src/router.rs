@@ -10,7 +10,8 @@ use axum::{
     routing::{delete, get, patch, post},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
+use http::HeaderValue;
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use crate::{
     api::{self, middleware::jwt_auth},
@@ -19,19 +20,39 @@ use crate::{
 };
 
 pub fn build(state: AppState) -> Router {
+    let cors = build_cors(&state);
+
     // Keep CORS policy explicit at the top-level router so every grouped route
     // shares a consistent browser/API access policy.
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
     Router::new()
         .merge(build_public_routes())
         .merge(build_authed_routes(state.clone()))
         .merge(build_ws_routes())
         .layer(cors)
         .with_state(state)
+}
+
+fn build_cors(state: &AppState) -> CorsLayer {
+    let mut cors = CorsLayer::new()
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let configured = state
+        .config
+        .cors_allowed_origins
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| HeaderValue::from_str(s).ok())
+        .collect::<Vec<_>>();
+
+    if configured.is_empty() {
+        cors.allow_origin(Any)
+    } else {
+        cors.allow_origin(AllowOrigin::list(configured))
+    }
 }
 
 fn build_authed_routes(state: AppState) -> Router {
@@ -51,9 +72,24 @@ fn build_authed_routes(state: AppState) -> Router {
         .route("/api/v1/bots", get(api::bots::list_bots).post(api::bots::create_bot))
         .route("/api/v1/bots/:bot_id/status", get(api::bots::get_bot_status))
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
+        .route(
+            "/api/v1/bots/:bot_id/capability-delegations",
+            get(api::acp_capability::list_delegations).post(api::acp_capability::create_delegation),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/capability-reject-logs",
+            get(api::acp_capability::list_reject_logs),
+        )
+        .route("/api/v1/ops/capability-reject-logs", get(api::acp_capability::list_reject_logs_admin))
+        .route(
+            "/api/v1/bots/:bot_id/capability-delegations/:delegation_id",
+            delete(api::acp_capability::revoke_delegation),
+        )
         .route("/api/v1/files/presign", post(api::files::request_presign))
         .route("/api/v1/files/:file_id/confirm", post(api::files::confirm_upload))
         .route("/api/v1/files/:file_id/status", get(api::files::get_file_status))
+        .route("/api/v1/files/:file_id/preview", get(api::files::preview_file))
+        .route("/api/v1/files/:file_id/download", get(api::files::download_file))
         .route("/api/v1/friends", get(api::friends::list_friends).post(api::friends::add_friend).delete(api::friends::remove_friend))
         .route("/api/v1/friends/search", get(api::friends::search_users))
         .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))

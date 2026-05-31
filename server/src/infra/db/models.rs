@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+/// Message API 对外消息体的统一版本。
+pub const MESSAGE_SCHEMA_VERSION: u8 = 1;
+
 // ── User ──────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -50,10 +53,32 @@ pub struct Message {
     pub edited_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageMention {
+    pub member_id: String,
+    pub member_type: String,
+    pub username: Option<String>,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageFileRef {
+    pub file_id: String,
+    pub original_filename: Option<String>,
+    pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub status: Option<String>,
+    pub expires_at: Option<String>,
+    pub preview_url: Option<String>,
+    pub download_url: Option<String>,
+}
+
 // ── DTO（API 响应用）─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageDto {
+    /// 消息体 schema version（用于客户端/机器人兼容）。
+    pub v: u8,
     pub msg_id: String,
     pub channel_id: String,
     pub sender_type: String,
@@ -64,6 +89,8 @@ pub struct MessageDto {
     pub is_partial: bool,
     pub reply_to_msg_id: Option<String>,
     pub file_ids: Vec<String>,
+    pub mentions: Vec<MessageMention>,
+    pub files: Vec<MessageFileRef>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -71,6 +98,7 @@ impl MessageDto {
     pub fn from_row(row: &sqlx::postgres::PgRow) -> Self {
         use sqlx::Row;
         Self {
+            v: MESSAGE_SCHEMA_VERSION,
             msg_id: row.try_get("id").unwrap_or_default(),
             channel_id: row.try_get("channel_id").unwrap_or_default(),
             sender_type: row.try_get("sender_type").unwrap_or_default(),
@@ -85,9 +113,11 @@ impl MessageDto {
                 Err(_) => row
                     .try_get::<Value, _>("file_ids")
                     .ok()
-                    .and_then(|value| serde_json::from_value(value).ok())
-                    .unwrap_or_default(),
+                .and_then(|value| serde_json::from_value(value).ok())
+                .unwrap_or_default(),
             },
+            mentions: Vec::new(),
+            files: Vec::new(),
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
         }
     }

@@ -72,6 +72,7 @@ pub async fn dispatch(
         bot_id: params.bot_id,
         channel_id: params.channel_id,
         task_id,
+        session_id: params.session_id,
         finalized: false,
     });
 

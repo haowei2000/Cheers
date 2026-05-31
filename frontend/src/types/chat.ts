@@ -45,6 +45,13 @@ export type DMCounterparty = {
   avatar_url?: string | null;
 };
 
+export type MessageMentionRef = {
+  member_id: string;
+  member_type: "user" | "bot";
+  username?: string | null;
+  display_name?: string | null;
+};
+
 export type DM = {
   channel_id: string;
   workspace_id: string;
@@ -124,6 +131,7 @@ export type MemoryLoadDetail = {
 
 export type Message = {
   msg_id: string;
+  v?: number;
   task_id?: string | null;
   sender_id: string;
   sender_type: string;
@@ -143,6 +151,7 @@ export type Message = {
     | "notification";
   content_data?: Record<string, unknown> | null;
   file_ids?: string[];
+  mentions?: MessageMentionRef[];
   files?: FileInfo[];
   is_secret?: boolean;
   secret_token?: string;

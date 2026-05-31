@@ -82,6 +82,13 @@ pub async fn send_message(
 #[derive(Deserialize)]
 pub struct ListMessagesQuery {
     pub before: Option<String>,
+    #[serde(rename = "before_id")]
+    pub before_id: Option<String>,
+    #[serde(rename = "around_id")]
+    pub around_id: Option<String>,
+    pub after: Option<String>,
+    #[serde(rename = "after_id")]
+    pub after_id: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
@@ -102,13 +109,28 @@ pub async fn list_messages(
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
 
     let limit = q.limit.clamp(1, 200);
-    let msgs = messages::list_messages(&state.db, user_id, channel_id, q.before, limit).await?;
+    let before = q.before.or(q.before_id).or(q.around_id);
+    let after = q.after.or(q.after_id);
+    let page = messages::list_messages(&state.db, user_id, channel_id, before, after, limit).await?;
+    let messages = page.messages;
+    let has_more = page.has_more;
     info!(
         user_id = %user_id,
         channel_id = %channel_id,
-        return_count = msgs.len(),
+        return_count = messages.len(),
         "list_messages returned"
     );
 
-    Ok(Json(serde_json::json!({ "messages": msgs, "count": msgs.len() })))
+    Ok(Json(serde_json::json!({
+        "messages": &messages,
+        "data": &messages,
+        "count": messages.len(),
+        "meta": {
+            "has_more_before": page.has_more_before,
+            "has_more_after": page.has_more_after,
+            "has_more": has_more,
+            "anchor_found": page.anchor_found,
+            "limit": limit,
+        },
+    })))
 }
