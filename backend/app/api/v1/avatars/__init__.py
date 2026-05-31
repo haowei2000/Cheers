@@ -1,1 +1,0 @@
-"""Avatar API package."""
