@@ -261,8 +261,20 @@ heal it; formalize the member abstraction above it instead.**
      any member; `type` only drives a small badge, not a separate render path.
    - **Collapse the fork points:** `messages.mention_bot_ids` vs `mention_user_ids`
      being two columns is identity-split leaking upward. Under a first-class model an
-     @ is an @ of a *member*; converge toward polymorphic `mentions[{id,type}]`.
-     Every such `if sender_type == "bot"` branch is the cost of "half first-class."
+     @ is an @ of a *member*. Every such `if sender_type == "bot"` branch is the cost
+     of "half first-class."
+     - **Decided 2026-05-31: a `message_mentions` join table, not JSONB columns.**
+       `message_mentions(msg_id, member_id, member_type)` — the same polymorphic
+       `(member_id, member_type)` shape this schema already uses for
+       `channel_memberships` and `messages.sender_*`. Rationale: (a) `@me`
+       notifications become an indexed reverse lookup (`WHERE member_id = $me`),
+       which a JSONB array can only do via GIN containment; (b) dispatch routing
+       uses the parse result already in memory at write time, so the table adds no
+       read on the hot path; (c) mentions are written once with the (immutable)
+       message — N small INSERTs inside the message transaction. Both legacy JSONB
+       columns (`mention_bot_ids` / `mention_user_ids`) are dropped (greenfield, no
+       migration). See [DECENTRALIZED_MESH §2](./DECENTRALIZED_MESH.md) for how
+       dispatch consumes it.
 
 3. **Formal Principal abstraction layer — gated on "will there be a third member
    type?"** This is the one strategic call.

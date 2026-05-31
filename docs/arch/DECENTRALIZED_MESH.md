@@ -50,6 +50,13 @@ The gateway dispatch logic degrades to an O(1) lookup with no AI in the path.
 - No `@` and no default bot → **silent** (the message is still recorded).
 - All `@` messages are **visible** in the channel.
 - Bot@Bot has **no depth cap** (see §8 for chains + cancel + §9 for the budget).
+- **Mention source (decided 2026-05-31):** `@` is parsed at message-write time into a
+  `message_mentions(msg_id, member_id, member_type)` join table (see
+  [context-and-environment §5.2](./context-and-environment.md)), inside the same
+  transaction that allocates `channel_seq`. `resolve_bot_triggers` uses the parse
+  result already in memory (no re-read); `@me` notifications reverse-look-up the table
+  by `member_id`. The legacy `mention_bot_ids` / `mention_user_ids` JSONB columns are
+  dropped. `channel.default_bot_id` overrides `workspaces.default_bot_id`.
 
 ---
 
