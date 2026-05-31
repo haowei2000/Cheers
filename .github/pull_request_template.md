@@ -23,7 +23,7 @@
 ## Database migration
 
 - [ ] Does not involve database changes
-- [ ] Alembic migration file added and verified locally (`alembic heads` has one head, then `alembic upgrade head`)
+- [ ] New sequential sqlx migration added under `gateway/migrations/` and verified locally (`cargo build`, then run against a clean Postgres); no edits to already-applied migrations
 
 ## Security and Release Impact
 
