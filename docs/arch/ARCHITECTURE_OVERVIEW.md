@@ -17,6 +17,7 @@
 > - [context-and-environment.md](./context-and-environment.md) —— 上下文与 Environment 架构（会话/记忆/Environment 三分、记忆即文件系统、Environment 即插件；v1 声明式渲染，预留代码插件升级路径）
 > - [DECENTRALIZED_MESH.md](./DECENTRALIZED_MESH.md) —— 去中心化 Bot 网格（去调度层、channel_seq 事件时钟、两类资源一致性、频道操作日志、Bot@Bot 任务链与取消、可选预算）
 > - [BUILTIN_AGENT.md](./BUILTIN_AGENT.md) —— 内置 Agent：删光所有内置 bot 类，改为**一份通用 runtime**（代码只写一次、无 per-bot 分支）；身份是**数据**（seed 的 bot_account，≥1 个保住网格多 peer）；行为是 Environment 模板；确定性逻辑下沉成 tool 而非 bot
+> - [MESSAGE_CONTENT_FORMAT.md](./MESSAGE_CONTENT_FORMAT.md) —— 消息正文格式：text + 扁平 token（`<@bot:id>`/`<@user:id>`/`<#file:id>`/`<#chan:id>`）；操作永不进正文（typed resource_req）；不上 XML/AST；富内容走 content_data；token=渲染位置、message_mentions 表=查询，互补
 
 ---
 

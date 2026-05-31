@@ -274,7 +274,9 @@ heal it; formalize the member abstraction above it instead.**
        message — N small INSERTs inside the message transaction. Both legacy JSONB
        columns (`mention_bot_ids` / `mention_user_ids`) are dropped (greenfield, no
        migration). See [DECENTRALIZED_MESH §2](./DECENTRALIZED_MESH.md) for how
-       dispatch consumes it.
+       dispatch consumes it, and [MESSAGE_CONTENT_FORMAT](./MESSAGE_CONTENT_FORMAT.md)
+       for the textual carrier (`<@bot:id>` / `<@user:id>` flat tokens) that mirrors the
+       table — token = render position, table = query; they must agree after write.
 
 3. **Formal Principal abstraction layer — gated on "will there be a third member
    type?"** This is the one strategic call.
