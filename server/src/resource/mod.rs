@@ -36,6 +36,7 @@ pub async fn dispatch(db: &PgPool, bot_id: Uuid, frame: &Value) -> Value {
         // ── mesh step 6：新增读操作 ───────────────────────────────────────
         "channel.activity.read" => activity::handle_read(db, bot_id, &params).await,
         "channel.messages.index" => activity::handle_index(db, bot_id, &params).await,
+        "channel.messages.by-seq" => messages::handle_by_seq(db, bot_id, &params).await,
         "fs.ls" => fs::handle_ls(db, bot_id, &params).await,
         "fs.read" => fs::handle_read(db, bot_id, &params).await,
 

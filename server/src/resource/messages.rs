@@ -19,6 +19,20 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
 
     check_bot_in_channel(db, bot_id, channel_id).await?;
 
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(50)
+        .clamp(1, 200);
+
+    if let Some(since_seq) = params.get("since_seq").and_then(|v| v.as_i64()) {
+        let page =
+            domain_messages::list_channel_messages_since_seq(db, &channel_id, since_seq, limit)
+                .await
+                .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        return message_page_response(channel_id, page, limit);
+    }
+
     let before = params
         .get("before")
         .and_then(|v| v.as_str())
@@ -41,11 +55,6 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
         .map(str::to_string);
     let resolved_before = before.or(before_id).or(around_id);
     let resolved_after = after.or(after_id);
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(50)
-        .min(200);
 
     if resolved_before.is_some() && resolved_after.is_some() {
         return Err(super::resource_error(
@@ -63,29 +72,50 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
     )
     .await
     .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
-    let has_more = page.has_more;
-    let messages = page.messages;
+    message_page_response(channel_id, page, limit)
+}
 
-    let messages: Vec<Value> = messages
+pub async fn handle_by_seq(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+    let channel_id: Uuid = params
+        .get("channel_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    check_bot_in_channel(db, bot_id, channel_id).await?;
+
+    let min_seq = params
+        .get("min_seq")
+        .or_else(|| params.get("from_seq"))
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "min_seq required"))?;
+    let max_seq = params
+        .get("max_seq")
+        .or_else(|| params.get("to_seq"))
+        .and_then(|v| v.as_i64());
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(50)
+        .clamp(1, 200);
+    let page =
+        domain_messages::list_channel_messages_by_seq(db, &channel_id, min_seq, max_seq, limit)
+            .await
+            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+
+    message_page_response(channel_id, page, limit)
+}
+
+fn message_page_response(
+    channel_id: Uuid,
+    page: domain_messages::MessageListPage,
+    limit: i64,
+) -> ResourceResult {
+    let has_more = page.has_more;
+    let messages: Vec<Value> = page
+        .messages
         .into_iter()
         .map(|message| {
-            serde_json::to_value(message).unwrap_or_else(|_| {
-                serde_json::json!({
-                    "v": MESSAGE_SCHEMA_VERSION,
-                    "msg_id": "",
-                    "channel_id": channel_id.to_string(),
-                    "channel_seq": null,
-                    "sender_type": "system",
-                    "content": "",
-                    "msg_type": "text",
-                    "is_partial": false,
-                    "reply_to_msg_id": null,
-                    "file_ids": [],
-                    "mentions": [],
-                    "files": [],
-                    "created_at": Utc::now(),
-                })
-            })
+            serde_json::to_value(message).unwrap_or_else(|_| fallback_message_value(channel_id))
         })
         .collect();
 
@@ -100,6 +130,24 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
             "limit": limit,
         },
     }))
+}
+
+fn fallback_message_value(channel_id: Uuid) -> Value {
+    serde_json::json!({
+        "v": MESSAGE_SCHEMA_VERSION,
+        "msg_id": "",
+        "channel_id": channel_id.to_string(),
+        "channel_seq": null,
+        "sender_type": "system",
+        "content": "",
+        "msg_type": "text",
+        "is_partial": false,
+        "reply_to_msg_id": null,
+        "file_ids": [],
+        "mentions": [],
+        "files": [],
+        "created_at": Utc::now(),
+    })
 }
 
 pub async fn handle_create(

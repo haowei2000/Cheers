@@ -625,24 +625,10 @@ pub async fn list_channel_messages(
         (Some(_), Some(_)) => unreachable!(),
     };
 
-    let mut msgs: Vec<MessageDto> = rows.iter().map(MessageDto::from_row).collect();
+    let mut msgs = hydrate_message_rows(db, &rows).await?;
     let has_more = msgs.len() > requested_limit as usize;
     if has_more {
         msgs.truncate(requested_limit as usize);
-    }
-    if !msgs.is_empty() {
-        let message_ids: Vec<String> = msgs.iter().map(|message| message.msg_id.clone()).collect();
-        let msg_mention_map = load_message_mentions(&db, &message_ids).await?;
-        let file_id_set = unique_file_ids_from_messages(&msgs);
-        let file_ref_map = load_message_files_map(&db, &file_id_set).await?;
-
-        for message in &mut msgs {
-            message.mentions = msg_mention_map
-                .get(&message.msg_id)
-                .cloned()
-                .unwrap_or_default();
-            message.files = normalize_message_file_refs(&message.file_ids, &file_ref_map);
-        }
     }
 
     msgs.reverse(); // 按时间升序返回
@@ -654,6 +640,124 @@ pub async fn list_channel_messages(
         has_more,
         anchor_found,
     })
+}
+
+pub async fn list_channel_messages_since_seq(
+    db: &PgPool,
+    channel_id: &Uuid,
+    since_seq: i64,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    let limit = limit.clamp(1, 200);
+    let rows = sqlx::query(
+        "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+                m.channel_seq, u.display_name AS sender_name,
+                m.content, m.msg_type, m.is_partial, m.file_ids,
+                m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
+         FROM messages m
+         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+         WHERE m.channel_id = $1
+           AND m.is_partial = FALSE
+           AND m.channel_seq IS NOT NULL
+           AND m.channel_seq > $2
+         ORDER BY m.channel_seq ASC
+         LIMIT $3",
+    )
+    .bind(channel_id.to_string())
+    .bind(since_seq.max(0))
+    .bind(limit + 1)
+    .fetch_all(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    let has_more = rows.len() > limit as usize;
+    let rows = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows[..]
+    };
+    let messages = hydrate_message_rows(db, rows).await?;
+
+    Ok(MessageListPage {
+        messages,
+        has_more_before: false,
+        has_more_after: has_more,
+        has_more,
+        anchor_found: true,
+    })
+}
+
+pub async fn list_channel_messages_by_seq(
+    db: &PgPool,
+    channel_id: &Uuid,
+    min_seq: i64,
+    max_seq: Option<i64>,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    let limit = limit.clamp(1, 200);
+    let rows = sqlx::query(
+        "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+                m.channel_seq, u.display_name AS sender_name,
+                m.content, m.msg_type, m.is_partial, m.file_ids,
+                m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
+         FROM messages m
+         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+         WHERE m.channel_id = $1
+           AND m.is_partial = FALSE
+           AND m.channel_seq IS NOT NULL
+           AND m.channel_seq >= $2
+           AND ($3::bigint IS NULL OR m.channel_seq <= $3)
+         ORDER BY m.channel_seq ASC
+         LIMIT $4",
+    )
+    .bind(channel_id.to_string())
+    .bind(min_seq.max(1))
+    .bind(max_seq)
+    .bind(limit + 1)
+    .fetch_all(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    let has_more = rows.len() > limit as usize;
+    let rows = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows[..]
+    };
+    let messages = hydrate_message_rows(db, rows).await?;
+
+    Ok(MessageListPage {
+        messages,
+        has_more_before: false,
+        has_more_after: has_more,
+        has_more,
+        anchor_found: true,
+    })
+}
+
+async fn hydrate_message_rows(
+    db: &PgPool,
+    rows: &[sqlx::postgres::PgRow],
+) -> Result<Vec<MessageDto>, AppError> {
+    let mut msgs: Vec<MessageDto> = rows.iter().map(MessageDto::from_row).collect();
+    if msgs.is_empty() {
+        return Ok(msgs);
+    }
+
+    let message_ids: Vec<String> = msgs.iter().map(|message| message.msg_id.clone()).collect();
+    let msg_mention_map = load_message_mentions(db, &message_ids).await?;
+    let file_id_set = unique_file_ids_from_messages(&msgs);
+    let file_ref_map = load_message_files_map(db, &file_id_set).await?;
+
+    for message in &mut msgs {
+        message.mentions = msg_mention_map
+            .get(&message.msg_id)
+            .cloned()
+            .unwrap_or_default();
+        message.files = normalize_message_file_refs(&message.file_ids, &file_ref_map);
+    }
+
+    Ok(msgs)
 }
 
 fn unique_file_ids_from_messages(messages: &[MessageDto]) -> Vec<String> {
