@@ -12,12 +12,9 @@ Thank you for your willingness to participate in AgentNexus. The project mainly 
 
 ## Development environment
 
-Backend:```bash
-cd backend
-uv venv
-source .venv/bin/activate
-uv sync --extra dev
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+Gateway (Rust backend):```bash
+cd gateway
+cargo run   # runs sqlx migrations on startup
 ```
 front end:```bash
 cd frontend
@@ -34,8 +31,7 @@ Please modify the default password and key in `.env` before running it for the f
 ## Check before submission
 
 Run based on change scope:```bash
-cd backend && uv run ruff check app/
-cd backend && uv run pytest ../tests -v
+cd gateway && cargo build && cargo test
 cd frontend && npm run build
 ```
 npm package changes also require running `npm run lint`, `npm test`, and `npm run build` in the corresponding package directory.
@@ -51,7 +47,7 @@ The release workflow will rewrite the dependency to the published npm version be
 
 - Describe the motivation for the change, core solutions and test results.
 - Synchronously update documentation when it comes to API, configuration, deployment or user flows.
-- Submit Alembic migrations and verify upgrades when it comes to database structures.
+- Add a new sequential sqlx migration (`gateway/migrations/<NNNN>_<desc>.sql`) for database structure changes; never edit an already-applied migration.
 - Do not submit `.env`, databases, logs, uploaded files, private keys, tokens or production configurations.
 
 ## Security issues

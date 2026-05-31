@@ -56,7 +56,6 @@ Default local endpoints:
 
 - Frontend: http://localhost
 - API: http://localhost:8000
-- Swagger: http://localhost:8000/docs
 - Health check: http://localhost:8000/health
 
 If document preview is enabled, make sure `PUBLIC_BASE_URL` is reachable from the kkFileView container. Never use `.env.example` secrets in production.
@@ -68,13 +67,9 @@ cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
 docker compose up -d postgres redis rustfs kkfileview
 
-cd backend
-uv venv
-source .venv/bin/activate
-uv sync --extra dev
-uv run alembic upgrade head
-uv run alembic -c alembic_context.ini upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Rust gateway (runs sqlx migrations on startup)
+cd gateway
+cargo run
 ```
 
 ```bash
@@ -83,13 +78,15 @@ npm install
 npm run dev
 ```
 
-## Seed Data
+## Bots
 
-With `SEED_DATA=1`, the backend creates a default workspace, a default channel, an administrator, one default prompt template, and the built-in Coordinator Bot. Open the default channel and send:
-
-```text
-@Coordinator how do I use this?
-```
+The platform is **external-agent-first**: there is no built-in bot (the old
+`Coordinator` is gone — routing is a deterministic `@mention → bot` lookup). Connect an
+external ACP agent (OpenCode, Claude, Codex) via `packages/agentnexus-mcp-server` or an
+ACP connector, then `@` it in a channel. See
+[docs/arch/BUILTIN_AGENT.md](docs/arch/BUILTIN_AGENT.md) and
+[docs/arch/DECENTRALIZED_MESH.md](docs/arch/DECENTRALIZED_MESH.md). Default seed data for
+the gateway is being re-established.
 
 ## Contributing
 
@@ -97,7 +94,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 - Work branches must target `develop`.
 - `main` only accepts merges from `develop`.
-- Run the relevant backend tests and frontend build before submitting changes.
+- Run `cd gateway && cargo build && cargo test` and the frontend build before submitting.
 - Report security issues privately according to [SECURITY.md](SECURITY.md).
 
 ## License

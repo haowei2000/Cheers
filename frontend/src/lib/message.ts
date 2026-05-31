@@ -4,9 +4,8 @@ import type { Message } from "../types";
  * A conversation only becomes a topic once this many direct
  * replies have accumulated under the root. Below the threshold, replies
  * render as plain inline messages under the root — no dock, no topic
- * card. Keep this in sync with the backend constant
- * TOPIC_PROMOTE_THRESHOLD in
- * backend/app/services/orchestrator/topic_context.py.
+ * card. This is a frontend display threshold; keep it in sync with the
+ * gateway's server-side topic-promotion constant once topics land there.
  */
 export const TOPIC_DISPLAY_THRESHOLD = 4;
 
