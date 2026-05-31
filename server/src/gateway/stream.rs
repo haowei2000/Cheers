@@ -15,7 +15,11 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
+use crate::{
+    domain::sessions,
+    gateway::realtime::{fanout::Fanout, frame::WireFrame},
+    infra::db::models::MESSAGE_SCHEMA_VERSION,
+};
 
 // ── StreamEntry ───────────────────────────────────────────────────────────────
 
@@ -93,8 +97,18 @@ pub async fn handle_delta(
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or("missing msg_id")?;
-
     let delta = frame.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+    if let Some(session_id) = extract_session_id(frame) {
+        if let Err(e) = sessions::touch_session(db, session_id).await {
+            tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+        }
+    } else if let Some(provider_session_key) = extract_provider_session_key(frame) {
+        if let Ok(session_id) = sessions::resolve_session_id_by_key(db, &bot_id.to_string(), bot_id, &provider_session_key).await {
+            if let Err(e) = sessions::touch_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
+            }
+        }
+    }
 
     // R1: 所有权校验 —— 以 PG 为准，不信任内存注册表
     let channel_id = verify_ownership(db, bot_id, msg_id).await?;
@@ -137,6 +151,8 @@ pub async fn handle_done(
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or("missing msg_id")?;
+    let session_id = extract_session_id(frame);
+    let provider_session_key = extract_provider_session_key(frame);
 
     let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -162,17 +178,74 @@ pub async fn handle_done(
     .map_err(|_| "db error")?;
 
     // ── 再 fan-out 终态帧 ────────────────────────────────────────────────────
+    let details = sqlx::query(
+        "SELECT channel_id, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id
+         FROM messages WHERE msg_id = $1",
+    )
+    .bind(msg_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(|_| "db error")?
+    .ok_or("message not found")?;
+    let file_ids = details
+        .try_get::<Vec<String>, _>("file_ids")
+        .ok()
+        .unwrap_or_default();
+    let msg_type = details
+        .try_get::<String, _>("msg_type")
+        .unwrap_or_else(|_| "text".to_string());
+    let reply_to_msg_id = details.try_get::<Option<String>, _>("reply_to_msg_id").ok();
+
     let wire = WireFrame::channel(
         channel_id,
         "message_done",
-        json!({ "msg_id": msg_id, "content": content }),
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "sender_type": "bot",
+            "sender_id": bot_id,
+            "content": content,
+            "msg_type": msg_type,
+            "is_partial": false,
+            "reply_to_msg_id": reply_to_msg_id,
+            "file_ids": file_ids,
+            "mentions": [],
+            "files": [],
+        }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
     // 清理注册表
     registry.remove(msg_id);
 
+    if let Some(session_id) = session_id {
+        if let Err(e) = sessions::finalize_session(db, session_id).await {
+            tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
+        }
+    } else if let Some(provider_session_key) = provider_session_key {
+        if let Ok(session_id) = sessions::resolve_session_id_by_key(db, &bot_id.to_string(), bot_id, &provider_session_key).await {
+            if let Err(e) = sessions::finalize_session(db, session_id).await {
+                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn extract_session_id(frame: &Value) -> Option<Uuid> {
+    frame
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .and_then(|raw| raw.parse().ok())
+}
+
+fn extract_provider_session_key(frame: &Value) -> Option<String> {
+    frame
+        .get("provider_session_key")
+        .and_then(|v| v.as_str())
+        .map(std::string::ToString::to_string)
 }
 
 /// 处理 bot 主动发新消息（send 帧）。
@@ -192,17 +265,21 @@ pub async fn handle_send(
         .ok_or("missing channel_id")?;
 
     let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let msg_type = frame.get("msg_type").and_then(|v| v.as_str()).unwrap_or("text");
+    let file_ids = parse_file_ids(frame.get("file_ids"));
     let msg_id = Uuid::new_v4();
 
     // 先落库
     sqlx::query(
-        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial)
-         VALUES ($1, $2, 'bot', $3, $4, FALSE)",
+        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, msg_type, is_partial, file_ids)
+         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6)",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
     .bind(bot_id.to_string())
     .bind(content)
+    .bind(msg_type)
+    .bind(serde_json::json!(file_ids.clone()))
     .execute(db)
     .await
     .map_err(|_| "db error")?;
@@ -211,11 +288,40 @@ pub async fn handle_send(
     let wire = WireFrame::channel(
         channel_id,
         "message",
-        json!({ "msg_id": msg_id, "content": content, "sender_id": bot_id }),
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "sender_type": "bot",
+            "sender_id": bot_id,
+            "content": content,
+            "msg_type": msg_type,
+            "is_partial": false,
+            "file_ids": file_ids,
+            "mentions": [],
+            "files": [],
+        }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
     Ok(())
+}
+
+fn parse_file_ids(value: Option<&Value>) -> Vec<String> {
+    let mut file_ids = Vec::new();
+    for v in value.and_then(|v| v.as_array()).unwrap_or(&[]).iter() {
+        let Some(raw) = v.as_str() else {
+            continue;
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !file_ids.iter().any(|existing| existing == trimmed) {
+            file_ids.push(trimmed.to_string());
+        }
+    }
+    file_ids
 }
 
 // ── R1 所有权校验（以 PG 为准）───────────────────────────────────────────────

@@ -16,12 +16,15 @@ use super::{
     stream::{StreamEntry, StreamRegistry},
 };
 use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
+use crate::domain::sessions;
+use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
 /// 派发参数。
 pub struct DispatchParams {
     pub trigger_msg_id: Uuid,
     pub bot_id: Uuid,
     pub channel_id: Uuid,
+    pub provider_session_key: String,
     pub session_id: Option<Uuid>,
 }
 
@@ -77,11 +80,17 @@ pub async fn dispatch(
         params.channel_id,
         "message",
         json!({
+            "v": MESSAGE_SCHEMA_VERSION,
             "msg_id": placeholder_id,
             "sender_id": params.bot_id,
             "sender_type": "bot",
             "content": "",
+            "msg_type": "text",
             "is_partial": true,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
         }),
     );
     fanout.broadcast_channel(params.channel_id, bubble).await;
@@ -92,6 +101,7 @@ pub async fn dispatch(
         params.channel_id,
         params.trigger_msg_id,
         placeholder_id,
+        &params.provider_session_key,
         params.session_id,
     );
 
@@ -103,6 +113,9 @@ pub async fn dispatch(
         // bot 不在线：清理占位（或标记为失败，让前端看到错误提示）
         let _ = mark_placeholder_failed(db, placeholder_id).await;
         registry.remove(placeholder_id);
+        if let Some(session_id) = params.session_id {
+            let _ = sessions::finalize_session(db, session_id).await;
+        }
         return DispatchResult::BotOffline;
     }
 
@@ -188,6 +201,7 @@ fn build_task_frame(
     channel_id: Uuid,
     msg_id: Uuid,
     placeholder_msg_id: Uuid,
+    provider_session_key: &str,
     session_id: Option<Uuid>,
 ) -> Value {
     json!({
@@ -196,6 +210,7 @@ fn build_task_frame(
         "channel_id": channel_id,
         "msg_id": msg_id,
         "placeholder_msg_id": placeholder_msg_id,
+        "provider_session_key": provider_session_key,
         "trigger": "user_message",
         "session_id": session_id,
         "enqueued_at": chrono::Utc::now().to_rfc3339(),

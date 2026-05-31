@@ -1,0 +1,260 @@
+use chrono::Utc;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::errors::AppError;
+
+const PROVIDER: &str = "acp";
+const PROVIDER_AGENT_ID: &str = "main";
+
+pub const SESSION_SCOPE_CHANNEL: &str = "channel";
+pub const SESSION_SCOPE_TASK: &str = "task";
+pub const SESSION_SCOPE_TOPIC: &str = "topic";
+pub const SESSION_SCOPE_DM: &str = "dm";
+pub const SESSION_SCOPE_WORKSPACE: &str = "workspace";
+pub const SESSION_SCOPE_GLOBAL: &str = "global";
+pub const SESSION_SCOPE_USER: &str = "user";
+
+pub const SESSION_STATUS_ACTIVE: &str = "active";
+pub const SESSION_STATUS_BUSY: &str = "busy";
+pub const SESSION_STATUS_IDLE: &str = "idle";
+pub const SESSION_STATUS_REVOKED: &str = "revoked";
+pub const SESSION_STATUS_EXPIRED: &str = "expired";
+pub const SESSION_STATUS_ERROR: &str = "error";
+
+pub fn normalize_scope_type(raw: &str) -> &str {
+    match raw {
+        SESSION_SCOPE_CHANNEL | SESSION_SCOPE_TASK | SESSION_SCOPE_TOPIC | SESSION_SCOPE_DM
+        | SESSION_SCOPE_WORKSPACE | SESSION_SCOPE_GLOBAL | SESSION_SCOPE_USER => raw,
+        _ => SESSION_SCOPE_CHANNEL,
+    }
+}
+
+fn scope_columns(scope_type: &str, scope_id: &str, task_id: Option<&str>) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+    let scope_id = scope_id.to_string();
+    match scope_type {
+        SESSION_SCOPE_CHANNEL => (Some(scope_id), None, None, None),
+        SESSION_SCOPE_TOPIC => (None, Some(scope_id), None, None),
+        SESSION_SCOPE_DM => (None, None, Some(scope_id), None),
+        SESSION_SCOPE_TASK => {
+            let task = scope_id;
+            (None, None, None, Some(task))
+        }
+        SESSION_SCOPE_WORKSPACE | SESSION_SCOPE_GLOBAL | SESSION_SCOPE_USER => (None, None, None, None),
+        _ => (Some(scope_id), None, None, None),
+    }
+}
+
+fn fallback_task_id(
+    scope_type: &str,
+    scope_id: &str,
+    provided: Option<&str>,
+) -> Option<String> {
+    match scope_type {
+        SESSION_SCOPE_TASK => Some(scope_id.to_string()),
+        SESSION_SCOPE_CHANNEL => provided.and_then(|v| if v.is_empty() { None } else { Some(v.to_string()) }),
+        SESSION_SCOPE_TOPIC => provided.and_then(|v| if v.is_empty() { None } else { Some(v.to_string()) }),
+        SESSION_SCOPE_DM => provided.and_then(|v| if v.is_empty() { None } else { Some(v.to_string()) }),
+        _ => provided.and_then(|v| if v.is_empty() { None } else { Some(v.to_string()) }),
+    }
+}
+
+#[derive(Debug)]
+pub struct SessionHandle {
+    pub session_id: Uuid,
+}
+
+/// 依据 provider 维度创建/复用 session，并绑定当前 scope。
+pub async fn acquire_scope_session(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    provider_session_key: &str,
+    scope_type: &str,
+    scope_id: &str,
+    task_id: Option<&str>,
+    role: &str,
+) -> Result<SessionHandle, AppError> {
+    let scope_type = normalize_scope_type(scope_type);
+    let scope_id = scope_id.trim();
+    if scope_id.is_empty() {
+        return Err(AppError::BadRequest("scope_id can not be empty".into()));
+    }
+    let provider_account_id = provider_account_id.trim();
+    if provider_account_id.is_empty() {
+        return Err(AppError::BadRequest("provider_account_id can not be empty".into()));
+    }
+
+    let now = Utc::now();
+    let session_id: String = sqlx::query_scalar(
+        "INSERT INTO agentnexus_sessions (
+            session_id, bot_id, provider, provider_account_id, provider_agent_id,
+            provider_session_key, provider_session_id, current_scope_type, current_scope_id,
+            status, metadata, last_used_at, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, '{}'::jsonb, $10, $10, $10
+        )
+        ON CONFLICT (provider, provider_account_id, provider_session_key)
+        DO UPDATE SET
+            bot_id = EXCLUDED.bot_id,
+            current_scope_type = EXCLUDED.current_scope_type,
+            current_scope_id = EXCLUDED.current_scope_id,
+            status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at,
+            last_used_at = EXCLUDED.last_used_at
+        RETURNING session_id",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(PROVIDER_AGENT_ID)
+    .bind(provider_session_key)
+    .bind(scope_type)
+    .bind(scope_id)
+    .bind(SESSION_STATUS_BUSY)
+    .bind(now)
+    .fetch_one(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    let session_uuid = Uuid::parse_str(&session_id).map_err(|_| AppError::Internal("invalid session_id".into()))?;
+    upsert_session_binding(
+        db,
+        &session_uuid,
+        bot_id,
+        provider_account_id,
+        scope_type,
+        scope_id,
+        fallback_task_id(scope_type, scope_id, task_id),
+        role,
+    )
+    .await?;
+
+    Ok(SessionHandle { session_id: session_uuid })
+}
+
+async fn upsert_session_binding(
+    db: &PgPool,
+    session_id: &Uuid,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    scope_type: &str,
+    scope_id: &str,
+    task_id: Option<String>,
+    role: &str,
+) -> Result<(), AppError> {
+    let (channel_id, topic_id, dm_id, binding_task_id) = scope_columns(scope_type, scope_id, task_id.as_deref());
+    sqlx::query(
+        "INSERT INTO agentnexus_session_bindings (
+            binding_id, session_id, bot_id, provider, provider_account_id, provider_agent_id,
+            scope_type, scope_id, channel_id, topic_id, dm_id, task_id, role, created_at
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW()
+        )
+        ON CONFLICT ON CONSTRAINT uq_agentnexus_session_binding_scope
+        DO UPDATE SET
+            session_id = EXCLUDED.session_id,
+            role = EXCLUDED.role,
+            detached_at = NULL,
+            bot_id = EXCLUDED.bot_id,
+            provider = EXCLUDED.provider,
+            provider_account_id = EXCLUDED.provider_account_id,
+            provider_agent_id = EXCLUDED.provider_agent_id,
+            task_id = EXCLUDED.task_id,
+            channel_id = EXCLUDED.channel_id,
+            topic_id = EXCLUDED.topic_id,
+            dm_id = EXCLUDED.dm_id,
+            created_at = EXCLUDED.created_at
+        ",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(session_id.to_string())
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(PROVIDER_AGENT_ID)
+    .bind(scope_type)
+    .bind(scope_id)
+    .bind(channel_id)
+    .bind(topic_id)
+    .bind(dm_id)
+    .bind(binding_task_id.or(task_id))
+    .bind(role)
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    Ok(())
+}
+
+pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
+    let now = Utc::now();
+    sqlx::query(
+        "UPDATE agentnexus_sessions
+         SET status = $1, last_used_at = $2, updated_at = $2
+         WHERE session_id = $3",
+    )
+    .bind(SESSION_STATUS_BUSY)
+    .bind(now)
+    .bind(session_id.to_string())
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    Ok(())
+}
+
+pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
+    let now = Utc::now();
+    sqlx::query(
+        "UPDATE agentnexus_sessions
+         SET status = $1, last_used_at = $2, updated_at = $2
+         WHERE session_id = $3",
+    )
+    .bind(SESSION_STATUS_IDLE)
+    .bind(now)
+    .bind(session_id.to_string())
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    sqlx::query(
+        "UPDATE agentnexus_session_bindings
+         SET detached_at = COALESCE(detached_at, $1)
+         WHERE session_id = $2 AND detached_at IS NULL",
+    )
+    .bind(now)
+    .bind(session_id.to_string())
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    Ok(())
+}
+
+pub async fn resolve_session_id_by_key(
+    db: &PgPool,
+    provider_account_id: &str,
+    bot_id: Uuid,
+    provider_session_key: &str,
+) -> Result<Uuid, AppError> {
+    sqlx::query(
+        "SELECT session_id FROM agentnexus_sessions
+         WHERE bot_id = $1
+           AND provider = $2
+           AND provider_account_id = $3
+           AND provider_session_key = $4
+         LIMIT 1",
+    )
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(provider_session_key)
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .and_then(|row| row.try_get::<String, _>("session_id").ok())
+    .and_then(|value| Uuid::parse_str(&value).ok())
+    .ok_or_else(|| AppError::NotFound)
+}
