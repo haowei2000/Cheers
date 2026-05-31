@@ -20,6 +20,7 @@
 | 版本管理 | **暂不做** `bot_versions` | 有价值但大改，需要回滚/灰度时再上 |
 | 权限引擎 | **不做** `capability_grants` 独立层 | 无多租户、当前规模下属过度设计 |
 | 密钥 | 维持现状（哈希存储，不进 JSONB） | 已符合最佳实践 |
+| 安全能力开关 | `binding_config.acp_security` 作为 bot 可选字段 | 当前入库 + handshake 下发，暂不做 payload 加解密 |
 
 ---
 
@@ -43,6 +44,7 @@
 2. **无 effective_config 合并器**：合并逻辑隐式、分散在 adapter 解析处，难审计、难调试。
 3. **无版本/回滚**：改配置即时生效，无 draft/active/archived。← 有价值，但本期不做
 4. **权限隐式**：靠 `binding_type`/`scope` 表达，无独立权限层。← 无多租户下不引入
+5. **安全能力缺口**：未把 `acp_security` 作为一等配置项暴露，导致 E2EE 无法按 bot 做选择性启用。← 已补齐
 
 ---
 
@@ -81,6 +83,7 @@ effective_config  →  adapter / pipeline
 | `limits.*` | **取最小值**（不能被频道放大） | `max_recent_messages`、`max_tool_calls_per_run` |
 | `tools.enabled` | **取交集**（不是并集） | Bot 启用 ∩ 系统允许 |
 | `security.*` | **只能收紧，不能放宽** | `redact_pii` 一旦上层为真，下层不能改假 |
+| `acp_security` | **`enabled` 可收紧；`mode`/`algorithm` 不得比对端更弱** | `enabled=false` 只允许在 channel 覆盖；`mode/algorithm` 可被约束到白名单 |
 
 合并顺序（不考虑多租户，无 system/tenant 多级，仅两层 + 系统默认）：
 
@@ -111,9 +114,17 @@ effective_config  →  adapter / pipeline
   "llm":     { "temperature": 0.1 },
   "trigger": { "requires_mention": true, "auto_reply": false },
   "context": { "max_recent_messages": 10, "include_room_summary": true },
+  "acp_security": {
+    "enabled": true,
+    "mode": "X25519-ECDH",
+    "algorithm": "AES-256-GCM",
+    "allow_plaintext_fallback": false
+  },
   "prompt":  { "template_id": "..." }   // 兼容现有 ChannelMembership.template_id
 }
 ```
+
+> `acp_security` 落库位置是 `bot_accounts.binding_config.acp_security`。当前网关在 control/data `hello` 帧中回传该字段用于能力协商；加密 payload 透传与签名校验尚待后续实施。
 
 ---
 
@@ -136,6 +147,7 @@ effective_config  →  adapter / pipeline
 - **`bot_versions`**：draft / active / archived + 回滚 + 变更审计。`bot_accounts.active_version_id` 指向当前版本，配置从字段挪到版本表。
 - **effective_config 调试接口**：`GET /channels/{cid}/bots/{bid}/effective-config` 返回各层来源，便于排查「为什么这个频道里 Bot 行为变了」。
 - **配置 schema 校验**：按 `binding_type`（http / agent_bridge）用 Pydantic 校验 override 结构，保存前拒绝非法配置。
+- **握手级 E2EE 元数据**：记录 `acp_security.phase`、`allow_plaintext_fallback` 命中率和协商失败码，作为联调/监控基线。
 
 ---
 

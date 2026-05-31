@@ -34,6 +34,8 @@ struct BotInfo {
     bot_id: Uuid,
     username: String,
     display_name: Option<String>,
+    /// 可选的 ACP 安全配置快照（目前仅回显，不强制加解密）。
+    acp_security: Option<Value>,
 }
 
 // ── Control WS ────────────────────────────────────────────────────────────────
@@ -63,7 +65,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
 
     // ── 3. 发 hello 帧（membership snapshot）─────────────────────────────
     let memberships = load_memberships(&state.db, bot.bot_id).await;
-    let hello = json!({
+    let mut hello = json!({
         "type": "hello",
         "bot_id": bot.bot_id,
         "bot_username": bot.username,
@@ -71,6 +73,9 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
         "connection_id": connection_id,
         "memberships": memberships,
     });
+    if let Some(acp_security) = &bot.acp_security {
+        hello["acp_security"] = acp_security.clone();
+    }
     if ws_send(&mut socket, &hello).await.is_err() {
         return;
     }
@@ -151,13 +156,16 @@ async fn handle_data(mut socket: WebSocket, state: AppState) {
 
     // ── 3. 发 hello 帧 ──────────────────────────────────────────────────
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
-    let hello = json!({
+    let mut hello = json!({
         "type": "hello",
         "stream": "data",
         "bot_id": bot.bot_id,
         "connection_id": connection_id,
         "last_event_seq": 0,
     });
+    if let Some(acp_security) = &bot.acp_security {
+        hello["acp_security"] = acp_security.clone();
+    }
     if ws_send(&mut socket, &hello).await.is_err() {
         return;
     }
@@ -328,7 +336,7 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Option<BotInfo> {
     let token_hash = hash_bot_token(token);
 
     let row = sqlx::query(
-        "SELECT id, username, display_name, status
+        "SELECT bot_id, username, display_name, status, binding_config
          FROM bot_accounts WHERE bot_token_hash = $1",
     )
     .bind(&token_hash)
@@ -341,19 +349,51 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Option<BotInfo> {
         return None;
     }
 
-    let bot_id_str: String = row.try_get("id").ok()?;
+    let binding_config = row.try_get::<Option<Value>, _>("binding_config").ok().flatten();
     Some(BotInfo {
-        bot_id: bot_id_str.parse().ok()?,
+        bot_id: row.try_get::<String, _>("bot_id").ok()?.parse().ok()?,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),
+        acp_security: resolve_bot_acp_security(binding_config),
     })
+}
+
+fn resolve_bot_acp_security(binding_config: Option<Value>) -> Option<Value> {
+    let acp_security = binding_config
+        .as_ref()?
+        .as_object()?
+        .get("acp_security")?
+        .as_object()?;
+
+    let mode = acp_security
+        .get("mode")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("X25519-ECDH");
+    let algorithm = acp_security
+        .get("algorithm")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("AES-256-GCM");
+    let allow_plaintext_fallback = acp_security
+        .get("allow_plaintext_fallback")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    Some(json!({
+        "enabled": acp_security.get("enabled").and_then(Value::as_bool).unwrap_or(false),
+        "mode": mode,
+        "algorithm": algorithm,
+        "allow_plaintext_fallback": allow_plaintext_fallback,
+        "phase": "negotiated",
+    }))
 }
 
 async fn load_memberships(db: &PgPool, bot_id: Uuid) -> Vec<Value> {
     let rows = sqlx::query(
         "SELECT cm.channel_id, c.name
          FROM channel_memberships cm
-         JOIN channels c ON c.id = cm.channel_id
+         JOIN channels c ON c.channel_id = cm.channel_id
          WHERE cm.member_id = $1 AND cm.member_type = 'bot'",
     )
     .bind(bot_id.to_string())

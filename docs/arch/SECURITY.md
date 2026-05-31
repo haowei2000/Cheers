@@ -4,11 +4,11 @@
 > 分支：`break/rust-gateway-arch`
 > 配套：[BOT_PERMISSION](./BOT_PERMISSION.md) · [ACP_INTEGRATION](./ACP_INTEGRATION.md)
 
-本文定义 AgentNexus 的安全架构，包括传输安全、设备认证、三方安全边界，以及（**未来计划**的）端到端加密。
+本文定义 AgentNexus 的安全架构，包括传输安全、设备认证、三方安全边界，以及 bot 级可选端到端加密（**当前可选**，默认关闭）。
 
-> **范围定调（已锁定）**：本期只做 **层级 A —— 传输安全 + 静态加密 + 设备认证**。
-> **端到端加密（E2EE）整体搁置为未来计划**，与 [E2EE_NOTES.md](./E2EE_NOTES.md) 的结论一致。
-> 本文 §4（Daemon↔Agent E2EE）、§5（群聊 E2EE）、§6（E2EE 代价）均为**未来计划的设计存档**，本期不实现。
+> **范围定调（已锁定）**：本期主线依旧是 **层级 A —— 传输安全 + 静态加密 + 设备认证**。
+> **ACP 端点 E2EE 改为 bot 可选项**：默认关闭，默认行为等同明文；若 `binding_config.acp_security.enabled=true`，网关走可选协商通道（目前为字段下发，不含 payload 加解密）。
+> 本文 §4（Daemon↔Agent E2EE）、§5（群聊 E2EE）、§6（E2EE 代价）仍为**未来计划设计存档**，本期不作为默认行为启用。
 >
 > ⚠️ **E2EE 与现有能力的硬冲突（实现 E2EE 前必须解决）**：[AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) 的 `channel.files.read`（返回文本/markdown）、`channel.context`（聚合明文）、以及服务端 RAG/全文搜索/历史摘要/文件转换，**全部依赖 Platform 能读明文**。一旦上群聊 E2EE（§5），这些服务端读取能力失效，须挪到客户端/Daemon 端（见 §6 的解决方案表）。本期保留这些服务端能力，因此本期不上 E2EE。
 
@@ -20,6 +20,7 @@
 |------|------|------|------|
 | 传输安全 | TLS 1.3 + cert pinning | **本期** | 防窃听、防中间人 |
 | 设备认证 | Ed25519 密钥对 + 设备证书 + 短期凭证 | **本期** | 双向认证，不可伪造 |
+| bot 级 ACP 端点 E2EE | `binding_config.acp_security` 作为可选开关 | **可选（待实现）** | 先打通 control/data 握手，未默认加密 payload |
 | Daemon ↔ Agent E2EE | ECDH 密钥协商 + AES-256-GCM | **未来计划** | Platform 看不到内容（与服务端读取冲突，本期不做） |
 | 群聊 E2EE | Group Key 模型 | **未来计划** | 频道成员（含 Bot）持有 key，Platform 不持有 |
 | 三方安全边界 | Platform/Daemon/Agent 各管各的，互不可绕过 | **本期** | 最小权限原则 |
