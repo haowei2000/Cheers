@@ -29,6 +29,7 @@ import type {
   ConnectorControlConfig,
   ControlInbound,
   DataInbound,
+  AcpSecurityHello,
   DeltaFrame,
   DoneFrame,
   ErrorFrame,
@@ -45,6 +46,7 @@ import type {
   TerminalAck,
   TraceFrame,
   TriggerMessage,
+  AcpCapabilityEnvelope,
 } from "./types.js";
 
 const DEFAULT_SEND_ACK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -52,6 +54,26 @@ const DEFAULT_SEND_ACK_TIMEOUT_MS = 10 * 60 * 1000;
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
+
+function normalizeAcpSecurity(value: unknown): AcpSecurityHello | null {
+  if (!isObject(value)) return null;
+  return {
+    enabled: typeof value.enabled === "boolean" ? value.enabled : undefined,
+    mode: typeof value.mode === "string" && value.mode.trim() ? value.mode.trim() : undefined,
+    algorithm: typeof value.algorithm === "string" && value.algorithm.trim() ? value.algorithm.trim() : undefined,
+    require_capability: typeof value.require_capability === "boolean"
+      ? value.require_capability
+      : undefined,
+    allow_plaintext_fallback: typeof value.allow_plaintext_fallback === "boolean"
+      ? value.allow_plaintext_fallback
+      : undefined,
+    phase: typeof value.phase === "string" && value.phase.trim() ? value.phase.trim() : undefined,
+  };
+}
+
+type AcpCapabilityFrame = ReplyFrame | SendFrame | DeltaFrame | DoneFrame | ErrorFrame | PermissionRequestFrame | TraceFrame | SessionUpdateFrame;
+
+type AcpCapabilityFramePrepare = (frame: AcpCapabilityFrame, security: AcpSecurityHello | null) => void;
 
 export interface SessionConfig {
   botToken: string;
@@ -111,6 +133,8 @@ export interface SessionEvents {
   onFatal?: (reason: string) => void;
   /** Control/data connection state changes for observability. */
   onConnectionChange?: (stream: "control" | "data", state: "open" | "closed") => void;
+  onAcpSecurity?: (security: AcpSecurityHello | null) => void;
+  onDataFramePrepare?: AcpCapabilityFramePrepare;
 }
 
 type InflightResolver = (ack: SendAck) => void;
@@ -126,6 +150,7 @@ export interface SendResult {
 }
 
 const MAX_INFLIGHT = 500; // Soft cap; reject new sends above this limit.
+const ACP_CAPABILITY_MISSING_CODE = "acp_capability_missing";
 
 export class BotSession {
   public readonly membership: MembershipSnapshot = {
@@ -152,6 +177,7 @@ export class BotSession {
   private controlReady = false;
   /** Data hello has arrived. */
   private dataReady = false;
+  private acpSecurity: AcpSecurityHello | null = null;
 
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
@@ -260,6 +286,8 @@ export class BotSession {
         case "hello": {
           this.botId = frame.bot_id;
           this.sessionId = frame.session_id;
+          this.acpSecurity = normalizeAcpSecurity(frame.acp_security);
+          this.events.onAcpSecurity?.(this.acpSecurity);
           // Hello is the authoritative membership snapshot, so replace local state.
           this.membership.channelIds.clear();
           this.membership.byId.clear();
@@ -393,6 +421,8 @@ export class BotSession {
           // Data hello includes last_event_seq. On the first connection
           // lastProcessedSeq=0, so we do not resume until the agent reports how
           // far it has processed.
+          this.acpSecurity = normalizeAcpSecurity(frame.acp_security);
+          this.events.onAcpSecurity?.(this.acpSecurity);
           this.dataReady = true;
           this.maybeResolveReady();
           break;
@@ -485,12 +515,16 @@ export class BotSession {
     fileIds?: string[];
   }): Promise<SendResult> {
     const { source, text, fileIds } = args;
+    const locator = this.getSessionLocatorFromMessage(source);
     return this.sendFrame<ReplyFrame>({
       type: "reply",
       client_msg_id: randomUUID(),
       task_id: source.event.task_id,
       reply_to_msg_id: source.event.placeholder_msg_id ?? null,
       channel_id: source.channelId,
+      session_id: locator.sessionId,
+      provider_session_key: locator.providerSessionKey,
+      provider_session_id: locator.providerSessionId,
       text,
       file_ids: fileIds,
     });
@@ -502,14 +536,25 @@ export class BotSession {
   // the server accepted the finalization request.
 
   /** Push a single token / chunk into a streaming reply identified by `msgId`. */
-  streamDelta(args: { msgId: string; seq: number; delta: string }): boolean {
+  streamDelta(args: {
+    msgId: string;
+    seq: number;
+    delta: string;
+    sessionId?: string;
+    providerSessionKey?: string | null;
+    providerSessionId?: string;
+  }): boolean {
     if (!this.data.isOpen) return false;
     const frame: DeltaFrame = {
       type: "delta",
       msg_id: args.msgId,
       seq: args.seq,
       delta: args.delta,
+      session_id: args.sessionId,
+      provider_session_key: args.providerSessionKey ?? null,
+      provider_session_id: args.providerSessionId,
     };
+    if (!this.applyFrameCapabilities(frame)) return false;
     return this.data.send(frame);
   }
 
@@ -517,28 +562,86 @@ export class BotSession {
    *  message_done. Optional `fileIds` attaches binary outputs uploaded
    *  during the stream (e.g. images / .md from sendMedia). Optional `content`
    *  is a durable final snapshot for restart recovery. */
-  streamDone(args: { msgId: string; fileIds?: string[]; content?: string }): Promise<SendResult> {
+  streamDone(args: {
+    msgId: string;
+    fileIds?: string[];
+    content?: string;
+    sessionId?: string;
+    providerSessionKey?: string | null;
+    providerSessionId?: string;
+  }): Promise<SendResult> {
     const frame: DoneFrame = { type: "done", client_msg_id: randomUUID(), msg_id: args.msgId };
     if (args.fileIds && args.fileIds.length > 0) frame.file_ids = args.fileIds;
     if (args.content !== undefined) frame.content = args.content;
+    if (args.sessionId) frame.session_id = args.sessionId;
+    if (args.providerSessionId) frame.provider_session_id = args.providerSessionId;
+    if (args.providerSessionKey !== undefined) frame.provider_session_key = args.providerSessionKey;
+    if (!this.applyFrameCapabilities(frame)) {
+      return Promise.resolve({
+        ok: false,
+        error: "acp_capability is required but not attached",
+        code: ACP_CAPABILITY_MISSING_CODE,
+      });
+    }
     return this.sendTerminalFrame(frame);
   }
 
   /** Mid-stream error: server finalizes partial with the given message tag. */
-  streamError(args: { msgId: string; message: string }): Promise<SendResult> {
+  streamError(args: {
+    msgId: string;
+    message: string;
+    sessionId?: string;
+    providerSessionKey?: string | null;
+    providerSessionId?: string;
+  }): Promise<SendResult> {
     const frame: ErrorFrame = {
       type: "error",
       client_msg_id: randomUUID(),
       msg_id: args.msgId,
       message: args.message,
+      session_id: args.sessionId,
+      provider_session_key: args.providerSessionKey ?? null,
+      provider_session_id: args.providerSessionId,
     };
+    if (!this.applyFrameCapabilities(frame)) {
+      return Promise.resolve({
+        ok: false,
+        error: "acp_capability is required but not attached",
+        code: ACP_CAPABILITY_MISSING_CODE,
+      });
+    }
     return this.sendTerminalFrame(frame);
+  }
+
+  private getSessionLocatorFromMessage(source: InboundMessage): {
+    sessionId?: string;
+    providerSessionKey: string | null;
+    providerSessionId?: string;
+  } {
+    const session = source.event.session;
+    const sessionId = typeof session?.id === "string" && session.id ? session.id : undefined;
+    const providerSessionKey = typeof source.event.provider_session_key === "string"
+      ? source.event.provider_session_key
+      : typeof session?.provider_session_key === "string"
+        ? session.provider_session_key
+        : null;
+    const providerSessionId = typeof source.event.provider_session_id === "string"
+      ? source.event.provider_session_id
+      : typeof session?.provider_session_id === "string"
+        ? session.provider_session_id
+        : undefined;
+    return {
+      sessionId,
+      providerSessionKey,
+      providerSessionId,
+    };
   }
 
   /** Best-effort runtime trace/progress event for a bot reply placeholder. */
   trace(args: Omit<TraceFrame, "type">): boolean {
     if (!this.data.isOpen) return false;
     const frame: TraceFrame = { type: "trace", ...args };
+    if (!this.applyFrameCapabilities(frame)) return false;
     return this.data.send(frame);
   }
 
@@ -546,6 +649,7 @@ export class BotSession {
   reportProviderSession(args: Omit<SessionUpdateFrame, "type">): boolean {
     if (!this.data.isOpen) return false;
     const frame: SessionUpdateFrame = { type: "session_update", ...args };
+    if (!this.applyFrameCapabilities(frame)) return false;
     return this.data.send(frame);
   }
 
@@ -573,6 +677,9 @@ export class BotSession {
     text: string;
     inReplyToMsgId?: string | null;
     fileIds?: string[];
+    sessionId?: string;
+    providerSessionKey?: string | null;
+    providerSessionId?: string;
   }): Promise<SendResult> {
     return this.sendFrame<SendFrame>({
       type: "send",
@@ -581,6 +688,9 @@ export class BotSession {
       text: args.text,
       in_reply_to_msg_id: args.inReplyToMsgId ?? null,
       file_ids: args.fileIds,
+      session_id: args.sessionId,
+      provider_session_key: args.providerSessionKey,
+      provider_session_id: args.providerSessionId,
     });
   }
 
@@ -595,6 +705,8 @@ export class BotSession {
     msgId?: string | null;
     acpSessionId?: string | null;
     providerSessionKey?: string | null;
+    providerSessionId?: string;
+    sessionId?: string;
     options?: PermissionRequestOption[];
   }): Promise<SendResult> {
     return this.sendFrame<PermissionRequestFrame>({
@@ -606,6 +718,8 @@ export class BotSession {
       msg_id: args.msgId ?? null,
       acp_session_id: args.acpSessionId ?? null,
       provider_session_key: args.providerSessionKey ?? null,
+      provider_session_id: args.providerSessionId,
+      session_id: args.sessionId,
       title: args.title ?? null,
       body: args.body,
       tool: args.tool ?? null,
@@ -719,6 +833,13 @@ export class BotSession {
     if (this.inflight.size >= MAX_INFLIGHT) {
       return Promise.resolve({ ok: false, error: "too many inflight messages", code: "backpressure" });
     }
+    if (!this.applyFrameCapabilities(frame)) {
+      return Promise.resolve({
+        ok: false,
+        error: "acp_capability is required but not attached",
+        code: ACP_CAPABILITY_MISSING_CODE,
+      });
+    }
     return new Promise<SendResult>((resolve) => {
       const timer = setTimeout(() => {
         this.inflight.delete(frame.client_msg_id);
@@ -751,6 +872,13 @@ export class BotSession {
   private sendTerminalFrame<F extends DoneFrame | ErrorFrame>(frame: F): Promise<SendResult> {
     if (!this.data.isOpen) {
       return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
+    }
+    if (!this.applyFrameCapabilities(frame)) {
+      return Promise.resolve({
+        ok: false,
+        error: "acp_capability is required but not attached",
+        code: ACP_CAPABILITY_MISSING_CODE,
+      });
     }
     const clientMsgId = frame.client_msg_id ?? randomUUID();
     frame.client_msg_id = clientMsgId;
@@ -806,6 +934,27 @@ export class BotSession {
       });
     }
     this.inflightTerminals.clear();
+  }
+
+  private applyFrameCapabilities(frame: AcpCapabilityFrame): boolean {
+    if (!this.events.onDataFramePrepare) return true;
+    try {
+      this.events.onDataFramePrepare(frame, this.acpSecurity);
+    } catch (err) {
+      this.events.onError?.(err);
+      return false;
+    }
+    if (
+      frame.type === "send"
+      || frame.type === "delta"
+      || frame.type === "done"
+      || frame.type === "trace"
+      || frame.type === "permission_request"
+      || frame.type === "session_update"
+    ) {
+      if (!frame.acp_capability) return false;
+    }
+    return true;
   }
 
   // =================== heartbeat / close ===================

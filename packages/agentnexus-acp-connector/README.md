@@ -38,11 +38,23 @@ Key capabilities:
         "env": {
           "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT"
         }
+      },
+      "acpCapability": {
+        "delegationId": "0f5d2f4a-...",
+        "privateKey": "file:/path/to/connector-capability-private-key.pem",
+        "algorithm": "ed25519",
+        "requestIdPrefix": "anx-opencode",
+        "kid": "delegate-key-001"
       }
     }
   }
 }
 ```
+
+When `bot_accounts.binding_config.acp_security.require_capability=true`, fill `acpCapability`
+so the connector can inject `acp_capability` on protected frames. The private key must be
+an Ed25519 PEM private key readable by Node.js. `file:` paths for `privateKey` support
+both absolute paths and paths relative to the connector config file.
 
 ```bash
 agentnexus-acp-connector --config ./agentnexus-acp.json
