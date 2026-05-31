@@ -20,6 +20,7 @@
 | 并发控制 | **Backend 按 bot 限并发 + 排队** | 单连接吞吐有限，防一个重会话饿死其他 |
 | 资源访问 | **`resource_req/res` 协议**（data channel） | bot 通过协议访问平台资源，不直连 DB |
 | 可选 E2EE 协商 | **`binding_config.acp_security` 在 hello 携带**，默认 `enabled=false` | 控制面先行，当前不强制 payload 加密 |
+| provider.config 协议 | `provider.config.get/update` 走 data channel | 统一接入 same socket；敏感变更建议 E2EE 与版本审计 |
 
 ---
 
@@ -39,6 +40,8 @@
 
 - Bot 创建时可携带 `acp_security`（`enabled`、`mode`、`algorithm`、`allow_plaintext_fallback`），网关会归一化后写入 `bot_accounts.binding_config.acp_security`。
 - control/data `hello` 帧都可透出该字段，connector 以此决定是否尝试做端到端加密，当前实现只支持协商字段，不处理加密 payload。
+- 连接安全约束建议：对 `provider.config.get/update`，除 `allow_plaintext_fallback=true` 且业务确认安全场景外，优先要求加密 envelope；
+  由资源层落地 `E2EE_REQUIRED` 和 `DECRYPT_FAILED` 错误行为。
 - 建议约定：
   - `mode`：`X25519-ECDH`（初始）
   - `algorithm`：`AES-256-GCM` 或 `ChaCha20-Poly1305`
@@ -149,6 +152,8 @@ Rust Backend ──data WS──▶ Bot: {type:"resource_res", req_id:"r1", ok:t
 | WS resource | `channel.files.read` | WS-only bot，保持单连接 |
 | WS resource | `channel.files` | 批量查询文件列表（HTTP 无此端点） |
 | WS resource | `channel.memory` | 读写记忆层（HTTP 无此端点） |
+| WS resource | `provider.config.get` | 读取受控配置字段（白名单 + 脱敏） |
+| WS resource | `provider.config.update` | 更新受控配置字段（加密 + 版本校验 + 审计） |
 
 两者并行，bot 自行选择。resource 协议的额外优势：批量查询、分块传输、与任务链路共享连接。
 
