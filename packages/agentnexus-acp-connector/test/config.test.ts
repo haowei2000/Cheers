@@ -38,7 +38,7 @@ describe("loadConfig", () => {
           agent: {
             transport: "stdio",
             command: "opencode",
-            cwd: "$PWD",
+            cwd: workdir,
           },
         },
       },
@@ -91,5 +91,59 @@ describe("loadConfig", () => {
     }), "utf8");
 
     await expect(loadConfig(configPath)).rejects.toThrow(/cwd does not exist/);
+  });
+
+  it("parses acpCapability and resolves file private keys relative to the config directory", async () => {
+    const workdir = path.join(tmp, "workspace");
+    const keyDir = path.join(tmp, "keys");
+    await Promise.all([mkdir(workdir), mkdir(keyDir)]);
+    const keyPath = path.join(keyDir, "connector.key");
+    await writeFile(keyPath, "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n", "utf8");
+    const configPath = path.join(tmp, "agentnexus-acp.json");
+    await writeFile(configPath, JSON.stringify({
+      accounts: {
+        "opencode-main": {
+          botToken: "agb_test",
+          controlUrl: "ws://example.test/ws/agent-bridge/control",
+          dataUrl: "ws://example.test/ws/agent-bridge/data",
+          acpCapability: {
+            delegationId: "550e8400-e29b-41d4-a716-446655440000",
+            privateKey: "file:./keys/connector.key",
+          },
+          agent: {
+            transport: "stdio",
+            command: "opencode",
+            cwd: "$PWD",
+          },
+        },
+      },
+    }), "utf8");
+
+    const config = await loadConfig(configPath);
+
+    expect(config.accounts["opencode-main"].acpCapability?.privateKey).toBe(keyPath);
+    expect(config.accounts["opencode-main"].acpCapability?.delegationId).toBe("550e8400-e29b-41d4-a716-446655440000");
+  });
+
+  it("requires delegation_id when acpCapability is configured", async () => {
+    const configPath = path.join(tmp, "agentnexus-acp.json");
+    await writeFile(configPath, JSON.stringify({
+      accounts: {
+        "opencode-main": {
+          botToken: "agb_test",
+          controlUrl: "ws://example.test/ws/agent-bridge/control",
+          dataUrl: "ws://example.test/ws/agent-bridge/data",
+          acpCapability: {
+            privateKey: "file:/tmp/key.pem",
+          },
+          agent: {
+            transport: "stdio",
+            command: "opencode",
+          },
+        },
+      },
+    }), "utf8");
+
+    await expect(loadConfig(configPath)).rejects.toThrow(/delegationId is required/);
   });
 });
