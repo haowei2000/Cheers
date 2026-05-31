@@ -31,12 +31,21 @@ export interface StdioAgentConfig {
   clientCapabilities?: Record<string, unknown>;
 }
 
+export interface AcpCapabilityConfig {
+  delegationId: string;
+  privateKey: string;
+  kid?: string;
+  algorithm?: string;
+  requestIdPrefix?: string;
+}
+
 export interface AccountConfig {
   botToken: string;
   controlUrl: string;
   dataUrl: string;
   advanced?: SessionConfig["advanced"];
   agent: StdioAgentConfig;
+  acpCapability?: AcpCapabilityConfig;
 }
 
 export interface ConnectorConfig {

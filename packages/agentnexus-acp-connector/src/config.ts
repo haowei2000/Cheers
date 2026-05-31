@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { AccountConfig, ConnectorConfig } from "./types.js";
+import type { AcpCapabilityConfig, AccountConfig, ConnectorConfig } from "./types.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -16,6 +16,54 @@ function normalizePermissionMode(value: unknown, fallback: "ask" | "reject" | "a
 
 function normalizeOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function expandConfigString(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const text = value.trim();
+  if (text.startsWith("file:")) return text;
+  return expandEnvValue(text, { missing: "empty" });
+}
+
+function normalizeAcpCapability(id: string, raw: unknown, baseDir: string): AcpCapabilityConfig | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) {
+    throw new Error(`accounts.${id}.acpCapability must be an object`);
+  }
+  const delegationId = normalizeOptionalString(
+    "delegationId" in raw && (raw as Record<string, unknown>).delegationId
+      ? (raw as Record<string, unknown>).delegationId
+      : (raw as Record<string, unknown>).delegation_id,
+  );
+  const privateKey = expandConfigString(
+    "privateKey" in raw && (raw as Record<string, unknown>).privateKey
+      ? (raw as Record<string, unknown>).privateKey
+      : (raw as Record<string, unknown>).private_key,
+  );
+  const algorithm = normalizeOptionalString((raw as Record<string, unknown>).algorithm);
+  const kid = normalizeOptionalString("kid" in raw ? (raw as Record<string, unknown>).kid : undefined);
+  const requestIdPrefix = normalizeOptionalString(
+    "requestIdPrefix" in raw
+      ? (raw as Record<string, unknown>).requestIdPrefix
+      : (raw as Record<string, unknown>).request_id_prefix,
+  );
+  if (!delegationId) {
+    throw new Error(`accounts.${id}.acpCapability.delegationId is required`);
+  }
+  if (!privateKey) {
+    throw new Error(`accounts.${id}.acpCapability.privateKey is required`);
+  }
+  const normalizedPrivateKey = privateKey.trim();
+  const expandedPrivateKey = normalizedPrivateKey.startsWith("file:")
+    ? `file:${expandPathValue(normalizedPrivateKey.slice(5).trim(), baseDir)}`
+    : normalizedPrivateKey;
+  return {
+    delegationId,
+    privateKey: expandedPrivateKey,
+    algorithm: algorithm ?? "ed25519",
+    kid,
+    requestIdPrefix,
+  };
 }
 
 function expandEnvValue(
@@ -106,6 +154,11 @@ async function normalizeAccount(id: string, raw: unknown, baseDir: string): Prom
     controlUrl: String(raw.controlUrl),
     dataUrl: String(raw.dataUrl),
     advanced: isObject(raw.advanced) ? raw.advanced : undefined,
+    acpCapability: normalizeAcpCapability(
+      id,
+      (raw as Record<string, unknown>).acpCapability ?? (raw as Record<string, unknown>).acp_capability,
+      baseDir,
+    ),
     agent: {
       transport: "stdio",
       command: String(agent.command),

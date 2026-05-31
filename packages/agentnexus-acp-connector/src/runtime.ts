@@ -1,4 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createPrivateKey,
+  randomUUID,
+  sign as cryptoSign,
+} from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -6,6 +12,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   BotSession,
   type AttachmentInfo,
+  type AcpCapabilityEnvelope,
+  type AcpSecurityHello,
   type ConfigOptionSetInbound,
   type ConfigUpdateInbound,
   type InboundMessage,
@@ -16,6 +24,7 @@ import { JsonRpcError, JsonRpcRequestTimeoutError } from "./acp-jsonrpc.js";
 import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";
 import type {
+  AcpCapabilityConfig,
   AccountConfig,
   AcpConfigOption,
   AcpConfigOptionValue,
@@ -83,6 +92,124 @@ interface BridgeUploadedFile {
   download_url?: string;
 }
 
+interface AcpCapabilitySigner {
+  sign(frame: OutboundAcpDataFrame): AcpCapabilityEnvelope;
+}
+
+interface OutboundAcpDataFrame {
+  type: string;
+  acp_capability?: AcpCapabilityEnvelope;
+  [key: string]: unknown;
+}
+
+type CanonicalValue = null | boolean | number | string | CanonicalRecord | CanonicalValue[];
+
+interface CanonicalRecord {
+  [key: string]: CanonicalValue;
+}
+
+const ACP_CAPABILITY_SIGNED_FRAME_TYPES = new Set([
+  "send",
+  "delta",
+  "done",
+  "resource_req",
+  "session_update",
+  "permission_request",
+  "trace",
+]);
+const ACP_CAPABILITY_SUPPORTED_ALGORITHM = "ed25519";
+
+function readTextFileIfPrefixed(pathRef: string): string {
+  const trimmed = pathRef.trim();
+  if (!trimmed.startsWith("file:")) return trimmed;
+  const rawPath = trimmed.slice(5).trim();
+  const envExpandedPath = rawPath.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_m, name: string) => process.env[name] ?? "");
+  const envExpandedSimple = /^\$[A-Za-z0-9_]+$/.test(envExpandedPath)
+    ? process.env[envExpandedPath.slice(1)] ?? ""
+    : envExpandedPath;
+  const finalPath = path.resolve(envExpandedSimple);
+  return readFileSync(finalPath, "utf8");
+}
+
+function canonicalSerialize(value: CanonicalValue): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean" || typeof value === "number") return String(value);
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "\"\"";
+    }
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalSerialize).join(",")}]`;
+  }
+  const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalSerialize(item)}`).join(",")}}`;
+}
+
+function frameForSignature(frame: OutboundAcpDataFrame): CanonicalRecord {
+  const copied = JSON.parse(JSON.stringify(frame)) as CanonicalValue;
+  if (copied && typeof copied === "object" && !Array.isArray(copied)) {
+    delete (copied as CanonicalRecord).acp_capability;
+    return copied as CanonicalRecord;
+  }
+  return {};
+}
+
+function frameNeedsAcpCapability(type: string): boolean {
+  return ACP_CAPABILITY_SIGNED_FRAME_TYPES.has(type);
+}
+
+function buildCapabilityPayload(
+  frameType: string,
+  delegationId: string,
+  ts: number,
+  nonce: string,
+  requestId: string,
+  sanitizedFrame: CanonicalValue,
+): string {
+  return `anx-cap|v1|type=${frameType}|kid=${delegationId}|ts=${ts}|nonce=${nonce}|request=${requestId}|payload=${canonicalSerialize(sanitizedFrame)}`;
+}
+
+function buildAcpCapabilitySigner(config: AcpCapabilityConfig): AcpCapabilitySigner {
+  const algorithm = (config.algorithm ?? ACP_CAPABILITY_SUPPORTED_ALGORITHM).toLowerCase();
+  if (algorithm !== ACP_CAPABILITY_SUPPORTED_ALGORITHM) {
+    throw new Error(`unsupported acp capability algorithm: ${algorithm}`);
+  }
+
+  const privateKeyText = readTextFileIfPrefixed(config.privateKey);
+  if (!privateKeyText.trim()) {
+    throw new Error(`account ${config.delegationId} has empty acp private_key`);
+  }
+
+  const privateKey = createPrivateKey(privateKeyText);
+  const requestIdPrefix = (config.requestIdPrefix && config.requestIdPrefix.trim())
+    ? config.requestIdPrefix.trim()
+    : "acp-cap";
+  let requestSeq = 0;
+
+  return {
+    sign(frame: OutboundAcpDataFrame): AcpCapabilityEnvelope {
+      const ts = Math.floor(Date.now() / 1000);
+      const nonce = randomUUID();
+      const requestId = `${requestIdPrefix}-${ts}-${++requestSeq}`;
+      const payload = frameForSignature(frame);
+      const data = buildCapabilityPayload(frame.type, config.delegationId, ts, nonce, requestId, payload);
+      const signature = cryptoSign(null, Buffer.from(data, "utf8"), privateKey).toString("base64");
+      return {
+        delegation_id: config.delegationId,
+        ts,
+        nonce,
+        request_id: requestId,
+        signature,
+        algorithm,
+        kid: config.kid,
+      };
+    },
+  };
+}
+
 class BridgeHttpUploadError extends Error {
   constructor(
     readonly status: number,
@@ -96,6 +223,7 @@ class BridgeHttpUploadError extends Error {
 interface RunContext {
   source: InboundMessage;
   providerSessionKey: string;
+  sourceSessionId?: string;
   acpSessionId: string;
   msgId: string;
   httpBase: string;
@@ -765,13 +893,55 @@ function permissionBody(params: unknown): string {
   return title;
 }
 
-function providerSessionKeyOf(message: InboundMessage): string {
+function providerSessionKeyOf(message: InboundMessage): string | null {
   const event = message.event;
   const fromEvent = event.provider_session_key;
   const fromSession = event.session?.provider_session_key;
   if (typeof fromEvent === "string" && fromEvent) return fromEvent;
   if (typeof fromSession === "string" && fromSession) return fromSession;
-  return `channel:${message.channelId}`;
+  return null;
+}
+
+function readStringField(obj: unknown, key: string): string | undefined {
+  if (!isObject(obj)) return undefined;
+  const raw = obj[key];
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function messageSessionContext(message: InboundMessage): {
+  sessionId?: string;
+  providerSessionKey: string;
+  providerSessionId?: string;
+} {
+  const event = message.event;
+  const sourceProviderSessionId = readStringField(event, "provider_session_id");
+  const sourceSession = event.session;
+  return {
+    sessionId: readStringField(sourceSession, "id"),
+    providerSessionKey: providerSessionKeyOf(message) ?? "",
+    providerSessionId: sourceProviderSessionId ?? readStringField(sourceSession, "provider_session_id"),
+  };
+}
+
+function withSessionFields(frame: {
+  session_id?: string;
+  provider_session_key?: string | null;
+  provider_session_id?: string;
+}, ctx: RunContext): {
+  session_id?: string;
+  provider_session_key: string;
+  provider_session_id: string;
+} {
+  frame.session_id = frame.session_id ?? ctx.sourceSessionId;
+  frame.provider_session_key = frame.provider_session_key ?? ctx.providerSessionKey;
+  frame.provider_session_id = frame.provider_session_id ?? ctx.acpSessionId;
+  return {
+    session_id: frame.session_id,
+    provider_session_key: frame.provider_session_key,
+    provider_session_id: frame.provider_session_id,
+  };
 }
 
 function deriveHttpBase(wsUrl: string): string {
@@ -1386,9 +1556,13 @@ export class AcpBridgeAccount {
   private readonly queuesByProviderSessionKey = new Map<string, Promise<void>>();
   private readonly configOptionsBySession = new Map<string, AcpConfigOption[]>();
   private readonly pendingPermissions = new Map<string, PendingPermissionRequest>();
+  private readonly reportedProviderSessions = new Set<string>();
   private desiredAcpConfigOptions: Record<string, string> = {};
   private desiredAcpConfigOptionsKey = acpConfigOptionsKey({});
   private discoveredOptions: AcpDiscoveredOptions | null = null;
+  private readonly acpCapabilitySigner = this.config.acpCapability
+    ? buildAcpCapabilitySigner(this.config.acpCapability)
+    : null;
 
   constructor(
     private readonly accountId: string,
@@ -1419,6 +1593,7 @@ export class AcpBridgeAccount {
         onPermissionResolution: (resolution) => this.handlePermissionResolution(resolution),
         onFatal: (reason) => this.logger.error("bridge account=%s fatal: %s", this.accountId, reason),
         onError: (err) => this.logger.error("bridge account=%s error: %s", this.accountId, String(err)),
+        onDataFramePrepare: (frame, security) => this.onAcpDataFramePrepare(frame, security),
         onConnectionChange: (stream, state) => this.logger.info(
           "bridge account=%s %s=%s",
           this.accountId,
@@ -1443,6 +1618,21 @@ export class AcpBridgeAccount {
       this.pendingPermissions.delete(requestId);
     }
     await Promise.allSettled([this.bridge.stop(), this.agent.stop()]);
+  }
+
+  private onAcpDataFramePrepare(frame: OutboundAcpDataFrame, security: AcpSecurityHello | null): void {
+    if (!security?.require_capability) return;
+    if (security.algorithm && security.algorithm.toLowerCase() !== ACP_CAPABILITY_SUPPORTED_ALGORITHM) {
+      throw new Error(
+        `unsupported acp capability algorithm in hello: ${security.algorithm}, expected ${ACP_CAPABILITY_SUPPORTED_ALGORITHM}`,
+      );
+    }
+    if (!this.acpCapabilitySigner) {
+      throw new Error(`acp_capability missing for account=${this.accountId}, but require_capability is true`);
+    }
+    if (!frameNeedsAcpCapability(frame.type)) return;
+    const envelope = this.acpCapabilitySigner.sign(frame);
+    frame.acp_capability = envelope;
   }
 
   private reportAcpDiscoveredOptions(
@@ -1480,6 +1670,26 @@ export class AcpBridgeAccount {
     this.discoveredOptions = next;
     if (!this.bridge.sendConfigOptions({ options: normalizeDiscoveredOptions(next) })) {
       this.logger.debug?.("bridge account=%s skipped config_options; control stream is not open", this.accountId);
+    }
+  }
+
+  private reportProviderSessionIdentity(providerSessionKey: string, providerSessionId: string): void {
+    if (this.reportedProviderSessions.has(providerSessionId)) return;
+    this.reportedProviderSessions.add(providerSessionId);
+    if (!this.bridge.reportProviderSession({
+      provider_session_key: providerSessionKey,
+      provider_session_id: providerSessionId,
+      metadata: {
+        account_id: this.accountId,
+        command: this.config.agent.command,
+        cwd: this.config.agent.cwd ?? null,
+      },
+    })) {
+      this.logger.debug?.(
+        "bridge account=%s skipped session_update; data stream is not open for session=%s",
+        this.accountId,
+        providerSessionId,
+      );
     }
   }
 
@@ -1548,6 +1758,10 @@ export class AcpBridgeAccount {
 
   private enqueueMessage(message: InboundMessage): void {
     const providerSessionKey = providerSessionKeyOf(message);
+    if (!providerSessionKey) {
+      this.logger.warn("acp account=%s missing provider_session_key; dropping message for strong isolation", this.accountId);
+      return;
+    }
     const previous = this.queuesByProviderSessionKey.get(providerSessionKey) ?? Promise.resolve();
     let next: Promise<void>;
     next = previous
@@ -1578,6 +1792,7 @@ export class AcpBridgeAccount {
         const loaded = await this.agent.loadSession(saved);
         this.activeProviderSessions.set(providerSessionKey, saved);
         this.providerSessionKeysByAcpSession.set(saved, providerSessionKey);
+        this.reportProviderSessionIdentity(providerSessionKey, saved);
         const options = this.updateSessionConfigOptions(saved, loaded.configOptions);
         this.reportAcpDiscoveredOptions(providerSessionKey, saved, loaded);
         const rejected = await this.applyDesiredSessionConfigOptions(saved, options);
@@ -1603,6 +1818,7 @@ export class AcpBridgeAccount {
     this.activeProviderSessions.set(providerSessionKey, created.sessionId);
     this.providerSessionKeysByAcpSession.set(created.sessionId, providerSessionKey);
     await this.state.set(this.accountId, providerSessionKey, created.sessionId);
+    this.reportProviderSessionIdentity(providerSessionKey, created.sessionId);
     const options = this.updateSessionConfigOptions(created.sessionId, created.configOptions);
     this.reportAcpDiscoveredOptions(providerSessionKey, created.sessionId, created);
     const rejected = await this.applyDesiredSessionConfigOptions(created.sessionId, options);
@@ -1618,17 +1834,24 @@ export class AcpBridgeAccount {
       this.activeProviderSessions.delete(providerSessionKey);
     }
     this.providerSessionKeysByAcpSession.delete(acpSessionId);
+    this.reportedProviderSessions.delete(acpSessionId);
     this.configOptionsBySession.delete(acpSessionId);
     await this.state.remove(this.accountId, providerSessionKey);
   }
 
   private async handleMessage(message: InboundMessage): Promise<void> {
     const providerSessionKey = providerSessionKeyOf(message);
+    if (!providerSessionKey) {
+      this.logger.warn("acp account=%s missing provider_session_key; aborting message handling", this.accountId);
+      return;
+    }
+    const sourceSession = messageSessionContext(message);
     const acpSessionId = await this.ensureAcpSession(providerSessionKey);
     const msgId = message.event.placeholder_msg_id || `${message.event.task_id}`;
     const ctx: RunContext = {
       source: message,
       providerSessionKey,
+      sourceSessionId: sourceSession.sessionId,
       acpSessionId,
       msgId,
       httpBase: deriveHttpBase(this.config.dataUrl),
@@ -1668,10 +1891,10 @@ export class AcpBridgeAccount {
         userMessage = detail;
         this.bridge.trace({
           msg_id: msgId,
+          ...withSessionFields({}, ctx),
           task_id: message.event.task_id,
           channel_id: message.channelId,
           run_id: ctx.acpSessionId,
-          session_key: providerSessionKey,
           stream: "acp",
           seq: ++ctx.traceSeq,
           phase: "prompt_timeout",
@@ -1683,10 +1906,10 @@ export class AcpBridgeAccount {
       } else {
         this.bridge.trace({
           msg_id: msgId,
+          ...withSessionFields({}, ctx),
           task_id: message.event.task_id,
           channel_id: message.channelId,
           run_id: ctx.acpSessionId,
-          session_key: providerSessionKey,
           stream: "acp",
           seq: ++ctx.traceSeq,
           phase: "prompt_failed",
@@ -1704,8 +1927,21 @@ export class AcpBridgeAccount {
         const visibleError = `${prefix}${userMessage}`;
         ctx.text += visibleError;
         ctx.sentDelta = true;
-        this.bridge.streamDelta({ msgId, seq: ++ctx.deltaSeq, delta: visibleError });
-        const ack = await this.bridge.streamError({ msgId, message: userMessage });
+        this.bridge.streamDelta({
+          msgId,
+          seq: ++ctx.deltaSeq,
+          delta: visibleError,
+          sessionId: ctx.sourceSessionId,
+          providerSessionId: ctx.acpSessionId,
+          providerSessionKey: ctx.providerSessionKey,
+        });
+        const ack = await this.bridge.streamError({
+          msgId,
+          message: userMessage,
+          sessionId: ctx.sourceSessionId,
+          providerSessionId: ctx.acpSessionId,
+          providerSessionKey: ctx.providerSessionKey,
+        });
         if (!ack.ok) {
           this.logger.warn(
             "acp account=%s stream error not acknowledged msg_id=%s code=%s error=%s",
@@ -1728,10 +1964,10 @@ export class AcpBridgeAccount {
   private tracePromptStarted(ctx: RunContext): void {
     this.bridge.trace({
       msg_id: ctx.msgId,
+      ...withSessionFields({}, ctx),
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: ctx.acpSessionId,
-      session_key: ctx.providerSessionKey,
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: "prompt_started",
@@ -1757,10 +1993,10 @@ export class AcpBridgeAccount {
     await Promise.allSettled(ctx.pendingFileUploads);
     this.bridge.trace({
       msg_id: ctx.msgId,
+      ...withSessionFields({}, ctx),
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: ctx.acpSessionId,
-      session_key: ctx.providerSessionKey,
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: "prompt_finished",
@@ -1773,6 +2009,9 @@ export class AcpBridgeAccount {
         msgId: ctx.msgId,
         fileIds: ctx.fileIds,
         content: ctx.text,
+        sessionId: ctx.sourceSessionId,
+        providerSessionId: ctx.acpSessionId,
+        providerSessionKey: ctx.providerSessionKey,
       });
       if (!ack.ok) {
         this.logger.warn(
@@ -1813,10 +2052,10 @@ export class AcpBridgeAccount {
     this.activeRunsBySession.set(nextSessionId, ctx);
     this.bridge.trace({
       msg_id: ctx.msgId,
+      ...withSessionFields({}, ctx),
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: nextSessionId,
-      session_key: ctx.providerSessionKey,
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: "provider_session_rotated",
@@ -1862,6 +2101,8 @@ export class AcpBridgeAccount {
       msgId: ctx.msgId,
       acpSessionId: ctx.acpSessionId,
       providerSessionKey: ctx.providerSessionKey,
+      providerSessionId: ctx.acpSessionId,
+      sessionId: ctx.sourceSessionId,
       title,
       body,
       tool: permissionToolName(params),
@@ -1883,7 +2124,7 @@ export class AcpBridgeAccount {
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: ctx.acpSessionId,
-      session_key: ctx.providerSessionKey,
+      ...withSessionFields({}, ctx),
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: "permission_requested",
@@ -1942,7 +2183,7 @@ export class AcpBridgeAccount {
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: ctx.acpSessionId,
-      session_key: ctx.providerSessionKey,
+      ...withSessionFields({}, ctx),
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: "permission_resolved",
@@ -2224,7 +2465,14 @@ export class AcpBridgeAccount {
       if (text) {
         ctx.text += text;
         ctx.sentDelta = true;
-        this.bridge.streamDelta({ msgId: ctx.msgId, seq: ++ctx.deltaSeq, delta: text });
+        this.bridge.streamDelta({
+          msgId: ctx.msgId,
+          seq: ++ctx.deltaSeq,
+          delta: text,
+          sessionId: ctx.sourceSessionId,
+          providerSessionId: ctx.acpSessionId,
+          providerSessionKey: ctx.providerSessionKey,
+        });
       }
       const upload = this.uploadAcpFiles(ctx, update.content);
       ctx.pendingFileUploads.push(upload);
@@ -2236,10 +2484,10 @@ export class AcpBridgeAccount {
       : summarizeUpdate(update);
     this.bridge.trace({
       msg_id: ctx.msgId,
+      ...withSessionFields({}, ctx),
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: ctx.acpSessionId,
-      session_key: ctx.providerSessionKey,
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: kind,
@@ -2318,10 +2566,10 @@ export class AcpBridgeAccount {
     ctx.fileIds.push(file.file_id);
     this.bridge.trace({
       msg_id: ctx.msgId,
+      ...withSessionFields({}, ctx),
       task_id: ctx.source.event.task_id,
       channel_id: ctx.source.channelId,
       run_id: ctx.acpSessionId,
-      session_key: ctx.providerSessionKey,
       stream: "acp",
       seq: ++ctx.traceSeq,
       phase: "file_uploaded",
@@ -2350,14 +2598,14 @@ export class AcpBridgeAccount {
     for (let attempt = 1; !lastAck.ok && transientCodes.has(lastAck.code) && attempt < 3; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
       this.bridge.trace({
-        msg_id: ctx.msgId,
-        task_id: ctx.source.event.task_id,
-        channel_id: ctx.source.channelId,
-        run_id: ctx.acpSessionId,
-        session_key: ctx.providerSessionKey,
-        stream: "acp",
-        seq: ++ctx.traceSeq,
-        phase: "file_upload_retry",
+      msg_id: ctx.msgId,
+      ...withSessionFields({}, ctx),
+      task_id: ctx.source.event.task_id,
+      channel_id: ctx.source.channelId,
+      run_id: ctx.acpSessionId,
+      stream: "acp",
+      seq: ++ctx.traceSeq,
+      phase: "file_upload_retry",
         status: "running",
         title: "Retrying ACP file upload",
         message: `${file.filename}: ${lastAck.code}`,
