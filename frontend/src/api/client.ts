@@ -1,9 +1,13 @@
 import { DEFAULT_LANGUAGE, LANGUAGE_STORAGE_KEY, normalizeLanguage, type AppLanguage } from "../i18n/catalog";
 
-export const API_BASE = "/api/v1";
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim();
+export const API_BASE = configuredApiBase ? configuredApiBase : "/api/v1";
 
-const WS_PROTO = location.protocol === "https:" ? "wss" : "ws";
-export const WS_BASE = `${WS_PROTO}://${location.host}`;
+const configuredWsBase = import.meta.env.VITE_WS_BASE_URL?.trim();
+const wsProto = location.protocol === "https:" ? "wss" : "ws";
+export const WS_BASE = configuredWsBase
+  ? configuredWsBase
+  : `${wsProto}://${location.host}`;
 
 export class ApiError extends Error {
   status: number;
@@ -58,8 +62,9 @@ function resolveUrl(path: string): string {
   // "/channels" and "channels", as API subpaths and prepend API_BASE so fetch
   // does not hit the SPA try_files fallback and receive index.html.
   if (path.startsWith("/api")) return path;
-  const suffix = path.startsWith("/") ? path.slice(1) : path;
-  return `${API_BASE}/${suffix}`;
+  const normalizedBase = API_BASE.endsWith("/") ? API_BASE.slice(0, -1) : API_BASE;
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${suffix}`;
 }
 
 export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {

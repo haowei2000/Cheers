@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::AppError,
+    domain::mentions,
     gateway::{
         dispatcher::{self, DispatchParams},
         realtime::{fanout::Fanout, frame::WireFrame},
@@ -72,9 +73,12 @@ pub async fn create_message(
     .and_then(|r| r.try_get("display_name").ok());
 
     // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
+    let mentions = mentions::parse(db, params.channel_id, &params.content).await;
     let msg_id = Uuid::new_v4();
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
+
+    let mut tx = db.begin().await.map_err(AppError::Db)?;
 
     sqlx::query(
         "INSERT INTO messages
@@ -85,13 +89,19 @@ pub async fn create_message(
     .bind(msg_id.to_string())
     .bind(params.channel_id.to_string())
     .bind(params.user_id.to_string())
-    .bind(&params.content)
-    .bind(msg_type)
-    .bind(params.reply_to_msg_id.map(|id| id.to_string()))
-    .bind(now)
-    .execute(db)
-    .await
-    .map_err(AppError::Db)?;
+        .bind(&params.content)
+        .bind(msg_type)
+        .bind(params.reply_to_msg_id.map(|id| id.to_string()))
+        .bind(now)
+        .execute(&mut tx)
+        .await
+        .map_err(AppError::Db)?;
+
+    mentions::insert_batch(&mut tx, msg_id, &mentions)
+        .await
+        .map_err(AppError::Db)?;
+
+    tx.commit().await.map_err(AppError::Db)?;
 
     let dto = MessageDto {
         msg_id: msg_id.to_string(),
@@ -125,9 +135,6 @@ pub async fn create_message(
     fanout.broadcast_channel(params.channel_id, wire).await;
 
     // ── 5. 解析 bot 触发，派发 task ───────────────────────────────────
-    // mesh step 2: mentions 将由 create_message 事务内解析传入；
-    // 骨架阶段暂传空 slice，step 2 实现时替换为事务内解析结果。
-    let mentions: Vec<crate::domain::mentions::Mention> = vec![];
     let bots = resolve_bot_triggers(db, params.channel_id, &mentions).await;
     for bot_id in bots {
         let result = dispatcher::dispatch(
@@ -183,7 +190,24 @@ async fn resolve_bot_triggers(
     }
 
     // 2. 无 @bot → 回落 channels.default_bot_id
-    todo!("mesh step 2: SELECT default_bot_id FROM channels WHERE channel_id=$1; return vec![id] or vec![]")
+    use sqlx::Row;
+
+    match sqlx::query(
+        "SELECT COALESCE(c.default_bot_id, w.default_bot_id) AS default_bot_id
+         FROM channels c
+         JOIN workspaces w ON w.workspace_id = c.workspace_id
+         WHERE c.channel_id = $1",
+    )
+    .bind(channel_id.to_string())
+    .fetch_optional(db)
+    .await
+    {
+        Ok(Some(row)) => match row.try_get::<Option<String>, _>("default_bot_id") {
+            Ok(Some(raw)) => Uuid::parse_str(&raw).into_iter().collect(),
+            _ => vec![],
+        },
+        _ => vec![],
+    }
 }
 
 // ── list_messages ─────────────────────────────────────────────────────────────
