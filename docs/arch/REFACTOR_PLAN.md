@@ -318,38 +318,49 @@ services:
 
 ---
 
-## 六、迁移阶段规划
+## 六、重建阶段规划
 
-### Phase 0：准备（1-2 周）
-- [ ] RS256 密钥对生成，JWT 迁移窗口
-- [ ] 内置 bot 改走 Agent Bridge 协议（Python 内部改造）
-- [ ] 定义 resource_req/res 协议（已定稿 → AGENT_BRIDGE_RESOURCE.md）
-- [ ] 定义 ACP 权限模型（已定稿 → BOT_PERMISSION.md）
-- [ ] DB migration：bot_accounts 加 `permissions`, `trust_level`, `approval_mode` 列
-- [ ] 完善集成测试覆盖，作为回归基准
+> **Clean rebuild，无渐进式 Phase 0。** 旧 `bot_runtime/`、旧 Python REST API、旧内置 bot 类一次性删除，不做"在旧单体内改造"的过渡。新 Agent Service 从零写，Rust Backend 替换旧 Python 单体。协议和 DB schema 已定稿，直接建目标形态。
 
-### Phase 1：Rust Backend PoC（3-4 周）
-- [ ] 初始化 Cargo workspace
-- [ ] 实现 auth（RS256 签发+验签）
-- [ ] 实现 WS（浏览器侧 + Agent Bridge）
-- [ ] 实现核心 REST 端点（auth + channels + messages）
-- [ ] 实现 agent_bridge 模块（注册、派发、delta 转发）
-- [ ] 实现 resource 模块（resource_req 分发）
-- [ ] 实现权限引擎（ACP RBAC evaluate）
-- [ ] Agent Service 独立部署
-- [ ] 灰度：10% 流量走 Rust Backend
+### Phase 1：Rust Backend + 新 Agent Service（进行中）
 
-### Phase 2：Rust Backend 全量（3-4 周）
-- [ ] 迁移剩余 REST 端点
-- [ ] 旧 Python REST API 下线
-- [ ] Redis 移除 realtime/queue 用途，仅保留 cache
-- [ ] 集成测试全量通过
+**Rust Backend**（`gateway/`，已启动）
+- [x] axum 骨架 + sqlx + ACP Bridge WS
+- [x] 浏览器 WS handler（subscribe/unsubscribe）
+- [x] domain 层骨架（auth / messages / bots）
+- [x] Redis Fanout + BotRegistry
+- [x] REST 核心端点（bots / channels / files / friends / mcp / workspaces）
+- [x] sqlx 迁移文件（baseline + permission）
+- [ ] 去中心化网格 schema（`channel_seq`, `default_bot_id`, `task_chains`, `channel_operations`, `memory_files`）
+- [ ] 重写 `resolve_bot_triggers`：all-online-bots → `@mention` + `default_bot`
+- [ ] Bot@Bot 重入 + chain 传播 + 派发门
+- [ ] `cancel_chain`
+- [ ] Resource 层：`since_seq` / index / `channel.activity.read` / `fs.*`
+- [ ] Environment 动态 tool 注册（资源分发器从静态 `match` 升级为注册表）
+
+**新 Python Agent Service**（从零写，见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)）
+- [ ] 通用 agent runtime loop（task → resource_req → LLM → delta/done；无 per-bot 分支）
+- [ ] 数据驱动的身份加载（读 bot_accounts，每身份一条 WS 连接，启动时全部 boot-connect）
+- [ ] ResourceClient（resource_req/res）
+- [ ] MCP stdio 集成（`packages/agentnexus-mcp-server/`）
+- [ ] 默认 Environment 模板 seed（替代旧硬编码 anchor/progress 层）
+
+**收尾**
+- [ ] 旧 Python 单体整体下线（旧 REST API + 旧 bot_runtime + 旧 agent_bridge routes）
+- [ ] 集成测试基线通过（见 CLAUDE.md：需 Docker Compose 全栈）
+
+### Phase 2：网格能力全量 + 全量 REST
+
+- [ ] 全量 REST 端点补齐（当前缺口端点）
+- [ ] DM / topic scope resource（当前只有 `channel.*`）
+- [ ] bot 权限 channel 覆盖 UI（前端新设置界面）
+- [ ] Environment Lens 渲染（v1 声明式：markdown / kanban / table / timeline）
 
 ### Phase 3：优化（持续）
-- [ ] Rust Backend 性能调优
-- [ ] Agent Service 独立扩容（K8s HPA）
+
+- [ ] Agent Service 独立扩容（多身份分片，见 [BUILTIN_AGENT §6](./BUILTIN_AGENT.md)）
 - [ ] OpenTelemetry 全链路追踪
-- [ ] 权限审计日志
+- [ ] resource API 限流/审计日志
 - [ ] Vector DB 评估（pgvector 或 Qdrant）
 
 ---

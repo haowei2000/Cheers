@@ -130,14 +130,15 @@ Browser / Mobile
 
 ---
 
-## 五、迁移阶段
+## 五、重建阶段
+
+> **Clean rebuild，无 Phase 0 渐进。** 见 [REFACTOR_PLAN §六](./REFACTOR_PLAN.md) 和 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)。
 
 | Phase | 目标 | 关键动作 |
 |-------|------|---------|
-| **0** | 准备 | RS256 密钥对；内置 bot 改走 Agent Bridge 协议；定义 resource/permission 协议 |
-| **1** | Rust Backend PoC | axum + sqlx：auth + WS + messages + agent_bridge + resource API |
-| **2** | Rust Backend 全量 | 迁移剩余 REST 端点；旧 Python REST API 下线 |
-| **3** | 优化 | Agent Service 独立扩容；OpenTelemetry；权限审计日志 |
+| **1** | Rust Backend + 新 Agent Service | Rust Backend（已启动）补齐网格 schema + 路由重写；新 Python Agent Service 通用 runtime 从零写；旧 Python 单体整体下线 |
+| **2** | 全量 REST + 网格能力 | 补齐 REST 端点；DM/topic resource；Lens 渲染 v1 |
+| **3** | 优化 | Agent Service 扩容（多身份分片）；OpenTelemetry；权限审计日志 |
 
 ---
 
