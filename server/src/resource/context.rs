@@ -2,7 +2,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{channel_info, members, memory, messages};
+use super::{channel_info, members, messages};
 use super::{check_bot_in_channel, ResourceResult};
 
 /// channel.context — 聚合查询（一次 round-trip 拿常用上下文）
@@ -58,20 +58,6 @@ pub async fn handle(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult
         if let Ok(msgs) = messages::handle_read(db, bot_id, &msg_params).await {
             result["recent_messages"] = msgs["messages"].clone();
         }
-    }
-
-    if include.is_empty() || include.contains(&"memory") {
-        let mut memory_result = serde_json::json!({});
-        for layer in &["ANCHOR", "DECISIONS", "PROGRESS"] {
-            let mem_params = serde_json::json!({
-                "channel_id": channel_id.to_string(),
-                "layer": layer,
-            });
-            if let Ok(mem) = memory::handle_read(db, bot_id, &mem_params).await {
-                memory_result[layer] = mem;
-            }
-        }
-        result["memory"] = memory_result;
     }
 
     Ok(result)

@@ -20,6 +20,7 @@ This directory stores architecture, protocol, and gateway design docs.
 - [ACP Capability Delegation](ACP_CAPABILITY_DELEGATION.md)
 - [ACP Integration](ACP_INTEGRATION.md)
 - [Agent Bridge Resources](AGENT_BRIDGE_RESOURCE.md)
+- [MCP Agent Topology & Permission Boundary](MCP_AGENT_SECURITY.md)
 - [Built-in Agent Notes](BUILTIN_AGENT.md)
 
 ## Security and Operations Context

@@ -54,19 +54,6 @@ pub struct AddMemberRequest {
     pub member_type: String,
 }
 
-#[derive(Deserialize)]
-pub struct ContextUpdateRequest {
-    #[serde(default)]
-    pub anchor: Option<String>,
-    #[serde(default)]
-    pub decisions: Option<String>,
-    #[serde(default)]
-    pub files_index: Option<String>,
-    #[serde(default)]
-    pub recent: Option<String>,
-    #[serde(default)]
-    pub layers: Option<Value>,
-}
 
 fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
     ChannelDto {
@@ -355,70 +342,4 @@ pub async fn remove_channel_member(
         .execute(&state.db)
         .await?;
     Ok(Json(json!({"removed": true})))
-}
-
-pub async fn get_channel_context(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(channel_id): Path<String>,
-) -> Result<Json<Value>, AppError> {
-    if !is_channel_member(&state, &channel_id, &claims.sub, &claims.role).await? {
-        return Err(AppError::Forbidden("not a channel member".into()));
-    }
-    let rows = sqlx::query("SELECT layer, content FROM memory_entries WHERE channel_id = $1 ORDER BY layer, sort_order")
-        .bind(&channel_id)
-        .fetch_all(&state.db)
-        .await?;
-    let mut out = serde_json::Map::new();
-    for row in rows {
-        let key: String = row.try_get("layer").unwrap_or_default();
-        let content: String = row.try_get("content").unwrap_or_default();
-        out.insert(key.to_lowercase(), json!(content));
-    }
-    Ok(Json(Value::Object(out)))
-}
-
-pub async fn put_channel_context(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(channel_id): Path<String>,
-    Json(body): Json<ContextUpdateRequest>,
-) -> Result<Json<Value>, AppError> {
-    ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
-    let mut layers: Vec<(String, String)> = Vec::new();
-    if let Some(v) = body.anchor {
-        layers.push(("ANCHOR".into(), v));
-    }
-    if let Some(v) = body.decisions {
-        layers.push(("DECISIONS".into(), v));
-    }
-    if let Some(v) = body.files_index {
-        layers.push(("FILES_INDEX".into(), v));
-    }
-    if let Some(v) = body.recent {
-        layers.push(("RECENT".into(), v));
-    }
-    if let Some(Value::Object(map)) = body.layers {
-        for (key, value) in map {
-            if let Some(content) = value.as_str() {
-                layers.push((key.to_uppercase(), content.to_string()));
-            }
-        }
-    }
-    for (layer, content) in layers {
-        sqlx::query(
-            "INSERT INTO memory_entries (entry_id, channel_id, layer, content, sort_order, created_by, creator_type)
-             VALUES ($1, $2, $3, $4, 0, $5, 'user')
-             ON CONFLICT (channel_id, layer, sort_order)
-             DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()",
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(&channel_id)
-        .bind(layer)
-        .bind(content)
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
-    }
-    Ok(Json(json!({"updated": true})))
 }

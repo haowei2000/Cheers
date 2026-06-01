@@ -45,7 +45,6 @@ function fakeInbound(taskId: string, channelId: string): InboundMessage {
       channel_id: channelId,
       placeholder_msg_id: `ph-${taskId}`,
       trigger_message: { user: "u1", text: "@ws-bot do it", timestamp: "2026-04-21T00:00:00Z" },
-      memory_context: {},
       attachments: [],
       binding_config: {},
     } as unknown as InboundMessage["event"],

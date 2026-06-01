@@ -1521,16 +1521,6 @@ async function attachmentToPromptBlocks(
 async function buildPrompt(message: InboundMessage, options: PromptBuildOptions): Promise<ContentBlock[]> {
   const parts: string[] = [AGENTNEXUS_ACP_OUTPUT_CONTRACT];
   if (message.text.trim()) parts.push(message.text.trim());
-  const memory = message.event.memory_context ?? {};
-  if (Object.keys(memory).length > 0) {
-    parts.push(
-      [
-        "<agentnexus_memory>",
-        ...Object.entries(memory).map(([key, value]) => `<${key}>\n${value}\n</${key}>`),
-        "</agentnexus_memory>",
-      ].join("\n"),
-    );
-  }
   if (message.attachments.length > 0) {
     parts.push(
       [

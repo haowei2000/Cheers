@@ -74,7 +74,6 @@ export class MockBridge {
       task_id: ev.task_id,
       placeholder_msg_id: ev.placeholder_msg_id ?? `ph-${ev.task_id}`,
       trigger_message: ev.trigger_message ?? { text: "hello" },
-      memory_context: ev.memory_context ?? {},
       attachments: ev.attachments ?? [],
       binding_config: ev.binding_config ?? {},
       provider_session_key: ev.provider_session_key,

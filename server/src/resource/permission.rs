@@ -143,7 +143,7 @@ pub async fn evaluate(
     Ok(EvaluationResult::deny("no matching grant"))
 }
 
-/// resource 匹配规则：支持精确匹配和通配符前缀（"channel:*" 匹配 "channel:memory"）。
+/// resource 匹配规则：支持精确匹配和通配符前缀（"channel:*" 匹配 "channel:messages"、"channel:fs" 等）。
 fn resource_matches(grant_resource: &str, requested: &str) -> bool {
     if grant_resource == "*" {
         return true;

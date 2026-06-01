@@ -162,10 +162,11 @@ pub async fn handle_done(
     let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
     let done_file_ids = parse_file_ids(frame.get("file_ids"));
     let done_file_ids = (!done_file_ids.is_empty()).then_some(serde_json::json!(done_file_ids));
+    let mention_ids = parse_mention_ids(frame.get("mention_ids"));
 
     // R1: 所有权校验
     let channel_id = verify_ownership(db, bot_id, msg_id).await?;
-    let normalized = mentions::normalize_bot_content(db, channel_id, content)
+    let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
         .map_err(mention_parse_error_to_static)?;
 
@@ -192,14 +193,14 @@ pub async fn handle_done(
          RETURNING channel_id, channel_seq, depth, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
     )
     .bind(channel_seq)
-    .bind(&normalized.content)
+    .bind(content)
     .bind(done_file_ids)
     .bind(msg_id.to_string())
     .fetch_optional(&mut *tx)
     .await
     .map_err(|_| "db error")?
     .ok_or("message not found")?;
-    mentions::replace_batch(&mut tx, msg_id, &normalized.mentions)
+    mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(|_| "db error")?;
     tx.commit().await.map_err(|_| "db error")?;
@@ -235,12 +236,12 @@ pub async fn handle_done(
             "channel_seq": channel_seq,
             "sender_type": "bot",
             "sender_id": bot_id,
-            "content": &normalized.content,
+            "content": content,
             "msg_type": msg_type,
             "is_partial": false,
             "reply_to_msg_id": reply_to_msg_id,
             "file_ids": file_ids,
-            "mentions": mention_dtos(&normalized.mentions),
+            "mentions": mention_dtos(&mentions),
             "files": [],
         }),
     );
@@ -259,7 +260,7 @@ pub async fn handle_done(
             msg_id,
             channel_seq,
             depth,
-            &normalized.mentions,
+            &mentions,
         )
         .await
         {
@@ -411,8 +412,9 @@ pub async fn handle_send(
         .and_then(|v| v.as_str())
         .unwrap_or("text");
     let file_ids = parse_file_ids(frame.get("file_ids"));
+    let mention_ids = parse_mention_ids(frame.get("mention_ids"));
     let msg_id = Uuid::new_v4();
-    let normalized = mentions::normalize_bot_content(db, channel_id, content)
+    let mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
         .await
         .map_err(mention_parse_error_to_static)?;
 
@@ -430,14 +432,14 @@ pub async fn handle_send(
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
     .bind(bot_id.to_string())
-    .bind(&normalized.content)
+    .bind(content)
     .bind(msg_type)
     .bind(serde_json::json!(file_ids.clone()))
     .bind(channel_seq)
     .execute(&mut *tx)
     .await
     .map_err(|_| "db error")?;
-    mentions::insert_batch(&mut tx, msg_id, &normalized.mentions)
+    mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(|_| "db error")?;
     tx.commit().await.map_err(|_| "db error")?;
@@ -453,11 +455,11 @@ pub async fn handle_send(
             "channel_seq": channel_seq,
             "sender_type": "bot",
             "sender_id": bot_id,
-            "content": &normalized.content,
+            "content": content,
             "msg_type": msg_type,
             "is_partial": false,
             "file_ids": file_ids,
-            "mentions": mention_dtos(&normalized.mentions),
+            "mentions": mention_dtos(&mentions),
             "files": [],
         }),
     );
@@ -470,6 +472,7 @@ fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static
     match error {
         mentions::MentionParseError::Db(_) => "db error",
         mentions::MentionParseError::InvalidMember { .. } => "invalid mention",
+        mentions::MentionParseError::NameNotFound { .. } => "mention name not found",
     }
 }
 
@@ -483,6 +486,17 @@ fn mention_dtos(mentions: &[mentions::Mention]) -> Vec<MessageMention> {
             display_name: None,
         })
         .collect()
+}
+
+fn parse_mention_ids(value: Option<&Value>) -> Vec<Uuid> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_file_ids(value: Option<&Value>) -> Vec<String> {

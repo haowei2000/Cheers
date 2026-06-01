@@ -154,20 +154,6 @@ export function registerTools(server: McpServer, client: AgentNexusClient): void
     async ({ channel_id, file_id }) => run(() => client.readFile({ channelId: channel_id, fileId: file_id })),
   );
 
-  server.registerTool(
-    "read_memory",
-    {
-      title: "Read channel memory",
-      description: "Persisted memory entries for this channel, within a memory layer.",
-      inputSchema: {
-        ...channelArg,
-        layer: z.string().describe("Memory layer/tier to read (e.g. 'channel', 'task')."),
-      },
-      annotations: { readOnlyHint: true },
-    },
-    async ({ channel_id, layer }) => run(() => client.readMemory({ channelId: channel_id, layer })),
-  );
-
   // ── writes (Grant-gated) ──────────────────────────────────────────────────
   server.registerTool(
     "post_message",
@@ -179,10 +165,23 @@ export function registerTools(server: McpServer, client: AgentNexusClient): void
       inputSchema: {
         ...channelArg,
         text: z.string().min(1).describe("Message body (markdown)."),
+        mention_names: z
+          .array(z.string())
+          .optional()
+          .describe("Members to @mention by username or display name. Gateway resolves to UUIDs."),
+        reply_to_msg_id: z.string().optional().describe("msg_id to reply to (threaded reply)."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    async ({ channel_id, text }) => run(() => client.postMessage({ channelId: channel_id, text })),
+    async ({ channel_id, text, mention_names, reply_to_msg_id }) =>
+      run(() =>
+        client.postMessage({
+          channelId: channel_id,
+          text,
+          mentionNames: mention_names,
+          replyToMsgId: reply_to_msg_id,
+        }),
+      ),
   );
 
   server.registerTool(
@@ -200,25 +199,6 @@ export function registerTools(server: McpServer, client: AgentNexusClient): void
     },
     async ({ channel_id, filename, data_b64, content_type }) =>
       run(() => client.createFile({ channelId: channel_id, filename, dataB64: data_b64, contentType: content_type })),
-  );
-
-  server.registerTool(
-    "update_memory",
-    {
-      title: "Update channel memory",
-      description: "Write memory entries into a channel layer. mode=replace clears the layer first.",
-      inputSchema: {
-        ...channelArg,
-        layer: z.string().describe("Memory layer/tier to write."),
-        mode: z.enum(["replace", "merge"]).optional().describe("Default replace."),
-        entries: z
-          .array(z.object({ title: z.string().optional(), content: z.string() }))
-          .describe("Entries to persist."),
-      },
-      annotations: { readOnlyHint: false },
-    },
-    async ({ channel_id, layer, mode, entries }) =>
-      run(() => client.updateMemory({ channelId: channel_id, layer, mode, entries })),
   );
 
   server.registerTool(

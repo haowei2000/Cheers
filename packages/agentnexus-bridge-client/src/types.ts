@@ -232,7 +232,6 @@ export interface MessageEvent {
   task_id: string;
   placeholder_msg_id?: string | null;
   trigger_message: TriggerMessage;
-  memory_context: Record<string, string>;
   attachments: AttachmentInfo[];
   binding_config?: Record<string, unknown>;
   session?: AgentNexusSessionRef;

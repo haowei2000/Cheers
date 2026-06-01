@@ -96,10 +96,6 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             delete(api::channels::remove_channel_member),
         )
         .route(
-            "/api/v1/channels/:channel_id/context",
-            get(api::channels::get_channel_context).put(api::channels::put_channel_context),
-        )
-        .route(
             "/api/v1/channels/:channel_id/messages",
             post(api::messages::send_message).get(api::messages::list_messages),
         )

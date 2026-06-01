@@ -96,22 +96,24 @@ export class AgentNexusClient {
       file_id: args.fileId,
     });
   }
-  /** `layer` selects which memory tier to read (the gateway requires it). */
-  readMemory(args: { channelId?: string; layer: string }) {
-    return this.call("channel.memory", {
-      channel_id: this.resolveChannel(args.channelId),
-      layer: args.layer,
-    });
-  }
-
   // ── writes (membership + Grant) ──────────────────────────────────────────
-  // NOTE: the gateway create handler currently reads `content` + `msg_type`
-  // only; threaded replies (reply_to_msg_id) are not wired server-side yet.
-  postMessage(args: { channelId?: string; text: string; msgType?: string }) {
+  postMessage(args: {
+    channelId?: string;
+    text: string;
+    msgType?: string;
+    /** Mention by username / display_name — gateway resolves to UUID. For LLM agents. */
+    mentionNames?: string[];
+    /** Mention by UUID — for programmatic callers who already have member IDs. */
+    mentionIds?: string[];
+    replyToMsgId?: string;
+  }) {
     return this.call("channel.messages.create", {
       channel_id: this.resolveChannel(args.channelId),
       content: args.text,
       msg_type: args.msgType ?? "text",
+      mention_names: args.mentionNames,
+      mention_ids: args.mentionIds,
+      reply_to_msg_id: args.replyToMsgId,
     });
   }
   createFile(args: { channelId?: string; filename: string; dataB64: string; contentType?: string }) {
@@ -122,21 +124,6 @@ export class AgentNexusClient {
       content_type: args.contentType,
     });
   }
-  /** Memory writes are layered + entry-based: `mode` replace|merge, entries[]. */
-  updateMemory(args: {
-    channelId?: string;
-    layer: string;
-    mode?: "replace" | "merge";
-    entries: Array<{ title?: string; content: string }>;
-  }) {
-    return this.call("channel.memory.update", {
-      channel_id: this.resolveChannel(args.channelId),
-      layer: args.layer,
-      mode: args.mode ?? "replace",
-      entries: args.entries,
-    });
-  }
-
   // ── fs.* workspace (membership read, Grant-gated writes) ────────────────
   fsLs(args: { channelId?: string; path?: string }) {
     return this.call("fs.ls", {

@@ -85,12 +85,10 @@ pub async fn handle_by_seq(db: &PgPool, bot_id: Uuid, params: &Value) -> Resourc
 
     let min_seq = params
         .get("min_seq")
-        .or_else(|| params.get("from_seq"))
         .and_then(|v| v.as_i64())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "min_seq required"))?;
     let max_seq = params
         .get("max_seq")
-        .or_else(|| params.get("to_seq"))
         .and_then(|v| v.as_i64());
     let limit = params
         .get("limit")
@@ -173,7 +171,7 @@ pub async fn handle_create(
     .await?;
 
     let msg_id = Uuid::new_v4();
-    let raw_content = params
+    let content = params
         .get("content")
         .and_then(|v| v.as_str())
         .unwrap_or("")
@@ -189,10 +187,39 @@ pub async fn handle_create(
         .and_then(|s| Uuid::parse_str(s).ok())
         .map(|v| v.to_string());
     let file_ids = parse_file_ids(params.get("file_ids"));
+    // mention_names：LLM agent 传 username/display_name，gateway 做 name→UUID 解析
+    let mention_names: Vec<String> = params
+        .get("mention_names")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    // mention_ids：程序化调用直接传 UUID
+    let mention_ids: Vec<Uuid> = params
+        .get("mention_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                .collect()
+        })
+        .unwrap_or_default();
     let now = Utc::now();
-    let normalized = mentions::normalize_bot_content(db, channel_id, &raw_content)
+    // 先解析 names，再验证 IDs，合并去重
+    let mut mentions = mentions::resolve_mention_names(db, channel_id, &mention_names)
         .await
         .map_err(resource_mention_error)?;
+    let id_mentions = mentions::validate_mention_ids(db, channel_id, &mention_ids)
+        .await
+        .map_err(resource_mention_error)?;
+    for m in id_mentions {
+        if !mentions.iter().any(|x| x.member_id == m.member_id && x.member_type == m.member_type) {
+            mentions.push(m);
+        }
+    }
 
     let mut tx = db
         .begin()
@@ -210,7 +237,7 @@ pub async fn handle_create(
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
     .bind(bot_id.to_string())
-    .bind(&normalized.content)
+    .bind(&content)
     .bind(&msg_type)
     .bind(&reply_to_msg_id)
     .bind(&serde_json::json!(file_ids.clone()))
@@ -219,7 +246,7 @@ pub async fn handle_create(
     .execute(&mut *tx)
     .await
     .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
-    mentions::insert_batch(&mut tx, msg_id, &normalized.mentions)
+    mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     tx.commit()
@@ -230,7 +257,7 @@ pub async fn handle_create(
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
 
-    let mention_dtos = mention_dtos(&normalized.mentions);
+    let mention_dtos = mention_dtos(&mentions);
     let dto = MessageDto {
         v: MESSAGE_SCHEMA_VERSION,
         msg_id: msg_id.to_string(),
@@ -240,7 +267,7 @@ pub async fn handle_create(
         sender_type: "bot".into(),
         sender_id: Some(bot_id.to_string()),
         sender_name: None,
-        content: normalized.content,
+        content,
         msg_type,
         is_partial: false,
         reply_to_msg_id,
@@ -273,7 +300,12 @@ pub async fn handle_create(
 fn resource_mention_error(error: mentions::MentionParseError) -> (String, String) {
     match error {
         mentions::MentionParseError::Db(_) => super::resource_error("INTERNAL_ERROR", "db error"),
-        other => super::resource_error("INVALID_PARAMS", &other.to_string()),
+        mentions::MentionParseError::InvalidMember { member_id } => {
+            super::resource_error("MEMBER_NOT_FOUND", format!("mention target not in channel: {member_id}"))
+        }
+        mentions::MentionParseError::NameNotFound { name } => {
+            super::resource_error("MEMBER_NOT_FOUND", format!("mention name not found in channel: {name}"))
+        }
     }
 }
 

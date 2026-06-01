@@ -92,7 +92,7 @@ pub async fn handle_write(
     session_id: Option<&str>,
 ) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_memory_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, bot_id, channel_id, session_id).await?;
     let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
     let is_dir = params
         .get("is_dir")
@@ -195,7 +195,7 @@ pub async fn handle_edit(
     session_id: Option<&str>,
 ) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_memory_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, bot_id, channel_id, session_id).await?;
     let old = params
         .get("old_string")
         .and_then(|v| v.as_str())
@@ -280,7 +280,7 @@ pub async fn handle_append(
     session_id: Option<&str>,
 ) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_memory_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, bot_id, channel_id, session_id).await?;
     let append = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
     let mut tx = db
@@ -357,7 +357,7 @@ pub async fn handle_rm(
     session_id: Option<&str>,
 ) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_memory_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, bot_id, channel_id, session_id).await?;
     let recursive = params
         .get("recursive")
         .and_then(|v| v.as_bool())
@@ -429,7 +429,7 @@ pub async fn handle_mv(
     session_id: Option<&str>,
 ) -> ResourceResult {
     let channel_id = extract_channel_id(params)?;
-    check_memory_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, bot_id, channel_id, session_id).await?;
     let from = normalize_path(
         params.get("from").and_then(|v| v.as_str()).unwrap_or(""),
         false,
@@ -537,7 +537,7 @@ pub async fn handle_mv(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-async fn check_memory_write(
+async fn check_fs_write(
     db: &PgPool,
     bot_id: Uuid,
     channel_id: Uuid,
@@ -547,7 +547,7 @@ async fn check_memory_write(
         db,
         bot_id,
         channel_id,
-        "channel:memory",
+        "channel:fs",
         "write",
         session_id,
     )

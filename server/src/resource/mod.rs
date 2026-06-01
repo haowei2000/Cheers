@@ -4,7 +4,6 @@ pub mod context;
 pub mod files;
 pub mod fs;
 pub mod members;
-pub mod memory;
 pub mod messages;
 pub mod permission;
 
@@ -30,7 +29,6 @@ pub async fn dispatch(db: &PgPool, bot_id: Uuid, frame: &Value) -> Value {
         "channel.messages" => messages::handle_read(db, bot_id, &params).await,
         "channel.files" => files::handle_list(db, bot_id, &params).await,
         "channel.files.read" => files::handle_read(db, bot_id, &params).await,
-        "channel.memory" => memory::handle_read(db, bot_id, &params).await,
         "channel.context" => context::handle(db, bot_id, &params).await,
 
         // ── mesh step 6：新增读操作 ───────────────────────────────────────
@@ -43,7 +41,6 @@ pub async fn dispatch(db: &PgPool, bot_id: Uuid, frame: &Value) -> Value {
         // ── 写操作（频道成员 + Grant）────────────────────────────────────
         "channel.messages.create" => messages::handle_create(db, bot_id, &params, session_id).await,
         "channel.files.create" => files::handle_create(db, bot_id, &params, session_id).await,
-        "channel.memory.update" => memory::handle_update(db, bot_id, &params, session_id).await,
 
         // ── mesh step 6：新增写操作（fs.*）───────────────────────────────
         "fs.write" => fs::handle_write(db, bot_id, &params, session_id).await,
