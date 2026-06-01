@@ -28,6 +28,8 @@ pub struct SendMessageRequest {
     pub reply_to_msg_id: Option<Uuid>,
     #[serde(default)]
     pub file_ids: Vec<String>,
+    #[serde(default)]
+    pub mention_ids: Vec<Uuid>,
 }
 
 pub async fn send_message(
@@ -68,6 +70,7 @@ pub async fn send_message(
             msg_type: body.msg_type,
             reply_to_msg_id: body.reply_to_msg_id,
             file_ids: body.file_ids,
+            mention_ids: body.mention_ids,
         },
     )
     .await?;
