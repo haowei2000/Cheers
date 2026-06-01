@@ -1,4 +1,4 @@
-/// ACP Bridge 流式回流层。
+/// Agent Bridge 流式回流层。
 ///
 /// 职责：
 /// - 维护 msg_id → StreamEntry 的注册表（占位消息归属）
@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{chains, channel_seq, mentions, sessions, chains::MAX_BOT_REPLY_DEPTH},
+    domain::{chains, chains::MAX_BOT_REPLY_DEPTH, channel_seq, mentions, sessions},
     gateway::{
         realtime::{fanout::Fanout, frame::WireFrame},
         registry::BotLocator,
@@ -399,18 +399,30 @@ pub async fn handle_send(
     db: &PgPool,
     bot_id: Uuid,
     frame: &Value,
-) -> Result<(), &'static str> {
+) -> Result<Uuid, &'static str> {
     let channel_id: Uuid = frame
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or("missing channel_id")?;
 
-    let content = frame.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    ensure_bot_channel_member(db, bot_id, channel_id).await?;
+
+    let content = frame
+        .get("content")
+        .or_else(|| frame.get("text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let msg_type = frame
         .get("msg_type")
         .and_then(|v| v.as_str())
         .unwrap_or("text");
+    let reply_to_msg_id = frame
+        .get("in_reply_to_msg_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
     let file_ids = parse_file_ids(frame.get("file_ids"));
     let mention_ids = parse_mention_ids(frame.get("mention_ids"));
     let msg_id = Uuid::new_v4();
@@ -426,8 +438,8 @@ pub async fn handle_send(
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, file_ids, channel_seq)
-         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7)",
+             is_partial, file_ids, channel_seq, in_reply_to_msg_id)
+         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, $6, $7, $8)",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
@@ -436,6 +448,7 @@ pub async fn handle_send(
     .bind(msg_type)
     .bind(serde_json::json!(file_ids.clone()))
     .bind(channel_seq)
+    .bind(&reply_to_msg_id)
     .execute(&mut *tx)
     .await
     .map_err(|_| "db error")?;
@@ -458,6 +471,7 @@ pub async fn handle_send(
             "content": content,
             "msg_type": msg_type,
             "is_partial": false,
+            "reply_to_msg_id": reply_to_msg_id,
             "file_ids": file_ids,
             "mentions": mention_dtos(&mentions),
             "files": [],
@@ -465,7 +479,33 @@ pub async fn handle_send(
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
-    Ok(())
+    Ok(msg_id)
+}
+
+async fn ensure_bot_channel_member(
+    db: &PgPool,
+    bot_id: Uuid,
+    channel_id: Uuid,
+) -> Result<(), &'static str> {
+    let ok = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'
+        ) AS ok",
+    )
+    .bind(channel_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_one(db)
+    .await
+    .map_err(|_| "db error")?
+    .try_get::<bool, _>("ok")
+    .unwrap_or(false);
+
+    if ok {
+        Ok(())
+    } else {
+        Err("bot is not a member of the target channel")
+    }
 }
 
 fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {

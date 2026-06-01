@@ -16,8 +16,10 @@ This directory stores architecture, protocol, and gateway design docs.
 
 ## ACP and Agent Integration
 
+- [Agent Bridge Protocol](AGENT_BRIDGE_PROTOCOL.md)
 - [ACP Connection Model](ACP_CONNECTION_MODEL.md)
 - [ACP Capability Delegation](ACP_CAPABILITY_DELEGATION.md)
+- [Agent Bridge and ACP Compatibility](AGENT_BRIDGE_ACP_COMPATIBILITY.md)
 - [ACP Integration](ACP_INTEGRATION.md)
 - [Agent Bridge Resources](AGENT_BRIDGE_RESOURCE.md)
 - [MCP Agent Topology & Permission Boundary](MCP_AGENT_SECURITY.md)

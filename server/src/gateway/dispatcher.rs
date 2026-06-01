@@ -63,7 +63,15 @@ pub async fn dispatch(
 
     // ── 创建占位 Message（先落库）────────────────────────────────────────────
     let task_id = Uuid::new_v4();
-    if let Err(e) = create_placeholder(db, placeholder_id, params.channel_id, params.bot_id, params.depth).await {
+    if let Err(e) = create_placeholder(
+        db,
+        placeholder_id,
+        params.channel_id,
+        params.bot_id,
+        params.depth,
+    )
+    .await
+    {
         return DispatchResult::DbError(e);
     }
 
@@ -100,6 +108,9 @@ pub async fn dispatch(
     fanout.broadcast_channel(params.channel_id, bubble).await;
 
     // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
+    let task_context = load_task_context(db, params.trigger_msg_id)
+        .await
+        .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
     let task_frame = build_task_frame(
         task_id,
         params.channel_id,
@@ -109,6 +120,7 @@ pub async fn dispatch(
         placeholder_id,
         &params.provider_session_key,
         params.session_id,
+        task_context,
     );
 
     let delivered = bot_locator.dispatch_task(params.bot_id, task_frame).await;
@@ -216,6 +228,82 @@ struct FailedPlaceholder {
     channel_seq: i64,
 }
 
+struct TaskContext {
+    trigger_message: Value,
+    attachments: Vec<Value>,
+}
+
+impl TaskContext {
+    fn fallback(msg_id: Uuid) -> Self {
+        Self {
+            trigger_message: json!({ "msg_id": msg_id }),
+            attachments: Vec::new(),
+        }
+    }
+}
+
+async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
+    let row = sqlx::query(
+        "SELECT
+            m.msg_id,
+            m.sender_id,
+            m.sender_type,
+            m.content,
+            m.created_at,
+            m.msg_type,
+            m.in_reply_to_msg_id,
+            m.file_ids,
+            COALESCE(NULLIF(u.display_name, ''), u.username, NULLIF(b.display_name, ''), b.username) AS sender_name
+         FROM messages m
+         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+         LEFT JOIN bot_accounts b ON m.sender_type = 'bot' AND b.bot_id = m.sender_id
+         WHERE m.msg_id = $1",
+    )
+    .bind(msg_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()??;
+
+    let file_ids = row
+        .try_get::<Value, _>("file_ids")
+        .ok()
+        .and_then(|value| {
+            value.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(ToString::to_string))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .unwrap_or_default();
+    let attachments = file_ids
+        .iter()
+        .map(|file_id| json!({ "file_id": file_id }))
+        .collect::<Vec<_>>();
+    let timestamp = row
+        .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+        .ok()
+        .map(|dt| dt.to_rfc3339());
+    let sender_id = row.try_get::<String, _>("sender_id").unwrap_or_default();
+    let sender_name = row
+        .try_get::<Option<String>, _>("sender_name")
+        .ok()
+        .flatten();
+
+    Some(TaskContext {
+        trigger_message: json!({
+            "msg_id": msg_id,
+            "user": sender_id,
+            "sender_name": sender_name,
+            "text": row.try_get::<String, _>("content").unwrap_or_default(),
+            "timestamp": timestamp,
+            "msg_type": row.try_get::<String, _>("msg_type").unwrap_or_else(|_| "text".to_string()),
+            "in_reply_to_msg_id": row.try_get::<Option<String>, _>("in_reply_to_msg_id").ok().flatten(),
+        }),
+        attachments,
+    })
+}
+
 async fn mark_placeholder_failed(
     db: &PgPool,
     placeholder_id: Uuid,
@@ -269,13 +357,20 @@ fn build_task_frame(
     placeholder_msg_id: Uuid,
     provider_session_key: &str,
     session_id: Option<Uuid>,
+    task_context: TaskContext,
 ) -> Value {
-    let trigger = if depth > 0 { "bot_message" } else { "user_message" };
+    let trigger = if depth > 0 {
+        "bot_message"
+    } else {
+        "user_message"
+    };
 
     json!({
         "type": "task",
+        "v": 1,
         "task_id": task_id,
         "channel_id": channel_id,
+        "trigger_msg_id": msg_id,
         "msg_id": msg_id,
         "trigger_seq": trigger_seq,
         "depth": depth,
@@ -283,6 +378,18 @@ fn build_task_frame(
         "provider_session_key": provider_session_key,
         "trigger": trigger,
         "session_id": session_id,
+        "session_policy": {
+            "on_missing": "create",
+            "on_paused": "resume",
+            "after_task": "keep_active"
+        },
+        "trigger_message": task_context.trigger_message,
+        "attachments": task_context.attachments,
+        "session": {
+            "id": session_id,
+            "provider_session_key": provider_session_key,
+            "task_scope_id": task_id,
+        },
         "enqueued_at": chrono::Utc::now().to_rfc3339(),
     })
 }

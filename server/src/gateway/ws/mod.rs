@@ -1,2 +1,2 @@
-pub mod acp_bridge;
+pub mod agent_bridge;
 pub mod browser;

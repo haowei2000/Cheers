@@ -17,7 +17,7 @@ pub trait BotLocator: Send + Sync {
 }
 
 /// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
-/// 只有 transport/ws/acp_bridge.rs 使用。
+/// 只有 transport/ws/agent_bridge.rs 使用。
 /// 单实例：InProcessBotLocator。多实例：RedisBotRegistry。
 pub trait BotRegistry: Send + Sync {
     /// 注册 control WS，返回一个取消信号接收端。

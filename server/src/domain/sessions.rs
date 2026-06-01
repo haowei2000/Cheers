@@ -19,6 +19,8 @@ pub const SESSION_SCOPE_USER: &str = "user";
 pub const SESSION_STATUS_ACTIVE: &str = "active";
 pub const SESSION_STATUS_BUSY: &str = "busy";
 pub const SESSION_STATUS_IDLE: &str = "idle";
+pub const SESSION_STATUS_PAUSED: &str = "paused";
+pub const SESSION_STATUS_TERMINATED: &str = "terminated";
 pub const SESSION_STATUS_REVOKED: &str = "revoked";
 pub const SESSION_STATUS_EXPIRED: &str = "expired";
 pub const SESSION_STATUS_ERROR: &str = "error";
@@ -389,6 +391,82 @@ pub async fn apply_session_update(
     .bind(SESSION_STATUS_BUSY)
     .bind(now)
     .bind(session_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .ok_or_else(|| AppError::NotFound)?;
+
+    Uuid::parse_str(&updated).map_err(|_| AppError::Internal("invalid session_id".into()))
+}
+
+pub fn normalize_runtime_status(raw: &str) -> Option<&'static str> {
+    match raw {
+        SESSION_STATUS_ACTIVE => Some(SESSION_STATUS_ACTIVE),
+        SESSION_STATUS_BUSY => Some(SESSION_STATUS_BUSY),
+        SESSION_STATUS_IDLE => Some(SESSION_STATUS_IDLE),
+        SESSION_STATUS_PAUSED => Some(SESSION_STATUS_PAUSED),
+        SESSION_STATUS_TERMINATED => Some(SESSION_STATUS_TERMINATED),
+        SESSION_STATUS_REVOKED => Some(SESSION_STATUS_REVOKED),
+        SESSION_STATUS_EXPIRED => Some(SESSION_STATUS_EXPIRED),
+        SESSION_STATUS_ERROR => Some(SESSION_STATUS_ERROR),
+        _ => None,
+    }
+}
+
+pub async fn apply_runtime_session_ack(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    session_id: Option<Uuid>,
+    provider_session_key: Option<&str>,
+    provider_session_id: Option<String>,
+    status: &str,
+    metadata: Option<Value>,
+) -> Result<Uuid, AppError> {
+    let status = normalize_runtime_status(status)
+        .ok_or_else(|| AppError::BadRequest(format!("invalid runtime session status: {status}")))?;
+    let session_id = if let Some(session_id) = session_id {
+        session_id
+    } else {
+        resolve_session_id(
+            db,
+            bot_id,
+            provider_account_id,
+            provider_session_key,
+            provider_session_id.as_deref(),
+        )
+        .await?
+    };
+    let now = Utc::now();
+    let metadata_json = metadata.map(|value| value.to_string());
+
+    let updated: String = sqlx::query_scalar(
+        "UPDATE agentnexus_sessions
+         SET provider_session_id = COALESCE($1, provider_session_id),
+             provider_session_key = COALESCE($2, provider_session_key),
+             metadata = CASE
+                WHEN $3 IS NULL THEN metadata
+                WHEN jsonb_typeof($3::jsonb) = 'object' THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+                ELSE metadata
+             END,
+             status = $4,
+             last_used_at = $5,
+             updated_at = $5
+         WHERE session_id = $6
+           AND bot_id = $7
+           AND provider = $8
+           AND provider_account_id = $9
+         RETURNING session_id",
+    )
+    .bind(provider_session_id)
+    .bind(provider_session_key)
+    .bind(metadata_json)
+    .bind(status)
+    .bind(now)
+    .bind(session_id.to_string())
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
     .fetch_optional(db)
     .await
     .map_err(AppError::Db)?

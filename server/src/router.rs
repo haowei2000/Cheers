@@ -3,7 +3,7 @@
 //! The router is intentionally split into three groups:
 //! - `public`: endpoints available before authentication (health/login).
 //! - `authed`: endpoints requiring JWT middleware.
-//! - `ws_routes`: WebSocket upgrade and ACP bridge endpoints.
+//! - `ws_routes`: WebSocket upgrade and Agent Bridge endpoints.
 
 use axum::{
     http::HeaderValue,
@@ -173,10 +173,10 @@ fn build_ws_routes() -> Router<AppState> {
     let ws_routes = Router::new()
         .route("/ws", get(ws::browser::ws_handler))
         .route(
-            "/ws/acp-bridge/control",
-            get(ws::acp_bridge::control_handler),
+            "/ws/agent-bridge/control",
+            get(ws::agent_bridge::control_handler),
         )
-        .route("/ws/acp-bridge/data", get(ws::acp_bridge::data_handler));
+        .route("/ws/agent-bridge/data", get(ws::agent_bridge::data_handler));
     ws_routes
 }
 
