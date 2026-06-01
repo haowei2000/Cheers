@@ -1,9 +1,7 @@
-//! @mention token scan 与 `message_mentions` 写入（mesh step 2）。
+//! @mention 验证与 `message_mentions` 写入（mesh step 2）。
 //!
-//! Canonical message content uses flat tokens (`<@bot:id>` / `<@user:id>`).
-//! Human-authored messages only scan those tokens; bare `@name` is plain text.
-//! Bot-authored legacy text gets a fallback name-resolution pass and is rewritten
-//! to tokens before it is stored, so content tokens and `message_mentions` agree.
+//! 人类消息：前端显式传 `mention_ids`（用户点击 mention 按钮产生），服务端只做成员验证。
+//! Bot 消息：内容可能含遗留裸 `@name`，经 `normalize_bot_content` 改写成 token 后存库。
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -62,14 +60,44 @@ struct BareMentionReplacement {
     mention: Mention,
 }
 
-/// Human-authored content is canonical already: only token mentions count.
-pub async fn parse_human_tokens(
+/// 验证前端传来的 mention_ids 都是频道成员，并从 channel_memberships 查出对应 member_type。
+pub async fn validate_mention_ids(
     db: &PgPool,
     channel_id: Uuid,
-    content: &str,
+    mention_ids: &[Uuid],
 ) -> Result<Vec<Mention>, MentionParseError> {
-    let mentions = scan_tokens(content);
-    ensure_mentions_in_channel(db, channel_id, &mentions).await?;
+    let mut mentions = Vec::new();
+    for &member_id in mention_ids {
+        let row = sqlx::query(
+            "SELECT member_type FROM channel_memberships
+             WHERE channel_id = $1 AND member_id = $2
+             LIMIT 1",
+        )
+        .bind(channel_id.to_string())
+        .bind(member_id.to_string())
+        .fetch_optional(db)
+        .await?;
+
+        let Some(row) = row else {
+            return Err(MentionParseError::InvalidMember {
+                member_type: "unknown",
+                member_id,
+            });
+        };
+
+        let member_type = match row.try_get::<String, _>("member_type").as_deref() {
+            Ok("bot") => MemberType::Bot,
+            Ok("user") => MemberType::User,
+            _ => {
+                return Err(MentionParseError::InvalidMember {
+                    member_type: "unknown",
+                    member_id,
+                })
+            }
+        };
+
+        push_unique(&mut mentions, member_id, member_type);
+    }
     Ok(mentions)
 }
 
@@ -100,8 +128,8 @@ pub async fn normalize_bot_content(
     })
 }
 
-/// Pure token scan. Bare `@name` text is intentionally ignored.
-pub fn scan_tokens(content: &str) -> Vec<Mention> {
+#[cfg(test)]
+fn scan_tokens(content: &str) -> Vec<Mention> {
     collect_unique_mentions(
         scan_mention_token_spans(content)
             .into_iter()

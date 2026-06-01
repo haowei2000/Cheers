@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{chains, channel_seq, mentions, sessions},
+    domain::{chains, channel_seq, mentions, sessions, chains::MAX_BOT_REPLY_DEPTH},
     gateway::{
         realtime::{fanout::Fanout, frame::WireFrame},
         registry::BotLocator,
@@ -189,7 +189,7 @@ pub async fn handle_done(
              is_partial = FALSE,
              file_ids = COALESCE($3::jsonb, file_ids)
          WHERE msg_id = $4 AND is_partial = TRUE AND channel_seq IS NULL
-         RETURNING channel_id, channel_seq, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
+         RETURNING channel_id, channel_seq, depth, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
     )
     .bind(channel_seq)
     .bind(&normalized.content)
@@ -203,17 +203,6 @@ pub async fn handle_done(
         .await
         .map_err(|_| "db error")?;
     tx.commit().await.map_err(|_| "db error")?;
-    let chain_context = match chains::mark_reply_finalized(db, msg_id).await {
-        Ok(context) => context,
-        Err(e) => {
-            tracing::warn!(
-                msg_id = %msg_id,
-                err = %e,
-                "bot reply finalized but chain bookkeeping failed"
-            );
-            None
-        }
-    };
 
     let channel_id = details
         .try_get::<String, _>("channel_id")
@@ -223,6 +212,7 @@ pub async fn handle_done(
     let channel_seq = details
         .try_get::<i64, _>("channel_seq")
         .map_err(|_| "db error")?;
+    let depth = details.try_get::<i32, _>("depth").unwrap_or(0);
     let file_ids = details
         .try_get::<Vec<String>, _>("file_ids")
         .ok()
@@ -259,28 +249,21 @@ pub async fn handle_done(
     // 清理注册表
     registry.remove(msg_id);
 
-    if let Some(chain_context) = chain_context {
-        if let Err(e) = chains::on_bot_reply_finalized(
+    if depth < MAX_BOT_REPLY_DEPTH {
+        if let Err(e) = chains::trigger_bot_replies(
             db,
             fanout,
             registry,
             bot_locator,
-            chain_context.chain_id,
-            chain_context.parent_task_id,
-            chain_context.parent_depth,
+            channel_id,
             msg_id,
             channel_seq,
-            channel_id,
+            depth,
             &normalized.mentions,
         )
         .await
         {
-            tracing::warn!(
-                chain_id = %chain_context.chain_id,
-                msg_id = %msg_id,
-                err = %e,
-                "bot reply chain re-entry failed"
-            );
+            tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
         }
     }
 

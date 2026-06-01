@@ -1,13 +1,8 @@
-//! Bot@Bot 任务链跟踪与取消（DECENTRALIZED_MESH §8，mesh step 4-5）。
+//! Bot@Bot 触发与取消。
 //!
-//! 链的生命周期：
-//!   用户触发 → root task → 创建 chain（status=active）
-//!   bot 回复含 @mention → 派发门检查 chain.status → active 则 dispatch 下一跳
-//!   用户点 ⏹ → cancel_chain → status=cancelled + 广播现有 per-msg_id cancel 帧
-//!
-//! 停止两部分：
-//!   (a) 派发门（权威）：dispatch 前检查 status != active → drop
-//!   (b) 取消广播（尽力）：对 in-flight bot_runs 发 cancel 帧
+//! bot 回复 finalize 后，若回复中含 @bot mention 且 depth < MAX_BOT_REPLY_DEPTH，
+//! 则直接 dispatch 下一跳（和用户消息触发 bot 完全一致，无链跟踪）。
+//! 取消接口（cancel / resolve_chain_id_for_message）保留供已有 cancel-chain API 使用。
 use std::sync::Arc;
 
 use sqlx::{PgPool, Row};
@@ -52,66 +47,10 @@ impl ChainStatus {
     }
 }
 
-/// 为一条用户触发的 root task 创建新链，返回 chain_id。
-pub async fn create(
-    db: &PgPool,
-    channel_id: Uuid,
-    root_task_id: Uuid,
-    root_msg_id: Uuid,
-) -> Result<Uuid, sqlx::Error> {
-    let mut tx = db.begin().await?;
-    let chain_id = create_in_tx(&mut tx, channel_id, root_task_id, root_msg_id).await?;
-    tx.commit().await?;
-    Ok(chain_id)
-}
+/// bot@bot 触发的最大深度，超出后静默停止。
+pub const MAX_BOT_REPLY_DEPTH: i32 = 5;
 
-pub async fn create_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    channel_id: Uuid,
-    root_task_id: Uuid,
-    root_msg_id: Uuid,
-) -> Result<Uuid, sqlx::Error> {
-    let chain_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO task_chains (chain_id, channel_id, root_task_id, root_msg_id, status)
-         VALUES ($1, $2, $3, $4, 'active')",
-    )
-    .bind(chain_id.to_string())
-    .bind(channel_id.to_string())
-    .bind(root_task_id.to_string())
-    .bind(root_msg_id.to_string())
-    .execute(&mut **tx)
-    .await?;
-
-    Ok(chain_id)
-}
-
-/// dispatch 前的派发门：检查 chain 是否仍 active。
-/// 返回 `false` 时调用方必须 drop，不能派发下一跳（这是取消的权威路径）。
-pub async fn is_active(db: &PgPool, chain_id: Uuid) -> Result<bool, sqlx::Error> {
-    let status = sqlx::query("SELECT status FROM task_chains WHERE chain_id = $1")
-        .bind(chain_id.to_string())
-        .fetch_optional(db)
-        .await?
-        .and_then(|row| row.try_get::<String, _>("status").ok());
-
-    Ok(matches!(status.as_deref(), Some("active")))
-}
-
-pub async fn is_active_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    chain_id: Uuid,
-) -> Result<bool, sqlx::Error> {
-    let status = sqlx::query("SELECT status FROM task_chains WHERE chain_id = $1")
-        .bind(chain_id.to_string())
-        .fetch_optional(&mut **tx)
-        .await?
-        .and_then(|row| row.try_get::<String, _>("status").ok());
-
-    Ok(matches!(status.as_deref(), Some("active")))
-}
-
-/// 取消整条链（mesh step 5）。
+/// 取消整条链。
 ///
 /// 原子地将 `status` 改为 `cancelled`（idempotent）；
 /// 返回需要广播 cancel 的 (placeholder_msg_id, bot_id) 列表（供调用方做尽力广播）。
@@ -208,39 +147,28 @@ pub async fn resolve_chain_id_for_message(
     Ok(raw)
 }
 
-/// Bot@Bot 重入：bot 回复 finalize 后，解析回复中的 @mention，若链仍 active 则
-/// dispatch 下一跳（继承 chain_id，递增 depth）。在 `stream::handle_done` 之后调用。
-pub async fn on_bot_reply_finalized(
+/// bot 回复 finalize 后触发回复中 @bot mention，depth+1 后 dispatch。
+/// 超过 MAX_BOT_REPLY_DEPTH 时静默停止，防止无限循环。
+pub async fn trigger_bot_replies(
     db: &PgPool,
     fanout: &Arc<dyn Fanout>,
     stream_registry: &StreamRegistry,
     bot_locator: &Arc<dyn BotLocator>,
-    chain_id: Uuid,
-    parent_task_id: Uuid,
-    parent_depth: i32,
+    channel_id: Uuid,
     reply_msg_id: Uuid,
     reply_seq: i64,
-    channel_id: Uuid,
+    current_depth: i32,
     mentions: &[Mention],
 ) -> Result<(), sqlx::Error> {
     let bots = mentioned_bots(mentions);
-    if bots.is_empty() || !is_active(db, chain_id).await? {
+    if bots.is_empty() {
         return Ok(());
     }
 
+    let next_depth = current_depth.saturating_add(1);
     let workspace_id = resolve_channel_workspace_id(db, channel_id).await?;
-    let depth = parent_depth.saturating_add(1);
 
     for bot_id in bots {
-        if !is_active(db, chain_id).await? {
-            tracing::info!(
-                chain_id = %chain_id,
-                bot_id = %bot_id,
-                "chain dispatch gate blocked bot mention"
-            );
-            break;
-        }
-
         let provider_session_key = provider_session_key_for_bot_workspace(workspace_id, bot_id);
         let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
             .await?
@@ -259,15 +187,14 @@ pub async fn on_bot_reply_finalized(
 
         if let Err(e) = &session {
             tracing::warn!(
-                chain_id = %chain_id,
                 bot_id = %bot_id,
                 channel_id = %channel_id,
                 err = %e,
-                "session acquire failed, fallback to unbound chain dispatch"
+                "session acquire failed for bot reply trigger"
             );
         }
 
-        let result = dispatcher::dispatch(
+        if let dispatcher::DispatchResult::DbError(e) = dispatcher::dispatch(
             db,
             fanout,
             stream_registry,
@@ -277,113 +204,16 @@ pub async fn on_bot_reply_finalized(
                 trigger_seq: reply_seq,
                 bot_id,
                 channel_id,
-                chain_id: Some(chain_id),
-                parent_task_id: Some(parent_task_id),
-                depth,
+                depth: next_depth,
                 provider_session_key,
-                session_id: session.ok().map(|session| session.session_id),
+                session_id: session.ok().map(|s| s.session_id),
             },
         )
-        .await;
-
-        match result {
-            dispatcher::DispatchResult::DbError(e) => {
-                tracing::warn!(chain_id = %chain_id, bot_id = %bot_id, err = e, "chain dispatch failed");
-            }
-            dispatcher::DispatchResult::ChainBlocked => {
-                tracing::info!(chain_id = %chain_id, bot_id = %bot_id, "chain dispatch blocked");
-            }
-            _ => {}
+        .await
+        {
+            tracing::warn!(bot_id = %bot_id, err = e, "bot reply dispatch failed");
         }
     }
-
-    Ok(())
-}
-
-pub struct ReplyChainContext {
-    pub chain_id: Uuid,
-    pub parent_task_id: Uuid,
-    pub parent_depth: i32,
-}
-
-pub async fn mark_reply_finalized(
-    db: &PgPool,
-    placeholder_msg_id: Uuid,
-) -> Result<Option<ReplyChainContext>, sqlx::Error> {
-    let mut tx = db.begin().await?;
-    let Some(row) = sqlx::query(
-        "UPDATE bot_runs
-         SET status = 'done',
-             last_event_type = 'done',
-             updated_at = NOW()
-         WHERE placeholder_msg_id = $1
-         RETURNING task_id, chain_id",
-    )
-    .bind(placeholder_msg_id.to_string())
-    .fetch_optional(&mut *tx)
-    .await?
-    else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-
-    let task_id = row.try_get::<String, _>("task_id")?;
-    let Some(chain_id) = row.try_get::<Option<String>, _>("chain_id")? else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-
-    let Some(task_row) = sqlx::query(
-        "UPDATE agent_tasks
-         SET response_msg_id = $2
-         WHERE task_id = $1
-         RETURNING depth",
-    )
-    .bind(&task_id)
-    .bind(placeholder_msg_id.to_string())
-    .fetch_optional(&mut *tx)
-    .await?
-    else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-
-    let Ok(chain_id) = Uuid::parse_str(&chain_id) else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-    let Ok(parent_task_id) = Uuid::parse_str(&task_id) else {
-        tx.commit().await?;
-        return Ok(None);
-    };
-    let parent_depth = task_row.try_get::<Option<i32>, _>("depth")?.unwrap_or(0);
-
-    tx.commit().await?;
-
-    Ok(Some(ReplyChainContext {
-        chain_id,
-        parent_task_id,
-        parent_depth,
-    }))
-}
-
-pub async fn mark_run_failed(
-    db: &PgPool,
-    placeholder_msg_id: Uuid,
-    error_message: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE bot_runs
-         SET status = 'failed',
-             last_event_type = 'error',
-             error_message = $2,
-             updated_at = NOW()
-         WHERE placeholder_msg_id = $1",
-    )
-    .bind(placeholder_msg_id.to_string())
-    .bind(error_message)
-    .execute(db)
-    .await?;
 
     Ok(())
 }

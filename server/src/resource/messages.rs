@@ -236,6 +236,7 @@ pub async fn handle_create(
         msg_id: msg_id.to_string(),
         channel_id: channel_id.to_string(),
         channel_seq: Some(channel_seq),
+        depth: 0,
         sender_type: "bot".into(),
         sender_id: Some(bot_id.to_string()),
         sender_name: None,

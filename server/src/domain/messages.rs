@@ -40,6 +40,7 @@ pub struct CreateMessageParams {
     pub msg_type: Option<String>,
     pub reply_to_msg_id: Option<Uuid>,
     pub file_ids: Vec<String>,
+    pub mention_ids: Vec<Uuid>,
 }
 
 pub async fn create_message(
@@ -87,10 +88,10 @@ pub async fn create_message(
             .and_then(|r| r.try_get("display_name").ok());
 
     // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
-    let mentions = mentions::parse_human_tokens(db, params.channel_id, &params.content)
+    let mentions = mentions::validate_mention_ids(db, params.channel_id, &params.mention_ids)
         .await
         .map_err(mention_parse_error_to_app)?;
-    debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mention tokens scanned");
+    debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mention ids validated");
     let msg_id = Uuid::new_v4();
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
@@ -132,6 +133,7 @@ pub async fn create_message(
         msg_id: msg_id.to_string(),
         channel_id: params.channel_id.to_string(),
         channel_seq: Some(seq),
+        depth: 0,
         sender_type: "user".into(),
         sender_id: Some(params.user_id.to_string()),
         sender_name: sender_name.clone(),
@@ -216,8 +218,6 @@ pub async fn create_message(
                 trigger_seq: seq,
                 bot_id,
                 channel_id: params.channel_id,
-                chain_id: None,
-                parent_task_id: None,
                 depth: 0,
                 provider_session_key,
                 session_id: session.ok().map(|session| session.session_id),
