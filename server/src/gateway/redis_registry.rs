@@ -16,7 +16,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use super::registry::{BotLocator, BotRegistry};
@@ -102,8 +102,8 @@ impl RedisBotRegistry {
 
 // BotRegistry 在 Arc<RedisBotRegistry> 上实现
 impl BotRegistry for Arc<RedisBotRegistry> {
-    fn bind_control(&self, bot_id: Uuid, conn_id: Uuid, task_tx: mpsc::Sender<Value>) {
-        RedisBotRegistry::bind_control(self, bot_id, conn_id, task_tx);
+    fn bind_control(&self, bot_id: Uuid, conn_id: Uuid, task_tx: mpsc::Sender<Value>) -> oneshot::Receiver<()> {
+        RedisBotRegistry::bind_control(self, bot_id, conn_id, task_tx)
     }
     fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
         RedisBotRegistry::bind_data(self, bot_id, data_tx);
@@ -111,10 +111,16 @@ impl BotRegistry for Arc<RedisBotRegistry> {
     fn unbind(&self, bot_id: Uuid) {
         RedisBotRegistry::unbind(self, bot_id);
     }
+    fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
+        RedisBotRegistry::unbind_if_connection(self, bot_id, conn_id);
+    }
+    fn unbind_data(&self, bot_id: Uuid) {
+        RedisBotRegistry::unbind_data(self, bot_id);
+    }
 }
 
 impl BotRegistry for RedisBotRegistry {
-    fn bind_control(&self, bot_id: Uuid, _conn_id: Uuid, task_tx: mpsc::Sender<Value>) {
+    fn bind_control(&self, bot_id: Uuid, _conn_id: Uuid, task_tx: mpsc::Sender<Value>) -> oneshot::Receiver<()> {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let client = self.client.clone();
         let publisher = self.publisher.clone();
@@ -122,7 +128,10 @@ impl BotRegistry for RedisBotRegistry {
         // 设置 Redis 在线标记（30s TTL，由心跳续期）
         tokio::spawn(set_online(publisher.clone(), bot_id));
 
-        // 启动订阅转发任务
+        // supersede 信号：新连接进来时通知旧 WS handler 退出
+        let (supersede_tx, supersede_rx) = oneshot::channel::<()>();
+
+        // 启动订阅转发任务（cancel_rx 在 unbind 时触发）
         tokio::spawn(forward_loop(
             client,
             control_subject(bot_id),
@@ -130,10 +139,17 @@ impl BotRegistry for RedisBotRegistry {
             cancel_rx,
         ));
 
-        // 存 cancel 令牌（bind_data 时补第二个）
-        // 先存一个 dummy 给 data，等 bind_data 调用时替换
+        // 存 cancel 令牌（bind_data 时补第二个）；同时存旧 supersede_tx
+        // 若已有旧 session，触发其 supersede 信号
         let (dummy_tx, _) = tokio::sync::oneshot::channel::<()>();
-        self.cancel_map.insert(bot_id, (cancel_tx, dummy_tx));
+        if let Some((_, old)) = self.cancel_map.remove(&bot_id) {
+            drop(old); // drop 旧 cancel 对（会触发旧 forward_loop 退出）
+        }
+        // 重用 cancel_map 中第二个槽存 supersede_tx（临时方案）
+        self.cancel_map.insert(bot_id, (cancel_tx, supersede_tx));
+        drop(dummy_tx);
+
+        supersede_rx
     }
 
     fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
@@ -167,6 +183,15 @@ impl BotRegistry for RedisBotRegistry {
                 .query_async(&mut publisher)
                 .await;
         });
+    }
+
+    fn unbind_if_connection(&self, bot_id: Uuid, _conn_id: Uuid) {
+        // Redis 模式下连接生命周期由 forward_loop 管理，unbind 直接清理即可
+        self.unbind(bot_id);
+    }
+
+    fn unbind_data(&self, _bot_id: Uuid) {
+        // Redis 模式下 data TX 不在 cancel_map 里，无需额外操作
     }
 }
 

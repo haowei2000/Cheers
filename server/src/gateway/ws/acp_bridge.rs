@@ -18,7 +18,10 @@ use uuid::Uuid;
 use crate::{
     app_state::AppState,
     domain::acp_capability,
-    gateway::stream::{handle_delta, handle_done, handle_send, handle_session_update},
+    gateway::{
+        realtime::frame::WireFrame,
+        stream::{handle_delta, handle_done, handle_send, handle_session_update},
+    },
     infra::crypto::hash_bot_token,
     resource,
 };
@@ -61,7 +64,8 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
     let connection_id = Uuid::new_v4();
     let (task_tx, mut task_rx) = mpsc::channel::<Value>(64);
 
-    state
+    // bind_control 先插入新 session，再向旧连接发 supersede 信号
+    let mut supersede_rx = state
         .bot_registry
         .bind_control(bot.bot_id, connection_id, task_tx);
 
@@ -86,7 +90,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
     tracing::info!(bot_id = %bot.bot_id, "control connected");
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
-    loop {
+    let superseded = loop {
         tokio::select! {
             // 收 bot 发来的控制帧
             msg = socket.recv() => {
@@ -97,7 +101,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
                         }
                     }
                     Some(Ok(Message::Ping(d))) => { let _ = socket.send(Message::Pong(d)).await; }
-                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Close(_))) | None => break false,
                     _ => {}
                 }
             }
@@ -106,16 +110,26 @@ async fn handle_control(mut socket: WebSocket, state: AppState) {
             task = task_rx.recv() => {
                 match task {
                     Some(t) => {
-                        if ws_send(&mut socket, &t).await.is_err() { break; }
+                        if ws_send(&mut socket, &t).await.is_err() { break false; }
                     }
-                    None => break,
+                    None => break false,
                 }
             }
-        }
-    }
 
-    tracing::info!(bot_id = %bot.bot_id, "control disconnected");
-    // TODO: unbind control
+            // 被新连接 supersede
+            _ = &mut supersede_rx => {
+                close(&mut socket, CLOSE_SUPERSEDED, "superseded by new connection").await;
+                break true;
+            }
+        }
+    };
+
+    tracing::info!(bot_id = %bot.bot_id, superseded, "control disconnected");
+
+    // 被 supersede 时新连接已写入 session，不能 unbind（会删掉新 session）
+    if !superseded {
+        state.bot_registry.unbind_if_connection(bot.bot_id, connection_id);
+    }
 }
 
 async fn handle_control_frame(frame: &Value, state: &AppState, bot_id: Uuid) {
@@ -125,8 +139,36 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot_id: Uuid) {
         "ready" => {
             tracing::info!(bot_id = %bot_id, version = ?frame.get("plugin_version"), "bot ready");
         }
-        "config_status" | "config_options" | "config_option_status" => {
-            // TODO: 持久化 config 状态到 bot_accounts.binding_config
+        ftype @ ("config_status" | "config_options" | "config_option_status") => {
+            // connector 上报配置状态，局部写入 bot_accounts.binding_config
+            let config_key = match ftype {
+                "config_status"        => "connector_status",
+                "config_options"       => "config_options",
+                "config_option_status" => "config_option_status",
+                _                      => return,
+            };
+            let mut payload = frame.clone();
+            // 去掉 type 字段，只存业务数据
+            if let Some(obj) = payload.as_object_mut() { obj.remove("type"); }
+            let payload_str = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
+            let result = sqlx::query(
+                "UPDATE bot_accounts
+                 SET binding_config = jsonb_set(
+                     COALESCE(binding_config, '{}'),
+                     $2,
+                     $3::jsonb,
+                     true
+                 )
+                 WHERE bot_id = $1",
+            )
+            .bind(bot_id.to_string())
+            .bind(format!("{{{config_key}}}"))  // jsonb_set path 格式：{key}
+            .bind(&payload_str)
+            .execute(&state.db)
+            .await;
+            if let Err(e) = result {
+                tracing::warn!(bot_id = %bot_id, key = config_key, err = %e, "config persist failed");
+            }
         }
         other => {
             tracing::debug!(bot_id = %bot_id, frame_type = other, "unknown control frame");
@@ -282,6 +324,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState) {
     }
 
     tracing::info!(bot_id = %bot.bot_id, "data disconnected");
+    state.bot_registry.unbind_data(bot.bot_id);
 }
 
 async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socket: &mut WebSocket) {
@@ -337,7 +380,44 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 
         // ── 审批请求（转发给频道内用户）─────────────────────────────────────
         "permission_request" => {
-            // TODO: fan-out permission_request 帧给频道内用户
+            let channel_id = frame
+                .get("channel_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<Uuid>().ok());
+            if let Some(channel_id) = channel_id {
+                // 验证 bot 是该频道成员后才广播，防止 bot 向无关频道发审批请求
+                let is_member = sqlx::query(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM channel_memberships
+                        WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'
+                    ) AS ok",
+                )
+                .bind(channel_id.to_string())
+                .bind(bot.bot_id.to_string())
+                .fetch_one(&state.db)
+                .await
+                .ok()
+                .and_then(|row| row.try_get::<bool, _>("ok").ok())
+                .unwrap_or(false);
+
+                if is_member {
+                    let wire = WireFrame::channel(channel_id, "permission_request", frame.clone());
+                    state.fanout.broadcast_channel(channel_id, wire).await;
+                } else {
+                    tracing::warn!(
+                        bot_id = %bot.bot_id,
+                        channel_id = %channel_id,
+                        "permission_request rejected: bot not in channel"
+                    );
+                    let _ = ws_send(socket, &json!({
+                        "type": "error",
+                        "code": "NOT_MEMBER",
+                        "detail": "bot is not a member of the target channel",
+                    })).await;
+                }
+            } else {
+                tracing::warn!(bot_id = %bot.bot_id, "permission_request missing channel_id");
+            }
         }
         "session_update" => {
             if let Err(e) =
@@ -353,7 +433,10 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         }
 
         "resume" => {
-            // TODO: event_log 重放
+            // event_log 重放：需要 event_log 表基础设施，暂未实现。
+            // 当前 last_event_seq 始终返回 0，bot 重连后需自行通过
+            // channel.activity.read?since_seq=<last_known> 补齐上下文。
+            tracing::debug!(bot_id = %bot.bot_id, "resume frame received (not yet implemented)");
         }
 
         other => {
