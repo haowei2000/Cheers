@@ -533,18 +533,18 @@ mod tests {
     }
 
     #[test]
-    fn old_metadata_json_still_loads() {
+    fn metadata_defaults_missing_optional_fields() {
         let metadata: DaemonMetadata = serde_json::from_value(json!({
             "name": "opencode-main",
             "pid": 1234,
-            "config_path": "/tmp/agentnexus-acp.json",
+            "config_path": "/tmp/agentnexus-daemon.toml",
             "started_at": "2026-06-02T00:00:00Z",
             "cwd": "/tmp",
             "argv": [
                 "/usr/local/bin/agentnexus-acp-connector",
                 "run",
                 "--config",
-                "/tmp/agentnexus-acp.json",
+                "/tmp/agentnexus-daemon.toml",
                 "--name",
                 "opencode-main"
             ],
@@ -564,7 +564,7 @@ mod tests {
             "/usr/local/bin/agentnexus-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
-            "/tmp/agentnexus-acp.json".to_string(),
+            "/tmp/agentnexus-daemon.toml".to_string(),
             "--name".to_string(),
             "opencode-main".to_string(),
         ];
@@ -574,7 +574,7 @@ mod tests {
             "/usr/local/bin/agentnexus-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
-            "/tmp/other.json".to_string(),
+            "/tmp/other.toml".to_string(),
             "--name".to_string(),
             "opencode-main".to_string(),
         ];
@@ -587,16 +587,16 @@ mod tests {
             "/Users/me/bin/agentnexus-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
-            "/tmp/agentnexus-acp.json".to_string(),
+            "/tmp/agentnexus-daemon.toml".to_string(),
             "--name".to_string(),
             "opencode-main".to_string(),
         ];
         assert!(command_text_matches_expected(
-            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-acp.json --name opencode-main",
+            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-daemon.toml --name opencode-main",
             &expected,
         ));
         assert!(!command_text_matches_expected(
-            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-acp.json --name other",
+            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-daemon.toml --name other",
             &expected,
         ));
     }

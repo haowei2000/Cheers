@@ -38,7 +38,6 @@ jobs:
               - "frontend/**"
               - ".github/workflows/ci.yml"
             plugin:
-              - "packages/agentnexus-acp-connector/**"
               - "packages/agentnexus-acp-connector-rs/**"
               - "packages/agentnexus-mcp-server/**"
               - ".github/workflows/ci.yml"
@@ -107,7 +106,7 @@ jobs:
         run: npm run build
 
   # ─────────────────────────────────────────────
-  # Agent packages: TS compatibility packages + Rust connector/MCP binaries
+  # Agent packages: Rust connector/MCP binaries
   # ─────────────────────────────────────────────
   plugin-build:
     name: Agent Package Check
@@ -117,13 +116,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: packages/agentnexus-acp-connector/package-lock.json
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -137,22 +129,6 @@ jobs:
             packages/agentnexus-acp-connector-rs -> packages/agentnexus-acp-connector-rs/target
             packages/agentnexus-mcp-server -> packages/agentnexus-mcp-server/target
 
-      - name: Install ACP connector dependencies
-        working-directory: packages/agentnexus-acp-connector
-        run: npm ci
-
-      - name: Lint ACP connector
-        working-directory: packages/agentnexus-acp-connector
-        run: npm run lint
-
-      - name: Test ACP connector
-        working-directory: packages/agentnexus-acp-connector
-        run: npm test
-
-      - name: Build ACP connector
-        working-directory: packages/agentnexus-acp-connector
-        run: npm run build
-
       - name: Format Rust agent packages
         run: |
           cargo fmt --manifest-path packages/agentnexus-acp-connector-rs/Cargo.toml -- --check
@@ -160,6 +136,9 @@ jobs:
 
       - name: Check Rust connector daemon
         run: cargo check --manifest-path packages/agentnexus-acp-connector-rs/Cargo.toml
+
+      - name: Test Rust connector daemon
+        run: cargo test --manifest-path packages/agentnexus-acp-connector-rs/Cargo.toml
 
       - name: Check Rust MCP server
         run: cargo check --manifest-path packages/agentnexus-mcp-server/Cargo.toml

@@ -1,15 +1,10 @@
-FROM docker.m.daocloud.io/library/node:20-bookworm-slim AS connector-builder
+FROM docker.m.daocloud.io/library/rust:1-bookworm AS agent-builder
 
-ARG NPM_REGISTRY=https://registry.npmjs.org
-RUN npm config set registry "${NPM_REGISTRY}"
-
-WORKDIR /build/packages/agentnexus-acp-connector
-
-COPY packages/agentnexus-acp-connector/package*.json ./
-RUN npm ci
-
-COPY packages/agentnexus-acp-connector/ ./
-RUN npm run build
+WORKDIR /build
+COPY packages/agentnexus-acp-connector-rs ./packages/agentnexus-acp-connector-rs
+COPY packages/agentnexus-mcp-server ./packages/agentnexus-mcp-server
+RUN cargo build --release --manifest-path packages/agentnexus-acp-connector-rs/Cargo.toml \
+    && cargo build --release --manifest-path packages/agentnexus-mcp-server/Cargo.toml
 
 FROM docker.m.daocloud.io/library/node:20-bookworm-slim
 
@@ -23,9 +18,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=connector-builder /build/packages/agentnexus-acp-connector /opt/agentnexus-acp-connector
+COPY --from=agent-builder /build/packages/agentnexus-acp-connector-rs/target/release/agentnexus-acp-connector /usr/local/bin/agentnexus-acp-connector
+COPY --from=agent-builder /build/packages/agentnexus-mcp-server/target/release/agentnexus-mcp-server /usr/local/bin/agentnexus-mcp-server
 RUN npm config set registry "${NPM_REGISTRY}" \
-    && npm install -g /opt/agentnexus-acp-connector "opencode-ai@${OPENCODE_VERSION}" \
+    && npm install -g "opencode-ai@${OPENCODE_VERSION}" \
     && npm cache clean --force
 
 COPY docker/opencode-bot/entrypoint.sh /usr/local/bin/agentnexus-opencode-bot

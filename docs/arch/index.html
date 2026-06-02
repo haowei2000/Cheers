@@ -916,12 +916,12 @@ tr:last-child td {
           </article>
 
           <article class="goal-card">
-            <span class="badge mostly">基本完成</span>
+            <span class="badge done">已完成</span>
             <h3>Agent package 退旧迁移</h3>
-            <p>OpenClaw channel package 和独立 bridge-client 包已移除；Rust connector crate 承接 daemon 与 bridge 协议能力，TS 前台 runtime 暂留兼容。</p>
+            <p>OpenClaw channel package、独立 bridge-client 包和旧 TypeScript ACP connector 均已移除；Rust connector crate 承接 daemon、BridgeRuntime、ACP adapter 与 bridge 协议能力。</p>
             <div class="evidence">
               <a href="../../packages/agentnexus-acp-connector-rs">connector-rs</a>
-              <a href="../../packages/agentnexus-acp-connector/README.md">acp connector README</a>
+              <a href="../../packages/agentnexus-acp-connector-rs/README.md">Rust connector README</a>
             </div>
           </article>
 
@@ -940,7 +940,7 @@ tr:last-child td {
             <h3>Connector MCP stdio 注入</h3>
             <p>ACP agent 配置里的 <code>mcpServers</code> 已由 connector 传入 session/new/load；自动合成 AgentNexus MCP entry 和 loopback resource endpoint 是下一步。</p>
             <div class="evidence">
-              <a href="../../packages/agentnexus-acp-connector/src/acp-agent.ts">acp-agent.ts</a>
+              <a href="../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs">bridge_runtime.rs</a>
               <a href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">ACP compatibility</a>
             </div>
           </article>
@@ -1073,8 +1073,8 @@ tr:last-child td {
             <p>fan-out 和 BotLocator 先走进程内或 Redis registry，跨实例扩展保留 trait 接口。</p>
           </article>
           <article class="decision-card">
-            <h3>旧兼容只保留在边界</h3>
-            <p>OpenClaw 和独立 TS bridge-client 退场；TS foreground runtime 只是 Rust connector 全量化前的兼容层。</p>
+            <h3>旧代码已删除</h3>
+            <p>OpenClaw 包、独立 TS bridge-client 和 TS ACP connector 不再保留；默认运行路径只剩 Rust connector。</p>
           </article>
         </div>
       </section>
@@ -1082,10 +1082,15 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="backlog-title">剩余工作建议</h2>
-            <p>下一步重点不是再补临时 shim，而是把 connector 侧 MCP 注入闭环实现、验证，并继续把 Rust connector 全量化。</p>
+            <p>下一步重点不是再补临时 shim，而是把 Backend 审批闭环、connector 侧 MCP 注入闭环实现并验证，继续把 Rust connector 全量化。</p>
           </div>
         </div>
         <div class="backlog-grid">
+          <article class="backlog-card">
+            <span class="badge open">P0</span>
+            <h3>Backend permission_resolution 闭环</h3>
+            <p>补齐 <code>/messages/:msg_id/resolve</code> 和 <code>/request-approval</code> 后端接口：Backend 根据 bot owner、channel/workspace membership、Grant 与 request 状态判断审批人，更新审批消息，并通过 control WS 下发 <code>permission_resolution</code> 给 connector。</p>
+          </article>
           <article class="backlog-card">
             <span class="badge open">实现</span>
             <h3>Connector 自动 MCP 注入</h3>

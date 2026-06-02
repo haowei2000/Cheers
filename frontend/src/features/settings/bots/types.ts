@@ -1,12 +1,8 @@
 export type BotScope = "private" | "friend" | "everyone";
-export type ConnectorPermissionMode = "ask" | "reject" | "allow" | "cancel";
 export type AgentNativePermissionMode = "ask" | "allow" | "deny";
 
 export type ConnectorControlSettings = {
-  agentnexusApprovalMode?: ConnectorPermissionMode;
   agentNativePermissionMode?: AgentNativePermissionMode | string;
-  /** @deprecated Use agentnexusApprovalMode. */
-  permissionMode?: ConnectorPermissionMode;
   requestTimeoutMs?: number;
   promptTimeoutMs?: number;
   cwd?: string;

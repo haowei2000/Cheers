@@ -29,16 +29,11 @@ import type {
   BotConnectionTestResult,
   BotRow,
   BotScope,
-  ConnectorPermissionMode,
   ModelItem,
   TemplateItem,
 } from "./types";
 
 type BotSettingsTab = "profile" | "runtime" | "status";
-
-function normalizeConnectorPermissionMode(value: unknown): ConnectorPermissionMode {
-  return value === "ask" || value === "allow" || value === "cancel" || value === "reject" ? value : "ask";
-}
 
 function normalizeAgentNativePermissionMode(value: unknown): AgentNativePermissionMode {
   return value === "allow" || value === "deny" || value === "ask" ? value : "ask";
@@ -156,9 +151,6 @@ export function BotEditPane({
     ),
   );
   const [savingConnectorControl, setSavingConnectorControl] = useState(false);
-  const [agentnexusApprovalMode, setAgentnexusApprovalMode] = useState<ConnectorPermissionMode>(
-    normalizeConnectorPermissionMode(connectorSettings.agentnexusApprovalMode ?? connectorSettings.permissionMode),
-  );
   const [agentNativePermissionMode, setAgentNativePermissionMode] = useState<AgentNativePermissionMode>(
     normalizeAgentNativePermissionMode(connectorSettings.agentNativePermissionMode),
   );
@@ -182,9 +174,6 @@ export function BotEditPane({
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
     const nextSettings = bot.binding_config?.connector_control?.settings || {};
-    setAgentnexusApprovalMode(
-      normalizeConnectorPermissionMode(nextSettings.agentnexusApprovalMode ?? nextSettings.permissionMode),
-    );
     setAgentNativePermissionMode(normalizeAgentNativePermissionMode(nextSettings.agentNativePermissionMode));
     setConnectorPromptTimeoutSeconds(msToSeconds(nextSettings.promptTimeoutMs, 900));
     setConnectorRequestTimeoutSeconds(msToSeconds(nextSettings.requestTimeoutMs, 120));
@@ -384,7 +373,6 @@ export function BotEditPane({
     setSavingConnectorControl(true);
     try {
       const settings: Record<string, unknown> = {
-        agentnexusApprovalMode,
         agentNativePermissionMode,
         promptTimeoutMs: secondsToMs(connectorPromptTimeoutSeconds),
         requestTimeoutMs: secondsToMs(connectorRequestTimeoutSeconds),
@@ -644,18 +632,6 @@ export function BotEditPane({
                 </span>
               )}
             </div>
-            <Field label="AgentNexus approval handling">
-              <select
-                value={agentnexusApprovalMode}
-                onChange={(e) => setAgentnexusApprovalMode(normalizeConnectorPermissionMode(e.target.value))}
-                className={inputCls}
-              >
-                <option value="ask">Ask owner in chat</option>
-                <option value="reject">Reject</option>
-                <option value="allow">Allow</option>
-                <option value="cancel">Cancel</option>
-              </select>
-            </Field>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
               <Field label="Working directory">
                 <input

@@ -5,7 +5,6 @@ import { LoginModal } from "../LoginModal";
 import { CreateWorkspaceModal, type CreateWorkspaceSubmitOptions } from "../CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "../InviteWorkspaceMemberModal";
 import { CreateChannelModal, type CreateChannelSubmitOptions } from "../CreateChannelModal";
-import { OpenClawQcModal } from "../OpenClawQcModal";
 import { ChannelSettingsModal } from "../ChannelSettingsModal";
 import { HelpModal } from "../HelpModal";
 import type {
@@ -54,8 +53,6 @@ interface AppModalsProps {
   }) => void;
   onOpenDM: (memberId: string, memberType: "user" | "bot") => void;
   onLogout: () => void;
-  qcOpen: boolean;
-  onCloseQc: () => void;
   selectedId: string | null;
   selectedChannel: Channel | null;
   createWsOpen: boolean;
@@ -122,8 +119,6 @@ export function AppModals({
   onProfileUpdated,
   onOpenDM,
   onLogout,
-  qcOpen,
-  onCloseQc,
   selectedId,
   selectedChannel,
   createWsOpen,
@@ -206,13 +201,6 @@ export function AppModals({
           />
         </Suspense>
       )}
-
-      <OpenClawQcModal
-        open={qcOpen}
-        onClose={onCloseQc}
-        channelId={selectedId}
-        channelName={selectedChannel?.name}
-      />
 
       <CreateWorkspaceModal
         open={createWsOpen}

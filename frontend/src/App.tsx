@@ -684,7 +684,6 @@ export default function App() {
     {},
   );
 
-  const [qcOpen, setQcOpen] = useState(false);
 
   const handleMessageNavigate = useCallback(
     (channelId: string, msgId?: string) => {
@@ -1532,8 +1531,6 @@ export default function App() {
         }}
         onOpenDM={openDirectMessage}
         onLogout={handleLogout}
-        qcOpen={qcOpen}
-        onCloseQc={() => setQcOpen(false)}
         selectedId={selectedId}
         selectedChannel={selectedChannel}
         createWsOpen={createWsOpen}

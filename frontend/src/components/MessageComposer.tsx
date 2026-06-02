@@ -39,7 +39,7 @@ const MESSAGE_COMPOSER_KIND_LABEL: Record<MessageComposerKind, string> = {
 function promptTemplateDisplayName(template?: ComposerPromptTemplate | null): string {
   if (!template) return "";
   const name = template.name.trim();
-  if (!name || /^__.*__$/.test(name) || name.includes("__openclaw_passthrough__")) {
+  if (!name || /^__.*__$/.test(name)) {
     return "System passthrough template";
   }
   return name;

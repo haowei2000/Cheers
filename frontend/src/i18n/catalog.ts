@@ -346,7 +346,6 @@ export const EN_TO_ZH: Record<string, string> = {
   "Password updated": "密码已更新",
   "Secret saved": "密钥已保存",
   "Secret deleted": "密钥已删除",
-  "Connect OpenClaw": "接入 OpenClaw（废弃）",
   "Enter Gateway URL and token to create a bot and probe its capabilities": "输入 Gateway URL 和 Token，自动创建 Bot 并探测其能力",
   "If the URL does not include /v1, it will be completed automatically": "若 URL 未包含 /v1，将自动补全",
   "Agent ID (model name)": "Agent ID（模型名）",

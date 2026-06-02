@@ -274,11 +274,11 @@ Current and target Rust module ownership:
 | `daemon.rs` | Supervisor lifecycle, daemon metadata, process identity verification. |
 | `bridge.rs` | Agent Bridge v1 frame types and raw WebSocket read/write. |
 | `bridge_session.rs` | Control/data session handshake, ready, membership snapshot, frame send/receive. |
-| `bridge_runtime.rs` | Planned orchestration layer: task/cancel/session/config/permission/resource routing. |
-| `runtime_adapter.rs` | Planned adapter trait and runtime events. |
-| `acp_adapter.rs` | Planned ACP stdio JSON-RPC adapter. |
-| `loopback.rs` | Planned local endpoint for MCP tool calls. |
-| `state.rs` | Planned local provider session mapping store. |
+| `bridge_runtime.rs` | Orchestration layer: task/cancel/session/config/permission/resource routing. |
+| `runtime_adapter.rs` | Adapter trait and runtime events. |
+| `acp_adapter.rs` | ACP stdio JSON-RPC adapter. |
+| `loopback.rs` | Local endpoint for MCP tool calls. |
+| `state.rs` | Local provider session mapping store. |
 
 ## 10. Non-Goals
 
@@ -290,18 +290,13 @@ Current and target Rust module ownership:
 - Do not replace `task` with ACP `session/prompt`; they are different concepts.
 - Do not add compatibility placeholders to fake a working runtime path.
 
-## 11. Migration Order
+## 11. Current Runtime Status
 
-1. Keep Rust supervisor stable: metadata, logs, start/stop/status, process verification.
-2. Keep Rust Agent Bridge frame types aligned to `AGENT_BRIDGE_PROTOCOL.md`.
-3. Build BridgeSession: auth, hello, ready, membership state, frame routing.
-4. Build BridgeRuntime with a real adapter boundary.
-5. Build AcpAdapter for ACP initialize/session/new/load/prompt/cancel and session/update events.
-6. Add State Store for provider session mapping.
-7. Add Local Loopback Resource Server and MCP injection.
-8. Add permission request/resolution flow.
-9. Add config update/config option flow.
-10. Only then switch the default `run` path away from the TypeScript foreground runtime.
+The default `run` path is Rust-only. The old TypeScript foreground runtime and private TypeScript
+bridge-client copy have been removed from the repository.
+
+Remaining work should extend the Rust modules above rather than reintroducing compatibility
+packages.
 
 ## 12. Final Principle
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-CONFIG_PATH="${OPENCODE_BOT_CONFIG_PATH:-/app/config/agentnexus-acp.json}"
+CONFIG_PATH="${OPENCODE_BOT_CONFIG_PATH:-/app/config/agentnexus-daemon.toml}"
 STATE_DIR="${OPENCODE_STATE_DIR:-/app/state}"
 OPENCODE_HOME="${OPENCODE_HOME:-/app/state/opencode}"
 export OPENCODE_HOME
@@ -39,7 +39,7 @@ function opencodeModel(provider, model) {
   return model.includes("/") ? model : `${provider}/${model}`;
 }
 
-const configPath = env("OPENCODE_BOT_CONFIG_PATH", "/app/config/agentnexus-acp.json");
+const configPath = env("OPENCODE_BOT_CONFIG_PATH", "/app/config/agentnexus-daemon.toml");
 const stateDir = env("OPENCODE_STATE_DIR", "/app/state");
 const username = env("OPENCODE_BOT_USERNAME", "opencode").trim() || "opencode";
 const botToken = requireEnv("OPENCODE_BOT_TOKEN");
@@ -49,13 +49,7 @@ const controlUrl = env("OPENCODE_BOT_CONTROL_URL", `${wsBase}/ws/agent-bridge/co
 const dataUrl = env("OPENCODE_BOT_DATA_URL", `${wsBase}/ws/agent-bridge/data`);
 const cwd = path.resolve(env("OPENCODE_WORKSPACE_DIR", "/workspace"));
 const promptTimeoutMs = intEnv("OPENCODE_PROMPT_TIMEOUT_MS", 660000);
-const requestTimeoutMsRaw = env("OPENCODE_REQUEST_TIMEOUT_MS", "").trim();
-const legacyPermissionMode = env("OPENCODE_PERMISSION_MODE", "").trim();
-const agentnexusApprovalMode = (
-  env("OPENCODE_AGENTNEXUS_APPROVAL_MODE", "").trim() ||
-  legacyPermissionMode ||
-  "ask"
-);
+const requestTimeoutMs = intEnv("OPENCODE_REQUEST_TIMEOUT_MS", 300000);
 const agentNativePermissionMode = env("OPENCODE_NATIVE_PERMISSION_MODE", "ask").trim() || "ask";
 const model = env("OPENCODE_MODEL", "").trim();
 const baseUrl = env("OPENCODE_OPENAI_BASE_URL", "https://api.deepseek.com").trim();
@@ -63,9 +57,6 @@ const provider = env("OPENCODE_PROVIDER", "deepseek").trim() || "deepseek";
 const opencodeCommand = env("OPENCODE_ACP_COMMAND", "opencode").trim() || "opencode";
 const opencodeModelName = opencodeModel(provider, model);
 
-if (!["ask", "reject", "allow", "cancel"].includes(agentnexusApprovalMode)) {
-  throw new Error("OPENCODE_AGENTNEXUS_APPROVAL_MODE must be ask, reject, allow, or cancel");
-}
 if (!["ask", "allow", "deny", "reject"].includes(agentNativePermissionMode)) {
   throw new Error("OPENCODE_NATIVE_PERMISSION_MODE must be ask, allow, deny, or reject");
 }
@@ -93,46 +84,138 @@ const opencodeConfig = {
   permission: opencodePermission,
 };
 
-const agent = {
-  transport: "stdio",
-  command: opencodeCommand,
-  args: ["acp", "--cwd", cwd],
-  cwd,
-  promptTimeoutMs,
-  agentnexusApprovalMode,
-  agentNativePermissionMode,
-  env: {
-    OPENCODE_OPENAI_API_KEY: "$OPENCODE_OPENAI_API_KEY",
-    OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig),
-    OPENCODE_DISABLE_AUTOUPDATE: "true",
-  },
-};
-
-if (requestTimeoutMsRaw) {
-  agent.requestTimeoutMs = intEnv("OPENCODE_REQUEST_TIMEOUT_MS", 300000);
+function tomlString(value) {
+  return JSON.stringify(String(value));
 }
 
-const config = {
-  accounts: {
-    [username]: {
-      botToken,
-      controlUrl,
-      dataUrl,
-      agent,
-    },
-  },
-  statePath: path.join(stateDir, "agentnexus-acp-state.json"),
+function tomlArray(values) {
+  return `[${values.map(tomlString).join(", ")}]`;
+}
+
+function tomlKey(value) {
+  return tomlString(value);
+}
+
+function tomlInlineTable(record) {
+  return `{ ${Object.entries(record)
+    .map(([key, value]) => `${key} = ${tomlString(value)}`)
+    .join(", ")} }`;
+}
+
+const statePath = path.join(stateDir, "agentnexus-acp-state.json");
+const logDir = path.join(stateDir, "logs");
+const accountKey = tomlKey(username);
+const envSet = {
+  OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig),
+  OPENCODE_DISABLE_AUTOUPDATE: "true",
 };
 
-fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+const configToml = `version = 1
+
+[daemon]
+state_path = ${tomlString(statePath)}
+log_dir = ${tomlString(logDir)}
+
+[accounts.${accountKey}.bridge]
+control_url = ${tomlString(controlUrl)}
+data_url = ${tomlString(dataUrl)}
+bot_token_env = "OPENCODE_BOT_TOKEN"
+heartbeat_interval_ms = 25000
+ack_timeout_ms = 600000
+
+[accounts.${accountKey}.bridge.reconnect]
+base_ms = 500
+max_ms = 30000
+
+[accounts.${accountKey}.adapter]
+type = "stdio"
+command = ${tomlString(opencodeCommand)}
+args = ${tomlArray(["acp", "--cwd", cwd])}
+
+[accounts.${accountKey}.policy.sessions]
+create = true
+load = true
+cancel = true
+terminate = true
+request_timeout_ms = ${requestTimeoutMs}
+
+[accounts.${accountKey}.policy.prompt]
+allow = true
+max_concurrent = 1
+max_prompt_bytes = 200000
+max_duration_ms = ${promptTimeoutMs}
+allow_attachments = true
+allow_images = true
+allow_local_file_refs = false
+
+[accounts.${accountKey}.policy.workspace]
+default_cwd = ${tomlString(cwd)}
+allowed_roots = ${tomlArray([cwd])}
+backend_may_set_cwd = false
+
+[accounts.${accountKey}.policy.filesystem.read]
+allow = true
+allowed_roots = ${tomlArray([cwd])}
+
+[accounts.${accountKey}.policy.filesystem.write]
+allow = true
+allowed_roots = ${tomlArray([cwd])}
+
+[accounts.${accountKey}.policy.terminal]
+allow = true
+
+[accounts.${accountKey}.policy.env]
+inherit = false
+allow = ${tomlArray(["PATH", "HOME", "OPENCODE_HOME", "OPENCODE_OPENAI_API_KEY"])}
+set = ${tomlInlineTable(envSet)}
+
+[accounts.${accountKey}.policy.config]
+backend_may_set_model = false
+backend_may_set_native_options = false
+allowed_config_options = []
+
+[accounts.${accountKey}.policy.permission]
+forward_to_backend = true
+wait_timeout_ms = 900000
+on_timeout = "cancel"
+
+[accounts.${accountKey}.policy.send]
+allow = true
+max_text_bytes = 200000
+max_files = 10
+
+[accounts.${accountKey}.policy.file_upload]
+allow = false
+max_bytes = 26214400
+allowed_content_types = []
+
+[accounts.${accountKey}.policy.trace]
+allow = true
+max_message_bytes = 32000
+
+[accounts.${accountKey}.policy.session_update]
+allow = true
+include_metadata = true
+
+[accounts.${accountKey}.policy.mcp]
+inject_agentnexus = true
+backend_may_inject_extra_servers = false
+allowed_servers = ["agentnexus"]
+
+[accounts.${accountKey}.policy.loopback]
+allowed_resources = ["channel.messages.context", "channel.files.read"]
+deny_resources = ["fs.write"]
+request_timeout_ms = 600000
+`;
+
+fs.writeFileSync(configPath, configToml, { mode: 0o600 });
 console.info(
-  "generated OpenCode ACP connector config account=%s control=%s data=%s cwd=%s model=%s approval_mode=%s native_permission=%s base_url=%s api_key_set=%s image_support=true embedded_context=true",
+  "generated OpenCode Rust ACP connector config account=%s control=%s data=%s cwd=%s model=%s native_permission=%s base_url=%s api_key_set=%s image_support=true embedded_context=true",
   username,
   controlUrl,
   dataUrl,
   cwd,
   opencodeModelName,
-  agentnexusApprovalMode,
   agentNativePermissionMode,
   baseUrl,
   apiKey ? "true" : "false",

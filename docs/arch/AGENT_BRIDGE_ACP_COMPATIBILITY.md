@@ -245,7 +245,7 @@ ACP 标准已经提供统一的 MCP 导入面：Client 在 `session/new` / `sess
 
 | 组件 | 职责 | 不负责 |
 |------|------|--------|
-| Rust daemon | 管理 connector 进程生命周期：`start/stop/restart/status/logs`，校验配置，拉起 foreground runtime。 | 不直接 `spawn` 或持有 `agentnexus-mcp-server`。 |
+| Rust daemon | 管理 connector 进程生命周期：`start/stop/restart/status/logs`，校验本地 TOML policy，并运行 Rust BridgeRuntime。 | 不直接 `spawn` 或持有 `agentnexus-mcp-server`。 |
 | connector runtime | 维护 Agent Bridge control/data WS；维护 ACP session；在 `session/new` / `session/load` 中注入 `mcpServers`；提供本机 loopback resource endpoint。 | 不绕过 Backend 做平台权限裁判。 |
 | ACP agent | 根据 ACP `mcpServers` 配置启动 stdio MCP server，并把 tool call 发送给该 MCP server。 | 不理解 AgentNexus 的 token、Grant、channel membership 细节。 |
 | `agentnexus-mcp-server` | 作为 stdio MCP server 暴露 AgentNexus tools；把 tool call 转成 loopback HTTP 调用给 connector。 | 不打开自己的 Agent Bridge WS，不持有 bot token 的第二条连接。 |
@@ -319,17 +319,19 @@ connector → Backend:
 
 ### 5.2 connector 支持多个 runtime adapter
 
-配置文件中可以显式声明 runtime 协议：
+配置文件中可以显式声明 ACP adapter。安全边界不放在 adapter
+里，而是放在本地 TOML 的 `policy.*` 下：
 
-```jsonc
-{
-  "agent": {
-    "protocol": "acp",
-    "command": "opencode",
-    "args": ["--acp", "--stdio"],
-    "cwd": "/repo"
-  }
-}
+```toml
+[accounts."opencode-main".adapter]
+type = "stdio"
+command = "opencode"
+args = ["acp", "--cwd", "/repo"]
+
+[accounts."opencode-main".policy.workspace]
+default_cwd = "/repo"
+allowed_roots = ["/repo"]
+backend_may_set_cwd = false
 ```
 
 自定义协议示例：
@@ -475,7 +477,7 @@ ACP adapter 可以在内部把 resource 内容转成 prompt content 或 MCP tool
 |----------|----------|------|
 | `acp_bridge.rs` | `agent_bridge.rs` | 服务端说的是 AgentNexus Bridge Protocol。 |
 | `/ws/acp-bridge/control` | `/ws/agent-bridge/control` | 不保留旧 WS alias，避免继续把服务端协议误读为 ACP。 |
-| `agentnexus-acp-connector` | 短期保留；长期可考虑 `agentnexus-agent-connector` | 现在主 runtime 是 ACP，包名可暂不动。 |
+| `agentnexus-acp-connector` | Rust connector binary | 旧 TypeScript npm package 已删除，包名只保留为 Rust binary 名称。 |
 | `ACP Connector` | `AgentNexus Connector with ACP adapter` | 对外说明更准确。 |
 
 命名迁移以正式协议为准：server 侧只暴露 `/ws/agent-bridge/*`，connector 和部署配置同步切换。
@@ -530,13 +532,13 @@ Backend ↔ connector 的 AgentNexus Bridge Protocol。
 
 ### Phase 3：connector 内部 adapter 化
 
-- 从 `agentnexus-acp-connector` 中抽出 `AgentRuntimeAdapter` 接口。
+- 在 Rust connector 中保留 `RuntimeAdapter` 接口。
 - 将现有 ACP stdio 逻辑收敛为 `AcpRuntimeAdapter`。
 - 增加一个最小 custom adapter 示例，证明服务端无需改动。
 
 ### Phase 4：Rust connector 协议层与测试
 
-- bridge-client 协议能力收敛到 Rust connector crate；独立 TS SDK 包不再发布。
+- bridge-client 协议能力收敛到 Rust connector crate；独立 TS SDK 包和旧 TS connector 均不再保留。
 - 增加协议 contract tests：
   - task → ACP prompt → delta/done。
   - ACP permission request → permission_resolution。

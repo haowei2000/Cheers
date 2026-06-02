@@ -39,8 +39,8 @@ type AgentPackage = {
 const setupSteps: Step[] = [
   {
     id: "packages",
-    title: "1. Install a ready-made ACP package",
-    summary: "Pick the npm package for your agent; do not write an adapter yourself.",
+    title: "1. Install a ready-made ACP agent",
+    summary: "Pick the ACP runtime for your agent; do not write an adapter yourself.",
   },
   {
     id: "check",
@@ -55,7 +55,7 @@ const setupSteps: Step[] = [
   {
     id: "config",
     title: "4. Save the connector config",
-    summary: "Write data.acp_connector_config to a local JSON file and edit the agent command.",
+    summary: "Write a local TOML policy file and edit the ACP agent command.",
   },
   {
     id: "run",
@@ -215,7 +215,7 @@ function formatArgs(args: string[]): string {
 }
 
 function AgentPackageCard({ agent }: { agent: AgentPackage }) {
-  const configLine = `"command": "${agent.command}", "args": ${formatArgs(agent.args)}`;
+  const configLine = `command = "${agent.command}"\nargs = ${formatArgs(agent.args)}`;
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--bg-0)] p-3">
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -245,7 +245,7 @@ function AgentPackageCard({ agent }: { agent: AgentPackage }) {
         <code>{agent.install}</code>
       </pre>
       <p className="an-type-caption mt-2 text-[var(--fg-3)]">{agent.note}</p>
-      <p className="an-type-caption mt-2 break-words font-mono text-[var(--fg-2)]">
+      <p className="an-type-caption mt-2 whitespace-pre-wrap break-words font-mono text-[var(--fg-2)]">
         {configLine}
       </p>
     </div>
@@ -357,35 +357,65 @@ npm install -g pi-acp`;
     "scope": "private"
   }'`;
 
-  const configJson = `{
-  "accounts": {
-    "opencode-main": {
-      "botToken": "agb_xxx",
-      "controlUrl": "${urls.controlWs}",
-      "dataUrl": "${urls.dataWs}",
-      "agent": {
-        "transport": "stdio",
-        "command": "opencode",
-        "args": ["acp", "--cwd", "/Users/me/project"],
-        "cwd": "/Users/me/project",
-        "promptTimeoutMs": 660000,
-        "agentnexusApprovalMode": "ask",
-        "agentNativePermissionMode": "ask",
-        "env": {
-          "OPENCODE_CONFIG_CONTENT": "$OPENCODE_CONFIG_CONTENT"
-        }
-      }
-    }
-  }
-}`;
+  const configToml = `version = 1
 
-  const installCommands = `npm install -g @haowei0520/acp-connector
-npm list -g @haowei0520/acp-connector --depth=0`;
+[daemon]
+state_path = "./state.json"
+log_dir = "./logs"
 
-  const runCommands = `agentnexus-acp-connector run --config ./agentnexus-acp.json
+[accounts."opencode-main".bridge]
+control_url = "${urls.controlWs}"
+data_url = "${urls.dataWs}"
+bot_token_env = "AGENTNEXUS_BOT_TOKEN"
+
+[accounts."opencode-main".adapter]
+type = "stdio"
+command = "opencode"
+args = ["acp", "--cwd", "/Users/me/project"]
+
+[accounts."opencode-main".policy.workspace]
+default_cwd = "/Users/me/project"
+allowed_roots = ["/Users/me/project"]
+backend_may_set_cwd = false
+
+[accounts."opencode-main".policy.filesystem.read]
+allow = true
+allowed_roots = ["/Users/me/project"]
+
+[accounts."opencode-main".policy.filesystem.write]
+allow = true
+allowed_roots = ["/Users/me/project"]
+
+[accounts."opencode-main".policy.terminal]
+allow = true
+
+[accounts."opencode-main".policy.env]
+inherit = false
+allow = ["PATH", "HOME", "OPENCODE_OPENAI_API_KEY"]
+
+[accounts."opencode-main".policy.permission]
+forward_to_backend = true
+wait_timeout_ms = 900000
+on_timeout = "cancel"
+
+[accounts."opencode-main".policy.mcp]
+inject_agentnexus = true
+backend_may_inject_extra_servers = false
+allowed_servers = ["agentnexus"]
+
+[accounts."opencode-main".policy.loopback]
+allowed_resources = ["channel.messages.context", "channel.files.read"]
+deny_resources = ["fs.write"]
+request_timeout_ms = 600000`;
+
+  const installCommands = `cargo install --path packages/agentnexus-acp-connector-rs --locked
+agentnexus-acp-connector --help`;
+
+  const runCommands = `export AGENTNEXUS_BOT_TOKEN=agb_xxx
+agentnexus-acp-connector run --config ./agentnexus-daemon.toml
 
 # After the first successful run, keep it alive with daemon mode:
-agentnexus-acp-connector start --config ./agentnexus-acp.json --name opencode-main
+agentnexus-acp-connector start --config ./agentnexus-daemon.toml --name opencode-main
 agentnexus-acp-connector status --name opencode-main
 agentnexus-acp-connector logs --name opencode-main --lines 120`;
 
@@ -453,20 +483,20 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
           <section className="border-b border-[var(--border)] pb-5">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <span className="an-chip accent">ACP stdio</span>
-              <span className="an-chip">npm package</span>
+              <span className="an-chip">Rust connector</span>
               <span className="an-chip">WebSocket bridge</span>
             </div>
             <h2 className="mb-2 text-2xl font-semibold leading-tight tracking-normal text-[var(--fg-1)]">
-              Install the ACP package, register the Bot, run the connector.
+              Install an ACP agent, register the Bot, run the Rust connector.
             </h2>
             <p className="an-type-body max-w-3xl leading-relaxed text-[var(--fg-2)]">
-              Do not write a custom ACP adapter for common agents. Install the ready-made npm package
-              for your agent, then let `@haowei0520/acp-connector` bridge that local stdio process
-              to AgentNexus over WebSocket.
+              Do not write a custom ACP adapter for common agents. Install a ready-made ACP runtime,
+              then let the Rust `agentnexus-acp-connector` bridge that local stdio process to
+              AgentNexus over WebSocket.
             </p>
             <p className="an-type-caption mt-3 max-w-3xl rounded-md border border-[var(--orange-muted)] bg-[var(--orange-muted)] px-3 py-2 text-[var(--orange)]">
-              OpenClaw plugin links are legacy/deprecated. New deployments should use the npm
-              packages below and migrate to a local ACP-capable agent.
+              The old TypeScript connector package has been removed. New deployments use the Rust
+              connector plus a local ACP-capable agent.
             </p>
             <div className="mt-4 flex flex-wrap gap-2 sm:hidden">
               <a href={urls.discovery} className="an-btn an-btn-sm">
@@ -480,16 +510,16 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
             </div>
           </section>
 
-          <Section id="packages" title="1. Install a ready-made ACP package">
+          <Section id="packages" title="1. Install a ready-made ACP agent">
             <p className="an-type-body mb-3 text-[var(--fg-2)]">
-              There are two npm packages involved: the AgentNexus connector and the ACP-capable
-              agent package. Install the connector once, then pick exactly one agent package from
-              the list below for each Bot runtime.
+              There are two local pieces: the Rust AgentNexus connector and one ACP-capable agent
+              runtime. Install the connector once, then pick exactly one agent package from the list
+              below for each Bot runtime.
             </p>
             <div className="mb-4 grid gap-4 xl:grid-cols-2">
               <CodeBlock
-                label="install AgentNexus connector"
-                code="npm install -g @haowei0520/acp-connector"
+                label="install Rust AgentNexus connector"
+                code="cargo install --path packages/agentnexus-acp-connector-rs --locked"
               />
               <CodeBlock label="install one common agent package" code={packageInstallCommands} />
             </div>
@@ -531,8 +561,9 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
 
           <Section id="register" title="3. Register an AgentNexus Bot">
             <p className="an-type-body mb-3 text-[var(--fg-2)]">
-              Register creates the AgentNexus Bot and returns `bot_token` plus `data.acp_connector_config`.
-              The token is shown once, so save the response immediately.
+              Register creates the AgentNexus Bot and returns `bot_token` plus Agent Bridge control
+              and data URLs. The token is shown once, so store it in an environment variable rather
+              than writing it into TOML.
             </p>
             <div className="grid gap-4 xl:grid-cols-2">
               <CodeBlock label="register with account password" code={registerCurl} />
@@ -542,11 +573,11 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
 
           <Section id="config" title="4. Save the connector config">
             <p className="an-type-body mb-3 text-[var(--fg-2)]">
-              Copy `data.acp_connector_config` from the registration response to `./agentnexus-acp.json`.
-              Then edit only the local agent fields: `command`, `args`, `cwd`, and any `env` values.
-              Use the exact `command` and `args` shown in the package card you selected.
+              Save a local `./agentnexus-daemon.toml` file. The bridge URLs and token env name map to
+              Agent Bridge; all local safety boundaries live under `policy.*`. Use the exact
+              `command` and `args` shown in the package card you selected.
             </p>
-            <CodeBlock label="agentnexus-acp.json" code={configJson} />
+            <CodeBlock label="agentnexus-daemon.toml" code={configToml} />
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div className="rounded-md border border-[var(--border)] p-3">
                 <p className="an-type-label">command</p>
@@ -557,8 +588,8 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
                 <p className="an-type-caption text-[var(--fg-3)]">The project folder the agent may read and write.</p>
               </div>
               <div className="rounded-md border border-[var(--border)] p-3">
-                <p className="an-type-label">permission modes</p>
-                <p className="an-type-caption text-[var(--fg-3)]">Use `ask` until the workspace is trusted.</p>
+                <p className="an-type-label">policy.*</p>
+                <p className="an-type-caption text-[var(--fg-3)]">The local authorization boundary for cwd, env, files, terminal, resources, and permissions.</p>
               </div>
             </div>
           </Section>
@@ -581,7 +612,7 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
                 <ul className="an-type-body mt-2 list-disc space-y-1 pl-5 text-[var(--fg-2)]">
                   <li>`status` reports running.</li>
                   <li>Logs show both WebSocket streams connected.</li>
-                  <li>The npm-installed ACP process starts without auth or setup prompts.</li>
+                  <li>The ACP runtime process starts without auth or setup prompts.</li>
                 </ul>
               </div>
               <div className="rounded-md border border-[var(--border)] p-3">
@@ -599,7 +630,7 @@ agentnexus-acp-connector logs --name opencode-main --lines 120`;
             <h2 className="an-type-title mb-3">Fast troubleshooting</h2>
             <div className="grid gap-3 md:grid-cols-2">
               {[
-                ["Command not found", "Install the matching npm package, then fix `command` and `args`."],
+                ["Command not found", "Install the matching ACP runtime, then fix `command` and `args`."],
                 ["Auth error", "Log in with the ACP agent's own CLI, then restart the connector."],
                 ["Token lost", "Rotate the Agent Bridge token in AgentNexus Bot settings and update the config."],
                 ["No reply", "Check channel membership, connector logs, and WebSocket reachability."],
