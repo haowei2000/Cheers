@@ -18,6 +18,7 @@ The binary name is `agentnexus-mcp-server`.
 The connector starts this server as an MCP child process and injects:
 
 - `AGENTNEXUS_RESOURCE_URL`: connector loopback endpoint that accepts resource calls.
+- `AGENTNEXUS_RESOURCE_TOKEN`: optional bearer token for the connector loopback endpoint.
 - `AGENTNEXUS_CHANNEL_ID`: default channel for channel-scoped tools.
 - `AGENTNEXUS_BOT_ID`: optional diagnostic bot id.
 - `AGENTNEXUS_REQUEST_TIMEOUT_MS`: optional per-call timeout, default `30000`.

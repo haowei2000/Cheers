@@ -612,12 +612,12 @@ tr:last-child td {
         <div>
           <p class="eyebrow">Architecture status snapshot</p>
           <h1>去中心化 Agent 网格的当前完成度</h1>
-          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛，以及旧 TS agent 包迁移到 Rust。</p>
+          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交和客户端 daemon 架构固化文档合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛、旧 TS agent 包迁移到 Rust，以及 Rust connector 的 BridgeSession/BridgeRuntime 分层。</p>
           <div class="meta-row" aria-label="Audit metadata">
             <span class="pill">生成日期: 2026-06-02</span>
             <span class="pill">分支: main</span>
-            <span class="pill">HEAD: ff14b2d + docs sync</span>
-            <span class="pill">范围: 2026-06-01 的 6 次提交</span>
+            <span class="pill">HEAD: ff14b2d + client daemon architecture docs</span>
+            <span class="pill">范围: 2026-06-01 的 6 次提交 + 2026-06-02 daemon 架构固化</span>
           </div>
         </div>
 
@@ -633,6 +633,10 @@ tr:last-child td {
               <span>旧 TS agent 包删除、停用或迁移到 Rust</span>
             </div>
             <div class="score-item">
+              <strong>2</strong>
+              <span>客户端 daemon 架构文档已入库（中英双语）</span>
+            </div>
+            <div class="score-item">
               <strong>1</strong>
               <span>Rust gateway 是当前唯一后端形态</span>
             </div>
@@ -642,6 +646,11 @@ tr:last-child td {
               <span>Agent Bridge</span>
               <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
               <b>完成</b>
+            </div>
+            <div class="progress-row">
+              <span>客户端 daemon 架构</span>
+              <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
+              <b>已固化</b>
             </div>
             <div class="progress-row">
               <span>Rust agent 包迁移</span>
@@ -680,6 +689,11 @@ tr:last-child td {
             <span class="badge mostly">基本完成</span>
             <b>Agent 包 Rust 化</b>
             <span>OpenClaw legacy 包停用，<code>agentnexus-mcp-server</code> 迁成 Rust binary，bridge-client 能力并入 Rust connector crate。</span>
+          </article>
+          <article class="metric-card">
+            <span class="badge done">已固化</span>
+            <b>客户端 daemon 架构</b>
+            <span>Rust daemon 侧职责拆成 Supervisor、BridgeSession、BridgeRuntime、RuntimeAdapter/AcpAdapter、Loopback 和 State Store，避免把进程管理、Agent Bridge、ACP 与 MCP/resource 混成一层。</span>
           </article>
         </div>
       </section>
@@ -731,12 +745,24 @@ tr:last-child td {
                 <span>只负责 connector 生命周期：start / stop / restart / status / logs。</span>
               </div>
               <div class="node">
-                <strong>ACP Connector runtime</strong>
-                <span>持有 Agent Bridge control/data 连接，调用 ACP session/new/load，并负责 <code>mcpServers</code> 注入边界。</span>
+                <strong>Local TOML Policy</strong>
+                <span>本地 Agent Bridge 授权边界：bridge/adapter 只做启动与连接，cwd/env/fs/terminal/permission/send/file/trace/session_update/resource 全部由 <code>policy.*</code> 控制。</span>
               </div>
               <div class="node">
-                <strong>ACP agent + MCP stdio</strong>
-                <span>OpenCode / Claude / Codex 按 ACP <code>mcpServers</code> 启动 <code>agentnexus-mcp-server</code>，tool call 经 connector loopback 转成 <code>resource_req</code>。</span>
+                <strong>BridgeSession</strong>
+                <span>持有 Agent Bridge control/data WS，完成 auth、hello、ready、membership snapshot 和 frame 收发。</span>
+              </div>
+              <div class="node">
+                <strong>BridgeRuntime</strong>
+                <span>编排 task/cancel/session/config/permission/resource，将平台帧路由到 runtime adapter。</span>
+              </div>
+              <div class="node">
+                <strong>AcpAdapter</strong>
+                <span>通过 ACP JSON-RPC stdio 管理真实 ACP agent，负责 session/new/load/prompt/cancel 和 session/update 事件。</span>
+              </div>
+              <div class="node">
+                <strong>Loopback + MCP stdio</strong>
+                <span>ACP agent 按 <code>mcpServers</code> 启动 <code>agentnexus-mcp-server</code>，tool call 经 loopback 转成 Agent Bridge <code>resource_req</code>。</span>
               </div>
             </div>
           </div>
@@ -900,6 +926,16 @@ tr:last-child td {
           </article>
 
           <article class="goal-card">
+            <span class="badge done">已固化</span>
+            <h3>客户端 daemon 分层</h3>
+            <p>本地 daemon 架构固定为 Supervisor / State Store / BridgeSession / BridgeRuntime / RuntimeAdapter / AcpAdapter / Loopback，下一步实现必须沿这个数据流推进。</p>
+            <div class="evidence">
+              <a href="CLIENT_DAEMON_ARCHITECTURE.zh-CN.md">client daemon arch</a>
+              <a href="CLIENT_DAEMON_ARCHITECTURE.md">English version</a>
+            </div>
+          </article>
+
+          <article class="goal-card">
             <span class="badge partial">部分完成</span>
             <h3>Connector MCP stdio 注入</h3>
             <p>ACP agent 配置里的 <code>mcpServers</code> 已由 connector 传入 session/new/load；自动合成 AgentNexus MCP entry 和 loopback resource endpoint 是下一步。</p>
@@ -980,11 +1016,21 @@ tr:last-child td {
           </div>
           <div class="flow-step">
             <small>5</small>
+            <strong>BridgeSession 边界</strong>
+            <span>BridgeSession 只管理 Agent Bridge control/data transport；不调用 ACP、不拼 prompt、不处理本地文件。</span>
+          </div>
+          <div class="flow-step">
+            <small>6</small>
+            <strong>BridgeRuntime 编排</strong>
+            <span>BridgeRuntime 确保 provider session mapping，调用 RuntimeAdapter，并把 RuntimeEvent 转成 data <code>delta/done/error</code>。</span>
+          </div>
+          <div class="flow-step">
+            <small>7</small>
             <strong>connector MCP 注入</strong>
             <span>connector 在 ACP <code>session/new/load</code> 注入 <code>mcpServers</code>；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。</span>
           </div>
           <div class="flow-step">
-            <small>6</small>
+            <small>8</small>
             <strong>资源裁判</strong>
             <span>connector 把 MCP tool call 转成 <code>resource_req</code>，Backend 统一校验频道成员、Grant 和 capability delegation。</span>
           </div>
@@ -1015,6 +1061,10 @@ tr:last-child td {
             <p>daemon 只管理 connector 生命周期；connector 注入 <code>mcpServers</code>，ACP agent 按 stdio 启动 MCP server。</p>
           </article>
           <article class="decision-card">
+            <h3>BridgeSession 不碰 ACP</h3>
+            <p>Agent Bridge transport、runtime 编排和 ACP JSON-RPC 分别属于 BridgeSession、BridgeRuntime 和 AcpAdapter。</p>
+          </article>
+          <article class="decision-card">
             <h3>Agent Bridge 是平台协议</h3>
             <p>服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。</p>
           </article>
@@ -1040,6 +1090,11 @@ tr:last-child td {
             <span class="badge open">实现</span>
             <h3>Connector 自动 MCP 注入</h3>
             <p>在 connector runtime 中增加 <code>agent.agentnexusMcp.enabled</code>，自动合成 stdio <code>mcpServers</code> entry 并注入 ACP <code>session/new/load</code>。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge open">实现</span>
+            <h3>BridgeRuntime 骨架</h3>
+            <p>按客户端 daemon 架构文档新增 Rust <code>bridge_runtime.rs</code>，承接 task/cancel/session/config/permission/resource 路由，先接真实 AcpAdapter 边界。</p>
           </article>
           <article class="backlog-card">
             <span class="badge open">实现</span>
@@ -1089,6 +1144,14 @@ tr:last-child td {
             <strong>Refactor Plan</strong>
             <span>阶段计划与剩余项</span>
           </a>
+          <a class="source-link" href="CLIENT_DAEMON_ARCHITECTURE.md">
+            <strong>Client Daemon Architecture</strong>
+            <span>Rust daemon / connector 分层、数据流和迁移顺序</span>
+          </a>
+          <a class="source-link" href="CLIENT_DAEMON_ARCHITECTURE.zh-CN.md">
+            <strong>客户端 Daemon 架构</strong>
+            <span>客户端 daemon 侧组件边界、BridgeSession/BridgeRuntime/AcpAdapter 责任划分</span>
+          </a>
           <a class="source-link" href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">
             <strong>Agent Bridge ACP Compatibility</strong>
             <span>Agent Bridge、ACP 和 MCP stdio 注入边界</span>
@@ -1125,7 +1188,7 @@ tr:last-child td {
       </section>
     </main>
     <footer class="footer">
-      <p>Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set. This is a generated documentation snapshot; update <code>architecture-status.page.json</code> and run <code>make docs-pages</code> instead of editing <code>index.html</code> directly.</p>
+      <p>Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set and the 2026-06-02 client daemon architecture docs. This is a generated documentation snapshot; update <code>architecture-status.page.json</code> and run <code>make docs-pages</code> instead of editing <code>index.html</code> directly.</p>
     </footer>
   </div>
 </body>

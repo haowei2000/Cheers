@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
 
+use crate::bridge_runtime::run_connector;
 use crate::config::load_config;
 use crate::daemon::{
-    daemon_logs, daemon_status, restart_daemon, run_foreground_connector, start_daemon,
-    stop_daemon, StartDaemonOptions,
+    daemon_logs, daemon_status, restart_daemon, start_daemon, stop_daemon, StartDaemonOptions,
 };
 
 #[derive(Debug, Parser)]
@@ -134,7 +134,7 @@ async fn run_foreground(config_path: Option<PathBuf>) -> anyhow::Result<()> {
         state_path = %config.state_path.display(),
         "validated connector config"
     );
-    run_foreground_connector(&config_path).await
+    run_connector(config).await
 }
 
 async fn resolve_restart_config(

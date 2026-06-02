@@ -13,18 +13,20 @@
   "hero": {
     "eyebrow": "Architecture status snapshot",
     "heading": "去中心化 Agent 网格的当前完成度",
-    "lead": "本页基于 2026-06-02 的 `main` 分支快照，并把 2026-06-01 本地领先远程的 6 次提交合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛，以及旧 TS agent 包迁移到 Rust。",
-    "meta": ["生成日期: 2026-06-02", "分支: main", "HEAD: ff14b2d + docs sync", "范围: 2026-06-01 的 6 次提交"]
+    "lead": "本页基于 2026-06-02 的 `main` 分支快照，并把 2026-06-01 本地领先远程的 6 次提交和客户端 daemon 架构固化文档合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛、旧 TS agent 包迁移到 Rust，以及 Rust connector 的 BridgeSession/BridgeRuntime 分层。",
+    "meta": ["生成日期: 2026-06-02", "分支: main", "HEAD: ff14b2d + client daemon architecture docs", "范围: 2026-06-01 的 6 次提交 + 2026-06-02 daemon 架构固化"]
   },
   "summary": {
     "title": "一句话结论",
     "scores": [
       { "value": "6", "label": "2026-06-01 工作提交已合并到本页" },
       { "value": "3", "label": "旧 TS agent 包删除、停用或迁移到 Rust" },
+      { "value": "2", "label": "客户端 daemon 架构文档已入库（中英双语）" },
       { "value": "1", "label": "Rust gateway 是当前唯一后端形态" }
     ],
     "progress": [
       { "label": "Agent Bridge", "value": "完成", "percent": 100, "status": "done" },
+      { "label": "客户端 daemon 架构", "value": "已固化", "percent": 100, "status": "done" },
       { "label": "Rust agent 包迁移", "value": "基本完成", "percent": 88, "status": "mostly" },
       { "label": "Connector MCP 注入", "value": "待实现", "percent": 35, "status": "partial" }
     ]
@@ -51,6 +53,12 @@
           "badge": "基本完成",
           "title": "Agent 包 Rust 化",
           "body": "OpenClaw legacy 包停用，`agentnexus-mcp-server` 迁成 Rust binary，bridge-client 能力并入 Rust connector crate。"
+        },
+        {
+          "status": "done",
+          "badge": "已固化",
+          "title": "客户端 daemon 架构",
+          "body": "Rust daemon 侧职责拆成 Supervisor、BridgeSession、BridgeRuntime、RuntimeAdapter/AcpAdapter、Loopback 和 State Store，避免把进程管理、Agent Bridge、ACP 与 MCP/resource 混成一层。"
         }
       ]
     },
@@ -77,8 +85,11 @@
           "title": "外部 Agent",
           "nodes": [
             { "title": "Rust daemon", "body": "只负责 connector 生命周期：start / stop / restart / status / logs。" },
-            { "title": "ACP Connector runtime", "body": "持有 Agent Bridge control/data 连接，调用 ACP session/new/load，并负责 `mcpServers` 注入边界。" },
-            { "title": "ACP agent + MCP stdio", "body": "OpenCode / Claude / Codex 按 ACP `mcpServers` 启动 `agentnexus-mcp-server`，tool call 经 connector loopback 转成 `resource_req`。" }
+            { "title": "Local TOML Policy", "body": "本地 Agent Bridge 授权边界：bridge/adapter 只做启动与连接，cwd/env/fs/terminal/permission/send/file/trace/session_update/resource 全部由 `policy.*` 控制。" },
+            { "title": "BridgeSession", "body": "持有 Agent Bridge control/data WS，完成 auth、hello、ready、membership snapshot 和 frame 收发。" },
+            { "title": "BridgeRuntime", "body": "编排 task/cancel/session/config/permission/resource，将平台帧路由到 runtime adapter。" },
+            { "title": "AcpAdapter", "body": "通过 ACP JSON-RPC stdio 管理真实 ACP agent，负责 session/new/load/prompt/cancel 和 session/update 事件。" },
+            { "title": "Loopback + MCP stdio", "body": "ACP agent 按 `mcpServers` 启动 `agentnexus-mcp-server`，tool call 经 loopback 转成 Agent Bridge `resource_req`。" }
           ]
         }
       ]
@@ -192,6 +203,16 @@
           ]
         },
         {
+          "status": "done",
+          "badge": "已固化",
+          "title": "客户端 daemon 分层",
+          "body": "本地 daemon 架构固定为 Supervisor / State Store / BridgeSession / BridgeRuntime / RuntimeAdapter / AcpAdapter / Loopback，下一步实现必须沿这个数据流推进。",
+          "evidence": [
+            { "label": "client daemon arch", "href": "CLIENT_DAEMON_ARCHITECTURE.zh-CN.md" },
+            { "label": "English version", "href": "CLIENT_DAEMON_ARCHITECTURE.md" }
+          ]
+        },
+        {
           "status": "partial",
           "badge": "部分完成",
           "title": "Connector MCP stdio 注入",
@@ -251,8 +272,10 @@
         { "kicker": "2", "title": "终态 fan-out", "body": "PG commit 后再广播浏览器终态帧，满足 Write-Before-Deliver。" },
         { "kicker": "3", "title": "message-level dispatch", "body": "有 `@bot` 派发指定 bot；bot 回复再次 mention bot 时以 depth+1 继续派发，超过上限静默。" },
         { "kicker": "4", "title": "per-message cancel", "body": "用户停止某条 bot placeholder 时，Backend 找到 owner bot 并只推送该消息的 cancel frame。" },
-        { "kicker": "5", "title": "connector MCP 注入", "body": "connector 在 ACP `session/new/load` 注入 `mcpServers`；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。" },
-        { "kicker": "6", "title": "资源裁判", "body": "connector 把 MCP tool call 转成 `resource_req`，Backend 统一校验频道成员、Grant 和 capability delegation。" }
+        { "kicker": "5", "title": "BridgeSession 边界", "body": "BridgeSession 只管理 Agent Bridge control/data transport；不调用 ACP、不拼 prompt、不处理本地文件。" },
+        { "kicker": "6", "title": "BridgeRuntime 编排", "body": "BridgeRuntime 确保 provider session mapping，调用 RuntimeAdapter，并把 RuntimeEvent 转成 data `delta/done/error`。" },
+        { "kicker": "7", "title": "connector MCP 注入", "body": "connector 在 ACP `session/new/load` 注入 `mcpServers`；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。" },
+        { "kicker": "8", "title": "资源裁判", "body": "connector 把 MCP tool call 转成 `resource_req`，Backend 统一校验频道成员、Grant 和 capability delegation。" }
       ]
     },
     "decisions": {
@@ -263,6 +286,7 @@
         { "title": "频道只转发 @", "body": "没有中央 coordinator 参与意图判断，路由规则可测试、可审计。" },
         { "title": "资源写走 Grant", "body": "Resource API 读只需频道成员，写需要成员身份和 ACP RBAC Grant。" },
         { "title": "MCP 注入归 connector", "body": "daemon 只管理 connector 生命周期；connector 注入 `mcpServers`，ACP agent 按 stdio 启动 MCP server。" },
+        { "title": "BridgeSession 不碰 ACP", "body": "Agent Bridge transport、runtime 编排和 ACP JSON-RPC 分别属于 BridgeSession、BridgeRuntime 和 AcpAdapter。" },
         { "title": "Agent Bridge 是平台协议", "body": "服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。" },
         { "title": "单实例是本期约束", "body": "fan-out 和 BotLocator 先走进程内或 Redis registry，跨实例扩展保留 trait 接口。" },
         { "title": "旧兼容只保留在边界", "body": "OpenClaw 和独立 TS bridge-client 退场；TS foreground runtime 只是 Rust connector 全量化前的兼容层。" }
@@ -273,6 +297,7 @@
       "intro": "下一步重点不是再补临时 shim，而是把 connector 侧 MCP 注入闭环实现、验证，并继续把 Rust connector 全量化。",
       "cards": [
         { "status": "open", "badge": "实现", "title": "Connector 自动 MCP 注入", "body": "在 connector runtime 中增加 `agent.agentnexusMcp.enabled`，自动合成 stdio `mcpServers` entry 并注入 ACP `session/new/load`。" },
+        { "status": "open", "badge": "实现", "title": "BridgeRuntime 骨架", "body": "按客户端 daemon 架构文档新增 Rust `bridge_runtime.rs`，承接 task/cancel/session/config/permission/resource 路由，先接真实 AcpAdapter 边界。" },
         { "status": "open", "badge": "实现", "title": "Loopback resource endpoint", "body": "connector 本机起 HTTP endpoint，接收 `agentnexus-mcp-server` tool call，转成 data WS `resource_req` 并等待 `resource_res`。" },
         { "status": "partial", "badge": "验证", "title": "MCP 端到端", "body": "用真实 connector 验证 `read_activity`、`fs_write`、`messages_by_seq`、per-message cancel 和 stdio MCP 注入。" },
         { "status": "partial", "badge": "验证", "title": "空库启动和 cargo 测试", "body": "按 sqlx migration discipline，从空 Postgres 跑 gateway，确认 `0001..0008` 可线性执行。" },
@@ -288,6 +313,8 @@
         { "title": "Architecture Overview", "href": "ARCHITECTURE_OVERVIEW.md", "description": "目标拓扑与部署模型" },
         { "title": "Decentralized Mesh", "href": "DECENTRALIZED_MESH.md", "description": "mesh 步骤与资源一致性" },
         { "title": "Refactor Plan", "href": "REFACTOR_PLAN.md", "description": "阶段计划与剩余项" },
+        { "title": "Client Daemon Architecture", "href": "CLIENT_DAEMON_ARCHITECTURE.md", "description": "Rust daemon / connector 分层、数据流和迁移顺序" },
+        { "title": "客户端 Daemon 架构", "href": "CLIENT_DAEMON_ARCHITECTURE.zh-CN.md", "description": "客户端 daemon 侧组件边界、BridgeSession/BridgeRuntime/AcpAdapter 责任划分" },
         { "title": "Agent Bridge ACP Compatibility", "href": "AGENT_BRIDGE_ACP_COMPATIBILITY.md", "description": "Agent Bridge、ACP 和 MCP stdio 注入边界" },
         { "title": "Agent Bridge Protocol", "href": "AGENT_BRIDGE_PROTOCOL.md", "description": "control/data WS 平台协议" },
         { "title": "Message Content Format", "href": "MESSAGE_CONTENT_FORMAT.md", "description": "token 与 mention 表关系" },
@@ -299,5 +326,5 @@
       ]
     }
   },
-  "footer": "Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set. This is a generated documentation snapshot; update `architecture-status.page.json` and run `make docs-pages` instead of editing `index.html` directly."
+  "footer": "Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set and the 2026-06-02 client daemon architecture docs. This is a generated documentation snapshot; update `architecture-status.page.json` and run `make docs-pages` instead of editing `index.html` directly."
 }
