@@ -1,17 +1,21 @@
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tokio::signal;
 use tokio::time::sleep;
+
+use crate::config::load_daemon_file_config;
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+
+const DAEMON_METADATA_VERSION: u32 = 1;
+const DAEMON_RUNTIME_KIND: &str = "rust-supervisor";
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -23,10 +27,26 @@ pub struct DaemonPaths {
     pub stderr_log_path: PathBuf,
 }
 
+impl DaemonPaths {
+    fn with_log_dir(mut self, name: &str, log_dir: PathBuf) -> Self {
+        self.stdout_log_path = log_dir.join(format!("{name}.stdout.log"));
+        self.stderr_log_path = log_dir.join(format!("{name}.stderr.log"));
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonMetadata {
+    #[serde(default = "default_daemon_metadata_version")]
+    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_kind: Option<String>,
     pub name: String,
     pub pid: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process_group_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<PathBuf>,
     pub config_path: PathBuf,
     pub started_at: String,
     pub cwd: PathBuf,
@@ -72,7 +92,7 @@ pub async fn daemon_status(name: &str, home_dir: Option<&Path>) -> anyhow::Resul
     let metadata = read_metadata(&paths).await?;
     let running = metadata
         .as_ref()
-        .map(|metadata| pid_is_running(metadata.pid))
+        .map(daemon_process_is_running)
         .unwrap_or(false);
     Ok(DaemonStatus {
         name,
@@ -84,7 +104,7 @@ pub async fn daemon_status(name: &str, home_dir: Option<&Path>) -> anyhow::Resul
 
 pub async fn start_daemon(options: StartDaemonOptions) -> anyhow::Result<DaemonMetadata> {
     let name = safe_name(&options.name);
-    let paths = resolve_daemon_paths(&name, options.home_dir.as_deref())?;
+    let mut paths = resolve_daemon_paths(&name, options.home_dir.as_deref())?;
     let existing = daemon_status(&name, options.home_dir.as_deref()).await?;
     if existing.running {
         if let Some(metadata) = existing.metadata {
@@ -101,29 +121,26 @@ pub async fn start_daemon(options: StartDaemonOptions) -> anyhow::Result<DaemonM
             options.config_path.display()
         )
     })?;
+    let daemon_config = load_daemon_file_config(&config_path).await?;
+    if let Some(log_dir) = daemon_config.log_dir {
+        paths = paths.with_log_dir(&name, log_dir);
+    }
     fs::create_dir_all(&paths.service_dir)
         .with_context(|| format!("failed to create {}", paths.service_dir.display()))?;
+    if let Some(parent) = paths.stdout_log_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
 
     let stdout = append_log(&paths.stdout_log_path)?;
     let stderr = append_log(&paths.stderr_log_path)?;
     let executable = env::current_exe().context("failed to resolve current executable")?;
     let cwd = env::current_dir().context("failed to resolve current directory")?;
-    let argv = vec![
-        executable.display().to_string(),
-        "run".to_string(),
-        "--config".to_string(),
-        config_path.display().to_string(),
-        "--name".to_string(),
-        name.clone(),
-    ];
+    let argv = build_supervisor_argv(&executable, &config_path, &name);
 
     let mut command = Command::new(&executable);
     command
-        .arg("run")
-        .arg("--config")
-        .arg(&config_path)
-        .arg("--name")
-        .arg(&name)
+        .args(argv.iter().skip(1))
         .current_dir(&cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
@@ -136,8 +153,12 @@ pub async fn start_daemon(options: StartDaemonOptions) -> anyhow::Result<DaemonM
     drop(child);
 
     let metadata = DaemonMetadata {
+        schema_version: DAEMON_METADATA_VERSION,
+        runtime_kind: Some(DAEMON_RUNTIME_KIND.to_string()),
         name,
         pid,
+        process_group_id: Some(pid),
+        executable_path: Some(executable),
         config_path,
         started_at: Utc::now().to_rfc3339(),
         cwd,
@@ -148,7 +169,7 @@ pub async fn start_daemon(options: StartDaemonOptions) -> anyhow::Result<DaemonM
     write_metadata(&paths, &metadata).await?;
 
     sleep(Duration::from_millis(1200)).await;
-    if !pid_is_running(pid) {
+    if !daemon_process_is_running(&metadata) {
         let err_tail = tail_file(&paths.stderr_log_path, 80)
             .await
             .unwrap_or_default();
@@ -181,19 +202,17 @@ pub async fn stop_daemon(
         return daemon_status(&name, home_dir).await;
     }
 
-    signal_process(metadata.pid, libc::SIGTERM);
-    signal_process_group(metadata.pid, libc::SIGTERM);
+    signal_daemon_process(&metadata, libc::SIGTERM);
     let deadline = Instant::now() + timeout.unwrap_or_else(|| Duration::from_secs(10));
     while Instant::now() < deadline {
-        if !pid_is_running(metadata.pid) {
+        if !daemon_process_is_running(&metadata) {
             remove_metadata(&paths).await?;
             return daemon_status(&name, home_dir).await;
         }
         sleep(Duration::from_millis(250)).await;
     }
 
-    signal_process(metadata.pid, libc::SIGKILL);
-    signal_process_group(metadata.pid, libc::SIGKILL);
+    signal_daemon_process(&metadata, libc::SIGKILL);
     sleep(Duration::from_millis(500)).await;
     remove_metadata(&paths).await?;
     daemon_status(&name, home_dir).await
@@ -209,123 +228,30 @@ pub async fn daemon_logs(
     home_dir: Option<&Path>,
     lines: usize,
 ) -> anyhow::Result<String> {
-    let paths = resolve_daemon_paths(name, home_dir)?;
+    let status = daemon_status(name, home_dir).await?;
+    let paths = status.paths;
+    let (stdout_log_path, stderr_log_path) = status
+        .metadata
+        .map(|metadata| (metadata.stdout_log_path, metadata.stderr_log_path))
+        .unwrap_or_else(|| (paths.stdout_log_path.clone(), paths.stderr_log_path.clone()));
     let lines = lines.max(1);
-    let stdout = tail_file(&paths.stdout_log_path, lines)
-        .await
-        .unwrap_or_default();
-    let stderr = tail_file(&paths.stderr_log_path, lines)
-        .await
-        .unwrap_or_default();
+    let stdout = tail_file(&stdout_log_path, lines).await.unwrap_or_default();
+    let stderr = tail_file(&stderr_log_path, lines).await.unwrap_or_default();
     Ok(format!(
         "==> {} <==\n{}\n\n==> {} <==\n{}",
-        paths.stdout_log_path.display(),
+        stdout_log_path.display(),
         if stdout.is_empty() {
             "(empty)"
         } else {
             stdout.trim_end()
         },
-        paths.stderr_log_path.display(),
+        stderr_log_path.display(),
         if stderr.is_empty() {
             "(empty)"
         } else {
             stderr.trim_end()
         },
     ))
-}
-
-pub async fn run_foreground_connector(config_path: &Path) -> anyhow::Result<()> {
-    let config_path = fs::canonicalize(config_path)
-        .with_context(|| format!("config file does not exist: {}", config_path.display()))?;
-    let ts_cli = resolve_typescript_cli()?;
-    let mut command = Command::new(resolve_node_command());
-    command
-        .arg(&ts_cli)
-        .arg("run")
-        .arg("--config")
-        .arg(&config_path)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-    set_process_group(&mut command);
-
-    tracing::info!(
-        runner = %ts_cli.display(),
-        config = %config_path.display(),
-        "starting TypeScript foreground connector runtime"
-    );
-    let mut child = command.spawn().with_context(|| {
-        format!(
-            "failed to start TypeScript foreground connector with {}",
-            ts_cli.display()
-        )
-    })?;
-    wait_for_foreground_child(&mut child).await
-}
-
-async fn wait_for_foreground_child(child: &mut Child) -> anyhow::Result<()> {
-    #[cfg(unix)]
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .context("failed to install SIGTERM handler")?;
-
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .context("failed to wait for connector runtime")?
-        {
-            return exit_status_to_result(status);
-        }
-
-        #[cfg(unix)]
-        tokio::select! {
-            _ = sleep(Duration::from_millis(250)) => {}
-            _ = signal::ctrl_c() => {
-                return terminate_foreground_child(child).await;
-            }
-            _ = sigterm.recv() => {
-                return terminate_foreground_child(child).await;
-            }
-        }
-
-        #[cfg(not(unix))]
-        tokio::select! {
-            _ = sleep(Duration::from_millis(250)) => {}
-            _ = signal::ctrl_c() => {
-                return terminate_foreground_child(child).await;
-            }
-        }
-    }
-}
-
-async fn terminate_foreground_child(child: &mut Child) -> anyhow::Result<()> {
-    let pid = child.id();
-    signal_process(pid, libc::SIGTERM);
-    signal_process_group(pid, libc::SIGTERM);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        if let Some(status) = child
-            .try_wait()
-            .context("failed to wait for connector runtime")?
-        {
-            return exit_status_to_result(status);
-        }
-        sleep(Duration::from_millis(200)).await;
-    }
-
-    signal_process(pid, libc::SIGKILL);
-    signal_process_group(pid, libc::SIGKILL);
-    let status = child
-        .wait()
-        .context("failed to wait for killed connector runtime")?;
-    exit_status_to_result(status)
-}
-
-fn exit_status_to_result(status: ExitStatus) -> anyhow::Result<()> {
-    if status.success() {
-        Ok(())
-    } else {
-        Err(anyhow!("connector runtime exited with {status}"))
-    }
 }
 
 fn append_log(path: &Path) -> anyhow::Result<File> {
@@ -380,49 +306,6 @@ async fn tail_file(path: &Path, lines: usize) -> anyhow::Result<String> {
     let split: Vec<&str> = text.lines().collect();
     let start = split.len().saturating_sub(lines.max(1));
     Ok(split[start..].join("\n"))
-}
-
-fn resolve_typescript_cli() -> anyhow::Result<PathBuf> {
-    if let Ok(path) = env::var("AGENTNEXUS_ACP_TS_CLI") {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            return Ok(path);
-        }
-        return Err(anyhow!(
-            "AGENTNEXUS_ACP_TS_CLI points to a missing file: {}",
-            path.display()
-        ));
-    }
-
-    let mut candidates = Vec::new();
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    if let Some(packages_dir) = manifest_dir.parent() {
-        candidates.push(packages_dir.join("agentnexus-acp-connector/dist/cli.js"));
-    }
-    if let Ok(exe) = env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("dist/cli.js"));
-            candidates.push(dir.join("../dist/cli.js"));
-        }
-    }
-    if let Ok(cwd) = env::current_dir() {
-        candidates.push(cwd.join("dist/cli.js"));
-        candidates.push(cwd.join("packages/agentnexus-acp-connector/dist/cli.js"));
-    }
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-
-    Err(anyhow!(
-        "could not locate the TypeScript foreground connector runner; run `npm run build` in packages/agentnexus-acp-connector or set AGENTNEXUS_ACP_TS_CLI"
-    ))
-}
-
-fn resolve_node_command() -> String {
-    env::var("AGENTNEXUS_ACP_NODE").unwrap_or_else(|_| "node".to_string())
 }
 
 fn default_home_dir() -> anyhow::Result<PathBuf> {
@@ -506,4 +389,215 @@ fn set_process_group(command: &mut Command) {
     }
     #[cfg(not(unix))]
     let _ = command;
+}
+
+fn default_daemon_metadata_version() -> u32 {
+    DAEMON_METADATA_VERSION
+}
+
+fn build_supervisor_argv(executable: &Path, config_path: &Path, name: &str) -> Vec<String> {
+    vec![
+        executable.display().to_string(),
+        "run".to_string(),
+        "--config".to_string(),
+        config_path.display().to_string(),
+        "--name".to_string(),
+        name.to_string(),
+    ]
+}
+
+fn daemon_process_is_running(metadata: &DaemonMetadata) -> bool {
+    if !pid_is_running(metadata.pid) {
+        return false;
+    }
+    if matches!(
+        metadata.runtime_kind.as_deref(),
+        Some(kind) if kind != DAEMON_RUNTIME_KIND
+    ) {
+        return false;
+    }
+    process_command_matches_metadata(metadata)
+}
+
+fn process_command_matches_metadata(metadata: &DaemonMetadata) -> bool {
+    let expected = expected_daemon_argv(metadata);
+    if expected.len() < 6 {
+        return false;
+    }
+
+    match read_process_command(metadata.pid) {
+        Some(ProcessCommandLine::Args(actual)) => argv_matches_expected(&actual, &expected),
+        Some(ProcessCommandLine::Text(text)) => command_text_matches_expected(&text, &expected),
+        None => false,
+    }
+}
+
+fn expected_daemon_argv(metadata: &DaemonMetadata) -> Vec<String> {
+    if !metadata.argv.is_empty() {
+        return metadata.argv.clone();
+    }
+    match metadata.executable_path.as_deref() {
+        Some(executable_path) => {
+            build_supervisor_argv(executable_path, &metadata.config_path, &metadata.name)
+        }
+        None => Vec::new(),
+    }
+}
+
+fn argv_matches_expected(actual: &[String], expected: &[String]) -> bool {
+    if actual.len() >= expected.len()
+        && actual
+            .iter()
+            .zip(expected.iter())
+            .all(|(actual, expected)| actual == expected)
+    {
+        return true;
+    }
+    command_text_matches_expected(&actual.join(" "), expected)
+}
+
+fn command_text_matches_expected(command: &str, expected: &[String]) -> bool {
+    let Some(executable) = expected.first() else {
+        return false;
+    };
+    let executable_name = Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(executable);
+    let executable_matches = command.contains(executable) || command.contains(executable_name);
+    executable_matches && expected.iter().skip(1).all(|arg| command.contains(arg))
+}
+
+#[allow(dead_code)]
+enum ProcessCommandLine {
+    Args(Vec<String>),
+    Text(String),
+}
+
+#[cfg(target_os = "linux")]
+fn read_process_command(pid: u32) -> Option<ProcessCommandLine> {
+    let bytes = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let args: Vec<String> = bytes
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8_lossy(part).to_string())
+        .collect();
+    if args.is_empty() {
+        None
+    } else {
+        Some(ProcessCommandLine::Args(args))
+    }
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn read_process_command(pid: u32) -> Option<ProcessCommandLine> {
+    let output = Command::new("ps")
+        .arg("-ww")
+        .arg("-p")
+        .arg(pid.to_string())
+        .arg("-o")
+        .arg("command=")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(ProcessCommandLine::Text(text))
+    }
+}
+
+#[cfg(not(unix))]
+fn read_process_command(_pid: u32) -> Option<ProcessCommandLine> {
+    None
+}
+
+fn signal_daemon_process(metadata: &DaemonMetadata, signal: i32) {
+    signal_process(metadata.pid, signal);
+    signal_process_group(metadata.process_group_id.unwrap_or(metadata.pid), signal);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn safe_name_removes_unsafe_segments() {
+        assert_eq!(safe_name(" opencode/main "), "opencode-main");
+        assert_eq!(safe_name("///"), "default");
+        assert_eq!(safe_name("alpha_beta.1"), "alpha_beta.1");
+    }
+
+    #[test]
+    fn old_metadata_json_still_loads() {
+        let metadata: DaemonMetadata = serde_json::from_value(json!({
+            "name": "opencode-main",
+            "pid": 1234,
+            "config_path": "/tmp/agentnexus-acp.json",
+            "started_at": "2026-06-02T00:00:00Z",
+            "cwd": "/tmp",
+            "argv": [
+                "/usr/local/bin/agentnexus-acp-connector",
+                "run",
+                "--config",
+                "/tmp/agentnexus-acp.json",
+                "--name",
+                "opencode-main"
+            ],
+            "stdout_log_path": "/tmp/stdout.log",
+            "stderr_log_path": "/tmp/stderr.log"
+        }))
+        .expect("old metadata should deserialize");
+
+        assert_eq!(metadata.schema_version, DAEMON_METADATA_VERSION);
+        assert!(metadata.runtime_kind.is_none());
+        assert!(metadata.process_group_id.is_none());
+    }
+
+    #[test]
+    fn argv_match_requires_the_supervisor_invocation() {
+        let expected = vec![
+            "/usr/local/bin/agentnexus-acp-connector".to_string(),
+            "run".to_string(),
+            "--config".to_string(),
+            "/tmp/agentnexus-acp.json".to_string(),
+            "--name".to_string(),
+            "opencode-main".to_string(),
+        ];
+        assert!(argv_matches_expected(&expected, &expected));
+
+        let wrong_config = vec![
+            "/usr/local/bin/agentnexus-acp-connector".to_string(),
+            "run".to_string(),
+            "--config".to_string(),
+            "/tmp/other.json".to_string(),
+            "--name".to_string(),
+            "opencode-main".to_string(),
+        ];
+        assert!(!argv_matches_expected(&wrong_config, &expected));
+    }
+
+    #[test]
+    fn command_text_match_accepts_ps_style_output() {
+        let expected = vec![
+            "/Users/me/bin/agentnexus-acp-connector".to_string(),
+            "run".to_string(),
+            "--config".to_string(),
+            "/tmp/agentnexus-acp.json".to_string(),
+            "--name".to_string(),
+            "opencode-main".to_string(),
+        ];
+        assert!(command_text_matches_expected(
+            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-acp.json --name opencode-main",
+            &expected,
+        ));
+        assert!(!command_text_matches_expected(
+            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-acp.json --name other",
+            &expected,
+        ));
+    }
 }

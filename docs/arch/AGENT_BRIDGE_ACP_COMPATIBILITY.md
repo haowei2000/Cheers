@@ -233,6 +233,10 @@ AgentNexus 的 `task` 和 ACP session 不是同一个概念：
 
 ### 4.5 MCP stdio 注入边界
 
+客户端 daemon / connector 的完整分层和数据流见
+[客户端 Daemon 架构](CLIENT_DAEMON_ARCHITECTURE.zh-CN.md)（[English](CLIENT_DAEMON_ARCHITECTURE.md)）。
+本节只固定 ACP 与 MCP stdio 的兼容边界。
+
 ACP 标准已经提供统一的 MCP 导入面：Client 在 `session/new` / `session/load`
 参数中传 `mcpServers`，ACP agent 作为 MCP client 连接这些 server。AgentNexus
 应沿用这个标准入口，而不是在 daemon 或 Backend 里另建一套 MCP 生命周期。

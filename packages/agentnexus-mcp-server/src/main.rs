@@ -9,6 +9,7 @@ use serde_json::{json, Map, Value};
 #[derive(Debug, Clone)]
 struct ServerConfig {
     resource_url: String,
+    resource_token: Option<String>,
     default_channel_id: Option<String>,
     bot_id: Option<String>,
     request_timeout_ms: u64,
@@ -56,6 +57,7 @@ fn load_config() -> anyhow::Result<ServerConfig> {
         .unwrap_or(30_000);
     Ok(ServerConfig {
         resource_url,
+        resource_token: empty_to_none(env::var("AGENTNEXUS_RESOURCE_TOKEN").ok()),
         default_channel_id: empty_to_none(env::var("AGENTNEXUS_CHANNEL_ID").ok()),
         bot_id: empty_to_none(env::var("AGENTNEXUS_BOT_ID").ok()),
         request_timeout_ms,
@@ -178,24 +180,27 @@ impl AgentNexusClient {
         resource: &str,
         params: Map<String, Value>,
     ) -> Result<Value, ResourceError> {
-        let response = self
+        let mut request = self
             .http
             .post(&self.config.resource_url)
-            .json(&json!({ "resource": resource, "params": params }))
-            .send()
-            .await
-            .map_err(|err| ResourceError {
-                code: if err.is_timeout() {
-                    "IPC_TIMEOUT".to_string()
-                } else {
-                    "IPC_UNAVAILABLE".to_string()
-                },
-                message: if err.is_timeout() {
-                    "connector IPC timed out".to_string()
-                } else {
-                    err.to_string()
-                },
-            })?;
+            .json(&json!({ "resource": resource, "params": params }));
+        if let Some(token) = &self.config.resource_token {
+            request = request
+                .bearer_auth(token)
+                .header("X-AgentNexus-Loopback-Token", token);
+        }
+        let response = request.send().await.map_err(|err| ResourceError {
+            code: if err.is_timeout() {
+                "IPC_TIMEOUT".to_string()
+            } else {
+                "IPC_UNAVAILABLE".to_string()
+            },
+            message: if err.is_timeout() {
+                "connector IPC timed out".to_string()
+            } else {
+                err.to_string()
+            },
+        })?;
         let status = response.status();
         if !status.is_success() {
             return Err(ResourceError {

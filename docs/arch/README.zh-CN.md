@@ -16,6 +16,7 @@
 ## ACP 与 Agent 接入
 
 - [Agent Bridge 协议](AGENT_BRIDGE_PROTOCOL.md)
+- [客户端 Daemon 架构](CLIENT_DAEMON_ARCHITECTURE.zh-CN.md) / [English](CLIENT_DAEMON_ARCHITECTURE.md)
 - [ACP 连接模型](ACP_CONNECTION_MODEL.md)
 - [Agent Bridge 与 ACP 兼容设计](AGENT_BRIDGE_ACP_COMPATIBILITY.md)
 - [ACP 集成](ACP_INTEGRATION.md)

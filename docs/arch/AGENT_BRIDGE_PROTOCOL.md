@@ -3,7 +3,7 @@
 > 状态：架构层规范草案
 > 日期：2026-06-01
 > 适用范围：AgentNexus Rust Backend ↔ AgentNexus Connector
-> 配套：[AGENT_BRIDGE_ACP_COMPATIBILITY](./AGENT_BRIDGE_ACP_COMPATIBILITY.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md) · [ACP_CONNECTION_MODEL](./ACP_CONNECTION_MODEL.md)
+> 配套：[CLIENT_DAEMON_ARCHITECTURE](./CLIENT_DAEMON_ARCHITECTURE.md) · [AGENT_BRIDGE_ACP_COMPATIBILITY](./AGENT_BRIDGE_ACP_COMPATIBILITY.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md) · [ACP_CONNECTION_MODEL](./ACP_CONNECTION_MODEL.md)
 
 本文定义 **AgentNexus Agent Bridge Protocol** 到底实现什么、如何握手、支持哪些请求和事件、
 以及在整体架构中位于哪一层。
@@ -855,7 +855,7 @@ Backend 先确认审批卡已发布：
 - Backend 校验 bot 是目标 channel 成员。
 - Backend 校验审批用户有权操作该 channel/message。
 - Connector 不得本地伪造审批结果。
-- 当前实现能 fanout `permission_request`，但缺少 `send_ack` 和 `permission_resolution` 闭环。
+- Rust daemon 侧必须等待 `send_ack`，并用 `permission_resolution` 闭环返回 ACP outcome；超时按本地 policy 取消。
 
 ### 7.9 Config frames
 
