@@ -1,7 +1,7 @@
 # Agent Bridge 自定义协议与 ACP 兼容设计
 
 > 状态：讨论稿
-> 日期：2026-06-01
+> 日期：2026-06-02
 > 配套：[AGENT_BRIDGE_PROTOCOL](./AGENT_BRIDGE_PROTOCOL.md) · [ACP_CONNECTION_MODEL](./ACP_CONNECTION_MODEL.md) · [ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
 
 本文专门讨论 AgentNexus 当前的服务端 `acp-bridge` 协议与外部 Agent Client Protocol
@@ -97,6 +97,7 @@ ACP 不直接建模 AgentNexus 的 workspace/channel/message/fanout/DB 持久化
 | 自定义 agent 协议怎么接 | 自定义 adapter 接入 connector，或高级集成方直接实现 AgentNexus Bridge Protocol。 |
 | 服务端是否关心本地 agent 是 ACP 还是 custom | 默认不关心。服务端只看 connector 上报的能力和平台帧。 |
 | 平台资源访问是否走 ACP `fs/*` | 不直接走。平台资源继续走 `resource_req/resource_res`；connector 可把它暴露给 ACP agent 的 MCP server 或 prompt context。 |
+| AgentNexus MCP stdio 谁注入 | connector 在 ACP `session/new` / `session/load` 中注入 `mcpServers`；ACP agent 按 ACP 标准启动 stdio MCP 子进程；daemon 不直接管理 MCP server。 |
 | 权限谁裁判 | 服务端裁判平台权限；connector 只负责把 ACP permission request 翻译成平台 `permission_request` 并等待结果。 |
 | 配置谁权威 | 服务端保存平台配置；ACP session config options 由 connector 映射和同步。 |
 | 是否预留 ACP-native remote endpoint | 可以预留，但作为独立 gateway adapter，不替代现有 Bridge Protocol。 |
@@ -230,7 +231,56 @@ AgentNexus 的 `task` 和 ACP session 不是同一个概念：
 不要把 AgentNexus 平台资源伪装成本地文件系统。平台资源有成员、审计、对象存储、
 频道归属等语义，应继续走 `resource_req/resource_res`。
 
-### 4.5 Config options
+### 4.5 MCP stdio 注入边界
+
+ACP 标准已经提供统一的 MCP 导入面：Client 在 `session/new` / `session/load`
+参数中传 `mcpServers`，ACP agent 作为 MCP client 连接这些 server。AgentNexus
+应沿用这个标准入口，而不是在 daemon 或 Backend 里另建一套 MCP 生命周期。
+
+当前职责边界固定为：
+
+| 组件 | 职责 | 不负责 |
+|------|------|--------|
+| Rust daemon | 管理 connector 进程生命周期：`start/stop/restart/status/logs`，校验配置，拉起 foreground runtime。 | 不直接 `spawn` 或持有 `agentnexus-mcp-server`。 |
+| connector runtime | 维护 Agent Bridge control/data WS；维护 ACP session；在 `session/new` / `session/load` 中注入 `mcpServers`；提供本机 loopback resource endpoint。 | 不绕过 Backend 做平台权限裁判。 |
+| ACP agent | 根据 ACP `mcpServers` 配置启动 stdio MCP server，并把 tool call 发送给该 MCP server。 | 不理解 AgentNexus 的 token、Grant、channel membership 细节。 |
+| `agentnexus-mcp-server` | 作为 stdio MCP server 暴露 AgentNexus tools；把 tool call 转成 loopback HTTP 调用给 connector。 | 不打开自己的 Agent Bridge WS，不持有 bot token 的第二条连接。 |
+| Rust Backend | 只处理 Agent Bridge `resource_req/resource_res` 和权限、持久化、fanout。 | 不管理本地 ACP/MCP 子进程。 |
+
+目标拓扑：
+
+```text
+Rust daemon
+  └─ starts connector runtime
+       ├─ Agent Bridge control/data WS ── Rust Backend
+       ├─ ACP JSON-RPC stdio ─────────── ACP agent
+       │    └─ starts stdio MCP child ── agentnexus-mcp-server
+       └─ loopback HTTP resource endpoint ◀── MCP tool calls
+```
+
+因此，“起 stdio MCP server”在实现层面不是 daemon 直接起进程，而是 connector
+把 stdio MCP server 配置注入给 ACP agent，由 ACP agent 按协议启动。connector
+再把 MCP tool call 转成 data WS 上的 `resource_req`，等待同一 data WS 返回的
+`resource_res`。
+
+推荐配置入口：
+
+```json
+{
+  "agent": {
+    "agentnexusMcp": {
+      "enabled": true,
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+`transport: "auto"` 可作为未来默认值，但当前应解析为 `stdio`。HTTP MCP 可以作为
+后续能力保留；它需要额外解决 session/channel 绑定、本机鉴权和多会话隔离，不应替代
+本地主链路的 stdio 方案。
+
+### 4.6 Config options
 
 ACP 的 session config options 可以作为 AgentNexus bot 设置页的动态选项来源。
 

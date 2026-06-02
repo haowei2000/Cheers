@@ -612,12 +612,12 @@ tr:last-child td {
         <div>
           <p class="eyebrow">Architecture status snapshot</p>
           <h1>去中心化 Agent 网格的当前完成度</h1>
-          <p class="lead">本页基于 2026-05-31 的 <code>main</code> 分支和最近 8 次提交，对照 <a href="ARCHITECTURE_OVERVIEW.md">架构总览</a>、<a href="REFACTOR_PLAN.md">重构计划</a> 与 <a href="DECENTRALIZED_MESH.md">Decentralized Mesh</a>，汇总已经落地、部分落地和仍待实现的目标。</p>
+          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛，以及旧 TS agent 包迁移到 Rust。</p>
           <div class="meta-row" aria-label="Audit metadata">
-            <span class="pill">日期: 2026-05-31</span>
+            <span class="pill">生成日期: 2026-06-02</span>
             <span class="pill">分支: main</span>
-            <span class="pill">HEAD: 289f972</span>
-            <span class="pill">范围: 最近 8 次提交</span>
+            <span class="pill">HEAD: ff14b2d + docs sync</span>
+            <span class="pill">范围: 2026-06-01 的 6 次提交</span>
           </div>
         </div>
 
@@ -625,12 +625,12 @@ tr:last-child td {
           <h2 id="summary-card-title">一句话结论</h2>
           <div class="score">
             <div class="score-item">
-              <strong>6/7</strong>
-              <span>mesh 核心步骤已落地或基本落地</span>
+              <strong>6</strong>
+              <span>2026-06-01 工作提交已合并到本页</span>
             </div>
             <div class="score-item">
-              <strong>20+</strong>
-              <span>MCP 工具映射到 Resource API</span>
+              <strong>3</strong>
+              <span>旧 TS agent 包删除、停用或迁移到 Rust</span>
             </div>
             <div class="score-item">
               <strong>1</strong>
@@ -639,19 +639,19 @@ tr:last-child td {
           </div>
           <div class="progress-line" id="summary">
             <div class="progress-row">
-              <span>去中心化路由</span>
+              <span>Agent Bridge</span>
               <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
               <b>完成</b>
             </div>
             <div class="progress-row">
-              <span>Resource API</span>
-              <div class="bar"><span style="width: 86%; background: var(--blue);"></span></div>
+              <span>Rust agent 包迁移</span>
+              <div class="bar"><span style="width: 88%; background: var(--blue);"></span></div>
               <b>基本完成</b>
             </div>
             <div class="progress-row">
-              <span>产品化能力</span>
-              <div class="bar"><span style="width: 42%; background: var(--amber);"></span></div>
-              <b>部分</b>
+              <span>Connector MCP 注入</span>
+              <div class="bar"><span style="width: 35%; background: var(--amber);"></span></div>
+              <b>待实现</b>
             </div>
           </div>
         </aside>
@@ -662,24 +662,24 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="snapshot-title">当前快照</h2>
-            <p>架构目标已经从“设计意图”推进到可追踪的 Rust gateway 代码路径，剩余缺口集中在环境插件、UI 和验证。</p>
+            <p>架构目标已经从“设计意图”推进到可追踪的 Rust gateway 和外置 connector 路径，剩余缺口集中在 connector 自动 MCP 注入、端到端验证和产品化界面。</p>
           </div>
         </div>
         <div class="metric-grid">
           <article class="metric-card">
             <span class="badge done">已完成</span>
-            <b>Mesh 行为反转</b>
-            <span>从“触发所有在线 bot”切到 <code>&lt;@bot:id&gt;</code> 精确路由；无 mention 时回落 <code>default_bot_id</code>。</span>
+            <b>Agent Bridge 正式化</b>
+            <span>服务端路径切到 <code>/ws/agent-bridge/*</code>，control/data 连接生命周期、supersede 和 runtime session 状态进入 Rust gateway。</span>
           </article>
           <article class="metric-card">
             <span class="badge done">已完成</span>
-            <b>频道事件时钟</b>
-            <span><code>channel_seq</code> 在用户消息、bot finalize、bot send 和文件操作中统一分配。</span>
+            <b>消息级路由和取消</b>
+            <span>Bot@Bot 链路改成 message depth，取消改成单条 in-flight bot 消息，避免旧 task chain 状态拖累路由。</span>
           </article>
           <article class="metric-card">
             <span class="badge mostly">基本完成</span>
-            <b>资源层</b>
-            <span><code>channel.activity.read</code>、<code>messages_by_seq</code>、<code>fs.*</code> 与 MCP 工具面已接通。</span>
+            <b>Agent 包 Rust 化</b>
+            <span>OpenClaw legacy 包停用，<code>agentnexus-mcp-server</code> 迁成 Rust binary，bridge-client 能力并入 Rust connector crate。</span>
           </article>
         </div>
       </section>
@@ -687,7 +687,7 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="topology-title">当前拓扑</h2>
-            <p>平台侧保持单实例 Rust Backend，智能体全部通过外部 ACP / MCP 桥接入；Resource API 是 bot 访问平台资源的唯一协议面。</p>
+            <p>平台侧保持单实例 Rust Backend；本地 agent 通过 Rust daemon 管理的 connector 接入，connector 承担 ACP 会话、<code>mcpServers</code> 注入和 resource loopback，Resource API 仍是 bot 访问平台资源的唯一协议面。</p>
           </div>
         </div>
         <div class="topology" role="img" aria-label="Browser and external agents connect to the Rust Backend over REST, WebSocket, Agent Bridge, and Resource API.">
@@ -714,7 +714,7 @@ tr:last-child td {
               </div>
               <div class="node">
                 <strong>WS Gateway + Agent Bridge</strong>
-                <span>browser fan-out、control/data WS、stream registry、BotLocator。</span>
+                <span>browser fan-out、control/data WS、stream registry、BotLocator、connector supersede。</span>
               </div>
               <div class="node">
                 <strong>Resource API</strong>
@@ -727,16 +727,16 @@ tr:last-child td {
             <h3>外部 Agent</h3>
             <div class="node-list">
               <div class="node">
-                <strong>ACP Connector</strong>
-                <span>直接持有 Agent Bridge control/data 连接。</span>
+                <strong>Rust daemon</strong>
+                <span>只负责 connector 生命周期：start / stop / restart / status / logs。</span>
               </div>
               <div class="node">
-                <strong>agentnexus-mcp-server</strong>
-                <span>本地 stdio MCP 工具转换为 Resource API 调用。</span>
+                <strong>ACP Connector runtime</strong>
+                <span>持有 Agent Bridge control/data 连接，调用 ACP session/new/load，并负责 <code>mcpServers</code> 注入边界。</span>
               </div>
               <div class="node">
-                <strong>Claude / Codex / OpenCode</strong>
-                <span>作为外部 peer 进入频道网格，不依赖内置 runtime。</span>
+                <strong>ACP agent + MCP stdio</strong>
+                <span>OpenCode / Claude / Codex 按 ACP <code>mcpServers</code> 启动 <code>agentnexus-mcp-server</code>，tool call 经 connector loopback 转成 <code>resource_req</code>。</span>
               </div>
             </div>
           </div>
@@ -745,8 +745,8 @@ tr:last-child td {
       <section id="changes" aria-labelledby="changes-title">
         <div class="section-heading">
           <div>
-            <h2 id="changes-title">最近 8 次改动如何推进目标</h2>
-            <p>提交集中在 ACP 能力、mesh 路由、频道时钟、任务链、取消和资源 API。它们共同覆盖了 Decentralized Mesh §11 的前 6 个步骤。</p>
+            <h2 id="changes-title">2026-06-01 的 6 次提交如何推进目标</h2>
+            <p>提交集中在 Agent Bridge 协议正式化、message-level bot 路由/取消、mention API 收敛，以及 legacy TS agent 包到 Rust 的迁移。它们把服务端协议、connector 边界和 agent 包形态推进到当前主线。</p>
           </div>
         </div>
         <div class="timeline">
@@ -761,52 +761,40 @@ tr:last-child td {
             </thead>
             <tbody>
               <tr>
-                <td class="commit">289f972</td>
-                <td>2026-05-31</td>
-                <td>finish mesh resource api</td>
-                <td>补齐 <code>channel.activity.read</code>、<code>channel.messages.index/by-seq</code>、<code>fs.*</code>，并扩展 MCP tool surface。</td>
+                <td class="commit">ff14b2d</td>
+                <td>2026-06-01</td>
+                <td>chore: migrate agent packages to rust</td>
+                <td>停用 OpenClaw legacy 包；<code>agentnexus-mcp-server</code> 改为 Rust binary；bridge-client 能力并入 Rust connector crate；TS daemon 退场为 Rust supervisor。</td>
               </tr>
               <tr>
-                <td class="commit">7aec35d</td>
-                <td>2026-05-31</td>
-                <td>add mesh chain cancellation</td>
-                <td>加入 <code>cancel-chain</code> REST 入口、链状态更新和现有 cancel 帧广播。</td>
+                <td class="commit">3614b00</td>
+                <td>2026-06-01</td>
+                <td>Migrate backend to Agent Bridge protocol</td>
+                <td>服务端 WS 命名和代码路径切到 Agent Bridge；新增协议文档和 runtime session status migration。</td>
               </tr>
               <tr>
-                <td class="commit">89bef9d</td>
-                <td>2026-05-31</td>
-                <td>propagate mesh task chains</td>
-                <td>bot 回复 finalize 后重入 mention 路由，沿链继承 <code>chain_id</code>、<code>parent_task_id</code>、<code>depth</code>。</td>
+                <td class="commit">af64bcf</td>
+                <td>2026-06-01</td>
+                <td>feat(server): complete acp bridge connection lifecycle</td>
+                <td>补齐 connector control/data 连接生命周期，新增 supersede 信号和连接一致性处理。</td>
               </tr>
               <tr>
-                <td class="commit">5365bbb</td>
-                <td>2026-05-31</td>
-                <td>allocate mesh channel sequences</td>
-                <td>把 <code>channel_seq</code> 纳入消息、stream done、dispatcher 失败收口和 resource 读模型。</td>
+                <td class="commit">2f204ec</td>
+                <td>2026-06-01</td>
+                <td>refactor: unify mention API and remove legacy memory system</td>
+                <td>用户和 bot 消息统一 explicit mention_ids；移除旧 memory resource，MCP post_message 可按名称解析 mention。</td>
               </tr>
               <tr>
-                <td class="commit">51bb07d</td>
-                <td>2026-05-31</td>
-                <td>enforce mesh mention token semantics</td>
-                <td>确立扁平 token 语义，写入 <code>message_mentions</code>，bot 输出中的 legacy bare mention 会规范化。</td>
+                <td class="commit">03c7984</td>
+                <td>2026-06-01</td>
+                <td>refactor(server): replace chain cancel with per-message bot cancel</td>
+                <td>取消从 chain 级别收敛到单条 bot placeholder，直接向对应 bot 派发 cancel。</td>
               </tr>
               <tr>
-                <td class="commit">139cfd0</td>
-                <td>2026-05-31</td>
-                <td>stabilize Rust backend compile</td>
-                <td>收敛 gateway API、resource、session、permission 等模块的编译契约。</td>
-              </tr>
-              <tr>
-                <td class="commit">00a4cfc</td>
-                <td>2026-05-31</td>
-                <td>connector privateKey validation test</td>
-                <td>补 ACP connector 配置校验测试，属于接入层质量补强。</td>
-              </tr>
-              <tr>
-                <td class="commit">a747a1e</td>
-                <td>2026-05-31</td>
-                <td>acp capability/session and message enhancements</td>
-                <td>增加 capability delegation、session 状态、消息模型和文件端点增强，为后续 mesh 能力打底。</td>
+                <td class="commit">5c7a1ec</td>
+                <td>2026-06-01</td>
+                <td>refactor(server): replace chain propagation with message-level depth</td>
+                <td>移除 task_chains/agent_tasks/bot_runs 派发状态；Bot@Bot 改成普通 mention 触发，并用 depth 防循环。</td>
               </tr>
             </tbody>
           </table>
@@ -833,7 +821,7 @@ tr:last-child td {
           <article class="goal-card">
             <span class="badge done">已完成</span>
             <h3>Mesh schema</h3>
-            <p><code>next_seq</code>、<code>channel_seq</code>、<code>message_mentions</code>、<code>task_chains</code>、<code>channel_operations</code>、<code>memory_files</code> 已进入 sqlx 迁移。</p>
+            <p><code>next_seq</code>、<code>channel_seq</code>、<code>message_mentions</code>、message depth 和 Agent Bridge runtime session 状态已进入 sqlx 迁移。</p>
             <div class="evidence">
               <a href="../../server/migrations/0003_decentralized_mesh.sql">0003 migration</a>
               <a href="DECENTRALIZED_MESH.md">mesh design</a>
@@ -842,8 +830,8 @@ tr:last-child td {
 
           <article class="goal-card">
             <span class="badge done">已完成</span>
-            <h3>Mention 路由与 default bot</h3>
-            <p>用户消息只扫描 <code>&lt;@bot:id&gt;</code> / <code>&lt;@user:id&gt;</code> token；无 bot mention 时回落频道或 workspace 默认 bot。</p>
+            <h3>Mention 路由与 message depth</h3>
+            <p>用户和 bot 消息统一 explicit mention_ids；Bot@Bot 不再依赖 task chain 状态，而是用 message depth 限制递归。</p>
             <div class="evidence">
               <a href="../../server/src/domain/mentions.rs">mentions.rs</a>
               <a href="../../server/src/domain/messages.rs">messages.rs</a>
@@ -862,21 +850,21 @@ tr:last-child td {
 
           <article class="goal-card">
             <span class="badge done">已完成</span>
-            <h3>Bot@Bot 任务链</h3>
-            <p>root dispatch 创建链，bot 回复触发下一跳，dispatch gate 检查链状态，取消或暂停后阻止未来 hop。</p>
+            <h3>Agent Bridge 生命周期</h3>
+            <p>control/data 连接迁移到 Agent Bridge 命名；registry 支持 supersede，runtime session 状态进入 gateway 路径。</p>
             <div class="evidence">
-              <a href="../../server/src/domain/chains.rs">chains.rs</a>
-              <a href="../../server/src/gateway/dispatcher.rs">dispatcher.rs</a>
+              <a href="../../server/src/gateway/ws/agent_bridge.rs">agent_bridge.rs</a>
+              <a href="../../server/src/gateway/registry.rs">registry.rs</a>
             </div>
           </article>
 
           <article class="goal-card">
             <span class="badge mostly">基本完成</span>
-            <h3>链取消</h3>
-            <p>用户可通过消息解析到 <code>chain_id</code> 并取消整条链；当前未把 <code>chain.cancelled</code> 操作写入 activity log，这在设计中是可选项。</p>
+            <h3>单消息取消</h3>
+            <p>取消 API 通过 placeholder 找到 owner bot，只取消当前 in-flight bot 消息，不再取消整条旧 task chain。</p>
             <div class="evidence">
               <a href="../../server/src/api/messages.rs">api/messages.rs</a>
-              <a href="../../server/src/domain/chains.rs">chains.rs</a>
+              <a href="../../server/src/gateway/stream.rs">stream.rs</a>
             </div>
           </article>
 
@@ -893,11 +881,31 @@ tr:last-child td {
 
           <article class="goal-card">
             <span class="badge mostly">基本完成</span>
-            <h3>MCP 标准桥工具面</h3>
-            <p><code>agentnexus-mcp-server</code> 已迁为 Rust binary，并把资源读写映射成 MCP tools，支持 session 默认频道和跨频道参数。</p>
+            <h3>Rust MCP 标准桥工具面</h3>
+            <p><code>agentnexus-mcp-server</code> 已迁为 Rust binary，并把资源读写映射成 MCP tools；connector 负责后续按 ACP <code>mcpServers</code> 注入。</p>
             <div class="evidence">
               <a href="../../packages/agentnexus-mcp-server/src/main.rs">main.rs</a>
               <a href="../../packages/agentnexus-mcp-server/Cargo.toml">Cargo.toml</a>
+            </div>
+          </article>
+
+          <article class="goal-card">
+            <span class="badge mostly">基本完成</span>
+            <h3>Agent package 退旧迁移</h3>
+            <p>OpenClaw channel package 和独立 bridge-client 包已移除；Rust connector crate 承接 daemon 与 bridge 协议能力，TS 前台 runtime 暂留兼容。</p>
+            <div class="evidence">
+              <a href="../../packages/agentnexus-acp-connector-rs">connector-rs</a>
+              <a href="../../packages/agentnexus-acp-connector/README.md">acp connector README</a>
+            </div>
+          </article>
+
+          <article class="goal-card">
+            <span class="badge partial">部分完成</span>
+            <h3>Connector MCP stdio 注入</h3>
+            <p>ACP agent 配置里的 <code>mcpServers</code> 已由 connector 传入 session/new/load；自动合成 AgentNexus MCP entry 和 loopback resource endpoint 是下一步。</p>
+            <div class="evidence">
+              <a href="../../packages/agentnexus-acp-connector/src/acp-agent.ts">acp-agent.ts</a>
+              <a href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">ACP compatibility</a>
             </div>
           </article>
 
@@ -914,9 +922,8 @@ tr:last-child td {
           <article class="goal-card">
             <span class="badge partial">部分完成</span>
             <h3>文件与 memory 资源</h3>
-            <p><code>memory_entries</code> 已退到 <code>memory_files</code> 树；旧 <code>channel.memory</code> 有兼容映射。S3 文件内容读写仍有 Phase 2 TODO。</p>
+            <p>旧 <code>channel.memory</code> resource 已移除，当前资源面转向文件、消息和 <code>fs.*</code>；S3 文件内容读写仍需继续验证。</p>
             <div class="evidence">
-              <a href="../../server/src/resource/memory.rs">memory.rs</a>
               <a href="../../server/src/resource/files.rs">files.rs</a>
             </div>
           </article>
@@ -947,7 +954,7 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="contract-title">关键运行流</h2>
-            <p>下面是已经进入代码的核心契约：写后投递、事件时钟、任务链和资源一致性。</p>
+            <p>下面是当前主链路的核心契约：写后投递、消息级 bot 路由、Agent Bridge 生命周期，以及 ACP MCP stdio 的责任边界。</p>
           </div>
         </div>
         <div class="flow">
@@ -963,18 +970,23 @@ tr:last-child td {
           </div>
           <div class="flow-step">
             <small>3</small>
-            <strong>mesh dispatch</strong>
-            <span>有 <code>@bot</code> 派发指定 bot；否则使用 <code>default_bot_id</code>；否则静默。</span>
+            <strong>message-level dispatch</strong>
+            <span>有 <code>@bot</code> 派发指定 bot；bot 回复再次 mention bot 时以 depth+1 继续派发，超过上限静默。</span>
           </div>
           <div class="flow-step">
             <small>4</small>
-            <strong>bot finalize</strong>
-            <span>placeholder finalize 时取 <code>channel_seq</code>，规范化 bot mention，并可触发下一跳。</span>
+            <strong>per-message cancel</strong>
+            <span>用户停止某条 bot placeholder 时，Backend 找到 owner bot 并只推送该消息的 cancel frame。</span>
           </div>
           <div class="flow-step">
             <small>5</small>
-            <strong>资源追赶</strong>
-            <span>bot 通过 <code>since_seq</code>、<code>by-seq</code> 和 activity stream 补齐上下文。</span>
+            <strong>connector MCP 注入</strong>
+            <span>connector 在 ACP <code>session/new/load</code> 注入 <code>mcpServers</code>；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。</span>
+          </div>
+          <div class="flow-step">
+            <small>6</small>
+            <strong>资源裁判</strong>
+            <span>connector 把 MCP tool call 转成 <code>resource_req</code>，Backend 统一校验频道成员、Grant 和 capability delegation。</span>
           </div>
         </div>
       </section>
@@ -999,8 +1011,12 @@ tr:last-child td {
             <p>Resource API 读只需频道成员，写需要成员身份和 ACP RBAC Grant。</p>
           </article>
           <article class="decision-card">
-            <h3>两类资源分治</h3>
-            <p>Class 1 用 <code>channel_seq</code> 追赶，Class 2 用 <code>memory_files.version</code> 乐观锁。</p>
+            <h3>MCP 注入归 connector</h3>
+            <p>daemon 只管理 connector 生命周期；connector 注入 <code>mcpServers</code>，ACP agent 按 stdio 启动 MCP server。</p>
+          </article>
+          <article class="decision-card">
+            <h3>Agent Bridge 是平台协议</h3>
+            <p>服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。</p>
           </article>
           <article class="decision-card">
             <h3>单实例是本期约束</h3>
@@ -1008,7 +1024,7 @@ tr:last-child td {
           </article>
           <article class="decision-card">
             <h3>旧兼容只保留在边界</h3>
-            <p><code>channel.memory</code> 映射到新文件树；核心合同已切到 <code>fs.*</code> 和 activity。</p>
+            <p>OpenClaw 和独立 TS bridge-client 退场；TS foreground runtime 只是 Rust connector 全量化前的兼容层。</p>
           </article>
         </div>
       </section>
@@ -1016,19 +1032,29 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="backlog-title">剩余工作建议</h2>
-            <p>下一步重点不是再补临时 shim，而是把已实现的协议面验证、产品化，并把文档 checklist 同步到真实状态。</p>
+            <p>下一步重点不是再补临时 shim，而是把 connector 侧 MCP 注入闭环实现、验证，并继续把 Rust connector 全量化。</p>
           </div>
         </div>
         <div class="backlog-grid">
           <article class="backlog-card">
-            <span class="badge partial">验证</span>
-            <h3>空库启动和 cargo 测试</h3>
-            <p>按 sqlx migration discipline，从空 Postgres 跑 gateway，确认 <code>0001..0006</code> 可线性执行。</p>
+            <span class="badge open">实现</span>
+            <h3>Connector 自动 MCP 注入</h3>
+            <p>在 connector runtime 中增加 <code>agent.agentnexusMcp.enabled</code>，自动合成 stdio <code>mcpServers</code> entry 并注入 ACP <code>session/new/load</code>。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge open">实现</span>
+            <h3>Loopback resource endpoint</h3>
+            <p>connector 本机起 HTTP endpoint，接收 <code>agentnexus-mcp-server</code> tool call，转成 data WS <code>resource_req</code> 并等待 <code>resource_res</code>。</p>
           </article>
           <article class="backlog-card">
             <span class="badge partial">验证</span>
             <h3>MCP 端到端</h3>
-            <p>用真实 connector 验证 <code>read_activity</code>、<code>fs_write</code>、<code>messages_by_seq</code> 和链取消。</p>
+            <p>用真实 connector 验证 <code>read_activity</code>、<code>fs_write</code>、<code>messages_by_seq</code>、per-message cancel 和 stdio MCP 注入。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge partial">验证</span>
+            <h3>空库启动和 cargo 测试</h3>
+            <p>按 sqlx migration discipline，从空 Postgres 跑 gateway，确认 <code>0001..0008</code> 可线性执行。</p>
           </article>
           <article class="backlog-card">
             <span class="badge open">实现</span>
@@ -1036,22 +1062,12 @@ tr:last-child td {
             <p>把 resource dispatcher 从静态 <code>match</code> 演进成可按 channel / template 注册的 handler。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>DM / topic resource scope</h3>
-            <p>补齐架构文档中标出的 <code>channel.*</code> 之外的 resource scope。</p>
-          </article>
-          <article class="backlog-card">
             <span class="badge open">产品化</span>
             <h3>权限覆盖 UI 和 Lens</h3>
             <p>前端还缺 channel override 设置界面，以及 Environment Lens 的声明式渲染。</p>
           </article>
-          <article class="backlog-card">
-            <span class="badge partial">文档</span>
-            <h3>更新 Markdown checklist</h3>
-            <p><code>REFACTOR_PLAN.md</code> 里的 Phase 1 checkbox 仍是旧状态，应按本页结论同步。</p>
-          </article>
         </div>
-        <p class="note">根因判断：最近几次改动解决的是架构合同已经定稿但 gateway 实现落后的问题。当前选择是把真实调用路径 <code>create_message</code>、<code>stream::handle_done</code>、<code>dispatcher</code>、<code>resource::dispatch</code> 对齐到同一个 mesh 合同，而不是增加临时参数或硬编码分支。</p>
+        <p class="note">根因判断：2026-06-01 的改动解决了平台协议命名、消息级路由/取消和旧 agent 包形态不一致的问题。MCP stdio 集成的正确方向是 connector 注入 ACP <code>mcpServers</code> 并提供 loopback resource endpoint，而不是让 daemon 直接管理 MCP 子进程。</p>
       </section>
       <section aria-labelledby="sources-title">
         <div class="section-heading">
@@ -1073,6 +1089,14 @@ tr:last-child td {
             <strong>Refactor Plan</strong>
             <span>阶段计划与剩余项</span>
           </a>
+          <a class="source-link" href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">
+            <strong>Agent Bridge ACP Compatibility</strong>
+            <span>Agent Bridge、ACP 和 MCP stdio 注入边界</span>
+          </a>
+          <a class="source-link" href="AGENT_BRIDGE_PROTOCOL.md">
+            <strong>Agent Bridge Protocol</strong>
+            <span>control/data WS 平台协议</span>
+          </a>
           <a class="source-link" href="MESSAGE_CONTENT_FORMAT.md">
             <strong>Message Content Format</strong>
             <span>token 与 mention 表关系</span>
@@ -1085,19 +1109,23 @@ tr:last-child td {
             <strong>server/src/resource/mod.rs</strong>
             <span>Resource API dispatcher</span>
           </a>
-          <a class="source-link" href="../../server/src/domain/chains.rs">
-            <strong>server/src/domain/chains.rs</strong>
-            <span>任务链与取消</span>
+          <a class="source-link" href="../../server/src/gateway/ws/agent_bridge.rs">
+            <strong>server/src/gateway/ws/agent_bridge.rs</strong>
+            <span>Agent Bridge WS lifecycle</span>
           </a>
           <a class="source-link" href="../../packages/agentnexus-mcp-server/src/main.rs">
             <strong>agentnexus-mcp-server</strong>
             <span>Rust MCP 工具映射</span>
           </a>
+          <a class="source-link" href="../../packages/agentnexus-acp-connector-rs">
+            <strong>agentnexus-acp-connector-rs</strong>
+            <span>Rust daemon 和 bridge 协议能力</span>
+          </a>
         </div>
       </section>
     </main>
     <footer class="footer">
-      <p>Generated from local repository state on 2026-05-31. This is a generated documentation snapshot; update <code>architecture-status.page.json</code> and run <code>make docs-pages</code> instead of editing <code>index.html</code> directly.</p>
+      <p>Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set. This is a generated documentation snapshot; update <code>architecture-status.page.json</code> and run <code>make docs-pages</code> instead of editing <code>index.html</code> directly.</p>
     </footer>
   </div>
 </body>
