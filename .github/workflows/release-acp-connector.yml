@@ -101,7 +101,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.versions.outputs.tag }}
           name: agentnexus-acp-connector v${{ steps.versions.outputs.acp_version }}
