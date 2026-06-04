@@ -12,6 +12,10 @@ struct ServerConfig {
     resource_token: Option<String>,
     default_channel_id: Option<String>,
     bot_id: Option<String>,
+    /// Platform session UUID injected by the connector via AGENTNEXUS_SESSION_ID.
+    /// Forwarded in every resource call so the server can perform Grant
+    /// authorization on write operations.
+    session_id: Option<String>,
     request_timeout_ms: u64,
 }
 
@@ -60,6 +64,7 @@ fn load_config() -> anyhow::Result<ServerConfig> {
         resource_token: empty_to_none(env::var("AGENTNEXUS_RESOURCE_TOKEN").ok()),
         default_channel_id: empty_to_none(env::var("AGENTNEXUS_CHANNEL_ID").ok()),
         bot_id: empty_to_none(env::var("AGENTNEXUS_BOT_ID").ok()),
+        session_id: empty_to_none(env::var("AGENTNEXUS_SESSION_ID").ok()),
         request_timeout_ms,
     })
 }
@@ -180,10 +185,11 @@ impl AgentNexusClient {
         resource: &str,
         params: Map<String, Value>,
     ) -> Result<Value, ResourceError> {
-        let mut request = self
-            .http
-            .post(&self.config.resource_url)
-            .json(&json!({ "resource": resource, "params": params }));
+        let mut body = json!({ "resource": resource, "params": params });
+        if let Some(session_id) = &self.config.session_id {
+            body["session_id"] = Value::String(session_id.clone());
+        }
+        let mut request = self.http.post(&self.config.resource_url).json(&body);
         if let Some(token) = &self.config.resource_token {
             request = request
                 .bearer_auth(token)

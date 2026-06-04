@@ -22,6 +22,10 @@ pub struct LoopbackRequest {
     pub req_id: String,
     pub resource: String,
     pub params: Option<Value>,
+    /// Platform session UUID supplied by the caller (e.g. agentnexus-mcp-server).
+    /// Forwarded verbatim into `resource_req` so the server can perform
+    /// Grant authorization on write operations.
+    pub session_id: Option<String>,
     pub respond_to: oneshot::Sender<LoopbackResponse>,
 }
 
@@ -97,6 +101,11 @@ async fn handle_connection(
         .ok_or_else(|| anyhow!("loopback request requires resource"))?
         .to_string();
     let params = body.get("params").cloned();
+    let session_id = body
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
     let req_id = body
         .get("req_id")
         .or_else(|| body.get("reqId"))
@@ -108,6 +117,7 @@ async fn handle_connection(
         req_id: req_id.clone(),
         resource,
         params,
+        session_id,
         respond_to,
     })
     .await

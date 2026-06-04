@@ -1001,6 +1001,10 @@ pub enum DataOutbound {
         resource: String,
         #[serde(default)]
         params: Option<Value>,
+        /// Platform session UUID forwarded from the loopback caller.
+        /// Required by the server's Grant authorization for write operations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
         #[serde(default)]
         encrypted: Option<bool>,
         #[serde(default)]
