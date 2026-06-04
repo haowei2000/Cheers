@@ -384,6 +384,7 @@ impl RuntimeContext {
                 req_id: request.req_id.clone(),
                 resource: request.resource,
                 params: request.params,
+                session_id: request.session_id,
                 encrypted: None,
                 encrypted_payload: None,
                 acp_capability: None,
@@ -1264,6 +1265,9 @@ impl RuntimeContext {
                     "AGENTNEXUS_RESOURCE_TOKEN": self.loopback.token.clone(),
                     "AGENTNEXUS_CHANNEL_ID": task.channel_id.clone(),
                     "AGENTNEXUS_BOT_ID": self.account_id.clone(),
+                    // Platform session UUID — forwarded into resource_req so the server
+                    // can perform Grant authorization on write operations.
+                    "AGENTNEXUS_SESSION_ID": task.session_id.clone().unwrap_or_default(),
                     "AGENTNEXUS_REQUEST_TIMEOUT_MS": self.config.policy.loopback.request_timeout_ms.to_string()
                 }
             }));
@@ -1272,6 +1276,7 @@ impl RuntimeContext {
     }
 
     fn loopback_resource_allowed(&self, resource: &str) -> bool {
+        // Explicit deny always wins.
         if self
             .config
             .policy
@@ -1282,12 +1287,40 @@ impl RuntimeContext {
         {
             return false;
         }
-        self.config
+        // Explicit allow list takes precedence over the auto-allow below.
+        if self
+            .config
             .policy
             .loopback
             .allowed_resources
             .iter()
             .any(|item| item == resource)
+        {
+            return true;
+        }
+        // When inject_agentnexus is enabled and the user has not configured an
+        // explicit allowed_resources list, automatically permit the read-only
+        // resources that the injected MCP server uses. Write resources (anything
+        // that modifies state) remain opt-in via allowed_resources.
+        if self.config.policy.mcp.inject_agentnexus
+            && self.config.policy.loopback.allowed_resources.is_empty()
+        {
+            const MCP_READ_RESOURCES: &[&str] = &[
+                "channel.info",
+                "channel.members",
+                "channel.messages",
+                "channel.messages.index",
+                "channel.messages.by-seq",
+                "channel.activity.read",
+                "channel.files",
+                "channel.files.read",
+                "channel.context",
+                "fs.ls",
+                "fs.read",
+            ];
+            return MCP_READ_RESOURCES.contains(&resource);
+        }
+        false
     }
 
     async fn trace(
