@@ -1,43 +1,36 @@
 {
-  "name": "agentnexus-frontend",
+  "name": "chateverywhere-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@headlessui/react": "^2.2.10",
-    "@lobehub/icons": "^1.80.0",
-    "@tanstack/react-virtual": "^3.13.24",
+    "@tanstack/react-query": "^5.62.3",
     "clsx": "^2.1.1",
-    "dingtalk-design-libs": "^0.2.0",
     "highlight.js": "^11.11.1",
-    "lucide-react": "^1.16.0",
-    "mermaid": "^11.13.0",
+    "lucide-react": "^0.469.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-file-icon": "^1.6.0",
     "react-hot-toast": "^2.4.1",
-    "react-markdown": "^10.1.0",
-    "react-router-dom": "^7.13.1",
-    "remark-gfm": "^4.0.1",
-    "simple-icons": "^16.19.0",
-    "tailwind-merge": "^3.5.0"
+    "react-markdown": "^9.0.1",
+    "react-router-dom": "^7.0.2",
+    "remark-gfm": "^4.0.0",
+    "tailwind-merge": "^2.5.5",
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^5.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.15",
+    "tailwindcss": "^3.4.17",
     "typescript": "~5.6.2",
-    "vite": "^6.4.2"
-  },
-  "overrides": {
-    "axios": "^1.16.1"
+    "vite": "^6.0.5"
   }
 }

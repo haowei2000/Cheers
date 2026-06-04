@@ -1,42 +1,11 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>AgentNexus 智枢协作平台</title>
-    <!-- IBM Plex Sans handles Latin UI text; Noto Sans SC handles CJK fallback;
-         JetBrains Mono handles code. Local system fonts remain in the CSS stack
-         so the app still renders well if remote fonts are unavailable. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
-    />
-    <style>
-      /* Prevent iOS Safari from auto-zooming on input focus (requires font-size >= 16px) */
-      @media screen and (max-width: 767px) {
-        input, select, textarea { font-size: 16px !important; }
-      }
-      /* Smooth momentum scrolling on iOS */
-      * { -webkit-overflow-scrolling: touch; }
-      /* Hide scrollbar for horizontal nav on admin page */
-      .scrollbar-hide::-webkit-scrollbar { display: none; }
-      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      /* Keep the root fillable while runtime visual-viewport variables settle. */
-      html, body, #root { height: 100%; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatEverywhere</title>
   </head>
   <body>
-    <script>
-      // Apply dark mode immediately to prevent flash of light theme
-      (function() {
-        var stored = localStorage.getItem('agentnexus-theme');
-        var isDark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-        if (isDark) document.documentElement.classList.add('dark');
-      })();
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
