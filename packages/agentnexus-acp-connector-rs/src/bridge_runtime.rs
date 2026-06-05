@@ -360,18 +360,6 @@ impl RuntimeContext {
         self: Arc<Self>,
         request: LoopbackRequest,
     ) -> anyhow::Result<()> {
-        if !self.loopback_resource_allowed(&request.resource) {
-            let _ = request.respond_to.send(LoopbackResponse {
-                ok: false,
-                data: None,
-                error: Some(format!(
-                    "local daemon policy does not allow resource {}",
-                    request.resource
-                )),
-                code: Some("LOCAL_POLICY_DENIED".to_string()),
-            });
-            return Ok(());
-        }
         let (tx, rx) = oneshot::channel();
         self.shared
             .lock()
@@ -838,12 +826,10 @@ impl RuntimeContext {
         mut settings: ConnectorControlSettings,
     ) -> (ConnectorControlSettings, Vec<ConfigStatusRejectedField>) {
         let mut rejected = Vec::new();
-        if settings.agentnexus_approval_mode.take().is_some()
-            || settings.permission_mode.take().is_some()
-        {
+        if settings.permission_mode.take().is_some() {
             rejected.push(ConfigStatusRejectedField {
-                field: "agentnexusApprovalMode".to_string(),
-                reason: "platform permission is resolved by Backend permission_resolution, not local daemon config".to_string(),
+                field: "permissionMode".to_string(),
+                reason: "channel resource permission is resolved by Backend membership role; ACP permission prompts use permission_resolution".to_string(),
             });
         }
         if let Some(cwd) = settings.cwd.take() {
@@ -1265,62 +1251,14 @@ impl RuntimeContext {
                     "AGENTNEXUS_RESOURCE_TOKEN": self.loopback.token.clone(),
                     "AGENTNEXUS_CHANNEL_ID": task.channel_id.clone(),
                     "AGENTNEXUS_BOT_ID": self.account_id.clone(),
-                    // Platform session UUID — forwarded into resource_req so the server
-                    // can perform Grant authorization on write operations.
+                    // Platform session UUID for correlation only. Resource authorization
+                    // uses the authenticated bot principal plus channel membership role.
                     "AGENTNEXUS_SESSION_ID": task.session_id.clone().unwrap_or_default(),
                     "AGENTNEXUS_REQUEST_TIMEOUT_MS": self.config.policy.loopback.request_timeout_ms.to_string()
                 }
             }));
         }
         Value::Array(servers)
-    }
-
-    fn loopback_resource_allowed(&self, resource: &str) -> bool {
-        // Explicit deny always wins.
-        if self
-            .config
-            .policy
-            .loopback
-            .deny_resources
-            .iter()
-            .any(|item| item == resource)
-        {
-            return false;
-        }
-        // Explicit allow list takes precedence over the auto-allow below.
-        if self
-            .config
-            .policy
-            .loopback
-            .allowed_resources
-            .iter()
-            .any(|item| item == resource)
-        {
-            return true;
-        }
-        // When inject_agentnexus is enabled and the user has not configured an
-        // explicit allowed_resources list, automatically permit the read-only
-        // resources that the injected MCP server uses. Write resources (anything
-        // that modifies state) remain opt-in via allowed_resources.
-        if self.config.policy.mcp.inject_agentnexus
-            && self.config.policy.loopback.allowed_resources.is_empty()
-        {
-            const MCP_READ_RESOURCES: &[&str] = &[
-                "channel.info",
-                "channel.members",
-                "channel.messages",
-                "channel.messages.index",
-                "channel.messages.by-seq",
-                "channel.activity.read",
-                "channel.files",
-                "channel.files.read",
-                "channel.context",
-                "fs.ls",
-                "fs.read",
-            ];
-            return MCP_READ_RESOURCES.contains(&resource);
-        }
-        false
     }
 
     async fn trace(
@@ -2159,7 +2097,7 @@ fn bridge_ready_from_initialize(initialize: &Value, policy: &LocalPolicy) -> Bri
         "streaming": policy.prompt.allow,
         "files": policy.file_upload.allow,
         "send": policy.send.allow,
-        "resource_req": !policy.loopback.allowed_resources.is_empty(),
+        "resource_req": true,
         "permission_request": policy.permission.forward_to_backend,
         "config_options": true,
         "trace": policy.trace.allow,

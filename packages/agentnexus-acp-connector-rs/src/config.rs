@@ -84,8 +84,6 @@ pub struct LocalPolicy {
     pub sessions: SessionsPolicy,
     pub prompt: PromptPolicy,
     pub workspace: WorkspacePolicy,
-    pub filesystem: FilesystemPolicy,
-    pub terminal: TerminalPolicy,
     pub env: EnvPolicy,
     pub config: RuntimeConfigPolicy,
     pub permission: PermissionPolicy,
@@ -122,23 +120,6 @@ pub struct WorkspacePolicy {
     pub default_cwd: Option<PathBuf>,
     pub backend_may_set_cwd: bool,
     pub allowed_roots: Vec<PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FilesystemPolicy {
-    pub read: FilesystemAccessPolicy,
-    pub write: FilesystemAccessPolicy,
-}
-
-#[derive(Debug, Clone)]
-pub struct FilesystemAccessPolicy {
-    pub allow: bool,
-    pub allowed_roots: Vec<PathBuf>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TerminalPolicy {
-    pub allow: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -216,8 +197,6 @@ pub struct McpPolicy {
 
 #[derive(Debug, Clone)]
 pub struct LoopbackPolicy {
-    pub allowed_resources: Vec<String>,
-    pub deny_resources: Vec<String>,
     pub request_timeout_ms: u64,
 }
 
@@ -310,10 +289,6 @@ struct RawPolicy {
     #[serde(default)]
     workspace: RawWorkspacePolicy,
     #[serde(default)]
-    filesystem: RawFilesystemPolicy,
-    #[serde(default)]
-    terminal: RawTerminalPolicy,
-    #[serde(default)]
     env: RawEnvPolicy,
     #[serde(default)]
     config: RawRuntimeConfigPolicy,
@@ -339,8 +314,6 @@ impl Default for RawPolicy {
             sessions: RawSessionsPolicy::default(),
             prompt: RawPromptPolicy::default(),
             workspace: RawWorkspacePolicy::default(),
-            filesystem: RawFilesystemPolicy::default(),
-            terminal: RawTerminalPolicy::default(),
             env: RawEnvPolicy::default(),
             config: RawRuntimeConfigPolicy::default(),
             permission: RawPermissionPolicy::default(),
@@ -423,40 +396,6 @@ struct RawWorkspacePolicy {
     backend_may_set_cwd: bool,
     #[serde(default)]
     allowed_roots: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawFilesystemPolicy {
-    #[serde(default)]
-    read: RawFilesystemAccessPolicy,
-    #[serde(default)]
-    write: RawFilesystemAccessPolicy,
-}
-
-impl Default for RawFilesystemPolicy {
-    fn default() -> Self {
-        Self {
-            read: RawFilesystemAccessPolicy::default(),
-            write: RawFilesystemAccessPolicy::default(),
-        }
-    }
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawFilesystemAccessPolicy {
-    #[serde(default)]
-    allow: bool,
-    #[serde(default)]
-    allowed_roots: Vec<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawTerminalPolicy {
-    #[serde(default)]
-    allow: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -607,10 +546,6 @@ impl Default for RawMcpPolicy {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoopbackPolicy {
-    #[serde(default)]
-    allowed_resources: Vec<String>,
-    #[serde(default)]
-    deny_resources: Vec<String>,
     #[serde(default = "default_loopback_timeout_ms")]
     request_timeout_ms: u64,
 }
@@ -618,8 +553,6 @@ struct RawLoopbackPolicy {
 impl Default for RawLoopbackPolicy {
     fn default() -> Self {
         Self {
-            allowed_resources: Vec::new(),
-            deny_resources: Vec::new(),
             request_timeout_ms: default_loopback_timeout_ms(),
         }
     }
@@ -751,7 +684,7 @@ async fn normalize_account(
             prompt_timeout_ms: policy.prompt.max_duration_ms,
             agent_native_permission_mode: None,
             mcp_servers: policy.mcp.servers.clone(),
-            client_capabilities: Some(client_capabilities_from_policy(&policy)),
+            client_capabilities: Some(client_capabilities()),
         },
         acp_capability,
         policy,
@@ -780,16 +713,6 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
         }
         None => None,
     };
-    let fs_read_roots = resolve_existing_dirs(
-        &raw.filesystem.read.allowed_roots,
-        base_dir,
-        &format!("accounts.{id}.policy.filesystem.read.allowed_roots"),
-    )?;
-    let fs_write_roots = resolve_existing_dirs(
-        &raw.filesystem.write.allowed_roots,
-        base_dir,
-        &format!("accounts.{id}.policy.filesystem.write.allowed_roots"),
-    )?;
     let mcp_servers = toml_values_to_json_array(raw.mcp.servers)?;
 
     Ok(LocalPolicy {
@@ -813,19 +736,6 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             default_cwd,
             backend_may_set_cwd: raw.workspace.backend_may_set_cwd,
             allowed_roots: workspace_roots,
-        },
-        filesystem: FilesystemPolicy {
-            read: FilesystemAccessPolicy {
-                allow: raw.filesystem.read.allow,
-                allowed_roots: fs_read_roots,
-            },
-            write: FilesystemAccessPolicy {
-                allow: raw.filesystem.write.allow,
-                allowed_roots: fs_write_roots,
-            },
-        },
-        terminal: TerminalPolicy {
-            allow: raw.terminal.allow,
         },
         env: EnvPolicy {
             inherit: raw.env.inherit,
@@ -867,8 +777,6 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             servers: mcp_servers,
         },
         loopback: LoopbackPolicy {
-            allowed_resources: raw.loopback.allowed_resources,
-            deny_resources: raw.loopback.deny_resources,
             request_timeout_ms: raw.loopback.request_timeout_ms,
         },
     })
@@ -992,13 +900,13 @@ fn find_command_in_path(command: &str) -> Option<PathBuf> {
     None
 }
 
-fn client_capabilities_from_policy(policy: &LocalPolicy) -> Value {
+fn client_capabilities() -> Value {
     json!({
         "fs": {
-            "readTextFile": policy.filesystem.read.allow,
-            "writeTextFile": policy.filesystem.write.allow
+            "readTextFile": false,
+            "writeTextFile": false
         },
-        "terminal": policy.terminal.allow
+        "terminal": false
     })
 }
 
@@ -1210,17 +1118,6 @@ request_timeout_ms = 333000
 max_duration_ms = 444000
 max_prompt_bytes = 12345
 
-[accounts.local.policy.filesystem.read]
-allow = true
-allowed_roots = ["{}"]
-
-[accounts.local.policy.filesystem.write]
-allow = false
-allowed_roots = []
-
-[accounts.local.policy.terminal]
-allow = false
-
 [accounts.local.policy.env]
 inherit = false
 allow = ["AGENTNEXUS_TEST_SECRET"]
@@ -1254,11 +1151,9 @@ allow = true
 include_metadata = false
 
 [accounts.local.policy.loopback]
-allowed_resources = ["channel.messages.context"]
-deny_resources = ["fs.write"]
+request_timeout_ms = 666000
 "#,
                 std::env::current_exe().unwrap().display(),
-                workspace.display(),
                 workspace.display(),
                 workspace.display()
             ),
@@ -1296,16 +1191,17 @@ deny_resources = ["fs.write"]
         );
         assert_eq!(
             account.agent.client_capabilities.as_ref().unwrap()["fs"]["readTextFile"],
-            true
+            false
+        );
+        assert_eq!(
+            account.agent.client_capabilities.as_ref().unwrap()["fs"]["writeTextFile"],
+            false
         );
         assert_eq!(
             account.agent.client_capabilities.as_ref().unwrap()["terminal"],
             false
         );
-        assert_eq!(
-            account.policy.loopback.allowed_resources,
-            vec!["channel.messages.context".to_string()]
-        );
+        assert_eq!(account.policy.loopback.request_timeout_ms, 666000);
         assert_eq!(account.policy.permission.wait_timeout_ms, 555000);
         assert!(matches!(
             account.policy.permission.on_timeout,

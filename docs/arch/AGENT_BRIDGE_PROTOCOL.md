@@ -228,7 +228,7 @@ Connector 在 control 和 data 两条 WS 上都必须先发：
   "token": "agb_xxx",
   "bridge_protocol_version": 1,
   "connector": {
-    "name": "agentnexus-acp-connector",
+    "name": "cce-acp-connector",
     "version": "0.2.0"
   }
 }

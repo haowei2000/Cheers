@@ -2,16 +2,16 @@ use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use super::{check_bot_in_channel, not_found, ResourceResult};
+use super::{authorize_channel_read, not_found, Principal, ResourceResult};
 
-pub async fn handle(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
 
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let row = sqlx::query(
         "SELECT id, name, channel_type, workspace_id, topic, created_at, auto_assist

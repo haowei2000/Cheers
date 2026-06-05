@@ -41,17 +41,6 @@ default_cwd = "~/.agentnexus/workspace"
 allowed_roots = ["~/.agentnexus/workspace"]
 backend_may_set_cwd = true
 
-[accounts.local_acp.policy.filesystem.read]
-allow = false
-allowed_roots = []
-
-[accounts.local_acp.policy.filesystem.write]
-allow = false
-allowed_roots = []
-
-[accounts.local_acp.policy.terminal]
-allow = false
-
 [accounts.local_acp.policy.env]
 inherit = false
 allow = ["HOME", "PATH"]
@@ -90,11 +79,4 @@ backend_may_inject_extra_servers = false
 allowed_servers = ["agentnexus"]
 
 [accounts.local_acp.policy.loopback]
-allowed_resources = [
-  "channel.messages.context",
-  "channel.files.read",
-]
-deny_resources = [
-  "fs.write",
-]
 request_timeout_ms = 600000

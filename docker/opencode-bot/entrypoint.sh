@@ -153,17 +153,6 @@ default_cwd = ${tomlString(cwd)}
 allowed_roots = ${tomlArray([cwd])}
 backend_may_set_cwd = false
 
-[accounts.${accountKey}.policy.filesystem.read]
-allow = true
-allowed_roots = ${tomlArray([cwd])}
-
-[accounts.${accountKey}.policy.filesystem.write]
-allow = true
-allowed_roots = ${tomlArray([cwd])}
-
-[accounts.${accountKey}.policy.terminal]
-allow = true
-
 [accounts.${accountKey}.policy.env]
 inherit = false
 allow = ${tomlArray(["PATH", "HOME", "OPENCODE_HOME", "OPENCODE_OPENAI_API_KEY"])}
@@ -203,8 +192,6 @@ backend_may_inject_extra_servers = false
 allowed_servers = ["agentnexus"]
 
 [accounts.${accountKey}.policy.loopback]
-allowed_resources = ["channel.messages.context", "channel.files.read"]
-deny_resources = ["fs.write"]
 request_timeout_ms = 600000
 `;
 
@@ -222,4 +209,4 @@ console.info(
 );
 NODE
 
-exec agentnexus-acp-connector run --config "$CONFIG_PATH"
+exec cce-acp-connector run --config "$CONFIG_PATH"

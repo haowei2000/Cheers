@@ -18,7 +18,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=agent-builder /build/packages/agentnexus-acp-connector-rs/target/release/agentnexus-acp-connector /usr/local/bin/agentnexus-acp-connector
+COPY --from=agent-builder /build/packages/agentnexus-acp-connector-rs/target/release/cce-acp-connector /usr/local/bin/cce-acp-connector
 COPY --from=agent-builder /build/packages/agentnexus-mcp-server/target/release/agentnexus-mcp-server /usr/local/bin/agentnexus-mcp-server
 RUN npm config set registry "${NPM_REGISTRY}" \
     && npm install -g "opencode-ai@${OPENCODE_VERSION}" \

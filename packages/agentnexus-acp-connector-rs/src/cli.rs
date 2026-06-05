@@ -10,7 +10,7 @@ use crate::daemon::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "agentnexus-acp-connector")]
+#[command(name = "cce-acp-connector")]
 #[command(about = "AgentNexus ACP connector daemon")]
 pub struct Args {
     #[command(subcommand)]
@@ -54,7 +54,7 @@ pub async fn run() -> anyhow::Result<()> {
             })
             .await?;
             println!(
-                "started agentnexus-acp-connector name={} pid={}",
+                "started cce-acp-connector name={} pid={}",
                 metadata.name, metadata.pid
             );
             println!("config: {}", metadata.config_path.display());
@@ -68,15 +68,12 @@ pub async fn run() -> anyhow::Result<()> {
             if before.running {
                 if let Some(metadata) = before.metadata {
                     println!(
-                        "stopped agentnexus-acp-connector name={} pid={}",
+                        "stopped cce-acp-connector name={} pid={}",
                         before.name, metadata.pid
                     );
                 }
             } else {
-                println!(
-                    "agentnexus-acp-connector name={} is not running",
-                    status.name
-                );
+                println!("cce-acp-connector name={} is not running", status.name);
             }
             Ok(())
         }
@@ -90,7 +87,7 @@ pub async fn run() -> anyhow::Result<()> {
             })
             .await?;
             println!(
-                "restarted agentnexus-acp-connector name={} pid={}",
+                "restarted cce-acp-connector name={} pid={}",
                 metadata.name, metadata.pid
             );
             println!("config: {}", metadata.config_path.display());
@@ -99,7 +96,7 @@ pub async fn run() -> anyhow::Result<()> {
         Command::Status => {
             let status = daemon_status(&args.name, args.home.as_deref()).await?;
             println!(
-                "agentnexus-acp-connector name={} status={}",
+                "cce-acp-connector name={} status={}",
                 status.name,
                 if status.running { "running" } else { "stopped" }
             );

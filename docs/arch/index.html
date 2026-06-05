@@ -612,12 +612,12 @@ tr:last-child td {
         <div>
           <p class="eyebrow">Architecture status snapshot</p>
           <h1>去中心化 Agent 网格的当前完成度</h1>
-          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交和客户端 daemon 架构固化文档合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛、旧 TS agent 包迁移到 Rust，以及 Rust connector 的 BridgeSession/BridgeRuntime 分层。</p>
+          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交、客户端 daemon 架构固化文档和前端重做架构合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛、旧 TS agent 包迁移到 Rust、Rust connector 的 BridgeSession/BridgeRuntime 分层，以及旧前端 deprecated 后的 <code>frontend-next</code> 主线。</p>
           <div class="meta-row" aria-label="Audit metadata">
             <span class="pill">生成日期: 2026-06-02</span>
             <span class="pill">分支: main</span>
-            <span class="pill">HEAD: ff14b2d + client daemon architecture docs</span>
-            <span class="pill">范围: 2026-06-01 的 6 次提交 + 2026-06-02 daemon 架构固化</span>
+            <span class="pill">HEAD: d5ca9d3 + frontend rebuild architecture docs</span>
+            <span class="pill">范围: 2026-06-01 的 6 次提交 + 2026-06-02 daemon / frontend 架构固化</span>
           </div>
         </div>
 
@@ -634,7 +634,7 @@ tr:last-child td {
             </div>
             <div class="score-item">
               <strong>2</strong>
-              <span>客户端 daemon 架构文档已入库（中英双语）</span>
+              <span>daemon 和 frontend 重做架构文档已入库（中英双语）</span>
             </div>
             <div class="score-item">
               <strong>1</strong>
@@ -649,6 +649,11 @@ tr:last-child td {
             </div>
             <div class="progress-row">
               <span>客户端 daemon 架构</span>
+              <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
+              <b>已固化</b>
+            </div>
+            <div class="progress-row">
+              <span>前端重做架构</span>
               <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
               <b>已固化</b>
             </div>
@@ -671,7 +676,7 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="snapshot-title">当前快照</h2>
-            <p>架构目标已经从“设计意图”推进到可追踪的 Rust gateway 和外置 connector 路径，剩余缺口集中在 connector 自动 MCP 注入、端到端验证和产品化界面。</p>
+            <p>架构目标已经从“设计意图”推进到可追踪的 Rust gateway、外置 connector 路径和前端重做路径，剩余缺口集中在 Backend 审批闭环、connector 自动 MCP 注入、端到端验证和 <code>frontend-next</code> 产品化。</p>
           </div>
         </div>
         <div class="metric-grid">
@@ -695,6 +700,16 @@ tr:last-child td {
             <b>客户端 daemon 架构</b>
             <span>Rust daemon 侧职责拆成 Supervisor、BridgeSession、BridgeRuntime、RuntimeAdapter/AcpAdapter、Loopback 和 State Store，避免把进程管理、Agent Bridge、ACP 与 MCP/resource 混成一层。</span>
           </article>
+          <article class="metric-card">
+            <span class="badge done">已固化</span>
+            <b>前端重做架构</b>
+            <span>旧 <code>frontend/</code> 标记为 deprecated legacy；新主线固定为 <code>frontend-next/</code>，采用 TypeScript + React + Vite + TanStack Router/Query。</span>
+          </article>
+          <article class="metric-card">
+            <span class="badge done">已固化</span>
+            <b>frontend-next 设计语言</b>
+            <span>设计语言固定为动静结合、图标优先、层级浮面和持续方位感：变化信息必须动态明显，主内容在底层，操作面以浮层承载。</span>
+          </article>
         </div>
       </section>
       <section id="topology" aria-labelledby="topology-title">
@@ -713,8 +728,12 @@ tr:last-child td {
                 <span>REST + browser WS，订阅频道并接收消息与流式 delta。</span>
               </div>
               <div class="node">
-                <strong>Frontend</strong>
-                <span>React + Vite 保持现有应用形态，协议 URL 基本不变。</span>
+                <strong>Legacy Frontend</strong>
+                <span>当前 <code>frontend/</code> 只保留为 deprecated deployed UI，短期兼容修复可进，新的工作台能力不再继续堆在旧结构上。</span>
+              </div>
+              <div class="node">
+                <strong>frontend-next</strong>
+                <span>新的浏览器工作台主线：TypeScript + React + Vite，TanStack Router/Query 管路由与 server state，Browser WS 由独立 realtime layer 收口。</span>
               </div>
             </div>
           </div>
@@ -732,7 +751,7 @@ tr:last-child td {
               </div>
               <div class="node">
                 <strong>Resource API</strong>
-                <span>channel reads、Grant-gated writes、activity stream、workspace file tree。</span>
+                <span>channel reads、membership-role-gated writes、activity stream、workspace file tree。</span>
               </div>
             </div>
           </div>
@@ -746,7 +765,7 @@ tr:last-child td {
               </div>
               <div class="node">
                 <strong>Local TOML Policy</strong>
-                <span>本地 Agent Bridge 授权边界：bridge/adapter 只做启动与连接，cwd/env/fs/terminal/permission/send/file/trace/session_update/resource 全部由 <code>policy.*</code> 控制。</span>
+                <span>本地 Agent Bridge 授权边界：bridge/adapter 只做启动与连接，cwd/env 由本地 policy 控制；fs/terminal 属于 agent 进程 OS 权限，permission/send/file/trace/session_update 由 <code>policy.*</code> 控制。</span>
               </div>
               <div class="node">
                 <strong>BridgeSession</strong>
@@ -1076,6 +1095,14 @@ tr:last-child td {
             <h3>旧代码已删除</h3>
             <p>OpenClaw 包、独立 TS bridge-client 和 TS ACP connector 不再保留；默认运行路径只剩 Rust connector。</p>
           </article>
+          <article class="decision-card">
+            <h3>前端重做主线已定</h3>
+            <p>旧 <code>frontend/</code> deprecated；新前端从 <code>frontend-next/</code> 按 vertical slice 重建，Rust Backend 继续作为唯一平台权威。</p>
+          </article>
+          <article class="decision-card">
+            <h3>前端设计语言已定</h3>
+            <p><code>frontend-next</code> 采用动静结合、图标+hover、分层浮面和方位感契约；每个 view 必须说明我在哪、怎么回去、能做什么。</p>
+          </article>
         </div>
       </section>
       <section id="backlog" aria-labelledby="backlog-title">
@@ -1090,6 +1117,11 @@ tr:last-child td {
             <span class="badge open">P0</span>
             <h3>Backend permission_resolution 闭环</h3>
             <p>补齐 <code>/messages/:msg_id/resolve</code> 和 <code>/request-approval</code> 后端接口：Backend 根据 bot owner、channel/workspace membership、Grant 与 request 状态判断审批人，更新审批消息，并通过 control WS 下发 <code>permission_resolution</code> 给 connector。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge open">架构</span>
+            <h3>frontend-next scaffold</h3>
+            <p>按前端重做架构创建 <code>frontend-next/</code>：TypeScript + React + Vite，先建立 app shell、router、providers、shared/api、shared/realtime 和基础 design tokens。</p>
           </article>
           <article class="backlog-card">
             <span class="badge open">实现</span>
@@ -1164,6 +1196,10 @@ tr:last-child td {
           <a class="source-link" href="AGENT_BRIDGE_PROTOCOL.md">
             <strong>Agent Bridge Protocol</strong>
             <span>control/data WS 平台协议</span>
+          </a>
+          <a class="source-link" href="FRONTEND_REBUILD_ARCHITECTURE.md">
+            <strong>Frontend Rebuild Architecture</strong>
+            <span>前端重做语言、框架、数据流和迁移边界</span>
           </a>
           <a class="source-link" href="MESSAGE_CONTENT_FORMAT.md">
             <strong>Message Content Format</strong>

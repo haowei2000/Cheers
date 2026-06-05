@@ -22,6 +22,7 @@ use crate::{
         registry::BotLocator,
     },
     infra::db::models::{MessageMention, MESSAGE_SCHEMA_VERSION},
+    resource::{authorize_channel_write, Principal},
 };
 
 // ── StreamEntry ───────────────────────────────────────────────────────────────
@@ -393,7 +394,7 @@ fn extract_provider_session_id(frame: &Value) -> Option<String> {
 /// 处理 bot 主动发新消息（send 帧）。
 ///
 /// 不同于 delta/done（续写占位），send 是建全新 Message。
-/// 权限检查：校验 bot 是该 channel 成员（R1 退化形式）。
+/// 权限检查：bot token 只映射身份；频道写权限由 membership role 决定。
 pub async fn handle_send(
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
@@ -406,7 +407,16 @@ pub async fn handle_send(
         .and_then(|s| s.parse().ok())
         .ok_or("missing channel_id")?;
 
-    ensure_bot_channel_member(db, bot_id, channel_id).await?;
+    let principal = Principal::bot(bot_id);
+    authorize_channel_write(db, &principal, channel_id)
+        .await
+        .map_err(|(code, _)| {
+            if code == "INTERNAL_ERROR" {
+                "db error"
+            } else {
+                "bot is not allowed to write to the target channel"
+            }
+        })?;
 
     let content = frame
         .get("content")
@@ -480,32 +490,6 @@ pub async fn handle_send(
     fanout.broadcast_channel(channel_id, wire).await;
 
     Ok(msg_id)
-}
-
-async fn ensure_bot_channel_member(
-    db: &PgPool,
-    bot_id: Uuid,
-    channel_id: Uuid,
-) -> Result<(), &'static str> {
-    let ok = sqlx::query(
-        "SELECT EXISTS(
-            SELECT 1 FROM channel_memberships
-            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'
-        ) AS ok",
-    )
-    .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
-    .fetch_one(db)
-    .await
-    .map_err(|_| "db error")?
-    .try_get::<bool, _>("ok")
-    .unwrap_or(false);
-
-    if ok {
-        Ok(())
-    } else {
-        Err("bot is not a member of the target channel")
-    }
 }
 
 fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {

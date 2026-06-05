@@ -511,7 +511,8 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 
         // ── resource 访问 ──────────────────────────────────────────────────
         "resource_req" => {
-            let resp = resource::dispatch(&state.db, bot.bot_id, frame).await;
+            let resp =
+                resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await;
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }

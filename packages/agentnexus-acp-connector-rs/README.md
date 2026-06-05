@@ -1,4 +1,4 @@
-# agentnexus-acp-connector Rust daemon
+# cce-acp-connector Rust daemon
 
 Rust local daemon for the AgentNexus ACP connector.
 
@@ -17,9 +17,11 @@ The local config is TOML because it is a human-audited security policy. It
 defines what the remote Agent Bridge Backend may cause this machine to do.
 Protocol frames and state files remain JSON.
 
-`adapter` only describes how to start the local ACP runtime. Workspace, env,
-filesystem, terminal, permission, resource, file, and message boundaries belong
-under `policy.*`.
+`adapter` only describes how to start the local ACP runtime. Workspace and env
+policy shape the local process launch. Local filesystem and terminal access
+belong to that ACP agent process and are bounded by the OS user, cwd/env,
+container, or sandbox. The connector does not proxy ACP client-side filesystem
+or terminal methods. Channel resource authorization belongs to the Backend.
 
 ```toml
 version = 1
@@ -69,17 +71,6 @@ backend_may_set_cwd = true
 inherit = false
 allow = ["HOME", "PATH"]
 
-[accounts.haowei_claude.policy.filesystem.read]
-allow = false
-allowed_roots = []
-
-[accounts.haowei_claude.policy.filesystem.write]
-allow = false
-allowed_roots = []
-
-[accounts.haowei_claude.policy.terminal]
-allow = false
-
 [accounts.haowei_claude.policy.config]
 backend_may_set_model = false
 backend_may_set_native_options = false
@@ -114,8 +105,6 @@ backend_may_inject_extra_servers = false
 allowed_servers = ["agentnexus"]
 
 [accounts.haowei_claude.policy.loopback]
-allowed_resources = ["channel.messages.context", "channel.files.read"]
-deny_resources = ["fs.write"]
 request_timeout_ms = 600000
 
 [accounts.haowei_claude.security.acp_capability]
@@ -126,6 +115,11 @@ kid = "local-main"
 request_id_prefix = "local-main"
 ```
 
+The connector advertises ACP `clientCapabilities.fs` and
+`clientCapabilities.terminal` as `false`. If the local agent needs to read or
+write files or run commands, grant those abilities to the agent process through
+its runtime environment rather than through connector resource policy.
+
 Do not put `permissionMode = "ask"` in local config. ACP permission requests are
 forwarded to the Backend as Agent Bridge `permission_request` frames, and the
 Backend answers with `permission_resolution`. The local daemon only controls
@@ -133,10 +127,10 @@ whether forwarding is allowed and how long it waits.
 
 ```bash
 cd packages/agentnexus-acp-connector-rs
-cargo run -- start --config /path/to/agentnexus-daemon.toml --name haowei-claude
-cargo run -- status --name haowei-claude
-cargo run -- logs --name haowei-claude --lines 120
-cargo run -- stop --name haowei-claude
+cargo run --bin cce-acp-connector -- start --config /path/to/agentnexus-daemon.toml --name haowei-claude
+cargo run --bin cce-acp-connector -- status --name haowei-claude
+cargo run --bin cce-acp-connector -- logs --name haowei-claude --lines 120
+cargo run --bin cce-acp-connector -- stop --name haowei-claude
 ```
 
 Set `AGENTNEXUS_ACP_HOME=/path/to/state` or pass `--home /path/to/state` to
