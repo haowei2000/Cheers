@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { buildWsUrl } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import type { Message, WsEvent } from "@/types";
 
 interface Callbacks {
@@ -14,7 +15,16 @@ const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
 const MAX_RETRIES = 10;
 
+// Backend browser WS protocol:
+//   1. Connect to /ws
+//   2. Client → {"type":"auth","token":"..."}
+//   3. Server → {"type":"auth_ok","user_id":"..."}
+//   4. Client → {"type":"subscribe","channel_id":"..."}
+//   5. Server → {"type":"subscribed","channel_id":"..."}
+//   6. Broadcast frames arrive tagged with channel_id
+
 export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
+  const token = useAuthStore((s) => s.token);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -23,13 +33,14 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   cbsRef.current = cbs;
 
   const connect = useCallback(() => {
-    if (!channelId || !mountedRef.current) return;
+    if (!channelId || !token || !mountedRef.current) return;
 
-    const ws = new WebSocket(buildWsUrl(`/ws/channels/${channelId}`));
+    const ws = new WebSocket(buildWsUrl("/ws"));
     wsRef.current = ws;
 
     ws.onopen = () => {
-      retryRef.current = 0;
+      // Phase 1: authenticate
+      ws.send(JSON.stringify({ type: "auth", token }));
     };
 
     ws.onmessage = (ev) => {
@@ -42,6 +53,22 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
 
       const { type, data } = event;
 
+      // Protocol control frames — handle then return
+      if (type === "auth_ok") {
+        retryRef.current = 0;
+        // Phase 2: subscribe to the target channel
+        ws.send(JSON.stringify({ type: "subscribe", channel_id: channelId }));
+        return;
+      }
+      if (type === "auth_err") {
+        ws.close();
+        return;
+      }
+      if (type === "subscribed" || type === "unsubscribed" || type === "pong") {
+        return;
+      }
+
+      // Broadcast frames
       if (type === "message") {
         cbsRef.current.onMessage(data as unknown as Message);
       } else if (type === "message_stream") {
@@ -65,10 +92,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     ws.onclose = () => {
       if (!mountedRef.current) return;
       if (retryRef.current >= MAX_RETRIES) return;
-      const delay = Math.min(
-        BASE_DELAY * 2 ** retryRef.current,
-        MAX_DELAY
-      );
+      const delay = Math.min(BASE_DELAY * 2 ** retryRef.current, MAX_DELAY);
       retryRef.current += 1;
       timerRef.current = setTimeout(connect, delay);
     };
@@ -76,7 +100,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     ws.onerror = () => {
       ws.close();
     };
-  }, [channelId]);
+  }, [channelId, token]);
 
   useEffect(() => {
     mountedRef.current = true;
