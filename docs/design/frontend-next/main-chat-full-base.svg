@@ -1,0 +1,276 @@
+<svg width="1440" height="920" viewBox="0 0 1440 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="24" flood-color="#111827" flood-opacity="0.09"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#111827" flood-opacity="0.08"/>
+    </filter>
+    <filter id="panelShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#111827" flood-opacity="0.07"/>
+    </filter>
+    <style>
+      .label { font: 500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #667085; letter-spacing: 0; }
+      .body { font: 400 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #344054; letter-spacing: 0; }
+      .title { font: 650 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #182230; letter-spacing: 0; }
+      .small { font: 500 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #98A2B3; letter-spacing: 0; }
+      .mono { font: 500 11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; fill: #667085; letter-spacing: 0; }
+      .icon { stroke: #667085; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .iconActive { stroke: #2563EB; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <!-- Full-space base content layer: this is the deepest surface, not a centered panel. -->
+  <rect id="base-workbench-surface" width="1440" height="920" fill="#F7F8FA"/>
+  <g id="base-subtle-grid" opacity="0.45">
+    <path d="M0 112H1440M0 224H1440M0 336H1440M0 448H1440M0 560H1440M0 672H1440M0 784H1440" stroke="#EEF1F5"/>
+    <path d="M120 0V920M240 0V920M360 0V920M480 0V920M600 0V920M720 0V920M840 0V920M960 0V920M1080 0V920M1200 0V920M1320 0V920" stroke="#F1F3F6"/>
+  </g>
+
+  <!-- Main timeline content lives directly on the base layer and fills the available space. -->
+  <g id="full-base-chat-timeline">
+    <line x1="442" y1="0" x2="442" y2="920" stroke="#E6E9EF"/>
+    <line x1="1068" y1="0" x2="1068" y2="920" stroke="#EEF1F5"/>
+    <g id="ambient-route-watermark" opacity="0.65">
+      <text x="456" y="126" class="small">Agent Platform / # agent-ops</text>
+      <text x="456" y="150" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="650" fill="#182230">Main conversation</text>
+    </g>
+
+    <g id="date-divider">
+      <line x1="456" y1="204" x2="675" y2="204" stroke="#E6E9EF"/>
+      <text x="694" y="208" class="small">Today</text>
+      <line x1="744" y1="204" x2="1032" y2="204" stroke="#E6E9EF"/>
+    </g>
+
+    <g id="user-message">
+      <circle cx="468" cy="260" r="16" fill="#E6EEF8"/>
+      <text x="461" y="265" class="label" fill="#2563EB">H</text>
+      <text x="496" y="255" class="title">Haowei</text>
+      <text x="558" y="255" class="small">09:42</text>
+      <rect x="496" y="270" width="512" height="66" rx="10" fill="#FFFFFF" fill-opacity="0.86" stroke="#E4E7EC"/>
+      <text x="516" y="297" class="body">Summarize the daemon architecture and verify the ACP bridge path.</text>
+      <g transform="translate(516 312)">
+        <rect width="105" height="20" rx="10" fill="#F2F4F7"/>
+        <path d="M13 6v8M9 10h8" class="icon"/>
+        <text x="26" y="14" class="small">2 files attached</text>
+      </g>
+    </g>
+
+    <g id="agent-streaming-message">
+      <circle cx="468" cy="402" r="16" fill="#EEF4FF"/>
+      <path d="M461 403c4-9 13-9 18 0M463 409h16" class="iconActive"/>
+      <text x="496" y="397" class="title">AgentNexus ACP</text>
+      <text x="606" y="397" class="small">running</text>
+      <rect x="496" y="410" width="594" height="112" rx="10" fill="#FFFFFF" fill-opacity="0.9" stroke="#BFDBFE"/>
+      <text x="516" y="438" class="body">BridgeRuntime is loading the provider session and waiting for ACP output.</text>
+      <text x="516" y="464" class="body">The response is streaming through Agent Bridge data frames</text>
+      <rect x="840" y="451" width="2" height="18" rx="1" fill="#2563EB"/>
+      <g transform="translate(516 488)">
+        <rect width="172" height="24" rx="12" fill="#EFF6FF" stroke="#BFDBFE"/>
+        <circle cx="16" cy="12" r="4" fill="#2563EB"/>
+        <circle cx="16" cy="12" r="8" stroke="#2563EB" stroke-opacity="0.18"/>
+        <text x="30" y="16" class="label" fill="#2563EB">live delta · seq 1842</text>
+      </g>
+    </g>
+
+    <g id="approval-card">
+      <rect x="496" y="570" width="594" height="106" rx="12" fill="#FFFDF7" fill-opacity="0.95" stroke="#F2C94C"/>
+      <rect x="496" y="570" width="4" height="106" rx="2" fill="#D97706"/>
+      <circle cx="524" cy="604" r="10" fill="#FEF3C7"/>
+      <path d="M524 599v7M524 609h.01" stroke="#B45309" stroke-width="1.8" stroke-linecap="round"/>
+      <text x="552" y="609" class="title">Approval needed</text>
+      <text x="678" y="609" class="small">waiting for bot owner</text>
+      <rect x="978" y="592" width="82" height="24" rx="12" fill="#FEF3C7"/>
+      <text x="991" y="608" class="small" fill="#B45309">00:08 pending</text>
+      <text x="516" y="642" class="body">Allow file edit in /workspace/server/src/gateway/ws?</text>
+      <g transform="translate(516 654)">
+        <rect width="74" height="26" rx="7" fill="#FFFFFF" stroke="#D0D5DD"/>
+        <text x="21" y="18" class="label">Deny</text>
+        <rect x="84" width="82" height="26" rx="7" fill="#2563EB"/>
+        <text x="109" y="18" class="label" fill="#FFFFFF">Allow</text>
+      </g>
+    </g>
+
+    <g id="system-note">
+      <rect x="496" y="728" width="410" height="44" rx="10" fill="#FFFFFF" fill-opacity="0.72" stroke="#E4E7EC"/>
+      <path d="M520 743v12M514 749h12" class="icon"/>
+      <text x="540" y="755" class="label">Trace updated · AcpAdapter received session/update</text>
+    </g>
+  </g>
+
+  <!-- Workspace rail floats above the full base layer. -->
+  <g id="workspace-rail" filter="url(#panelShadow)">
+    <rect x="22" y="78" width="58" height="778" rx="14" fill="#FFFFFF" fill-opacity="0.94" stroke="#E4E7EC"/>
+    <g transform="translate(38 98)">
+      <rect width="26" height="26" rx="8" fill="#182230"/>
+      <text x="6" y="18" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">AN</text>
+    </g>
+    <g transform="translate(38 154)">
+      <rect x="-8" y="-8" width="42" height="42" rx="10" fill="#EFF6FF"/>
+      <path d="M4 8h18M4 14h18M4 20h12" class="iconActive"/>
+    </g>
+    <g transform="translate(38 214)">
+      <circle cx="13" cy="13" r="10" class="icon"/>
+      <path d="M13 8v5l4 3" class="icon"/>
+    </g>
+    <g transform="translate(38 274)">
+      <path d="M5 7h16v14H5zM8 11h10M8 15h7" class="icon"/>
+    </g>
+    <g transform="translate(38 334)">
+      <path d="M13 4l9 5v10l-9 5-9-5V9z" class="icon"/>
+      <path d="M13 11v7" class="icon"/>
+    </g>
+    <g transform="translate(38 792)">
+      <circle cx="13" cy="13" r="11" fill="#F2F4F7"/>
+      <path d="M13 7v6l4 3" class="icon"/>
+    </g>
+  </g>
+
+  <!-- Channel list floating layer. -->
+  <g id="channel-list-panel" filter="url(#panelShadow)">
+    <rect x="98" y="78" width="296" height="778" rx="14" fill="#FFFFFF" fill-opacity="0.94" stroke="#E4E7EC"/>
+    <text x="122" y="116" class="title">AgentNexus</text>
+    <text x="122" y="138" class="small">Workspace · live</text>
+    <circle cx="358" cy="116" r="5" fill="#16A34A"/>
+    <g transform="translate(122 162)">
+      <rect width="228" height="36" rx="9" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M16 12v12M10 18h12" class="icon"/>
+      <text x="40" y="23" class="label">New task or channel</text>
+      <path d="M205 13l6 5-6 5" class="icon"/>
+    </g>
+    <text x="122" y="236" class="small">PROJECTS</text>
+    <g transform="translate(114 252)">
+      <rect width="258" height="42" rx="10" fill="#EFF6FF"/>
+      <path d="M22 14h16M22 22h12" class="iconActive"/>
+      <text x="54" y="25" class="label" fill="#2563EB">agent-ops</text>
+      <circle cx="236" cy="21" r="4" fill="#2563EB"/>
+    </g>
+    <g transform="translate(114 302)">
+      <path d="M22 14h16M22 22h12" class="icon"/>
+      <text x="54" y="25" class="label">runtime-debug</text>
+      <rect x="210" y="12" width="28" height="18" rx="9" fill="#F2F4F7"/>
+      <text x="219" y="25" class="small">3</text>
+    </g>
+    <g transform="translate(114 350)">
+      <path d="M22 14h16M22 22h12" class="icon"/>
+      <text x="54" y="25" class="label">frontend-next</text>
+    </g>
+    <text x="122" y="430" class="small">AGENTS</text>
+    <g transform="translate(114 448)">
+      <circle cx="22" cy="20" r="13" fill="#EEF4FF"/>
+      <path d="M15 20c4-8 12-8 16 0M17 26h12" class="iconActive"/>
+      <text x="54" y="18" class="label">ACP Connector</text>
+      <text x="54" y="36" class="small">running · permission wait</text>
+      <circle cx="236" cy="20" r="5" fill="#D97706"/>
+    </g>
+    <g transform="translate(114 506)">
+      <circle cx="22" cy="20" r="13" fill="#ECFDF3"/>
+      <path d="M16 20l5 5 10-11" stroke="#16A34A" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="54" y="18" class="label">MCP Server</text>
+      <text x="54" y="36" class="small">ready</text>
+    </g>
+  </g>
+
+  <!-- Floating route header. -->
+  <g id="floating-route-header" filter="url(#softShadow)">
+    <rect x="418" y="26" width="646" height="54" rx="14" fill="#FFFFFF" fill-opacity="0.94" stroke="#E4E7EC"/>
+    <g transform="translate(438 43)">
+      <path d="M14 4L6 12l8 8" class="icon"/>
+    </g>
+    <text x="472" y="52" class="label">Workspace</text>
+    <path d="M546 47l5 5-5 5" class="icon"/>
+    <text x="562" y="52" class="label">Agent Platform</text>
+    <path d="M665 47l5 5-5 5" class="icon"/>
+    <text x="682" y="52" class="title"># agent-ops</text>
+    <g transform="translate(910 40)">
+      <rect width="86" height="26" rx="13" fill="#ECFDF3" stroke="#ABEFC6"/>
+      <circle cx="17" cy="13" r="4" fill="#16A34A"/>
+      <text x="28" y="17" class="small" fill="#15803D">live</text>
+    </g>
+    <g transform="translate(1014 43)">
+      <circle cx="10" cy="10" r="10" fill="#F8FAFC"/>
+      <path d="M7 10h6M10 7v6" class="icon"/>
+    </g>
+  </g>
+
+  <!-- Right inspector floats above base, narrower visual weight. -->
+  <g id="right-inspector" filter="url(#panelShadow)">
+    <rect x="1092" y="78" width="318" height="778" rx="14" fill="#FFFFFF" fill-opacity="0.94" stroke="#E4E7EC"/>
+    <text x="1118" y="108" class="title">Inspector</text>
+    <text x="1118" y="130" class="small">Agent context · current session</text>
+    <g transform="translate(1118 156)">
+      <rect width="264" height="82" rx="12" fill="#F8FAFC" stroke="#EAECF0"/>
+      <circle cx="24" cy="26" r="8" fill="#16A34A"/>
+      <text x="42" y="30" class="label">BridgeSession ready</text>
+      <text x="42" y="54" class="mono">last_event_seq 1842</text>
+      <rect x="188" y="16" width="50" height="22" rx="11" fill="#EFF6FF"/>
+      <text x="201" y="31" class="small" fill="#2563EB">data</text>
+    </g>
+    <g transform="translate(1118 264)">
+      <text class="small">ACTIVE RUN</text>
+      <rect y="16" width="264" height="88" rx="12" fill="#FFFFFF" stroke="#EAECF0"/>
+      <path d="M20 42h16M20 52h10" class="iconActive"/>
+      <text x="50" y="46" class="label">session/request_permission</text>
+      <text x="50" y="68" class="small">ACP session · acp-7f29</text>
+      <rect x="50" y="78" width="188" height="6" rx="3" fill="#EEF2F6"/>
+      <rect x="50" y="78" width="104" height="6" rx="3" fill="#2563EB"/>
+    </g>
+    <g transform="translate(1118 390)">
+      <text class="small">ACTIONS</text>
+      <rect y="18" width="38" height="38" rx="10" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M14 37h10M19 32v10" class="icon"/>
+      <rect x="50" y="18" width="38" height="38" rx="10" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M63 32h12v12H63z" class="icon"/>
+      <rect x="100" y="18" width="38" height="38" rx="10" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M114 31l10 6-10 6z" class="icon"/>
+      <rect x="150" y="18" width="38" height="38" rx="10" fill="#FFF7ED" stroke="#FED7AA"/>
+      <path d="M169 30v11M169 46h.01" stroke="#D97706" stroke-width="1.8" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(1118 486)">
+      <text class="small">FILES / CONTEXT</text>
+      <rect y="20" width="264" height="38" rx="9" fill="#F8FAFC"/>
+      <path d="M18 32h13l5 5v13H18z" class="icon"/>
+      <text x="50" y="44" class="label">bridge_runtime.rs</text>
+      <text x="214" y="44" class="small">12k</text>
+      <rect y="64" width="264" height="38" rx="9" fill="#F8FAFC"/>
+      <path d="M18 76h13l5 5v13H18z" class="icon"/>
+      <text x="50" y="88" class="label">agent_bridge.rs</text>
+      <text x="214" y="88" class="small">31k</text>
+    </g>
+    <g transform="translate(1118 640)">
+      <text class="small">TRACE</text>
+      <line x1="11" y1="28" x2="11" y2="98" stroke="#E4E7EC"/>
+      <circle cx="11" cy="30" r="5" fill="#16A34A"/>
+      <text x="28" y="34" class="label">session/load ok</text>
+      <circle cx="11" cy="62" r="5" fill="#2563EB"/>
+      <text x="28" y="66" class="label">prompt started</text>
+      <circle cx="11" cy="94" r="5" fill="#D97706"/>
+      <text x="28" y="98" class="label">permission requested</text>
+    </g>
+  </g>
+
+  <!-- Floating composer above full base. -->
+  <g id="floating-composer" filter="url(#softShadow)">
+    <rect x="416" y="792" width="646" height="92" rx="16" fill="#FFFFFF" fill-opacity="0.95" stroke="#D0D5DD"/>
+    <text x="448" y="825" class="body">Ask @ACP Connector to continue after approval...</text>
+    <g transform="translate(444 846)">
+      <rect width="32" height="32" rx="9" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M11 16h10M16 11v10" class="icon"/>
+      <rect x="42" width="32" height="32" rx="9" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M53 12h10v10H53zM57 22v4" class="icon"/>
+      <rect x="84" width="32" height="32" rx="9" fill="#F8FAFC" stroke="#EAECF0"/>
+      <path d="M99 9v14M93 15h12" class="icon"/>
+      <rect x="468" width="96" height="32" rx="10" fill="#2563EB"/>
+      <path d="M493 11l16 5-16 5 3-5z" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="518" y="21" class="label" fill="#FFFFFF">Send</text>
+    </g>
+    <g transform="translate(838 805)">
+      <rect width="132" height="24" rx="12" fill="#F8FAFC" stroke="#EAECF0"/>
+      <circle cx="16" cy="12" r="4" fill="#16A34A"/>
+      <text x="30" y="16" class="small">ready · approval open</text>
+    </g>
+  </g>
+
+  <g id="figma-import-note">
+    <rect x="456" y="884" width="238" height="22" rx="11" fill="#F2F4F7"/>
+    <text x="472" y="899" class="small">Figma import mockup · full base layer v2</text>
+  </g>
+</svg>
