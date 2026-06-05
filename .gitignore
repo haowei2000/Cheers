@@ -12,6 +12,13 @@ __pycache__/
 venv/
 .venv/
 env/
+.ruff_cache/
+.mypy_cache/
+
+# Rust
+target/
+*.profraw
+*.rs.bk
 
 # 运行时与数据（设计书约定排除）
 data/
@@ -24,6 +31,8 @@ tmp/
 # 前端
 node_modules/
 frontend/dist/
+frontend/.vite/
+coverage/
 *.tsbuildinfo
 frontend/.env
 frontend/.env.local
