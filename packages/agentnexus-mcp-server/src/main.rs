@@ -12,9 +12,8 @@ struct ServerConfig {
     resource_token: Option<String>,
     default_channel_id: Option<String>,
     bot_id: Option<String>,
-    /// Platform session UUID injected by the connector via AGENTNEXUS_SESSION_ID.
-    /// Forwarded in every resource call so the server can perform Grant
-    /// authorization on write operations.
+    /// Optional platform session UUID injected by the connector for correlation.
+    /// It is not used for resource authentication or authorization.
     session_id: Option<String>,
     request_timeout_ms: u64,
 }

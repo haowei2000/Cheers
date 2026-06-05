@@ -1,10 +1,10 @@
 [package]
-name = "agentnexus-acp-connector"
-version = "0.1.19"
+name = "cce-acp-connector"
+version = "0.1.22"
 edition = "2021"
 
 [[bin]]
-name = "agentnexus-acp-connector"
+name = "cce-acp-connector"
 path = "src/main.rs"
 
 [dependencies]

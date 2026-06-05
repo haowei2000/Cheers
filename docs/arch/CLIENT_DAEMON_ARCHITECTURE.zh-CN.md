@@ -59,8 +59,6 @@ State Store 管 session 映射。
 [accounts.<id>.policy.sessions]
 [accounts.<id>.policy.prompt]
 [accounts.<id>.policy.workspace]
-[accounts.<id>.policy.filesystem.read/write]
-[accounts.<id>.policy.terminal]
 [accounts.<id>.policy.env]
 [accounts.<id>.policy.config]
 [accounts.<id>.policy.permission]
@@ -73,10 +71,13 @@ State Store 管 session 映射。
 [accounts.<id>.security.acp_capability]
 ```
 
-`adapter` 只描述如何启动本地 ACP runtime。`cwd`、环境变量暴露、文件系统访问、terminal
-访问、resource 转发、permission 转发、send/file 行为、trace/session_update 发射能力都放在
-`policy.*` 下。本地没有 `permissionMode = "ask"` 字段；ACP permission request 必须转发给
-Backend，并通过 `permission_resolution` 解决。
+`adapter` 只描述如何启动本地 ACP runtime。`cwd` 和环境变量暴露由 `policy.workspace` 与
+`policy.env` 控制。本地文件系统和 terminal 访问属于 ACP agent 进程自己，由 OS 用户、
+cwd/env、容器或 sandbox 限制；connector 对 ACP client-side `fs` 和 `terminal` 能力固定
+声明不可用。permission 转发、send/file 行为、trace/session_update 发射能力仍放在
+`policy.*` 下。`policy.loopback` 只承载本地 loopback 传输参数；频道资源授权由 Backend 的
+membership role 解决。本地没有 `permissionMode = "ask"` 字段；ACP permission request 必须
+转发给 Backend，并通过 `permission_resolution` 解决。
 
 ## 2. 协议边界
 

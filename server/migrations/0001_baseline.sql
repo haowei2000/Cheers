@@ -156,6 +156,8 @@ CREATE TABLE IF NOT EXISTS channel_memberships (
     template_id VARCHAR(36) REFERENCES prompt_templates(template_id),
     last_read_at TIMESTAMPTZ,
     hidden_at   TIMESTAMPTZ,
+    CONSTRAINT chk_channel_memberships_member_type CHECK (member_type IN ('user', 'bot')),
+    CONSTRAINT chk_channel_memberships_role CHECK (role IN ('owner', 'admin', 'member', 'readonly')),
     PRIMARY KEY (channel_id, member_id)
 );
 CREATE INDEX IF NOT EXISTS ix_channel_memberships_member ON channel_memberships(member_id, member_type);

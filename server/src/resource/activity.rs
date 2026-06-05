@@ -8,17 +8,17 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use super::{check_bot_in_channel, ResourceResult};
+use super::{authorize_channel_read, Principal, ResourceResult};
 
 /// 处理 `resource_req { resource: "channel.activity.read", params: { channel_id, since_seq?, limit? } }`
-pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
 
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let since_seq = params
         .get("since_seq")
@@ -130,14 +130,14 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
 /// 处理 `resource_req { resource: "channel.messages.index", params: { channel_id } }`
 ///
 /// 返回 `{ min_seq, max_seq, count }` 供 bot 做 gap 自愈（DECENTRALIZED_MESH §4）。
-pub async fn handle_index(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_index(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
 
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let row = sqlx::query(
         "SELECT MIN(channel_seq) AS min_seq,

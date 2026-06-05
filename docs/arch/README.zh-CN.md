@@ -8,6 +8,7 @@
 
 - [架构状态网页](index.html) — 由 `architecture-status.page.json` 通过 `make docs-pages` 生成
 - [架构总览](ARCHITECTURE_OVERVIEW.md)
+- [前端重做架构](FRONTEND_REBUILD_ARCHITECTURE.zh-CN.md) / [English](FRONTEND_REBUILD_ARCHITECTURE.md)
 - [网关与传输协议](WIRE_PROTOCOL.md)
 - [消息内容格式](MESSAGE_CONTENT_FORMAT.md)
 - [任务投递流程](TASK_DELIVERY.md)

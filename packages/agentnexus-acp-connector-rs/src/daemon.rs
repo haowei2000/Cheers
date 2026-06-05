@@ -541,7 +541,7 @@ mod tests {
             "started_at": "2026-06-02T00:00:00Z",
             "cwd": "/tmp",
             "argv": [
-                "/usr/local/bin/agentnexus-acp-connector",
+                "/usr/local/bin/cce-acp-connector",
                 "run",
                 "--config",
                 "/tmp/agentnexus-daemon.toml",
@@ -561,7 +561,7 @@ mod tests {
     #[test]
     fn argv_match_requires_the_supervisor_invocation() {
         let expected = vec![
-            "/usr/local/bin/agentnexus-acp-connector".to_string(),
+            "/usr/local/bin/cce-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
             "/tmp/agentnexus-daemon.toml".to_string(),
@@ -571,7 +571,7 @@ mod tests {
         assert!(argv_matches_expected(&expected, &expected));
 
         let wrong_config = vec![
-            "/usr/local/bin/agentnexus-acp-connector".to_string(),
+            "/usr/local/bin/cce-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
             "/tmp/other.toml".to_string(),
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn command_text_match_accepts_ps_style_output() {
         let expected = vec![
-            "/Users/me/bin/agentnexus-acp-connector".to_string(),
+            "/Users/me/bin/cce-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
             "/tmp/agentnexus-daemon.toml".to_string(),
@@ -592,11 +592,11 @@ mod tests {
             "opencode-main".to_string(),
         ];
         assert!(command_text_matches_expected(
-            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-daemon.toml --name opencode-main",
+            "/Users/me/bin/cce-acp-connector run --config /tmp/agentnexus-daemon.toml --name opencode-main",
             &expected,
         ));
         assert!(!command_text_matches_expected(
-            "/Users/me/bin/agentnexus-acp-connector run --config /tmp/agentnexus-daemon.toml --name other",
+            "/Users/me/bin/cce-acp-connector run --config /tmp/agentnexus-daemon.toml --name other",
             &expected,
         ));
     }

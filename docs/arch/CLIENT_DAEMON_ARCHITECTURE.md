@@ -61,8 +61,6 @@ config file.
 [accounts.<id>.policy.sessions]
 [accounts.<id>.policy.prompt]
 [accounts.<id>.policy.workspace]
-[accounts.<id>.policy.filesystem.read/write]
-[accounts.<id>.policy.terminal]
 [accounts.<id>.policy.env]
 [accounts.<id>.policy.config]
 [accounts.<id>.policy.permission]
@@ -75,10 +73,14 @@ config file.
 [accounts.<id>.security.acp_capability]
 ```
 
-`adapter` only describes how to start the local ACP runtime. `cwd`, environment exposure, filesystem
-access, terminal access, resource forwarding, permission forwarding, send/file behavior, and trace or
-session-update emission all live under `policy.*`. There is no local `permissionMode = "ask"` field;
-ACP permission requests are forwarded to Backend and resolved through `permission_resolution`.
+`adapter` only describes how to start the local ACP runtime. `cwd` and environment exposure live
+under `policy.workspace` and `policy.env`. Local filesystem and terminal access belong to the local
+ACP agent process itself and are bounded by the OS user, cwd/env, container, or sandbox; the
+connector advertises ACP client-side `fs` and `terminal` capabilities as unavailable. Permission
+forwarding, send/file behavior, and trace or session-update emission still live under `policy.*`.
+`policy.loopback` only carries local loopback transport settings; channel resource authorization is
+resolved by Backend membership role. There is no local `permissionMode = "ask"` field; ACP
+permission requests are forwarded to Backend and resolved through `permission_resolution`.
 
 ## 2. Protocol Boundaries
 

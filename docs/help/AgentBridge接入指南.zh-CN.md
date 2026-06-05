@@ -8,7 +8,7 @@
 >
 > 本指南中的 OpenClaw 插件链接和下载入口仅保留给已有部署维护使用，已标记为废弃/遗留路径。新部署请优先打开 `/acp-bridge`，安装 Rust connector 和现成的 ACP agent 包，并迁移到支持 ACP 的本地 Agent，例如 Codex ACP、Claude Agent ACP、OpenCode、Gemini CLI、GitHub Copilot CLI、Qwen Code、Cline、Kilo Code 或 pi ACP。
 
-推荐路径：ACP 协议 Agent 通过 Rust `agentnexus-acp-connector` 接入，并以 OpenCode ACP 为例。
+推荐路径：ACP 协议 Agent 通过 Rust `cce-acp-connector` 接入，并以 OpenCode ACP 为例。
 
 推荐 ACP 路径和遗留 OpenClaw 路径都使用 AgentNexus 的 **Agent Bridge Bot**。用户在频道或 DM 中 `@Bot` 后，AgentNexus 通过两条 WebSocket 把任务推给外部 provider，provider 再把流式文本、最终回复和附件回传给 AgentNexus。
 
@@ -253,7 +253,7 @@ cargo install --path packages/agentnexus-acp-connector-rs --locked
 确认命令可用：
 
 ```bash
-agentnexus-acp-connector --help
+cce-acp-connector --help
 ```
 
 ### 4.2 Docker Compose 预置 OpenCode Bot
@@ -341,17 +341,6 @@ default_cwd = "/Users/haowei/Projects/AgentNexus"
 allowed_roots = ["/Users/haowei/Projects/AgentNexus"]
 backend_may_set_cwd = false
 
-[accounts."opencode-acp".policy.filesystem.read]
-allow = true
-allowed_roots = ["/Users/haowei/Projects/AgentNexus"]
-
-[accounts."opencode-acp".policy.filesystem.write]
-allow = true
-allowed_roots = ["/Users/haowei/Projects/AgentNexus"]
-
-[accounts."opencode-acp".policy.terminal]
-allow = true
-
 [accounts."opencode-acp".policy.env]
 inherit = false
 allow = ["PATH", "HOME", "OPENCODE_OPENAI_API_KEY"]
@@ -367,15 +356,15 @@ backend_may_inject_extra_servers = false
 allowed_servers = ["agentnexus"]
 
 [accounts."opencode-acp".policy.loopback]
-allowed_resources = ["channel.messages.context", "channel.files.read"]
-deny_resources = ["fs.write"]
 request_timeout_ms = 600000
 ```
 
 注意：
 
 - `adapter` 只描述如何启动 ACP agent。
-- `cwd`、环境变量、文件系统、terminal、resource、permission 都由 `policy.*` 控制。
+- `cwd` 和环境变量由 connector 本地 policy 控制；文件系统和 terminal 访问由 ACP agent
+  进程自己使用 OS 权限完成，connector 不代理 ACP client-side fs/terminal 方法。
+- 频道 resource 读写由 Backend 按 bot token 身份和频道 membership role 鉴权。
 - 本地没有 `permissionMode = "ask"`；ACP permission request 必须转发给 Backend，再由
   `permission_resolution` 返回 ACP outcome。
 
@@ -385,22 +374,22 @@ request_timeout_ms = 600000
 
 ```bash
 export AGENTNEXUS_BOT_TOKEN=agb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-agentnexus-acp-connector run --config ./agentnexus-daemon.toml
+cce-acp-connector run --config ./agentnexus-daemon.toml
 ```
 
 后台守护进程：
 
 ```bash
-agentnexus-acp-connector start --config ./agentnexus-daemon.toml --name opencode-acp
-agentnexus-acp-connector status --name opencode-acp
-agentnexus-acp-connector logs --name opencode-acp --lines 200
+cce-acp-connector start --config ./agentnexus-daemon.toml --name opencode-acp
+cce-acp-connector status --name opencode-acp
+cce-acp-connector logs --name opencode-acp --lines 200
 ```
 
 停止或重启：
 
 ```bash
-agentnexus-acp-connector restart --name opencode-acp
-agentnexus-acp-connector stop --name opencode-acp
+cce-acp-connector restart --name opencode-acp
+cce-acp-connector stop --name opencode-acp
 ```
 
 ### 4.6 在 AgentNexus 中测试 OpenCode ACP
@@ -449,8 +438,8 @@ ACP Connector 支持两条文件回传路径：
 配置要求：
 
 - `policy.workspace.default_cwd` 必须是该文件所在工作区或其父目录。
-- `policy.filesystem.write.allowed_roots` 需要包含可信工作区。
-- 返回文件必须在本地 policy 允许的 workspace roots 内，避免误传工作区外的本地文件。
+- ACP agent 进程需要在 OS 层拥有读写该工作区的权限。
+- 返回文件必须位于配置的 workspace roots 内，避免误传工作区外的本地文件。
 
 ---
 
@@ -511,7 +500,7 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 在 AgentNexus 管理界面对 Agent Bridge Bot 执行 rotate token，拿到新的 `agb_...` 后：
 
 - OpenClaw（废弃/遗留）：更新 `~/.openclaw/openclaw.json`，再 `openclaw daemon restart`；有维护窗口时建议迁移到 `/acp-bridge` 的 ACP Connector。
-- ACP：更新 `agentnexus-daemon.toml`，再 `agentnexus-acp-connector restart --name <name>`。
+- ACP：更新 `agentnexus-daemon.toml`，再 `cce-acp-connector restart --name <name>`。
 
 旧 token 会立即失效。
 

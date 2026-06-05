@@ -477,7 +477,7 @@ ACP adapter 可以在内部把 resource 内容转成 prompt content 或 MCP tool
 |----------|----------|------|
 | `acp_bridge.rs` | `agent_bridge.rs` | 服务端说的是 AgentNexus Bridge Protocol。 |
 | `/ws/acp-bridge/control` | `/ws/agent-bridge/control` | 不保留旧 WS alias，避免继续把服务端协议误读为 ACP。 |
-| `agentnexus-acp-connector` | Rust connector binary | 旧 TypeScript npm package 已删除，包名只保留为 Rust binary 名称。 |
+| `cce-acp-connector` | Rust connector binary | 旧 TypeScript npm package 已删除，包名只保留为 Rust binary 名称。 |
 | `ACP Connector` | `AgentNexus Connector with ACP adapter` | 对外说明更准确。 |
 
 命名迁移以正式协议为准：server 侧只暴露 `/ws/agent-bridge/*`，connector 和部署配置同步切换。

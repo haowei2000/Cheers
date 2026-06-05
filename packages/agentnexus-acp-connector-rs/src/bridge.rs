@@ -43,7 +43,7 @@ pub struct ConnectorInfo {
 impl Default for ConnectorInfo {
     fn default() -> Self {
         Self {
-            name: "agentnexus-acp-connector".to_string(),
+            name: "cce-acp-connector".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
@@ -342,8 +342,6 @@ pub struct AcpCapabilityEnvelope {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectorControlSettings {
-    #[serde(default, rename = "agentnexusApprovalMode")]
-    pub agentnexus_approval_mode: Option<String>,
     #[serde(default, rename = "agentNativePermissionMode")]
     pub agent_native_permission_mode: Option<String>,
     #[serde(default, rename = "permissionMode")]
@@ -1001,8 +999,9 @@ pub enum DataOutbound {
         resource: String,
         #[serde(default)]
         params: Option<Value>,
-        /// Platform session UUID forwarded from the loopback caller.
-        /// Required by the server's Grant authorization for write operations.
+        /// Optional platform session UUID forwarded from the loopback caller.
+        /// This is correlation context only; server-side resource authorization
+        /// uses the authenticated bot principal and channel membership role.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session_id: Option<String>,
         #[serde(default)]

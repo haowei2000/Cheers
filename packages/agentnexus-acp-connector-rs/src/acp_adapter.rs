@@ -237,7 +237,7 @@ impl RuntimeAdapter for AcpAdapter {
                         "terminal": false
                     })),
                     "clientInfo": {
-                        "name": "agentnexus-acp-connector",
+                        "name": "cce-acp-connector",
                         "title": "AgentNexus ACP Connector",
                         "version": env!("CARGO_PKG_VERSION")
                     }
@@ -375,10 +375,10 @@ impl RuntimeAdapter for AcpAdapter {
         let previous = self.config.clone();
         let mut restart_fields = Vec::new();
 
-        if settings.agentnexus_approval_mode.is_some() || settings.permission_mode.is_some() {
+        if settings.permission_mode.is_some() {
             rejected.push(ConfigStatusRejectedField {
-                field: "agentnexusApprovalMode".to_string(),
-                reason: "platform permission is resolved by Backend permission_resolution, not the ACP adapter".to_string(),
+                field: "permissionMode".to_string(),
+                reason: "channel resource permission is resolved by Backend membership role; ACP permission prompts use permission_resolution".to_string(),
             });
         }
 

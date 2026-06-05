@@ -52,8 +52,8 @@ pub struct ChannelUpdateRequest {
 pub struct AddMemberRequest {
     pub member_id: String,
     pub member_type: String,
+    pub role: Option<String>,
 }
-
 
 fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
     ChannelDto {
@@ -314,19 +314,28 @@ pub async fn add_channel_member(
             "member_type must be user or bot".into(),
         ));
     }
+    let role = body.role.unwrap_or_else(|| "member".into());
+    if !matches!(role.as_str(), "owner" | "admin" | "member" | "readonly") {
+        return Err(AppError::BadRequest(
+            "role must be owner, admin, member, or readonly".into(),
+        ));
+    }
     sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
-         VALUES ($1, $2, $3, 'member', $4)
-         ON CONFLICT (channel_id, member_id) DO UPDATE SET member_type = EXCLUDED.member_type",
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (channel_id, member_id) DO UPDATE SET
+            member_type = EXCLUDED.member_type,
+            role = EXCLUDED.role",
     )
     .bind(&channel_id)
     .bind(&body.member_id)
     .bind(&body.member_type)
+    .bind(&role)
     .bind(&claims.sub)
     .execute(&state.db)
     .await?;
     Ok(Json(
-        json!({"channel_id": channel_id, "member_id": body.member_id, "member_type": body.member_type}),
+        json!({"channel_id": channel_id, "member_id": body.member_id, "member_type": body.member_type, "role": role}),
     ))
 }
 

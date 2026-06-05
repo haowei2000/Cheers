@@ -22,9 +22,9 @@ pub struct LoopbackRequest {
     pub req_id: String,
     pub resource: String,
     pub params: Option<Value>,
-    /// Platform session UUID supplied by the caller (e.g. agentnexus-mcp-server).
-    /// Forwarded verbatim into `resource_req` so the server can perform
-    /// Grant authorization on write operations.
+    /// Optional platform session UUID supplied by the caller for correlation.
+    /// Resource authorization is performed by the server from the bridge bot
+    /// identity and channel membership role, not from this value.
     pub session_id: Option<String>,
     pub respond_to: oneshot::Sender<LoopbackResponse>,
 }
