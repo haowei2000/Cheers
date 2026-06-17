@@ -612,12 +612,12 @@ tr:last-child td {
         <div>
           <p class="eyebrow">Architecture status snapshot</p>
           <h1>去中心化 Agent 网格的当前完成度</h1>
-          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交、客户端 daemon 架构固化文档和前端重做架构合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛、旧 TS agent 包迁移到 Rust、Rust connector 的 BridgeSession/BridgeRuntime 分层，以及旧前端 deprecated 后的 <code>frontend-next</code> 主线。</p>
+          <p class="lead">本页基于 2026-06-07 工作会话状态。核心进展：前端在 <code>frontend/</code> 内完成 from-scratch 重做（53k→4.4k LOC）；session_id 从 MCP/resource 全链路移除；MCP server 改为共享单进程 + channel_id 显式传入；connection 管理 bug 修复（Redis registry data cancel 竞态、supersede 误判、独立重连死循环）；OpenCode ACP e2e 验证通过——用户 @testbot → gateway dispatch → connector prompt → OpenCode → AI 回复 &quot;4&quot; → 频道可见。</p>
           <div class="meta-row" aria-label="Audit metadata">
-            <span class="pill">生成日期: 2026-06-02</span>
+            <span class="pill">生成日期: 2026-06-07</span>
             <span class="pill">分支: main</span>
-            <span class="pill">HEAD: d5ca9d3 + frontend rebuild architecture docs</span>
-            <span class="pill">范围: 2026-06-01 的 6 次提交 + 2026-06-02 daemon / frontend 架构固化</span>
+            <span class="pill">HEAD: (working tree)</span>
+            <span class="pill">范围: session_id 清理 + MCP 注入重构 + connection 修复 + OpenCode ACP e2e</span>
           </div>
         </div>
 
@@ -625,20 +625,20 @@ tr:last-child td {
           <h2 id="summary-card-title">一句话结论</h2>
           <div class="score">
             <div class="score-item">
-              <strong>6</strong>
-              <span>2026-06-01 工作提交已合并到本页</span>
+              <strong>11 步</strong>
+              <span>全链路打通：REST → dispatch → WS → prompt → ACP → AI → 回复</span>
             </div>
             <div class="score-item">
-              <strong>3</strong>
-              <span>旧 TS agent 包删除、停用或迁移到 Rust</span>
+              <strong>7 bugs</strong>
+              <span>今日修复：PG 语法、session_id、supersede、重连死循环、data 竞态、超时误报、MCP 兼容</span>
             </div>
             <div class="score-item">
-              <strong>2</strong>
-              <span>daemon 和 frontend 重做架构文档已入库（中英双语）</span>
+              <strong>0</strong>
+              <span>connector socket 立断 (已修复为稳定连接)</span>
             </div>
             <div class="score-item">
               <strong>1</strong>
-              <span>Rust gateway 是当前唯一后端形态</span>
+              <span>Rust gateway 是唯一后端</span>
             </div>
           </div>
           <div class="progress-line" id="summary">
@@ -648,24 +648,29 @@ tr:last-child td {
               <b>完成</b>
             </div>
             <div class="progress-row">
-              <span>客户端 daemon 架构</span>
+              <span>Connection 管理</span>
               <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
-              <b>已固化</b>
+              <b>已修复</b>
             </div>
             <div class="progress-row">
-              <span>前端重做架构</span>
+              <span>前端重做实现</span>
               <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
-              <b>已固化</b>
+              <b>已完成</b>
             </div>
             <div class="progress-row">
-              <span>Rust agent 包迁移</span>
-              <div class="bar"><span style="width: 88%; background: var(--blue);"></span></div>
-              <b>基本完成</b>
+              <span>Bot 资源权限统一</span>
+              <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
+              <b>已完成</b>
+            </div>
+            <div class="progress-row">
+              <span>E2E 集成 (OpenCode ACP)</span>
+              <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
+              <b>验证通过</b>
             </div>
             <div class="progress-row">
               <span>Connector MCP 注入</span>
-              <div class="bar"><span style="width: 35%; background: var(--amber);"></span></div>
-              <b>待实现</b>
+              <div class="bar"><span style="width: 80%; background: var(--blue);"></span></div>
+              <b>基本完成</b>
             </div>
           </div>
         </aside>
@@ -676,39 +681,39 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="snapshot-title">当前快照</h2>
-            <p>架构目标已经从“设计意图”推进到可追踪的 Rust gateway、外置 connector 路径和前端重做路径，剩余缺口集中在 Backend 审批闭环、connector 自动 MCP 注入、端到端验证和 <code>frontend-next</code> 产品化。</p>
+            <p>架构目标已经从&quot;设计意图&quot;推进到可验证的实现：Rust gateway 是唯一后端，前端已重做，E2E 全链路经 OpenCode ACP 验证通过。剩余工作集中在 MCP stdio→HTTP 适配、Backend 审批闭环和前端 product-facing 功能。</p>
           </div>
         </div>
         <div class="metric-grid">
           <article class="metric-card">
-            <span class="badge done">已完成</span>
-            <b>Agent Bridge 正式化</b>
-            <span>服务端路径切到 <code>/ws/agent-bridge/*</code>，control/data 连接生命周期、supersede 和 runtime session 状态进入 Rust gateway。</span>
+            <span class="badge done">已验证</span>
+            <b>E2E 全链路 (OpenCode ACP)</b>
+            <span>用户 @testbot → Gateway mention 解析 → Redis pub/sub dispatch → Connector control WS task → build_prompt(channel_id + channel_name) → OpenCode ACP session/prompt → AI 回复 → data/done → Gateway finalize → 频道可见。全链路 11 步打通。</span>
+          </article>
+          <article class="metric-card">
+            <span class="badge done">已修复</span>
+            <b>Connection 管理竞态修复</b>
+            <span>Redis registry 的 <code>cancel_map</code> 用 tuple 存储 control/data cancel token，<code>bind_control</code> 的 <code>remove()</code> 误删 <code>bind_data</code> 存的 data cancel → forward_loop 退出 → data WS RST。改为 <code>BotCancelTokens</code> struct 三字段独立管理。</span>
           </article>
           <article class="metric-card">
             <span class="badge done">已完成</span>
-            <b>消息级路由和取消</b>
-            <span>Bot@Bot 链路改成 message depth，取消改成单条 in-flight bot 消息，避免旧 task chain 状态拖累路由。</span>
+            <b>session_id 全链路清理</b>
+            <span><code>resource::dispatch()</code> 从不读取 <code>session_id</code>。从 <code>DataOutbound::ResourceReq</code>、<code>LoopbackRequest</code>、MCP server env 全部移除，4 跳 dead metadata 清零。</span>
           </article>
           <article class="metric-card">
-            <span class="badge mostly">基本完成</span>
-            <b>Agent 包 Rust 化</b>
-            <span>OpenClaw legacy 包停用，<code>agentnexus-mcp-server</code> 迁成 Rust binary，bridge-client 能力并入 Rust connector crate。</span>
+            <span class="badge done">已完成</span>
+            <b>MCP 注入重构</b>
+            <span>MCP server 改为共享单进程 (name=&quot;agentnexus&quot;)；移除 <code>AGENTNEXUS_CHANNEL_ID</code> 和 <code>AGENTNEXUS_SESSION_ID</code> env var；prompt 注入 <code>channel_id + channel_name</code> 双重标识，agent 显式传入 tool call。</span>
           </article>
           <article class="metric-card">
-            <span class="badge done">已固化</span>
-            <b>客户端 daemon 架构</b>
-            <span>Rust daemon 侧职责拆成 Supervisor、BridgeSession、BridgeRuntime、RuntimeAdapter/AcpAdapter、Loopback 和 State Store，避免把进程管理、Agent Bridge、ACP 与 MCP/resource 混成一层。</span>
+            <span class="badge done">已完成</span>
+            <b>前端 from-scratch 重做</b>
+            <span>旧 53k LOC legacy 前端已全部删除；新前端直接在 <code>frontend/</code> 内重做：React 18 + Vite 6 + TypeScript + Tailwind CSS 3 + Zustand + TanStack Query。</span>
           </article>
           <article class="metric-card">
-            <span class="badge done">已固化</span>
-            <b>前端重做架构</b>
-            <span>旧 <code>frontend/</code> 标记为 deprecated legacy；新主线固定为 <code>frontend-next/</code>，采用 TypeScript + React + Vite + TanStack Router/Query。</span>
-          </article>
-          <article class="metric-card">
-            <span class="badge done">已固化</span>
-            <b>frontend-next 设计语言</b>
-            <span>设计语言固定为动静结合、图标优先、层级浮面和持续方位感：变化信息必须动态明显，主内容在底层，操作面以浮层承载。</span>
+            <span class="badge done">已完成</span>
+            <b>Gateway supersede 修复</b>
+            <span><code>handle_control</code> 的 <code>select!</code> 从 <code>_ = &amp;mut supersede_rx</code> 改为 <code>result = &amp;mut supersede_rx</code>，区分 <code>is_ok()</code>（真 supersede）和 channel 关闭（oneshot drop）。</span>
           </article>
         </div>
       </section>
@@ -716,7 +721,7 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="topology-title">当前拓扑</h2>
-            <p>平台侧保持单实例 Rust Backend；本地 agent 通过 Rust daemon 管理的 connector 接入，connector 承担 ACP 会话、<code>mcpServers</code> 注入和 resource loopback，Resource API 仍是 bot 访问平台资源的唯一协议面。</p>
+            <p>平台侧 Rust Backend + Redis pub/sub dispatch；本地 connector 通过 Agent Bridge control/data WS 接入；ACP agent 使用 OpenCode (<code>opencode acp</code>，持久 stdio)；MCP server (agentnexus-mcp-server) 为可选注入，当前需 HTTP 适配。</p>
           </div>
         </div>
         <div class="topology" role="img" aria-label="Browser and external agents connect to the Rust Backend over REST, WebSocket, Agent Bridge, and Resource API.">
@@ -728,12 +733,8 @@ tr:last-child td {
                 <span>REST + browser WS，订阅频道并接收消息与流式 delta。</span>
               </div>
               <div class="node">
-                <strong>Legacy Frontend</strong>
-                <span>当前 <code>frontend/</code> 只保留为 deprecated deployed UI，短期兼容修复可进，新的工作台能力不再继续堆在旧结构上。</span>
-              </div>
-              <div class="node">
-                <strong>frontend-next</strong>
-                <span>新的浏览器工作台主线：TypeScript + React + Vite，TanStack Router/Query 管路由与 server state，Browser WS 由独立 realtime layer 收口。</span>
+                <strong>New Frontend (frontend/)</strong>
+                <span>From-scratch 重做：React 18 + Vite 6 + TypeScript + Tailwind + Zustand + TanStack Query。3-panel 布局，WS 实时消息，Markdown + 代码高亮，JWT 认证。</span>
               </div>
             </div>
           </div>
@@ -743,15 +744,19 @@ tr:last-child td {
             <div class="node-list">
               <div class="node">
                 <strong>REST API</strong>
-                <span>workspaces / channels / messages / bots / files / friends / capability。</span>
+                <span>workspaces / channels / messages / bots / files / friends / capability。Mention 解析 + bot trigger 派发。</span>
+              </div>
+              <div class="node">
+                <strong>Redis pub/sub Dispatch</strong>
+                <span>在线的 bot 通过 Redis pub/sub 接收 task 帧。online key (30s TTL) 用于派发前检查。</span>
               </div>
               <div class="node">
                 <strong>WS Gateway + Agent Bridge</strong>
-                <span>browser fan-out、control/data WS、stream registry、BotLocator、connector supersede。</span>
+                <span>browser fan-out、control/data WS、stream registry、connector supersede（已修复误判）。</span>
               </div>
               <div class="node">
                 <strong>Resource API</strong>
-                <span>channel reads、membership-role-gated writes、activity stream、workspace file tree。</span>
+                <span>统一权限校验的 channel reads / membership-role-gated writes / activity / fs。session_id 已移除。</span>
               </div>
             </div>
           </div>
@@ -760,28 +765,20 @@ tr:last-child td {
             <h3>外部 Agent</h3>
             <div class="node-list">
               <div class="node">
-                <strong>Rust daemon</strong>
-                <span>只负责 connector 生命周期：start / stop / restart / status / logs。</span>
+                <strong>Connector (Rust daemon)</strong>
+                <span>AccountRuntime → BridgeSession (control+data WS) → BridgeRuntime (task 编排) → AcpAdapter (ACP stdio)。</span>
               </div>
               <div class="node">
-                <strong>Local TOML Policy</strong>
-                <span>本地 Agent Bridge 授权边界：bridge/adapter 只做启动与连接，cwd/env 由本地 policy 控制；fs/terminal 属于 agent 进程 OS 权限，permission/send/file/trace/session_update 由 <code>policy.*</code> 控制。</span>
+                <strong>OpenCode ACP</strong>
+                <span><code>/tmp/opencode acp</code> — 持久 ACP stdio agent。支持 OAuth 认证，无需 API key。<code>session/new</code> → <code>session/prompt</code> → 流式 <code>session/update</code>。</span>
               </div>
               <div class="node">
-                <strong>BridgeSession</strong>
-                <span>持有 Agent Bridge control/data WS，完成 auth、hello、ready、membership snapshot 和 frame 收发。</span>
+                <strong>agentnexus-mcp-server</strong>
+                <span>18 个 MCP tools (channel info, messages, files, fs.*)。stdlib 模式通过 loopback HTTP 调用 connector 的 ResourceReq 转发。OpenCode 需要 HTTP/SSE MCP 格式 (待适配)。</span>
               </div>
               <div class="node">
-                <strong>BridgeRuntime</strong>
-                <span>编排 task/cancel/session/config/permission/resource，将平台帧路由到 runtime adapter。</span>
-              </div>
-              <div class="node">
-                <strong>AcpAdapter</strong>
-                <span>通过 ACP JSON-RPC stdio 管理真实 ACP agent，负责 session/new/load/prompt/cancel 和 session/update 事件。</span>
-              </div>
-              <div class="node">
-                <strong>Loopback + MCP stdio</strong>
-                <span>ACP agent 按 <code>mcpServers</code> 启动 <code>agentnexus-mcp-server</code>，tool call 经 loopback 转成 Agent Bridge <code>resource_req</code>。</span>
+                <strong>Loopback Resource Server</strong>
+                <span>connector 本地 HTTP endpoint。接收 MCP tool call → 转成 data WS <code>resource_req</code> → Backend <code>resource::dispatch()</code> → 返回。</span>
               </div>
             </div>
           </div>
@@ -790,56 +787,68 @@ tr:last-child td {
       <section id="changes" aria-labelledby="changes-title">
         <div class="section-heading">
           <div>
-            <h2 id="changes-title">2026-06-01 的 6 次提交如何推进目标</h2>
-            <p>提交集中在 Agent Bridge 协议正式化、message-level bot 路由/取消、mention API 收敛，以及 legacy TS agent 包到 Rust 的迁移。它们把服务端协议、connector 边界和 agent 包形态推进到当前主线。</p>
+            <h2 id="changes-title">2026-06-07 工作会话改动</h2>
+            <p>本次会话集中修复了 connection 管理、session 元数据清理、MCP 注入重构，并通过 OpenCode ACP 完成了首次 E2E 全链路验证。</p>
           </div>
         </div>
         <div class="timeline">
           <table>
             <thead>
               <tr>
-                <th>提交</th>
-                <th>日期</th>
+                <th>类别</th>
+                <th>范围</th>
                 <th>主题</th>
                 <th>架构影响</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td class="commit">ff14b2d</td>
-                <td>2026-06-01</td>
-                <td>chore: migrate agent packages to rust</td>
-                <td>停用 OpenClaw legacy 包；<code>agentnexus-mcp-server</code> 改为 Rust binary；bridge-client 能力并入 Rust connector crate；TS daemon 退场为 Rust supervisor。</td>
+                <td class="commit">修复</td>
+                <td>gateway</td>
+                <td>PG migration 语法</td>
+                <td><code>ADD CONSTRAINT IF NOT EXISTS</code> → <code>DO $$ IF NOT EXISTS</code> 包裹</td>
               </tr>
               <tr>
-                <td class="commit">3614b00</td>
-                <td>2026-06-01</td>
-                <td>Migrate backend to Agent Bridge protocol</td>
-                <td>服务端 WS 命名和代码路径切到 Agent Bridge；新增协议文档和 runtime session status migration。</td>
+                <td class="commit">清理</td>
+                <td>connector + MCP</td>
+                <td>session_id 全链路移除</td>
+                <td><code>DataOutbound::ResourceReq</code>、<code>LoopbackRequest</code>、MCP env 三处移除 dead metadata</td>
               </tr>
               <tr>
-                <td class="commit">af64bcf</td>
-                <td>2026-06-01</td>
-                <td>feat(server): complete acp bridge connection lifecycle</td>
-                <td>补齐 connector control/data 连接生命周期，新增 supersede 信号和连接一致性处理。</td>
+                <td class="commit">重构</td>
+                <td>connector</td>
+                <td>MCP 注入模式</td>
+                <td>共享单进程 + 移除 env channel_id → agent 显式传入 + prompt 双重标识</td>
               </tr>
               <tr>
-                <td class="commit">2f204ec</td>
-                <td>2026-06-01</td>
-                <td>refactor: unify mention API and remove legacy memory system</td>
-                <td>用户和 bot 消息统一 explicit mention_ids；移除旧 memory resource，MCP post_message 可按名称解析 mention。</td>
+                <td class="commit">修复</td>
+                <td>gateway</td>
+                <td>supersede 误判</td>
+                <td><code>_ = &amp;mut rx</code> → <code>result = &amp;mut rx; result.is_ok()</code> 区分真 supersede</td>
               </tr>
               <tr>
-                <td class="commit">03c7984</td>
-                <td>2026-06-01</td>
-                <td>refactor(server): replace chain cancel with per-message bot cancel</td>
-                <td>取消从 chain 级别收敛到单条 bot placeholder，直接向对应 bot 派发 cancel。</td>
+                <td class="commit">修复</td>
+                <td>connector</td>
+                <td>独立重连死循环</td>
+                <td><code>spawn_*_socket</code> 移除独立重连 → 报告 <code>SocketClosed</code> 给 runtime</td>
               </tr>
               <tr>
-                <td class="commit">5c7a1ec</td>
-                <td>2026-06-01</td>
-                <td>refactor(server): replace chain propagation with message-level depth</td>
-                <td>移除 task_chains/agent_tasks/bot_runs 派发状态；Bot@Bot 改成普通 mention 触发，并用 depth 防循环。</td>
+                <td class="commit">修复</td>
+                <td>gateway</td>
+                <td>Redis data cancel 竞态</td>
+                <td><code>cancel_map</code> tuple → <code>BotCancelTokens</code> struct 三字段独立</td>
+              </tr>
+              <tr>
+                <td class="commit">修复</td>
+                <td>connector</td>
+                <td>socket 超时误报</td>
+                <td><code>Err(Elapsed)</code> 静默忽略 → <code>Ok(None)</code>/<code>Ok(Err)</code> 才是真错误</td>
+              </tr>
+              <tr>
+                <td class="commit">验证</td>
+                <td>e2e</td>
+                <td>OpenCode ACP 全链路</td>
+                <td>用户 @testbot → dispatch → prompt → AI → &quot;4&quot; → 频道可见</td>
               </tr>
             </tbody>
           </table>
@@ -849,137 +858,90 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="goals-title">架构目标完成度</h2>
-            <p>这里按“当前代码是否已经承担该职责”来判断，不把未验证的部署流程算作完全完成。</p>
+            <p>按&quot;当前代码是否已经承担该职责&quot;来判断。</p>
           </div>
         </div>
         <div class="goal-grid">
           <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Rust Backend 骨架与核心路由</h3>
-            <p>axum router、JWT 中间件、browser WS、ACP Bridge WS 和核心 REST 已在 <code>server/</code> 中统一。</p>
+            <span class="badge done">已验证</span>
+            <h3>E2E 全链路</h3>
+            <p>REST API 发消息 → Gateway mention 解析 + Redis dispatch → Connector control WS 收 task → build_prompt → OpenCode ACP session/prompt → AI 回复 → data/done → finalize → 频道 fanout。11 步全链路在真实 Gateway + Connector + OpenCode ACP 上通过。</p>
             <div class="evidence">
-              <a href="../../server/src/router.rs">router.rs</a>
-              <a href="../../server/src/gateway/ws/acp_bridge.rs">acp_bridge.rs</a>
+              <a href="../../tmp/cheers-integration-test/connector.toml">connector.toml</a>
+            </div>
+          </article>
+
+          <article class="goal-card">
+            <span class="badge done">已修复</span>
+            <h3>Connection 管理稳定性</h3>
+            <p>Control + Data WS 连接稳定（无 supersede 死循环、无 data RST 竞态）。Redis registry 的 cancel_map struct 重构消除了 bind_control/bind_data 的 token 覆盖。</p>
+            <div class="evidence">
+              <a href="../../server/src/gateway/redis_registry.rs">redis_registry.rs</a>
+              <a href="../../server/src/gateway/registry.rs">registry.rs</a>
+            </div>
+          </article>
+
+          <article class="goal-card">
+            <span class="badge done">已完成</span>
+            <h3>前端 From-Scratch 重做</h3>
+            <p>旧 53k LOC 全部删除。新前端 React 18 + Vite 6 + TS + Tailwind + Zustand + TanStack Query。3-panel 布局 + WS 流式 + Markdown。</p>
+            <div class="evidence">
+              <a href="../../frontend/src">frontend/src</a>
+            </div>
+          </article>
+
+          <article class="goal-card">
+            <span class="badge done">已完成</span>
+            <h3>Bot Channel Resource 权限统一</h3>
+            <p><code>permission.rs</code> 已移除；<code>resource_req</code> 统一经 resource dispatcher 校验成员身份 + role。</p>
+            <div class="evidence">
+              <a href="../../server/src/resource/mod.rs">resource/mod.rs</a>
             </div>
           </article>
 
           <article class="goal-card">
             <span class="badge done">已完成</span>
             <h3>Mesh schema</h3>
-            <p><code>next_seq</code>、<code>channel_seq</code>、<code>message_mentions</code>、message depth 和 Agent Bridge runtime session 状态已进入 sqlx 迁移。</p>
+            <p><code>next_seq</code>、<code>channel_seq</code>、<code>message_mentions</code>、message depth 和 Agent Bridge runtime session 已进入 sqlx 迁移。</p>
             <div class="evidence">
               <a href="../../server/migrations/0003_decentralized_mesh.sql">0003 migration</a>
-              <a href="DECENTRALIZED_MESH.md">mesh design</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Mention 路由与 message depth</h3>
-            <p>用户和 bot 消息统一 explicit mention_ids；Bot@Bot 不再依赖 task chain 状态，而是用 message depth 限制递归。</p>
-            <div class="evidence">
-              <a href="../../server/src/domain/mentions.rs">mentions.rs</a>
-              <a href="../../server/src/domain/messages.rs">messages.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>channel_seq 事件时钟</h3>
-            <p>分配函数在事务内更新 <code>channels.next_seq</code>；用户消息 born final，bot placeholder finalize 时才取号。</p>
-            <div class="evidence">
-              <a href="../../server/src/domain/channel_seq.rs">channel_seq.rs</a>
-              <a href="../../server/src/gateway/stream.rs">stream.rs</a>
             </div>
           </article>
 
           <article class="goal-card">
             <span class="badge done">已完成</span>
             <h3>Agent Bridge 生命周期</h3>
-            <p>control/data 连接迁移到 Agent Bridge 命名；registry 支持 supersede，runtime session 状态进入 gateway 路径。</p>
+            <p>control/data 连接、registry、supersede (已修复)、runtime session 状态完整。</p>
             <div class="evidence">
               <a href="../../server/src/gateway/ws/agent_bridge.rs">agent_bridge.rs</a>
-              <a href="../../server/src/gateway/registry.rs">registry.rs</a>
             </div>
           </article>
 
           <article class="goal-card">
             <span class="badge mostly">基本完成</span>
-            <h3>单消息取消</h3>
-            <p>取消 API 通过 placeholder 找到 owner bot，只取消当前 in-flight bot 消息，不再取消整条旧 task chain。</p>
+            <h3>Connector MCP 注入</h3>
+            <p>Session 管理、loopback、resource dispatch 均已就绪。OpenCode ACP 需要 HTTP/SSE MCP 格式而非 stdio（已识别，待适配）。18 个 MCP tools 已用 mock loopback 验证。</p>
             <div class="evidence">
-              <a href="../../server/src/api/messages.rs">api/messages.rs</a>
-              <a href="../../server/src/gateway/stream.rs">stream.rs</a>
+              <a href="../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs">bridge_runtime.rs</a>
+              <a href="../../packages/agentnexus-mcp-server/src/main.rs">main.rs (MCP)</a>
             </div>
           </article>
 
           <article class="goal-card">
             <span class="badge mostly">基本完成</span>
             <h3>Resource API v1</h3>
-            <p>频道信息、成员、消息、activity、文件列表、memory 兼容层和 <code>fs.*</code> 已统一通过 resource dispatcher 暴露。</p>
+            <p>频道信息、成员、消息、activity、文件列表和 <code>fs.*</code> 已统一通过 resource dispatcher 暴露；权限已收敛为单一路径。</p>
             <div class="evidence">
               <a href="../../server/src/resource/mod.rs">resource/mod.rs</a>
-              <a href="../../server/src/resource/activity.rs">activity.rs</a>
-              <a href="../../server/src/resource/fs.rs">fs.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge mostly">基本完成</span>
-            <h3>Rust MCP 标准桥工具面</h3>
-            <p><code>agentnexus-mcp-server</code> 已迁为 Rust binary，并把资源读写映射成 MCP tools；connector 负责后续按 ACP <code>mcpServers</code> 注入。</p>
-            <div class="evidence">
-              <a href="../../packages/agentnexus-mcp-server/src/main.rs">main.rs</a>
-              <a href="../../packages/agentnexus-mcp-server/Cargo.toml">Cargo.toml</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Agent package 退旧迁移</h3>
-            <p>OpenClaw channel package、独立 bridge-client 包和旧 TypeScript ACP connector 均已移除；Rust connector crate 承接 daemon、BridgeRuntime、ACP adapter 与 bridge 协议能力。</p>
-            <div class="evidence">
-              <a href="../../packages/agentnexus-acp-connector-rs">connector-rs</a>
-              <a href="../../packages/agentnexus-acp-connector-rs/README.md">Rust connector README</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已固化</span>
-            <h3>客户端 daemon 分层</h3>
-            <p>本地 daemon 架构固定为 Supervisor / State Store / BridgeSession / BridgeRuntime / RuntimeAdapter / AcpAdapter / Loopback，下一步实现必须沿这个数据流推进。</p>
-            <div class="evidence">
-              <a href="CLIENT_DAEMON_ARCHITECTURE.zh-CN.md">client daemon arch</a>
-              <a href="CLIENT_DAEMON_ARCHITECTURE.md">English version</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge partial">部分完成</span>
-            <h3>Connector MCP stdio 注入</h3>
-            <p>ACP agent 配置里的 <code>mcpServers</code> 已由 connector 传入 session/new/load；自动合成 AgentNexus MCP entry 和 loopback resource endpoint 是下一步。</p>
-            <div class="evidence">
-              <a href="../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs">bridge_runtime.rs</a>
-              <a href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">ACP compatibility</a>
             </div>
           </article>
 
           <article class="goal-card">
             <span class="badge partial">部分完成</span>
             <h3>全量 REST 覆盖</h3>
-            <p>核心端点已经迁移到 Rust；DM、topic scope、admin 级资源和部分旧后端能力仍需要逐项对齐。</p>
+            <p>核心端点已迁移到 Rust；DM、topic scope、admin 级资源仍需逐项对齐。</p>
             <div class="evidence">
               <a href="../../server/src/api">server/src/api</a>
-              <a href="REFACTOR_PLAN.md">refactor plan</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge partial">部分完成</span>
-            <h3>文件与 memory 资源</h3>
-            <p>旧 <code>channel.memory</code> resource 已移除，当前资源面转向文件、消息和 <code>fs.*</code>；S3 文件内容读写仍需继续验证。</p>
-            <div class="evidence">
-              <a href="../../server/src/resource/files.rs">files.rs</a>
             </div>
           </article>
 
@@ -989,7 +951,6 @@ tr:last-child td {
             <p>资源分发器仍是静态 <code>match</code>；按 channel / Environment 注册动态 resource handler 尚未实现。</p>
             <div class="evidence">
               <a href="../../server/src/resource/mod.rs">resource/mod.rs</a>
-              <a href="context-and-environment.md">context-and-environment</a>
             </div>
           </article>
 
@@ -999,8 +960,6 @@ tr:last-child td {
             <p>单实例部署仍是本期决策；多实例 fan-out/locator、内容级 E2EE 和向量检索均保留为后续演进。</p>
             <div class="evidence">
               <a href="ARCHITECTURE_OVERVIEW.md">overview</a>
-              <a href="SECURITY.md">security</a>
-              <a href="E2EE_NOTES.md">e2ee notes</a>
             </div>
           </article>
         </div>
@@ -1008,50 +967,50 @@ tr:last-child td {
       <section aria-labelledby="contract-title">
         <div class="section-heading">
           <div>
-            <h2 id="contract-title">关键运行流</h2>
-            <p>下面是当前主链路的核心契约：写后投递、消息级 bot 路由、Agent Bridge 生命周期，以及 ACP MCP stdio 的责任边界。</p>
+            <h2 id="contract-title">已验证的运行流</h2>
+            <p>以下是经 OpenCode ACP E2E 验证的核心链路。</p>
           </div>
         </div>
         <div class="flow">
           <div class="flow-step">
             <small>1</small>
             <strong>消息写入</strong>
-            <span>验证成员、解析 token mention、事务分配 <code>channel_seq</code>、插入消息。</span>
+            <span>验证成员、解析 mention、事务分配 <code>channel_seq</code>、插入消息。</span>
           </div>
           <div class="flow-step">
             <small>2</small>
-            <strong>终态 fan-out</strong>
-            <span>PG commit 后再广播浏览器终态帧，满足 Write-Before-Deliver。</span>
+            <strong>Bot trigger 解析</strong>
+            <span><code>resolve_bot_triggers()</code> 匹配 mention_ids → 查找频道成员 bot。</span>
           </div>
           <div class="flow-step">
             <small>3</small>
-            <strong>message-level dispatch</strong>
-            <span>有 <code>@bot</code> 派发指定 bot；bot 回复再次 mention bot 时以 depth+1 继续派发，超过上限静默。</span>
+            <strong>Redis dispatch</strong>
+            <span>检查 Redis online key → <code>dispatch_task</code> 通过 pub/sub 发 task 帧。</span>
           </div>
           <div class="flow-step">
             <small>4</small>
-            <strong>per-message cancel</strong>
-            <span>用户停止某条 bot placeholder 时，Backend 找到 owner bot 并只推送该消息的 cancel frame。</span>
+            <strong>Control WS 接收</strong>
+            <span>Connector 的 forward_loop 从 Redis 订阅收到 task → 转发给 BridgeRuntime。</span>
           </div>
           <div class="flow-step">
             <small>5</small>
-            <strong>BridgeSession 边界</strong>
-            <span>BridgeSession 只管理 Agent Bridge control/data transport；不调用 ACP、不拼 prompt、不处理本地文件。</span>
+            <strong>Prompt 构建</strong>
+            <span><code>build_prompt()</code> 注入 system contract + channel_id + channel_name + trigger message。</span>
           </div>
           <div class="flow-step">
             <small>6</small>
-            <strong>BridgeRuntime 编排</strong>
-            <span>BridgeRuntime 确保 provider session mapping，调用 RuntimeAdapter，并把 RuntimeEvent 转成 data <code>delta/done/error</code>。</span>
+            <strong>ACP session/prompt</strong>
+            <span>AcpAdapter 调 OpenCode ACP <code>session/new</code> → <code>session/prompt</code> (JSON-RPC stdio)。</span>
           </div>
           <div class="flow-step">
             <small>7</small>
-            <strong>connector MCP 注入</strong>
-            <span>connector 在 ACP <code>session/new/load</code> 注入 <code>mcpServers</code>；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。</span>
+            <strong>流式 delta</strong>
+            <span>OpenCode 通过 <code>session/update</code> (agent_message_chunk) 流式返回 AI 生成文本。</span>
           </div>
           <div class="flow-step">
             <small>8</small>
-            <strong>资源裁判</strong>
-            <span>connector 把 MCP tool call 转成 <code>resource_req</code>，Backend 统一校验频道成员、Grant 和 capability delegation。</span>
+            <strong>Data WS 回传</strong>
+            <span>BridgeRuntime 将 delta 转成 data WS <code>delta/done</code> 帧 → Gateway 接收。</span>
           </div>
         </div>
       </section>
@@ -1059,49 +1018,41 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="decisions-title">已经明确的架构方向</h2>
-            <p>这些决策在当前代码或文档中已经形成约束，后续实现应继续沿用。</p>
+            <p>这些决策在当前代码或文档中已经形成约束。</p>
           </div>
         </div>
         <div class="decision-grid">
           <article class="decision-card">
             <h3>外部 agent 优先</h3>
-            <p>平台不再依赖内置 Python bot runtime；外置 ACP bot 和 MCP agent 是同一协议路径。</p>
+            <p>平台不依赖内置 runtime；外置 ACP agent (OpenCode / Claude / Codex) 通过同一 ACP 协议接入。</p>
           </article>
           <article class="decision-card">
             <h3>频道只转发 @</h3>
             <p>没有中央 coordinator 参与意图判断，路由规则可测试、可审计。</p>
           </article>
           <article class="decision-card">
-            <h3>资源写走 Grant</h3>
-            <p>Resource API 读只需频道成员，写需要成员身份和 ACP RBAC Grant。</p>
+            <h3>资源写走 membership role</h3>
+            <p>Resource API 读需频道成员，写需 owner/admin/member role。旧 Grant 机制已移除。</p>
           </article>
           <article class="decision-card">
             <h3>MCP 注入归 connector</h3>
-            <p>daemon 只管理 connector 生命周期；connector 注入 <code>mcpServers</code>，ACP agent 按 stdio 启动 MCP server。</p>
-          </article>
-          <article class="decision-card">
-            <h3>BridgeSession 不碰 ACP</h3>
-            <p>Agent Bridge transport、runtime 编排和 ACP JSON-RPC 分别属于 BridgeSession、BridgeRuntime 和 AcpAdapter。</p>
+            <p>daemon 只管理 connector 生命周期；connector 负责 MCP server 注入 (当前需 HTTP 适配)。</p>
           </article>
           <article class="decision-card">
             <h3>Agent Bridge 是平台协议</h3>
             <p>服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。</p>
           </article>
           <article class="decision-card">
-            <h3>单实例是本期约束</h3>
-            <p>fan-out 和 BotLocator 先走进程内或 Redis registry，跨实例扩展保留 trait 接口。</p>
+            <h3>单实例 + Redis dispatch</h3>
+            <p>bot task 通过 Redis pub/sub 派发；online key 用于派发前检查。</p>
           </article>
           <article class="decision-card">
-            <h3>旧代码已删除</h3>
-            <p>OpenClaw 包、独立 TS bridge-client 和 TS ACP connector 不再保留；默认运行路径只剩 Rust connector。</p>
+            <h3>前端为原地重建</h3>
+            <p>直接在 <code>frontend/</code> 内 from-scratch 重做；React 18 + Vite 6 + TS + Tailwind。</p>
           </article>
           <article class="decision-card">
-            <h3>前端重做主线已定</h3>
-            <p>旧 <code>frontend/</code> deprecated；新前端从 <code>frontend-next/</code> 按 vertical slice 重建，Rust Backend 继续作为唯一平台权威。</p>
-          </article>
-          <article class="decision-card">
-            <h3>前端设计语言已定</h3>
-            <p><code>frontend-next</code> 采用动静结合、图标+hover、分层浮面和方位感契约；每个 view 必须说明我在哪、怎么回去、能做什么。</p>
+            <h3>ACP agent = OpenCode</h3>
+            <p><code>opencode acp</code> 支持持久 stdio ACP + OAuth 认证，无需 API key。MCP 需 HTTP 适配。</p>
           </article>
         </div>
       </section>
@@ -1109,44 +1060,24 @@ tr:last-child td {
         <div class="section-heading">
           <div>
             <h2 id="backlog-title">剩余工作建议</h2>
-            <p>下一步重点不是再补临时 shim，而是把 Backend 审批闭环、connector 侧 MCP 注入闭环实现并验证，继续把 Rust connector 全量化。</p>
+            <p>E2E 全链路已打通。下一步：MCP stdio→HTTP 适配以在 OpenCode 上启用 MCP tools、Backend 审批闭环、前端 product-facing 功能。</p>
           </div>
         </div>
         <div class="backlog-grid">
           <article class="backlog-card">
+            <span class="badge mostly">适配</span>
+            <h3>MCP server HTTP 模式</h3>
+            <p>agentnexus-mcp-server 需要支持 HTTP/SSE transport，以兼容 OpenCode ACP 的 MCP 格式 (<code>type: &quot;http&quot;</code>, <code>url</code>, <code>headers</code>)。当前 stdio 模式在 mock loopback 上已验证 18 tools。</p>
+          </article>
+          <article class="backlog-card">
             <span class="badge open">P0</span>
             <h3>Backend permission_resolution 闭环</h3>
-            <p>补齐 <code>/messages/:msg_id/resolve</code> 和 <code>/request-approval</code> 后端接口：Backend 根据 bot owner、channel/workspace membership、Grant 与 request 状态判断审批人，更新审批消息，并通过 control WS 下发 <code>permission_resolution</code> 给 connector。</p>
+            <p>补齐 <code>/messages/:msg_id/resolve</code> 和审批消息接口。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">架构</span>
-            <h3>frontend-next scaffold</h3>
-            <p>按前端重做架构创建 <code>frontend-next/</code>：TypeScript + React + Vite，先建立 app shell、router、providers、shared/api、shared/realtime 和基础 design tokens。</p>
-          </article>
-          <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>Connector 自动 MCP 注入</h3>
-            <p>在 connector runtime 中增加 <code>agent.agentnexusMcp.enabled</code>，自动合成 stdio <code>mcpServers</code> entry 并注入 ACP <code>session/new/load</code>。</p>
-          </article>
-          <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>BridgeRuntime 骨架</h3>
-            <p>按客户端 daemon 架构文档新增 Rust <code>bridge_runtime.rs</code>，承接 task/cancel/session/config/permission/resource 路由，先接真实 AcpAdapter 边界。</p>
-          </article>
-          <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>Loopback resource endpoint</h3>
-            <p>connector 本机起 HTTP endpoint，接收 <code>agentnexus-mcp-server</code> tool call，转成 data WS <code>resource_req</code> 并等待 <code>resource_res</code>。</p>
-          </article>
-          <article class="backlog-card">
-            <span class="badge partial">验证</span>
-            <h3>MCP 端到端</h3>
-            <p>用真实 connector 验证 <code>read_activity</code>、<code>fs_write</code>、<code>messages_by_seq</code>、per-message cancel 和 stdio MCP 注入。</p>
-          </article>
-          <article class="backlog-card">
-            <span class="badge partial">验证</span>
-            <h3>空库启动和 cargo 测试</h3>
-            <p>按 sqlx migration discipline，从空 Postgres 跑 gateway，确认 <code>0001..0008</code> 可线性执行。</p>
+            <span class="badge open">P1</span>
+            <h3>前端 Chat 功能完善</h3>
+            <p>bot 配置界面、审批卡片渲染、文件上传/预览、通知面板、频道设置。</p>
           </article>
           <article class="backlog-card">
             <span class="badge open">实现</span>
@@ -1154,12 +1085,17 @@ tr:last-child td {
             <p>把 resource dispatcher 从静态 <code>match</code> 演进成可按 channel / template 注册的 handler。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">产品化</span>
-            <h3>权限覆盖 UI 和 Lens</h3>
-            <p>前端还缺 channel override 设置界面，以及 Environment Lens 的声明式渲染。</p>
+            <span class="badge open">实现</span>
+            <h3>Redis online key 自动管理</h3>
+            <p><code>set_online</code> spawn task 失败无声；需要心跳续期 + 断线清理机制。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge open">验证</span>
+            <h3>MCP E2E (真实频道)</h3>
+            <p>MCP HTTP 适配后，用真实 connector 验证 <code>read_activity</code>、<code>fs_write</code>、<code>messages_by_seq</code> 全链路。</p>
           </article>
         </div>
-        <p class="note">根因判断：2026-06-01 的改动解决了平台协议命名、消息级路由/取消和旧 agent 包形态不一致的问题。MCP stdio 集成的正确方向是 connector 注入 ACP <code>mcpServers</code> 并提供 loopback resource endpoint，而不是让 daemon 直接管理 MCP 子进程。</p>
+        <p class="note">根因判断：2026-06-07 工作会话解决了 7 个 bugs，从 PG migration 语法到 Redis registry data cancel 竞态。最关键的是 connection 管理三层修复：(1) supersede 误判 → 精确区分 oneshot 信号 vs drop；(2) 独立重连 → 统一 SocketClosed 报告；(3) Redis cancel_map tuple 覆盖 → BotCancelTokens struct。E2E 全链路经 OpenCode ACP 验证通过。</p>
       </section>
       <section aria-labelledby="sources-title">
         <div class="section-heading">
@@ -1177,21 +1113,13 @@ tr:last-child td {
             <strong>Decentralized Mesh</strong>
             <span>mesh 步骤与资源一致性</span>
           </a>
-          <a class="source-link" href="REFACTOR_PLAN.md">
-            <strong>Refactor Plan</strong>
-            <span>阶段计划与剩余项</span>
-          </a>
           <a class="source-link" href="CLIENT_DAEMON_ARCHITECTURE.md">
             <strong>Client Daemon Architecture</strong>
-            <span>Rust daemon / connector 分层、数据流和迁移顺序</span>
+            <span>Rust daemon / connector 分层</span>
           </a>
-          <a class="source-link" href="CLIENT_DAEMON_ARCHITECTURE.zh-CN.md">
-            <strong>客户端 Daemon 架构</strong>
-            <span>客户端 daemon 侧组件边界、BridgeSession/BridgeRuntime/AcpAdapter 责任划分</span>
-          </a>
-          <a class="source-link" href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">
-            <strong>Agent Bridge ACP Compatibility</strong>
-            <span>Agent Bridge、ACP 和 MCP stdio 注入边界</span>
+          <a class="source-link" href="BOT_PERMISSION_CLOSED_LOOP.md">
+            <strong>Bot Permission Closed Loop</strong>
+            <span>Bot 权限闭环</span>
           </a>
           <a class="source-link" href="AGENT_BRIDGE_PROTOCOL.md">
             <strong>Agent Bridge Protocol</strong>
@@ -1199,37 +1127,33 @@ tr:last-child td {
           </a>
           <a class="source-link" href="FRONTEND_REBUILD_ARCHITECTURE.md">
             <strong>Frontend Rebuild Architecture</strong>
-            <span>前端重做语言、框架、数据流和迁移边界</span>
+            <span>前端重做架构</span>
           </a>
-          <a class="source-link" href="MESSAGE_CONTENT_FORMAT.md">
-            <strong>Message Content Format</strong>
-            <span>token 与 mention 表关系</span>
+          <a class="source-link" href="../../server/src/gateway/redis_registry.rs">
+            <strong>server/src/gateway/redis_registry.rs</strong>
+            <span>Redis pub/sub dispatch + BotCancelTokens</span>
           </a>
-          <a class="source-link" href="../../server/src/domain/messages.rs">
-            <strong>server/src/domain/messages.rs</strong>
-            <span>写入、路由、分页</span>
+          <a class="source-link" href="../../server/src/gateway/registry.rs">
+            <strong>server/src/gateway/registry.rs</strong>
+            <span>BotLocator + supersede 逻辑</span>
           </a>
           <a class="source-link" href="../../server/src/resource/mod.rs">
             <strong>server/src/resource/mod.rs</strong>
             <span>Resource API dispatcher</span>
           </a>
-          <a class="source-link" href="../../server/src/gateway/ws/agent_bridge.rs">
-            <strong>server/src/gateway/ws/agent_bridge.rs</strong>
-            <span>Agent Bridge WS lifecycle</span>
+          <a class="source-link" href="../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs">
+            <strong>connector bridge_runtime.rs</strong>
+            <span>Runtime 编排 + MCP 注入 + prompt 构建</span>
           </a>
           <a class="source-link" href="../../packages/agentnexus-mcp-server/src/main.rs">
             <strong>agentnexus-mcp-server</strong>
-            <span>Rust MCP 工具映射</span>
-          </a>
-          <a class="source-link" href="../../packages/agentnexus-acp-connector-rs">
-            <strong>agentnexus-acp-connector-rs</strong>
-            <span>Rust daemon 和 bridge 协议能力</span>
+            <span>18 MCP tools</span>
           </a>
         </div>
       </section>
     </main>
     <footer class="footer">
-      <p>Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set and the 2026-06-02 client daemon architecture docs. This is a generated documentation snapshot; update <code>architecture-status.page.json</code> and run <code>make docs-pages</code> instead of editing <code>index.html</code> directly.</p>
+      <p>Generated from 2026-06-07 working session state, reflecting session_id cleanup, MCP injection refactor, connection management fixes (supersede + reconnect loop + Redis data cancel race), and first E2E verification via OpenCode ACP. Update <code>architecture-status.page.json</code> and run <code>node scripts/generate-architecture-status-page.mjs</code> to regenerate.</p>
     </footer>
   </div>
 </body>

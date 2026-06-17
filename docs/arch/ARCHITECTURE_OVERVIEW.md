@@ -3,6 +3,8 @@
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
 > 本文是架构重构的**索引入口**。细则见：
+> - [DATA_FLOW_AND_REFACTOR_PLAN.md](./DATA_FLOW_AND_REFACTOR_PLAN.md) —— **数据流全景与改造计划（代码现状快照）**：三面协议帧表、八条端到端流程、系统不变量、协议-代码差异表、改造项 R1–R13
+> - [ROADMAP.md](./ROADMAP.md) —— **工程执行路线图**：里程碑 M0–M4、依赖与验收门、schema-超前-code 缺口、功能裁剪表（把 R1–R13 与 Phase 计划合成可落地序列）
 > - [REFACTOR_PLAN.md](./REFACTOR_PLAN.md) —— 模块迁移、目录结构、阶段计划、风险
 > - [WIRE_PROTOCOL.md](./WIRE_PROTOCOL.md) —— 实时线协议 v1（浏览器 ↔ Rust Backend）
 > - [TASK_DELIVERY.md](./TASK_DELIVERY.md) —— Agent 任务投递契约 v2（Backend → Agent Bridge WS → Agent Service）
