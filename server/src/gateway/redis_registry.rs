@@ -77,17 +77,19 @@ impl BotLocator for RedisBotLocator {
 
 // ── RedisBotRegistry（连接绑定侧）───────────────────────────────────────────
 
+struct BotCancelTokens {
+    /// Drop to cancel the control forward_loop.
+    control_cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Drop to cancel the data forward_loop.
+    data_cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Send to notify old handler that a new control connection superseded it.
+    supersede_tx: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
 pub struct RedisBotRegistry {
     client: redis::Client,
     publisher: redis::aio::ConnectionManager,
-    /// 取消令牌：bot_id → CancelSender（drop 时取消订阅任务）
-    cancel_map: dashmap::DashMap<
-        Uuid,
-        (
-            tokio::sync::oneshot::Sender<()>,
-            tokio::sync::oneshot::Sender<()>,
-        ),
-    >,
+    cancel_map: dashmap::DashMap<Uuid, BotCancelTokens>,
 }
 
 impl RedisBotRegistry {
@@ -103,19 +105,19 @@ impl RedisBotRegistry {
 // BotRegistry 在 Arc<RedisBotRegistry> 上实现
 impl BotRegistry for Arc<RedisBotRegistry> {
     fn bind_control(&self, bot_id: Uuid, conn_id: Uuid, task_tx: mpsc::Sender<Value>) -> oneshot::Receiver<()> {
-        RedisBotRegistry::bind_control(self, bot_id, conn_id, task_tx)
+        (**self).bind_control(bot_id, conn_id, task_tx)
     }
     fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
-        RedisBotRegistry::bind_data(self, bot_id, data_tx);
+        (**self).bind_data(bot_id, data_tx)
     }
     fn unbind(&self, bot_id: Uuid) {
-        RedisBotRegistry::unbind(self, bot_id);
+        (**self).unbind(bot_id)
     }
     fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
-        RedisBotRegistry::unbind_if_connection(self, bot_id, conn_id);
+        (**self).unbind_if_connection(bot_id, conn_id)
     }
     fn unbind_data(&self, bot_id: Uuid) {
-        RedisBotRegistry::unbind_data(self, bot_id);
+        (**self).unbind_data(bot_id)
     }
 }
 
@@ -125,13 +127,10 @@ impl BotRegistry for RedisBotRegistry {
         let client = self.client.clone();
         let publisher = self.publisher.clone();
 
-        // 设置 Redis 在线标记（30s TTL，由心跳续期）
         tokio::spawn(set_online(publisher.clone(), bot_id));
 
-        // supersede 信号：新连接进来时通知旧 WS handler 退出
         let (supersede_tx, supersede_rx) = oneshot::channel::<()>();
 
-        // 启动订阅转发任务（cancel_rx 在 unbind 时触发）
         tokio::spawn(forward_loop(
             client,
             control_subject(bot_id),
@@ -139,15 +138,23 @@ impl BotRegistry for RedisBotRegistry {
             cancel_rx,
         ));
 
-        // 存 cancel 令牌（bind_data 时补第二个）；同时存旧 supersede_tx
-        // 若已有旧 session，触发其 supersede 信号
-        let (dummy_tx, _) = tokio::sync::oneshot::channel::<()>();
-        if let Some((_, old)) = self.cancel_map.remove(&bot_id) {
-            drop(old); // drop 旧 cancel 对（会触发旧 forward_loop 退出）
-        }
-        // 重用 cancel_map 中第二个槽存 supersede_tx（临时方案）
-        self.cancel_map.insert(bot_id, (cancel_tx, supersede_tx));
-        drop(dummy_tx);
+        // Preserve data_cancel if bind_data arrived first (race).
+        // Also signal supersede on the old control handler.
+        let existing_data = self.cancel_map.remove(&bot_id).and_then(|(_, old)| {
+            if let Some(tx) = old.supersede_tx {
+                let _ = tx.send(());
+            }
+            old.data_cancel
+        });
+
+        self.cancel_map.insert(
+            bot_id,
+            BotCancelTokens {
+                control_cancel: Some(cancel_tx),
+                data_cancel: existing_data,
+                supersede_tx: Some(supersede_tx),
+            },
+        );
 
         supersede_rx
     }
@@ -163,12 +170,18 @@ impl BotRegistry for RedisBotRegistry {
             cancel_rx,
         ));
 
-        // 替换 cancel_map 里的 data cancel
+        // Store data cancel; preserve existing control_cancel if bind_control was first.
         if let Some(mut entry) = self.cancel_map.get_mut(&bot_id) {
-            entry.1 = cancel_tx;
+            entry.data_cancel = Some(cancel_tx);
         } else {
-            let (ctrl_dummy, _) = tokio::sync::oneshot::channel::<()>();
-            self.cancel_map.insert(bot_id, (ctrl_dummy, cancel_tx));
+            self.cancel_map.insert(
+                bot_id,
+                BotCancelTokens {
+                    control_cancel: None,
+                    data_cancel: Some(cancel_tx),
+                    supersede_tx: None,
+                },
+            );
         }
     }
 

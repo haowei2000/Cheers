@@ -58,12 +58,16 @@ struct BotSession {
 
 pub struct InProcessBotLocator {
     sessions: DashMap<Uuid, BotSession>,
+    /// data_tx that arrived before the control session was created.
+    /// bind_control picks these up so they are not lost to the race.
+    pending_data: DashMap<Uuid, mpsc::Sender<Value>>,
 }
 
 impl InProcessBotLocator {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             sessions: DashMap::new(),
+            pending_data: DashMap::new(),
         })
     }
 
@@ -80,6 +84,7 @@ impl Default for InProcessBotLocator {
     fn default() -> Self {
         Self {
             sessions: DashMap::new(),
+            pending_data: DashMap::new(),
         }
     }
 }
@@ -93,18 +98,24 @@ impl BotRegistry for InProcessBotLocator {
     ) -> oneshot::Receiver<()> {
         let (supersede_tx, supersede_rx) = oneshot::channel();
 
-        // 新连接进来：通知旧连接它被取代了（旧连接的 supersede_rx 会收到信号）
-        // 必须先 insert 再 send，保证新连接已注册后旧连接才退出
+        // Remove any old session and signal it (genuine supersede).
+        // If there's no old session the signal just drops.
         if let Some((_, old)) = self.sessions.remove(&bot_id) {
             let _ = old.supersede_tx.send(());
         }
+
+        // Pick up any data_tx that arrived before bind_control (race).
+        let data_tx = self.pending_data.remove(&bot_id).map(|(_, tx)| {
+            tracing::debug!(%bot_id, "bind_control picked up pending data_tx");
+            tx
+        });
 
         self.sessions.insert(
             bot_id,
             BotSession {
                 connection_id: conn_id,
                 control_tx: task_tx,
-                data_tx: None,
+                data_tx,
                 supersede_tx,
             },
         );
@@ -115,6 +126,10 @@ impl BotRegistry for InProcessBotLocator {
     fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
         if let Some(mut s) = self.sessions.get_mut(&bot_id) {
             s.data_tx = Some(data_tx);
+            tracing::debug!(%bot_id, "bind_data attached to existing session");
+        } else {
+            tracing::debug!(%bot_id, "bind_data: session not ready, stashing");
+            self.pending_data.insert(bot_id, data_tx);
         }
     }
 
@@ -123,9 +138,6 @@ impl BotRegistry for InProcessBotLocator {
     }
 
     fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
-        // 只有 connection_id 匹配时才删，防止误删新连接的 session。
-        // 顺序保证：bind_control 先 insert 新 session 再发 supersede 信号，
-        // 所以此处调用时新连接的 conn_id 已经写入，check 不会误删。
         let matches = self
             .sessions
             .get(&bot_id)
@@ -160,5 +172,45 @@ impl BotLocator for InProcessBotLocator {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_tx() -> mpsc::Sender<Value> {
+        let (tx, _rx) = mpsc::channel(1);
+        tx
+    }
+
+    /// Race: the data WS can arrive before the control WS. The early data_tx
+    /// must be stashed in `pending_data` and picked up by `bind_control`,
+    /// otherwise the bot would never come online.
+    #[test]
+    fn bind_data_before_bind_control_is_not_lost() {
+        let reg = InProcessBotLocator::new();
+        let bot = Uuid::new_v4();
+
+        // data WS arrives first: stashed, bot not online yet (no control session).
+        reg.bind_data(bot, dummy_tx());
+        assert!(!reg.is_online(bot), "bot must not be online with control session missing");
+
+        // control WS arrives: it must adopt the stashed data_tx.
+        let _supersede_rx = reg.bind_control(bot, Uuid::new_v4(), dummy_tx());
+        assert!(reg.is_online(bot), "data_tx from the early data WS must survive the race");
+    }
+
+    /// Normal ordering: control first, then data. Bot is only online once both exist.
+    #[test]
+    fn bind_control_then_bind_data_comes_online() {
+        let reg = InProcessBotLocator::new();
+        let bot = Uuid::new_v4();
+
+        let _supersede_rx = reg.bind_control(bot, Uuid::new_v4(), dummy_tx());
+        assert!(!reg.is_online(bot), "control-only session is not yet online");
+
+        reg.bind_data(bot, dummy_tx());
+        assert!(reg.is_online(bot));
     }
 }

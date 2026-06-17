@@ -130,10 +130,13 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
                 }
             }
 
-            // 被新连接 supersede
-            _ = &mut supersede_rx => {
-                close(&mut socket, CLOSE_SUPERSEDED, "superseded by new connection").await;
-                break true;
+            // 被新连接 supersede（仅当有人显式发送信号，非 channel 关闭）
+            result = &mut supersede_rx => {
+                if result.is_ok() {
+                    close(&mut socket, CLOSE_SUPERSEDED, "superseded by new connection").await;
+                    break true;
+                }
+                break false;
             }
         }
     };
