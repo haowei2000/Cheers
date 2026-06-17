@@ -22,10 +22,6 @@ pub struct LoopbackRequest {
     pub req_id: String,
     pub resource: String,
     pub params: Option<Value>,
-    /// Optional platform session UUID supplied by the caller for correlation.
-    /// Resource authorization is performed by the server from the bridge bot
-    /// identity and channel membership role, not from this value.
-    pub session_id: Option<String>,
     pub respond_to: oneshot::Sender<LoopbackResponse>,
 }
 
@@ -101,11 +97,6 @@ async fn handle_connection(
         .ok_or_else(|| anyhow!("loopback request requires resource"))?
         .to_string();
     let params = body.get("params").cloned();
-    let session_id = body
-        .get("session_id")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string);
     let req_id = body
         .get("req_id")
         .or_else(|| body.get("reqId"))
@@ -117,7 +108,6 @@ async fn handle_connection(
         req_id: req_id.clone(),
         resource,
         params,
-        session_id,
         respond_to,
     })
     .await

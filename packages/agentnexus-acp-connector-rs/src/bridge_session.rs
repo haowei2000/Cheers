@@ -153,6 +153,10 @@ impl MembershipSnapshot {
     pub fn len(&self) -> usize {
         self.channel_ids.len()
     }
+
+    pub fn iter_channels(&self) -> impl Iterator<Item = &ChannelInfo> {
+        self.by_id.values()
+    }
 }
 
 pub struct BridgeSession {
