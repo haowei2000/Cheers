@@ -999,11 +999,6 @@ pub enum DataOutbound {
         resource: String,
         #[serde(default)]
         params: Option<Value>,
-        /// Optional platform session UUID forwarded from the loopback caller.
-        /// This is correlation context only; server-side resource authorization
-        /// uses the authenticated bot principal and channel membership role.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        session_id: Option<String>,
         #[serde(default)]
         encrypted: Option<bool>,
         #[serde(default)]

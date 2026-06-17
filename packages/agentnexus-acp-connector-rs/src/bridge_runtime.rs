@@ -103,6 +103,17 @@ impl AccountRuntime {
         let bridge = BridgeSession::connect(bridge_config.clone(), bridge_ready.clone()).await?;
         let initial_connector_config = bridge.control_hello().connector_config.clone();
         let security = bridge.data_hello().acp_security.clone();
+        // Extract channel_id → channel_name map from membership snapshot
+        // before it's consumed by spawn_bridge_io.
+        let channel_names: std::collections::HashMap<String, String> = bridge
+            .memberships()
+            .iter_channels()
+            .filter_map(|ch| {
+                ch.channel_name
+                    .as_ref()
+                    .map(|name| (ch.channel_id.clone(), name.clone()))
+            })
+            .collect();
         let signer = CapabilitySigner::from_config(self.config.acp_capability.clone(), security)?;
         let io = spawn_bridge_io(
             bridge,
@@ -137,7 +148,9 @@ impl AccountRuntime {
             });
         }
 
-        let shared = Arc::new(Mutex::new(SharedRuntimeState::default()));
+        let mut shared = SharedRuntimeState::default();
+        shared.channel_names = channel_names;
+        let shared = Arc::new(Mutex::new(shared));
         let adapter_for_stop = adapter.clone();
         let context = Arc::new(RuntimeContext {
             account_id: self.account_id,
@@ -273,11 +286,30 @@ impl RuntimeContext {
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
             }
+            ControlInbound::ChannelJoined { channel, .. } => {
+                if let Some(name) = &channel.channel_name {
+                    self.shared
+                        .lock()
+                        .await
+                        .channel_names
+                        .insert(channel.channel_id.clone(), name.clone());
+                }
+            }
+            ControlInbound::ChannelLeft { channel_id, .. } => {
+                self.shared.lock().await.channel_names.remove(&channel_id);
+            }
+            ControlInbound::Hello { memberships, .. } => {
+                let mut guard = self.shared.lock().await;
+                for ch in memberships {
+                    if let Some(name) = &ch.channel_name {
+                        guard
+                            .channel_names
+                            .insert(ch.channel_id.clone(), name.clone());
+                    }
+                }
+            }
             ControlInbound::Pong | ControlInbound::Unknown => {}
-            ControlInbound::Hello { .. }
-            | ControlInbound::ChannelJoined { .. }
-            | ControlInbound::ChannelLeft { .. }
-            | ControlInbound::Error { .. } => {}
+            ControlInbound::Error { .. } => {}
         }
         Ok(())
     }
@@ -372,7 +404,6 @@ impl RuntimeContext {
                 req_id: request.req_id.clone(),
                 resource: request.resource,
                 params: request.params,
-                session_id: request.session_id,
                 encrypted: None,
                 encrypted_payload: None,
                 acp_capability: None,
@@ -453,7 +484,18 @@ impl RuntimeContext {
             None,
         )
         .await?;
-        let prompt = build_prompt(&task, &self.config.policy.prompt);
+        let channel_name = self
+            .shared
+            .lock()
+            .await
+            .channel_names
+            .get(&task.channel_id)
+            .cloned();
+        let prompt = build_prompt(
+            &task,
+            &self.config.policy.prompt,
+            channel_name.as_deref(),
+        );
         let prompt_size = serde_json::to_vec(&prompt)?.len();
         if prompt_size > self.config.policy.prompt.max_prompt_bytes {
             self.io
@@ -1233,7 +1275,7 @@ impl RuntimeContext {
             .clone()
     }
 
-    fn mcp_servers_for_task(&self, task: &TaskCommand) -> Value {
+    fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
         let mut servers = self
             .config
             .agent
@@ -1242,6 +1284,11 @@ impl RuntimeContext {
             .cloned()
             .unwrap_or_default();
         if self.config.policy.mcp.inject_agentnexus {
+            // Single shared MCP server process across all sessions.
+            // CHANNEL_ID is not set via env — the ACP agent must pass
+            // channel_id explicitly in every tool call (it knows the
+            // channel context from the task trigger).
+            // This avoids spawning one process per channel.
             servers.push(json!({
                 "name": "agentnexus",
                 "command": resolve_mcp_server_command(),
@@ -1249,11 +1296,7 @@ impl RuntimeContext {
                 "env": {
                     "AGENTNEXUS_RESOURCE_URL": self.loopback.url.clone(),
                     "AGENTNEXUS_RESOURCE_TOKEN": self.loopback.token.clone(),
-                    "AGENTNEXUS_CHANNEL_ID": task.channel_id.clone(),
                     "AGENTNEXUS_BOT_ID": self.account_id.clone(),
-                    // Platform session UUID for correlation only. Resource authorization
-                    // uses the authenticated bot principal plus channel membership role.
-                    "AGENTNEXUS_SESSION_ID": task.session_id.clone().unwrap_or_default(),
                     "AGENTNEXUS_REQUEST_TIMEOUT_MS": self.config.policy.loopback.request_timeout_ms.to_string()
                 }
             }));
@@ -1309,6 +1352,7 @@ struct SharedRuntimeState {
     pending_permissions: HashMap<String, PendingPermission>,
     pending_resources: HashMap<String, oneshot::Sender<LoopbackResponse>>,
     session_locks: HashMap<String, Arc<Mutex<()>>>,
+    channel_names: std::collections::HashMap<String, String>,
 }
 
 struct PendingPermission {
@@ -1609,32 +1653,36 @@ fn spawn_control_socket(
     mut out_rx: mpsc::Receiver<ControlOutbound>,
     runtime_tx: mpsc::Sender<RuntimeInput>,
     config: BridgeSessionConfig,
-    ready: BridgeReady,
+    _ready: BridgeReady,
 ) {
     tokio::spawn(async move {
         let mut next_heartbeat = Instant::now() + config.heartbeat_interval;
-        let mut reconnect_attempt = 0_u32;
+        tracing::debug!("control socket read loop started");
         loop {
             while let Ok(frame) = out_rx.try_recv() {
-                if let Err(_err) = socket.send_json(&frame).await {
-                    match reconnect_control_stream(
-                        &config,
-                        &ready,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                            if let Err(err) = socket.send_json(&frame).await {
-                                let _ = runtime_tx
-                                    .send(RuntimeInput::SocketError {
-                                        stream: "control",
-                                        error: err.to_string(),
-                                    })
-                                    .await;
+                if socket.send_json(&frame).await.is_err() {
+                    tracing::warn!("control socket send failed → closing");
+                    let _ = runtime_tx
+                        .send(RuntimeInput::SocketClosed("control"))
+                        .await;
+                    return;
+                }
+            }
+            if Instant::now() >= next_heartbeat {
+                if socket.send_json(&ControlOutbound::Ping).await.is_err() {
+                    tracing::warn!("control socket heartbeat failed → closing");
+                    let _ = runtime_tx
+                        .send(RuntimeInput::SocketClosed("control"))
+                        .await;
+                    return;
+                }
+                next_heartbeat = Instant::now() + config.heartbeat_interval;
+            }
+            match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
+                Ok(Ok(Some(value))) => {
+                    match serde_json::from_value::<ControlInbound>(value) {
+                        Ok(frame) => {
+                            if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
                                 return;
                             }
                         }
@@ -1649,110 +1697,15 @@ fn spawn_control_socket(
                         }
                     }
                 }
-            }
-            if Instant::now() >= next_heartbeat {
-                if let Err(err) = socket.send_json(&ControlOutbound::Ping).await {
-                    match reconnect_control_stream(
-                        &config,
-                        &ready,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                        }
-                        Err(reconnect_err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "control",
-                                    error: format!("{err}; reconnect failed: {reconnect_err}"),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
-                } else {
-                    next_heartbeat = Instant::now() + config.heartbeat_interval;
+                Ok(Ok(None)) | Ok(Err(_)) => {
+                    let _ = runtime_tx
+                        .send(RuntimeInput::SocketClosed("control"))
+                        .await;
+                    return;
                 }
-            }
-            match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
-                Ok(Ok(Some(value))) => match serde_json::from_value::<ControlInbound>(value) {
-                    Ok(frame) => {
-                        if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
-                            return;
-                        }
-                    }
-                    Err(err) => {
-                        let _ = runtime_tx
-                            .send(RuntimeInput::SocketError {
-                                stream: "control",
-                                error: err.to_string(),
-                            })
-                            .await;
-                        return;
-                    }
-                },
-                Ok(Ok(None)) => {
-                    match reconnect_control_stream(
-                        &config,
-                        &ready,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                        }
-                        Err(err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "control",
-                                    error: err.to_string(),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
+                Err(_elapsed) => {
+                    // Timeout — expected, just loop back to check heartbeats/outgoing
                 }
-                Ok(Err(err)) => {
-                    if is_fatal_bridge_error(&err) {
-                        let _ = runtime_tx
-                            .send(RuntimeInput::SocketError {
-                                stream: "control",
-                                error: err.to_string(),
-                            })
-                            .await;
-                        return;
-                    }
-                    match reconnect_control_stream(
-                        &config,
-                        &ready,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                        }
-                        Err(reconnect_err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "control",
-                                    error: reconnect_err.to_string(),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
-                }
-                Err(_) => {}
             }
         }
     });
@@ -1764,11 +1717,11 @@ fn spawn_data_socket(
     runtime_tx: mpsc::Sender<RuntimeInput>,
     config: BridgeSessionConfig,
     mut signer: Option<CapabilitySigner>,
-    last_event_seq: Arc<AtomicU64>,
+    _last_event_seq: Arc<AtomicU64>,
 ) {
     tokio::spawn(async move {
         let mut next_heartbeat = Instant::now() + config.heartbeat_interval;
-        let mut reconnect_attempt = 0_u32;
+        tracing::debug!("data socket read loop started");
         loop {
             while let Ok(mut frame) = out_rx.try_recv() {
                 if let Some(signer) = &mut signer {
@@ -1782,25 +1735,27 @@ fn spawn_data_socket(
                         return;
                     }
                 }
-                if let Err(_err) = socket.send_json(&frame).await {
-                    match reconnect_data_stream(
-                        &config,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                        &last_event_seq,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                            if let Err(err) = socket.send_json(&frame).await {
-                                let _ = runtime_tx
-                                    .send(RuntimeInput::SocketError {
-                                        stream: "data",
-                                        error: err.to_string(),
-                                    })
-                                    .await;
+                if socket.send_json(&frame).await.is_err() {
+                    let _ = runtime_tx
+                        .send(RuntimeInput::SocketClosed("data"))
+                        .await;
+                    return;
+                }
+            }
+            if Instant::now() >= next_heartbeat {
+                if socket.send_json(&DataOutbound::Ping).await.is_err() {
+                    let _ = runtime_tx
+                        .send(RuntimeInput::SocketClosed("data"))
+                        .await;
+                    return;
+                }
+                next_heartbeat = Instant::now() + config.heartbeat_interval;
+            }
+            match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
+                Ok(Ok(Some(value))) => {
+                    match serde_json::from_value::<DataInbound>(value) {
+                        Ok(frame) => {
+                            if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
                                 return;
                             }
                         }
@@ -1815,110 +1770,15 @@ fn spawn_data_socket(
                         }
                     }
                 }
-            }
-            if Instant::now() >= next_heartbeat {
-                if let Err(err) = socket.send_json(&DataOutbound::Ping).await {
-                    match reconnect_data_stream(
-                        &config,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                        &last_event_seq,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                        }
-                        Err(reconnect_err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "data",
-                                    error: format!("{err}; reconnect failed: {reconnect_err}"),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
-                } else {
-                    next_heartbeat = Instant::now() + config.heartbeat_interval;
+                Ok(Ok(None)) | Ok(Err(_)) => {
+                    let _ = runtime_tx
+                        .send(RuntimeInput::SocketClosed("data"))
+                        .await;
+                    return;
                 }
-            }
-            match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
-                Ok(Ok(Some(value))) => match serde_json::from_value::<DataInbound>(value) {
-                    Ok(frame) => {
-                        if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
-                            return;
-                        }
-                    }
-                    Err(err) => {
-                        let _ = runtime_tx
-                            .send(RuntimeInput::SocketError {
-                                stream: "data",
-                                error: err.to_string(),
-                            })
-                            .await;
-                        return;
-                    }
-                },
-                Ok(Ok(None)) => {
-                    match reconnect_data_stream(
-                        &config,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                        &last_event_seq,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                        }
-                        Err(err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "data",
-                                    error: err.to_string(),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
+                Err(_elapsed) => {
+                    // Timeout — expected
                 }
-                Ok(Err(err)) => {
-                    if is_fatal_bridge_error(&err) {
-                        let _ = runtime_tx
-                            .send(RuntimeInput::SocketError {
-                                stream: "data",
-                                error: err.to_string(),
-                            })
-                            .await;
-                        return;
-                    }
-                    match reconnect_data_stream(
-                        &config,
-                        &runtime_tx,
-                        &mut reconnect_attempt,
-                        &last_event_seq,
-                    )
-                    .await
-                    {
-                        Ok(new_socket) => {
-                            socket = new_socket;
-                            next_heartbeat = Instant::now() + config.heartbeat_interval;
-                        }
-                        Err(reconnect_err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "data",
-                                    error: reconnect_err.to_string(),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
-                }
-                Err(_) => {}
             }
         }
     });
@@ -2012,9 +1872,10 @@ async fn reconnect_data_stream(
 
 fn is_fatal_bridge_error(err: &anyhow::Error) -> bool {
     let text = err.to_string();
-    text.contains("fatal code=4401")
-        || text.contains("fatal code=4402")
-        || text.contains("fatal code=4403")
+    // 4401: auth failure (fatal)
+    // 4403: forbidden (fatal)
+    // 4402: superseded by new connection (recoverable — reconnect)
+    text.contains("fatal code=4401") || text.contains("fatal code=4403")
 }
 
 fn capability_enabled(
@@ -2106,8 +1967,17 @@ fn bridge_ready_from_initialize(initialize: &Value, policy: &LocalPolicy) -> Bri
     ready
 }
 
-fn build_prompt(task: &TaskCommand, policy: &PromptPolicy) -> Vec<Value> {
-    let mut parts = vec![AGENTNEXUS_ACP_OUTPUT_CONTRACT.to_string()];
+fn build_prompt(task: &TaskCommand, policy: &PromptPolicy, channel_name: Option<&str>) -> Vec<Value> {
+    let mut parts = vec![
+        AGENTNEXUS_ACP_OUTPUT_CONTRACT.to_string(),
+        format!(
+            "AgentNexus channel context: channel_id={}{}",
+            task.channel_id,
+            channel_name
+                .map(|n| format!(", channel_name=\"{n}\""))
+                .unwrap_or_default(),
+        ),
+    ];
     if let Some(text) = task
         .trigger_message
         .as_ref()
@@ -2468,10 +2338,12 @@ mod tests {
                 extra: serde_json::Map::new(),
             }],
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true));
+        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(text.contains("@bot summarize"));
         assert!(text.contains("report.pdf"));
+        assert!(text.contains("channel_id=channel-1"));
+        assert!(text.contains("channel_name=\"#general\""));
     }
 
     fn test_prompt_policy(allow_attachments: bool) -> PromptPolicy {
@@ -2536,5 +2408,60 @@ mod tests {
             data_b64: "cmVwb3J0".to_string(),
         };
         assert_eq!(file_upload_ack_client_file_id(&upload), Some("file-1"));
+    }
+
+    #[test]
+    fn resource_req_serializes_without_session_id() {
+        let req = DataOutbound::ResourceReq {
+            v: BRIDGE_PROTOCOL_VERSION,
+            req_id: "req-1".to_string(),
+            resource: "channel.info".to_string(),
+            params: Some(json!({"channel_id": "ch-1"})),
+            encrypted: None,
+            encrypted_payload: None,
+            acp_capability: None,
+        };
+        let json = serde_json::to_value(&req).expect("serialize");
+        assert_eq!(json["type"], "resource_req");
+        assert_eq!(json["req_id"], "req-1");
+        assert_eq!(json["resource"], "channel.info");
+        // session_id must NOT appear in the wire format
+        assert!(json.get("session_id").is_none(), "session_id is dead metadata and must not be serialized");
+    }
+
+    #[test]
+    fn prompt_includes_channel_id_and_name() {
+        let task = TaskCommand {
+            task_id: "task-1".to_string(),
+            channel_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            msg_id: "msg-1".to_string(),
+            provider_session_key: "default:testbot".to_string(),
+            session_id: None,
+            trigger_message: Some(json!({"text": "@testbot hello"})),
+            attachments: Vec::new(),
+        };
+        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(text.contains("channel_id=550e8400"), "prompt must include channel_id");
+        assert!(text.contains("channel_name=\"#general\""), "prompt must include channel_name");
+        assert!(text.contains("@testbot hello"), "prompt must include trigger message");
+    }
+
+    #[test]
+    fn prompt_without_channel_name_still_includes_channel_id() {
+        let task = TaskCommand {
+            task_id: "task-1".to_string(),
+            channel_id: "chan-1".to_string(),
+            msg_id: "msg-1".to_string(),
+            provider_session_key: "default:testbot".to_string(),
+            session_id: None,
+            trigger_message: None,
+            attachments: Vec::new(),
+        };
+        let prompt = build_prompt(&task, &test_prompt_policy(false), None);
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(text.contains("channel_id=chan-1"), "prompt must include channel_id even without channel_name");
+        // channel_name should NOT appear when absent
+        assert!(!text.contains("channel_name="), "channel_name must not appear when not available");
     }
 }
