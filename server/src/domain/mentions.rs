@@ -169,3 +169,37 @@ fn push_unique(mentions: &mut Vec<Mention>, member_id: Uuid, member_type: Member
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 同一 (member_id, member_type) 去重，重复 @ 同一成员只记一次。
+    #[test]
+    fn push_unique_dedupes_same_member() {
+        let mut v = Vec::new();
+        let id = Uuid::new_v4();
+        push_unique(&mut v, id, MemberType::User);
+        push_unique(&mut v, id, MemberType::User);
+        assert_eq!(v.len(), 1);
+    }
+
+    /// 同 id 但 type 不同算两个不同 mention（user 与 bot 多态共用 id 空间）。
+    #[test]
+    fn push_unique_keeps_distinct_type_same_id() {
+        let mut v = Vec::new();
+        let id = Uuid::new_v4();
+        push_unique(&mut v, id, MemberType::User);
+        push_unique(&mut v, id, MemberType::Bot);
+        assert_eq!(v.len(), 2);
+    }
+
+    /// 不同 id 各自保留。
+    #[test]
+    fn push_unique_keeps_distinct_ids() {
+        let mut v = Vec::new();
+        push_unique(&mut v, Uuid::new_v4(), MemberType::User);
+        push_unique(&mut v, Uuid::new_v4(), MemberType::User);
+        assert_eq!(v.len(), 2);
+    }
+}

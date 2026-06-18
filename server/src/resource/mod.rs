@@ -186,3 +186,24 @@ pub async fn authorize_channel_write(
 pub fn role_can_write(role: &str) -> bool {
     matches!(role, "owner" | "admin" | "member")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// I8：owner/admin/member 可写。
+    #[test]
+    fn writer_roles_can_write() {
+        for role in ["owner", "admin", "member"] {
+            assert!(role_can_write(role), "{role} 应可写");
+        }
+    }
+
+    /// 其余角色只读；匹配区分大小写（不接受 "Owner"/"ADMIN"）。
+    #[test]
+    fn other_roles_are_read_only() {
+        for role in ["viewer", "guest", "observer", "", "Owner", "ADMIN", "members"] {
+            assert!(!role_can_write(role), "{role} 必须只读");
+        }
+    }
+}
