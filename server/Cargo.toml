@@ -7,6 +7,12 @@ edition = "2021"
 name = "server"
 path = "src/main.rs"
 
+[features]
+# Gates the tests/flows.rs integration suite (needs a live Postgres via
+# DATABASE_URL). Off by default so the unit `cargo test` job needs no DB;
+# the integration CI job runs `cargo test --features integration --test flows`.
+integration = []
+
 [dependencies]
 # ── 运行时 ──────────────────────────────────────────────────────────────────
 tokio        = { version = "1",   features = ["full"] }
@@ -73,3 +79,15 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
+# Integration tests (tests/) are a separate crate: they see only server's
+# public API plus these dev-deps, not server's regular dependencies.
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "postgres",
+    "uuid",
+    "macros",
+    "migrate",
+] }
+uuid = { version = "1", features = ["v4", "v5"] }
+serde_json = "1"
+async-trait = "0.1"

@@ -1,6 +1,6 @@
 # 数据流全景与改造计划
 
-> 版本：v1.4（2026-06-18）—— R1（进程内）；R4-1 单测；R3 背压；R5 双派发
+> 版本：v1.5（2026-06-18）—— M0 完成：R1（进程内）·R3 背压·R4-1 单测·R4-2 集成·R5 双派发
 > 性质：**代码现状快照 + 改造提案**。
 > 与其他设计文档的区别：本文以**代码实际行为**为准绳（基于 `main` 分支 cc538b0 + 当前未提交改动），
 > 凡与设计文档冲突之处都在 [§2.6 差异表](#26-协议文档-vs-代码差异表) 显式标注。
@@ -13,8 +13,8 @@
 - 系统是**三面协议**结构：浏览器面（WIRE v1，单 WS 复用）、Bot 面（Agent Bridge，control + data 双 WS）、资源面（resource_req/res 子协议，挂在 data WS 上）。
 - 状态真相只有 PG；fan-out / bot 路由 / 流注册表全部**进程内**（R1-A 已落地）；**写后投递**（终态先落库再广播）+ **channel_seq 事件时钟** + **REST 补齐** 共同构成自愈闭环。
 - ~~当前最大问题：**多实例改造只做了一半**~~ **已解决（R1-A）**：`main.rs` 装配回退为 `InProcessFanout` + `InProcessBotLocator`，与全进程内的流注册表/取消令牌一致；Redis 不再是 fan-out 路径的启动依赖。`redis_fanout.rs` / `redis_registry.rs` 保留编译（`#[allow(dead_code)]`），作为未来多实例（R1-B / M4）的起点。
-- 已修：~~终态帧背压破约~~（R3）、~~多实例半成品~~（R1-A）、~~测试真空~~（R4-1 纯逻辑层）。**剩余**：流式热路径每帧 2 次 PG 查询（R6）、集成测试（R4-2）。
-- 改造项共 13 项（R1–R13），见 [§5](#五改造项清单)；M0 已完成 R1/R2/R3/R4-1/R5，剩 R4-2；其余 R6–R13 按 M1–M3 推进。
+- 已修：~~终态帧背压破约~~（R3）、~~多实例半成品~~（R1-A）、~~测试真空~~（R4-1 纯逻辑 + R4-2 集成）、~~双派发竞态~~（R5）。**剩余**：流式热路径每帧 2 次 PG 查询（R6）。
+- 改造项共 13 项（R1–R13），见 [§5](#五改造项清单)；**M0 已全部完成**（R1/R2/R3/R4-1/R4-2/R5）；其余 R6–R13 按 M1–M3 推进。
 
 ---
 
@@ -386,7 +386,9 @@ bot 路由侧（registry）：
 
 ### R4 [P1] 测试安全网（后续所有改造的前置）
 
-> **R4-1 已完成（2026-06-18）**：纯逻辑单测落地——`derive_placeholder_id`（I4 幂等）、`StreamRegistry::next_seq`（I7/R2 seq 单调）、`StreamRegistry::claim_finalize`（R4 finalize 守卫，由 handle_done 内联 get_mut 提取为带契约方法）、`role_can_write`（I8）、`is_terminal_frame`（I6）、`push_unique`（mention 去重）、connector 的 `compute_backoff`（退避边界）。server `cargo test` 18 项、connector 29 项全绿。**R4-2 集成测试仍待建**（解锁 R1 全链路冒烟验收）。
+> **R4-1 已完成（2026-06-18）**：纯逻辑单测落地——`derive_placeholder_id`（I4 幂等）、`StreamRegistry::next_seq`（I7/R2 seq 单调）、`StreamRegistry::claim_finalize`（R4 finalize 守卫，由 handle_done 内联 get_mut 提取为带契约方法）、`role_can_write`（I8）、`is_terminal_frame`（I6）、`push_unique`（mention 去重）、connector 的 `compute_backoff`（退避边界）。server `cargo test` 21 项、connector 29 项全绿。
+>
+> **R4-2 已完成（2026-06-18）**：白盒集成测试落地。先把 server 从纯 bin 拆为 lib+thin bin（`src/lib.rs` 导出各 module），让 `tests/flows.rs` 能直接调真实函数。用 `#[sqlx::test]`（每测一隔离 DB + 自动跑 migrations），feature `integration` 门控（默认单测 job 无需 DB）。4 项对真实 PG：I2（channel_seq 并发 gap-free）、流程 2（create_message 连续 seq + I1 落库）+ 流程 8（since-seq 补齐）、R5（并发 dispatch 经计数 BotLocator 断言 task 只派一次）、流程 4（done finalize + 迟到第二个 done 幂等且不耗 seq）。运行：`DATABASE_URL=… cargo test --features integration --test flows`。
 
 - **现状**：49 个 Rust 文件仅 `acp_capability.rs` 有测试；旧 pytest 集成套件随 Python 后端移除。
 - **方案**（两层）：

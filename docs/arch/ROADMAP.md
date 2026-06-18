@@ -1,6 +1,6 @@
 # Engineering Execution Roadmap
 
-> 版本：v1.4（2026-06-18）—— R1（进程内）；R4-1 单测；R3 背压；R5 双派发
+> 版本：v1.5（2026-06-18）—— M0 完成：R1（进程内）·R3 背压·R4-1 单测·R4-2 集成·R5 双派发
 > 性质：**执行路线图** —— 把架构现状转成可落地的里程碑序列。
 > 与其他文档的关系：
 > - [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md) —— 目标拓扑与硬契约（**做什么**）
@@ -114,13 +114,13 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
 
 > 勾选随实现推进更新；每次架构变更同步本文版本号。
 
-- [ ] **M0** 夯实地基
+- [x] **M0** 夯实地基 ✅ **全部完成（2026-06-18）**
   - [x] R2 WIP 收尾 + 工作树干净（commit 8a7b661：删调试日志 + bind 竞态修复 + 单测）
   - [x] R4-1 纯逻辑单测（17 项：I4 幂等派生 / I7 seq 单调 / R4 finalize 守卫 / role_can_write / compute_backoff / mention 去重 / is_terminal_frame）
   - [x] R1 部署形态决策 → **方案 A（进程内）**：`main.rs` 装配 InProcessFanout + InProcessBotLocator，Redis 退出 fan-out 启动路径（2026-06-18）
   - [x] R3 终态背压修复（fanout 入队失败且终态帧 → 4408 关闭；closers 信号 + browser close_rx；单测 3 项）
-  - [x] R5 dispatcher 双派发修复（删前置 SELECT，create_placeholder 返回 rows_affected==1 定胜负；败者不派发 task。并发断言测试折入 R4-2）
-  - [ ] R4-2 集成测试（I1/I2 + 全链路 + 补齐）
+  - [x] R5 dispatcher 双派发修复（删前置 SELECT，create_placeholder 返回 rows_affected==1 定胜负；败者不派发 task）
+  - [x] R4-2 集成测试（bin→lib + `#[sqlx::test]`，feature `integration` 门控；4 项对真实 PG：I2 gap-free / 流程 2 连续 seq + 流程 8 补齐 / R5 并发只派一次 / 流程 4 done finalize + 幂等）
 - [ ] **M1** 核心闭环可演示
   - [ ] 后端 CRUD 补洞
   - [ ] 前端实时 / 流式 / mention / 文件 / presence
