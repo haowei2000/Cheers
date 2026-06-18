@@ -9,20 +9,9 @@ use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-mod api;
-mod app_state;
-mod config;
-mod domain;
-mod errors;
-mod gateway;
-mod infra;
-mod resource;
-mod router;
-
-use app_state::AppState;
-use config::Config;
-use gateway::realtime::manager::ConnectionManager;
-use gateway::stream::StreamRegistry;
+use server::gateway::realtime::manager::ConnectionManager;
+use server::gateway::stream::StreamRegistry;
+use server::{gateway, infra, router, AppState, Config};
 
 /// Start the HTTP/WebSocket gateway service.
 ///
