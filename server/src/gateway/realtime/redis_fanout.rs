@@ -61,8 +61,14 @@ impl RedisFanout {
     }
 
     /// 供 ConnectionManager 注册本地浏览器连接（subscribe 时调用）。
-    pub fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        self.local.register_user(user_id, conn_id, tx);
+    pub fn register_user(
+        &self,
+        user_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<WireFrame>,
+        close_tx: mpsc::Sender<()>,
+    ) {
+        self.local.register_user(user_id, conn_id, tx, close_tx);
     }
     pub fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
         self.local.subscribe_channel(channel_id, conn_id, tx);
@@ -76,8 +82,14 @@ impl RedisFanout {
 }
 
 impl LocalRegistry for RedisFanout {
-    fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        self.local.register_user(user_id, conn_id, tx);
+    fn register_user(
+        &self,
+        user_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<WireFrame>,
+        close_tx: mpsc::Sender<()>,
+    ) {
+        self.local.register_user(user_id, conn_id, tx, close_tx);
     }
     fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
         self.local.subscribe_channel(channel_id, conn_id, tx);

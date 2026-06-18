@@ -1,6 +1,6 @@
 # 数据流全景与改造计划
 
-> 版本：v1.2（2026-06-18）—— R1 决策落地：方案 A（进程内）；R4-1 纯逻辑单测落地
+> 版本：v1.3（2026-06-18）—— R1 决策（进程内）；R4-1 纯逻辑单测；R3 终态背压修复
 > 性质：**代码现状快照 + 改造提案**。
 > 与其他设计文档的区别：本文以**代码实际行为**为准绳（基于 `main` 分支 cc538b0 + 当前未提交改动），
 > 凡与设计文档冲突之处都在 [§2.6 差异表](#26-协议文档-vs-代码差异表) 显式标注。
@@ -335,7 +335,7 @@ bot 路由侧（registry）：
 | I3 | **R1–R4 回流规则**（见流程 4 表） | `stream.rs` |
 | I4 | **占位幂等**：placeholder_id = UUIDv5(trigger_msg_id:bot_id)，重投收敛同一占位 | `derive_placeholder_id` |
 | I5 | **bot 链深度上限**防环 | `MAX_BOT_REPLY_DEPTH` |
-| I6 | **背压**：流式帧可丢；终态帧不丢，宁可断连让客户端走 REST 补齐 | ⚠ 当前在 fanout 入队层**破约**（R3） |
+| I6 | **背压**：流式帧可丢；终态帧不丢，宁可断连让客户端走 REST 补齐 | ✅ R3 已修复：fanout 入队失败且为终态帧时触发 4408 关闭（`InProcessFanout::deliver` + browser `close_rx`） |
 | I7 | **seq 盖戳唯一来源是 Backend** | `StreamRegistry::next_seq` |
 | I8 | **bot 资源访问一律过成员资格**，写操作再过 role；bot 不直连 DB | `resource::authorize_*` |
 
@@ -373,7 +373,9 @@ bot 路由侧（registry）：
 - **方案**：删除或降为 `debug!`；为该竞态补一个单测（先 bind_data 后 bind_control，断言 data_tx 不丢）；提交。
 - **验收**：`cargo build && cargo test` 通过；`git status` 干净。
 
-### R3 [P1] 终态帧背压破约修复
+### R3 [P1] 终态帧背压破约修复 — ✅ **已修复（2026-06-18）**
+
+> **落地**：`InProcessFanout` 新增 `closers: DashMap<conn_id, mpsc::Sender<()>>`（`register_user` 时存、`deregister_user` 时删）。新私有方法 `deliver()` 统一投递：`try_send` 返回 `Full` 且 `frame.is_terminal()` 时，触发该连接的关闭信号；流式帧维持静默丢弃。browser.rs 写循环新增 `close_rx` select 分支 → 4408 关闭。终态判定收敛到 `WireFrame::is_terminal()`。单测 3 项（终态触发关闭 / 流式不触发 / 注销清理）。
 
 - **现状**：`InProcessFanout::broadcast_*` 对每个订阅者 `let _ = tx.try_send(frame)`（`fanout.rs:96-103`）——队列满时**任何帧静默丢弃，包括终态帧**。browser.rs 的 4408 背压关闭只覆盖 `socket.send` 失败，覆盖不到入队失败。
 - **问题**：违反 I6。慢消费者会永久错过 `message`/`message_done`，且连接不断开，客户端无从知道需要 REST 补齐——在线用户看到消息缺失直到手动刷新。

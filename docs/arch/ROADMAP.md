@@ -1,6 +1,6 @@
 # Engineering Execution Roadmap
 
-> 版本：v1.2（2026-06-18）—— R1 决策：方案 A（进程内）；R4-1 纯逻辑单测落地
+> 版本：v1.3（2026-06-18）—— R1 决策（进程内）；R4-1 单测；R3 背压修复
 > 性质：**执行路线图** —— 把架构现状转成可落地的里程碑序列。
 > 与其他文档的关系：
 > - [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md) —— 目标拓扑与硬契约（**做什么**）
@@ -118,7 +118,7 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] R2 WIP 收尾 + 工作树干净（commit 8a7b661：删调试日志 + bind 竞态修复 + 单测）
   - [x] R4-1 纯逻辑单测（17 项：I4 幂等派生 / I7 seq 单调 / R4 finalize 守卫 / role_can_write / compute_backoff / mention 去重 / is_terminal_frame）
   - [x] R1 部署形态决策 → **方案 A（进程内）**：`main.rs` 装配 InProcessFanout + InProcessBotLocator，Redis 退出 fan-out 启动路径（2026-06-18）
-  - [ ] R3 终态背压修复
+  - [x] R3 终态背压修复（fanout 入队失败且终态帧 → 4408 关闭；closers 信号 + browser close_rx；单测 3 项）
   - [ ] R5 dispatcher 双派发修复
   - [ ] R4-2 集成测试（I1/I2 + 全链路 + 补齐）
 - [ ] **M1** 核心闭环可演示

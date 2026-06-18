@@ -77,4 +77,13 @@ impl WireFrame {
             data,
         }
     }
+
+    /// 终态帧：先落 PG 再广播，承诺不丢（I6）。背压时不静默丢弃，
+    /// 而是关闭连接让客户端走 REST 补齐。其余（message_stream 等）可丢。
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self.frame_type.as_str(),
+            "message" | "message_done" | "message_deleted"
+        )
+    }
 }
