@@ -93,6 +93,8 @@ impl ConnectionManager {
     }
 
     /// 多实例：用 RedisFanout（它实现了 LocalRegistry 委托给内部 local）。
+    /// 当前单实例未装配（roadmap R1-B / M4 才启用）。
+    #[allow(dead_code)]
     pub fn new_with_redis(
         fanout: Arc<crate::gateway::realtime::redis_fanout::RedisFanout>,
         db: PgPool,

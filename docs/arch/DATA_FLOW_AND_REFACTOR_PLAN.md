@@ -1,6 +1,6 @@
 # 数据流全景与改造计划
 
-> 版本：v1.0（2026-06-12）
+> 版本：v1.1（2026-06-18）—— R1 决策落地：方案 A（进程内）
 > 性质：**代码现状快照 + 改造提案**。
 > 与其他设计文档的区别：本文以**代码实际行为**为准绳（基于 `main` 分支 cc538b0 + 当前未提交改动），
 > 凡与设计文档冲突之处都在 [§2.6 差异表](#26-协议文档-vs-代码差异表) 显式标注。
@@ -11,8 +11,8 @@
 ## 〇、TL;DR
 
 - 系统是**三面协议**结构：浏览器面（WIRE v1，单 WS 复用）、Bot 面（Agent Bridge，control + data 双 WS）、资源面（resource_req/res 子协议，挂在 data WS 上）。
-- 状态真相只有 PG；Redis 仅承担易失的路由/广播；**写后投递**（终态先落库再广播）+ **channel_seq 事件时钟** + **REST 补齐** 共同构成自愈闭环。
-- 当前最大问题：**多实例改造只做了一半**——fan-out 和 bot 路由走 Redis，但流注册表、取消令牌、supersede 信号还在进程内。结果是"只能单实例运行，却为每帧多付一次 Redis 往返"。
+- 状态真相只有 PG；fan-out / bot 路由 / 流注册表全部**进程内**（R1-A 已落地）；**写后投递**（终态先落库再广播）+ **channel_seq 事件时钟** + **REST 补齐** 共同构成自愈闭环。
+- ~~当前最大问题：**多实例改造只做了一半**~~ **已解决（R1-A）**：`main.rs` 装配回退为 `InProcessFanout` + `InProcessBotLocator`，与全进程内的流注册表/取消令牌一致；Redis 不再是 fan-out 路径的启动依赖。`redis_fanout.rs` / `redis_registry.rs` 保留编译（`#[allow(dead_code)]`），作为未来多实例（R1-B / M4）的起点。
 - 次大问题：**终态帧背压破约**（fanout 入队失败静默丢终态帧）、**流式热路径每帧 2 次 PG 查询**、**测试真空**。
 - 改造项共 13 项（R1–R13），见 [§5](#五改造项清单)；建议顺序：R2 收尾 → R4 测试安全网 → R1 部署形态决策 → R3/R5/R6 修正 → 其余按需。
 
@@ -150,11 +150,11 @@
 
 | # | 文档说 | 代码实际 | 处置建议 |
 |---|---|---|---|
-| 1 | ARCHITECTURE_OVERVIEW §二之二 / WIRE §8：**单实例、进程内 fan-out、无消息总线** | `main.rs:60-70` 硬接 `RedisFanout` + `RedisBotRegistry`，Redis 是启动硬依赖 | **R1 决策**后改文档或改代码 |
+| 1 | ARCHITECTURE_OVERVIEW §二之二 / WIRE §8：**单实例、进程内 fan-out、无消息总线** | ~~`main.rs` 硬接 `RedisFanout` + `RedisBotRegistry`~~ **已对齐（R1-A）**：`main.rs` 装配 `InProcessFanout` + `InProcessBotLocator`，Redis 不再是 fan-out 路径启动依赖 | ✅ 已解决，代码与文档一致 |
 | 2 | BOT_PERMISSION.md：Grant + 覆盖 + 审批 + trust_level 四级 | `bot_grants`/`trust_level` 在代码**零引用**；写权限 = channel role（commit 85290a7 有意统一） | R13：在 BOT_PERMISSION.md 顶部标注"现状=role 模型，Grant 体系未实现/已搁置" |
 | 3 | GATEWAY_CODE_ARCH §一：`transport/`、`acp_bridge/` 目录 | 实际为 `api/`、`gateway/`（见 §1.1 映射表） | R13：按代码重写该文档 |
 | 4 | GATEWAY_CODE_ARCH §4-B："infra/db 追加 delta 内容" | delta **不落库**（只 fan-out；WIRE §4.2 才是对的） | R13：订正 |
-| 5 | GATEWAY_CODE_ARCH §五：`InProcessFanout` 为本期实现 | 装配的是 RedisFanout；InProcess 仅作 Redis 实现的本地转发表 | 随 R1 处置 |
+| 5 | GATEWAY_CODE_ARCH §五：`InProcessFanout` 为本期实现 | ~~装配的是 RedisFanout~~ **已对齐（R1-A）**：装配即 `InProcessFanout` | ✅ 已解决 |
 | 6 | AGENT_BRIDGE_RESOURCE：资源词表早期版本 | 代码已扩充 mesh step 6 词表（`fs.*`、`activity`、`by-seq`） | R13：以 §2.4 为准刷新 |
 
 ---
@@ -346,7 +346,9 @@ bot 路由侧（registry）：
 > 编号 R1–R13。每项给：现状 → 问题 → 方案 → 涉及文件 → 验收标准。
 > 优先级：P0 = 方向性/阻塞提交；P1 = 正确性；P2 = 热路径性能；P3 = 可维护性。
 
-### R1 [P0] 部署形态二选一：回退进程内（推荐）或走完 Redis
+### R1 [P0] 部署形态二选一：回退进程内（推荐）或走完 Redis — ✅ **已决策：方案 A（进程内）**
+
+> **决策（2026-06-18）**：选方案 A。`main.rs` 装配已改为 `InProcessFanout` + 单个 `InProcessBotLocator`（同时充当 BotRegistry 与 BotLocator，共享 DashMap）。Redis 连接已从启动流程移除，不再是 fan-out 路径硬依赖。`redis_fanout.rs` / `redis_registry.rs` / `ConnectionManager::new_with_redis` 以 `#[allow(dead_code)]` 保留编译，作为 R1-B / M4 起点。剩余验收（集成冒烟流程 2→4）随 R4-2 完成。
 
 - **现状**：见流程 7。Redis fan-out + Redis bot 路由已装配，但流注册表/取消令牌/supersede 在进程内；文档定调单实例。
 - **问题**：当前状态 = 单实例能力 + 多实例成本，且制造了"已支持多实例"的错觉。
