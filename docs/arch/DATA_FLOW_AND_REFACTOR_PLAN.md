@@ -1,6 +1,6 @@
 # 数据流全景与改造计划
 
-> 版本：v1.3（2026-06-18）—— R1 决策（进程内）；R4-1 纯逻辑单测；R3 终态背压修复
+> 版本：v1.4（2026-06-18）—— R1（进程内）；R4-1 单测；R3 背压；R5 双派发
 > 性质：**代码现状快照 + 改造提案**。
 > 与其他设计文档的区别：本文以**代码实际行为**为准绳（基于 `main` 分支 cc538b0 + 当前未提交改动），
 > 凡与设计文档冲突之处都在 [§2.6 差异表](#26-协议文档-vs-代码差异表) 显式标注。
@@ -13,8 +13,8 @@
 - 系统是**三面协议**结构：浏览器面（WIRE v1，单 WS 复用）、Bot 面（Agent Bridge，control + data 双 WS）、资源面（resource_req/res 子协议，挂在 data WS 上）。
 - 状态真相只有 PG；fan-out / bot 路由 / 流注册表全部**进程内**（R1-A 已落地）；**写后投递**（终态先落库再广播）+ **channel_seq 事件时钟** + **REST 补齐** 共同构成自愈闭环。
 - ~~当前最大问题：**多实例改造只做了一半**~~ **已解决（R1-A）**：`main.rs` 装配回退为 `InProcessFanout` + `InProcessBotLocator`，与全进程内的流注册表/取消令牌一致；Redis 不再是 fan-out 路径的启动依赖。`redis_fanout.rs` / `redis_registry.rs` 保留编译（`#[allow(dead_code)]`），作为未来多实例（R1-B / M4）的起点。
-- 次大问题：**终态帧背压破约**（fanout 入队失败静默丢终态帧）、**流式热路径每帧 2 次 PG 查询**、**测试真空**。
-- 改造项共 13 项（R1–R13），见 [§5](#五改造项清单)；建议顺序：R2 收尾 → R4 测试安全网 → R1 部署形态决策 → R3/R5/R6 修正 → 其余按需。
+- 已修：~~终态帧背压破约~~（R3）、~~多实例半成品~~（R1-A）、~~测试真空~~（R4-1 纯逻辑层）。**剩余**：流式热路径每帧 2 次 PG 查询（R6）、集成测试（R4-2）。
+- 改造项共 13 项（R1–R13），见 [§5](#五改造项清单)；M0 已完成 R1/R2/R3/R4-1/R5，剩 R4-2；其余 R6–R13 按 M1–M3 推进。
 
 ---
 
@@ -37,7 +37,8 @@
 │    dispatcher.rs        task 派发（幂等占位 + task 帧）               │
 │    stream.rs            delta/done 回流（R1–R4 + seq 盖戳）          │
 │    registry.rs          BotRegistry/BotLocator trait + 进程内实现    │
-│    redis_registry.rs    Redis 实现（当前 main.rs 装配的是这个）       │
+│                         （R1-A：main.rs 装配进程内 InProcessBotLocator）│
+│    redis_registry.rs    Redis 实现（parked，未装配，备 R1-B/M4）      │
 │    realtime/            Fanout trait + InProcess/Redis 实现          │
 │                         + ConnectionManager（成员资格 LRU 缓存）      │
 │  resource/   resource_req 分发器 + 各资源 handler（鉴权=channel role）│
@@ -105,7 +106,7 @@
 }
 ```
 
-- **终态帧**：`message` / `message_done` / `message_deleted` —— 必须先落 PG 再广播，承诺不丢（见不变量 I6 及其当前破约 R3）。
+- **终态帧**：`message` / `message_done` / `message_deleted` —— 必须先落 PG 再广播，承诺不丢（不变量 I6；背压破约已由 R3 修复）。
 - **流式帧**：`message_stream` —— 不落库、可丢，靠 `message_done` 全量自愈。
 - 关闭码：`4401` 鉴权失败 / `4403` 非频道成员 / `4408` 背压关闭。
 
@@ -204,15 +205,15 @@
 
 ```
  ① placeholder_id = UUIDv5(NAMESPACE_DNS, "{trigger_msg_id}:{bot_id}")   ← 确定性（I4）
- ② check_idempotency：占位已存在且 in-progress/done → 跳过        ⚠ 与③非原子，R5
- ③ INSERT 占位 (is_partial=TRUE, channel_seq=NULL) ON CONFLICT DO NOTHING
+ ② INSERT 占位 (is_partial=TRUE, channel_seq=NULL) ON CONFLICT DO NOTHING ← rows_affected==1 才是胜者（R5 已修，原子定胜负）
+ ③ 败者（rows_affected==0）直接返回 AlreadyInProgress，不派发 task
  ④ StreamRegistry.register(StreamEntry{msg_id,bot_id,channel,task_id,session_id})
-                                                   ⚠ 进程内 DashMap，R1 关键点
+                                                   进程内 DashMap（R1-A 既定形态）
  ⑤ fanout 占位气泡（"message" 终态帧，is_partial=true, channel_seq=null）
  ⑥ load_task_context（触发消息全文 + 发送者名 + 附件）
  ⑦ bot_locator.dispatch_task(bot_id, task帧)
-      └ Redis 路线：check_online(SET …:online, TTL 30s) → PUBLISH …:control，
-        以 PUBLISH 订阅者数 >0 判定 delivered
+      └ 进程内（R1-A）：查 InProcessBotLocator.sessions 命中则 control_tx.try_send，
+        try_send 成功即 delivered；查不到 = bot 不在线
  ⑧ 未送达 → mark_placeholder_failed（finalize 为 "[bot offline]"，此时才耗 seq）
             → fanout message_done → 清理注册表 → finalize session
 ```
@@ -393,7 +394,9 @@ bot 路由侧（registry）：
   2. **集成测试重建**（`sqlx::test` 或 Docker Compose 起栈，URL 读 `INTEGRATION_BASE_URL`，遵守 CLAUDE.md 不许硬编码端口）：流程 2→4 全链路（发消息→占位→delta→done→seq 连续性断言）、I1 写后投递（断库时不广播）、I2 gap-free（并发发消息 seq 无洞）、流程 8 重连补齐。
 - **验收**：CI 跑 `cargo test` + 集成 job；不变量 I1/I2/I3/I4 各至少一条测试覆盖。
 
-### R5 [P1] dispatcher 双派发竞态
+### R5 [P1] dispatcher 双派发竞态 — ✅ **已修复（2026-06-18）**
+
+> **落地**：删去前置 `check_idempotency` SELECT 与 `IdempotencyState` 枚举。`create_placeholder` 改返回 `Result<bool, String>`，`bool = rows_affected() == 1`（INSERT … ON CONFLICT DO NOTHING 是否真正插入）。`dispatch` 据此三分支：`Ok(true)` 胜者继续派发、`Ok(false)` 占位已存在返回 `AlreadyInProgress`（不派发 task）、`Err` 返回 `DbError`。原子的 INSERT 单点定胜负，并发双触发只有一个调用派发 task。**并发断言测试折入 R4-2**（需真实 PG + mock BotLocator）。
 
 - **现状**：`check_idempotency`（SELECT）与 `create_placeholder`（INSERT ON CONFLICT DO NOTHING）非原子（`dispatcher.rs:57-76`）。
 - **问题**：并发双触发时两边都过检查，占位收敛（I4 保住），但 **task 帧会派发两次**，bot 重复跑同一任务（费 LLM token；占位回写有 R4 守卫所以 UI 收敛）。
