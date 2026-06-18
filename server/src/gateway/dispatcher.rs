@@ -49,21 +49,15 @@ pub async fn dispatch(
     bot_locator: &Arc<dyn BotLocator>,
     params: DispatchParams,
 ) -> DispatchResult {
-    // ── 幂等检查 ──────────────────────────────────────────────────────────────
-    // 占位 id 由 (trigger_msg_id, bot_id) 确定性派生（R3）。
-    // 同一输入永远得到同一 UUID，重跑时 upsert 同一占位，不新建。
+    // ── 原子创建占位（先落库）────────────────────────────────────────────────
+    // 占位 id 由 (trigger_msg_id, bot_id) 确定性派生（I4）：同一输入永远同一 UUID。
+    // R5：不再用前置 SELECT 判幂等（与 INSERT 非原子，并发双触发会两边都通过，
+    // 导致 task 帧派发两次、bot 重复跑同一任务）。改由 `INSERT … ON CONFLICT
+    // DO NOTHING` 的 rows_affected 单点定胜负——只有真正插入占位的调用继续派发。
     let placeholder_id = derive_placeholder_id(params.trigger_msg_id, params.bot_id);
-
-    match check_idempotency(db, placeholder_id).await {
-        IdempotencyState::InProgress => return DispatchResult::AlreadyInProgress,
-        IdempotencyState::Done => return DispatchResult::AlreadyInProgress,
-        IdempotencyState::NotFound => {} // 继续正常派发
-        IdempotencyState::DbError(e) => return DispatchResult::DbError(e),
-    }
-
-    // ── 创建占位 Message（先落库）────────────────────────────────────────────
     let task_id = Uuid::new_v4();
-    if let Err(e) = create_placeholder(
+
+    match create_placeholder(
         db,
         placeholder_id,
         params.channel_id,
@@ -72,7 +66,9 @@ pub async fn dispatch(
     )
     .await
     {
-        return DispatchResult::DbError(e);
+        Ok(true) => {}                                          // 胜者：本次插入占位，继续派发
+        Ok(false) => return DispatchResult::AlreadyInProgress, // 占位已存在（败者 / 重投）
+        Err(e) => return DispatchResult::DbError(e),
     }
 
     // ── 注册 StreamEntry ─────────────────────────────────────────────────────
@@ -173,41 +169,17 @@ fn derive_placeholder_id(trigger_msg_id: Uuid, bot_id: Uuid) -> Uuid {
     Uuid::new_v5(&namespace, name.as_bytes())
 }
 
-enum IdempotencyState {
-    NotFound,
-    InProgress,
-    Done,
-    DbError(String),
-}
-
-async fn check_idempotency(db: &PgPool, placeholder_id: Uuid) -> IdempotencyState {
-    match sqlx::query("SELECT is_partial, content FROM messages WHERE msg_id = $1")
-        .bind(placeholder_id.to_string())
-        .fetch_optional(db)
-        .await
-    {
-        Err(e) => IdempotencyState::DbError(e.to_string()),
-        Ok(None) => IdempotencyState::NotFound,
-        Ok(Some(row)) => {
-            let is_partial: bool = row.try_get("is_partial").unwrap_or(false);
-            let content: String = row.try_get("content").unwrap_or_default();
-            if is_partial || content.is_empty() {
-                IdempotencyState::InProgress
-            } else {
-                IdempotencyState::Done
-            }
-        }
-    }
-}
-
+/// 原子创建占位。返回 `true` 表示本次 INSERT 胜出（rows_affected == 1）；
+/// `false` 表示占位已存在（并发双触发的败者，或同一触发的重投）——调用方据此
+/// 放弃派发，避免 bot 重复跑同一任务（R5）。
 async fn create_placeholder(
     db: &PgPool,
     placeholder_id: Uuid,
     channel_id: Uuid,
     bot_id: Uuid,
     depth: i32,
-) -> Result<(), String> {
-    sqlx::query(
+) -> Result<bool, String> {
+    let result = sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth)
          VALUES ($1, $2, 'bot', $3, '', TRUE, $4)
@@ -219,8 +191,9 @@ async fn create_placeholder(
     .bind(depth)
     .execute(db)
     .await
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    Ok(result.rows_affected() == 1)
 }
 
 struct FailedPlaceholder {
