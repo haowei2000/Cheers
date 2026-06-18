@@ -393,3 +393,42 @@ fn build_task_frame(
         "enqueued_at": chrono::Utc::now().to_rfc3339(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// I4：同一 (trigger, bot) 必派生同一占位 id（重投收敛同一占位）。
+    #[test]
+    fn placeholder_id_is_deterministic() {
+        let trigger = Uuid::new_v4();
+        let bot = Uuid::new_v4();
+        assert_eq!(
+            derive_placeholder_id(trigger, bot),
+            derive_placeholder_id(trigger, bot)
+        );
+    }
+
+    /// 不同 trigger 或不同 bot → 不同占位 id（不会误合并两个任务）。
+    #[test]
+    fn placeholder_id_varies_by_inputs() {
+        let trigger = Uuid::new_v4();
+        let bot = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        assert_ne!(
+            derive_placeholder_id(trigger, bot),
+            derive_placeholder_id(other, bot)
+        );
+        assert_ne!(
+            derive_placeholder_id(trigger, bot),
+            derive_placeholder_id(trigger, other)
+        );
+    }
+
+    /// 占位 id 是 UUID v5（确定性命名空间散列，而非随机 v4）。
+    #[test]
+    fn placeholder_id_is_v5() {
+        let id = derive_placeholder_id(Uuid::new_v4(), Uuid::new_v4());
+        assert_eq!(id.get_version_num(), 5);
+    }
+}

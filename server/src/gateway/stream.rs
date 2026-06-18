@@ -76,11 +76,38 @@ impl StreamRegistry {
             .unwrap_or(0)
     }
 
+    /// R4 守卫：原子地认领 finalize（在 DashMap 分片写锁下 read-and-set，
+    /// 无独立读写窗口）。done 帧借此挡住并发迟到的 delta / 第二个 done。
+    fn claim_finalize(&self, msg_id: Uuid) -> FinalizeClaim {
+        match self.entries.get_mut(&msg_id) {
+            None => FinalizeClaim::NotRegistered,
+            Some(mut entry) => {
+                if entry.finalized {
+                    FinalizeClaim::AlreadyFinalized
+                } else {
+                    entry.finalized = true;
+                    FinalizeClaim::Claimed
+                }
+            }
+        }
+    }
+
     /// 清理注册表（done 帧到达后调用）。
     pub fn remove(&self, msg_id: Uuid) {
         self.entries.remove(&msg_id);
         self.seq_counters.remove(&msg_id);
     }
+}
+
+/// `claim_finalize` 的认领结果（R4 守卫）。
+#[derive(Debug, PartialEq, Eq)]
+enum FinalizeClaim {
+    /// 本次成功把流标记为 finalize（此前未 finalize）。
+    Claimed,
+    /// 流已被先前的 done 帧 finalize——并发迟到的 done 应被拒绝。
+    AlreadyFinalized,
+    /// 流未注册——done 到达时占位理应仍在；按既有行为放行。
+    NotRegistered,
 }
 
 // ── 回流处理（R1-R4）─────────────────────────────────────────────────────────
@@ -172,11 +199,8 @@ pub async fn handle_done(
         .map_err(mention_parse_error_to_static)?;
 
     // R4: 标记 finalize（先在内存里标记，防止并发 delta 继续写入）
-    if let Some(mut entry) = registry.entries.get_mut(&msg_id) {
-        if entry.finalized {
-            return Err("already finalized");
-        }
-        entry.finalized = true;
+    if registry.claim_finalize(msg_id) == FinalizeClaim::AlreadyFinalized {
+        return Err("already finalized");
     }
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
@@ -644,4 +668,71 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
 
     let channel_id_str: String = row.try_get("channel_id").map_err(|_| "db error")?;
     channel_id_str.parse().map_err(|_| "invalid channel_id")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(msg_id: Uuid) -> StreamEntry {
+        StreamEntry {
+            msg_id,
+            bot_id: Uuid::new_v4(),
+            channel_id: Uuid::new_v4(),
+            task_id: Uuid::new_v4(),
+            session_id: None,
+            finalized: false,
+        }
+    }
+
+    /// R2 / I7：seq 由 Backend 单调盖戳，从 0 起每帧 +1。
+    #[test]
+    fn next_seq_is_monotonic_from_zero() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        assert_eq!(reg.next_seq(msg), 0);
+        assert_eq!(reg.next_seq(msg), 1);
+        assert_eq!(reg.next_seq(msg), 2);
+    }
+
+    /// 每条流的 seq 计数器相互独立。
+    #[test]
+    fn next_seq_is_independent_per_stream() {
+        let reg = StreamRegistry::new();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        reg.register(entry(a));
+        reg.register(entry(b));
+        assert_eq!(reg.next_seq(a), 0);
+        assert_eq!(reg.next_seq(a), 1);
+        assert_eq!(reg.next_seq(b), 0, "b 的计数器不受 a 影响");
+    }
+
+    /// 未注册的流盖戳返回 0（不 panic）。
+    #[test]
+    fn next_seq_unregistered_returns_zero() {
+        let reg = StreamRegistry::new();
+        assert_eq!(reg.next_seq(Uuid::new_v4()), 0);
+    }
+
+    /// R4：首个 done 认领 finalize，并发迟到的第二个 done 被拒。
+    #[test]
+    fn claim_finalize_rejects_second_claim() {
+        let reg = StreamRegistry::new();
+        let msg = Uuid::new_v4();
+        reg.register(entry(msg));
+        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::Claimed);
+        assert_eq!(reg.claim_finalize(msg), FinalizeClaim::AlreadyFinalized);
+    }
+
+    /// 未注册的流：finalize 认领返回 NotRegistered（handle_done 据此放行）。
+    #[test]
+    fn claim_finalize_unregistered_is_not_rejected() {
+        let reg = StreamRegistry::new();
+        assert_eq!(
+            reg.claim_finalize(Uuid::new_v4()),
+            FinalizeClaim::NotRegistered
+        );
+    }
 }

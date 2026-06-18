@@ -299,3 +299,30 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
         })))
         .await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gateway::realtime::frame::WireFrame;
+    use serde_json::json;
+
+    fn frame(frame_type: &str) -> WireFrame {
+        WireFrame::channel(Uuid::new_v4(), frame_type, json!({}))
+    }
+
+    /// I6：终态帧（不可丢，背压时关连接）须被识别。
+    #[test]
+    fn terminal_frames_are_recognized() {
+        for ft in ["message", "message_done", "message_deleted"] {
+            assert!(is_terminal_frame(&frame(ft)), "{ft} 是终态帧");
+        }
+    }
+
+    /// 流式 / 其它帧不是终态帧（背压时可静默丢弃）。
+    #[test]
+    fn streaming_frames_are_not_terminal() {
+        for ft in ["message_stream", "bot_trace", "pong", "presence"] {
+            assert!(!is_terminal_frame(&frame(ft)), "{ft} 不是终态帧");
+        }
+    }
+}

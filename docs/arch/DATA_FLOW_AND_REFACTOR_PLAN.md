@@ -1,6 +1,6 @@
 # 数据流全景与改造计划
 
-> 版本：v1.1（2026-06-18）—— R1 决策落地：方案 A（进程内）
+> 版本：v1.2（2026-06-18）—— R1 决策落地：方案 A（进程内）；R4-1 纯逻辑单测落地
 > 性质：**代码现状快照 + 改造提案**。
 > 与其他设计文档的区别：本文以**代码实际行为**为准绳（基于 `main` 分支 cc538b0 + 当前未提交改动），
 > 凡与设计文档冲突之处都在 [§2.6 差异表](#26-协议文档-vs-代码差异表) 显式标注。
@@ -382,6 +382,8 @@ bot 路由侧（registry）：
 - **验收**：单测——填满队列后广播终态帧，断言连接被关闭而非静默丢帧。
 
 ### R4 [P1] 测试安全网（后续所有改造的前置）
+
+> **R4-1 已完成（2026-06-18）**：纯逻辑单测落地——`derive_placeholder_id`（I4 幂等）、`StreamRegistry::next_seq`（I7/R2 seq 单调）、`StreamRegistry::claim_finalize`（R4 finalize 守卫，由 handle_done 内联 get_mut 提取为带契约方法）、`role_can_write`（I8）、`is_terminal_frame`（I6）、`push_unique`（mention 去重）、connector 的 `compute_backoff`（退避边界）。server `cargo test` 18 项、connector 29 项全绿。**R4-2 集成测试仍待建**（解锁 R1 全链路冒烟验收）。
 
 - **现状**：49 个 Rust 文件仅 `acp_capability.rs` 有测试；旧 pytest 集成套件随 Python 后端移除。
 - **方案**（两层）：

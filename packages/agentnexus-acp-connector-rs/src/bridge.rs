@@ -54,6 +54,40 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// 退避：指数增长但封顶 max_ms，再乘 [0.5, 1.0] 的 jitter。
+    /// jitter 随机，故对每个 attempt 多取样验证结果恒落在 [0.5×cap, cap]。
+    #[test]
+    fn backoff_stays_within_jittered_cap() {
+        let opts = ReconnectOptions {
+            base_ms: 1_000,
+            max_ms: 30_000,
+            reset_after_ms: 30_000,
+        };
+        for attempt in 1..=10u32 {
+            let uncapped = 1_000u64.saturating_mul(2u64.saturating_pow(attempt - 1));
+            let cap = uncapped.min(opts.max_ms);
+            let lower = (cap as f64 * 0.5).round() as u64;
+            for _ in 0..64 {
+                let ms = compute_backoff(attempt, opts).as_millis() as u64;
+                assert!(
+                    ms >= lower && ms <= cap,
+                    "attempt {attempt}: {ms}ms 不在 [{lower}, {cap}]"
+                );
+            }
+        }
+    }
+
+    /// 大 attempt 不溢出，稳定封顶在 max_ms（含 jitter 下界）。
+    #[test]
+    fn backoff_caps_at_max() {
+        let opts = ReconnectOptions::default();
+        let lower = (opts.max_ms as f64 * 0.5).round() as u64;
+        for _ in 0..64 {
+            let ms = compute_backoff(32, opts).as_millis() as u64;
+            assert!(ms >= lower && ms <= opts.max_ms, "{ms}ms 超出封顶");
+        }
+    }
+
     #[test]
     fn control_task_deserializes_from_agent_bridge_v1_shape() {
         let frame: ControlInbound = serde_json::from_value(json!({
