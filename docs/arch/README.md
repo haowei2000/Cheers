@@ -8,6 +8,7 @@ This directory stores architecture, protocol, and gateway design docs.
 
 - [Architecture Status Webpage](index.html) — generated from `architecture-status.page.json` by `make docs-pages`
 - [Architecture Overview](ARCHITECTURE_OVERVIEW.md)
+- [Frontend Rebuild Architecture](FRONTEND_REBUILD_ARCHITECTURE.md) / [中文](FRONTEND_REBUILD_ARCHITECTURE.zh-CN.md)
 - [Gateway Protocol](WIRE_PROTOCOL.md)
 - [Message Content Format](MESSAGE_CONTENT_FORMAT.md)
 - [Message Pagination](MESSAGE_PAGINATION.md)
@@ -17,6 +18,7 @@ This directory stores architecture, protocol, and gateway design docs.
 ## ACP and Agent Integration
 
 - [Agent Bridge Protocol](AGENT_BRIDGE_PROTOCOL.md)
+- [Client Daemon Architecture](CLIENT_DAEMON_ARCHITECTURE.md) / [中文](CLIENT_DAEMON_ARCHITECTURE.zh-CN.md)
 - [ACP Connection Model](ACP_CONNECTION_MODEL.md)
 - [ACP Capability Delegation](ACP_CAPABILITY_DELEGATION.md)
 - [Agent Bridge and ACP Compatibility](AGENT_BRIDGE_ACP_COMPATIBILITY.md)

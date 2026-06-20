@@ -8,6 +8,7 @@
 
 - [架构状态网页](index.html) — 由 `architecture-status.page.json` 通过 `make docs-pages` 生成
 - [架构总览](ARCHITECTURE_OVERVIEW.md)
+- [前端重做架构](FRONTEND_REBUILD_ARCHITECTURE.zh-CN.md) / [English](FRONTEND_REBUILD_ARCHITECTURE.md)
 - [网关与传输协议](WIRE_PROTOCOL.md)
 - [消息内容格式](MESSAGE_CONTENT_FORMAT.md)
 - [任务投递流程](TASK_DELIVERY.md)
@@ -16,6 +17,7 @@
 ## ACP 与 Agent 接入
 
 - [Agent Bridge 协议](AGENT_BRIDGE_PROTOCOL.md)
+- [客户端 Daemon 架构](CLIENT_DAEMON_ARCHITECTURE.zh-CN.md) / [English](CLIENT_DAEMON_ARCHITECTURE.md)
 - [ACP 连接模型](ACP_CONNECTION_MODEL.md)
 - [Agent Bridge 与 ACP 兼容设计](AGENT_BRIDGE_ACP_COMPATIBILITY.md)
 - [ACP 集成](ACP_INTEGRATION.md)

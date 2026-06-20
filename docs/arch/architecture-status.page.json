@@ -4,300 +4,325 @@
   "brand": "AgentNexus Architecture",
   "brandMark": "AN",
   "nav": [
-    { "href": "#summary", "label": "完成度" },
-    { "href": "#topology", "label": "拓扑" },
-    { "href": "#changes", "label": "近期改动" },
-    { "href": "#goals", "label": "目标状态" },
-    { "href": "#backlog", "label": "后续" }
+    { "href": "#status", "label": "状态", "status": "mostly" },
+    { "href": "#overview", "label": "架构", "status": "done" },
+    { "href": "#topology", "label": "拓扑", "status": "done" },
+    { "href": "#ledger", "label": "M0 账本", "status": "done" },
+    { "href": "#scope", "label": "范围", "status": "partial" },
+    { "href": "#backlog", "label": "后续", "status": "open" }
   ],
   "hero": {
-    "eyebrow": "Architecture status snapshot",
-    "heading": "去中心化 Agent 网格的当前完成度",
-    "lead": "本页基于 2026-06-02 的 `main` 分支快照，并把 2026-06-01 本地领先远程的 6 次提交合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛，以及旧 TS agent 包迁移到 Rust。",
-    "meta": ["生成日期: 2026-06-02", "分支: main", "HEAD: ff14b2d + docs sync", "范围: 2026-06-01 的 6 次提交"]
-  },
-  "summary": {
-    "title": "一句话结论",
-    "scores": [
-      { "value": "6", "label": "2026-06-01 工作提交已合并到本页" },
-      { "value": "3", "label": "旧 TS agent 包删除、停用或迁移到 Rust" },
-      { "value": "1", "label": "Rust gateway 是当前唯一后端形态" }
-    ],
-    "progress": [
-      { "label": "Agent Bridge", "value": "完成", "percent": 100, "status": "done" },
-      { "label": "Rust agent 包迁移", "value": "基本完成", "percent": 88, "status": "mostly" },
-      { "label": "Connector MCP 注入", "value": "待实现", "percent": 35, "status": "partial" }
+    "eyebrow": "Architecture status · 2026-06-20",
+    "heading": "去中心化 Agent 网格 · M0 夯实地基",
+    "lead": "AgentNexus 是一个「外接 agent 优先」的聊天网格：Rust gateway（`server/`）是唯一后端，React 前端（`frontend/`），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。",
+    "meta": [
+      "实测日期 2026-06-20",
+      "branch m0-foundation",
+      "HEAD 77d6ba9",
+      { "label": "未合并 main（领先 12 commits）", "status": "open" }
     ]
   },
-  "sections": {
-    "snapshot": {
-      "title": "当前快照",
-      "intro": "架构目标已经从“设计意图”推进到可追踪的 Rust gateway 和外置 connector 路径，剩余缺口集中在 connector 自动 MCP 注入、端到端验证和产品化界面。",
-      "metrics": [
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "Agent Bridge 正式化",
-          "body": "服务端路径切到 `/ws/agent-bridge/*`，control/data 连接生命周期、supersede 和 runtime session 状态进入 Rust gateway。"
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "消息级路由和取消",
-          "body": "Bot@Bot 链路改成 message depth，取消改成单条 in-flight bot 消息，避免旧 task chain 状态拖累路由。"
-        },
-        {
-          "status": "mostly",
-          "badge": "基本完成",
-          "title": "Agent 包 Rust 化",
-          "body": "OpenClaw legacy 包停用，`agentnexus-mcp-server` 迁成 Rust binary，bridge-client 能力并入 Rust connector crate。"
-        }
+  "sections": [
+    {
+      "type": "statusBand",
+      "title": "一眼看状态",
+      "intro": "M0 的 6 个改造项已全部实现并带测试；CI 集成 job 已接线（本地对真实 PG 4 项验证绿）。M0 验收门仅剩「合并 main」一项收口——用红色标出。",
+      "verdict": {
+        "value": "6/6",
+        "label": "M0 改造项已实现 + 测试覆盖（R1-A · R2 · R3 · R4-1 · R4-2 · R5）",
+        "status": "done"
+      },
+      "counters": [
+        { "value": "21 + 29 + 4", "label": "测试：server 单测 · connector · 集成（真实 PG，已接 CI）", "status": "done" },
+        { "value": "进程内", "label": "fan-out / 路由 / 流注册表（R1-A；Redis 仍 parked）", "status": "done" },
+        { "value": "已接线", "label": "CI 集成 job：Postgres 16 service + `--features integration`；本地 4 项绿", "status": "done" },
+        { "value": "未合并", "label": "m0-foundation → main（合并即触发首次 CI 集成跑）", "status": "open" }
+      ],
+      "chips": [
+        { "code": "R1-A", "label": "进程内部署", "status": "done", "href": "#r1a" },
+        { "code": "R2", "label": "绑定竞态", "status": "done", "href": "#r2" },
+        { "code": "R3", "label": "终态背压", "status": "done", "href": "#r3" },
+        { "code": "R4-1", "label": "纯逻辑单测", "status": "done", "href": "#r41" },
+        { "code": "R4-2", "label": "白盒集成", "status": "done", "href": "#r42" },
+        { "code": "R5", "label": "双派发", "status": "done", "href": "#r5" },
+        { "code": "CI", "label": "集成 job 已接", "status": "done", "href": "#r42" }
       ]
     },
-    "topology": {
+    {
+      "type": "legend",
+      "title": "图例",
+      "intro": "本页用到的状态色与代码缩写在此处定义一次；后文出现的 R/I 代码均可点击跳转，不再重复解释。",
+      "groups": [
+        {
+          "title": "状态色",
+          "kind": "status",
+          "items": [
+            { "key": "done", "gloss": "已落地并有测试覆盖" },
+            { "key": "mostly", "gloss": "主体完成，尚有一项收尾" },
+            { "key": "partial", "gloss": "核心完成，边角待补" },
+            { "key": "open", "gloss": "未开始 / 未接线" },
+            { "key": "future", "gloss": "本期外，未来演进（M4）" }
+          ]
+        },
+        {
+          "title": "改造项 R*（本期具体改动）",
+          "kind": "code",
+          "items": [
+            { "key": "R1-A", "gloss": "单实例进程内部署（Redis 退出启动路径）", "href": "#r1a" },
+            { "key": "R2", "gloss": "bind_control/bind_data 绑定竞态修复", "href": "#r2" },
+            { "key": "R3", "gloss": "终态帧背压：队列满关连接 4408，不静默丢", "href": "#r3" },
+            { "key": "R4-1", "gloss": "纯逻辑单测（无 DB）", "href": "#r41" },
+            { "key": "R4-2", "gloss": "白盒集成测试（对真实 Postgres）", "href": "#r42" },
+            { "key": "R5", "gloss": "dispatcher 双派发：原子 INSERT 单点定胜负", "href": "#r5" },
+            { "key": "R1-B", "gloss": "多实例 HA（Redis fan-out/registry，已 parked 备 M4）" }
+          ]
+        },
+        {
+          "title": "不变量 I*（系统恒成立的性质）",
+          "kind": "code",
+          "items": [
+            { "key": "I1", "gloss": "先落库再广播（终态先 COMMIT）" },
+            { "key": "I2", "gloss": "channel_seq 每频道 gap-free（行锁内分配）" },
+            { "key": "I4", "gloss": "占位幂等 = UUIDv5(trigger, bot)" },
+            { "key": "I6", "gloss": "终态帧不丢；流式帧可丢（自愈）" },
+            { "key": "I7", "gloss": "seq 唯一由 Backend 单调盖戳" }
+          ]
+        }
+      ],
+      "note": "R* = 一次具体改造；I* = 系统必须始终成立的不变量（每条由测试钉死）。M0=夯实地基 · M1=核心闭环 · M2=功能裁剪 · M4=多实例/HA。"
+    },
+    {
+      "type": "overview",
+      "title": "是什么 · 怎么跑",
+      "intro": "给第一次看这套架构的人：先讲它是什么、遵循哪些约束，再用一条 @bot 消息的生命周期讲它怎么跑。",
+      "what": [
+        "平台是「外接 agent 优先」：没有内置 Python runtime。Rust gateway（`server/`，9 个顶层模块）是唯一后端；React 前端（`frontend/`）；agent 作为外部进程，经 Agent Bridge 的两条 WS（control + data）接入。标准桥是 `agentnexus-mcp-server`。",
+        "浏览器走 REST + 一条 browser WS：订阅频道、收消息与流式 delta。bot 经 connector 接入：本地 ACP agent（配置驱动，example 指向 `claude-agent-acp`）说 ACP stdio；MCP 工具调用经 connector 的 loopback HTTP 回到后端的 resource 协议。整条链路当前为单实例进程内（R1-A）。"
+      ],
+      "principles": [
+        { "title": "外接 agent 优先。", "body": "平台不依赖内置 runtime；外置 ACP agent 经同一协议接入，agent 无关。" },
+        { "title": "频道只转发 @。", "body": "没有中央 coordinator 判意图，路由规则可测试、可审计。" },
+        { "title": "资源写走 membership role。", "body": "读需频道成员，写需 owner/admin/member；旧 Grant 机制已移除。" },
+        { "title": "Agent Bridge 是平台协议。", "body": "服务端不直接说 ACP JSON-RPC；ACP 只在 connector 的 adapter 层出现。" }
+      ],
+      "flow": {
+        "title": "一条 @bot 消息的生命周期",
+        "steps": [
+          { "kicker": "1", "title": "消息写入", "body": "验成员 → 事务内行锁分配 `channel_seq` → 插入消息 → 先 COMMIT，再广播。", "tag": "I1 · I2" },
+          { "kicker": "2", "title": "解析 + 派发", "body": "`resolve_bot_triggers` 命中 bot → `create_placeholder` 原子 `INSERT…ON CONFLICT` 单点定胜负 → `dispatch_task` 直接 try_send 到 control WS。", "tag": "R5 · I4" },
+          { "kicker": "3", "title": "Bridge 转发", "body": "connector control WS 收 task → BridgeRuntime → AcpAdapter `session/new`→`session/prompt`（ACP stdio）。" },
+          { "kicker": "4", "title": "流式 delta", "body": "agent `session/update` chunk 回流；Backend 盖 seq 戳后广播 `message_stream`，可丢（靠终态自愈）。", "tag": "I7" },
+          { "kicker": "5", "title": "done → finalize", "body": "`claim_finalize` 三态守卫 → 行锁分配 seq、`is_partial→FALSE` → 广播终态 `message_done`（队列满则 4408 关连接，不丢）。", "tag": "R3 · I6" },
+          { "kicker": "6", "title": "bot@bot 链", "body": "终态消息若 @ 了别的 bot 则递归同一派发路径，深度上限 `MAX_BOT_REPLY_DEPTH = 5`。" }
+        ]
+      }
+    },
+    {
+      "type": "topology",
       "title": "当前拓扑",
-      "intro": "平台侧保持单实例 Rust Backend；本地 agent 通过 Rust daemon 管理的 connector 接入，connector 承担 ACP 会话、`mcpServers` 注入和 resource loopback，Resource API 仍是 bot 访问平台资源的唯一协议面。",
+      "intro": "平台侧 Rust Backend；bot task 经进程内 `InProcessBotLocator` 直接派发（R1-A，Redis 退出启动路径、仍 parked 备 HA）。connector 经 Agent Bridge control/data WS 接入；ACP agent 配置驱动；MCP 注入为标准 ACP stdio server。",
       "lanes": [
         {
           "title": "客户端",
           "nodes": [
-            { "title": "Browser / Mobile", "body": "REST + browser WS，订阅频道并接收消息与流式 delta。" },
-            { "title": "Frontend", "body": "React + Vite 保持现有应用形态，协议 URL 基本不变。" }
+            { "title": "Browser / Mobile", "body": "REST + 一条 browser WS，订阅频道收消息与流式 delta；终态帧背压时收 4408 关闭转 REST 补齐（R3）。send 队列容量 256。" },
+            { "title": "Frontend (frontend/)", "body": "React 18 + Vite 6 + TS + Tailwind + Zustand + TanStack Query。3-panel 布局，`useChatRealtime` 原生 WS + 指数退避重连，react-markdown + highlight.js，JWT。新 src 仅 27 文件 ~2k LOC。" }
           ]
         },
         {
-          "title": "Rust Backend",
+          "title": "Rust Backend (server/)",
           "nodes": [
-            { "title": "REST API", "body": "workspaces / channels / messages / bots / files / friends / capability。" },
-            { "title": "WS Gateway + Agent Bridge", "body": "browser fan-out、control/data WS、stream registry、BotLocator、connector supersede。" },
-            { "title": "Resource API", "body": "channel reads、Grant-gated writes、activity stream、workspace file tree。" }
+            { "title": "REST API", "body": "9 个 handler：auth · workspaces · channels · messages · bots · files · friends · capability · mcp。Mention 解析 + bot trigger 派发。另有 3 条 WS（browser / bridge-control / bridge-data）。" },
+            { "title": "进程内 Dispatch (R1-A)", "body": "bot task 经 `InProcessBotLocator` 直接 try_send 到 control WS；session 命中即在线，无 Redis 往返。`create_placeholder` 原子 INSERT 单点定胜负（R5）。" },
+            { "title": "WS Gateway + Agent Bridge", "body": "browser fan-out（`InProcessFanout`，终态帧背压关连接 R3）、control/data WS、stream registry（`claim_finalize` 守卫）、supersede、bot@bot 链（深度 ≤ 5）。" },
+            { "title": "Resource API", "body": "统一鉴权：`channel.*` 读 / membership-role 写 / `fs.*`（agent 工作区文件，落 `memory_files`）。session_id 已移除。" }
           ]
         },
         {
-          "title": "外部 Agent",
+          "title": "外部 Agent (packages/)",
           "nodes": [
-            { "title": "Rust daemon", "body": "只负责 connector 生命周期：start / stop / restart / status / logs。" },
-            { "title": "ACP Connector runtime", "body": "持有 Agent Bridge control/data 连接，调用 ACP session/new/load，并负责 `mcpServers` 注入边界。" },
-            { "title": "ACP agent + MCP stdio", "body": "OpenCode / Claude / Codex 按 ACP `mcpServers` 启动 `agentnexus-mcp-server`，tool call 经 connector loopback 转成 `resource_req`。" }
+            { "title": "Connector (Rust daemon)", "body": "BridgeRuntime（supervisor）→ AccountRuntime（每账号）→ { BridgeSession：control+data WS · AcpAdapter：ACP stdio }。11 个源模块。" },
+            { "title": "ACP agent（配置驱动）", "body": "`adapter.command` 指定，持久 stdio；example 与 README 用 `/opt/homebrew/bin/claude-agent-acp`。agent 无关，provider 鉴权在 agent 进程内（不在 connector）。" },
+            { "title": "agentnexus-mcp-server", "body": "18 个 MCP tools（channel info / messages / files / `fs.*`）。注入为标准 ACP stdio（`mcpServers` 的 command/args/env），非 HTTP/SSE。" },
+            { "title": "Loopback Resource Server", "body": "connector 本地 HTTP，带 loopback token：MCP tool call → data WS `resource_req` → 后端 resource 派发 → 原路返回。" }
           ]
         }
       ]
     },
-    "changes": {
-      "title": "2026-06-01 的 6 次提交如何推进目标",
-      "intro": "提交集中在 Agent Bridge 协议正式化、message-level bot 路由/取消、mention API 收敛，以及 legacy TS agent 包到 Rust 的迁移。它们把服务端协议、connector 边界和 agent 包形态推进到当前主线。",
-      "headers": ["提交", "日期", "主题", "架构影响"],
-      "rows": [
-        ["ff14b2d", "2026-06-01", "chore: migrate agent packages to rust", "停用 OpenClaw legacy 包；`agentnexus-mcp-server` 改为 Rust binary；bridge-client 能力并入 Rust connector crate；TS daemon 退场为 Rust supervisor。"],
-        ["3614b00", "2026-06-01", "Migrate backend to Agent Bridge protocol", "服务端 WS 命名和代码路径切到 Agent Bridge；新增协议文档和 runtime session status migration。"],
-        ["af64bcf", "2026-06-01", "feat(server): complete acp bridge connection lifecycle", "补齐 connector control/data 连接生命周期，新增 supersede 信号和连接一致性处理。"],
-        ["2f204ec", "2026-06-01", "refactor: unify mention API and remove legacy memory system", "用户和 bot 消息统一 explicit mention_ids；移除旧 memory resource，MCP post_message 可按名称解析 mention。"],
-        ["03c7984", "2026-06-01", "refactor(server): replace chain cancel with per-message bot cancel", "取消从 chain 级别收敛到单条 bot placeholder，直接向对应 bot 派发 cancel。"],
-        ["5c7a1ec", "2026-06-01", "refactor(server): replace chain propagation with message-level depth", "移除 task_chains/agent_tasks/bot_runs 派发状态；Bot@Bot 改成普通 mention 触发，并用 depth 防循环。"]
+    {
+      "type": "ledger",
+      "title": "M0 账本",
+      "intro": "每个 M0 改造项在此处有且仅有一行权威记录：状态 + 一句话结论 + 证据链接 + 可展开的机制细节。状态带、图例、拓扑里出现的 R 码都指回这里，避免同一事实重复多遍。",
+      "items": [
+        {
+          "code": "R1-A",
+          "anchor": "r1a",
+          "status": "done",
+          "badge": "已落地",
+          "title": "部署形态回退单实例进程内",
+          "lead": "`main.rs` 装配 `InProcessFanout` + 单个 `InProcessBotLocator`，Redis 退出 fan-out 启动路径、不再是硬依赖。",
+          "evidence": [{ "label": "main.rs", "href": "../../server/src/main.rs" }],
+          "detail": "一个 `Arc<InProcessBotLocator>` 同时兼 `BotRegistry` 与 `BotLocator`，共享一份 DashMap。`redis_fanout.rs` / `redis_registry.rs` 仍编译但以 `#[allow(dead_code)]` parked，备未来多实例（R1-B / M4）。这消除了「单实例能力却付多实例成本」的中间态。注意：Redis 是被「移出 M0 启动路径」，不是从代码库移除。(main.rs:45-59；realtime/mod.rs:4-7)"
+        },
+        {
+          "code": "R2",
+          "anchor": "r2",
+          "status": "done",
+          "badge": "已修复",
+          "title": "bind_control / bind_data 绑定竞态",
+          "lead": "`pending_data` DashMap 暂存先到的 data_tx，control 上线后再 adopt——两条 WS 到达顺序不定也不丢绑定。",
+          "evidence": [{ "label": "registry.rs", "href": "../../server/src/gateway/registry.rs" }],
+          "detail": "control / data 两条 WS 到达顺序不确定：data 先到则把 data_tx 暂存进 `pending_data`，control 后到时收养；两个顺序各有单测。(registry.rs:63,107-134,190-215；commit 8a7b661)"
+        },
+        {
+          "code": "R3",
+          "anchor": "r3",
+          "status": "done",
+          "badge": "已修复",
+          "title": "终态帧背压：关连接而非静默丢",
+          "lead": "队列满且帧为终态时触发该连接的 4408 关闭信号，客户端转 REST 补齐；流式帧维持可丢。兑现 I6。",
+          "evidence": [
+            { "label": "fanout.rs", "href": "../../server/src/gateway/realtime/fanout.rs" },
+            { "label": "browser.rs", "href": "../../server/src/gateway/ws/browser.rs" }
+          ],
+          "detail": "`InProcessFanout` 持 `closers: DashMap<conn_id, Sender>`；`deliver()` 在 `try_send` 返回 `Full` 且 `frame.is_terminal()`（message / message_done / message_deleted）时 fire 该连接 closer，browser 写循环 `close_rx` 分支以 4408 关 socket。单测断言「终态满则发关闭信号、流式满则不发」。(fanout.rs:36,72-83；frame.rs:83-88；browser.rs:23,129-145)"
+        },
+        {
+          "code": "R4-1",
+          "anchor": "r41",
+          "status": "done",
+          "badge": "已完成",
+          "title": "纯逻辑单测安全网（无 DB）",
+          "lead": "server 21 项单测覆盖 I4 幂等 / I7 seq 单调 / finalize 守卫 / role_can_write / 退避 / mention 去重 / is_terminal；connector 另有 29 项。",
+          "evidence": [{ "label": "stream.rs", "href": "../../server/src/gateway/stream.rs" }],
+          "detail": "顺带把 `handle_done` 内联的 finalize 守卫提取为 `StreamRegistry::claim_finalize` → 三态枚举 `FinalizeClaim {Claimed, AlreadyFinalized, NotRegistered}`，行为等价且可单测。三态比 bool 精确：NotRegistered（放行）与 AlreadyFinalized（拒绝）行为不同。(stream.rs:81-111,719-737)"
+        },
+        {
+          "code": "R4-2",
+          "anchor": "r42",
+          "status": "done",
+          "badge": "已完成",
+          "title": "白盒集成测试（对真实 Postgres）",
+          "lead": "`#[sqlx::test]` 每测一个隔离临时 DB（自动跑 migrations），feature `integration` 门控；4 项钉死核心数据流不变量，已接入 CI。",
+          "evidence": [
+            { "label": "tests/flows.rs", "href": "../../server/tests/flows.rs" },
+            { "label": "ci.yml", "href": "../../.github/workflows/ci.yml" }
+          ],
+          "detail": "4 项：i2 并发 gap-free seq、流程 2 连续 seq + 流程 8 补齐、R5 并发只派一次（计数 BotLocator 断言）、流程 4 done finalize 幂等。前置依赖是 bin→lib 拆分让 `tests/` 能链接内部函数。整个文件 `#![cfg(feature = \"integration\")]` 门控——默认 `cargo test` 编 0 个集成测试、无需 DB。CI 已新增 `gateway-integration` job（Postgres 16 service + `DATABASE_URL` + `cargo test --features integration --test flows`），本地对真实 PG 4 项全绿。(flows.rs:17,96/127/196/265；ci.yml)"
+        },
+        {
+          "code": "R5",
+          "anchor": "r5",
+          "status": "done",
+          "badge": "已修复",
+          "title": "dispatcher 双派发：原子 INSERT 单点定胜负",
+          "lead": "删去前置非原子的 `check_idempotency` SELECT；`create_placeholder` 用 `INSERT…ON CONFLICT DO NOTHING` 的 `rows_affected()==1` 定胜负。",
+          "evidence": [{ "label": "dispatcher.rs", "href": "../../server/src/gateway/dispatcher.rs" }],
+          "detail": "占位 id 为 `UUIDv5(trigger_msg_id, bot_id)` 确定性派生（I4），并发双触发撞同一行只有一个插入成功：胜者派发 task、败者 `AlreadyInProgress` 不派发。替换了旧的 check-then-act（SELECT 与 INSERT 非原子，并发双触发会派两次）。(dispatcher.rs:53-56,164-196)"
+        },
+        {
+          "code": "bin→lib",
+          "anchor": "binlib",
+          "status": "done",
+          "badge": "已完成",
+          "title": "拆库解锁白盒测试",
+          "lead": "新增 `src/lib.rs` 导出 9 个 module，`main.rs` 减为薄壳 `use server::*`；纯结构移动、零行为变化。",
+          "evidence": [{ "label": "lib.rs", "href": "../../server/src/lib.rs" }],
+          "detail": "`server` 原为纯 bin crate，`tests/` 无法链接内部模块——这是结构债不是测试问题。另：`tests/` 是独立 crate，只看得到 public API + dev-dependencies，故 sqlx/uuid/serde_json/async-trait 要单独加进 `[dev-dependencies]`。(lib.rs:1-15)"
+        }
       ]
     },
-    "goals": {
-      "title": "架构目标完成度",
-      "intro": "这里按“当前代码是否已经承担该职责”来判断，不把未验证的部署流程算作完全完成。",
-      "cards": [
+    {
+      "type": "scope",
+      "title": "范围：schema 远超 code",
+      "intro": "迁移定义了 37 张表（8 个迁移文件），但只有一部分有 handler/domain 代码。这张「实现 / 仅 schema / 休眠」三分图是 M2 必须显式裁剪的依据。",
+      "lanes": [
         {
           "status": "done",
-          "badge": "已完成",
-          "title": "Rust Backend 骨架与核心路由",
-          "body": "axum router、JWT 中间件、browser WS、ACP Bridge WS 和核心 REST 已在 `server/` 中统一。",
-          "evidence": [
-            { "label": "router.rs", "href": "../../server/src/router.rs" },
-            { "label": "acp_bridge.rs", "href": "../../server/src/gateway/ws/acp_bridge.rs" }
-          ]
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "Mesh schema",
-          "body": "`next_seq`、`channel_seq`、`message_mentions`、message depth 和 Agent Bridge runtime session 状态已进入 sqlx 迁移。",
-          "evidence": [
-            { "label": "0003 migration", "href": "../../server/migrations/0003_decentralized_mesh.sql" },
-            { "label": "mesh design", "href": "DECENTRALIZED_MESH.md" }
-          ]
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "Mention 路由与 message depth",
-          "body": "用户和 bot 消息统一 explicit mention_ids；Bot@Bot 不再依赖 task chain 状态，而是用 message depth 限制递归。",
-          "evidence": [
-            { "label": "mentions.rs", "href": "../../server/src/domain/mentions.rs" },
-            { "label": "messages.rs", "href": "../../server/src/domain/messages.rs" }
-          ]
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "channel_seq 事件时钟",
-          "body": "分配函数在事务内更新 `channels.next_seq`；用户消息 born final，bot placeholder finalize 时才取号。",
-          "evidence": [
-            { "label": "channel_seq.rs", "href": "../../server/src/domain/channel_seq.rs" },
-            { "label": "stream.rs", "href": "../../server/src/gateway/stream.rs" }
-          ]
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "Agent Bridge 生命周期",
-          "body": "control/data 连接迁移到 Agent Bridge 命名；registry 支持 supersede，runtime session 状态进入 gateway 路径。",
-          "evidence": [
-            { "label": "agent_bridge.rs", "href": "../../server/src/gateway/ws/agent_bridge.rs" },
-            { "label": "registry.rs", "href": "../../server/src/gateway/registry.rs" }
-          ]
-        },
-        {
-          "status": "mostly",
-          "badge": "基本完成",
-          "title": "单消息取消",
-          "body": "取消 API 通过 placeholder 找到 owner bot，只取消当前 in-flight bot 消息，不再取消整条旧 task chain。",
-          "evidence": [
-            { "label": "api/messages.rs", "href": "../../server/src/api/messages.rs" },
-            { "label": "stream.rs", "href": "../../server/src/gateway/stream.rs" }
-          ]
-        },
-        {
-          "status": "mostly",
-          "badge": "基本完成",
-          "title": "Resource API v1",
-          "body": "频道信息、成员、消息、activity、文件列表、memory 兼容层和 `fs.*` 已统一通过 resource dispatcher 暴露。",
-          "evidence": [
-            { "label": "resource/mod.rs", "href": "../../server/src/resource/mod.rs" },
-            { "label": "activity.rs", "href": "../../server/src/resource/activity.rs" },
-            { "label": "fs.rs", "href": "../../server/src/resource/fs.rs" }
-          ]
-        },
-        {
-          "status": "mostly",
-          "badge": "基本完成",
-          "title": "Rust MCP 标准桥工具面",
-          "body": "`agentnexus-mcp-server` 已迁为 Rust binary，并把资源读写映射成 MCP tools；connector 负责后续按 ACP `mcpServers` 注入。",
-          "evidence": [
-            { "label": "main.rs", "href": "../../packages/agentnexus-mcp-server/src/main.rs" },
-            { "label": "Cargo.toml", "href": "../../packages/agentnexus-mcp-server/Cargo.toml" }
-          ]
-        },
-        {
-          "status": "mostly",
-          "badge": "基本完成",
-          "title": "Agent package 退旧迁移",
-          "body": "OpenClaw channel package 和独立 bridge-client 包已移除；Rust connector crate 承接 daemon 与 bridge 协议能力，TS 前台 runtime 暂留兼容。",
-          "evidence": [
-            { "label": "connector-rs", "href": "../../packages/agentnexus-acp-connector-rs" },
-            { "label": "acp connector README", "href": "../../packages/agentnexus-acp-connector/README.md" }
-          ]
-        },
-        {
-          "status": "partial",
-          "badge": "部分完成",
-          "title": "Connector MCP stdio 注入",
-          "body": "ACP agent 配置里的 `mcpServers` 已由 connector 传入 session/new/load；自动合成 AgentNexus MCP entry 和 loopback resource endpoint 是下一步。",
-          "evidence": [
-            { "label": "acp-agent.ts", "href": "../../packages/agentnexus-acp-connector/src/acp-agent.ts" },
-            { "label": "ACP compatibility", "href": "AGENT_BRIDGE_ACP_COMPATIBILITY.md" }
-          ]
-        },
-        {
-          "status": "partial",
-          "badge": "部分完成",
-          "title": "全量 REST 覆盖",
-          "body": "核心端点已经迁移到 Rust；DM、topic scope、admin 级资源和部分旧后端能力仍需要逐项对齐。",
-          "evidence": [
-            { "label": "server/src/api", "href": "../../server/src/api" },
-            { "label": "refactor plan", "href": "REFACTOR_PLAN.md" }
-          ]
-        },
-        {
-          "status": "partial",
-          "badge": "部分完成",
-          "title": "文件与 memory 资源",
-          "body": "旧 `channel.memory` resource 已移除，当前资源面转向文件、消息和 `fs.*`；S3 文件内容读写仍需继续验证。",
-          "evidence": [
-            { "label": "files.rs", "href": "../../server/src/resource/files.rs" }
+          "badge": "已实现",
+          "title": "有 handler/domain 代码",
+          "items": [
+            "users · workspaces · channels · channel_memberships",
+            "messages · message_mentions · file_records",
+            "bot_accounts · friendships",
+            "agentnexus_sessions (+ bindings)",
+            "acp_capability（delegations + reject_logs）",
+            "`memory_files`（agent 工作区 `fs.*`，`resource/fs.rs`，14 条 SQL）"
           ]
         },
         {
           "status": "open",
-          "badge": "未完成",
-          "title": "Environment 动态 tools",
-          "body": "资源分发器仍是静态 `match`；按 channel / Environment 注册动态 resource handler 尚未实现。",
-          "evidence": [
-            { "label": "resource/mod.rs", "href": "../../server/src/resource/mod.rs" },
-            { "label": "context-and-environment", "href": "context-and-environment.md" }
+          "badge": "仅 schema",
+          "title": "有表、无任何实现（8 张）",
+          "items": [
+            "memory_entries（Agent 记忆条目）",
+            "document_sets / _items / _exclusions（RAG / 检索）",
+            "history_pages（Lens 渲染）",
+            "bulletin_issues（摘要页）",
+            "todo_items · prompt_templates",
+            "keychain_items · ai_models"
           ]
         },
         {
           "status": "future",
-          "badge": "未来计划",
-          "title": "多实例、E2EE、Vector DB",
-          "body": "单实例部署仍是本期决策；多实例 fan-out/locator、内容级 E2EE 和向量检索均保留为后续演进。",
-          "evidence": [
-            { "label": "overview", "href": "ARCHITECTURE_OVERVIEW.md" },
-            { "label": "security", "href": "SECURITY.md" },
-            { "label": "e2ee notes", "href": "E2EE_NOTES.md" }
+          "badge": "休眠",
+          "title": "有表、src 无引用",
+          "items": [
+            "agent_tasks · bot_runs",
+            "task_chains",
+            "auth_external_identities",
+            "email_codes",
+            "（占位未启用，按需在 M2/M4 取舍）"
           ]
         }
-      ]
-    },
-    "flow": {
-      "title": "关键运行流",
-      "intro": "下面是当前主链路的核心契约：写后投递、消息级 bot 路由、Agent Bridge 生命周期，以及 ACP MCP stdio 的责任边界。",
-      "steps": [
-        { "kicker": "1", "title": "消息写入", "body": "验证成员、解析 token mention、事务分配 `channel_seq`、插入消息。" },
-        { "kicker": "2", "title": "终态 fan-out", "body": "PG commit 后再广播浏览器终态帧，满足 Write-Before-Deliver。" },
-        { "kicker": "3", "title": "message-level dispatch", "body": "有 `@bot` 派发指定 bot；bot 回复再次 mention bot 时以 depth+1 继续派发，超过上限静默。" },
-        { "kicker": "4", "title": "per-message cancel", "body": "用户停止某条 bot placeholder 时，Backend 找到 owner bot 并只推送该消息的 cancel frame。" },
-        { "kicker": "5", "title": "connector MCP 注入", "body": "connector 在 ACP `session/new/load` 注入 `mcpServers`；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。" },
-        { "kicker": "6", "title": "资源裁判", "body": "connector 把 MCP tool call 转成 `resource_req`，Backend 统一校验频道成员、Grant 和 capability delegation。" }
-      ]
-    },
-    "decisions": {
-      "title": "已经明确的架构方向",
-      "intro": "这些决策在当前代码或文档中已经形成约束，后续实现应继续沿用。",
-      "cards": [
-        { "title": "外部 agent 优先", "body": "平台不再依赖内置 Python bot runtime；外置 ACP bot 和 MCP agent 是同一协议路径。" },
-        { "title": "频道只转发 @", "body": "没有中央 coordinator 参与意图判断，路由规则可测试、可审计。" },
-        { "title": "资源写走 Grant", "body": "Resource API 读只需频道成员，写需要成员身份和 ACP RBAC Grant。" },
-        { "title": "MCP 注入归 connector", "body": "daemon 只管理 connector 生命周期；connector 注入 `mcpServers`，ACP agent 按 stdio 启动 MCP server。" },
-        { "title": "Agent Bridge 是平台协议", "body": "服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。" },
-        { "title": "单实例是本期约束", "body": "fan-out 和 BotLocator 先走进程内或 Redis registry，跨实例扩展保留 trait 接口。" },
-        { "title": "旧兼容只保留在边界", "body": "OpenClaw 和独立 TS bridge-client 退场；TS foreground runtime 只是 Rust connector 全量化前的兼容层。" }
-      ]
-    },
-    "backlog": {
-      "title": "剩余工作建议",
-      "intro": "下一步重点不是再补临时 shim，而是把 connector 侧 MCP 注入闭环实现、验证，并继续把 Rust connector 全量化。",
-      "cards": [
-        { "status": "open", "badge": "实现", "title": "Connector 自动 MCP 注入", "body": "在 connector runtime 中增加 `agent.agentnexusMcp.enabled`，自动合成 stdio `mcpServers` entry 并注入 ACP `session/new/load`。" },
-        { "status": "open", "badge": "实现", "title": "Loopback resource endpoint", "body": "connector 本机起 HTTP endpoint，接收 `agentnexus-mcp-server` tool call，转成 data WS `resource_req` 并等待 `resource_res`。" },
-        { "status": "partial", "badge": "验证", "title": "MCP 端到端", "body": "用真实 connector 验证 `read_activity`、`fs_write`、`messages_by_seq`、per-message cancel 和 stdio MCP 注入。" },
-        { "status": "partial", "badge": "验证", "title": "空库启动和 cargo 测试", "body": "按 sqlx migration discipline，从空 Postgres 跑 gateway，确认 `0001..0008` 可线性执行。" },
-        { "status": "open", "badge": "实现", "title": "Environment 动态注册", "body": "把 resource dispatcher 从静态 `match` 演进成可按 channel / template 注册的 handler。" },
-        { "status": "open", "badge": "产品化", "title": "权限覆盖 UI 和 Lens", "body": "前端还缺 channel override 设置界面，以及 Environment Lens 的声明式渲染。" }
       ],
-      "note": "根因判断：2026-06-01 的改动解决了平台协议命名、消息级路由/取消和旧 agent 包形态不一致的问题。MCP stdio 集成的正确方向是 connector 注入 ACP `mcpServers` 并提供 loopback resource endpoint，而不是让 daemon 直接管理 MCP 子进程。"
+      "note": "前端同为薄切片：仅 3 个 feature 区（auth / chat / settings），无 bot 管理 UI、无文件 UI、无权限 UI——这些属 M1 的前端工作量。"
     },
-    "sources": {
+    {
+      "type": "changes",
+      "title": "M0 改动（按依赖链逐项提交）",
+      "intro": "本里程碑按依赖链推完：部署决策 + 装配 → 纯逻辑单测安全网 → 终态背压与双派发竞态修复 → bin→lib 重构 → 白盒集成测试。每项独立提交，文档（ROADMAP / DATA_FLOW）同步刷新至 v1.5。",
+      "headers": ["范围", "主题", "架构影响", "Commit"],
+      "rows": [
+        ["gateway", "R1-A 回退进程内", "`main.rs` 装配 in-process fan-out/locator；Redis 退出启动路径；redis_* parked", "`169362a`"],
+        ["gateway+connector", "R4-1 纯逻辑单测", "21 项 I4/I7/finalize/role/backoff/mention/terminal；提取 `claim_finalize` 三态守卫", "`bd5c6f4`"],
+        ["gateway", "R3 终态帧背压", "入队 `Full` + 终态 → `closers` 信号 → browser `close_rx` 4408 关连接", "`9049598`"],
+        ["gateway", "R5 dispatcher 双派发", "删前置 SELECT；`create_placeholder` 返回 `rows_affected()==1` 定胜负", "`740ed40`"],
+        ["server", "bin→lib 拆分", "新增 `src/lib.rs`；main.rs 薄壳；解锁白盒集成测试", "`dfa3eec`"],
+        ["server", "R4-2 白盒集成测试", "`#[sqlx::test]` 隔离 DB + feature 门控；4 项对真实 PG", "`8e55486`"],
+        ["docs", "状态页重构（本页）", "多 agent ground-truth 校正 + 可读性重设计", "`77d6ba9`+"]
+      ]
+    },
+    {
+      "type": "backlog",
+      "title": "后续工作",
+      "intro": "CI 集成 job 已接线（本地对真实 PG 4 项验证绿），M0 验收门只剩「合并 main」一项。合并后进入 M1 核心闭环。红色为 M0 必须收的口。",
+      "cards": [
+        { "status": "open", "badge": "P0 · 合并", "title": "m0-foundation → main（M0 最后一口）", "body": "分支领先 main 12 commits、未开 PR；合并后 M0 才算真正落地，并触发新 `gateway-integration` job 的首次 CI 运行。CI 集成 job 本身已接线、本地验证绿。" },
+        { "status": "open", "badge": "M1 · 前端", "title": "前端核心闭环", "body": "`useChatRealtime` 重连后 REST 补齐、mention 选择器（`<@bot>`/`<@user>`）、文件上传 + `<#file>` token、presence、bot 管理 UI（注册外接 bot / 签发 botToken / 看 config·status）。" },
+        { "status": "open", "badge": "M1 · 后端", "title": "CRUD 补洞", "body": "对照核心闭环补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口——大多已存在，是补洞不是新建。" },
+        { "status": "mostly", "badge": "M1 · 验证", "title": "connector happy-path 文档化", "body": "经 `agentnexus-mcp-server` 或 `acp-connector-rs` 接入一条文档化通路：@提及 → 流式 → 断线重连。MCP 注入已是标准 ACP stdio（18 tools 在 mock loopback 上验证过）。" },
+        { "status": "future", "badge": "M2 · 裁剪", "title": "schema-only 功能定范围", "body": "对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。不得把只有 schema 的功能标成「完成」。" }
+      ],
+      "note": "M0 验收门：工作树干净 ✓ · `cargo test` 单测 + 集成两段已接 CI（`gateway-check` + `gateway-integration`）✓ · 不变量 I1/I2/I4/I6/I7 各有覆盖 ✓ · Redis 不再是 fan-out 启动硬依赖 ✓ · 集成测试本地对真实 PG 4 项绿 ✓。仅剩「合并 main」一项未结。"
+    },
+    {
+      "type": "sources",
       "title": "主要依据",
-      "intro": "这些文档和代码路径是本页判断的来源。",
+      "intro": "本页每条判断都来自下列代码与文档；事实由 backend / agents / frontend / progress 四路并行 ground-truth 校正。",
       "links": [
-        { "title": "Architecture Overview", "href": "ARCHITECTURE_OVERVIEW.md", "description": "目标拓扑与部署模型" },
-        { "title": "Decentralized Mesh", "href": "DECENTRALIZED_MESH.md", "description": "mesh 步骤与资源一致性" },
-        { "title": "Refactor Plan", "href": "REFACTOR_PLAN.md", "description": "阶段计划与剩余项" },
-        { "title": "Agent Bridge ACP Compatibility", "href": "AGENT_BRIDGE_ACP_COMPATIBILITY.md", "description": "Agent Bridge、ACP 和 MCP stdio 注入边界" },
-        { "title": "Agent Bridge Protocol", "href": "AGENT_BRIDGE_PROTOCOL.md", "description": "control/data WS 平台协议" },
-        { "title": "Message Content Format", "href": "MESSAGE_CONTENT_FORMAT.md", "description": "token 与 mention 表关系" },
-        { "title": "server/src/domain/messages.rs", "href": "../../server/src/domain/messages.rs", "description": "写入、路由、分页" },
-        { "title": "server/src/resource/mod.rs", "href": "../../server/src/resource/mod.rs", "description": "Resource API dispatcher" },
-        { "title": "server/src/gateway/ws/agent_bridge.rs", "href": "../../server/src/gateway/ws/agent_bridge.rs", "description": "Agent Bridge WS lifecycle" },
-        { "title": "agentnexus-mcp-server", "href": "../../packages/agentnexus-mcp-server/src/main.rs", "description": "Rust MCP 工具映射" },
-        { "title": "agentnexus-acp-connector-rs", "href": "../../packages/agentnexus-acp-connector-rs", "description": "Rust daemon 和 bridge 协议能力" }
+        { "title": "server/src/main.rs", "href": "../../server/src/main.rs", "description": "R1-A 进程内装配（main.rs:45-59）" },
+        { "title": "server/src/gateway/realtime/fanout.rs", "href": "../../server/src/gateway/realtime/fanout.rs", "description": "R3 终态帧背压 + deliver" },
+        { "title": "server/src/gateway/dispatcher.rs", "href": "../../server/src/gateway/dispatcher.rs", "description": "R5 原子占位单点定胜负" },
+        { "title": "server/src/gateway/stream.rs", "href": "../../server/src/gateway/stream.rs", "description": "claim_finalize 三态守卫 + seq 盖戳" },
+        { "title": "server/tests/flows.rs", "href": "../../server/tests/flows.rs", "description": "R4-2 白盒集成测试（feature 门控）" },
+        { "title": "server/src/resource/fs.rs", "href": "../../server/src/resource/fs.rs", "description": "memory_files 文件域 handler（已实现）" },
+        { "title": "packages/…/bridge_runtime.rs", "href": "../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs", "description": "BridgeRuntime → AccountRuntime → AcpAdapter" },
+        { "title": "Engineering Roadmap (M0 看板)", "href": "ROADMAP.md", "description": "里程碑 / 依赖 / 验收门，v1.5" },
+        { "title": "Data Flow & Refactor Plan", "href": "DATA_FLOW_AND_REFACTOR_PLAN.md", "description": "代码现状快照 + R1–R13，v1.5" },
+        { "title": "Architecture Overview", "href": "ARCHITECTURE_OVERVIEW.md", "description": "目标拓扑与部署模型" }
       ]
     }
-  },
-  "footer": "Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set. This is a generated documentation snapshot; update `architecture-status.page.json` and run `make docs-pages` instead of editing `index.html` directly."
+  ],
+  "footer": "基于 2026-06-20 对当前代码的实测快照（branch m0-foundation @ 77d6ba9，未合并 main）。事实经多 agent ground-truth 校正：ACP agent 为配置驱动（example `claude-agent-acp`，非 OpenCode）· MCP 注入为标准 ACP stdio · Redis 是 parked 非移除 · `memory_files` 已实现（非 schema-only）· CI 集成 job 已接线（`gateway-integration`，本地验证绿，待 push 跑首次）。改 `architecture-status.page.json` 后跑 `node scripts/generate-architecture-status-page.mjs` 重新生成本页。"
 }

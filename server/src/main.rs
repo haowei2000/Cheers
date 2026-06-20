@@ -1,28 +1,17 @@
 //! AgentNexus backend entrypoint.
 //!
-//! Builds runtime dependencies (config, database pool, Redis, gateway registries),
-//! initializes tracing, applies migrations, and starts the Axum server
-//! that exposes REST and WebSocket routes.
+//! Builds runtime dependencies (config, database pool, in-process gateway
+//! registries), initializes tracing, applies migrations, and starts the Axum
+//! server that exposes REST and WebSocket routes.
 
 use std::sync::Arc;
 
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-mod api;
-mod app_state;
-mod config;
-mod domain;
-mod errors;
-mod gateway;
-mod infra;
-mod resource;
-mod router;
-
-use app_state::AppState;
-use config::Config;
-use gateway::realtime::manager::ConnectionManager;
-use gateway::stream::StreamRegistry;
+use server::gateway::realtime::manager::ConnectionManager;
+use server::gateway::stream::StreamRegistry;
+use server::{gateway, infra, router, AppState, Config};
 
 /// Start the HTTP/WebSocket gateway service.
 ///
@@ -30,7 +19,7 @@ use gateway::stream::StreamRegistry;
 /// 1. Initialize tracing/logging.
 /// 2. Load configuration from environment.
 /// 3. Build database pool and run migrations.
-/// 4. Connect to Redis and initialize gateway components.
+/// 4. Initialize in-process gateway components (fan-out + bot registry).
 /// 5. Compose shared application state.
 /// 6. Build router and start Axum listener.
 #[tokio::main]
@@ -43,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Bootstrap in startup order: config -> db -> migrations -> redis -> gateway services.
+    // Bootstrap in startup order: config -> db -> migrations -> gateway services.
     let config = Arc::new(Config::from_env());
     info!(port = config.port, "starting server");
 
@@ -53,21 +42,21 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(&db).await?;
     info!("migrations applied");
 
-    let redis_client = redis::Client::open(config.redis_url.as_str())?;
-    let redis_publisher = redis::aio::ConnectionManager::new(redis_client.clone()).await?;
-    info!("redis ready");
+    // Single-instance deployment (R1-A): in-process fan-out + bot registry.
+    // Redis is NOT a startup dependency on the realtime path. The Redis impls
+    // (redis_fanout.rs / redis_registry.rs) stay compiled for a future
+    // multi-instance / HA switch but are intentionally not wired here.
+    let fanout_inner = gateway::realtime::fanout::InProcessFanout::new();
+    let conn_manager = ConnectionManager::new(fanout_inner.clone(), db.clone());
+    let fanout = fanout_inner as Arc<dyn gateway::realtime::fanout::Fanout>;
 
-    let fanout = gateway::realtime::redis_fanout::RedisFanout::new(&config.redis_url).await?;
-
-    let conn_manager = ConnectionManager::new_with_redis(fanout.clone(), db.clone());
-
-    let bot_registry = gateway::redis_registry::RedisBotRegistry::new(
-        redis_client.clone(),
-        redis_publisher.clone(),
-    ) as Arc<dyn gateway::registry::BotRegistry>;
-
-    let bot_locator = gateway::redis_registry::RedisBotLocator::new(redis_publisher.clone())
-        as Arc<dyn gateway::registry::BotLocator>;
+    // One in-process locator serves both roles: bind_control/bind_data store the
+    // bot sessions, dispatch_task/send_data read them. They MUST share a single
+    // instance — the Redis path can split registry/locator because it coordinates
+    // through Redis, but in-process the shared DashMap is the only coordination.
+    let locator = gateway::registry::InProcessBotLocator::new();
+    let bot_registry = locator.clone() as Arc<dyn gateway::registry::BotRegistry>;
+    let bot_locator = locator as Arc<dyn gateway::registry::BotLocator>;
 
     let stream_registry = StreamRegistry::new();
 

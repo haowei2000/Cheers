@@ -58,6 +58,8 @@ code {
   min-height: 100vh;
 }
 
+/* ── Topbar ─────────────────────────────────────────────────────────────── */
+
 .topbar {
   position: sticky;
   top: 0;
@@ -105,11 +107,14 @@ main,
 .nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.25rem;
   justify-content: flex-end;
 }
 
 .nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   border-radius: 6px;
   padding: 0.32rem 0.58rem;
   color: var(--muted);
@@ -122,16 +127,29 @@ main,
   color: var(--ink);
 }
 
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  flex: none;
+  background: var(--muted);
+}
+
+.dot.done { background: var(--green); }
+.dot.mostly { background: var(--blue); }
+.dot.partial { background: var(--amber); }
+.dot.open { background: var(--red); }
+.dot.future { background: var(--violet); }
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+
 .hero {
   border-bottom: 1px solid var(--line);
   background: #fff;
 }
 
 .hero-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 2rem;
-  padding: 3rem 0 2.2rem;
+  padding: 2.8rem 0 2.1rem;
 }
 
 .eyebrow {
@@ -140,6 +158,7 @@ main,
   font-size: 0.85rem;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 h1,
@@ -149,13 +168,13 @@ h3 {
 }
 
 h1 {
-  max-width: 760px;
+  max-width: 880px;
   margin: 0;
-  font-size: clamp(2rem, 4vw, 4.2rem);
+  font-size: clamp(1.9rem, 3.4vw, 3.2rem);
 }
 
 .lead {
-  max-width: 820px;
+  max-width: 880px;
   margin: 1rem 0 0;
   color: var(--muted);
   font-size: 1.08rem;
@@ -190,83 +209,20 @@ h1 {
   white-space: nowrap;
 }
 
-.status-summary,
-.metric-card,
-.goal-card,
-.decision-card,
-.backlog-card,
-.lane,
-.flow-step,
-.source-link,
-.timeline {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
+.pill.open {
+  border-color: #f0c5bf;
+  background: var(--red-soft);
+  color: var(--red);
+  font-weight: 600;
 }
 
-.status-summary {
-  align-self: start;
-  box-shadow: var(--shadow);
-  padding: 1rem;
+.pill.done {
+  border-color: #bfe3d4;
+  background: var(--green-soft);
+  color: var(--green);
 }
 
-.status-summary h2 {
-  margin: 0 0 0.7rem;
-  font-size: 1.05rem;
-}
-
-.score {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
-  margin-bottom: 1rem;
-}
-
-.score-item {
-  border-radius: 8px;
-  padding: 0.75rem;
-  background: var(--surface-soft);
-}
-
-.score-item strong {
-  display: block;
-  font-size: 1.55rem;
-  line-height: 1;
-}
-
-.score-item span {
-  display: block;
-  margin-top: 0.25rem;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.progress-line {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.progress-row {
-  display: grid;
-  grid-template-columns: 8rem 1fr auto;
-  align-items: center;
-  gap: 0.7rem;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.bar {
-  overflow: hidden;
-  height: 8px;
-  border-radius: 999px;
-  background: #edf1f6;
-}
-
-.bar > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-}
+/* ── Sections ───────────────────────────────────────────────────────────── */
 
 section {
   padding: 2.3rem 0;
@@ -287,52 +243,16 @@ section:last-child {
 
 .section-heading h2 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: 1.5rem;
 }
 
 .section-heading p {
-  max-width: 680px;
+  max-width: 760px;
   margin: 0.35rem 0 0;
   color: var(--muted);
 }
 
-.metric-grid,
-.goal-grid,
-.decision-grid,
-.backlog-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.metric-card,
-.goal-card,
-.decision-card,
-.backlog-card,
-.lane,
-.flow-step {
-  padding: 1rem;
-  min-width: 0;
-}
-
-.metric-card,
-.goal-card {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.metric-card b {
-  font-size: 1.8rem;
-  line-height: 1.08;
-}
-
-.metric-card span,
-.goal-card p,
-.decision-card p,
-.backlog-card p {
-  color: var(--muted);
-  margin: 0;
-}
+/* ── Badges + shared status colors ──────────────────────────────────────── */
 
 .badge {
   display: inline-flex;
@@ -345,57 +265,280 @@ section:last-child {
   white-space: nowrap;
 }
 
-.done {
+.done { background: var(--green-soft); color: var(--green); }
+.mostly { background: var(--blue-soft); color: var(--blue); }
+.partial { background: var(--amber-soft); color: var(--amber); }
+.open { background: var(--red-soft); color: var(--red); }
+.future { background: var(--violet-soft); color: var(--violet); }
+
+/* ── Status band (at-a-glance) ──────────────────────────────────────────── */
+
+.status-band {
+  display: grid;
+  gap: 1rem;
+}
+
+.band-top {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.6fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.verdict {
+  display: grid;
+  align-content: center;
+  gap: 0.3rem;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--green);
+  border-radius: 10px;
   background: var(--green-soft);
-  color: var(--green);
+  padding: 1rem 1.2rem;
 }
 
-.mostly {
-  background: var(--blue-soft);
-  color: var(--blue);
+.verdict.open { border-left-color: var(--red); background: var(--red-soft); }
+.verdict.partial { border-left-color: var(--amber); background: var(--amber-soft); }
+
+.verdict strong {
+  font-size: 2.4rem;
+  line-height: 1;
+  color: var(--ink);
 }
 
-.partial {
-  background: var(--amber-soft);
-  color: var(--amber);
+.verdict span {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
-.open {
+.counters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.counter {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.75rem 0.9rem;
+}
+
+.counter strong {
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+.counter span {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.counter.open {
+  border-color: #f0c5bf;
   background: var(--red-soft);
-  color: var(--red);
 }
 
-.future {
-  background: var(--violet-soft);
-  color: var(--violet);
+.counter.open strong { color: var(--red); }
+
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
 }
 
-.goal-card h3,
-.decision-card h3,
-.backlog-card h3 {
+.rchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0.4rem 0.7rem;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.rchip:hover { background: var(--surface-soft); }
+.rchip b { font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.86rem; }
+.rchip span { color: var(--muted); font-size: 0.84rem; }
+
+.rchip.done { border-left-color: var(--green); }
+.rchip.mostly { border-left-color: var(--blue); }
+.rchip.partial { border-left-color: var(--amber); }
+.rchip.open { border-left-color: var(--red); }
+.rchip.future { border-left-color: var(--violet); }
+
+/* ── Legend ─────────────────────────────────────────────────────────────── */
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.legend-group {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 1rem;
+}
+
+.legend-group h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+}
+
+.legend-items {
+  list-style: none;
   margin: 0;
-  font-size: 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
 }
 
-.evidence {
-  margin-top: 0.1rem;
+.legend-items li {
+  display: flex;
+  gap: 0.55rem;
+  align-items: baseline;
+  font-size: 0.9rem;
 }
 
-.evidence a {
-  padding: 0.12rem 0.52rem;
-  font-size: 0.78rem;
+.swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  flex: none;
+  transform: translateY(1px);
 }
 
-.evidence a:hover {
+.swatch.done { background: var(--green); }
+.swatch.mostly { background: var(--blue); }
+.swatch.partial { background: var(--amber); }
+.swatch.open { background: var(--red); }
+.swatch.future { background: var(--violet); }
+
+.legend-key {
+  font-weight: 700;
+  min-width: 3.4rem;
+  flex: none;
+}
+
+.legend-code {
+  flex: none;
+  min-width: 3rem;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.84rem;
+  text-decoration: none;
+}
+
+a.legend-code {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f3f5f9;
+  padding: 0.04rem 0.34rem;
   color: var(--blue);
-  border-color: #b9c8e8;
 }
+
+.legend-gloss { color: var(--muted); }
+
+/* ── Overview (what / how) ──────────────────────────────────────────────── */
+
+.overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 1.6rem;
+  align-items: start;
+}
+
+.overview-what p {
+  margin: 0 0 0.85rem;
+}
+
+.overview-what p:last-child { margin-bottom: 0; }
+
+.principles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.principles li {
+  border-left: 3px solid var(--blue);
+  padding-left: 0.75rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.principles b { color: var(--ink); }
+
+.flow-wrap { margin-top: 1.6rem; }
+
+.flow-title {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+}
+
+.flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.flow-step {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+}
+
+.flow-step small {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.flow-step strong { color: var(--ink); }
+
+.flow-step span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.flow-tag {
+  justify-self: start;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--violet);
+  background: var(--violet-soft);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  margin-top: 0.15rem;
+}
+
+/* ── Topology ───────────────────────────────────────────────────────────── */
 
 .topology {
   display: grid;
   grid-template-columns: 1fr 1.2fr 1fr;
   align-items: stretch;
   gap: 1rem;
+}
+
+.lane {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 1rem;
+  min-width: 0;
 }
 
 .lane h3 {
@@ -426,20 +569,148 @@ section:last-child {
   font-size: 0.9rem;
 }
 
+/* ── Ledger (canonical M0 record) ───────────────────────────────────────── */
+
+.ledger {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.ledger-item {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 1.1rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+}
+
+.ledger-item.done { border-left-color: var(--green); }
+.ledger-item.mostly { border-left-color: var(--blue); }
+.ledger-item.partial { border-left-color: var(--amber); }
+.ledger-item.open { border-left-color: var(--red); }
+.ledger-item.future { border-left-color: var(--violet); }
+
+.ledger-mark {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+}
+
+.ledger-code {
+  width: fit-content;
+  border: none;
+  background: var(--surface-soft);
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.ledger-body { min-width: 0; }
+
+.ledger-body strong {
+  display: block;
+  font-size: 1.02rem;
+}
+
+.ledger-body > p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}
+
+.ledger-body .evidence { margin-top: 0.55rem; }
+
+.ledger-detail { margin-top: 0.55rem; }
+
+.ledger-detail summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.ledger-detail[open] summary { margin-bottom: 0.45rem; }
+
+.ledger-detail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.evidence { margin-top: 0.1rem; }
+
+.evidence a {
+  padding: 0.12rem 0.52rem;
+  font-size: 0.78rem;
+}
+
+.evidence a:hover {
+  color: var(--blue);
+  border-color: #b9c8e8;
+}
+
+/* ── Scope (schema vs code) ─────────────────────────────────────────────── */
+
+.scope-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.scope-lane {
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--muted);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 1rem;
+}
+
+.scope-lane.done { border-top-color: var(--green); }
+.scope-lane.open { border-top-color: var(--red); }
+.scope-lane.future { border-top-color: var(--violet); }
+
+.scope-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+}
+
+.scope-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.scope-lane ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ── Changes table ──────────────────────────────────────────────────────── */
+
 .timeline {
   overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
 }
 
 table {
   width: 100%;
-  min-width: 760px;
+  min-width: 720px;
   border-collapse: collapse;
 }
 
 th,
 td {
   border-bottom: 1px solid var(--line);
-  padding: 0.78rem 0.9rem;
+  padding: 0.72rem 0.9rem;
   text-align: left;
   vertical-align: top;
 }
@@ -451,9 +722,7 @@ th {
   text-transform: uppercase;
 }
 
-tr:last-child td {
-  border-bottom: 0;
-}
+tr:last-child td { border-bottom: 0; }
 
 .commit {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -461,37 +730,36 @@ tr:last-child td {
   white-space: nowrap;
 }
 
-.flow {
+/* ── Backlog ────────────────────────────────────────────────────────────── */
+
+.backlog-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
 }
 
-.flow-step {
-  position: relative;
+.backlog-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 1rem;
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+  min-width: 0;
 }
 
-.flow-step:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: -0.76rem;
-  width: 0.76rem;
-  height: 1px;
-  background: var(--line);
+.backlog-card h3 {
+  margin: 0;
+  font-size: 1rem;
 }
 
-.flow-step small {
-  display: block;
-  margin-bottom: 0.35rem;
+.backlog-card p {
+  margin: 0;
   color: var(--muted);
-  font-weight: 700;
 }
 
-.flow-step strong {
-  display: block;
-  margin-bottom: 0.35rem;
-}
+/* ── Sources ────────────────────────────────────────────────────────────── */
 
 .source-list {
   display: grid;
@@ -503,13 +771,14 @@ tr:last-child td {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
   padding: 0.75rem 0.9rem;
   text-decoration: none;
 }
 
-.source-link strong {
-  color: var(--ink);
-}
+.source-link strong { color: var(--ink); }
 
 .source-link span {
   color: var(--muted);
@@ -517,10 +786,14 @@ tr:last-child td {
   text-align: right;
 }
 
+/* ── Note + footer ──────────────────────────────────────────────────────── */
+
 .note {
   border-left: 4px solid var(--blue);
   background: var(--blue-soft);
+  border-radius: 0 8px 8px 0;
   padding: 0.85rem 1rem;
+  margin: 1.2rem 0 0;
   color: #213a65;
 }
 
@@ -530,26 +803,21 @@ tr:last-child td {
   font-size: 0.92rem;
 }
 
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+
 @media (max-width: 980px) {
-  .hero-inner,
+  .band-top,
+  .overview,
   .topology {
     grid-template-columns: 1fr;
   }
 
-  .metric-grid,
-  .goal-grid,
-  .decision-grid,
+  .counters,
+  .flow,
+  .scope-grid,
   .backlog-grid,
   .source-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .flow {
-    grid-template-columns: 1fr;
-  }
-
-  .flow-step:not(:last-child)::after {
-    display: none;
   }
 }
 
@@ -560,32 +828,31 @@ tr:last-child td {
     flex-direction: column;
   }
 
-  .nav {
-    justify-content: flex-start;
-  }
+  .nav { justify-content: flex-start; }
 
-  .hero-inner {
-    padding-top: 2rem;
-  }
+  .hero-inner { padding-top: 2rem; }
 
-  .score,
-  .metric-grid,
-  .goal-grid,
-  .decision-grid,
+  .counters,
+  .flow,
+  .scope-grid,
   .backlog-grid,
   .source-list {
     grid-template-columns: 1fr;
   }
 
-  .progress-row {
+  .ledger-item {
     grid-template-columns: 1fr;
-    gap: 0.28rem;
+    gap: 0.6rem;
+  }
+
+  .ledger-mark {
+    grid-auto-flow: column;
+    justify-content: start;
+    align-items: center;
   }
 
   th,
-  td {
-    padding: 0.68rem;
-  }
+  td { padding: 0.68rem; }
 }
   </style>
 </head>
@@ -599,95 +866,202 @@ tr:last-child td {
           <span>AgentNexus Architecture</span>
         </div>
         <nav class="nav" aria-label="Page navigation">
-          <a href="#summary">完成度</a>
-          <a href="#topology">拓扑</a>
-          <a href="#changes">近期改动</a>
-          <a href="#goals">目标状态</a>
-          <a href="#backlog">后续</a>
+          <a href="#status"><span class="dot mostly" aria-hidden="true"></span>状态</a>
+          <a href="#overview"><span class="dot done" aria-hidden="true"></span>架构</a>
+          <a href="#topology"><span class="dot done" aria-hidden="true"></span>拓扑</a>
+          <a href="#ledger"><span class="dot done" aria-hidden="true"></span>M0 账本</a>
+          <a href="#scope"><span class="dot partial" aria-hidden="true"></span>范围</a>
+          <a href="#backlog"><span class="dot open" aria-hidden="true"></span>后续</a>
         </nav>
       </div>
     </header>
     <div class="hero">
       <div class="hero-inner">
-        <div>
-          <p class="eyebrow">Architecture status snapshot</p>
-          <h1>去中心化 Agent 网格的当前完成度</h1>
-          <p class="lead">本页基于 2026-06-02 的 <code>main</code> 分支快照，并把 2026-06-01 本地领先远程的 6 次提交合并进静态架构页：Agent Bridge 正式化、消息级路由/取消、mention API 收敛，以及旧 TS agent 包迁移到 Rust。</p>
-          <div class="meta-row" aria-label="Audit metadata">
-            <span class="pill">生成日期: 2026-06-02</span>
-            <span class="pill">分支: main</span>
-            <span class="pill">HEAD: ff14b2d + docs sync</span>
-            <span class="pill">范围: 2026-06-01 的 6 次提交</span>
-          </div>
+        <p class="eyebrow">Architecture status · 2026-06-20</p>
+        <h1>去中心化 Agent 网格 · M0 夯实地基</h1>
+        <p class="lead">AgentNexus 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。</p>
+        <div class="meta-row" aria-label="Audit metadata">
+          <span class="pill">实测日期 2026-06-20</span>
+          <span class="pill">branch m0-foundation</span>
+          <span class="pill">HEAD 77d6ba9</span>
+          <span class="pill open">未合并 main（领先 12 commits）</span>
         </div>
-
-        <aside class="status-summary" aria-labelledby="summary-card-title">
-          <h2 id="summary-card-title">一句话结论</h2>
-          <div class="score">
-            <div class="score-item">
-              <strong>6</strong>
-              <span>2026-06-01 工作提交已合并到本页</span>
-            </div>
-            <div class="score-item">
-              <strong>3</strong>
-              <span>旧 TS agent 包删除、停用或迁移到 Rust</span>
-            </div>
-            <div class="score-item">
-              <strong>1</strong>
-              <span>Rust gateway 是当前唯一后端形态</span>
-            </div>
-          </div>
-          <div class="progress-line" id="summary">
-            <div class="progress-row">
-              <span>Agent Bridge</span>
-              <div class="bar"><span style="width: 100%; background: var(--green);"></span></div>
-              <b>完成</b>
-            </div>
-            <div class="progress-row">
-              <span>Rust agent 包迁移</span>
-              <div class="bar"><span style="width: 88%; background: var(--blue);"></span></div>
-              <b>基本完成</b>
-            </div>
-            <div class="progress-row">
-              <span>Connector MCP 注入</span>
-              <div class="bar"><span style="width: 35%; background: var(--amber);"></span></div>
-              <b>待实现</b>
-            </div>
-          </div>
-        </aside>
       </div>
     </div>
     <main>
-      <section aria-labelledby="snapshot-title">
+      <section id="status" aria-labelledby="status-title">
         <div class="section-heading">
           <div>
-            <h2 id="snapshot-title">当前快照</h2>
-            <p>架构目标已经从“设计意图”推进到可追踪的 Rust gateway 和外置 connector 路径，剩余缺口集中在 connector 自动 MCP 注入、端到端验证和产品化界面。</p>
+            <h2 id="status-title">一眼看状态</h2>
+            <p>M0 的 6 个改造项已全部实现并带测试；CI 集成 job 已接线（本地对真实 PG 4 项验证绿）。M0 验收门仅剩「合并 main」一项收口——用红色标出。</p>
           </div>
         </div>
-        <div class="metric-grid">
-          <article class="metric-card">
-            <span class="badge done">已完成</span>
-            <b>Agent Bridge 正式化</b>
-            <span>服务端路径切到 <code>/ws/agent-bridge/*</code>，control/data 连接生命周期、supersede 和 runtime session 状态进入 Rust gateway。</span>
-          </article>
-          <article class="metric-card">
-            <span class="badge done">已完成</span>
-            <b>消息级路由和取消</b>
-            <span>Bot@Bot 链路改成 message depth，取消改成单条 in-flight bot 消息，避免旧 task chain 状态拖累路由。</span>
-          </article>
-          <article class="metric-card">
-            <span class="badge mostly">基本完成</span>
-            <b>Agent 包 Rust 化</b>
-            <span>OpenClaw legacy 包停用，<code>agentnexus-mcp-server</code> 迁成 Rust binary，bridge-client 能力并入 Rust connector crate。</span>
-          </article>
+        <div class="status-band">
+          <div class="band-top">
+            <div class="verdict done">
+              <strong>6/6</strong>
+              <span>M0 改造项已实现 + 测试覆盖（R1-A · R2 · R3 · R4-1 · R4-2 · R5）</span>
+            </div>
+            <div class="counters">
+              <div class="counter done">
+                <strong>21 + 29 + 4</strong>
+                <span>测试：server 单测 · connector · 集成（真实 PG，已接 CI）</span>
+              </div>
+              <div class="counter done">
+                <strong>进程内</strong>
+                <span>fan-out / 路由 / 流注册表（R1-A；Redis 仍 parked）</span>
+              </div>
+              <div class="counter done">
+                <strong>已接线</strong>
+                <span>CI 集成 job：Postgres 16 service + <code>--features integration</code>；本地 4 项绿</span>
+              </div>
+              <div class="counter open">
+                <strong>未合并</strong>
+                <span>m0-foundation → main（合并即触发首次 CI 集成跑）</span>
+              </div>
+            </div>
+          </div>
+          <div class="status-chips" aria-label="Workstream status chips">
+            <a class="rchip done" href="#r1a">
+              <b>R1-A</b>
+              <span>进程内部署</span>
+            </a>
+            <a class="rchip done" href="#r2">
+              <b>R2</b>
+              <span>绑定竞态</span>
+            </a>
+            <a class="rchip done" href="#r3">
+              <b>R3</b>
+              <span>终态背压</span>
+            </a>
+            <a class="rchip done" href="#r41">
+              <b>R4-1</b>
+              <span>纯逻辑单测</span>
+            </a>
+            <a class="rchip done" href="#r42">
+              <b>R4-2</b>
+              <span>白盒集成</span>
+            </a>
+            <a class="rchip done" href="#r5">
+              <b>R5</b>
+              <span>双派发</span>
+            </a>
+            <a class="rchip done" href="#r42">
+              <b>CI</b>
+              <span>集成 job 已接</span>
+            </a>
+          </div>
+        </div>
+      </section>
+      <section id="legend" aria-labelledby="legend-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="legend-title">图例</h2>
+            <p>本页用到的状态色与代码缩写在此处定义一次；后文出现的 R/I 代码均可点击跳转，不再重复解释。</p>
+          </div>
+        </div>
+        <div class="legend-grid">
+          <div class="legend-group">
+            <h3>状态色</h3>
+            <ul class="legend-items">
+              <li><span class="swatch done" aria-hidden="true"></span><span class="legend-key">done</span><span class="legend-gloss">已落地并有测试覆盖</span></li>
+              <li><span class="swatch mostly" aria-hidden="true"></span><span class="legend-key">mostly</span><span class="legend-gloss">主体完成，尚有一项收尾</span></li>
+              <li><span class="swatch partial" aria-hidden="true"></span><span class="legend-key">partial</span><span class="legend-gloss">核心完成，边角待补</span></li>
+              <li><span class="swatch open" aria-hidden="true"></span><span class="legend-key">open</span><span class="legend-gloss">未开始 / 未接线</span></li>
+              <li><span class="swatch future" aria-hidden="true"></span><span class="legend-key">future</span><span class="legend-gloss">本期外，未来演进（M4）</span></li>
+            </ul>
+          </div>
+          <div class="legend-group">
+            <h3>改造项 R*（本期具体改动）</h3>
+            <ul class="legend-items">
+              <li><a class="legend-code" href="#r1a">R1-A</a><span class="legend-gloss">单实例进程内部署（Redis 退出启动路径）</span></li>
+              <li><a class="legend-code" href="#r2">R2</a><span class="legend-gloss">bind_control/bind_data 绑定竞态修复</span></li>
+              <li><a class="legend-code" href="#r3">R3</a><span class="legend-gloss">终态帧背压：队列满关连接 4408，不静默丢</span></li>
+              <li><a class="legend-code" href="#r41">R4-1</a><span class="legend-gloss">纯逻辑单测（无 DB）</span></li>
+              <li><a class="legend-code" href="#r42">R4-2</a><span class="legend-gloss">白盒集成测试（对真实 Postgres）</span></li>
+              <li><a class="legend-code" href="#r5">R5</a><span class="legend-gloss">dispatcher 双派发：原子 INSERT 单点定胜负</span></li>
+              <li><code class="legend-code">R1-B</code><span class="legend-gloss">多实例 HA（Redis fan-out/registry，已 parked 备 M4）</span></li>
+            </ul>
+          </div>
+          <div class="legend-group">
+            <h3>不变量 I*（系统恒成立的性质）</h3>
+            <ul class="legend-items">
+              <li><code class="legend-code">I1</code><span class="legend-gloss">先落库再广播（终态先 COMMIT）</span></li>
+              <li><code class="legend-code">I2</code><span class="legend-gloss">channel_seq 每频道 gap-free（行锁内分配）</span></li>
+              <li><code class="legend-code">I4</code><span class="legend-gloss">占位幂等 = UUIDv5(trigger, bot)</span></li>
+              <li><code class="legend-code">I6</code><span class="legend-gloss">终态帧不丢；流式帧可丢（自愈）</span></li>
+              <li><code class="legend-code">I7</code><span class="legend-gloss">seq 唯一由 Backend 单调盖戳</span></li>
+            </ul>
+          </div>
+        </div>
+        <p class="note">R* = 一次具体改造；I* = 系统必须始终成立的不变量（每条由测试钉死）。M0=夯实地基 · M1=核心闭环 · M2=功能裁剪 · M4=多实例/HA。</p>
+      </section>
+      <section id="overview" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="overview-title">是什么 · 怎么跑</h2>
+            <p>给第一次看这套架构的人：先讲它是什么、遵循哪些约束，再用一条 @bot 消息的生命周期讲它怎么跑。</p>
+          </div>
+        </div>
+        <div class="overview">
+          <div class="overview-what">
+            <p>平台是「外接 agent 优先」：没有内置 Python runtime。Rust gateway（<code>server/</code>，9 个顶层模块）是唯一后端；React 前端（<code>frontend/</code>）；agent 作为外部进程，经 Agent Bridge 的两条 WS（control + data）接入。标准桥是 <code>agentnexus-mcp-server</code>。</p>
+            <p>浏览器走 REST + 一条 browser WS：订阅频道、收消息与流式 delta。bot 经 connector 接入：本地 ACP agent（配置驱动，example 指向 <code>claude-agent-acp</code>）说 ACP stdio；MCP 工具调用经 connector 的 loopback HTTP 回到后端的 resource 协议。整条链路当前为单实例进程内（R1-A）。</p>
+          </div>
+          <ul class="principles">
+            <li><b>外接 agent 优先。</b> 平台不依赖内置 runtime；外置 ACP agent 经同一协议接入，agent 无关。</li>
+            <li><b>频道只转发 @。</b> 没有中央 coordinator 判意图，路由规则可测试、可审计。</li>
+            <li><b>资源写走 membership role。</b> 读需频道成员，写需 owner/admin/member；旧 Grant 机制已移除。</li>
+            <li><b>Agent Bridge 是平台协议。</b> 服务端不直接说 ACP JSON-RPC；ACP 只在 connector 的 adapter 层出现。</li>
+          </ul>
+        </div>
+        <div class="flow-wrap">
+          <h3 class="flow-title">一条 @bot 消息的生命周期</h3>
+          <div class="flow">
+            <div class="flow-step">
+            <small>1</small>
+            <strong>消息写入</strong>
+            <span>验成员 → 事务内行锁分配 <code>channel_seq</code> → 插入消息 → 先 COMMIT，再广播。</span>
+            <em class="flow-tag">I1 · I2</em>
+          </div>
+            <div class="flow-step">
+            <small>2</small>
+            <strong>解析 + 派发</strong>
+            <span><code>resolve_bot_triggers</code> 命中 bot → <code>create_placeholder</code> 原子 <code>INSERT…ON CONFLICT</code> 单点定胜负 → <code>dispatch_task</code> 直接 try_send 到 control WS。</span>
+            <em class="flow-tag">R5 · I4</em>
+          </div>
+            <div class="flow-step">
+            <small>3</small>
+            <strong>Bridge 转发</strong>
+            <span>connector control WS 收 task → BridgeRuntime → AcpAdapter <code>session/new</code>→<code>session/prompt</code>（ACP stdio）。</span>
+            
+          </div>
+            <div class="flow-step">
+            <small>4</small>
+            <strong>流式 delta</strong>
+            <span>agent <code>session/update</code> chunk 回流；Backend 盖 seq 戳后广播 <code>message_stream</code>，可丢（靠终态自愈）。</span>
+            <em class="flow-tag">I7</em>
+          </div>
+            <div class="flow-step">
+            <small>5</small>
+            <strong>done → finalize</strong>
+            <span><code>claim_finalize</code> 三态守卫 → 行锁分配 seq、<code>is_partial→FALSE</code> → 广播终态 <code>message_done</code>（队列满则 4408 关连接，不丢）。</span>
+            <em class="flow-tag">R3 · I6</em>
+          </div>
+            <div class="flow-step">
+            <small>6</small>
+            <strong>bot@bot 链</strong>
+            <span>终态消息若 @ 了别的 bot 则递归同一派发路径，深度上限 <code>MAX_BOT_REPLY_DEPTH = 5</code>。</span>
+            
+          </div>
+          </div>
         </div>
       </section>
       <section id="topology" aria-labelledby="topology-title">
         <div class="section-heading">
           <div>
             <h2 id="topology-title">当前拓扑</h2>
-            <p>平台侧保持单实例 Rust Backend；本地 agent 通过 Rust daemon 管理的 connector 接入，connector 承担 ACP 会话、<code>mcpServers</code> 注入和 resource loopback，Resource API 仍是 bot 访问平台资源的唯一协议面。</p>
+            <p>平台侧 Rust Backend；bot task 经进程内 <code>InProcessBotLocator</code> 直接派发（R1-A，Redis 退出启动路径、仍 parked 备 HA）。connector 经 Agent Bridge control/data WS 接入；ACP agent 配置驱动；MCP 注入为标准 ACP stdio server。</p>
           </div>
         </div>
         <div class="topology" role="img" aria-label="Browser and external agents connect to the Rust Backend over REST, WebSocket, Agent Bridge, and Resource API.">
@@ -696,436 +1070,375 @@ tr:last-child td {
             <div class="node-list">
               <div class="node">
                 <strong>Browser / Mobile</strong>
-                <span>REST + browser WS，订阅频道并接收消息与流式 delta。</span>
+                <span>REST + 一条 browser WS，订阅频道收消息与流式 delta；终态帧背压时收 4408 关闭转 REST 补齐（R3）。send 队列容量 256。</span>
               </div>
               <div class="node">
-                <strong>Frontend</strong>
-                <span>React + Vite 保持现有应用形态，协议 URL 基本不变。</span>
+                <strong>Frontend (frontend/)</strong>
+                <span>React 18 + Vite 6 + TS + Tailwind + Zustand + TanStack Query。3-panel 布局，<code>useChatRealtime</code> 原生 WS + 指数退避重连，react-markdown + highlight.js，JWT。新 src 仅 27 文件 ~2k LOC。</span>
               </div>
             </div>
           </div>
 
           <div class="lane">
-            <h3>Rust Backend</h3>
+            <h3>Rust Backend (server/)</h3>
             <div class="node-list">
               <div class="node">
                 <strong>REST API</strong>
-                <span>workspaces / channels / messages / bots / files / friends / capability。</span>
+                <span>9 个 handler：auth · workspaces · channels · messages · bots · files · friends · capability · mcp。Mention 解析 + bot trigger 派发。另有 3 条 WS（browser / bridge-control / bridge-data）。</span>
+              </div>
+              <div class="node">
+                <strong>进程内 Dispatch (R1-A)</strong>
+                <span>bot task 经 <code>InProcessBotLocator</code> 直接 try_send 到 control WS；session 命中即在线，无 Redis 往返。<code>create_placeholder</code> 原子 INSERT 单点定胜负（R5）。</span>
               </div>
               <div class="node">
                 <strong>WS Gateway + Agent Bridge</strong>
-                <span>browser fan-out、control/data WS、stream registry、BotLocator、connector supersede。</span>
+                <span>browser fan-out（<code>InProcessFanout</code>，终态帧背压关连接 R3）、control/data WS、stream registry（<code>claim_finalize</code> 守卫）、supersede、bot@bot 链（深度 ≤ 5）。</span>
               </div>
               <div class="node">
                 <strong>Resource API</strong>
-                <span>channel reads、Grant-gated writes、activity stream、workspace file tree。</span>
+                <span>统一鉴权：<code>channel.*</code> 读 / membership-role 写 / <code>fs.*</code>（agent 工作区文件，落 <code>memory_files</code>）。session_id 已移除。</span>
               </div>
             </div>
           </div>
 
           <div class="lane">
-            <h3>外部 Agent</h3>
+            <h3>外部 Agent (packages/)</h3>
             <div class="node-list">
               <div class="node">
-                <strong>Rust daemon</strong>
-                <span>只负责 connector 生命周期：start / stop / restart / status / logs。</span>
+                <strong>Connector (Rust daemon)</strong>
+                <span>BridgeRuntime（supervisor）→ AccountRuntime（每账号）→ { BridgeSession：control+data WS · AcpAdapter：ACP stdio }。11 个源模块。</span>
               </div>
               <div class="node">
-                <strong>ACP Connector runtime</strong>
-                <span>持有 Agent Bridge control/data 连接，调用 ACP session/new/load，并负责 <code>mcpServers</code> 注入边界。</span>
+                <strong>ACP agent（配置驱动）</strong>
+                <span><code>adapter.command</code> 指定，持久 stdio；example 与 README 用 <code>/opt/homebrew/bin/claude-agent-acp</code>。agent 无关，provider 鉴权在 agent 进程内（不在 connector）。</span>
               </div>
               <div class="node">
-                <strong>ACP agent + MCP stdio</strong>
-                <span>OpenCode / Claude / Codex 按 ACP <code>mcpServers</code> 启动 <code>agentnexus-mcp-server</code>，tool call 经 connector loopback 转成 <code>resource_req</code>。</span>
+                <strong>agentnexus-mcp-server</strong>
+                <span>18 个 MCP tools（channel info / messages / files / <code>fs.*</code>）。注入为标准 ACP stdio（<code>mcpServers</code> 的 command/args/env），非 HTTP/SSE。</span>
+              </div>
+              <div class="node">
+                <strong>Loopback Resource Server</strong>
+                <span>connector 本地 HTTP，带 loopback token：MCP tool call → data WS <code>resource_req</code> → 后端 resource 派发 → 原路返回。</span>
               </div>
             </div>
           </div>
         </div>
       </section>
+      <section id="ledger" aria-labelledby="ledger-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="ledger-title">M0 账本</h2>
+            <p>每个 M0 改造项在此处有且仅有一行权威记录：状态 + 一句话结论 + 证据链接 + 可展开的机制细节。状态带、图例、拓扑里出现的 R 码都指回这里，避免同一事实重复多遍。</p>
+          </div>
+        </div>
+        <div class="ledger">
+          <article class="ledger-item done" id="r1a">
+            <div class="ledger-mark">
+              <span class="badge done">已落地</span>
+              <code class="ledger-code">R1-A</code>
+            </div>
+            <div class="ledger-body">
+              <strong>部署形态回退单实例进程内</strong>
+              <p><code>main.rs</code> 装配 <code>InProcessFanout</code> + 单个 <code>InProcessBotLocator</code>，Redis 退出 fan-out 启动路径、不再是硬依赖。</p>
+              <div class="evidence">
+              <a href="../../server/src/main.rs">main.rs</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p>一个 <code>Arc&lt;InProcessBotLocator&gt;</code> 同时兼 <code>BotRegistry</code> 与 <code>BotLocator</code>，共享一份 DashMap。<code>redis_fanout.rs</code> / <code>redis_registry.rs</code> 仍编译但以 <code>#[allow(dead_code)]</code> parked，备未来多实例（R1-B / M4）。这消除了「单实例能力却付多实例成本」的中间态。注意：Redis 是被「移出 M0 启动路径」，不是从代码库移除。(main.rs:45-59；realtime/mod.rs:4-7)</p></details>
+            </div>
+          </article>
+          <article class="ledger-item done" id="r2">
+            <div class="ledger-mark">
+              <span class="badge done">已修复</span>
+              <code class="ledger-code">R2</code>
+            </div>
+            <div class="ledger-body">
+              <strong>bind_control / bind_data 绑定竞态</strong>
+              <p><code>pending_data</code> DashMap 暂存先到的 data_tx，control 上线后再 adopt——两条 WS 到达顺序不定也不丢绑定。</p>
+              <div class="evidence">
+              <a href="../../server/src/gateway/registry.rs">registry.rs</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p>control / data 两条 WS 到达顺序不确定：data 先到则把 data_tx 暂存进 <code>pending_data</code>，control 后到时收养；两个顺序各有单测。(registry.rs:63,107-134,190-215；commit 8a7b661)</p></details>
+            </div>
+          </article>
+          <article class="ledger-item done" id="r3">
+            <div class="ledger-mark">
+              <span class="badge done">已修复</span>
+              <code class="ledger-code">R3</code>
+            </div>
+            <div class="ledger-body">
+              <strong>终态帧背压：关连接而非静默丢</strong>
+              <p>队列满且帧为终态时触发该连接的 4408 关闭信号，客户端转 REST 补齐；流式帧维持可丢。兑现 I6。</p>
+              <div class="evidence">
+              <a href="../../server/src/gateway/realtime/fanout.rs">fanout.rs</a>
+              <a href="../../server/src/gateway/ws/browser.rs">browser.rs</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p><code>InProcessFanout</code> 持 <code>closers: DashMap&lt;conn_id, Sender&gt;</code>；<code>deliver()</code> 在 <code>try_send</code> 返回 <code>Full</code> 且 <code>frame.is_terminal()</code>（message / message_done / message_deleted）时 fire 该连接 closer，browser 写循环 <code>close_rx</code> 分支以 4408 关 socket。单测断言「终态满则发关闭信号、流式满则不发」。(fanout.rs:36,72-83；frame.rs:83-88；browser.rs:23,129-145)</p></details>
+            </div>
+          </article>
+          <article class="ledger-item done" id="r41">
+            <div class="ledger-mark">
+              <span class="badge done">已完成</span>
+              <code class="ledger-code">R4-1</code>
+            </div>
+            <div class="ledger-body">
+              <strong>纯逻辑单测安全网（无 DB）</strong>
+              <p>server 21 项单测覆盖 I4 幂等 / I7 seq 单调 / finalize 守卫 / role_can_write / 退避 / mention 去重 / is_terminal；connector 另有 29 项。</p>
+              <div class="evidence">
+              <a href="../../server/src/gateway/stream.rs">stream.rs</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p>顺带把 <code>handle_done</code> 内联的 finalize 守卫提取为 <code>StreamRegistry::claim_finalize</code> → 三态枚举 <code>FinalizeClaim {Claimed, AlreadyFinalized, NotRegistered}</code>，行为等价且可单测。三态比 bool 精确：NotRegistered（放行）与 AlreadyFinalized（拒绝）行为不同。(stream.rs:81-111,719-737)</p></details>
+            </div>
+          </article>
+          <article class="ledger-item done" id="r42">
+            <div class="ledger-mark">
+              <span class="badge done">已完成</span>
+              <code class="ledger-code">R4-2</code>
+            </div>
+            <div class="ledger-body">
+              <strong>白盒集成测试（对真实 Postgres）</strong>
+              <p><code>#[sqlx::test]</code> 每测一个隔离临时 DB（自动跑 migrations），feature <code>integration</code> 门控；4 项钉死核心数据流不变量，已接入 CI。</p>
+              <div class="evidence">
+              <a href="../../server/tests/flows.rs">tests/flows.rs</a>
+              <a href="../../.github/workflows/ci.yml">ci.yml</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p>4 项：i2 并发 gap-free seq、流程 2 连续 seq + 流程 8 补齐、R5 并发只派一次（计数 BotLocator 断言）、流程 4 done finalize 幂等。前置依赖是 bin→lib 拆分让 <code>tests/</code> 能链接内部函数。整个文件 <code>#![cfg(feature = &quot;integration&quot;)]</code> 门控——默认 <code>cargo test</code> 编 0 个集成测试、无需 DB。CI 已新增 <code>gateway-integration</code> job（Postgres 16 service + <code>DATABASE_URL</code> + <code>cargo test --features integration --test flows</code>），本地对真实 PG 4 项全绿。(flows.rs:17,96/127/196/265；ci.yml)</p></details>
+            </div>
+          </article>
+          <article class="ledger-item done" id="r5">
+            <div class="ledger-mark">
+              <span class="badge done">已修复</span>
+              <code class="ledger-code">R5</code>
+            </div>
+            <div class="ledger-body">
+              <strong>dispatcher 双派发：原子 INSERT 单点定胜负</strong>
+              <p>删去前置非原子的 <code>check_idempotency</code> SELECT；<code>create_placeholder</code> 用 <code>INSERT…ON CONFLICT DO NOTHING</code> 的 <code>rows_affected()==1</code> 定胜负。</p>
+              <div class="evidence">
+              <a href="../../server/src/gateway/dispatcher.rs">dispatcher.rs</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p>占位 id 为 <code>UUIDv5(trigger_msg_id, bot_id)</code> 确定性派生（I4），并发双触发撞同一行只有一个插入成功：胜者派发 task、败者 <code>AlreadyInProgress</code> 不派发。替换了旧的 check-then-act（SELECT 与 INSERT 非原子，并发双触发会派两次）。(dispatcher.rs:53-56,164-196)</p></details>
+            </div>
+          </article>
+          <article class="ledger-item done" id="binlib">
+            <div class="ledger-mark">
+              <span class="badge done">已完成</span>
+              <code class="ledger-code">bin→lib</code>
+            </div>
+            <div class="ledger-body">
+              <strong>拆库解锁白盒测试</strong>
+              <p>新增 <code>src/lib.rs</code> 导出 9 个 module，<code>main.rs</code> 减为薄壳 <code>use server::*</code>；纯结构移动、零行为变化。</p>
+              <div class="evidence">
+              <a href="../../server/src/lib.rs">lib.rs</a>
+            </div>
+              <details class="ledger-detail"><summary>机制与代码锚点</summary><p><code>server</code> 原为纯 bin crate，<code>tests/</code> 无法链接内部模块——这是结构债不是测试问题。另：<code>tests/</code> 是独立 crate，只看得到 public API + dev-dependencies，故 sqlx/uuid/serde_json/async-trait 要单独加进 <code>[dev-dependencies]</code>。(lib.rs:1-15)</p></details>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section id="scope" aria-labelledby="scope-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="scope-title">范围：schema 远超 code</h2>
+            <p>迁移定义了 37 张表（8 个迁移文件），但只有一部分有 handler/domain 代码。这张「实现 / 仅 schema / 休眠」三分图是 M2 必须显式裁剪的依据。</p>
+          </div>
+        </div>
+        <div class="scope-grid">
+          <div class="scope-lane done">
+            <div class="scope-head">
+              <span class="badge done">已实现</span>
+              <h3>有 handler/domain 代码</h3>
+            </div>
+            <ul>
+              <li>users · workspaces · channels · channel_memberships</li>
+              <li>messages · message_mentions · file_records</li>
+              <li>bot_accounts · friendships</li>
+              <li>agentnexus_sessions (+ bindings)</li>
+              <li>acp_capability（delegations + reject_logs）</li>
+              <li><code>memory_files</code>（agent 工作区 <code>fs.*</code>，<code>resource/fs.rs</code>，14 条 SQL）</li>
+            </ul>
+          </div>
+          <div class="scope-lane open">
+            <div class="scope-head">
+              <span class="badge open">仅 schema</span>
+              <h3>有表、无任何实现（8 张）</h3>
+            </div>
+            <ul>
+              <li>memory_entries（Agent 记忆条目）</li>
+              <li>document_sets / _items / _exclusions（RAG / 检索）</li>
+              <li>history_pages（Lens 渲染）</li>
+              <li>bulletin_issues（摘要页）</li>
+              <li>todo_items · prompt_templates</li>
+              <li>keychain_items · ai_models</li>
+            </ul>
+          </div>
+          <div class="scope-lane future">
+            <div class="scope-head">
+              <span class="badge future">休眠</span>
+              <h3>有表、src 无引用</h3>
+            </div>
+            <ul>
+              <li>agent_tasks · bot_runs</li>
+              <li>task_chains</li>
+              <li>auth_external_identities</li>
+              <li>email_codes</li>
+              <li>（占位未启用，按需在 M2/M4 取舍）</li>
+            </ul>
+          </div>
+        </div>
+        <p class="note">前端同为薄切片：仅 3 个 feature 区（auth / chat / settings），无 bot 管理 UI、无文件 UI、无权限 UI——这些属 M1 的前端工作量。</p>
+      </section>
       <section id="changes" aria-labelledby="changes-title">
         <div class="section-heading">
           <div>
-            <h2 id="changes-title">2026-06-01 的 6 次提交如何推进目标</h2>
-            <p>提交集中在 Agent Bridge 协议正式化、message-level bot 路由/取消、mention API 收敛，以及 legacy TS agent 包到 Rust 的迁移。它们把服务端协议、connector 边界和 agent 包形态推进到当前主线。</p>
+            <h2 id="changes-title">M0 改动（按依赖链逐项提交）</h2>
+            <p>本里程碑按依赖链推完：部署决策 + 装配 → 纯逻辑单测安全网 → 终态背压与双派发竞态修复 → bin→lib 重构 → 白盒集成测试。每项独立提交，文档（ROADMAP / DATA_FLOW）同步刷新至 v1.5。</p>
           </div>
         </div>
         <div class="timeline">
           <table>
             <thead>
               <tr>
-                <th>提交</th>
-                <th>日期</th>
+                <th>范围</th>
                 <th>主题</th>
                 <th>架构影响</th>
+                <th>Commit</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td class="commit">ff14b2d</td>
-                <td>2026-06-01</td>
-                <td>chore: migrate agent packages to rust</td>
-                <td>停用 OpenClaw legacy 包；<code>agentnexus-mcp-server</code> 改为 Rust binary；bridge-client 能力并入 Rust connector crate；TS daemon 退场为 Rust supervisor。</td>
+                <td>gateway</td>
+                <td>R1-A 回退进程内</td>
+                <td><code>main.rs</code> 装配 in-process fan-out/locator；Redis 退出启动路径；redis_* parked</td>
+                <td class="commit"><code>169362a</code></td>
               </tr>
               <tr>
-                <td class="commit">3614b00</td>
-                <td>2026-06-01</td>
-                <td>Migrate backend to Agent Bridge protocol</td>
-                <td>服务端 WS 命名和代码路径切到 Agent Bridge；新增协议文档和 runtime session status migration。</td>
+                <td>gateway+connector</td>
+                <td>R4-1 纯逻辑单测</td>
+                <td>21 项 I4/I7/finalize/role/backoff/mention/terminal；提取 <code>claim_finalize</code> 三态守卫</td>
+                <td class="commit"><code>bd5c6f4</code></td>
               </tr>
               <tr>
-                <td class="commit">af64bcf</td>
-                <td>2026-06-01</td>
-                <td>feat(server): complete acp bridge connection lifecycle</td>
-                <td>补齐 connector control/data 连接生命周期，新增 supersede 信号和连接一致性处理。</td>
+                <td>gateway</td>
+                <td>R3 终态帧背压</td>
+                <td>入队 <code>Full</code> + 终态 → <code>closers</code> 信号 → browser <code>close_rx</code> 4408 关连接</td>
+                <td class="commit"><code>9049598</code></td>
               </tr>
               <tr>
-                <td class="commit">2f204ec</td>
-                <td>2026-06-01</td>
-                <td>refactor: unify mention API and remove legacy memory system</td>
-                <td>用户和 bot 消息统一 explicit mention_ids；移除旧 memory resource，MCP post_message 可按名称解析 mention。</td>
+                <td>gateway</td>
+                <td>R5 dispatcher 双派发</td>
+                <td>删前置 SELECT；<code>create_placeholder</code> 返回 <code>rows_affected()==1</code> 定胜负</td>
+                <td class="commit"><code>740ed40</code></td>
               </tr>
               <tr>
-                <td class="commit">03c7984</td>
-                <td>2026-06-01</td>
-                <td>refactor(server): replace chain cancel with per-message bot cancel</td>
-                <td>取消从 chain 级别收敛到单条 bot placeholder，直接向对应 bot 派发 cancel。</td>
+                <td>server</td>
+                <td>bin→lib 拆分</td>
+                <td>新增 <code>src/lib.rs</code>；main.rs 薄壳；解锁白盒集成测试</td>
+                <td class="commit"><code>dfa3eec</code></td>
               </tr>
               <tr>
-                <td class="commit">5c7a1ec</td>
-                <td>2026-06-01</td>
-                <td>refactor(server): replace chain propagation with message-level depth</td>
-                <td>移除 task_chains/agent_tasks/bot_runs 派发状态；Bot@Bot 改成普通 mention 触发，并用 depth 防循环。</td>
+                <td>server</td>
+                <td>R4-2 白盒集成测试</td>
+                <td><code>#[sqlx::test]</code> 隔离 DB + feature 门控；4 项对真实 PG</td>
+                <td class="commit"><code>8e55486</code></td>
+              </tr>
+              <tr>
+                <td>docs</td>
+                <td>状态页重构（本页）</td>
+                <td>多 agent ground-truth 校正 + 可读性重设计</td>
+                <td class="commit"><code>77d6ba9</code>+</td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
-      <section id="goals" aria-labelledby="goals-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="goals-title">架构目标完成度</h2>
-            <p>这里按“当前代码是否已经承担该职责”来判断，不把未验证的部署流程算作完全完成。</p>
-          </div>
-        </div>
-        <div class="goal-grid">
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Rust Backend 骨架与核心路由</h3>
-            <p>axum router、JWT 中间件、browser WS、ACP Bridge WS 和核心 REST 已在 <code>server/</code> 中统一。</p>
-            <div class="evidence">
-              <a href="../../server/src/router.rs">router.rs</a>
-              <a href="../../server/src/gateway/ws/acp_bridge.rs">acp_bridge.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Mesh schema</h3>
-            <p><code>next_seq</code>、<code>channel_seq</code>、<code>message_mentions</code>、message depth 和 Agent Bridge runtime session 状态已进入 sqlx 迁移。</p>
-            <div class="evidence">
-              <a href="../../server/migrations/0003_decentralized_mesh.sql">0003 migration</a>
-              <a href="DECENTRALIZED_MESH.md">mesh design</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Mention 路由与 message depth</h3>
-            <p>用户和 bot 消息统一 explicit mention_ids；Bot@Bot 不再依赖 task chain 状态，而是用 message depth 限制递归。</p>
-            <div class="evidence">
-              <a href="../../server/src/domain/mentions.rs">mentions.rs</a>
-              <a href="../../server/src/domain/messages.rs">messages.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>channel_seq 事件时钟</h3>
-            <p>分配函数在事务内更新 <code>channels.next_seq</code>；用户消息 born final，bot placeholder finalize 时才取号。</p>
-            <div class="evidence">
-              <a href="../../server/src/domain/channel_seq.rs">channel_seq.rs</a>
-              <a href="../../server/src/gateway/stream.rs">stream.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge done">已完成</span>
-            <h3>Agent Bridge 生命周期</h3>
-            <p>control/data 连接迁移到 Agent Bridge 命名；registry 支持 supersede，runtime session 状态进入 gateway 路径。</p>
-            <div class="evidence">
-              <a href="../../server/src/gateway/ws/agent_bridge.rs">agent_bridge.rs</a>
-              <a href="../../server/src/gateway/registry.rs">registry.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge mostly">基本完成</span>
-            <h3>单消息取消</h3>
-            <p>取消 API 通过 placeholder 找到 owner bot，只取消当前 in-flight bot 消息，不再取消整条旧 task chain。</p>
-            <div class="evidence">
-              <a href="../../server/src/api/messages.rs">api/messages.rs</a>
-              <a href="../../server/src/gateway/stream.rs">stream.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge mostly">基本完成</span>
-            <h3>Resource API v1</h3>
-            <p>频道信息、成员、消息、activity、文件列表、memory 兼容层和 <code>fs.*</code> 已统一通过 resource dispatcher 暴露。</p>
-            <div class="evidence">
-              <a href="../../server/src/resource/mod.rs">resource/mod.rs</a>
-              <a href="../../server/src/resource/activity.rs">activity.rs</a>
-              <a href="../../server/src/resource/fs.rs">fs.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge mostly">基本完成</span>
-            <h3>Rust MCP 标准桥工具面</h3>
-            <p><code>agentnexus-mcp-server</code> 已迁为 Rust binary，并把资源读写映射成 MCP tools；connector 负责后续按 ACP <code>mcpServers</code> 注入。</p>
-            <div class="evidence">
-              <a href="../../packages/agentnexus-mcp-server/src/main.rs">main.rs</a>
-              <a href="../../packages/agentnexus-mcp-server/Cargo.toml">Cargo.toml</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge mostly">基本完成</span>
-            <h3>Agent package 退旧迁移</h3>
-            <p>OpenClaw channel package 和独立 bridge-client 包已移除；Rust connector crate 承接 daemon 与 bridge 协议能力，TS 前台 runtime 暂留兼容。</p>
-            <div class="evidence">
-              <a href="../../packages/agentnexus-acp-connector-rs">connector-rs</a>
-              <a href="../../packages/agentnexus-acp-connector/README.md">acp connector README</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge partial">部分完成</span>
-            <h3>Connector MCP stdio 注入</h3>
-            <p>ACP agent 配置里的 <code>mcpServers</code> 已由 connector 传入 session/new/load；自动合成 AgentNexus MCP entry 和 loopback resource endpoint 是下一步。</p>
-            <div class="evidence">
-              <a href="../../packages/agentnexus-acp-connector/src/acp-agent.ts">acp-agent.ts</a>
-              <a href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">ACP compatibility</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge partial">部分完成</span>
-            <h3>全量 REST 覆盖</h3>
-            <p>核心端点已经迁移到 Rust；DM、topic scope、admin 级资源和部分旧后端能力仍需要逐项对齐。</p>
-            <div class="evidence">
-              <a href="../../server/src/api">server/src/api</a>
-              <a href="REFACTOR_PLAN.md">refactor plan</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge partial">部分完成</span>
-            <h3>文件与 memory 资源</h3>
-            <p>旧 <code>channel.memory</code> resource 已移除，当前资源面转向文件、消息和 <code>fs.*</code>；S3 文件内容读写仍需继续验证。</p>
-            <div class="evidence">
-              <a href="../../server/src/resource/files.rs">files.rs</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge open">未完成</span>
-            <h3>Environment 动态 tools</h3>
-            <p>资源分发器仍是静态 <code>match</code>；按 channel / Environment 注册动态 resource handler 尚未实现。</p>
-            <div class="evidence">
-              <a href="../../server/src/resource/mod.rs">resource/mod.rs</a>
-              <a href="context-and-environment.md">context-and-environment</a>
-            </div>
-          </article>
-
-          <article class="goal-card">
-            <span class="badge future">未来计划</span>
-            <h3>多实例、E2EE、Vector DB</h3>
-            <p>单实例部署仍是本期决策；多实例 fan-out/locator、内容级 E2EE 和向量检索均保留为后续演进。</p>
-            <div class="evidence">
-              <a href="ARCHITECTURE_OVERVIEW.md">overview</a>
-              <a href="SECURITY.md">security</a>
-              <a href="E2EE_NOTES.md">e2ee notes</a>
-            </div>
-          </article>
-        </div>
-      </section>
-      <section aria-labelledby="contract-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="contract-title">关键运行流</h2>
-            <p>下面是当前主链路的核心契约：写后投递、消息级 bot 路由、Agent Bridge 生命周期，以及 ACP MCP stdio 的责任边界。</p>
-          </div>
-        </div>
-        <div class="flow">
-          <div class="flow-step">
-            <small>1</small>
-            <strong>消息写入</strong>
-            <span>验证成员、解析 token mention、事务分配 <code>channel_seq</code>、插入消息。</span>
-          </div>
-          <div class="flow-step">
-            <small>2</small>
-            <strong>终态 fan-out</strong>
-            <span>PG commit 后再广播浏览器终态帧，满足 Write-Before-Deliver。</span>
-          </div>
-          <div class="flow-step">
-            <small>3</small>
-            <strong>message-level dispatch</strong>
-            <span>有 <code>@bot</code> 派发指定 bot；bot 回复再次 mention bot 时以 depth+1 继续派发，超过上限静默。</span>
-          </div>
-          <div class="flow-step">
-            <small>4</small>
-            <strong>per-message cancel</strong>
-            <span>用户停止某条 bot placeholder 时，Backend 找到 owner bot 并只推送该消息的 cancel frame。</span>
-          </div>
-          <div class="flow-step">
-            <small>5</small>
-            <strong>connector MCP 注入</strong>
-            <span>connector 在 ACP <code>session/new/load</code> 注入 <code>mcpServers</code>；ACP agent 启动 stdio MCP 子进程，MCP tool call 回到 connector loopback。</span>
-          </div>
-          <div class="flow-step">
-            <small>6</small>
-            <strong>资源裁判</strong>
-            <span>connector 把 MCP tool call 转成 <code>resource_req</code>，Backend 统一校验频道成员、Grant 和 capability delegation。</span>
-          </div>
-        </div>
-      </section>
-      <section aria-labelledby="decisions-title">
-        <div class="section-heading">
-          <div>
-            <h2 id="decisions-title">已经明确的架构方向</h2>
-            <p>这些决策在当前代码或文档中已经形成约束，后续实现应继续沿用。</p>
-          </div>
-        </div>
-        <div class="decision-grid">
-          <article class="decision-card">
-            <h3>外部 agent 优先</h3>
-            <p>平台不再依赖内置 Python bot runtime；外置 ACP bot 和 MCP agent 是同一协议路径。</p>
-          </article>
-          <article class="decision-card">
-            <h3>频道只转发 @</h3>
-            <p>没有中央 coordinator 参与意图判断，路由规则可测试、可审计。</p>
-          </article>
-          <article class="decision-card">
-            <h3>资源写走 Grant</h3>
-            <p>Resource API 读只需频道成员，写需要成员身份和 ACP RBAC Grant。</p>
-          </article>
-          <article class="decision-card">
-            <h3>MCP 注入归 connector</h3>
-            <p>daemon 只管理 connector 生命周期；connector 注入 <code>mcpServers</code>，ACP agent 按 stdio 启动 MCP server。</p>
-          </article>
-          <article class="decision-card">
-            <h3>Agent Bridge 是平台协议</h3>
-            <p>服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。</p>
-          </article>
-          <article class="decision-card">
-            <h3>单实例是本期约束</h3>
-            <p>fan-out 和 BotLocator 先走进程内或 Redis registry，跨实例扩展保留 trait 接口。</p>
-          </article>
-          <article class="decision-card">
-            <h3>旧兼容只保留在边界</h3>
-            <p>OpenClaw 和独立 TS bridge-client 退场；TS foreground runtime 只是 Rust connector 全量化前的兼容层。</p>
-          </article>
-        </div>
-      </section>
       <section id="backlog" aria-labelledby="backlog-title">
         <div class="section-heading">
           <div>
-            <h2 id="backlog-title">剩余工作建议</h2>
-            <p>下一步重点不是再补临时 shim，而是把 connector 侧 MCP 注入闭环实现、验证，并继续把 Rust connector 全量化。</p>
+            <h2 id="backlog-title">后续工作</h2>
+            <p>CI 集成 job 已接线（本地对真实 PG 4 项验证绿），M0 验收门只剩「合并 main」一项。合并后进入 M1 核心闭环。红色为 M0 必须收的口。</p>
           </div>
         </div>
         <div class="backlog-grid">
           <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>Connector 自动 MCP 注入</h3>
-            <p>在 connector runtime 中增加 <code>agent.agentnexusMcp.enabled</code>，自动合成 stdio <code>mcpServers</code> entry 并注入 ACP <code>session/new/load</code>。</p>
+            <span class="badge open">P0 · 合并</span>
+            <h3>m0-foundation → main（M0 最后一口）</h3>
+            <p>分支领先 main 12 commits、未开 PR；合并后 M0 才算真正落地，并触发新 <code>gateway-integration</code> job 的首次 CI 运行。CI 集成 job 本身已接线、本地验证绿。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>Loopback resource endpoint</h3>
-            <p>connector 本机起 HTTP endpoint，接收 <code>agentnexus-mcp-server</code> tool call，转成 data WS <code>resource_req</code> 并等待 <code>resource_res</code>。</p>
+            <span class="badge open">M1 · 前端</span>
+            <h3>前端核心闭环</h3>
+            <p><code>useChatRealtime</code> 重连后 REST 补齐、mention 选择器（<code>&lt;@bot&gt;</code>/<code>&lt;@user&gt;</code>）、文件上传 + <code>&lt;#file&gt;</code> token、presence、bot 管理 UI（注册外接 bot / 签发 botToken / 看 config·status）。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge partial">验证</span>
-            <h3>MCP 端到端</h3>
-            <p>用真实 connector 验证 <code>read_activity</code>、<code>fs_write</code>、<code>messages_by_seq</code>、per-message cancel 和 stdio MCP 注入。</p>
+            <span class="badge open">M1 · 后端</span>
+            <h3>CRUD 补洞</h3>
+            <p>对照核心闭环补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口——大多已存在，是补洞不是新建。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge partial">验证</span>
-            <h3>空库启动和 cargo 测试</h3>
-            <p>按 sqlx migration discipline，从空 Postgres 跑 gateway，确认 <code>0001..0008</code> 可线性执行。</p>
+            <span class="badge mostly">M1 · 验证</span>
+            <h3>connector happy-path 文档化</h3>
+            <p>经 <code>agentnexus-mcp-server</code> 或 <code>acp-connector-rs</code> 接入一条文档化通路：@提及 → 流式 → 断线重连。MCP 注入已是标准 ACP stdio（18 tools 在 mock loopback 上验证过）。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">实现</span>
-            <h3>Environment 动态注册</h3>
-            <p>把 resource dispatcher 从静态 <code>match</code> 演进成可按 channel / template 注册的 handler。</p>
-          </article>
-          <article class="backlog-card">
-            <span class="badge open">产品化</span>
-            <h3>权限覆盖 UI 和 Lens</h3>
-            <p>前端还缺 channel override 设置界面，以及 Environment Lens 的声明式渲染。</p>
+            <span class="badge future">M2 · 裁剪</span>
+            <h3>schema-only 功能定范围</h3>
+            <p>对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。不得把只有 schema 的功能标成「完成」。</p>
           </article>
         </div>
-        <p class="note">根因判断：2026-06-01 的改动解决了平台协议命名、消息级路由/取消和旧 agent 包形态不一致的问题。MCP stdio 集成的正确方向是 connector 注入 ACP <code>mcpServers</code> 并提供 loopback resource endpoint，而不是让 daemon 直接管理 MCP 子进程。</p>
+        <p class="note">M0 验收门：工作树干净 ✓ · <code>cargo test</code> 单测 + 集成两段已接 CI（<code>gateway-check</code> + <code>gateway-integration</code>）✓ · 不变量 I1/I2/I4/I6/I7 各有覆盖 ✓ · Redis 不再是 fan-out 启动硬依赖 ✓ · 集成测试本地对真实 PG 4 项绿 ✓。仅剩「合并 main」一项未结。</p>
       </section>
-      <section aria-labelledby="sources-title">
+      <section id="sources" aria-labelledby="sources-title">
         <div class="section-heading">
           <div>
             <h2 id="sources-title">主要依据</h2>
-            <p>这些文档和代码路径是本页判断的来源。</p>
+            <p>本页每条判断都来自下列代码与文档；事实由 backend / agents / frontend / progress 四路并行 ground-truth 校正。</p>
           </div>
         </div>
         <div class="source-list">
+          <a class="source-link" href="../../server/src/main.rs">
+            <strong>server/src/main.rs</strong>
+            <span>R1-A 进程内装配（main.rs:45-59）</span>
+          </a>
+          <a class="source-link" href="../../server/src/gateway/realtime/fanout.rs">
+            <strong>server/src/gateway/realtime/fanout.rs</strong>
+            <span>R3 终态帧背压 + deliver</span>
+          </a>
+          <a class="source-link" href="../../server/src/gateway/dispatcher.rs">
+            <strong>server/src/gateway/dispatcher.rs</strong>
+            <span>R5 原子占位单点定胜负</span>
+          </a>
+          <a class="source-link" href="../../server/src/gateway/stream.rs">
+            <strong>server/src/gateway/stream.rs</strong>
+            <span>claim_finalize 三态守卫 + seq 盖戳</span>
+          </a>
+          <a class="source-link" href="../../server/tests/flows.rs">
+            <strong>server/tests/flows.rs</strong>
+            <span>R4-2 白盒集成测试（feature 门控）</span>
+          </a>
+          <a class="source-link" href="../../server/src/resource/fs.rs">
+            <strong>server/src/resource/fs.rs</strong>
+            <span>memory_files 文件域 handler（已实现）</span>
+          </a>
+          <a class="source-link" href="../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs">
+            <strong>packages/…/bridge_runtime.rs</strong>
+            <span>BridgeRuntime → AccountRuntime → AcpAdapter</span>
+          </a>
+          <a class="source-link" href="ROADMAP.md">
+            <strong>Engineering Roadmap (M0 看板)</strong>
+            <span>里程碑 / 依赖 / 验收门，v1.5</span>
+          </a>
+          <a class="source-link" href="DATA_FLOW_AND_REFACTOR_PLAN.md">
+            <strong>Data Flow &amp; Refactor Plan</strong>
+            <span>代码现状快照 + R1–R13，v1.5</span>
+          </a>
           <a class="source-link" href="ARCHITECTURE_OVERVIEW.md">
             <strong>Architecture Overview</strong>
             <span>目标拓扑与部署模型</span>
-          </a>
-          <a class="source-link" href="DECENTRALIZED_MESH.md">
-            <strong>Decentralized Mesh</strong>
-            <span>mesh 步骤与资源一致性</span>
-          </a>
-          <a class="source-link" href="REFACTOR_PLAN.md">
-            <strong>Refactor Plan</strong>
-            <span>阶段计划与剩余项</span>
-          </a>
-          <a class="source-link" href="AGENT_BRIDGE_ACP_COMPATIBILITY.md">
-            <strong>Agent Bridge ACP Compatibility</strong>
-            <span>Agent Bridge、ACP 和 MCP stdio 注入边界</span>
-          </a>
-          <a class="source-link" href="AGENT_BRIDGE_PROTOCOL.md">
-            <strong>Agent Bridge Protocol</strong>
-            <span>control/data WS 平台协议</span>
-          </a>
-          <a class="source-link" href="MESSAGE_CONTENT_FORMAT.md">
-            <strong>Message Content Format</strong>
-            <span>token 与 mention 表关系</span>
-          </a>
-          <a class="source-link" href="../../server/src/domain/messages.rs">
-            <strong>server/src/domain/messages.rs</strong>
-            <span>写入、路由、分页</span>
-          </a>
-          <a class="source-link" href="../../server/src/resource/mod.rs">
-            <strong>server/src/resource/mod.rs</strong>
-            <span>Resource API dispatcher</span>
-          </a>
-          <a class="source-link" href="../../server/src/gateway/ws/agent_bridge.rs">
-            <strong>server/src/gateway/ws/agent_bridge.rs</strong>
-            <span>Agent Bridge WS lifecycle</span>
-          </a>
-          <a class="source-link" href="../../packages/agentnexus-mcp-server/src/main.rs">
-            <strong>agentnexus-mcp-server</strong>
-            <span>Rust MCP 工具映射</span>
-          </a>
-          <a class="source-link" href="../../packages/agentnexus-acp-connector-rs">
-            <strong>agentnexus-acp-connector-rs</strong>
-            <span>Rust daemon 和 bridge 协议能力</span>
           </a>
         </div>
       </section>
     </main>
     <footer class="footer">
-      <p>Generated from local repository state on 2026-06-02, reflecting the 2026-06-01 local commit set. This is a generated documentation snapshot; update <code>architecture-status.page.json</code> and run <code>make docs-pages</code> instead of editing <code>index.html</code> directly.</p>
+      <p>基于 2026-06-20 对当前代码的实测快照（branch m0-foundation @ 77d6ba9，未合并 main）。事实经多 agent ground-truth 校正：ACP agent 为配置驱动（example <code>claude-agent-acp</code>，非 OpenCode）· MCP 注入为标准 ACP stdio · Redis 是 parked 非移除 · <code>memory_files</code> 已实现（非 schema-only）· CI 集成 job 已接线（<code>gateway-integration</code>，本地验证绿，待 push 跑首次）。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
     </footer>
   </div>
 </body>

@@ -1,17 +1,34 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path";
 
-const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || "http://localhost:8000";
-const WS_PROXY_TARGET = process.env.VITE_WS_PROXY_TARGET || API_PROXY_TARGET.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
+const API_PROXY_TARGET =
+  process.env.VITE_API_PROXY_TARGET || "http://localhost:8000";
+const WS_PROXY_TARGET =
+  process.env.VITE_WS_PROXY_TARGET ||
+  API_PROXY_TARGET.replace(/^http:\/\//, "ws://").replace(
+    /^https:\/\//,
+    "wss://"
+  );
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   base: process.env.VITE_PUBLIC_BASE_PATH || "/",
   build: {
-    // App entry and route chunks are already split. Mermaid 11.15's on-demand
-    // rendering engine exceeds Vite's default 500 kB warning but is not in the
-    // first-screen bundle.
-    chunkSizeWarningLimit: 650,
+    chunkSizeWarningLimit: 1400,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          hljs: ["highlight.js"],
+          markdown: ["react-markdown", "remark-gfm"],
+        },
+      },
+    },
   },
   server: {
     port: 5173,
@@ -20,7 +37,6 @@ export default defineConfig({
       "/ws": { target: WS_PROXY_TARGET, ws: true },
       "/docs": { target: API_PROXY_TARGET, changeOrigin: true },
       "/health": { target: API_PROXY_TARGET, changeOrigin: true },
-      "/manual": { target: API_PROXY_TARGET, changeOrigin: true },
     },
   },
 });

@@ -8,16 +8,16 @@ use crate::{
     infra::db::models::{MessageDto, MessageFileRef, MessageMention, MESSAGE_SCHEMA_VERSION},
 };
 
-use super::{check_bot_in_channel, check_write_permission, ResourceResult};
+use super::{authorize_channel_read, authorize_channel_write, Principal, ResourceResult};
 
-pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
 
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let limit = params
         .get("limit")
@@ -75,21 +75,19 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
     message_page_response(channel_id, page, limit)
 }
 
-pub async fn handle_by_seq(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_by_seq(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let min_seq = params
         .get("min_seq")
         .and_then(|v| v.as_i64())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "min_seq required"))?;
-    let max_seq = params
-        .get("max_seq")
-        .and_then(|v| v.as_i64());
+    let max_seq = params.get("max_seq").and_then(|v| v.as_i64());
     let limit = params
         .get("limit")
         .and_then(|v| v.as_i64())
@@ -148,27 +146,14 @@ fn fallback_message_value(channel_id: Uuid) -> Value {
     })
 }
 
-pub async fn handle_create(
-    db: &PgPool,
-    bot_id: Uuid,
-    params: &Value,
-    session_id: Option<&str>,
-) -> ResourceResult {
+pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
 
-    check_write_permission(
-        db,
-        bot_id,
-        channel_id,
-        "channel:messages",
-        "create",
-        session_id,
-    )
-    .await?;
+    authorize_channel_write(db, principal, channel_id).await?;
 
     let msg_id = Uuid::new_v4();
     let content = params
@@ -216,7 +201,10 @@ pub async fn handle_create(
         .await
         .map_err(resource_mention_error)?;
     for m in id_mentions {
-        if !mentions.iter().any(|x| x.member_id == m.member_id && x.member_type == m.member_type) {
+        if !mentions
+            .iter()
+            .any(|x| x.member_id == m.member_id && x.member_type == m.member_type)
+        {
             mentions.push(m);
         }
     }
@@ -232,11 +220,12 @@ pub async fn handle_create(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
           is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq)
-         VALUES ($1, $2, 'bot', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9)",
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10)",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
-    .bind(bot_id.to_string())
+    .bind(principal.sender_type())
+    .bind(principal.principal_id.to_string())
     .bind(&content)
     .bind(&msg_type)
     .bind(&reply_to_msg_id)
@@ -264,8 +253,8 @@ pub async fn handle_create(
         channel_id: channel_id.to_string(),
         channel_seq: Some(channel_seq),
         depth: 0,
-        sender_type: "bot".into(),
-        sender_id: Some(bot_id.to_string()),
+        sender_type: principal.sender_type().into(),
+        sender_id: Some(principal.principal_id.to_string()),
         sender_name: None,
         content,
         msg_type,
@@ -283,8 +272,8 @@ pub async fn handle_create(
             "msg_id": msg_id.to_string(),
             "channel_id": channel_id.to_string(),
             "channel_seq": channel_seq,
-            "sender_type": "bot",
-            "sender_id": bot_id.to_string(),
+            "sender_type": principal.sender_type(),
+            "sender_id": principal.principal_id.to_string(),
             "content": "",
             "msg_type": "text",
             "is_partial": false,
@@ -300,12 +289,14 @@ pub async fn handle_create(
 fn resource_mention_error(error: mentions::MentionParseError) -> (String, String) {
     match error {
         mentions::MentionParseError::Db(_) => super::resource_error("INTERNAL_ERROR", "db error"),
-        mentions::MentionParseError::InvalidMember { member_id } => {
-            super::resource_error("MEMBER_NOT_FOUND", format!("mention target not in channel: {member_id}"))
-        }
-        mentions::MentionParseError::NameNotFound { name } => {
-            super::resource_error("MEMBER_NOT_FOUND", format!("mention name not found in channel: {name}"))
-        }
+        mentions::MentionParseError::InvalidMember { member_id } => super::resource_error(
+            "MEMBER_NOT_FOUND",
+            format!("mention target not in channel: {member_id}"),
+        ),
+        mentions::MentionParseError::NameNotFound { name } => super::resource_error(
+            "MEMBER_NOT_FOUND",
+            format!("mention name not found in channel: {name}"),
+        ),
     }
 }
 

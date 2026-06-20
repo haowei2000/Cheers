@@ -78,15 +78,19 @@ ACP-capable agent; new deployments must not use the old OpenClaw package path.
 Install:
 
 ```bash
-npm install -g @haowei0520/acp-connector
-agentnexus-acp-connector --help
+cargo install --path packages/agentnexus-acp-connector-rs --locked
+cce-acp-connector --help
 ```
 
-Register an ACP Bot with `bridge_provider=acp`, save the token, then configure the connector with `controlUrl`, `dataUrl`, and your local ACP agent command.
+Register an ACP Bot with `bridge_provider=acp`, save the token in an environment
+variable, then configure the Rust connector with a local TOML policy file.
 
 ## Docker Compose OpenCode Bot
 
-The Compose template includes an optional `opencode-bot` profile that seeds an OpenCode Agent Bridge Bot and runs `@haowei0520/acp-connector` with OpenCode ACP. OpenCode ACP declares image input and embedded-context support; actual image understanding still depends on the configured model/provider.
+The Compose template includes an optional `opencode-bot` profile that seeds an
+OpenCode Agent Bridge Bot and runs the Rust `cce-acp-connector` with
+OpenCode ACP. OpenCode ACP declares image input and embedded-context support;
+actual image understanding still depends on the configured model/provider.
 
 In `.env`, set:
 

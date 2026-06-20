@@ -31,6 +31,9 @@ pub struct InProcessFanout {
     channels: DashMap<Uuid, Vec<ConnSender>>,
     /// user_id → 该用户的所有连接的发送端
     users: DashMap<Uuid, Vec<ConnSender>>,
+    /// conn_id → 背压关闭信号端（I6）。终态帧入队失败时触发，
+    /// 让该连接的写循环以 4408 关闭，客户端转 REST 补齐。
+    closers: DashMap<Uuid, mpsc::Sender<()>>,
 }
 
 /// 连接的标识符 + 发送端
@@ -45,15 +48,38 @@ impl InProcessFanout {
         Arc::new(Self {
             channels: DashMap::new(),
             users: DashMap::new(),
+            closers: DashMap::new(),
         })
     }
 
-    /// 浏览器 WS 连接建立后，注册 user 级发送端。
-    pub fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
+    /// 浏览器 WS 连接建立后，注册 user 级发送端及背压关闭信号端。
+    pub fn register_user(
+        &self,
+        user_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<WireFrame>,
+        close_tx: mpsc::Sender<()>,
+    ) {
+        self.closers.insert(conn_id, close_tx);
         self.users
             .entry(user_id)
             .or_default()
             .push(ConnSender { conn_id, tx });
+    }
+
+    /// 向一组连接投递一帧。流式帧队列满时静默丢弃（靠 message_done 自愈）；
+    /// 终态帧队列满时不丢，触发该连接的背压关闭信号（I6）。
+    fn deliver(&self, senders: &[ConnSender], frame: &WireFrame) {
+        let terminal = frame.is_terminal();
+        for s in senders.iter() {
+            if let Err(mpsc::error::TrySendError::Full(_)) = s.tx.try_send(frame.clone()) {
+                if terminal {
+                    if let Some(closer) = self.closers.get(&s.conn_id) {
+                        let _ = closer.try_send(());
+                    }
+                }
+            }
+        }
     }
 
     /// 浏览器订阅某频道后，注册 channel 级发送端。
@@ -71,11 +97,12 @@ impl InProcessFanout {
         }
     }
 
-    /// 浏览器断线时，移除该连接的所有注册。
+    /// 浏览器断线时，移除该连接的所有注册（含关闭信号端）。
     pub fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
         if let Some(mut senders) = self.users.get_mut(&user_id) {
             senders.retain(|s| s.conn_id != conn_id);
         }
+        self.closers.remove(&conn_id);
     }
 }
 
@@ -84,6 +111,7 @@ impl Default for InProcessFanout {
         Self {
             channels: DashMap::new(),
             users: DashMap::new(),
+            closers: DashMap::new(),
         }
     }
 }
@@ -92,18 +120,79 @@ impl Default for InProcessFanout {
 impl Fanout for InProcessFanout {
     async fn broadcast_channel(&self, channel_id: Uuid, frame: WireFrame) {
         if let Some(senders) = self.channels.get(&channel_id) {
-            for s in senders.iter() {
-                // 非阻塞发送；队列满时丢弃（delta 可丢，终态帧由背压逻辑处理）
-                let _ = s.tx.try_send(frame.clone());
-            }
+            self.deliver(senders.value(), &frame);
         }
     }
 
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame) {
         if let Some(senders) = self.users.get(&user_id) {
-            for s in senders.iter() {
-                let _ = s.tx.try_send(frame.clone());
-            }
+            self.deliver(senders.value(), &frame);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn frame(frame_type: &str) -> WireFrame {
+        WireFrame::channel(Uuid::new_v4(), frame_type, json!({}))
+    }
+
+    /// 注册一个永不被消费、容量 1 的连接队列，并返回其关闭信号接收端。
+    fn full_conn(fanout: &InProcessFanout, user: Uuid) -> (mpsc::Receiver<WireFrame>, mpsc::Receiver<()>) {
+        let conn = Uuid::new_v4();
+        let (tx, rx) = mpsc::channel::<WireFrame>(1);
+        let (close_tx, close_rx) = mpsc::channel::<()>(1);
+        fanout.register_user(user, conn, tx, close_tx);
+        (rx, close_rx)
+    }
+
+    /// I6 / R3：队列满时广播终态帧 → 触发该连接背压关闭信号（不静默丢弃）。
+    #[tokio::test]
+    async fn terminal_frame_on_full_queue_signals_close() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        // _rx 不消费——队列保持满。
+        let (_rx, mut close_rx) = full_conn(&fanout, user);
+
+        fanout.broadcast_user(user, frame("message")).await; // 占满容量 1 的槽
+        fanout.broadcast_user(user, frame("message_done")).await; // 满 → 应触发关闭
+
+        assert!(
+            close_rx.try_recv().is_ok(),
+            "终态帧入队失败必须触发背压关闭信号"
+        );
+    }
+
+    /// 流式帧队列满时静默丢弃，不触发关闭（靠 message_done 自愈）。
+    #[tokio::test]
+    async fn streaming_frame_on_full_queue_does_not_close() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let (_rx, mut close_rx) = full_conn(&fanout, user);
+
+        fanout.broadcast_user(user, frame("message_stream")).await; // 占满
+        fanout.broadcast_user(user, frame("message_stream")).await; // 满 → 静默丢弃
+
+        assert!(
+            close_rx.try_recv().is_err(),
+            "流式帧丢弃不应触发关闭"
+        );
+    }
+
+    /// 断线注销后清掉关闭信号端，不泄漏。
+    #[tokio::test]
+    async fn deregister_drops_closer() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<()>(1);
+        fanout.register_user(user, conn, tx, close_tx);
+        assert!(fanout.closers.contains_key(&conn));
+        fanout.deregister_user(user, conn);
+        assert!(!fanout.closers.contains_key(&conn));
     }
 }

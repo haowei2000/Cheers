@@ -12,7 +12,13 @@ use super::fanout::WireFrame;
 /// 本地连接注册的抽象接口。
 /// InProcessFanout 和 RedisFanout 都实现这个接口。
 pub trait LocalRegistry: Send + Sync {
-    fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
+    fn register_user(
+        &self,
+        user_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<WireFrame>,
+        close_tx: mpsc::Sender<()>,
+    );
     fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid);
     fn deregister_user(&self, user_id: Uuid, conn_id: Uuid);
@@ -23,8 +29,14 @@ pub trait LocalRegistry: Send + Sync {
 use super::fanout::InProcessFanout;
 
 impl LocalRegistry for InProcessFanout {
-    fn register_user(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        InProcessFanout::register_user(self, user_id, conn_id, tx);
+    fn register_user(
+        &self,
+        user_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<WireFrame>,
+        close_tx: mpsc::Sender<()>,
+    ) {
+        InProcessFanout::register_user(self, user_id, conn_id, tx, close_tx);
     }
     fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
         InProcessFanout::subscribe_channel(self, channel_id, conn_id, tx);
@@ -93,6 +105,8 @@ impl ConnectionManager {
     }
 
     /// 多实例：用 RedisFanout（它实现了 LocalRegistry 委托给内部 local）。
+    /// 当前单实例未装配（roadmap R1-B / M4 才启用）。
+    #[allow(dead_code)]
     pub fn new_with_redis(
         fanout: Arc<crate::gateway::realtime::redis_fanout::RedisFanout>,
         db: PgPool,
@@ -104,8 +118,14 @@ impl ConnectionManager {
         })
     }
 
-    pub fn on_connect(&self, user_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>) {
-        self.registry.register_user(user_id, conn_id, tx);
+    pub fn on_connect(
+        &self,
+        user_id: Uuid,
+        conn_id: Uuid,
+        tx: mpsc::Sender<WireFrame>,
+        close_tx: mpsc::Sender<()>,
+    ) {
+        self.registry.register_user(user_id, conn_id, tx, close_tx);
     }
 
     pub fn on_disconnect(&self, user_id: Uuid, conn_id: Uuid, subscribed: &[Uuid]) {

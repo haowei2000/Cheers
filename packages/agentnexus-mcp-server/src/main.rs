@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 #[derive(Debug, Clone)]
 struct ServerConfig {
     resource_url: String,
-    default_channel_id: Option<String>,
+    resource_token: Option<String>,
     bot_id: Option<String>,
     request_timeout_ms: u64,
 }
@@ -36,12 +36,7 @@ async fn main() -> anyhow::Result<()> {
         config,
     };
     eprintln!(
-        "[agentnexus-mcp] ready (channel={}, bot={})",
-        client
-            .config
-            .default_channel_id
-            .as_deref()
-            .unwrap_or("none"),
+        "[agentnexus-mcp] ready (bot={})",
         client.config.bot_id.as_deref().unwrap_or("?"),
     );
     serve_stdio(client).await
@@ -56,7 +51,7 @@ fn load_config() -> anyhow::Result<ServerConfig> {
         .unwrap_or(30_000);
     Ok(ServerConfig {
         resource_url,
-        default_channel_id: empty_to_none(env::var("AGENTNEXUS_CHANNEL_ID").ok()),
+        resource_token: empty_to_none(env::var("AGENTNEXUS_RESOURCE_TOKEN").ok()),
         bot_id: empty_to_none(env::var("AGENTNEXUS_BOT_ID").ok()),
         request_timeout_ms,
     })
@@ -178,24 +173,25 @@ impl AgentNexusClient {
         resource: &str,
         params: Map<String, Value>,
     ) -> Result<Value, ResourceError> {
-        let response = self
-            .http
-            .post(&self.config.resource_url)
-            .json(&json!({ "resource": resource, "params": params }))
-            .send()
-            .await
-            .map_err(|err| ResourceError {
-                code: if err.is_timeout() {
-                    "IPC_TIMEOUT".to_string()
-                } else {
-                    "IPC_UNAVAILABLE".to_string()
-                },
-                message: if err.is_timeout() {
-                    "connector IPC timed out".to_string()
-                } else {
-                    err.to_string()
-                },
-            })?;
+        let body = json!({ "resource": resource, "params": params });
+        let mut request = self.http.post(&self.config.resource_url).json(&body);
+        if let Some(token) = &self.config.resource_token {
+            request = request
+                .bearer_auth(token)
+                .header("X-AgentNexus-Loopback-Token", token);
+        }
+        let response = request.send().await.map_err(|err| ResourceError {
+            code: if err.is_timeout() {
+                "IPC_TIMEOUT".to_string()
+            } else {
+                "IPC_UNAVAILABLE".to_string()
+            },
+            message: if err.is_timeout() {
+                "connector IPC timed out".to_string()
+            } else {
+                err.to_string()
+            },
+        })?;
         let status = response.status();
         if !status.is_success() {
             return Err(ResourceError {
@@ -226,15 +222,18 @@ impl AgentNexusClient {
     }
 
     fn resolve_channel(&self, args: &Map<String, Value>) -> Result<String, ResourceError> {
+        // channel_id is always required in tool arguments; there is no
+        // default env-based channel. The ACP agent is responsible for
+        // passing the correct channel_id from the task context.
         args.get("channel_id")
             .and_then(Value::as_str)
             .filter(|value| !value.trim().is_empty())
             .map(|value| value.trim().to_string())
-            .or_else(|| self.config.default_channel_id.clone())
             .ok_or_else(|| ResourceError {
                 code: "NO_CHANNEL".to_string(),
-                message: "no channel_id provided and this session is not bound to a channel"
-                    .to_string(),
+                message:
+                    "channel_id is required. The ACP agent must pass it from the task context."
+                        .to_string(),
             })
     }
 }
@@ -496,81 +495,81 @@ fn json_rpc_error(code: i64, message: &str) -> Value {
 
 fn tool_definitions() -> Vec<Value> {
     vec![
-        tool("get_channel_info", "Get channel info", "Metadata for a channel: name, type, workspace.", object_schema(vec![channel_id_prop()], vec![]), true, false),
-        tool("list_members", "List channel members", "Users and bots that are members of the channel.", object_schema(vec![channel_id_prop()], vec![]), true, false),
+        tool("get_channel_info", "Get channel info", "Metadata for a channel: name, type, workspace.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("list_members", "List channel members", "Users and bots that are members of the channel.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("read_messages", "Read recent messages", "Read channel messages by pagination cursor or channel_seq cursor.", object_schema(vec![
             channel_id_prop(),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
             string_prop("before", "Return messages before this msg_id."),
             string_prop("after", "Return messages after this msg_id."),
             number_prop("since_seq", "Return messages with channel_seq greater than this value.", Some(0), None),
-        ], vec![]), true, false),
-        tool("messages_index", "Get message sequence index", "Return min_seq, max_seq, and count for finalized channel messages.", object_schema(vec![channel_id_prop()], vec![]), true, false),
+        ], vec!["channel_id"]), true, false),
+        tool("messages_index", "Get message sequence index", "Return min_seq, max_seq, and count for finalized channel messages.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("messages_by_seq", "Read messages by channel_seq", "Fetch finalized channel messages in an inclusive channel_seq range.", object_schema(vec![
             channel_id_prop(),
             number_prop("min_seq", "Inclusive lower channel_seq.", Some(1), None),
             number_prop("max_seq", "Inclusive upper channel_seq.", Some(1), None),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
-        ], vec!["min_seq"]), true, false),
+        ], vec!["channel_id", "min_seq"]), true, false),
         tool("read_activity", "Read channel activity", "Read the unified channel_seq event stream: messages plus channel operations.", object_schema(vec![
             channel_id_prop(),
             number_prop("since_seq", "Return events with channel_seq greater than this value.", Some(0), None),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
-        ], vec![]), true, false),
-        tool("get_context", "Get channel context", "Condensed channel context bundle (topic, pinned info, summary).", object_schema(vec![channel_id_prop()], vec![]), true, false),
-        tool("list_files", "List channel files", "Files shared in the channel.", object_schema(vec![channel_id_prop()], vec![]), true, false),
+        ], vec!["channel_id"]), true, false),
+        tool("get_context", "Get channel context", "Condensed channel context bundle (topic, pinned info, summary).", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("list_files", "List channel files", "Files shared in the channel.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("read_file", "Read a channel file", "Fetch a file's content/metadata by id.", object_schema(vec![
             channel_id_prop(),
             string_prop("file_id", "File id from list_files."),
-        ], vec!["file_id"]), true, false),
+        ], vec!["channel_id", "file_id"]), true, false),
         tool("post_message", "Post a message", "Send a message to a channel. Use this for proactive / cross-channel posts; the reply to the triggering message goes through the normal agent reply flow, not this tool.", object_schema(vec![
             channel_id_prop(),
             string_prop("text", "Message body (markdown)."),
             array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs."),
             string_prop("reply_to_msg_id", "msg_id to reply to (threaded reply)."),
-        ], vec!["text"]), false, false),
+        ], vec!["channel_id", "text"]), false, false),
         tool("create_file", "Create a channel file", "Upload a file into the channel (base64-encoded bytes).", object_schema(vec![
             channel_id_prop(),
             string_prop("filename", "File name."),
             string_prop("data_b64", "Base64 of the raw file bytes."),
             string_prop("content_type", "MIME type."),
-        ], vec!["filename", "data_b64"]), false, false),
+        ], vec!["channel_id", "filename", "data_b64"]), false, false),
         tool("fs_ls", "List workspace files", "List AgentNexus workspace files under a path prefix.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "Path prefix. Omit or empty string for root."),
-        ], vec![]), true, false),
+        ], vec!["channel_id"]), true, false),
         tool("fs_read", "Read workspace file", "Read a file from the AgentNexus workspace tree.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
-        ], vec!["path"]), true, false),
+        ], vec!["channel_id", "path"]), true, false),
         tool("fs_write", "Write workspace file", "Create or overwrite a workspace file. Use if_version for optimistic locking.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
             string_prop("content", "Full file content."),
             number_prop("if_version", "Expected current version. Use 0 for create-only.", Some(0), None),
-        ], vec!["path", "content"]), false, false),
+        ], vec!["channel_id", "path", "content"]), false, false),
         tool("fs_edit", "Edit workspace file", "Replace exactly one string occurrence in a workspace file.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
             string_prop("old_string", "Existing string to replace. Must match exactly once."),
             string_prop("new_string", "Replacement string."),
             number_prop("if_version", "Expected current version.", Some(1), None),
-        ], vec!["path", "old_string", "new_string"]), false, false),
+        ], vec!["channel_id", "path", "old_string", "new_string"]), false, false),
         tool("fs_append", "Append workspace file", "Append content to a workspace file, creating it if missing.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
             string_prop("content", "Content to append."),
-        ], vec!["path", "content"]), false, false),
+        ], vec!["channel_id", "path", "content"]), false, false),
         tool("fs_rm", "Remove workspace file", "Remove a workspace file or subtree.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "Path to remove."),
             bool_prop("recursive", "Required when removing a subtree."),
-        ], vec!["path"]), false, true),
+        ], vec!["channel_id", "path"]), false, true),
         tool("fs_mv", "Move workspace file", "Rename or move a workspace file or subtree.", object_schema(vec![
             channel_id_prop(),
             string_prop("from", "Source path."),
             string_prop("to", "Target path."),
-        ], vec!["from", "to"]), false, false),
+        ], vec!["channel_id", "from", "to"]), false, false),
     ]
 }
 
@@ -610,7 +609,7 @@ fn object_schema(props: Vec<(&'static str, Value)>, required: Vec<&'static str>)
 fn channel_id_prop() -> (&'static str, Value) {
     string_prop(
         "channel_id",
-        "Target channel id. Omit to use the channel this session is bound to.",
+        "Target channel id (required; no default binding).",
     )
 }
 

@@ -10,14 +10,14 @@ use uuid::Uuid;
 
 use crate::domain::channel_seq;
 
-use super::{check_bot_in_channel, check_write_permission, ResourceResult};
+use super::{authorize_channel_read, authorize_channel_write, Principal, ResourceResult};
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 
 /// `fs.ls` — list a subtree by path prefix. Root is `path=""`.
-pub async fn handle_ls(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, true)?;
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let rows = sqlx::query(
         "SELECT path, version, is_dir, LENGTH(content)::bigint AS size_bytes,
@@ -55,9 +55,9 @@ pub async fn handle_ls(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceRes
 }
 
 /// `fs.read` — read one file.
-pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceResult {
+pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_bot_in_channel(db, bot_id, channel_id).await?;
+    authorize_channel_read(db, principal, channel_id).await?;
 
     let row = sqlx::query(
         "SELECT path, content, version, is_dir, created_at, updated_at
@@ -85,14 +85,9 @@ pub async fn handle_read(db: &PgPool, bot_id: Uuid, params: &Value) -> ResourceR
 // ── Writes ───────────────────────────────────────────────────────────────────
 
 /// `fs.write` — create or overwrite a file. `if_version=0` means create-only.
-pub async fn handle_write(
-    db: &PgPool,
-    bot_id: Uuid,
-    params: &Value,
-    session_id: Option<&str>,
-) -> ResourceResult {
+pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_fs_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, principal, channel_id).await?;
     let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
     let is_dir = params
         .get("is_dir")
@@ -150,7 +145,7 @@ pub async fn handle_write(
         sqlx::query(
             "INSERT INTO memory_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
-             ) VALUES ($1, $2, $3, $4, 1, $5, $6, 'bot')
+             ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7)
              RETURNING version",
         )
         .bind(Uuid::new_v4().to_string())
@@ -158,7 +153,8 @@ pub async fn handle_write(
         .bind(&path)
         .bind(content)
         .bind(is_dir)
-        .bind(bot_id.to_string())
+        .bind(principal.principal_id.to_string())
+        .bind(principal.member_type())
         .fetch_one(&mut *tx)
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
@@ -170,7 +166,7 @@ pub async fn handle_write(
         &mut tx,
         channel_id,
         "fs.write",
-        bot_id,
+        principal,
         &path,
         json!({"path": path, "version": version, "is_dir": is_dir}),
     )
@@ -188,14 +184,9 @@ pub async fn handle_write(
 }
 
 /// `fs.edit` — replace exactly one string occurrence.
-pub async fn handle_edit(
-    db: &PgPool,
-    bot_id: Uuid,
-    params: &Value,
-    session_id: Option<&str>,
-) -> ResourceResult {
+pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_fs_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, principal, channel_id).await?;
     let old = params
         .get("old_string")
         .and_then(|v| v.as_str())
@@ -255,7 +246,7 @@ pub async fn handle_edit(
         &mut tx,
         channel_id,
         "fs.edit",
-        bot_id,
+        principal,
         &path,
         json!({"path": path, "version": version}),
     )
@@ -273,14 +264,9 @@ pub async fn handle_edit(
 }
 
 /// `fs.append` — append to a file, creating it if missing.
-pub async fn handle_append(
-    db: &PgPool,
-    bot_id: Uuid,
-    params: &Value,
-    session_id: Option<&str>,
-) -> ResourceResult {
+pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_fs_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, principal, channel_id).await?;
     let append = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
     let mut tx = db
@@ -313,14 +299,15 @@ pub async fn handle_append(
         sqlx::query(
             "INSERT INTO memory_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
-             ) VALUES ($1, $2, $3, $4, 1, FALSE, $5, 'bot')
+             ) VALUES ($1, $2, $3, $4, 1, FALSE, $5, $6)
              RETURNING version",
         )
         .bind(Uuid::new_v4().to_string())
         .bind(channel_id.to_string())
         .bind(&path)
         .bind(append)
-        .bind(bot_id.to_string())
+        .bind(principal.principal_id.to_string())
+        .bind(principal.member_type())
         .fetch_one(&mut *tx)
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
@@ -332,7 +319,7 @@ pub async fn handle_append(
         &mut tx,
         channel_id,
         "fs.append",
-        bot_id,
+        principal,
         &path,
         json!({"path": path, "version": version, "appended_bytes": append.len()}),
     )
@@ -350,14 +337,9 @@ pub async fn handle_append(
 }
 
 /// `fs.rm` — remove a file or, with `recursive=true`, a subtree.
-pub async fn handle_rm(
-    db: &PgPool,
-    bot_id: Uuid,
-    params: &Value,
-    session_id: Option<&str>,
-) -> ResourceResult {
+pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let (channel_id, path) = extract_channel_path(params, false)?;
-    check_fs_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, principal, channel_id).await?;
     let recursive = params
         .get("recursive")
         .and_then(|v| v.as_bool())
@@ -404,7 +386,7 @@ pub async fn handle_rm(
         &mut tx,
         channel_id,
         "fs.rm",
-        bot_id,
+        principal,
         &path,
         json!({"path": path, "recursive": recursive, "deleted": deleted}),
     )
@@ -422,14 +404,9 @@ pub async fn handle_rm(
 }
 
 /// `fs.mv` — move/rename one node and all descendants.
-pub async fn handle_mv(
-    db: &PgPool,
-    bot_id: Uuid,
-    params: &Value,
-    session_id: Option<&str>,
-) -> ResourceResult {
+pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id = extract_channel_id(params)?;
-    check_fs_write(db, bot_id, channel_id, session_id).await?;
+    check_fs_write(db, principal, channel_id).await?;
     let from = normalize_path(
         params.get("from").and_then(|v| v.as_str()).unwrap_or(""),
         false,
@@ -517,7 +494,7 @@ pub async fn handle_mv(
         &mut tx,
         channel_id,
         "fs.mv",
-        bot_id,
+        principal,
         &from,
         json!({"from": from, "to": to, "moved": moved}),
     )
@@ -539,19 +516,12 @@ pub async fn handle_mv(
 
 async fn check_fs_write(
     db: &PgPool,
-    bot_id: Uuid,
+    principal: &Principal,
     channel_id: Uuid,
-    session_id: Option<&str>,
 ) -> Result<(), (String, String)> {
-    check_write_permission(
-        db,
-        bot_id,
-        channel_id,
-        "channel:fs",
-        "write",
-        session_id,
-    )
-    .await
+    authorize_channel_write(db, principal, channel_id)
+        .await
+        .map(|_| ())
 }
 
 async fn update_content(
@@ -582,7 +552,7 @@ async fn insert_operation(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     channel_id: Uuid,
     op_type: &str,
-    bot_id: Uuid,
+    principal: &Principal,
     target_ref: &str,
     payload: Value,
 ) -> Result<i64, (String, String)> {
@@ -592,13 +562,14 @@ async fn insert_operation(
     sqlx::query(
         "INSERT INTO channel_operations (
             id, channel_id, channel_seq, op_type, actor_type, actor_id, target_ref, payload
-         ) VALUES ($1, $2, $3, $4, 'bot', $5, $6, $7)",
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(Uuid::new_v4().to_string())
     .bind(channel_id.to_string())
     .bind(seq)
     .bind(op_type)
-    .bind(bot_id.to_string())
+    .bind(principal.member_type())
+    .bind(principal.principal_id.to_string())
     .bind(target_ref)
     .bind(payload)
     .execute(&mut **tx)

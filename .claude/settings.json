@@ -12,5 +12,18 @@
       "Bash(cat:*)",
       "Bash(env)"
     ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json\ndata = json.load(sys.stdin)\nprompt = data.get('prompt', '')\nhas_chinese = any('一' <= c <= '鿿' for c in prompt)\nif has_chinese:\n    msg = ('The user is learning English while coding in this project. After your main response, add a short section titled \\\"English Corner\\\" with: (1) a natural English translation of their Chinese input; (2) 2-3 coding or technical English words/phrases relevant to this task, each with a one-line example; (3) if their input were already in English, one tiny note on phrasing. Keep it concise and encouraging.')\n    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': msg}}))\n\"",
+            "statusMessage": "Preparing English learning tip..."
+          }
+        ]
+      }
+    ]
   }
 }

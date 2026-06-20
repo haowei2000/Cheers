@@ -130,10 +130,13 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
                 }
             }
 
-            // 被新连接 supersede
-            _ = &mut supersede_rx => {
-                close(&mut socket, CLOSE_SUPERSEDED, "superseded by new connection").await;
-                break true;
+            // 被新连接 supersede（仅当有人显式发送信号，非 channel 关闭）
+            result = &mut supersede_rx => {
+                if result.is_ok() {
+                    close(&mut socket, CLOSE_SUPERSEDED, "superseded by new connection").await;
+                    break true;
+                }
+                break false;
             }
         }
     };
@@ -511,7 +514,8 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 
         // ── resource 访问 ──────────────────────────────────────────────────
         "resource_req" => {
-            let resp = resource::dispatch(&state.db, bot.bot_id, frame).await;
+            let resp =
+                resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await;
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }

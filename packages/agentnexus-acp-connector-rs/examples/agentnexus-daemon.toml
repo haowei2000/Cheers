@@ -1,0 +1,82 @@
+version = 1
+
+[daemon]
+state_path = "state.json"
+log_dir = "logs"
+
+[accounts.local_acp.bridge]
+control_url = "wss://agentnexus.example.com/ws/agent-bridge/control"
+data_url = "wss://agentnexus.example.com/ws/agent-bridge/data"
+bot_token_env = "AGENTNEXUS_BOT_TOKEN"
+heartbeat_interval_ms = 25000
+ack_timeout_ms = 600000
+
+[accounts.local_acp.bridge.reconnect]
+base_ms = 500
+max_ms = 30000
+
+[accounts.local_acp.adapter]
+type = "stdio"
+command = "/opt/homebrew/bin/claude-agent-acp"
+args = []
+
+[accounts.local_acp.policy.sessions]
+create = true
+load = true
+cancel = true
+terminate = true
+request_timeout_ms = 120000
+
+[accounts.local_acp.policy.prompt]
+allow = true
+max_concurrent = 1
+max_prompt_bytes = 200000
+max_duration_ms = 900000
+allow_attachments = true
+allow_images = true
+allow_local_file_refs = false
+
+[accounts.local_acp.policy.workspace]
+default_cwd = "~/.agentnexus/workspace"
+allowed_roots = ["~/.agentnexus/workspace"]
+backend_may_set_cwd = true
+
+[accounts.local_acp.policy.env]
+inherit = false
+allow = ["HOME", "PATH"]
+
+[accounts.local_acp.policy.config]
+backend_may_set_model = false
+backend_may_set_native_options = false
+allowed_config_options = []
+
+[accounts.local_acp.policy.permission]
+forward_to_backend = true
+wait_timeout_ms = 900000
+on_timeout = "cancel"
+
+[accounts.local_acp.policy.send]
+allow = true
+max_text_bytes = 200000
+max_files = 10
+
+[accounts.local_acp.policy.file_upload]
+allow = false
+max_bytes = 26214400
+allowed_content_types = []
+
+[accounts.local_acp.policy.trace]
+allow = true
+max_message_bytes = 32000
+
+[accounts.local_acp.policy.session_update]
+allow = true
+include_metadata = true
+
+[accounts.local_acp.policy.mcp]
+inject_agentnexus = true
+backend_may_inject_extra_servers = false
+allowed_servers = ["agentnexus"]
+
+[accounts.local_acp.policy.loopback]
+request_timeout_ms = 600000

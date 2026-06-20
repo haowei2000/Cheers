@@ -80,8 +80,13 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     // ── 阶段 2：建立发送队列 + 注册连接 ──────────────────────────────────────
     let conn_id = Uuid::new_v4();
     let (tx, mut rx) = mpsc::channel::<WireFrame>(SEND_QUEUE_SIZE);
+    // 背压关闭信号：终态帧入队失败时由 fan-out 触发（I6，R3）。容量 1 即可——
+    // 一次信号就足以关连接，重复信号忽略。
+    let (close_tx, mut close_rx) = mpsc::channel::<()>(1);
 
-    state.conn_manager.on_connect(user_id, conn_id, tx.clone());
+    state
+        .conn_manager
+        .on_connect(user_id, conn_id, tx.clone(), close_tx);
     send_control(&mut socket, &ServerControl::AuthOk { user_id }).await;
 
     // ── 阶段 3：双向读写循环 ───────────────────────────────────────────────
@@ -131,6 +136,12 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     }
                     None => break,
                 }
+            }
+
+            // fan-out 报告终态帧入队失败（背压）→ 关闭连接，客户端走 REST 补齐（I6）。
+            _ = close_rx.recv() => {
+                close(&mut socket, CLOSE_BACKPRESSURE, "send queue full").await;
+                break;
             }
         }
     }
@@ -277,12 +288,9 @@ async fn handle_client_frame(
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
-/// 终态帧：队列满时不丢，关闭连接（写后投递原则）。
+/// 终态帧：队列满时不丢，关闭连接（写后投递原则）。见 `WireFrame::is_terminal`。
 fn is_terminal_frame(frame: &WireFrame) -> bool {
-    matches!(
-        frame.frame_type.as_str(),
-        "message" | "message_done" | "message_deleted"
-    )
+    frame.is_terminal()
 }
 
 async fn send_control(socket: &mut WebSocket, ctrl: &ServerControl) {
@@ -298,4 +306,31 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
             reason: reason.to_string().into(),
         })))
         .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gateway::realtime::frame::WireFrame;
+    use serde_json::json;
+
+    fn frame(frame_type: &str) -> WireFrame {
+        WireFrame::channel(Uuid::new_v4(), frame_type, json!({}))
+    }
+
+    /// I6：终态帧（不可丢，背压时关连接）须被识别。
+    #[test]
+    fn terminal_frames_are_recognized() {
+        for ft in ["message", "message_done", "message_deleted"] {
+            assert!(is_terminal_frame(&frame(ft)), "{ft} 是终态帧");
+        }
+    }
+
+    /// 流式 / 其它帧不是终态帧（背压时可静默丢弃）。
+    #[test]
+    fn streaming_frames_are_not_terminal() {
+        for ft in ["message_stream", "bot_trace", "pong", "presence"] {
+            assert!(!is_terminal_frame(&frame(ft)), "{ft} 不是终态帧");
+        }
+    }
 }

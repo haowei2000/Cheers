@@ -92,7 +92,6 @@ App.tsx
 │   │   └── MemberRow
 │   ├── ChannelSettingsModal
 │   │   └── MemberRow
-│   ├── OpenClawQcModal
 │   ├── AddBotModal
 │   │   └── MemberRow
 │   ├── MessageDetailModal
@@ -282,7 +281,6 @@ components/
 ├── TopicPage.tsx
 ├── TopicComposer.tsx
 ├── TaskPage.tsx
-├── OpenClawQcModal.tsx
 ├── AnnouncementComposerModal.tsx
 ├── DragOverlay.tsx
 ├── BotAvatar.tsx

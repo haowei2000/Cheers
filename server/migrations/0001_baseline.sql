@@ -62,9 +62,17 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
 );
 
 -- 补 bot_accounts → prompt_templates FK
-ALTER TABLE bot_accounts
-    ADD CONSTRAINT IF NOT EXISTS fk_bot_accounts_template_id
-    FOREIGN KEY (template_id) REFERENCES prompt_templates(template_id) DEFERRABLE INITIALLY DEFERRED;
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_bot_accounts_template_id'
+          AND conrelid = 'bot_accounts'::regclass
+    ) THEN
+        ALTER TABLE bot_accounts
+            ADD CONSTRAINT fk_bot_accounts_template_id
+            FOREIGN KEY (template_id) REFERENCES prompt_templates(template_id) DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+END $$;
 
 -- ── 用户 ──────────────────────────────────────────────────────────────────────
 
@@ -156,6 +164,8 @@ CREATE TABLE IF NOT EXISTS channel_memberships (
     template_id VARCHAR(36) REFERENCES prompt_templates(template_id),
     last_read_at TIMESTAMPTZ,
     hidden_at   TIMESTAMPTZ,
+    CONSTRAINT chk_channel_memberships_member_type CHECK (member_type IN ('user', 'bot')),
+    CONSTRAINT chk_channel_memberships_role CHECK (role IN ('owner', 'admin', 'member', 'readonly')),
     PRIMARY KEY (channel_id, member_id)
 );
 CREATE INDEX IF NOT EXISTS ix_channel_memberships_member ON channel_memberships(member_id, member_type);
