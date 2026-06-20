@@ -78,6 +78,57 @@ jobs:
         run: cargo clippy --all-targets || true
 
   # ─────────────────────────────────────────────
+  # Gateway (Rust): white-box integration tests (R4-2) against a real Postgres.
+  # The suite is feature-gated (`#![cfg(feature = "integration")]`), so the plain
+  # `cargo test` in gateway-check compiles zero of these — this job is the only
+  # place the I1/I2/I4/I6 + R5 invariants are actually exercised against Postgres.
+  # ─────────────────────────────────────────────
+  gateway-integration:
+    name: Gateway Integration (Postgres)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.gateway == 'true' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: server
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agentnexus
+          POSTGRES_PASSWORD: agentnexus
+          POSTGRES_DB: agentnexus
+        ports:
+          - 5432:5432
+        # Gate the job on the DB being reachable before any test connects.
+        options: >-
+          --health-cmd "pg_isready -U agentnexus"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # #[sqlx::test] connects here, then CREATEs/DROPs an isolated database per
+      # test and auto-runs server/migrations. The URL comes from the environment
+      # (never hard-coded in code) so parallel stacks can vary it freely.
+      DATABASE_URL: postgres://agentnexus:agentnexus@localhost:5432/agentnexus
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - name: Integration tests (real Postgres)
+        run: cargo test --features integration --test flows
+
+  # ─────────────────────────────────────────────
   # Frontend: type-check + build
   # ─────────────────────────────────────────────
   frontend-build:
