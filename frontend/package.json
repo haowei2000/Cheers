@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.10",
-    "@lobehub/icons": "^1.80.0",
+    "@lobehub/icons": "^5.10.0",
     "@tanstack/react-virtual": "^3.13.24",
     "clsx": "^2.1.1",
     "dingtalk-design-libs": "^0.2.0",
