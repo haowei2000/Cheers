@@ -491,11 +491,7 @@ impl RuntimeContext {
             .channel_names
             .get(&task.channel_id)
             .cloned();
-        let prompt = build_prompt(
-            &task,
-            &self.config.policy.prompt,
-            channel_name.as_deref(),
-        );
+        let prompt = build_prompt(&task, &self.config.policy.prompt, channel_name.as_deref());
         let prompt_size = serde_json::to_vec(&prompt)?.len();
         if prompt_size > self.config.policy.prompt.max_prompt_bytes {
             self.io
@@ -1662,45 +1658,37 @@ fn spawn_control_socket(
             while let Ok(frame) = out_rx.try_recv() {
                 if socket.send_json(&frame).await.is_err() {
                     tracing::warn!("control socket send failed → closing");
-                    let _ = runtime_tx
-                        .send(RuntimeInput::SocketClosed("control"))
-                        .await;
+                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
                     return;
                 }
             }
             if Instant::now() >= next_heartbeat {
                 if socket.send_json(&ControlOutbound::Ping).await.is_err() {
                     tracing::warn!("control socket heartbeat failed → closing");
-                    let _ = runtime_tx
-                        .send(RuntimeInput::SocketClosed("control"))
-                        .await;
+                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
                     return;
                 }
                 next_heartbeat = Instant::now() + config.heartbeat_interval;
             }
             match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
-                Ok(Ok(Some(value))) => {
-                    match serde_json::from_value::<ControlInbound>(value) {
-                        Ok(frame) => {
-                            if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
-                                return;
-                            }
-                        }
-                        Err(err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "control",
-                                    error: err.to_string(),
-                                })
-                                .await;
+                Ok(Ok(Some(value))) => match serde_json::from_value::<ControlInbound>(value) {
+                    Ok(frame) => {
+                        if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
                             return;
                         }
                     }
-                }
+                    Err(err) => {
+                        let _ = runtime_tx
+                            .send(RuntimeInput::SocketError {
+                                stream: "control",
+                                error: err.to_string(),
+                            })
+                            .await;
+                        return;
+                    }
+                },
                 Ok(Ok(None)) | Ok(Err(_)) => {
-                    let _ = runtime_tx
-                        .send(RuntimeInput::SocketClosed("control"))
-                        .await;
+                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
                     return;
                 }
                 Err(_elapsed) => {
@@ -1736,44 +1724,36 @@ fn spawn_data_socket(
                     }
                 }
                 if socket.send_json(&frame).await.is_err() {
-                    let _ = runtime_tx
-                        .send(RuntimeInput::SocketClosed("data"))
-                        .await;
+                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
                     return;
                 }
             }
             if Instant::now() >= next_heartbeat {
                 if socket.send_json(&DataOutbound::Ping).await.is_err() {
-                    let _ = runtime_tx
-                        .send(RuntimeInput::SocketClosed("data"))
-                        .await;
+                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
                     return;
                 }
                 next_heartbeat = Instant::now() + config.heartbeat_interval;
             }
             match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
-                Ok(Ok(Some(value))) => {
-                    match serde_json::from_value::<DataInbound>(value) {
-                        Ok(frame) => {
-                            if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
-                                return;
-                            }
-                        }
-                        Err(err) => {
-                            let _ = runtime_tx
-                                .send(RuntimeInput::SocketError {
-                                    stream: "data",
-                                    error: err.to_string(),
-                                })
-                                .await;
+                Ok(Ok(Some(value))) => match serde_json::from_value::<DataInbound>(value) {
+                    Ok(frame) => {
+                        if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
                             return;
                         }
                     }
-                }
+                    Err(err) => {
+                        let _ = runtime_tx
+                            .send(RuntimeInput::SocketError {
+                                stream: "data",
+                                error: err.to_string(),
+                            })
+                            .await;
+                        return;
+                    }
+                },
                 Ok(Ok(None)) | Ok(Err(_)) => {
-                    let _ = runtime_tx
-                        .send(RuntimeInput::SocketClosed("data"))
-                        .await;
+                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
                     return;
                 }
                 Err(_elapsed) => {
@@ -1967,7 +1947,11 @@ fn bridge_ready_from_initialize(initialize: &Value, policy: &LocalPolicy) -> Bri
     ready
 }
 
-fn build_prompt(task: &TaskCommand, policy: &PromptPolicy, channel_name: Option<&str>) -> Vec<Value> {
+fn build_prompt(
+    task: &TaskCommand,
+    policy: &PromptPolicy,
+    channel_name: Option<&str>,
+) -> Vec<Value> {
     let mut parts = vec![
         AGENTNEXUS_ACP_OUTPUT_CONTRACT.to_string(),
         format!(
@@ -2426,7 +2410,10 @@ mod tests {
         assert_eq!(json["req_id"], "req-1");
         assert_eq!(json["resource"], "channel.info");
         // session_id must NOT appear in the wire format
-        assert!(json.get("session_id").is_none(), "session_id is dead metadata and must not be serialized");
+        assert!(
+            json.get("session_id").is_none(),
+            "session_id is dead metadata and must not be serialized"
+        );
     }
 
     #[test]
@@ -2442,9 +2429,18 @@ mod tests {
         };
         let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
         let text = prompt[0]["text"].as_str().expect("text block");
-        assert!(text.contains("channel_id=550e8400"), "prompt must include channel_id");
-        assert!(text.contains("channel_name=\"#general\""), "prompt must include channel_name");
-        assert!(text.contains("@testbot hello"), "prompt must include trigger message");
+        assert!(
+            text.contains("channel_id=550e8400"),
+            "prompt must include channel_id"
+        );
+        assert!(
+            text.contains("channel_name=\"#general\""),
+            "prompt must include channel_name"
+        );
+        assert!(
+            text.contains("@testbot hello"),
+            "prompt must include trigger message"
+        );
     }
 
     #[test]
@@ -2460,8 +2456,14 @@ mod tests {
         };
         let prompt = build_prompt(&task, &test_prompt_policy(false), None);
         let text = prompt[0]["text"].as_str().expect("text block");
-        assert!(text.contains("channel_id=chan-1"), "prompt must include channel_id even without channel_name");
+        assert!(
+            text.contains("channel_id=chan-1"),
+            "prompt must include channel_id even without channel_name"
+        );
         // channel_name should NOT appear when absent
-        assert!(!text.contains("channel_name="), "channel_name must not appear when not available");
+        assert!(
+            !text.contains("channel_name="),
+            "channel_name must not appear when not available"
+        );
     }
 }

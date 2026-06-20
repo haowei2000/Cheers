@@ -231,8 +231,9 @@ impl AgentNexusClient {
             .map(|value| value.trim().to_string())
             .ok_or_else(|| ResourceError {
                 code: "NO_CHANNEL".to_string(),
-                message: "channel_id is required. The ACP agent must pass it from the task context."
-                    .to_string(),
+                message:
+                    "channel_id is required. The ACP agent must pass it from the task context."
+                        .to_string(),
             })
     }
 }
