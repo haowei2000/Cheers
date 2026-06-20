@@ -83,7 +83,7 @@ jobs:
 
       - name: Build and push gateway
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./server
           push: true
@@ -131,7 +131,7 @@ jobs:
 
       - name: Build and push frontend
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: true
