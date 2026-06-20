@@ -866,7 +866,7 @@ tr:last-child td { border-bottom: 0; }
           <span>AgentNexus Architecture</span>
         </div>
         <nav class="nav" aria-label="Page navigation">
-          <a href="#status"><span class="dot mostly" aria-hidden="true"></span>状态</a>
+          <a href="#status"><span class="dot done" aria-hidden="true"></span>状态</a>
           <a href="#overview"><span class="dot done" aria-hidden="true"></span>架构</a>
           <a href="#topology"><span class="dot done" aria-hidden="true"></span>拓扑</a>
           <a href="#ledger"><span class="dot done" aria-hidden="true"></span>M0 账本</a>
@@ -882,9 +882,9 @@ tr:last-child td { border-bottom: 0; }
         <p class="lead">AgentNexus 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。</p>
         <div class="meta-row" aria-label="Audit metadata">
           <span class="pill">实测日期 2026-06-20</span>
-          <span class="pill">branch m0-foundation</span>
-          <span class="pill">HEAD 77d6ba9</span>
-          <span class="pill open">未合并 main（领先 12 commits）</span>
+          <span class="pill">branch develop</span>
+          <span class="pill">HEAD 5c58c57</span>
+          <span class="pill done">M0 已并入 develop（PR #25）</span>
         </div>
       </div>
     </div>
@@ -893,7 +893,7 @@ tr:last-child td { border-bottom: 0; }
         <div class="section-heading">
           <div>
             <h2 id="status-title">一眼看状态</h2>
-            <p>M0 的 6 个改造项已全部实现并带测试；CI 集成 job 已接线（本地对真实 PG 4 项验证绿）。M0 验收门仅剩「合并 main」一项收口——用红色标出。</p>
+            <p>M0 的 6 个改造项已全部实现、测试覆盖、CI 全绿，并经 PR #25 合入 <code>develop</code>（test 阶段）。M0 工程目标达成；<code>develop → main</code>（prod 晋级）是独立发布步骤、由你定。</p>
           </div>
         </div>
         <div class="status-band">
@@ -912,12 +912,12 @@ tr:last-child td { border-bottom: 0; }
                 <span>fan-out / 路由 / 流注册表（R1-A；Redis 仍 parked）</span>
               </div>
               <div class="counter done">
-                <strong>已接线</strong>
-                <span>CI 集成 job：Postgres 16 service + <code>--features integration</code>；本地 4 项绿</span>
+                <strong>已接 CI</strong>
+                <span><code>gateway-integration</code>：Postgres service + <code>--features integration</code>；真 CI 两轮全绿</span>
               </div>
-              <div class="counter open">
-                <strong>未合并</strong>
-                <span>m0-foundation → main（合并即触发首次 CI 集成跑）</span>
+              <div class="counter done">
+                <strong>已并入</strong>
+                <span>M0 经 PR #25（merge <code>5c58c57</code>）合入 develop，CI 全绿</span>
               </div>
             </div>
           </div>
@@ -1341,10 +1341,22 @@ tr:last-child td { border-bottom: 0; }
                 <td class="commit"><code>8e55486</code></td>
               </tr>
               <tr>
+                <td>ci</td>
+                <td>R4-2 集成测试接入 CI</td>
+                <td>新增 <code>gateway-integration</code>：Postgres service + <code>--features integration</code>；真 CI 两轮全绿</td>
+                <td class="commit"><code>df8a6d4</code></td>
+              </tr>
+              <tr>
                 <td>docs</td>
-                <td>状态页重构（本页）</td>
-                <td>多 agent ground-truth 校正 + 可读性重设计</td>
-                <td class="commit"><code>77d6ba9</code>+</td>
+                <td>状态页重构为 ground-truth 仪表盘（本页）</td>
+                <td>多 agent 校正过期断言 + 可读性重设计</td>
+                <td class="commit"><code>871b4f3</code></td>
+              </tr>
+              <tr>
+                <td>merge</td>
+                <td>M0 合入 develop</td>
+                <td>PR #25 合并（merge <code>5c58c57</code>），develop 上 CI 全绿；develop→main prod 晋级待定</td>
+                <td class="commit"><code>5c58c57</code></td>
               </tr>
             </tbody>
           </table>
@@ -1354,14 +1366,14 @@ tr:last-child td { border-bottom: 0; }
         <div class="section-heading">
           <div>
             <h2 id="backlog-title">后续工作</h2>
-            <p>CI 集成 job 已接线（本地对真实 PG 4 项验证绿），M0 验收门只剩「合并 main」一项。合并后进入 M1 核心闭环。红色为 M0 必须收的口。</p>
+            <p>M0 已经 PR #25 合入 <code>develop</code>（CI 全绿），并正在晋级 <code>develop → main</code>（prod）。之后进入 M1 核心闭环。</p>
           </div>
         </div>
         <div class="backlog-grid">
           <article class="backlog-card">
-            <span class="badge open">P0 · 合并</span>
-            <h3>m0-foundation → main（M0 最后一口）</h3>
-            <p>分支领先 main 12 commits、未开 PR；合并后 M0 才算真正落地，并触发新 <code>gateway-integration</code> job 的首次 CI 运行。CI 集成 job 本身已接线、本地验证绿。</p>
+            <span class="badge mostly">发布 · 进行中</span>
+            <h3>develop → main（prod 晋级）</h3>
+            <p>M0 在 <code>develop</code>（test）CI 全绿；正在晋级到 <code>main</code>：push main 触发 <code>cd.yml</code> 构建并推送 gateway/frontend 镜像到 ghcr（<code>DEPLOY_ENABLED</code> 未开，无 live SSH 部署）。</p>
           </article>
           <article class="backlog-card">
             <span class="badge open">M1 · 前端</span>
@@ -1384,7 +1396,7 @@ tr:last-child td { border-bottom: 0; }
             <p>对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。不得把只有 schema 的功能标成「完成」。</p>
           </article>
         </div>
-        <p class="note">M0 验收门：工作树干净 ✓ · <code>cargo test</code> 单测 + 集成两段已接 CI（<code>gateway-check</code> + <code>gateway-integration</code>）✓ · 不变量 I1/I2/I4/I6/I7 各有覆盖 ✓ · Redis 不再是 fan-out 启动硬依赖 ✓ · 集成测试本地对真实 PG 4 项绿 ✓。仅剩「合并 main」一项未结。</p>
+        <p class="note">M0 验收门全绿并已落地 <code>develop</code>：工作树干净 ✓ · <code>cargo test</code> 单测 + 集成两段接 CI、真 CI 全绿（<code>gateway-check</code> + <code>gateway-integration</code>）✓ · 不变量 I1/I2/I4/I6/I7 各有覆盖 ✓ · Redis 不再是 fan-out 启动硬依赖 ✓ · 经 PR #25（merge <code>5c58c57</code>）合入 develop ✓。<code>develop → main</code> 的 prod 晋级是独立发布步骤。</p>
       </section>
       <section id="sources" aria-labelledby="sources-title">
         <div class="section-heading">
@@ -1438,7 +1450,7 @@ tr:last-child td { border-bottom: 0; }
       </section>
     </main>
     <footer class="footer">
-      <p>基于 2026-06-20 对当前代码的实测快照（branch m0-foundation @ 77d6ba9，未合并 main）。事实经多 agent ground-truth 校正：ACP agent 为配置驱动（example <code>claude-agent-acp</code>，非 OpenCode）· MCP 注入为标准 ACP stdio · Redis 是 parked 非移除 · <code>memory_files</code> 已实现（非 schema-only）· CI 集成 job 已接线（<code>gateway-integration</code>，本地验证绿，待 push 跑首次）。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
+      <p>基于 2026-06-20 对当前代码的实测快照（M0 经 PR #25 合入 <code>develop</code> @ 5c58c57，CI 全绿；正在晋级 <code>develop → main</code>，prod CD 推镜像、无 live deploy）。事实经多 agent ground-truth 校正：ACP agent 为配置驱动（example <code>claude-agent-acp</code>，非 OpenCode）· MCP 注入为标准 ACP stdio · Redis 是 parked 非移除 · <code>memory_files</code> 已实现（非 schema-only）· CI 集成 job 已接线并在真 CI 全绿。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
     </footer>
   </div>
 </body>
