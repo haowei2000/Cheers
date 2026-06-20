@@ -9,22 +9,15 @@ const dataPath = path.join(root, "docs/arch/architecture-status.page.json");
 const cssPath = path.join(root, "docs/arch/architecture-status.page.css");
 const outputPath = path.join(root, "docs/arch/index.html");
 
-const statusColor = {
-  done: "var(--green)",
-  mostly: "var(--blue)",
-  partial: "var(--amber)",
-  open: "var(--red)",
-  future: "var(--violet)",
-};
-
 const page = JSON.parse(await readFile(dataPath, "utf8"));
 const css = await readFile(cssPath, "utf8");
 
 await writeFile(outputPath, renderPage(page, css), "utf8");
 console.log(`Generated ${path.relative(root, outputPath)} from ${path.relative(root, dataPath)}`);
 
+// ── Page shell ──────────────────────────────────────────────────────────────
+
 function renderPage(data, cssText) {
-  const sections = data.sections;
   return `<!doctype html>
 <html lang="${attr(data.lang)}">
 <head>
@@ -41,14 +34,7 @@ ${cssText.trim()}
     ${renderTopbar(data)}
     ${renderHero(data)}
     <main>
-      ${renderSnapshot(sections.snapshot)}
-      ${renderTopology(sections.topology)}
-      ${renderChanges(sections.changes)}
-      ${renderGoals(sections.goals)}
-      ${renderFlow(sections.flow)}
-      ${renderDecisions(sections.decisions)}
-      ${renderBacklog(sections.backlog)}
-      ${renderSources(sections.sources)}
+      ${data.sections.map(renderSection).join("\n      ")}
     </main>
     <footer class="footer">
       <p>${inline(data.footer)}</p>
@@ -59,6 +45,24 @@ ${cssText.trim()}
 `;
 }
 
+// Each section carries a `type`; the page order is data-driven.
+function renderSection(section) {
+  switch (section.type) {
+    case "statusBand": return renderStatusBand(section);
+    case "legend": return renderLegend(section);
+    case "overview": return renderOverview(section);
+    case "topology": return renderTopology(section);
+    case "ledger": return renderLedger(section);
+    case "scope": return renderScope(section);
+    case "changes": return renderChanges(section);
+    case "backlog": return renderBacklog(section);
+    case "sources": return renderSources(section);
+    default: return `<!-- unknown section type: ${attr(section.type)} -->`;
+  }
+}
+
+// ── Topbar + hero ────────────────────────────────────────────────────────────
+
 function renderTopbar(data) {
   return `<header class="topbar">
       <div class="topbar-inner">
@@ -67,72 +71,141 @@ function renderTopbar(data) {
           <span>${text(data.brand)}</span>
         </div>
         <nav class="nav" aria-label="Page navigation">
-          ${data.nav.map((item) => `<a href="${attr(item.href)}">${text(item.label)}</a>`).join("\n          ")}
+          ${data.nav.map(renderNavLink).join("\n          ")}
         </nav>
       </div>
     </header>`;
 }
 
+function renderNavLink(item) {
+  const dot = item.status ? `<span class="dot ${attr(item.status)}" aria-hidden="true"></span>` : "";
+  return `<a href="${attr(item.href)}">${dot}${text(item.label)}</a>`;
+}
+
 function renderHero(data) {
   const hero = data.hero;
-  const summary = data.summary;
   return `<div class="hero">
       <div class="hero-inner">
-        <div>
-          <p class="eyebrow">${text(hero.eyebrow)}</p>
-          <h1>${inline(hero.heading)}</h1>
-          <p class="lead">${inline(hero.lead)}</p>
-          <div class="meta-row" aria-label="Audit metadata">
-            ${hero.meta.map((item) => `<span class="pill">${inline(item)}</span>`).join("\n            ")}
-          </div>
+        <p class="eyebrow">${text(hero.eyebrow)}</p>
+        <h1>${inline(hero.heading)}</h1>
+        <p class="lead">${inline(hero.lead)}</p>
+        <div class="meta-row" aria-label="Audit metadata">
+          ${hero.meta.map(renderMetaPill).join("\n          ")}
         </div>
-
-        <aside class="status-summary" aria-labelledby="summary-card-title">
-          <h2 id="summary-card-title">${text(summary.title)}</h2>
-          <div class="score">
-            ${summary.scores.map(renderScore).join("\n            ")}
-          </div>
-          <div class="progress-line" id="summary">
-            ${summary.progress.map(renderProgress).join("\n            ")}
-          </div>
-        </aside>
       </div>
     </div>`;
 }
 
-function renderScore(item) {
-  return `<div class="score-item">
-              <strong>${text(item.value)}</strong>
-              <span>${inline(item.label)}</span>
-            </div>`;
+function renderMetaPill(item) {
+  const label = typeof item === "string" ? item : item.label;
+  const status = typeof item === "object" && item.status ? ` ${attr(item.status)}` : "";
+  return `<span class="pill${status}">${inline(label)}</span>`;
 }
 
-function renderProgress(item) {
-  const width = Math.max(0, Math.min(100, Number(item.percent) || 0));
-  const color = statusColor[item.status] ?? "var(--blue)";
-  return `<div class="progress-row">
-              <span>${inline(item.label)}</span>
-              <div class="bar"><span style="width: ${width}%; background: ${color};"></span></div>
-              <b>${inline(item.value)}</b>
-            </div>`;
-}
+// ── Status band (at-a-glance) ────────────────────────────────────────────────
 
-function renderSnapshot(section) {
-  return `<section aria-labelledby="snapshot-title">
-        ${renderSectionHeading("snapshot-title", section.title, section.intro)}
-        <div class="metric-grid">
-          ${section.metrics.map(renderMetricCard).join("\n          ")}
+function renderStatusBand(section) {
+  return `<section id="status" aria-labelledby="status-title">
+        ${renderSectionHeading("status-title", section.title, section.intro)}
+        <div class="status-band">
+          <div class="band-top">
+            <div class="verdict ${attr(section.verdict.status)}">
+              <strong>${inline(section.verdict.value)}</strong>
+              <span>${inline(section.verdict.label)}</span>
+            </div>
+            <div class="counters">
+              ${section.counters.map(renderCounter).join("\n              ")}
+            </div>
+          </div>
+          <div class="status-chips" aria-label="Workstream status chips">
+            ${section.chips.map(renderRChip).join("\n            ")}
+          </div>
         </div>
       </section>`;
 }
 
-function renderMetricCard(card) {
-  return `<article class="metric-card">
-            ${renderBadge(card)}
-            <b>${inline(card.title)}</b>
-            <span>${inline(card.body)}</span>
-          </article>`;
+function renderCounter(counter) {
+  const status = counter.status ? ` ${attr(counter.status)}` : "";
+  return `<div class="counter${status}">
+                <strong>${inline(counter.value)}</strong>
+                <span>${inline(counter.label)}</span>
+              </div>`;
 }
+
+function renderRChip(chip) {
+  return `<a class="rchip ${attr(chip.status)}" href="${attr(chip.href ?? "#ledger")}">
+              <b>${text(chip.code)}</b>
+              <span>${inline(chip.label)}</span>
+            </a>`;
+}
+
+// ── Legend (decode jargon once) ──────────────────────────────────────────────
+
+function renderLegend(section) {
+  return `<section id="legend" aria-labelledby="legend-title">
+        ${renderSectionHeading("legend-title", section.title, section.intro)}
+        <div class="legend-grid">
+          ${section.groups.map(renderLegendGroup).join("\n          ")}
+        </div>
+        ${section.note ? `<p class="note">${inline(section.note)}</p>` : ""}
+      </section>`;
+}
+
+function renderLegendGroup(group) {
+  return `<div class="legend-group">
+            <h3>${inline(group.title)}</h3>
+            <ul class="legend-items">
+              ${group.items.map((item) => renderLegendItem(group.kind, item)).join("\n              ")}
+            </ul>
+          </div>`;
+}
+
+function renderLegendItem(kind, item) {
+  if (kind === "status") {
+    return `<li><span class="swatch ${attr(item.key)}" aria-hidden="true"></span><span class="legend-key">${text(item.key)}</span><span class="legend-gloss">${inline(item.gloss)}</span></li>`;
+  }
+  const key = item.href
+    ? `<a class="legend-code" href="${attr(item.href)}">${text(item.key)}</a>`
+    : `<code class="legend-code">${text(item.key)}</code>`;
+  return `<li>${key}<span class="legend-gloss">${inline(item.gloss)}</span></li>`;
+}
+
+// ── Overview (what is this / how it works) ───────────────────────────────────
+
+function renderOverview(section) {
+  const principles = section.principles
+    ? `<ul class="principles">
+            ${section.principles.map((p) => `<li><b>${inline(p.title)}</b> ${inline(p.body)}</li>`).join("\n            ")}
+          </ul>`
+    : "";
+  return `<section id="overview" aria-labelledby="overview-title">
+        ${renderSectionHeading("overview-title", section.title, section.intro)}
+        <div class="overview">
+          <div class="overview-what">
+            ${section.what.map((p) => `<p>${inline(p)}</p>`).join("\n            ")}
+          </div>
+          ${principles}
+        </div>
+        <div class="flow-wrap">
+          <h3 class="flow-title">${inline(section.flow.title)}</h3>
+          <div class="flow">
+            ${section.flow.steps.map(renderFlowStep).join("\n            ")}
+          </div>
+        </div>
+      </section>`;
+}
+
+function renderFlowStep(step) {
+  const tag = step.tag ? `<em class="flow-tag">${inline(step.tag)}</em>` : "";
+  return `<div class="flow-step">
+            <small>${inline(step.kicker)}</small>
+            <strong>${inline(step.title)}</strong>
+            <span>${inline(step.body)}</span>
+            ${tag}
+          </div>`;
+}
+
+// ── Topology ─────────────────────────────────────────────────────────────────
 
 function renderTopology(section) {
   return `<section id="topology" aria-labelledby="topology-title">
@@ -159,6 +232,63 @@ function renderNode(node) {
               </div>`;
 }
 
+// ── Ledger (canonical M0 record, progressive disclosure) ─────────────────────
+
+function renderLedger(section) {
+  return `<section id="ledger" aria-labelledby="ledger-title">
+        ${renderSectionHeading("ledger-title", section.title, section.intro)}
+        <div class="ledger">
+          ${section.items.map(renderLedgerItem).join("\n          ")}
+        </div>
+      </section>`;
+}
+
+function renderLedgerItem(item) {
+  const id = item.anchor ? ` id="${attr(item.anchor)}"` : "";
+  const evidence = renderEvidence(item.evidence);
+  const detail = item.detail
+    ? `<details class="ledger-detail"><summary>机制与代码锚点</summary><p>${inline(item.detail)}</p></details>`
+    : "";
+  return `<article class="ledger-item ${attr(item.status)}"${id}>
+            <div class="ledger-mark">
+              <span class="badge ${attr(item.status)}">${text(item.badge)}</span>
+              <code class="ledger-code">${text(item.code)}</code>
+            </div>
+            <div class="ledger-body">
+              <strong>${inline(item.title)}</strong>
+              <p>${inline(item.lead)}</p>
+              ${evidence}
+              ${detail}
+            </div>
+          </article>`;
+}
+
+// ── Scope (schema vs code) ───────────────────────────────────────────────────
+
+function renderScope(section) {
+  return `<section id="scope" aria-labelledby="scope-title">
+        ${renderSectionHeading("scope-title", section.title, section.intro)}
+        <div class="scope-grid">
+          ${section.lanes.map(renderScopeLane).join("\n          ")}
+        </div>
+        ${section.note ? `<p class="note">${inline(section.note)}</p>` : ""}
+      </section>`;
+}
+
+function renderScopeLane(lane) {
+  return `<div class="scope-lane ${attr(lane.status)}">
+            <div class="scope-head">
+              <span class="badge ${attr(lane.status)}">${text(lane.badge)}</span>
+              <h3>${inline(lane.title)}</h3>
+            </div>
+            <ul>
+              ${lane.items.map((i) => `<li>${inline(i)}</li>`).join("\n              ")}
+            </ul>
+          </div>`;
+}
+
+// ── Changes (commit table) ───────────────────────────────────────────────────
+
 function renderChanges(section) {
   return `<section id="changes" aria-labelledby="changes-title">
         ${renderSectionHeading("changes-title", section.title, section.intro)}
@@ -178,57 +308,15 @@ function renderChanges(section) {
 }
 
 function renderChangeRow(row) {
+  const cells = row
+    .map((cell, i) => (i === row.length - 1 ? `<td class="commit">${inline(cell)}</td>` : `<td>${inline(cell)}</td>`))
+    .join("\n                ");
   return `<tr>
-                <td class="commit">${text(row[0])}</td>
-                <td>${text(row[1])}</td>
-                <td>${inline(row[2])}</td>
-                <td>${inline(row[3])}</td>
+                ${cells}
               </tr>`;
 }
 
-function renderGoals(section) {
-  return `<section id="goals" aria-labelledby="goals-title">
-        ${renderSectionHeading("goals-title", section.title, section.intro)}
-        <div class="goal-grid">
-          ${section.cards.map(renderGoalCard).join("\n\n          ")}
-        </div>
-      </section>`;
-}
-
-function renderGoalCard(card) {
-  return `<article class="goal-card">
-            ${renderBadge(card)}
-            <h3>${inline(card.title)}</h3>
-            <p>${inline(card.body)}</p>
-            ${renderEvidence(card.evidence)}
-          </article>`;
-}
-
-function renderFlow(section) {
-  return `<section aria-labelledby="contract-title">
-        ${renderSectionHeading("contract-title", section.title, section.intro)}
-        <div class="flow">
-          ${section.steps.map(renderFlowStep).join("\n          ")}
-        </div>
-      </section>`;
-}
-
-function renderFlowStep(step) {
-  return `<div class="flow-step">
-            <small>${inline(step.kicker)}</small>
-            <strong>${inline(step.title)}</strong>
-            <span>${inline(step.body)}</span>
-          </div>`;
-}
-
-function renderDecisions(section) {
-  return `<section aria-labelledby="decisions-title">
-        ${renderSectionHeading("decisions-title", section.title, section.intro)}
-        <div class="decision-grid">
-          ${section.cards.map((card) => renderSimpleCard("decision-card", card)).join("\n          ")}
-        </div>
-      </section>`;
-}
+// ── Backlog ──────────────────────────────────────────────────────────────────
 
 function renderBacklog(section) {
   return `<section id="backlog" aria-labelledby="backlog-title">
@@ -236,7 +324,7 @@ function renderBacklog(section) {
         <div class="backlog-grid">
           ${section.cards.map(renderBacklogCard).join("\n          ")}
         </div>
-        <p class="note">${inline(section.note)}</p>
+        ${section.note ? `<p class="note">${inline(section.note)}</p>` : ""}
       </section>`;
 }
 
@@ -248,8 +336,10 @@ function renderBacklogCard(card) {
           </article>`;
 }
 
+// ── Sources ──────────────────────────────────────────────────────────────────
+
 function renderSources(section) {
-  return `<section aria-labelledby="sources-title">
+  return `<section id="sources" aria-labelledby="sources-title">
         ${renderSectionHeading("sources-title", section.title, section.intro)}
         <div class="source-list">
           ${section.links.map(renderSourceLink).join("\n          ")}
@@ -264,18 +354,13 @@ function renderSourceLink(link) {
           </a>`;
 }
 
-function renderSimpleCard(className, card) {
-  return `<article class="${className}">
-            <h3>${inline(card.title)}</h3>
-            <p>${inline(card.body)}</p>
-          </article>`;
-}
+// ── Shared helpers ───────────────────────────────────────────────────────────
 
 function renderSectionHeading(id, title, intro) {
+  const introLine = intro ? `\n            <p>${inline(intro)}</p>` : "";
   return `<div class="section-heading">
           <div>
-            <h2 id="${attr(id)}">${inline(title)}</h2>
-            <p>${inline(intro)}</p>
+            <h2 id="${attr(id)}">${inline(title)}</h2>${introLine}
           </div>
         </div>`;
 }
@@ -293,6 +378,7 @@ function renderEvidence(items = []) {
             </div>`;
 }
 
+// Inline markup: supports `code` spans and [label](href) links. No bold/markdown.
 function inline(value = "") {
   const input = String(value);
   let output = "";

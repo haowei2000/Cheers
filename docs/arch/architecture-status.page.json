@@ -4,305 +4,325 @@
   "brand": "AgentNexus Architecture",
   "brandMark": "AN",
   "nav": [
-    { "href": "#summary", "label": "完成度" },
-    { "href": "#topology", "label": "拓扑" },
-    { "href": "#changes", "label": "近期改动" },
-    { "href": "#goals", "label": "目标状态" },
-    { "href": "#backlog", "label": "后续" }
+    { "href": "#status", "label": "状态", "status": "mostly" },
+    { "href": "#overview", "label": "架构", "status": "done" },
+    { "href": "#topology", "label": "拓扑", "status": "done" },
+    { "href": "#ledger", "label": "M0 账本", "status": "done" },
+    { "href": "#scope", "label": "范围", "status": "partial" },
+    { "href": "#backlog", "label": "后续", "status": "open" }
   ],
   "hero": {
-    "eyebrow": "Architecture status snapshot",
-    "heading": "去中心化 Agent 网格的当前完成度",
-    "lead": "本页基于 2026-06-18 工作会话状态。M0「夯实地基」全部完成：部署形态决策为单实例进程内（R1-A，`main.rs` 装配 `InProcessFanout` + `InProcessBotLocator`，Redis 退出 fan-out 启动路径）；终态帧背压修复（R3，队列满关连接而非静默丢终态帧）；dispatcher 双派发竞态修复（R5，原子 INSERT 单点定胜负）；测试安全网建立——纯逻辑单测 21 项 + connector 29 项 + 对真实 PG 的白盒集成测试 4 项。server 拆为 lib+bin 以支持集成测试。",
-    "meta": ["生成日期: 2026-06-18", "分支: m0-foundation", "HEAD: 8e55486", "范围: M0 夯实地基 — R1-A / R3 / R5 / R4-1 / R4-2"]
-  },
-  "summary": {
-    "title": "一句话结论",
-    "scores": [
-      { "value": "6/6", "label": "M0 全部完成：R1-A · R2 · R3 · R4-1 · R4-2 · R5" },
-      { "value": "21+29+4", "label": "测试：server 单测 21 · connector 29 · 集成 4（真实 PG）" },
-      { "value": "进程内", "label": "fan-out / bot 路由 / 流注册表全进程内，Redis 退出启动路径" },
-      { "value": "5", "label": "不变量 I1/I2/I4/I6/I7 各有测试钉死" }
-    ],
-    "progress": [
-      { "label": "R1-A 部署形态（进程内）", "value": "已落地", "percent": 100, "status": "done" },
-      { "label": "R3 终态帧背压", "value": "已修复", "percent": 100, "status": "done" },
-      { "label": "R5 dispatcher 双派发", "value": "已修复", "percent": 100, "status": "done" },
-      { "label": "R4-1 纯逻辑单测", "value": "已完成", "percent": 100, "status": "done" },
-      { "label": "R4-2 白盒集成测试", "value": "已完成", "percent": 100, "status": "done" },
-      { "label": "CI 集成 job 接线", "value": "待接", "percent": 15, "status": "open" }
+    "eyebrow": "Architecture status · 2026-06-20",
+    "heading": "去中心化 Agent 网格 · M0 夯实地基",
+    "lead": "AgentNexus 是一个「外接 agent 优先」的聊天网格：Rust gateway（`server/`）是唯一后端，React 前端（`frontend/`），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。",
+    "meta": [
+      "实测日期 2026-06-20",
+      "branch m0-foundation",
+      "HEAD 77d6ba9",
+      { "label": "未合并 main（领先 12 commits）", "status": "open" }
     ]
   },
-  "sections": {
-    "snapshot": {
-      "title": "当前快照",
-      "intro": "M0 夯实地基的关键路径已全部完成：部署形态收敛为单实例进程内、终态帧背压与 dispatcher 双派发竞态已修、纯逻辑单测 + 白盒集成测试双层安全网就位。下一步进入 M1 核心闭环，并把集成测试接入 CI。",
-      "metrics": [
-        {
-          "status": "done",
-          "badge": "已决策落地",
-          "title": "部署形态 R1-A（进程内）",
-          "body": "`main.rs` 装配 `InProcessFanout` + 单个 `InProcessBotLocator`（一个 Arc 同时兼 `BotRegistry` 与 `BotLocator`，共享 DashMap）。Redis 退出 fan-out 启动路径，不再是硬依赖；`redis_fanout.rs` / `redis_registry.rs` 以 `#[allow(dead_code)]` parked，备未来多实例（R1-B / M4）。"
-        },
-        {
-          "status": "done",
-          "badge": "已修复",
-          "title": "终态帧背压 R3（I6 兑现）",
-          "body": "`InProcessFanout` 新增 `closers: DashMap<conn_id, Sender>`；`deliver()` 在 `try_send` 返回 `Full` 且 `frame.is_terminal()` 时触发该连接的关闭信号，browser 写循环 `close_rx` 分支以 4408 关连接，客户端转 REST 补齐。流式帧维持静默丢弃（靠 `message_done` 自愈）。"
-        },
-        {
-          "status": "done",
-          "badge": "已修复",
-          "title": "dispatcher 双派发 R5",
-          "body": "删去前置 `check_idempotency` SELECT（与 INSERT 非原子，并发双触发会派两次 task）。`create_placeholder` 改返回 `rows_affected()==1`，`INSERT … ON CONFLICT DO NOTHING` 单点定胜负：胜者派发、败者 `AlreadyInProgress` 不派发。"
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "纯逻辑单测 R4-1",
-          "body": "17 项覆盖 I4 幂等派生 / I7 seq 单调 / R4 finalize 守卫 / `role_can_write` / `compute_backoff` 退避边界 / mention 去重 / `is_terminal_frame`。顺带把 `handle_done` 内联 finalize 守卫提取为 `StreamRegistry::claim_finalize` → 三态 `FinalizeClaim`，行为等价且可测。"
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "白盒集成测试 R4-2",
-          "body": "server 拆 lib+bin 以让 `tests/` 链接内部函数；`#[sqlx::test]` 每测一个隔离临时 DB（自动跑 migrations），feature `integration` 门控（默认单测无需 DB）。4 项对真实 PG：I2 并发 gap-free、流程 2 连续 seq + 流程 8 补齐、R5 并发只派一次、流程 4 done finalize 幂等。"
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "bin→lib 结构重构",
-          "body": "`server` 原为纯 bin crate，`tests/` 无法链接内部模块。新增 `src/lib.rs` 导出 api/domain/gateway/resource/… 各 module，`main.rs` 减为薄壳 `use server::*`。纯结构移动、零行为变化，解锁白盒集成测试。"
-        }
+  "sections": [
+    {
+      "type": "statusBand",
+      "title": "一眼看状态",
+      "intro": "M0 的 6 个改造项已全部实现并带测试；CI 集成 job 已接线（本地对真实 PG 4 项验证绿）。M0 验收门仅剩「合并 main」一项收口——用红色标出。",
+      "verdict": {
+        "value": "6/6",
+        "label": "M0 改造项已实现 + 测试覆盖（R1-A · R2 · R3 · R4-1 · R4-2 · R5）",
+        "status": "done"
+      },
+      "counters": [
+        { "value": "21 + 29 + 4", "label": "测试：server 单测 · connector · 集成（真实 PG，已接 CI）", "status": "done" },
+        { "value": "进程内", "label": "fan-out / 路由 / 流注册表（R1-A；Redis 仍 parked）", "status": "done" },
+        { "value": "已接线", "label": "CI 集成 job：Postgres 16 service + `--features integration`；本地 4 项绿", "status": "done" },
+        { "value": "未合并", "label": "m0-foundation → main（合并即触发首次 CI 集成跑）", "status": "open" }
+      ],
+      "chips": [
+        { "code": "R1-A", "label": "进程内部署", "status": "done", "href": "#r1a" },
+        { "code": "R2", "label": "绑定竞态", "status": "done", "href": "#r2" },
+        { "code": "R3", "label": "终态背压", "status": "done", "href": "#r3" },
+        { "code": "R4-1", "label": "纯逻辑单测", "status": "done", "href": "#r41" },
+        { "code": "R4-2", "label": "白盒集成", "status": "done", "href": "#r42" },
+        { "code": "R5", "label": "双派发", "status": "done", "href": "#r5" },
+        { "code": "CI", "label": "集成 job 已接", "status": "done", "href": "#r42" }
       ]
     },
-    "topology": {
+    {
+      "type": "legend",
+      "title": "图例",
+      "intro": "本页用到的状态色与代码缩写在此处定义一次；后文出现的 R/I 代码均可点击跳转，不再重复解释。",
+      "groups": [
+        {
+          "title": "状态色",
+          "kind": "status",
+          "items": [
+            { "key": "done", "gloss": "已落地并有测试覆盖" },
+            { "key": "mostly", "gloss": "主体完成，尚有一项收尾" },
+            { "key": "partial", "gloss": "核心完成，边角待补" },
+            { "key": "open", "gloss": "未开始 / 未接线" },
+            { "key": "future", "gloss": "本期外，未来演进（M4）" }
+          ]
+        },
+        {
+          "title": "改造项 R*（本期具体改动）",
+          "kind": "code",
+          "items": [
+            { "key": "R1-A", "gloss": "单实例进程内部署（Redis 退出启动路径）", "href": "#r1a" },
+            { "key": "R2", "gloss": "bind_control/bind_data 绑定竞态修复", "href": "#r2" },
+            { "key": "R3", "gloss": "终态帧背压：队列满关连接 4408，不静默丢", "href": "#r3" },
+            { "key": "R4-1", "gloss": "纯逻辑单测（无 DB）", "href": "#r41" },
+            { "key": "R4-2", "gloss": "白盒集成测试（对真实 Postgres）", "href": "#r42" },
+            { "key": "R5", "gloss": "dispatcher 双派发：原子 INSERT 单点定胜负", "href": "#r5" },
+            { "key": "R1-B", "gloss": "多实例 HA（Redis fan-out/registry，已 parked 备 M4）" }
+          ]
+        },
+        {
+          "title": "不变量 I*（系统恒成立的性质）",
+          "kind": "code",
+          "items": [
+            { "key": "I1", "gloss": "先落库再广播（终态先 COMMIT）" },
+            { "key": "I2", "gloss": "channel_seq 每频道 gap-free（行锁内分配）" },
+            { "key": "I4", "gloss": "占位幂等 = UUIDv5(trigger, bot)" },
+            { "key": "I6", "gloss": "终态帧不丢；流式帧可丢（自愈）" },
+            { "key": "I7", "gloss": "seq 唯一由 Backend 单调盖戳" }
+          ]
+        }
+      ],
+      "note": "R* = 一次具体改造；I* = 系统必须始终成立的不变量（每条由测试钉死）。M0=夯实地基 · M1=核心闭环 · M2=功能裁剪 · M4=多实例/HA。"
+    },
+    {
+      "type": "overview",
+      "title": "是什么 · 怎么跑",
+      "intro": "给第一次看这套架构的人：先讲它是什么、遵循哪些约束，再用一条 @bot 消息的生命周期讲它怎么跑。",
+      "what": [
+        "平台是「外接 agent 优先」：没有内置 Python runtime。Rust gateway（`server/`，9 个顶层模块）是唯一后端；React 前端（`frontend/`）；agent 作为外部进程，经 Agent Bridge 的两条 WS（control + data）接入。标准桥是 `agentnexus-mcp-server`。",
+        "浏览器走 REST + 一条 browser WS：订阅频道、收消息与流式 delta。bot 经 connector 接入：本地 ACP agent（配置驱动，example 指向 `claude-agent-acp`）说 ACP stdio；MCP 工具调用经 connector 的 loopback HTTP 回到后端的 resource 协议。整条链路当前为单实例进程内（R1-A）。"
+      ],
+      "principles": [
+        { "title": "外接 agent 优先。", "body": "平台不依赖内置 runtime；外置 ACP agent 经同一协议接入，agent 无关。" },
+        { "title": "频道只转发 @。", "body": "没有中央 coordinator 判意图，路由规则可测试、可审计。" },
+        { "title": "资源写走 membership role。", "body": "读需频道成员，写需 owner/admin/member；旧 Grant 机制已移除。" },
+        { "title": "Agent Bridge 是平台协议。", "body": "服务端不直接说 ACP JSON-RPC；ACP 只在 connector 的 adapter 层出现。" }
+      ],
+      "flow": {
+        "title": "一条 @bot 消息的生命周期",
+        "steps": [
+          { "kicker": "1", "title": "消息写入", "body": "验成员 → 事务内行锁分配 `channel_seq` → 插入消息 → 先 COMMIT，再广播。", "tag": "I1 · I2" },
+          { "kicker": "2", "title": "解析 + 派发", "body": "`resolve_bot_triggers` 命中 bot → `create_placeholder` 原子 `INSERT…ON CONFLICT` 单点定胜负 → `dispatch_task` 直接 try_send 到 control WS。", "tag": "R5 · I4" },
+          { "kicker": "3", "title": "Bridge 转发", "body": "connector control WS 收 task → BridgeRuntime → AcpAdapter `session/new`→`session/prompt`（ACP stdio）。" },
+          { "kicker": "4", "title": "流式 delta", "body": "agent `session/update` chunk 回流；Backend 盖 seq 戳后广播 `message_stream`，可丢（靠终态自愈）。", "tag": "I7" },
+          { "kicker": "5", "title": "done → finalize", "body": "`claim_finalize` 三态守卫 → 行锁分配 seq、`is_partial→FALSE` → 广播终态 `message_done`（队列满则 4408 关连接，不丢）。", "tag": "R3 · I6" },
+          { "kicker": "6", "title": "bot@bot 链", "body": "终态消息若 @ 了别的 bot 则递归同一派发路径，深度上限 `MAX_BOT_REPLY_DEPTH = 5`。" }
+        ]
+      }
+    },
+    {
+      "type": "topology",
       "title": "当前拓扑",
-      "intro": "平台侧 Rust Backend，bot task 经进程内 `InProcessBotLocator` 直接派发（R1-A，Redis 退出启动路径）；本地 connector 通过 Agent Bridge control/data WS 接入；ACP agent 使用 OpenCode（`opencode acp`，持久 stdio）；MCP server 为可选注入，当前需 HTTP 适配。",
+      "intro": "平台侧 Rust Backend；bot task 经进程内 `InProcessBotLocator` 直接派发（R1-A，Redis 退出启动路径、仍 parked 备 HA）。connector 经 Agent Bridge control/data WS 接入；ACP agent 配置驱动；MCP 注入为标准 ACP stdio server。",
       "lanes": [
         {
           "title": "客户端",
           "nodes": [
-            { "title": "Browser / Mobile", "body": "REST + browser WS，订阅频道并接收消息与流式 delta；终态帧背压时收 4408 关闭信号转 REST 补齐（R3）。" },
-            { "title": "New Frontend (frontend/)", "body": "From-scratch 重做：React 18 + Vite 6 + TypeScript + Tailwind + Zustand + TanStack Query。3-panel 布局，WS 实时消息，Markdown + 代码高亮，JWT 认证。" }
+            { "title": "Browser / Mobile", "body": "REST + 一条 browser WS，订阅频道收消息与流式 delta；终态帧背压时收 4408 关闭转 REST 补齐（R3）。send 队列容量 256。" },
+            { "title": "Frontend (frontend/)", "body": "React 18 + Vite 6 + TS + Tailwind + Zustand + TanStack Query。3-panel 布局，`useChatRealtime` 原生 WS + 指数退避重连，react-markdown + highlight.js，JWT。新 src 仅 27 文件 ~2k LOC。" }
           ]
         },
         {
-          "title": "Rust Backend",
+          "title": "Rust Backend (server/)",
           "nodes": [
-            { "title": "REST API", "body": "workspaces / channels / messages / bots / files / friends / capability。Mention 解析 + bot trigger 派发。" },
-            { "title": "进程内 Dispatch (R1-A)", "body": "bot task 经 `InProcessBotLocator` 直接 `try_send` 到 control WS；session 命中即在线，无需 Redis 往返。`create_placeholder` 原子 INSERT 单点定胜负（R5）。" },
-            { "title": "WS Gateway + Agent Bridge", "body": "browser fan-out（`InProcessFanout`，终态帧背压关连接 R3）、control/data WS、stream registry（含 `claim_finalize` 守卫）、supersede。" },
-            { "title": "Resource API", "body": "统一权限校验的 channel reads / membership-role-gated writes / activity / fs。session_id 已移除。" }
+            { "title": "REST API", "body": "9 个 handler：auth · workspaces · channels · messages · bots · files · friends · capability · mcp。Mention 解析 + bot trigger 派发。另有 3 条 WS（browser / bridge-control / bridge-data）。" },
+            { "title": "进程内 Dispatch (R1-A)", "body": "bot task 经 `InProcessBotLocator` 直接 try_send 到 control WS；session 命中即在线，无 Redis 往返。`create_placeholder` 原子 INSERT 单点定胜负（R5）。" },
+            { "title": "WS Gateway + Agent Bridge", "body": "browser fan-out（`InProcessFanout`，终态帧背压关连接 R3）、control/data WS、stream registry（`claim_finalize` 守卫）、supersede、bot@bot 链（深度 ≤ 5）。" },
+            { "title": "Resource API", "body": "统一鉴权：`channel.*` 读 / membership-role 写 / `fs.*`（agent 工作区文件，落 `memory_files`）。session_id 已移除。" }
           ]
         },
         {
-          "title": "外部 Agent",
+          "title": "外部 Agent (packages/)",
           "nodes": [
-            { "title": "Connector (Rust daemon)", "body": "AccountRuntime → BridgeSession (control+data WS) → BridgeRuntime (task 编排) → AcpAdapter (ACP stdio)。" },
-            { "title": "OpenCode ACP", "body": "`/tmp/opencode acp` — 持久 ACP stdio agent。支持 OAuth 认证，无需 API key。`session/new` → `session/prompt` → 流式 `session/update`。" },
-            { "title": "agentnexus-mcp-server", "body": "18 个 MCP tools (channel info, messages, files, fs.*)。stdio 模式通过 loopback HTTP 调用 connector 的 ResourceReq 转发。OpenCode 需要 HTTP/SSE MCP 格式 (待适配)。" },
-            { "title": "Loopback Resource Server", "body": "connector 本地 HTTP endpoint。接收 MCP tool call → 转成 data WS `resource_req` → Backend `resource::dispatch()` → 返回。" }
+            { "title": "Connector (Rust daemon)", "body": "BridgeRuntime（supervisor）→ AccountRuntime（每账号）→ { BridgeSession：control+data WS · AcpAdapter：ACP stdio }。11 个源模块。" },
+            { "title": "ACP agent（配置驱动）", "body": "`adapter.command` 指定，持久 stdio；example 与 README 用 `/opt/homebrew/bin/claude-agent-acp`。agent 无关，provider 鉴权在 agent 进程内（不在 connector）。" },
+            { "title": "agentnexus-mcp-server", "body": "18 个 MCP tools（channel info / messages / files / `fs.*`）。注入为标准 ACP stdio（`mcpServers` 的 command/args/env），非 HTTP/SSE。" },
+            { "title": "Loopback Resource Server", "body": "connector 本地 HTTP，带 loopback token：MCP tool call → data WS `resource_req` → 后端 resource 派发 → 原路返回。" }
           ]
         }
       ]
     },
-    "changes": {
-      "title": "2026-06-18 工作会话改动（M0 夯实地基）",
-      "intro": "本次会话按依赖链逐项推完 M0：部署形态决策 + 装配、纯逻辑单测安全网、终态背压与双派发竞态修复、bin→lib 重构、白盒集成测试。每项独立提交，文档（ROADMAP / DATA_FLOW）同步刷新至 v1.5。",
-      "headers": ["类别", "范围", "主题", "架构影响"],
-      "rows": [
-        ["决策+装配", "gateway", "R1-A 回退进程内", "`main.rs` 装配 `InProcessFanout` + `InProcessBotLocator`；Redis 退出 fan-out 启动路径；redis_* parked（`169362a`）"],
-        ["测试", "gateway+connector", "R4-1 纯逻辑单测", "17 项 I4/I7/R4/role/backoff/mention/terminal；提取 `claim_finalize` 三态守卫（`bd5c6f4`）"],
-        ["修复", "gateway", "R3 终态帧背压", "入队 `Full` + 终态帧 → `closers` 信号 → browser `close_rx` 4408 关连接；流式仍可丢（`9049598`）"],
-        ["修复", "gateway", "R5 dispatcher 双派发", "删前置 SELECT；`create_placeholder` 返回 `rows_affected()==1` 单点定胜负（`740ed40`）"],
-        ["重构", "server", "bin→lib 拆分", "新增 `src/lib.rs` 导出各 module；`main.rs` 变薄壳；解锁白盒集成测试（`dfa3eec`）"],
-        ["测试", "server", "R4-2 白盒集成测试", "`#[sqlx::test]` 隔离 DB + feature `integration` 门控；4 项对真实 PG（I2 / 流程2-4 / R5）（`8e55486`）"]
-      ]
-    },
-    "goals": {
-      "title": "架构目标完成度",
-      "intro": "按\"当前代码是否已经承担该职责\"来判断。M0 项标注对应改造编号。",
-      "cards": [
+    {
+      "type": "ledger",
+      "title": "M0 账本",
+      "intro": "每个 M0 改造项在此处有且仅有一行权威记录：状态 + 一句话结论 + 证据链接 + 可展开的机制细节。状态带、图例、拓扑里出现的 R 码都指回这里，避免同一事实重复多遍。",
+      "items": [
         {
+          "code": "R1-A",
+          "anchor": "r1a",
           "status": "done",
-          "badge": "已完成",
-          "title": "测试安全网 (R4-1 + R4-2)",
-          "body": "纯逻辑单测 21（server）+ 29（connector）+ 白盒集成 4（真实 PG，`#[sqlx::test]` 隔离 DB，feature 门控）。不变量 I1/I2/I4/I6/I7 各至少一条测试覆盖。",
-          "evidence": [
-            { "label": "tests/flows.rs", "href": "../../server/tests/flows.rs" },
-            { "label": "stream.rs", "href": "../../server/src/gateway/stream.rs" }
-          ]
+          "badge": "已落地",
+          "title": "部署形态回退单实例进程内",
+          "lead": "`main.rs` 装配 `InProcessFanout` + 单个 `InProcessBotLocator`，Redis 退出 fan-out 启动路径、不再是硬依赖。",
+          "evidence": [{ "label": "main.rs", "href": "../../server/src/main.rs" }],
+          "detail": "一个 `Arc<InProcessBotLocator>` 同时兼 `BotRegistry` 与 `BotLocator`，共享一份 DashMap。`redis_fanout.rs` / `redis_registry.rs` 仍编译但以 `#[allow(dead_code)]` parked，备未来多实例（R1-B / M4）。这消除了「单实例能力却付多实例成本」的中间态。注意：Redis 是被「移出 M0 启动路径」，不是从代码库移除。(main.rs:45-59；realtime/mod.rs:4-7)"
         },
         {
-          "status": "done",
-          "badge": "已决策落地",
-          "title": "部署形态：单实例进程内 (R1-A)",
-          "body": "`main.rs` 装配 `InProcessFanout` + 单 `InProcessBotLocator`（兼 registry/locator，共享 DashMap）。Redis 退出 fan-out 启动路径；redis_* parked 备 R1-B/M4。消除「单实例能力却付多实例成本」的中间态。",
-          "evidence": [
-            { "label": "main.rs", "href": "../../server/src/main.rs" }
-          ]
-        },
-        {
+          "code": "R2",
+          "anchor": "r2",
           "status": "done",
           "badge": "已修复",
-          "title": "终态帧背压 (R3 / I6)",
-          "body": "入队队列满且为终态帧时关连接（4408），不再静默丢 `message_done`；流式帧维持可丢。`WireFrame::is_terminal()` 收敛判定，`InProcessFanout::deliver` + browser `close_rx` 实现。",
+          "title": "bind_control / bind_data 绑定竞态",
+          "lead": "`pending_data` DashMap 暂存先到的 data_tx，control 上线后再 adopt——两条 WS 到达顺序不定也不丢绑定。",
+          "evidence": [{ "label": "registry.rs", "href": "../../server/src/gateway/registry.rs" }],
+          "detail": "control / data 两条 WS 到达顺序不确定：data 先到则把 data_tx 暂存进 `pending_data`，control 后到时收养；两个顺序各有单测。(registry.rs:63,107-134,190-215；commit 8a7b661)"
+        },
+        {
+          "code": "R3",
+          "anchor": "r3",
+          "status": "done",
+          "badge": "已修复",
+          "title": "终态帧背压：关连接而非静默丢",
+          "lead": "队列满且帧为终态时触发该连接的 4408 关闭信号，客户端转 REST 补齐；流式帧维持可丢。兑现 I6。",
           "evidence": [
             { "label": "fanout.rs", "href": "../../server/src/gateway/realtime/fanout.rs" },
             { "label": "browser.rs", "href": "../../server/src/gateway/ws/browser.rs" }
-          ]
+          ],
+          "detail": "`InProcessFanout` 持 `closers: DashMap<conn_id, Sender>`；`deliver()` 在 `try_send` 返回 `Full` 且 `frame.is_terminal()`（message / message_done / message_deleted）时 fire 该连接 closer，browser 写循环 `close_rx` 分支以 4408 关 socket。单测断言「终态满则发关闭信号、流式满则不发」。(fanout.rs:36,72-83；frame.rs:83-88；browser.rs:23,129-145)"
         },
         {
+          "code": "R4-1",
+          "anchor": "r41",
+          "status": "done",
+          "badge": "已完成",
+          "title": "纯逻辑单测安全网（无 DB）",
+          "lead": "server 21 项单测覆盖 I4 幂等 / I7 seq 单调 / finalize 守卫 / role_can_write / 退避 / mention 去重 / is_terminal；connector 另有 29 项。",
+          "evidence": [{ "label": "stream.rs", "href": "../../server/src/gateway/stream.rs" }],
+          "detail": "顺带把 `handle_done` 内联的 finalize 守卫提取为 `StreamRegistry::claim_finalize` → 三态枚举 `FinalizeClaim {Claimed, AlreadyFinalized, NotRegistered}`，行为等价且可单测。三态比 bool 精确：NotRegistered（放行）与 AlreadyFinalized（拒绝）行为不同。(stream.rs:81-111,719-737)"
+        },
+        {
+          "code": "R4-2",
+          "anchor": "r42",
+          "status": "done",
+          "badge": "已完成",
+          "title": "白盒集成测试（对真实 Postgres）",
+          "lead": "`#[sqlx::test]` 每测一个隔离临时 DB（自动跑 migrations），feature `integration` 门控；4 项钉死核心数据流不变量，已接入 CI。",
+          "evidence": [
+            { "label": "tests/flows.rs", "href": "../../server/tests/flows.rs" },
+            { "label": "ci.yml", "href": "../../.github/workflows/ci.yml" }
+          ],
+          "detail": "4 项：i2 并发 gap-free seq、流程 2 连续 seq + 流程 8 补齐、R5 并发只派一次（计数 BotLocator 断言）、流程 4 done finalize 幂等。前置依赖是 bin→lib 拆分让 `tests/` 能链接内部函数。整个文件 `#![cfg(feature = \"integration\")]` 门控——默认 `cargo test` 编 0 个集成测试、无需 DB。CI 已新增 `gateway-integration` job（Postgres 16 service + `DATABASE_URL` + `cargo test --features integration --test flows`），本地对真实 PG 4 项全绿。(flows.rs:17,96/127/196/265；ci.yml)"
+        },
+        {
+          "code": "R5",
+          "anchor": "r5",
           "status": "done",
           "badge": "已修复",
-          "title": "dispatcher 双派发幂等 (R5)",
-          "body": "删非原子的 check-then-act；`create_placeholder` 用 `INSERT … ON CONFLICT` 的 `rows_affected()==1` 单点定胜负，并发双触发只有胜者派发 task。集成测试经计数 BotLocator 断言 dispatch_task 恰好一次。",
-          "evidence": [
-            { "label": "dispatcher.rs", "href": "../../server/src/gateway/dispatcher.rs" }
-          ]
+          "title": "dispatcher 双派发：原子 INSERT 单点定胜负",
+          "lead": "删去前置非原子的 `check_idempotency` SELECT；`create_placeholder` 用 `INSERT…ON CONFLICT DO NOTHING` 的 `rows_affected()==1` 定胜负。",
+          "evidence": [{ "label": "dispatcher.rs", "href": "../../server/src/gateway/dispatcher.rs" }],
+          "detail": "占位 id 为 `UUIDv5(trigger_msg_id, bot_id)` 确定性派生（I4），并发双触发撞同一行只有一个插入成功：胜者派发 task、败者 `AlreadyInProgress` 不派发。替换了旧的 check-then-act（SELECT 与 INSERT 非原子，并发双触发会派两次）。(dispatcher.rs:53-56,164-196)"
         },
         {
-          "status": "done",
-          "badge": "已验证",
-          "title": "E2E 全链路 (OpenCode ACP)",
-          "body": "用户 @testbot → mention 解析 → 进程内 dispatch（R1-A 后不再走 Redis）→ Connector control WS task → build_prompt → OpenCode ACP session/prompt → AI 回复 → data/done → finalize → 频道可见。",
-          "evidence": [
-            { "label": "bridge_runtime.rs", "href": "../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs" }
-          ]
-        },
-        {
+          "code": "bin→lib",
+          "anchor": "binlib",
           "status": "done",
           "badge": "已完成",
-          "title": "前端 From-Scratch 重做",
-          "body": "旧 53k LOC 全部删除。新前端 React 18 + Vite 6 + TS + Tailwind + Zustand + TanStack Query。3-panel 布局 + WS 流式 + Markdown。",
-          "evidence": [
-            { "label": "frontend/src", "href": "../../frontend/src" }
-          ]
-        },
+          "title": "拆库解锁白盒测试",
+          "lead": "新增 `src/lib.rs` 导出 9 个 module，`main.rs` 减为薄壳 `use server::*`；纯结构移动、零行为变化。",
+          "evidence": [{ "label": "lib.rs", "href": "../../server/src/lib.rs" }],
+          "detail": "`server` 原为纯 bin crate，`tests/` 无法链接内部模块——这是结构债不是测试问题。另：`tests/` 是独立 crate，只看得到 public API + dev-dependencies，故 sqlx/uuid/serde_json/async-trait 要单独加进 `[dev-dependencies]`。(lib.rs:1-15)"
+        }
+      ]
+    },
+    {
+      "type": "scope",
+      "title": "范围：schema 远超 code",
+      "intro": "迁移定义了 37 张表（8 个迁移文件），但只有一部分有 handler/domain 代码。这张「实现 / 仅 schema / 休眠」三分图是 M2 必须显式裁剪的依据。",
+      "lanes": [
         {
           "status": "done",
-          "badge": "已完成",
-          "title": "Bot Channel Resource 权限统一",
-          "body": "`permission.rs` 已移除；`resource_req` 统一经 resource dispatcher 校验成员身份 + role。`role_can_write` 已有单测覆盖（R4-1）。",
-          "evidence": [
-            { "label": "resource/mod.rs", "href": "../../server/src/resource/mod.rs" }
-          ]
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "Mesh schema",
-          "body": "`next_seq`、`channel_seq`、`message_mentions`、message depth 和 Agent Bridge runtime session 已进入 sqlx 迁移。channel_seq gap-free 已有并发集成测试（R4-2）。",
-          "evidence": [
-            { "label": "0003 migration", "href": "../../server/migrations/0003_decentralized_mesh.sql" }
-          ]
-        },
-        {
-          "status": "done",
-          "badge": "已完成",
-          "title": "Agent Bridge 生命周期",
-          "body": "control/data 连接、registry、supersede、runtime session 状态完整；bind_control/bind_data 竞态已修（R2）并有单测。",
-          "evidence": [
-            { "label": "agent_bridge.rs", "href": "../../server/src/gateway/ws/agent_bridge.rs" }
-          ]
-        },
-        {
-          "status": "mostly",
-          "badge": "基本完成",
-          "title": "Connector MCP 注入",
-          "body": "Session 管理、loopback、resource dispatch 均已就绪。OpenCode ACP 需要 HTTP/SSE MCP 格式而非 stdio（已识别，待适配）。18 个 MCP tools 已用 mock loopback 验证。",
-          "evidence": [
-            { "label": "bridge_runtime.rs", "href": "../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs" },
-            { "label": "main.rs (MCP)", "href": "../../packages/agentnexus-mcp-server/src/main.rs" }
-          ]
-        },
-        {
-          "status": "partial",
-          "badge": "部分完成",
-          "title": "全量 REST 覆盖 (M1)",
-          "body": "核心端点已迁移到 Rust；DM、topic scope、admin 级资源仍需逐项对齐——属 M1 后端 CRUD 补洞范围。",
-          "evidence": [
-            { "label": "server/src/api", "href": "../../server/src/api" }
+          "badge": "已实现",
+          "title": "有 handler/domain 代码",
+          "items": [
+            "users · workspaces · channels · channel_memberships",
+            "messages · message_mentions · file_records",
+            "bot_accounts · friendships",
+            "agentnexus_sessions (+ bindings)",
+            "acp_capability（delegations + reject_logs）",
+            "`memory_files`（agent 工作区 `fs.*`，`resource/fs.rs`，14 条 SQL）"
           ]
         },
         {
           "status": "open",
-          "badge": "待接线",
-          "title": "CI 集成 job",
-          "body": "集成测试可本地跑（`cargo test --features integration --test flows`），但尚未接入 CI。需加 GitHub Actions：起 Postgres service + 跑单测与集成两段。这是 M0 验收门最后一块。",
-          "evidence": [
-            { "label": "tests/flows.rs", "href": "../../server/tests/flows.rs" }
+          "badge": "仅 schema",
+          "title": "有表、无任何实现（8 张）",
+          "items": [
+            "memory_entries（Agent 记忆条目）",
+            "document_sets / _items / _exclusions（RAG / 检索）",
+            "history_pages（Lens 渲染）",
+            "bulletin_issues（摘要页）",
+            "todo_items · prompt_templates",
+            "keychain_items · ai_models"
           ]
         },
         {
           "status": "future",
-          "badge": "未来计划",
-          "title": "多实例、E2EE、Vector DB",
-          "body": "单实例进程内是本期决策（R1-A）；多实例 fan-out/locator（R1-B，redis_* 已 parked）、内容级 E2EE 和向量检索均保留为 M4 后续演进。",
-          "evidence": [
-            { "label": "overview", "href": "ARCHITECTURE_OVERVIEW.md" }
+          "badge": "休眠",
+          "title": "有表、src 无引用",
+          "items": [
+            "agent_tasks · bot_runs",
+            "task_chains",
+            "auth_external_identities",
+            "email_codes",
+            "（占位未启用，按需在 M2/M4 取舍）"
           ]
         }
-      ]
-    },
-    "flow": {
-      "title": "已验证的运行流",
-      "intro": "经 E2E 验证的核心链路；R1-A 后第 3 步由进程内 locator 直接派发（不再走 Redis）。流程 2→4 的 seq 连续性、finalize 幂等已由 R4-2 集成测试钉死。",
-      "steps": [
-        { "kicker": "1", "title": "消息写入", "body": "验证成员、解析 mention、事务内行锁分配 `channel_seq`（gap-free）、插入消息。先落库再广播（I1）。" },
-        { "kicker": "2", "title": "Bot trigger 解析", "body": "`resolve_bot_triggers()` 匹配 mention_ids → 查找频道成员 bot。" },
-        { "kicker": "3", "title": "进程内 dispatch", "body": "`InProcessBotLocator` 查 session 在线 → 原子创建占位（`rows_affected==1` 定胜负）→ `dispatch_task` 直接 `try_send` 到 control WS。" },
-        { "kicker": "4", "title": "Control WS 接收", "body": "Connector 的 control WS 收到 task 帧 → 转发给 BridgeRuntime。" },
-        { "kicker": "5", "title": "Prompt 构建", "body": "`build_prompt()` 注入 system contract + channel_id + channel_name + trigger message。" },
-        { "kicker": "6", "title": "ACP session/prompt", "body": "AcpAdapter 调 OpenCode ACP `session/new` → `session/prompt` (JSON-RPC stdio)。" },
-        { "kicker": "7", "title": "流式 delta", "body": "OpenCode 通过 `session/update` (agent_message_chunk) 流式返回；Backend 盖 seq 戳（I7），流式帧可丢。" },
-        { "kicker": "8", "title": "Data WS done → finalize", "body": "BridgeRuntime 回传 `delta/done`；`handle_done` 经 `claim_finalize` 守卫、行锁分配 seq、`is_partial→FALSE`，广播终态帧（不丢，I6）。" }
-      ]
-    },
-    "decisions": {
-      "title": "已经明确的架构方向",
-      "intro": "这些决策在当前代码或文档中已经形成约束。",
-      "cards": [
-        { "title": "外部 agent 优先", "body": "平台不依赖内置 runtime；外置 ACP agent (OpenCode / Claude / Codex) 通过同一 ACP 协议接入。" },
-        { "title": "频道只转发 @", "body": "没有中央 coordinator 参与意图判断，路由规则可测试、可审计。" },
-        { "title": "资源写走 membership role", "body": "Resource API 读需频道成员，写需 owner/admin/member role。旧 Grant 机制已移除。" },
-        { "title": "MCP 注入归 connector", "body": "daemon 只管理 connector 生命周期；connector 负责 MCP server 注入 (当前需 HTTP 适配)。" },
-        { "title": "Agent Bridge 是平台协议", "body": "服务端不直接说 ACP JSON-RPC；ACP 只在 connector runtime adapter 层出现。" },
-        { "title": "单实例 + 进程内 (R1-A)", "body": "fan-out / bot 路由 / 流注册表全进程内；Redis 退出 fan-out 启动路径，redis_* parked 备 HA（R1-B / M4）。" },
-        { "title": "前端为原地重建", "body": "直接在 `frontend/` 内 from-scratch 重做；React 18 + Vite 6 + TS + Tailwind。" },
-        { "title": "ACP agent = OpenCode", "body": "`opencode acp` 支持持久 stdio ACP + OAuth 认证，无需 API key。MCP 需 HTTP 适配。" }
-      ]
-    },
-    "backlog": {
-      "title": "剩余工作建议",
-      "intro": "M0 夯实地基已全部完成。下一步进入 M1 核心闭环（后端 CRUD 补洞 + 前端实时/流式/mention/文件 + bot 管理 UI），并把集成测试接入 CI。",
-      "cards": [
-        { "status": "open", "badge": "P0", "title": "CI 集成 job 接线", "body": "加 GitHub Actions：起 Postgres service，跑 `cargo test`（单测）+ `cargo test --features integration --test flows`（集成）。这是 M0 验收门「CI 双绿」的最后一块。" },
-        { "status": "open", "badge": "M1 前端", "title": "前端核心闭环", "body": "`useChatRealtime` 重连 → REST 补齐、流式 bot 回复渲染、mention 选择器、文件上传/附件 + `<#file>` token、presence、bot 管理 UI（注册外接 bot / 签发 botToken / 看 config/status）。" },
-        { "status": "open", "badge": "M1 后端", "title": "后端 CRUD 补洞", "body": "对照核心闭环补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口。大部分已存在——是补洞不是新建。" },
-        { "status": "open", "badge": "M1 验证", "title": "connector happy-path 文档化", "body": "经 agentnexus-mcp-server 或 acp-connector-rs 接入 Claude/Codex，一条文档化通路：@提及 → 流式 → 断线重连。" },
-        { "status": "mostly", "badge": "适配", "title": "MCP server HTTP 模式", "body": "agentnexus-mcp-server 需支持 HTTP/SSE transport，兼容 OpenCode ACP 的 MCP 格式 (`type: \"http\"`, `url`, `headers`)。当前 stdio 模式在 mock loopback 上已验证 18 tools。" },
-        { "status": "open", "badge": "P1", "title": "Backend permission_resolution 闭环", "body": "补齐 `/messages/:msg_id/resolve` 和审批消息接口。" }
       ],
-      "note": "M0 收尾：R1-A（进程内装配）· R3（终态帧背压）· R5（dispatcher 双派发）· R4-1（21 纯逻辑单测）· R4-2（4 项白盒集成测试）· bin→lib 重构。6 项逐项提交（169362a…8e55486），文档（ROADMAP / DATA_FLOW）同步刷新至 v1.5。M0 验收门除「CI 集成 job 接线」外全绿：工作树干净、cargo test + 集成双绿、不变量 I1/I2/I4/I6/I7 各有覆盖、Redis 不再是 fan-out 启动硬依赖。"
+      "note": "前端同为薄切片：仅 3 个 feature 区（auth / chat / settings），无 bot 管理 UI、无文件 UI、无权限 UI——这些属 M1 的前端工作量。"
     },
-    "sources": {
+    {
+      "type": "changes",
+      "title": "M0 改动（按依赖链逐项提交）",
+      "intro": "本里程碑按依赖链推完：部署决策 + 装配 → 纯逻辑单测安全网 → 终态背压与双派发竞态修复 → bin→lib 重构 → 白盒集成测试。每项独立提交，文档（ROADMAP / DATA_FLOW）同步刷新至 v1.5。",
+      "headers": ["范围", "主题", "架构影响", "Commit"],
+      "rows": [
+        ["gateway", "R1-A 回退进程内", "`main.rs` 装配 in-process fan-out/locator；Redis 退出启动路径；redis_* parked", "`169362a`"],
+        ["gateway+connector", "R4-1 纯逻辑单测", "21 项 I4/I7/finalize/role/backoff/mention/terminal；提取 `claim_finalize` 三态守卫", "`bd5c6f4`"],
+        ["gateway", "R3 终态帧背压", "入队 `Full` + 终态 → `closers` 信号 → browser `close_rx` 4408 关连接", "`9049598`"],
+        ["gateway", "R5 dispatcher 双派发", "删前置 SELECT；`create_placeholder` 返回 `rows_affected()==1` 定胜负", "`740ed40`"],
+        ["server", "bin→lib 拆分", "新增 `src/lib.rs`；main.rs 薄壳；解锁白盒集成测试", "`dfa3eec`"],
+        ["server", "R4-2 白盒集成测试", "`#[sqlx::test]` 隔离 DB + feature 门控；4 项对真实 PG", "`8e55486`"],
+        ["docs", "状态页重构（本页）", "多 agent ground-truth 校正 + 可读性重设计", "`77d6ba9`+"]
+      ]
+    },
+    {
+      "type": "backlog",
+      "title": "后续工作",
+      "intro": "CI 集成 job 已接线（本地对真实 PG 4 项验证绿），M0 验收门只剩「合并 main」一项。合并后进入 M1 核心闭环。红色为 M0 必须收的口。",
+      "cards": [
+        { "status": "open", "badge": "P0 · 合并", "title": "m0-foundation → main（M0 最后一口）", "body": "分支领先 main 12 commits、未开 PR；合并后 M0 才算真正落地，并触发新 `gateway-integration` job 的首次 CI 运行。CI 集成 job 本身已接线、本地验证绿。" },
+        { "status": "open", "badge": "M1 · 前端", "title": "前端核心闭环", "body": "`useChatRealtime` 重连后 REST 补齐、mention 选择器（`<@bot>`/`<@user>`）、文件上传 + `<#file>` token、presence、bot 管理 UI（注册外接 bot / 签发 botToken / 看 config·status）。" },
+        { "status": "open", "badge": "M1 · 后端", "title": "CRUD 补洞", "body": "对照核心闭环补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口——大多已存在，是补洞不是新建。" },
+        { "status": "mostly", "badge": "M1 · 验证", "title": "connector happy-path 文档化", "body": "经 `agentnexus-mcp-server` 或 `acp-connector-rs` 接入一条文档化通路：@提及 → 流式 → 断线重连。MCP 注入已是标准 ACP stdio（18 tools 在 mock loopback 上验证过）。" },
+        { "status": "future", "badge": "M2 · 裁剪", "title": "schema-only 功能定范围", "body": "对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。不得把只有 schema 的功能标成「完成」。" }
+      ],
+      "note": "M0 验收门：工作树干净 ✓ · `cargo test` 单测 + 集成两段已接 CI（`gateway-check` + `gateway-integration`）✓ · 不变量 I1/I2/I4/I6/I7 各有覆盖 ✓ · Redis 不再是 fan-out 启动硬依赖 ✓ · 集成测试本地对真实 PG 4 项绿 ✓。仅剩「合并 main」一项未结。"
+    },
+    {
+      "type": "sources",
       "title": "主要依据",
-      "intro": "这些文档和代码路径是本页判断的来源。",
+      "intro": "本页每条判断都来自下列代码与文档；事实由 backend / agents / frontend / progress 四路并行 ground-truth 校正。",
       "links": [
-        { "title": "Engineering Roadmap (M0 状态看板)", "href": "ROADMAP.md", "description": "里程碑 / 依赖 / 验收门，v1.5" },
-        { "title": "Data Flow & Refactor Plan", "href": "DATA_FLOW_AND_REFACTOR_PLAN.md", "description": "代码现状快照 + R1–R13，v1.5" },
-        { "title": "Architecture Overview", "href": "ARCHITECTURE_OVERVIEW.md", "description": "目标拓扑与部署模型" },
-        { "title": "Decentralized Mesh", "href": "DECENTRALIZED_MESH.md", "description": "mesh 步骤与资源一致性" },
-        { "title": "server/src/main.rs", "href": "../../server/src/main.rs", "description": "R1-A 进程内装配" },
+        { "title": "server/src/main.rs", "href": "../../server/src/main.rs", "description": "R1-A 进程内装配（main.rs:45-59）" },
         { "title": "server/src/gateway/realtime/fanout.rs", "href": "../../server/src/gateway/realtime/fanout.rs", "description": "R3 终态帧背压 + deliver" },
         { "title": "server/src/gateway/dispatcher.rs", "href": "../../server/src/gateway/dispatcher.rs", "description": "R5 原子占位单点定胜负" },
-        { "title": "server/src/gateway/stream.rs", "href": "../../server/src/gateway/stream.rs", "description": "claim_finalize 守卫 + seq 盖戳" },
-        { "title": "server/tests/flows.rs", "href": "../../server/tests/flows.rs", "description": "R4-2 白盒集成测试（真实 PG）" },
-        { "title": "server/src/resource/mod.rs", "href": "../../server/src/resource/mod.rs", "description": "Resource API dispatcher + role_can_write" }
+        { "title": "server/src/gateway/stream.rs", "href": "../../server/src/gateway/stream.rs", "description": "claim_finalize 三态守卫 + seq 盖戳" },
+        { "title": "server/tests/flows.rs", "href": "../../server/tests/flows.rs", "description": "R4-2 白盒集成测试（feature 门控）" },
+        { "title": "server/src/resource/fs.rs", "href": "../../server/src/resource/fs.rs", "description": "memory_files 文件域 handler（已实现）" },
+        { "title": "packages/…/bridge_runtime.rs", "href": "../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs", "description": "BridgeRuntime → AccountRuntime → AcpAdapter" },
+        { "title": "Engineering Roadmap (M0 看板)", "href": "ROADMAP.md", "description": "里程碑 / 依赖 / 验收门，v1.5" },
+        { "title": "Data Flow & Refactor Plan", "href": "DATA_FLOW_AND_REFACTOR_PLAN.md", "description": "代码现状快照 + R1–R13，v1.5" },
+        { "title": "Architecture Overview", "href": "ARCHITECTURE_OVERVIEW.md", "description": "目标拓扑与部署模型" }
       ]
     }
-  },
-  "footer": "Generated from 2026-06-18 working session state (M0 foundation complete): in-process deployment (R1-A), terminal-frame backpressure fix (R3), dispatcher double-dispatch fix (R5), pure-logic unit tests (R4-1) + white-box integration tests (R4-2), and the bin→lib split that unblocked them. Update `architecture-status.page.json` and run `node scripts/generate-architecture-status-page.mjs` to regenerate."
+  ],
+  "footer": "基于 2026-06-20 对当前代码的实测快照（branch m0-foundation @ 77d6ba9，未合并 main）。事实经多 agent ground-truth 校正：ACP agent 为配置驱动（example `claude-agent-acp`，非 OpenCode）· MCP 注入为标准 ACP stdio · Redis 是 parked 非移除 · `memory_files` 已实现（非 schema-only）· CI 集成 job 已接线（`gateway-integration`，本地验证绿，待 push 跑首次）。改 `architecture-status.page.json` 后跑 `node scripts/generate-architecture-status-page.mjs` 重新生成本页。"
 }
