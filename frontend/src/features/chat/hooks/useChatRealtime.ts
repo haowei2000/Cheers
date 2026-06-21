@@ -9,6 +9,8 @@ interface Callbacks {
   onStreamDone: (msg: Partial<Message> & { msg_id: string }) => void;
   onMessageDeleted: (msgId: string) => void;
   onBotProcessing?: (botId: string) => void;
+  /** Fired after every (re)subscribe ack — used to run REST seq catch-up. */
+  onReady?: () => void;
 }
 
 const BASE_DELAY = 1000;
@@ -64,7 +66,13 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         ws.close();
         return;
       }
-      if (type === "subscribed" || type === "unsubscribed" || type === "pong") {
+      if (type === "subscribed") {
+        // (Re)subscribe ack — trigger REST since-seq catch-up to heal any gap
+        // from a dropped connection (write-before-deliver self-heal).
+        cbsRef.current.onReady?.();
+        return;
+      }
+      if (type === "unsubscribed" || type === "pong") {
         return;
       }
 

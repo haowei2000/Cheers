@@ -112,6 +112,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bots::get_bot_status),
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
+        .route("/api/v1/bots/:bot_id/token", post(api::bots::issue_bot_token))
         .route(
             "/api/v1/bots/:bot_id/capability-delegations",
             get(api::acp_capability::list_delegations).post(api::acp_capability::create_delegation),

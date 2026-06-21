@@ -3,6 +3,7 @@ import { ArrowLeft, User } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { BotsManager } from "@/features/bots/BotsManager";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -67,6 +68,9 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* Bots */}
+        <BotsManager />
 
         {/* Danger zone */}
         <section>

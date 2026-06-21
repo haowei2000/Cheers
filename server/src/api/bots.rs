@@ -7,7 +7,12 @@ use serde_json::{json, Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{api::middleware::Claims, app_state::AppState, errors::AppError};
+use crate::{
+    api::middleware::Claims,
+    app_state::AppState,
+    errors::AppError,
+    infra::crypto::{generate_bot_token, hash_bot_token},
+};
 
 #[derive(Deserialize)]
 pub struct BotAcpSecurityConfig {
@@ -210,4 +215,39 @@ pub async fn test_bot(
     Ok(Json(
         json!({"bot_id": bot_id, "ok": true, "message": "bot configuration is readable"}),
     ))
+}
+
+/// POST /api/v1/bots/{bot_id}/token — issue (or rotate) the bot's Agent Bridge
+/// token. The plaintext is returned **once**; only its SHA-256 is persisted, and
+/// the Agent Bridge control/data WS authenticates by matching that hash.
+pub async fn issue_bot_token(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let token = generate_bot_token();
+    let token_hash = hash_bot_token(&token);
+    let token_prefix = &token[..token.len().min(12)];
+
+    let updated = sqlx::query(
+        "UPDATE bot_accounts
+         SET bot_token_hash = $1, bot_token_prefix = $2, bot_token_rotated_at = NOW()
+         WHERE bot_id = $3",
+    )
+    .bind(&token_hash)
+    .bind(token_prefix)
+    .bind(&bot_id)
+    .execute(&state.db)
+    .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(json!({
+        "bot_id": bot_id,
+        "token": token,
+        "token_prefix": token_prefix,
+        "note": "Store this token now — it is shown only once and replaces any previous token.",
+    })))
 }

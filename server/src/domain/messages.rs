@@ -450,7 +450,34 @@ pub async fn list_messages(
     after: Option<String>,
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
-    // 成员校验
+    ensure_member(db, channel_id, user_id).await?;
+
+    if before.is_some() && after.is_some() {
+        return Err(AppError::BadRequest(
+            "set either before or after, not both".into(),
+        ));
+    }
+
+    list_channel_messages(&db, &channel_id, before, after, limit).await
+}
+
+/// Permission-checked `channel_seq`-based catch-up: returns terminal messages
+/// with `channel_seq > since_seq` ascending. This is the reconnect/refresh path
+/// (the client tracks its last delivered `channel_seq` from the WS stream).
+pub async fn list_messages_since_seq(
+    db: &PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    since_seq: i64,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    ensure_member(db, channel_id, user_id).await?;
+    list_channel_messages_since_seq(db, &channel_id, since_seq, limit).await
+}
+
+/// Channel membership guard shared by the read paths. Any membership row
+/// (user or bot) grants read access to the channel's history.
+async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
     let is_member = sqlx::query(
         "SELECT EXISTS(
             SELECT 1 FROM channel_memberships
@@ -465,17 +492,11 @@ pub async fn list_messages(
     .try_get::<bool, _>("ok")
     .unwrap_or(false);
 
-    if !is_member {
-        return Err(AppError::Forbidden("not a channel member".into()));
+    if is_member {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("not a channel member".into()))
     }
-
-    if before.is_some() && after.is_some() {
-        return Err(AppError::BadRequest(
-            "set either before or after, not both".into(),
-        ));
-    }
-
-    list_channel_messages(&db, &channel_id, before, after, limit).await
 }
 
 /// 无权限透传的消息列表读取（供 resource 层复用统一消息模型）。

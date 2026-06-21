@@ -93,6 +93,9 @@ pub struct ListMessagesQuery {
     pub after: Option<String>,
     #[serde(rename = "after_id")]
     pub after_id: Option<String>,
+    /// `channel_seq`-based catch-up cursor: return terminal messages with
+    /// `channel_seq > since_seq` ascending (reconnect/refresh path).
+    pub since_seq: Option<i64>,
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
@@ -121,10 +124,13 @@ pub async fn list_messages(
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
 
     let limit = q.limit.clamp(1, 200);
-    let before = q.before.or(q.before_id).or(q.around_id);
-    let after = q.after.or(q.after_id);
-    let page =
-        messages::list_messages(&state.db, user_id, channel_id, before, after, limit).await?;
+    let page = if let Some(since_seq) = q.since_seq {
+        messages::list_messages_since_seq(&state.db, user_id, channel_id, since_seq, limit).await?
+    } else {
+        let before = q.before.or(q.before_id).or(q.around_id);
+        let after = q.after.or(q.after_id);
+        messages::list_messages(&state.db, user_id, channel_id, before, after, limit).await?
+    };
     let messages = page.messages;
     let has_more = page.has_more;
     info!(
