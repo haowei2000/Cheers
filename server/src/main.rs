@@ -42,6 +42,10 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(&db).await?;
     info!("migrations applied");
 
+    // Bootstrap a default admin on an empty database (there is no seed
+    // migration), so the gateway is reachable for the login/demo flow.
+    server::domain::seed::ensure_admin_user(&db).await?;
+
     // Single-instance deployment (R1-A): in-process fan-out + bot registry.
     // Redis is NOT a startup dependency on the realtime path. The Redis impls
     // (redis_fanout.rs / redis_registry.rs) stay compiled for a future

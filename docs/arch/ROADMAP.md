@@ -121,11 +121,11 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] R3 终态背压修复（fanout 入队失败且终态帧 → 4408 关闭；closers 信号 + browser close_rx；单测 3 项）
   - [x] R5 dispatcher 双派发修复（删前置 SELECT，create_placeholder 返回 rows_affected==1 定胜负；败者不派发 task）
   - [x] R4-2 集成测试（bin→lib + `#[sqlx::test]`，feature `integration` 门控；4 项对真实 PG：I2 gap-free / 流程 2 连续 seq + 流程 8 补齐 / R5 并发只派一次 / 流程 4 done finalize + 幂等）
-- [ ] **M1** 核心闭环可演示
-  - [ ] 后端 CRUD 补洞
-  - [ ] 前端实时 / 流式 / mention / 文件 / presence
-  - [ ] bot 管理 UI
-  - [ ] connector happy-path 文档化验证
+- [~] **M1** 核心闭环可演示（核心 message→@bot→流式→持久化 闭环 **2026-06-21 真机验证**；文件/presence 待办）
+  - [x] 后端 CRUD 补洞（admin seed 引导 · messages `?since_seq=` 追平 · botToken 签发 `POST /bots/:id/token`）
+  - [~] 前端实时 / 流式 / mention / 文件 / presence（实时·流式·mention·重连追平 ✅；文件·presence 待办）
+  - [x] bot 管理 UI（Settings → Bots：注册 / 签发 token / 加入频道）
+  - [x] connector happy-path 文档化验证（Rust connector + claude-code-acp 真机流式回复；见 [../DEMO_M1.md](../DEMO_M1.md)）
 - [ ] **M2** 功能裁剪（先定表，再实现）
 - [ ] **M3** 加固 & 文档对齐
 - [ ] **M4** 扩容（HA 触发）

@@ -1,0 +1,98 @@
+# Local M1 demo config for the Rust ACP connector.
+#
+# Fill the two placeholders marked <<< and run:
+#   mkdir -p ~/.agentnexus/workspace
+#   export AGENTNEXUS_BOT_TOKEN=agb_...          # the token issued in Settings → Bots
+#   cargo run --bin cce-acp-connector -- start \
+#       --config examples/agentnexus-daemon.local-demo.toml --name demo
+#
+# The bot must already exist on the gateway (Settings → Bots → Register), have a
+# token issued, and be a member of the channel you @mention it in. No ACP
+# capability is needed because the demo bot is created with
+# require_capability = false.
+
+version = 1
+
+[daemon]
+state_path = "state.json"
+log_dir = "logs"
+
+[accounts.demo.bridge]
+# Local gateway runs on :8000 over plain ws (use wss in production).
+control_url = "ws://localhost:8000/ws/agent-bridge/control"
+data_url = "ws://localhost:8000/ws/agent-bridge/data"
+bot_token_env = "AGENTNEXUS_BOT_TOKEN"
+heartbeat_interval_ms = 25000
+ack_timeout_ms = 600000
+
+[accounts.demo.bridge.reconnect]
+base_ms = 500
+max_ms = 30000
+
+[accounts.demo.adapter]
+type = "stdio"
+# <<< Path to your local ACP stdio agent (e.g. claude-agent-acp, opencode acp).
+command = "/REPLACE/with/your/acp-agent"
+args = []
+
+[accounts.demo.policy.sessions]
+create = true
+load = true
+cancel = true
+terminate = true
+request_timeout_ms = 120000
+
+[accounts.demo.policy.prompt]
+allow = true
+max_concurrent = 1
+max_prompt_bytes = 200000
+max_duration_ms = 900000
+allow_attachments = true
+allow_images = true
+allow_local_file_refs = false
+
+[accounts.demo.policy.workspace]
+# These directories must exist before `start` (config validation checks them).
+default_cwd = "~/.agentnexus/workspace"
+allowed_roots = ["~/.agentnexus/workspace"]
+backend_may_set_cwd = true
+
+[accounts.demo.policy.env]
+inherit = false
+allow = ["HOME", "PATH"]
+
+[accounts.demo.policy.config]
+backend_may_set_model = false
+backend_may_set_native_options = false
+allowed_config_options = []
+
+[accounts.demo.policy.permission]
+forward_to_backend = true
+wait_timeout_ms = 900000
+on_timeout = "cancel"
+
+[accounts.demo.policy.send]
+allow = true
+max_text_bytes = 200000
+max_files = 10
+
+[accounts.demo.policy.file_upload]
+allow = false
+max_bytes = 26214400
+allowed_content_types = []
+
+[accounts.demo.policy.trace]
+allow = true
+max_message_bytes = 32000
+
+[accounts.demo.policy.session_update]
+allow = true
+include_metadata = true
+
+[accounts.demo.policy.mcp]
+inject_agentnexus = true
+backend_may_inject_extra_servers = false
+allowed_servers = ["agentnexus"]
+
+[accounts.demo.policy.loopback]
+request_timeout_ms = 600000
