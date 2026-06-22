@@ -159,7 +159,17 @@ export function ChannelView({ channel }: Props) {
 
   const handleStreamDone = useCallback(
     (update: Partial<Message> & { msg_id: string }) => {
-      setMessages((prev) => upsertMessage(prev, { ...update, _streaming: false }));
+      setMessages((prev) =>
+        upsertMessage(prev, { ...update, _streaming: false, _trace: null })
+      );
+    },
+    []
+  );
+
+  const handleBotTrace = useCallback(
+    (msgId: string | null, title: string | null) => {
+      if (!msgId) return;
+      setMessages((prev) => upsertMessage(prev, { msg_id: msgId, _trace: title }));
     },
     []
   );
@@ -179,6 +189,7 @@ export function ChannelView({ channel }: Props) {
     onMessageDeleted: handleDeleted,
     onReady: catchUp,
     onPresence: (_ids, count) => setOnlineCount(count),
+    onBotTrace: handleBotTrace,
   });
 
   async function handleSend(

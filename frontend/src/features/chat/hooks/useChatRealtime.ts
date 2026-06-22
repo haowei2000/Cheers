@@ -13,6 +13,8 @@ interface Callbacks {
   onReady?: () => void;
   /** Channel presence update (online user ids + count). */
   onPresence?: (userIds: string[], count: number) => void;
+  /** Agent progress (trace) for a streaming bot message. */
+  onBotTrace?: (msgId: string | null, title: string | null) => void;
 }
 
 const BASE_DELAY = 1000;
@@ -99,6 +101,13 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
       } else if (type === "presence") {
         const d = data as { online_user_ids?: string[]; count?: number };
         cbsRef.current.onPresence?.(d.online_user_ids ?? [], d.count ?? 0);
+      } else if (type === "bot_trace") {
+        const d = data as {
+          msg_id?: string | null;
+          title?: string | null;
+          status?: string | null;
+        };
+        cbsRef.current.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
       }
     };
 
