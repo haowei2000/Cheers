@@ -222,9 +222,28 @@ pub async fn test_bot(
 /// the Agent Bridge control/data WS authenticates by matching that hash.
 pub async fn issue_bot_token(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    // The token grants the connector authority to act as this bot, so only the
+    // bot's creator or an admin may issue/rotate it (else any logged-in user
+    // could hijack or DoS another tenant's bot).
+    let owner: Option<String> =
+        sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
+            .bind(&bot_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::NotFound)?
+            .try_get::<Option<String>, _>("created_by")
+            .ok()
+            .flatten();
+    let is_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
+    if !is_admin && owner.as_deref() != Some(claims.sub.as_str()) {
+        return Err(AppError::Forbidden(
+            "only the bot owner or an admin may issue its token".into(),
+        ));
+    }
+
     let token = generate_bot_token();
     let token_hash = hash_bot_token(&token);
     let token_prefix = &token[..token.len().min(12)];
