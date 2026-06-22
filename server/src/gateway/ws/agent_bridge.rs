@@ -632,6 +632,17 @@ async fn handle_trace_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
         return;
     };
 
+    // The channel_id is bot-supplied and must not be trusted: only forward
+    // progress into channels the bot is actually a member of (mirrors the
+    // delta/done/send/permission_request handlers). Otherwise a self-registered
+    // bot could spoof agent-progress text into arbitrary channels.
+    if ensure_bot_channel_member(&state.db, bot.bot_id, channel_id)
+        .await
+        .is_err()
+    {
+        return;
+    }
+
     let wire = WireFrame::channel(
         channel_id,
         "bot_trace",
