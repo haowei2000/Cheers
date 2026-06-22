@@ -141,6 +141,11 @@ pub struct PermissionPolicy {
     pub forward_to_backend: bool,
     pub wait_timeout_ms: u64,
     pub on_timeout: PermissionTimeoutAction,
+    /// Auto-approve ACP tool-permission requests locally (select the "allow"
+    /// option) without forwarding to the backend. Use when the gateway already
+    /// enforces resource authz (channel membership + role), making the per-tool
+    /// ACP prompt redundant. Default false.
+    pub auto_allow: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,6 +434,8 @@ struct RawPermissionPolicy {
     wait_timeout_ms: u64,
     #[serde(default = "default_permission_on_timeout")]
     on_timeout: String,
+    #[serde(default)]
+    auto_allow: bool,
 }
 
 impl Default for RawPermissionPolicy {
@@ -437,6 +444,7 @@ impl Default for RawPermissionPolicy {
             forward_to_backend: true,
             wait_timeout_ms: default_permission_wait_timeout_ms(),
             on_timeout: default_permission_on_timeout(),
+            auto_allow: false,
         }
     }
 }
@@ -751,6 +759,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             forward_to_backend: raw.permission.forward_to_backend,
             wait_timeout_ms: raw.permission.wait_timeout_ms.max(1),
             on_timeout: PermissionTimeoutAction::from_str(&raw.permission.on_timeout)?,
+            auto_allow: raw.permission.auto_allow,
         },
         send: SendPolicy {
             allow: raw.send.allow,

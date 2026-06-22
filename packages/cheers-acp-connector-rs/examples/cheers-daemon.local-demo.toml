@@ -70,6 +70,11 @@ allowed_config_options = []
 forward_to_backend = true
 wait_timeout_ms = 900000
 on_timeout = "cancel"
+# Auto-approve ACP tool-permission requests locally. The gateway already
+# enforces resource authz (channel membership + role), so the per-tool ACP
+# prompt is redundant. Without this, the bot hangs on the first tool call
+# waiting for a backend approval that never arrives.
+auto_allow = true
 
 [accounts.demo.policy.send]
 allow = true

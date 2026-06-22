@@ -318,20 +318,30 @@ impl RuntimeContext {
         let ack_was_pending = self.io.resolve_data_ack(&frame).await;
         match frame {
             DataInbound::ResourceRes { response } => {
-                if let Some(tx) = self
-                    .shared
-                    .lock()
-                    .await
-                    .pending_resources
-                    .remove(&response.req_id)
-                {
-                    let _ = tx.send(LoopbackResponse {
-                        ok: response.ok,
-                        data: response.data,
-                        error: response.error,
-                        code: response.code,
-                    });
-                }
+                let matched = {
+                    let maybe_tx = self
+                        .shared
+                        .lock()
+                        .await
+                        .pending_resources
+                        .remove(&response.req_id);
+                    if let Some(tx) = maybe_tx {
+                        let _ = tx.send(LoopbackResponse {
+                            ok: response.ok,
+                            data: response.data,
+                            error: response.error,
+                            code: response.code,
+                        });
+                        true
+                    } else {
+                        false
+                    }
+                };
+                tracing::debug!(
+                    req_id = %response.req_id,
+                    matched,
+                    "loopback resource_res received"
+                );
             }
             DataInbound::SendAck {
                 permission_resolution,
@@ -393,11 +403,14 @@ impl RuntimeContext {
         request: LoopbackRequest,
     ) -> anyhow::Result<()> {
         let (tx, rx) = oneshot::channel();
+        let req_id = request.req_id.clone();
+        let resource = request.resource.clone();
         self.shared
             .lock()
             .await
             .pending_resources
             .insert(request.req_id.clone(), tx);
+        tracing::debug!(%req_id, %resource, "loopback resource_req sent");
         self.io
             .send_data(DataOutbound::ResourceReq {
                 v: BRIDGE_PROTOCOL_VERSION,
@@ -1098,6 +1111,28 @@ impl RuntimeContext {
             let _ = respond_to.send(PermissionOutcome::Cancelled);
             return Ok(());
         };
+        // Auto-approve locally when configured: the gateway already enforces
+        // resource authz (channel membership + role), so the per-tool ACP prompt
+        // is redundant. Without this, forward_to_backend waits for a backend
+        // approval that never comes and the tool call hangs.
+        if self.config.policy.permission.auto_allow {
+            if let Some(option_id) = permission_option_id_for_resolution(&params, "allow") {
+                self.trace(
+                    &run,
+                    "permission_auto_allowed",
+                    "running",
+                    "Auto-allowed ACP tool permission (local policy)",
+                    None,
+                )
+                .await?;
+                let _ = respond_to.send(PermissionOutcome::Selected { option_id });
+                return Ok(());
+            }
+            tracing::warn!(
+                account = %self.account_id,
+                "permission.auto_allow set but no 'allow' option in params; falling back to forward"
+            );
+        }
         if !self.config.policy.permission.forward_to_backend {
             self.trace(
                 &run,
