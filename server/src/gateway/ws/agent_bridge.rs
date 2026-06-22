@@ -440,6 +440,17 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
     match ftype {
         // ── 流式输出（写后投递）────────────────────────────────────────────
         "delta" => {
+            tracing::debug!(
+                bot_id = %bot.bot_id,
+                msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
+                bytes = frame
+                    .get("delta")
+                    .or_else(|| frame.get("content"))
+                    .and_then(|v| v.as_str())
+                    .map(str::len)
+                    .unwrap_or(0),
+                "delta frame"
+            );
             if let Err(e) = handle_delta(
                 &state.stream_registry,
                 &state.fanout,
@@ -456,6 +467,11 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         }
 
         "done" => {
+            tracing::info!(
+                bot_id = %bot.bot_id,
+                msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "terminal (done) frame received"
+            );
             handle_terminal_frame(frame, state, bot, socket, TerminalAckKind::Terminal).await;
         }
 
@@ -580,10 +596,55 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             .await;
         }
 
+        // ── agent 进度（trace）：记录 + 转发给浏览器，让 UI 显示「思考中」状态 ──
+        "trace" => {
+            handle_trace_frame(frame, state, bot).await;
+        }
+
         other => {
             tracing::debug!(bot_id = %bot.bot_id, frame_type = other, "unknown data frame");
         }
     }
+}
+
+/// 记录 agent 进度（trace）并 fan-out 一个 `bot_trace` 帧给频道内浏览器。
+/// trace 非终态帧，队列满时可丢弃（下一条 trace 或 message_done 会覆盖状态）。
+async fn handle_trace_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let msg_id = frame.get("msg_id").and_then(Value::as_str);
+    let phase = frame.get("phase").and_then(Value::as_str);
+    let status = frame.get("status").and_then(Value::as_str);
+    let title = frame.get("title").and_then(Value::as_str);
+
+    tracing::info!(
+        bot_id = %bot.bot_id,
+        msg_id = msg_id.unwrap_or(""),
+        phase = phase.unwrap_or(""),
+        status = status.unwrap_or(""),
+        title = title.unwrap_or(""),
+        "agent trace"
+    );
+
+    let Some(channel_id) = frame
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<Uuid>().ok())
+    else {
+        return;
+    };
+
+    let wire = WireFrame::channel(
+        channel_id,
+        "bot_trace",
+        json!({
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "phase": phase,
+            "status": status,
+            "title": title,
+            "message": frame.get("message").and_then(Value::as_str),
+        }),
+    );
+    state.fanout.broadcast_channel(channel_id, wire).await;
 }
 
 #[derive(Debug, Clone, Copy)]

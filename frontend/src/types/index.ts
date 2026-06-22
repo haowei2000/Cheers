@@ -82,6 +82,8 @@ export interface Message {
   is_partial?: boolean;
   error?: string | null;
   _streaming?: boolean;
+  /** Latest agent progress (trace) title shown while streaming. */
+  _trace?: string | null;
 }
 
 export interface MemberItem {

@@ -168,10 +168,17 @@ function MessageBody({ message }: { message: Message }) {
 
   if (message._streaming && !content && files.length === 0) {
     return (
-      <div className="flex items-center gap-1 py-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:150ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:300ms]" />
+      <div className="flex items-center gap-2 py-1">
+        <div className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:150ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:300ms]" />
+        </div>
+        {message._trace && (
+          <span className="text-xs text-zinc-500 italic truncate">
+            {message._trace}
+          </span>
+        )}
       </div>
     );
   }
@@ -201,6 +208,9 @@ function MessageBody({ message }: { message: Message }) {
         ))}
       {message._streaming && (
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink ml-0.5 align-text-bottom" />
+      )}
+      {message._streaming && message._trace && (
+        <p className="text-xs text-zinc-500 italic mt-0.5">{message._trace}</p>
       )}
       <FileChips files={files} />
     </div>
