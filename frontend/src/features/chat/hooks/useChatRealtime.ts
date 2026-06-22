@@ -11,6 +11,8 @@ interface Callbacks {
   onBotProcessing?: (botId: string) => void;
   /** Fired after every (re)subscribe ack — used to run REST seq catch-up. */
   onReady?: () => void;
+  /** Channel presence update (online user ids + count). */
+  onPresence?: (userIds: string[], count: number) => void;
 }
 
 const BASE_DELAY = 1000;
@@ -94,6 +96,9 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         cbsRef.current.onBotProcessing?.(
           (data as { bot_id: string }).bot_id
         );
+      } else if (type === "presence") {
+        const d = data as { online_user_ids?: string[]; count?: number };
+        cbsRef.current.onPresence?.(d.online_user_ids ?? [], d.count ?? 0);
       }
     };
 

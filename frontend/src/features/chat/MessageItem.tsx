@@ -1,9 +1,11 @@
 import { memo } from "react";
+import { FileText } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import type { Message } from "@/types";
+import { apiFetch } from "@/api/client";
+import type { Message, FileInfo } from "@/types";
 
 interface Props {
   message: Message;
@@ -109,8 +111,62 @@ export const MessageItem = memo(function MessageItem({
   );
 });
 
+// Flat <#file:id> tokens render as chips (below), not inline text.
+const FILE_TOKEN = /<#file:[^>]+>/g;
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function downloadFile(file: FileInfo) {
+  // The download endpoint is JWT-protected, so fetch with auth then save a blob.
+  try {
+    const res = await apiFetch(`/files/${file.file_id}/download`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.original_filename || file.file_id;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch {
+    /* ignore download failures */
+  }
+}
+
+function FileChips({ files }: { files: FileInfo[] }) {
+  if (!files.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-2">
+      {files.map((f) => (
+        <button
+          key={f.file_id}
+          type="button"
+          onClick={() => downloadFile(f)}
+          title={f.original_filename || f.file_id}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 transition-colors max-w-[240px]"
+        >
+          <FileText className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+          <span className="truncate">{f.original_filename || "file"}</span>
+          {typeof f.size_bytes === "number" && (
+            <span className="text-zinc-500">{formatBytes(f.size_bytes)}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MessageBody({ message }: { message: Message }) {
-  if (message._streaming && !message.content) {
+  const files = message.files ?? [];
+  const content = (message.content ?? "").replace(FILE_TOKEN, "").trim();
+
+  if (message._streaming && !content && files.length === 0) {
     return (
       <div className="flex items-center gap-1 py-1">
         <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
@@ -121,32 +177,32 @@ function MessageBody({ message }: { message: Message }) {
   }
 
   if (message.error) {
-    return (
-      <p className="text-sm text-red-400 italic">{message.error}</p>
-    );
+    return <p className="text-sm text-red-400 italic">{message.error}</p>;
   }
 
   const hasMarkdown =
-    message.content.includes("```") ||
-    message.content.includes("**") ||
-    message.content.includes("*") ||
-    message.content.includes("#") ||
-    message.content.includes("[") ||
-    message.content.includes("\n") ||
-    message.content.includes("`");
+    content.includes("```") ||
+    content.includes("**") ||
+    content.includes("*") ||
+    content.includes("#") ||
+    content.includes("[") ||
+    content.includes("\n") ||
+    content.includes("`");
 
   return (
     <div className="relative">
-      {hasMarkdown ? (
-        <MarkdownRenderer content={message.content} className="text-sm" />
-      ) : (
-        <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">
-          {message.content}
-        </p>
-      )}
+      {content &&
+        (hasMarkdown ? (
+          <MarkdownRenderer content={content} className="text-sm" />
+        ) : (
+          <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">
+            {content}
+          </p>
+        ))}
       {message._streaming && (
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink ml-0.5 align-text-bottom" />
       )}
+      <FileChips files={files} />
     </div>
   );
 }

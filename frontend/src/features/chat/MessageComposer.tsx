@@ -5,8 +5,10 @@ import {
   type KeyboardEvent,
   type FormEvent,
 } from "react";
-import { SendHorizontal, Bot, User } from "lucide-react";
+import { SendHorizontal, Bot, User, Paperclip, X, FileText } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { uploadFile } from "@/api/files";
+import type { FileInfo } from "@/types";
 
 export interface MentionCandidate {
   id: string;
@@ -16,10 +18,15 @@ export interface MentionCandidate {
 }
 
 interface Props {
+  channelId?: string;
   channelName?: string;
   disabled?: boolean;
   mentionables?: MentionCandidate[];
-  onSend: (content: string, mentionIds: string[]) => Promise<void>;
+  onSend: (
+    content: string,
+    mentionIds: string[],
+    fileIds: string[]
+  ) => Promise<void>;
 }
 
 interface PickerState {
@@ -30,6 +37,7 @@ interface PickerState {
 }
 
 export function MessageComposer({
+  channelId,
   channelName,
   disabled,
   mentionables = [],
@@ -37,10 +45,33 @@ export function MessageComposer({
 }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<FileInfo[]>([]);
+  const [uploading, setUploading] = useState(false);
   // Mentions the user has picked, keyed by id. Routing source of truth.
   const [picked, setPicked] = useState<MentionCandidate[]>([]);
   const [picker, setPicker] = useState<PickerState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || !channelId) return;
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        const info = await uploadFile(channelId, file);
+        setAttachments((prev) => [...prev, info]);
+      }
+    } catch {
+      /* keep the composer usable; failed uploads just won't attach */
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function removeAttachment(fileId: string) {
+    setAttachments((prev) => prev.filter((a) => a.file_id !== fileId));
+  }
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -95,21 +126,29 @@ export function MessageComposer({
   }
 
   async function submit() {
-    const content = text.trim();
-    if (!content || sending || disabled) return;
+    const typed = text.trim();
+    const fileIds = attachments.map((a) => a.file_id);
+    // Backend requires non-empty content; fall back to attachment names.
+    const content =
+      typed ||
+      (fileIds.length
+        ? attachments.map((a) => a.original_filename || "file").join(", ")
+        : "");
+    if (!content || sending || uploading || disabled) return;
     // Only keep mentions whose "@label" token still survives in the text.
     const ids = Array.from(
       new Set(
-        picked.filter((p) => content.includes(`@${p.label}`)).map((p) => p.id)
+        picked.filter((p) => typed.includes(`@${p.label}`)).map((p) => p.id)
       )
     );
     setSending(true);
     setText("");
     setPicked([]);
     setPicker(null);
+    setAttachments([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     try {
-      await onSend(content, ids);
+      await onSend(content, ids, fileIds);
     } finally {
       setSending(false);
       textareaRef.current?.focus();
@@ -155,7 +194,11 @@ export function MessageComposer({
     adjustHeight();
   }
 
-  const canSend = text.trim().length > 0 && !sending && !disabled;
+  const canSend =
+    (text.trim().length > 0 || attachments.length > 0) &&
+    !sending &&
+    !uploading &&
+    !disabled;
 
   return (
     <div className="px-4 pb-4 pt-2 relative">
@@ -194,6 +237,43 @@ export function MessageComposer({
         </div>
       )}
 
+      {(attachments.length > 0 || uploading) && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {attachments.map((a) => (
+            <span
+              key={a.file_id}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="max-w-[160px] truncate">
+                {a.original_filename || a.file_id.slice(0, 8)}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeAttachment(a.file_id)}
+                className="text-zinc-500 hover:text-zinc-200"
+                aria-label="Remove attachment"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          {uploading && (
+            <span className="inline-flex items-center text-xs text-zinc-500 px-1">
+              uploading…
+            </span>
+          )}
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => void handleFiles(e.target.files)}
+      />
+
       <div
         className={cn(
           "flex items-end gap-2 rounded-xl border bg-zinc-800/80 px-3 py-2 transition-colors",
@@ -202,6 +282,16 @@ export function MessageComposer({
             : "border-zinc-700 hover:border-zinc-600 focus-within:border-indigo-500/60 focus-within:bg-zinc-800"
         )}
       >
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || !channelId}
+          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 disabled:opacity-40 transition-colors mb-0.5"
+          aria-label="Attach file"
+        >
+          <Paperclip className="w-4 h-4" />
+        </button>
+
         <textarea
           ref={textareaRef}
           rows={1}

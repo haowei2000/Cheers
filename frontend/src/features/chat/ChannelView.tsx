@@ -49,6 +49,7 @@ export function ChannelView({ channel }: Props) {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
+  const [onlineCount, setOnlineCount] = useState(0);
 
   // Highest delivered channel_seq, used as the reconnect/refresh catch-up cursor.
   const lastSeqRef = useRef(0);
@@ -177,15 +178,19 @@ export function ChannelView({ channel }: Props) {
     onStreamDone: handleStreamDone,
     onMessageDeleted: handleDeleted,
     onReady: catchUp,
+    onPresence: (_ids, count) => setOnlineCount(count),
   });
 
-  async function handleSend(content: string, mentionIds: string[]) {
+  async function handleSend(
+    content: string,
+    mentionIds: string[],
+    fileIds: string[]
+  ) {
     if (!channel) return;
-    await sendMessage(
-      channel.channel_id,
-      content,
-      mentionIds.length ? { mention_ids: mentionIds } : {}
-    );
+    await sendMessage(channel.channel_id, content, {
+      ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
+      ...(fileIds.length ? { file_ids: fileIds } : {}),
+    });
   }
 
   if (!channel) {
@@ -214,10 +219,18 @@ export function ChannelView({ channel }: Props) {
           </>
         )}
         <div className="flex-1" />
-        <button className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 transition-colors text-xs">
-          <Users className="w-3.5 h-3.5" />
-          {mentionables.length || "Members"}
-        </button>
+        <div className="flex items-center gap-3 text-xs text-zinc-500">
+          {onlineCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              {onlineCount} online
+            </span>
+          )}
+          <span className="flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5" />
+            {mentionables.length || "Members"}
+          </span>
+        </div>
       </div>
 
       {/* Messages */}
@@ -237,6 +250,7 @@ export function ChannelView({ channel }: Props) {
 
       {/* Composer */}
       <MessageComposer
+        channelId={channel.channel_id}
         channelName={channel.name}
         mentionables={mentionables}
         onSend={handleSend}
