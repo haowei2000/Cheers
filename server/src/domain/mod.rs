@@ -6,3 +6,4 @@ pub mod mentions;
 pub mod messages;
 pub mod seed;
 pub mod sessions;
+pub mod workbench_plugins;

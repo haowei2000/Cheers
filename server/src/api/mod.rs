@@ -7,4 +7,5 @@ pub mod friends;
 pub mod mcp;
 pub mod messages;
 pub mod middleware;
+pub mod workbench;
 pub mod workspaces;

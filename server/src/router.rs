@@ -8,7 +8,7 @@
 use axum::{
     http::HeaderValue,
     middleware,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
@@ -56,6 +56,19 @@ fn build_cors(state: &AppState) -> CorsLayer {
 fn build_authed_routes(state: AppState) -> Router<AppState> {
     // Routes under this branch all require JWT authentication.
     Router::new()
+        // Server-level workbench plugin store (install = admin; list/bundle = any member).
+        .route(
+            "/api/v1/workbench/plugins",
+            get(api::workbench::list_plugins),
+        )
+        .route(
+            "/api/v1/workbench/plugins/:plugin_id",
+            put(api::workbench::install_plugin).delete(api::workbench::delete_plugin),
+        )
+        .route(
+            "/api/v1/workbench/plugins/:plugin_id/bundle",
+            get(api::workbench::get_bundle),
+        )
         .route(
             "/api/v1/workspaces",
             get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace),
