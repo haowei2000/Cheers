@@ -3,6 +3,14 @@
 > 语言：Rust · 框架：axum + tokio + sqlx
 > 本文只讲结构，不讲实现细节。
 
+> ⚠️ **部分内容描述的是已废弃的旧模型** —— 本文出现的死概念包括：
+> `memory_entries` / `MemoryEntry` 分层记忆表、`channel.memory` 与 `channel.memory.update`
+> resource 动词、`Grant` / `trust_level` 细粒度授权（`bot_grants`、`permission::evaluate()`）。
+> 这些在 external-agent-first 下已不再是现行行为。
+> **现行模型一句话**：无独立 memory 概念；文件是唯一基质；Context = 插件策展的文件；
+> agent 一律 pull；授权唯 channel-role。
+> 详见 [context-and-environment.md](context-and-environment.md) 顶部的「⚠️ CURRENT MODEL (2026-06-23)」声明。
+
 ---
 
 ## 一、目录结构（带注释）
@@ -15,7 +23,7 @@ gateway/
 │
 ├── migrations/                 ← sqlx 迁移文件（纯 SQL）
 │   ├── 0001_baseline.sql       ← 现有全量 schema（pg_dump 生成）
-│   └── 0002_permission.sql     ← bot_grants / trust_level 等新表
+│   └── 0002_permission.sql     ← bot_grants / trust_level 等新表  ⚠️ 历史设计，已废弃（R13）— 见 CURRENT MODEL
 │
 └── src/
     ├── main.rs                 ← 启动：读配置 → 建连接池 → 跑迁移 → 启动 axum
@@ -56,14 +64,14 @@ gateway/
     │   │                          + InProcessBotLocator（DashMap<bot_id, Session>）
     │   ├── dispatcher.rs       ← 收到用户消息 → 建占位 → 派 task 给 bot
     │   ├── stream.rs           ← 收到 bot 的 delta/done → R1~R4 校验 → fanout 给浏览器
-    │   ├── permission.rs       ← Grant 表查询 + evaluate()（deny-wins）
+    │   ├── permission.rs       ← Grant 表查询 + evaluate()（deny-wins）  ⚠️ 历史设计，已废弃 — 授权唯 channel-role，见 CURRENT MODEL
     │   └── resource/           ← resource_req 分发给各子 handler
     │       ├── mod.rs          ← 入口分发（match resource 字段）
     │       ├── channel_info.rs
     │       ├── members.rs
     │       ├── messages.rs
     │       ├── files.rs
-    │       ├── memory.rs       ← 写操作调 permission::evaluate()
+    │       ├── memory.rs       ← 写操作调 permission::evaluate()  ⚠️ 历史设计，已废弃 — memory_entries 表已 DROP，改用 fs.* / memory_files，见 CURRENT MODEL
     │       └── context.rs      ← 聚合查询
     │
     └── infra/                  ── 【基础设施】外部依赖封装 ──
@@ -180,6 +188,10 @@ transport/ws/browser.rs
 
 ### 4-D：Bot resource 请求（读记忆）
 
+> ⚠️ 整节为历史设计，已废弃 — 见 CURRENT MODEL。`channel.memory` / `channel.memory.update`
+> 动词指向已 DROP 的 `MemoryEntry`（`memory_entries`）表，现改用 `fs.*` 文件树；写操作不再经
+> `bot_grants` 的 `permission::evaluate()`，授权唯 channel-role。
+
 ```
 Bot
   │  data WS 发 resource_req{resource:"channel.memory", params:{...}}
@@ -256,12 +268,12 @@ WireFrame           ← 发给浏览器的标准帧（WIRE_PROTOCOL §4）
   seq?              ← 流式帧才有，由 Backend 盖戳
   data: serde_json::Value   ← 不解析内容，原样转发
 
-BotGrant            ← 对应 bot_grants 表
+BotGrant            ← 对应 bot_grants 表   ⚠️ 历史设计，已废弃（R13）— 见 CURRENT MODEL
   code / bot_id / scope_type / scope_id
   resource / actions / effect
   expires_at / revoked
 
-EvaluationResult    ← permission::evaluate() 的返回值
+EvaluationResult    ← permission::evaluate() 的返回值   ⚠️ 历史设计，已废弃 — 授权唯 channel-role，见 CURRENT MODEL
   effect: Allow | Deny
   grant?            ← 命中的是哪条 grant（用于审计）
   reason?           ← Deny 时的原因
@@ -277,7 +289,7 @@ Rust Backend（本文范围）         Python Agent Service（独立容器）
 所有 HTTP REST 端点               bot 逻辑、LLM 调用、Memory/RAG
 所有浏览器 WS 连接管理            通过 resource_req 访问平台数据
 Agent Bridge WS 服务端            不直连 DB
-权限引擎（Grant evaluate）
+权限引擎（Grant evaluate）        ⚠️ 历史设计，已废弃 — 授权唯 channel-role，见 CURRENT MODEL
 DB / S3 / JWT / SMTP
           │                                │
           └──── Agent Bridge WS ───────────┘

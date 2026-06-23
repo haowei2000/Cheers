@@ -15,6 +15,24 @@
 
 ---
 
+> ## ⚠️ Partly superseded (see CURRENT MODEL, 2026-06-23)
+>
+> Parts of this doc describe a **superseded** model. The dead concepts that appear
+> below are: the `memory_entries` layer model (ANCHOR/DECISIONS/PROGRESS), the
+> `channel.memory` / `channel.memory.update` verbs (and the `resource/memory.rs`
+> path), `Grant` / `trust_level` fine-grained authz, and the notion of a pushed
+> platform "memory" as a hardcoded layer.
+>
+> **Current model:** no separate *memory* concept; files are the only substrate;
+> a Context = plugin-curated files; the agent always **pulls** (no body injection);
+> authorization is **channel-role only**. See the
+> [⚠️ CURRENT MODEL (2026-06-23)](./context-and-environment.md) declaration at the
+> top of `context-and-environment.md`. The `fs.*` / `memory_files` direction this
+> doc already points to is correct; the inline ⚠️ notes mark only the spots that
+> still present a dead concept as live.
+
+---
+
 ## 1. Why: no coordinator
 
 The current built-in `Coordinator` uses an LLM agent to *guess* which bot should
@@ -26,6 +44,7 @@ replaces it with a deterministic protocol rule: **the channel only forwards `@`*
   `Coordinator` routing privilege and `AutoTakeoverStage` are removed.
 - `trust_level` still differs (built-in `system` vs external) but only affects
   *write Grants*, not routing.
+  > ⚠️ 历史设计，已废弃 — `Grant` / `trust_level` 细粒度授权由 R13 取消，channel-role 是唯一授权事实源。见 [CURRENT MODEL](./context-and-environment.md)。
 
 This makes Bot@Bot composition transparent (every hop is a visible channel
 message) and routing a deterministic `@mention → bot_id` table lookup.
@@ -156,6 +175,7 @@ re-read on next trigger.
 - The task frame carries `trigger_seq` (the trigger message's `channel_seq`) as a
   reference point; the bot owns its cursor (e.g. in its `channel.memory`). The
   gateway stays stateless about per-bot cursors.
+  > ⚠️ 历史设计，已废弃 — `channel.memory` 指向已删表（用 `fs.*` / `memory_files`）；现行模型下 agent 自管记忆，平台无独立 memory 概念。见 [CURRENT MODEL](./context-and-environment.md)。
 - Active recovery: `channel.messages.index` returns `{ min_seq, max_seq, count }`
   (+ optional headers without content). Because the stream is contiguous, a bot
   can compute exactly what it is missing and fetch it by range/seq. This is the
@@ -170,6 +190,8 @@ re-read on next trigger.
 The only change needed on the existing memory path before it is replaced by
 `fs.*`: wrap the `replace` mode (`DELETE` + loop `INSERT`) in a **transaction** to
 remove the torn-read window.
+
+> ⚠️ 历史设计，已废弃 — 这条 `memory_entries` `replace` 写路径已随该表 `DROP` 移除（`0003_decentralized_mesh.sql:89`），不再需要修补；文件是唯一基质，写入走 `fs.*`。见 [CURRENT MODEL](./context-and-environment.md)。
 
 ---
 
@@ -359,12 +381,15 @@ already exist.
 Write-Before-Deliver in `create_message`; the `resource_req` static dispatcher;
 deterministic placeholder id (UUID v5) idempotency; the permission/Grant engine.
 
+> ⚠️ 历史设计，已废弃 — “permission/Grant engine” 不再是事实源；R13 后授权唯 channel-role。见 [CURRENT MODEL](./context-and-environment.md)。
+
 **Conflicts (existing behavior to change):**
 - `domain/messages.rs::resolve_bot_triggers` currently triggers **all online bots**
   in the channel (its own TODO notes "@mention / coordinator routing" is unbuilt).
   This is the opposite of the mesh and is the biggest behavioral reversal.
 - `resource/memory.rs::handle_update` `replace` is not wrapped in a transaction
   (torn-read).
+  > ⚠️ 历史设计，已废弃 — `resource/memory.rs` / `channel.memory.update` 指向已删 `memory_entries` 表；现行写路径是 `fs.*`，此“冲突”不再适用。见 [CURRENT MODEL](./context-and-environment.md)。
 - Message reads order by `created_at`; the cursor model needs `channel_seq`.
 
 **Missing (net-new):** `channel_seq` (+ allocation), `channels.default_bot_id`,

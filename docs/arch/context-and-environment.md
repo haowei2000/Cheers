@@ -8,6 +8,41 @@
 > (`gateway/src/acp_bridge/resource/`, `backend/app/features/memory/`,
 > `backend/app/features/bot_runtime/pipeline/`) before implementing.
 
+---
+
+> ## ⚠️ CURRENT MODEL (2026-06-23 — supersedes parts of this doc)
+>
+> This doc was written (2026-05-30) when a **Python backend owned the bot runtime**, so a
+> platform-owned *memory* that the gateway **pushed** into the prompt was unambiguous —
+> platform memory *was* bot memory. **External-agent-first broke that premise**: the bot
+> (e.g. `claude-agent-acp`) is now an **external** process with **its own** memory/context.
+> A platform "memory" pushed into it would **compete for authority** with the bot's own. The
+> model is therefore:
+>
+> - **No platform "memory" concept.** The platform owns **shared files** (per-channel
+>   workspace = `memory_files`). The bot owns its own memory; the platform never pushes a
+>   competing one.
+> - **Files are the only substrate.** Some files are **"Contexts"** — curated,
+>   plugin-maintained files (`project.md`, conventions, glossary…). A Context *is a file*,
+>   not a separate store. There is **no `memory` substrate** distinct from files.
+> - **Pull, not push-bodies.** The agent **pulls** what it needs (history tool, `fs.*`). The
+>   platform does **not** inject file bodies. That Context files *exist* is delivered as a
+>   **system-prompt convention** (the semantic layer, §3), never by pushing their contents.
+>   "Push the index, pull the leaves" survives only as *awareness*, not body-injection.
+> - **Plugin = the Environment/Lens concept (§2.3)**, realized as workbench **Context
+>   plugins** + a generic **File plugin**. Honestly a *panel/Context convention*, not a
+>   backend isolation contract; the backend seam is just a `ResourceRegistry` of verbs.
+>
+> **Dead concepts — do NOT implement (kept for history only):**
+> `memory_entries` (the ANCHOR/DECISIONS/PROGRESS *layer model* — `DROP`ped in
+> `0003_decentralized_mesh.sql:89`; superseded by the `memory_files` tree) ·
+> `channel.memory` / `channel.memory.update` verbs (point at the dropped table — use
+> `fs.*`) · `Grant` / `trust_level` fine-grained authz (**R13** — channel-role is the only
+> authz source). Sections below that rely on these describe the *original* design, not
+> current behavior.
+
+---
+
 ## 1. The problem this solves
 
 External agents (ACP bots reverse-connected through the connector, and third-party

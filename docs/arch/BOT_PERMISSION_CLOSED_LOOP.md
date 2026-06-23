@@ -5,6 +5,8 @@
 > 适用范围：Rust Gateway、Agent Bridge、ACP Connector、Frontend 审批 UI
 > 配套：[AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [AGENT_BRIDGE_PROTOCOL](./AGENT_BRIDGE_PROTOCOL.md) · [ACP_CAPABILITY_DELEGATION](./ACP_CAPABILITY_DELEGATION.md) · [MCP_AGENT_SECURITY](./MCP_AGENT_SECURITY.md)
 
+> ⚠️ **本文部分内容描述已被取代的模型（2026-06-23）。** 本文涉及的废弃概念：可写的 `memory` 资源 / 记忆层（`append`/`replace` 动词、role 表中的 “写 memory”、`memory handler`，对应已 DROP 的 `memory_entries`）。**现行模型**：无独立 memory 概念；文件是唯一基质；Context = 插件策展的文件；agent 一律 pull；授权唯 channel-role。权威声明见 [context-and-environment.md](./context-and-environment.md) 顶部的「⚠️ CURRENT MODEL (2026-06-23)」。本文的「不引入 `trust_level`/`bot_grants`、改用 channel-role」这一主张与现行模型一致，保留。
+
 本文按新的设计方向重写 bot 权限闭环：
 
 **bot 不需要独立的复杂 `trust_level` 权限模型。bot 应被当作频道里的普通成员主体，与人类用户共用同一套资源接口、同一套 membership/role/object-rule 权限判断。**
@@ -100,6 +102,8 @@ WHERE channel_id = $1
 
 建议统一频道角色：
 
+> ⚠️ 下表中的 “写 ... memory” 是历史设计，已废弃 —— 现无独立 memory 资源，写入只走 `fs.*`（见 CURRENT MODEL）。
+
 | Role | 读频道资源 | 发消息 | 上传文件 | 写 workspace fs / memory | 管理成员 |
 |---|---:|---:|---:|---:|---:|
 | `owner` | 是 | 是 | 是 | 是 | 是 |
@@ -120,7 +124,7 @@ WHERE channel_id = $1
 | 上传文件 | 必须是频道成员且 role 可写 |
 | 删除文件 | 上传者、owner/admin，或资源策略允许 |
 | 写 `fs.*` | 频道成员且 role 可写；path 合法；版本乐观锁通过 |
-| 写 memory | 频道成员且 role 可写；`replace` 可要求二次确认 |
+| 写 memory | 频道成员且 role 可写；`replace` 可要求二次确认 ⚠️ 历史设计，已废弃 —— `memory` 资源不存在，统一走 `fs.*`（见 CURRENT MODEL） |
 | 管理成员 | owner/admin |
 | 管理 bot token / connector | bot owner 或系统 admin，这是账号管理，不是频道资源 |
 
@@ -202,8 +206,8 @@ data frame
 | 普通上传文件 | 否 | 频道 role 可写即可 |
 | `fs.write/edit/append` | 可选 | 如果产品上认为 agent workspace 写入需要用户确认 |
 | `fs.rm/mv` | 建议 | 破坏性操作建议确认 |
-| memory `append` | 可选 | 可由频道策略决定 |
-| memory `replace` | 建议 | 替换整个记忆层风险较高 |
+| memory `append` | 可选 | 可由频道策略决定 ⚠️ 历史设计，已废弃 —— 无 memory 动词，见 CURRENT MODEL |
+| memory `replace` | 建议 | 替换整个记忆层风险较高 ⚠️ 历史设计，已废弃 —— “记忆层” 概念已取消，文件是唯一基质，见 CURRENT MODEL |
 | 本地 agent 读写本机文件/执行命令 | 是 | 这是本地 agent 权限，不是平台资源权限 |
 | bot token rotate/revoke | 是账号管理操作 | 走 owner/admin API，不走频道审批 |
 
@@ -562,7 +566,7 @@ CREATE TABLE IF NOT EXISTS resource_audit_logs (
 
 ### Phase 2：资源接口合流
 
-- REST message/file/fs/memory handler 与 Agent Bridge resource handler 复用同一 domain service。
+- REST message/file/fs/memory handler 与 Agent Bridge resource handler 复用同一 domain service。（⚠️ `memory` handler 已废弃 —— 只剩 message/file/`fs.*`，见 CURRENT MODEL）
 - `send` 帧和 `channel.messages.create` 走同一 `create_channel_message()`。
 - `fs.*` user/bot 走同一 path 校验、版本锁、operation log。
 

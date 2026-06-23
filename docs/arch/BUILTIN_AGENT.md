@@ -8,6 +8,16 @@
 > Codex, or any ACP-compatible agent). The `cheers-mcp-server` package is the
 > standard bridge for MCP-capable agents to participate as ACP bots.
 
+> ⚠️ **Partly superseded — see CURRENT MODEL.** Parts of this doc describe a
+> SUPERSEDED model. The dead concepts that still appear here are: the hardcoded
+> memory layers (`ANCHOR` / `DECISIONS` / `PROGRESS`) and agent-side "memory
+> distillation" as a first-class platform concern. Current model: there is no
+> independent `memory` concept; files are the only substrate; Context = the files
+> a plugin curates; agents always **pull** (existence announced via system prompt,
+> never pushed as body); authorization is **channel-role only**. See the
+>「⚠️ CURRENT MODEL (2026-06-23)」declaration at the top of
+> [context-and-environment.md](./context-and-environment.md).
+
 ---
 
 ## 1. The decision
@@ -17,7 +27,7 @@ There is no built-in runtime. The platform is a pure protocol/data/routing layer
 | Layer | What it is | Who provides it |
 |---|---|---|
 | **Platform** | REST API, WS gateway, Agent Bridge, Resource API, mesh routing, DB/S3 | Rust Backend |
-| **Intelligence** | LLM reasoning, task execution, memory distillation | User-connected external ACP agent |
+| **Intelligence** | LLM reasoning, task execution, ~~memory distillation~~ (⚠️ 历史设计，已废弃 — 见 CURRENT MODEL；文件是唯一基质，无独立 memory 概念) | User-connected external ACP agent |
 | **Bridge** | MCP ↔ Agent Bridge translation for MCP-capable agents | `cheers-mcp-server` (stdio) |
 
 A "bot in a channel" is always an external ACP agent connected via a user-owned
@@ -35,6 +45,10 @@ or calls an LLM.
   Remaining levels: `trusted > standard > untrusted`.
 - Hardcoded memory layers (`ANCHOR` / `DECISIONS` / `PROGRESS`) — now files an
   Environment template seeds, if at all.
+  (⚠️ The layered `memory_entries` model these names came from is dead — dropped in
+  `0003_decentralized_mesh.sql:89`, replaced by the `memory_files` file tree. There is
+  no independent memory layer anymore; these are just default Environment-seeded files.
+  See CURRENT MODEL.)
 - The "one generic runtime + seeded identity" model from the earlier version of this doc.
 
 ---

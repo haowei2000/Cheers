@@ -4,6 +4,10 @@
 > 分支：`break/rust-gateway-arch`
 > 配套：[ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md)
 
+> **⚠️ R13 / M2 决策（2026-06-23）：`Grant` / `trust_level` 细粒度授权模型已废弃，不实现。**
+> 授权以 **channel-role**（owner / admin / member）为唯一事实来源——读取需频道成员、写入按角色。
+> schema 里残留的 `Grant` / `trust_level` 字段保留但不接线；本文下述任何 Grant/trust_level 段落仅作历史设计参考。
+
 本文定义 bot 的能力声明、权限控制与安全边界模型。
 
 ---
