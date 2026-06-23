@@ -38,6 +38,14 @@ enum ClientFrame {
     Subscribe { channel_id: Uuid },
     Unsubscribe { channel_id: Uuid },
     Ping,
+    /// 工作台：浏览器对平台 fs/channel 资源的 req/res 请求（经 `resource::dispatch_user`）。
+    /// 回执是 `resource_res` 原始帧（按 `req_id` 关联），直接写回本连接 socket。
+    ResourceReq {
+        req_id: String,
+        resource: String,
+        #[serde(default)]
+        params: serde_json::Value,
+    },
 }
 
 // ── 服务端控制回执（Backend → 客户端）────────────────────────────────────────
@@ -303,6 +311,23 @@ async fn handle_client_frame(
 
         ClientFrame::Ping => {
             send_control(socket, &ServerControl::Pong).await;
+        }
+
+        ClientFrame::ResourceReq {
+            req_id,
+            resource,
+            params,
+        } => {
+            // 用户路径：channel-role 鉴权在 dispatch_user 内（含破坏性 rm/mv 限 owner/admin）。
+            let frame = serde_json::json!({
+                "req_id": req_id,
+                "resource": resource,
+                "params": params,
+            });
+            let res = crate::resource::dispatch_user(&state.db, user_id, &frame).await;
+            if let Ok(json) = serde_json::to_string(&res) {
+                let _ = socket.send(Message::Text(json)).await;
+            }
         }
     }
 }

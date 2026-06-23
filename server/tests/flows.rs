@@ -73,13 +73,24 @@ async fn seed_user(db: &PgPool) -> Uuid {
 }
 
 async fn add_member(db: &PgPool, channel_id: Uuid, member_id: Uuid, member_type: &str) {
+    add_member_role(db, channel_id, member_id, member_type, "member").await;
+}
+
+async fn add_member_role(
+    db: &PgPool,
+    channel_id: Uuid,
+    member_id: Uuid,
+    member_type: &str,
+    role: &str,
+) {
     sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role)
-         VALUES ($1, $2, $3, 'member')",
+         VALUES ($1, $2, $3, $4)",
     )
     .bind(channel_id.to_string())
     .bind(member_id.to_string())
     .bind(member_type)
+    .bind(role)
     .execute(db)
     .await
     .unwrap();
@@ -334,7 +345,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
 // `Principal::bot` 行为（fs 往返、channel-role 鉴权、未知 verb fallback）锁住，
 // 作为后续改 dispatch 的安全网。
 
-use server::resource::{dispatch, Principal};
+use server::resource::{dispatch, dispatch_user, Principal};
 
 async fn seed_bot(db: &PgPool) -> Uuid {
     let id = Uuid::new_v4();
@@ -480,4 +491,77 @@ async fn m2_dispatch_unknown_resource(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false);
     assert_eq!(r["code"], "UNKNOWN_RESOURCE", "未知 verb 应 UNKNOWN_RESOURCE: {r}");
+}
+
+// ── M2 Slice 1：user→dispatch 桥（dispatch_user）的鉴权契约 ────────────────────
+//
+// 浏览器 WS 经 `resource_req` → `dispatch_user(Principal::user)`。在通用 dispatch
+// 的 channel-role 鉴权之上，破坏性 `fs.rm`/`fs.mv` 收紧到 owner/admin（评审：
+// 普通 member 不应能一帧 `rm -r` 掉整个工作区，含 agent 记忆）。bot 路径不受此限。
+
+/// member 可读写，但破坏性 `fs.rm` 被拒（PERMISSION_DENIED）。
+#[sqlx::test]
+async fn m2_user_member_can_write_but_not_rm(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await; // role = member
+    let cid = ch.to_string();
+
+    let r = dispatch_user(
+        &db,
+        user,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "a.md", "content": "hi", "if_version": 0 })),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "member 经 user 桥应可写: {r}");
+
+    let r = dispatch_user(
+        &db,
+        user,
+        &req("fs.rm", serde_json::json!({ "channel_id": cid, "path": "a.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "PERMISSION_DENIED", "member 破坏性 rm 应被拒: {r}");
+}
+
+/// owner/admin 可执行破坏性 `fs.rm`。
+#[sqlx::test]
+async fn m2_user_admin_can_rm(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let admin = seed_user(&db).await;
+    add_member_role(&db, ch, admin, "user", "admin").await;
+    let cid = ch.to_string();
+
+    let _ = dispatch_user(
+        &db,
+        admin,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "a.md", "content": "hi", "if_version": 0 })),
+    )
+    .await;
+    let r = dispatch_user(
+        &db,
+        admin,
+        &req("fs.rm", serde_json::json!({ "channel_id": cid, "path": "a.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "admin 应可 rm: {r}");
+}
+
+/// 非频道成员经 user 桥读 → NOT_MEMBER（与 bot 路径一致，channel-role 唯一事实源）。
+#[sqlx::test]
+async fn m2_user_non_member_rejected(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let outsider = seed_user(&db).await; // 故意不 add_member
+    let r = dispatch_user(
+        &db,
+        outsider,
+        &req("fs.read", serde_json::json!({ "channel_id": ch.to_string(), "path": "x.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "NOT_MEMBER", "非成员经 user 桥应 NOT_MEMBER: {r}");
 }
