@@ -21,6 +21,36 @@ const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
 const MAX_RETRIES = 10;
 
+// ── Resource req/res over the same channel socket (workbench fs/channel access) ──
+
+const RESOURCE_REQ_TIMEOUT = 15000;
+
+/** Result payload of a resource_req on success (handler `data`). */
+export type ResourceData = unknown;
+
+/** Thrown when a resource_req fails (rejected by dispatch_user or transport). */
+export class ResourceError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "ResourceError";
+    this.code = code;
+  }
+}
+
+interface ResourceRes {
+  ok: boolean;
+  data?: unknown;
+  code?: string;
+  error?: string;
+}
+
+interface PendingReq {
+  resolve: (data: ResourceData) => void;
+  reject: (err: ResourceError) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 // Backend browser WS protocol:
 //   1. Connect to /ws
 //   2. Client → {"type":"auth","token":"..."}
@@ -37,6 +67,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const mountedRef = useRef(true);
   const cbsRef = useRef(cbs);
   cbsRef.current = cbs;
+  const pendingRef = useRef<Map<string, PendingReq>>(new Map());
 
   const connect = useCallback(() => {
     if (!channelId || !token || !mountedRef.current) return;
@@ -54,6 +85,24 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
       try {
         event = JSON.parse(ev.data as string) as WsEvent;
       } catch {
+        return;
+      }
+
+      // Resource req/res correlation (workbench fs/channel access over this socket).
+      if ((event as { type?: string }).type === "resource_res") {
+        const res = event as unknown as ResourceRes & { req_id?: string };
+        const pending = res.req_id
+          ? pendingRef.current.get(res.req_id)
+          : undefined;
+        if (pending && res.req_id) {
+          pendingRef.current.delete(res.req_id);
+          clearTimeout(pending.timer);
+          if (res.ok) pending.resolve(res.data);
+          else
+            pending.reject(
+              new ResourceError(res.code ?? "ERROR", res.error ?? "resource error")
+            );
+        }
         return;
       }
 
@@ -112,6 +161,12 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     };
 
     ws.onclose = () => {
+      // Reject any in-flight resource requests bound to this socket.
+      for (const p of pendingRef.current.values()) {
+        clearTimeout(p.timer);
+        p.reject(new ResourceError("DISCONNECTED", "socket closed"));
+      }
+      pendingRef.current.clear();
       if (!mountedRef.current) return;
       if (retryRef.current >= MAX_RETRIES) return;
       const delay = Math.min(BASE_DELAY * 2 ** retryRef.current, MAX_DELAY);
@@ -133,4 +188,31 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
       wsRef.current?.close();
     };
   }, [connect]);
+
+  // Imperative resource client: send a resource_req on the live channel socket and
+  // resolve when the matching resource_res (by req_id) returns. Used by the workbench
+  // (File/Context plugins) to read/write the channel workspace fs.
+  const sendResourceReq = useCallback(
+    (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
+      return new Promise<ResourceData>((resolve, reject) => {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          reject(new ResourceError("DISCONNECTED", "socket not connected"));
+          return;
+        }
+        const reqId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          pendingRef.current.delete(reqId);
+          reject(new ResourceError("TIMEOUT", "resource request timed out"));
+        }, RESOURCE_REQ_TIMEOUT);
+        pendingRef.current.set(reqId, { resolve, reject, timer });
+        ws.send(
+          JSON.stringify({ type: "resource_req", req_id: reqId, resource, params })
+        );
+      });
+    },
+    []
+  );
+
+  return { sendResourceReq };
 }
