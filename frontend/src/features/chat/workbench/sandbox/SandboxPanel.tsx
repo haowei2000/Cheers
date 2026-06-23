@@ -86,6 +86,9 @@ export function pluginToPanels(plugin: PluginMeta): PanelDef[] {
   return panels.map((p) => ({
     id: `${plugin.plugin_id}:${p.id}`,
     title: p.title,
-    render: (ctx) => <SandboxPanel ctx={ctx} plugin={plugin} panelId={p.id} />,
+    // key by plugin+panel so switching tabs REMOUNTS the iframe — otherwise the same
+    // SandboxPanel instance is reused, the iframe never reloads, and it stays stuck on
+    // the first panel (the already-ready iframe never gets a fresh cheers:init).
+    render: (ctx) => <SandboxPanel key={`${plugin.plugin_id}:${p.id}`} ctx={ctx} plugin={plugin} panelId={p.id} />,
   }));
 }
