@@ -1,6 +1,6 @@
 import { Plus, Save, Trash2 } from "lucide-react";
-import type { PanelContext, PanelDef } from "../panelRegistry";
-import { useJsonFile } from "../jsonFile";
+import type { PanelContext, PanelDef } from "../../panelRegistry";
+import { useJsonFile } from "../../jsonFile";
 
 export interface Review {
   paper: string;

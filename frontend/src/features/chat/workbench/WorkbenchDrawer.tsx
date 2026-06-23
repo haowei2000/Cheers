@@ -4,7 +4,7 @@ import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { getPanels, type PanelContext } from "./panelRegistry";
 import { getEnvironment, getEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import "./panels/FilePanel"; // side-effect: registers the always-on File panel
-import "./environments/research"; // side-effect: registers the research scenario
+import "./environments"; // side-effect: registers every template folder (barrel)
 
 interface Props {
   open: boolean;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Save, X } from "lucide-react";
-import type { PanelContext, PanelDef } from "../panelRegistry";
-import { useJsonFile } from "../jsonFile";
+import type { PanelContext, PanelDef } from "../../panelRegistry";
+import { useJsonFile } from "../../jsonFile";
 
 export interface Board {
   columns: { name: string; items: string[] }[];
