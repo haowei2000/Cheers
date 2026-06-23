@@ -1,11 +1,10 @@
-// Workbench template barrel.
+// Template barrel.
 //
-// Each template is a SELF-CONTAINED folder: environments/<name>/ holding its own
-// board panels + an index.ts that calls registerEnvironment({ panels, seed }).
-// Importing the folder runs that registration (side-effect).
+// Templates are NO LONGER compiled in — they are standalone manifest JSON files
+// installed at runtime by dropping them into the workbench (which writes them to
+// `.workbench/templates/` in the channel; see loadWorkspaceTemplates). An example
+// plugin lives at `examples/research.json`.
 //
-// 👉 To add a template: drop in `environments/<name>/` (panels + index.ts) and add
-//    ONE line below. WorkbenchDrawer and everything else stay untouched. Explicit
-//    registration (vs glob auto-discovery) keeps "which templates are active" visible.
-import "./research";
-// import "./writing";   // ← future template, e.g.
+// (If you ever want a template bundled by default, add `import "./<name>";` here
+//  and have that folder call registerEnvironment — but the model is drop-to-install.)
+export {};
