@@ -7,10 +7,30 @@ export function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : "error";
 }
 
-// Shared board-panel plumbing: load a JSON file from the channel workspace, edit
-// in memory, save back with the server's optimistic lock (re-read on conflict).
-// `version === null` means the file doesn't exist yet (write with if_version=0 to create).
-export function useJsonFile<T>(fs: FsClient, path: string, fallback: T) {
+// ── Format layer: string <-> data, chosen by file extension ──────────────────
+// JSON for structured boards, plain text for Markdown / prompts. (YAML can be
+// added as another Format later; XML intentionally unsupported.)
+interface Format {
+  parse: (s: string) => unknown;
+  serialize: (d: unknown) => string;
+}
+const JSON_FMT: Format = {
+  parse: (s) => (s.trim() ? JSON.parse(s) : null),
+  serialize: (d) => JSON.stringify(d, null, 2),
+};
+const TEXT_FMT: Format = {
+  parse: (s) => s,
+  serialize: (d) => (typeof d === "string" ? d : String(d)),
+};
+export function formatFor(path: string): Format {
+  return path.endsWith(".json") ? JSON_FMT : TEXT_FMT;
+}
+
+// Generic file-backed state: load a workspace file (parsed by its format), edit in
+// memory, save back under the server's optimistic lock (re-read on conflict).
+// `version === null` => file doesn't exist yet (write with if_version=0 creates it).
+export function useFile<T>(fs: FsClient, path: string, fallback: T) {
+  const fmt = formatFor(path);
   const [data, setData] = useState<T>(fallback);
   const [version, setVersion] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -18,7 +38,7 @@ export function useJsonFile<T>(fs: FsClient, path: string, fallback: T) {
   const load = useCallback(async () => {
     try {
       const f = await fs.read(path);
-      setData(JSON.parse(f.content) as T);
+      setData(fmt.parse(f.content) as T);
       setVersion(f.version);
     } catch (e) {
       if (e instanceof ResourceError && e.code === "NOT_FOUND") {
@@ -28,7 +48,6 @@ export function useJsonFile<T>(fs: FsClient, path: string, fallback: T) {
         setStatus(errMsg(e));
       }
     }
-    // fallback is intentionally not a dep — it's a constant default.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fs, path]);
 
@@ -40,7 +59,7 @@ export function useJsonFile<T>(fs: FsClient, path: string, fallback: T) {
     async (next: T) => {
       setStatus(null);
       try {
-        const r = await fs.write(path, JSON.stringify(next, null, 2), version ?? 0);
+        const r = await fs.write(path, fmt.serialize(next), version ?? 0);
         setData(next);
         setVersion(r.version);
         setStatus("已保存");
@@ -53,8 +72,12 @@ export function useJsonFile<T>(fs: FsClient, path: string, fallback: T) {
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [fs, path, version, load]
   );
 
   return { data, setData, save, status, version, reload: load };
 }
+
+// Back-compat alias for imperative panels that hand-roll JSON state.
+export const useJsonFile = useFile;

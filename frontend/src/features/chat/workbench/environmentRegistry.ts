@@ -1,30 +1,17 @@
-import type { FsClient } from "./fsClient";
-import type { PanelDef } from "./panelRegistry";
+import type { TemplateManifest } from "./manifest";
 
-// An Environment = a channel "scenario" (the founding Environment-template idea):
-//   - panels: which ViewPanels this scenario shows (its Lens set)
-//   - seed:   scaffold the scenario's initial files on activation (the "init files" leg)
-// Everything it touches is plain files in memory_files (no separate store, no backend).
-export interface Environment {
-  id: string;
-  title: string;
-  panels: PanelDef[];
-  seed: (fs: FsClient) => Promise<void>;
+// Built-in templates are registered here at import time (compiled in). Workspace
+// templates are loaded at runtime per-channel (see loadWorkspaceTemplates) and merged
+// in by the workbench — they are NOT added to this global registry.
+const registry: TemplateManifest[] = [];
+
+export function registerEnvironment(m: TemplateManifest): void {
+  if (!registry.some((e) => e.id === m.id)) registry.push(m);
 }
 
-const registry: Environment[] = [];
-
-export function registerEnvironment(env: Environment): void {
-  if (!registry.some((e) => e.id === env.id)) registry.push(env);
-}
-
-export function getEnvironment(id: string | null | undefined): Environment | undefined {
-  return id ? registry.find((e) => e.id === id) : undefined;
-}
-
-export function getEnvironments(): Environment[] {
+export function getBuiltinEnvironments(): TemplateManifest[] {
   return registry;
 }
 
-// A channel binds to a scenario via a convention file — no schema change.
+// A channel binds to a template via this convention file — no schema change.
 export const WORKBENCH_CONFIG_PATH = ".workbench.json";
