@@ -565,3 +565,58 @@ async fn m2_user_non_member_rejected(db: PgPool) {
     assert_eq!(r["ok"], false);
     assert_eq!(r["code"], "NOT_MEMBER", "非成员经 user 桥应 NOT_MEMBER: {r}");
 }
+
+// ── M2 Slice 2：fs.* 写入安全上限（DoS 防护）─────────────────────────────────
+//
+// user 桥让浏览器能写 memory_files（TEXT 入库 + 全量 WS 广播）。单文件硬上限
+// 256KB，超限回 CONTENT_TOO_LARGE；对 bot 与 user 路径同等生效（安全上限，非授权）。
+
+/// 超 256KB 的写入被拒；append 把已有文件推过上限也被拒（覆盖 update_content 路径）；
+/// 正常小写入通过。
+#[sqlx::test]
+async fn m2_fs_write_size_cap(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    // 直接写超限内容 → CONTENT_TOO_LARGE
+    let huge = "x".repeat(256 * 1024 + 1);
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "big.bin", "content": huge, "if_version": 0 })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "CONTENT_TOO_LARGE", "超限写入应被拒: {r}");
+
+    // 接近上限的文件 + append 推过上限 → 也被拒（enforce_file_size 在 update_content）
+    let near = "y".repeat(256 * 1024 - 10);
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "grow.md", "content": near, "if_version": 0 })),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "接近上限的写入应通过: {r}");
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.append", serde_json::json!({ "channel_id": cid, "path": "grow.md", "content": "zzzzzzzzzzzzzzzzzzzz" })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "CONTENT_TOO_LARGE", "append 推过上限应被拒: {r}");
+
+    // 正常小写入仍通过
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "ok.md", "content": "small", "if_version": 0 })),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "正常写入应通过: {r}");
+}

@@ -94,6 +94,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let if_version = params.get("if_version").and_then(|v| v.as_i64());
+    enforce_file_size(content)?;
 
     let mut tx = db
         .begin()
@@ -142,6 +143,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
                 return Err(version_conflict(0));
             }
         }
+        enforce_channel_file_count(&mut tx, channel_id).await?;
         sqlx::query(
             "INSERT INTO memory_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
@@ -296,6 +298,8 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
         content.push_str(append);
         update_content(&mut tx, channel_id, &path, &content).await?
     } else {
+        enforce_channel_file_count(&mut tx, channel_id).await?;
+        enforce_file_size(append)?;
         sqlx::query(
             "INSERT INTO memory_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
@@ -524,12 +528,57 @@ async fn check_fs_write(
         .map(|_| ())
 }
 
+/// 单文件内容硬上限（字节）。`memory_files.content` 是 TEXT 行内存储，写入还会
+/// 全量经 WS 广播给每个订阅者——无上限即存储耗尽 / 网关 OOM 的口子（user 桥已
+/// 让浏览器能写）。对 bot 与 user 路径同等生效（安全上限，非授权）。
+const MAX_FILE_BYTES: usize = 256 * 1024;
+
+/// 每频道文件数上限。配合 `MAX_FILE_BYTES` 给频道工作区一个有界总量
+/// （≤ MAX_CHANNEL_FILES × MAX_FILE_BYTES）。
+const MAX_CHANNEL_FILES: i64 = 1024;
+
+/// 写入前校验单文件内容不超过 `MAX_FILE_BYTES`。所有写路径（write/edit/append 的
+/// 最终内容）都必须过这道关，不可按 verb 绕过。
+fn enforce_file_size(content: &str) -> Result<(), (String, String)> {
+    if content.len() > MAX_FILE_BYTES {
+        return Err(super::resource_error(
+            "CONTENT_TOO_LARGE",
+            format!(
+                "file content {} bytes exceeds limit {MAX_FILE_BYTES}",
+                content.len()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// 新建文件前校验频道文件数未达上限（仅 INSERT 路径需要）。
+async fn enforce_channel_file_count(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    channel_id: Uuid,
+) -> Result<(), (String, String)> {
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM memory_files WHERE channel_id = $1")
+            .bind(channel_id.to_string())
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    if count >= MAX_CHANNEL_FILES {
+        return Err(super::resource_error(
+            "CHANNEL_QUOTA_EXCEEDED",
+            format!("channel already has {count} files (limit {MAX_CHANNEL_FILES})"),
+        ));
+    }
+    Ok(())
+}
+
 async fn update_content(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     channel_id: Uuid,
     path: &str,
     content: &str,
 ) -> Result<i64, (String, String)> {
+    enforce_file_size(content)?;
     sqlx::query(
         "UPDATE memory_files
          SET content = $3,
