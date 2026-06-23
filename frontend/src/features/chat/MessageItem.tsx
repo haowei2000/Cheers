@@ -165,8 +165,12 @@ function FileChips({ files }: { files: FileInfo[] }) {
 function MessageBody({ message }: { message: Message }) {
   const files = message.files ?? [];
   const content = (message.content ?? "").replace(FILE_TOKEN, "").trim();
+  // Treat a pending bot placeholder (is_partial) as active too — the agent
+  // trace + typing indicator must show during the "thinking" phase, which
+  // happens before the first delta sets _streaming.
+  const active = message._streaming || message.is_partial;
 
-  if (message._streaming && !content && files.length === 0) {
+  if (active && !content && files.length === 0) {
     return (
       <div className="flex items-center gap-2 py-1">
         <div className="flex items-center gap-1">
@@ -209,7 +213,7 @@ function MessageBody({ message }: { message: Message }) {
       {message._streaming && (
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink ml-0.5 align-text-bottom" />
       )}
-      {message._streaming && message._trace && (
+      {active && message._trace && (
         <p className="text-xs text-zinc-500 italic mt-0.5">{message._trace}</p>
       )}
       <FileChips files={files} />
