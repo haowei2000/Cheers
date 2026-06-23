@@ -19,6 +19,20 @@ export async function fetchBundle(pluginId: string): Promise<string> {
   return res.text();
 }
 
+/** Extract the embedded manifest from an uploaded plugin .html (the
+ *  `<script type="application/json" id="cheers-plugin">…</script>` block). DOMParser
+ *  does NOT execute scripts, so reading an untrusted bundle here is inert. */
+export function parsePluginHtml(html: string): { id: string; title: string; manifest: unknown } {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const el = doc.querySelector("#cheers-plugin");
+  if (!el || !el.textContent) {
+    throw new Error('缺少内嵌 manifest：<script type="application/json" id="cheers-plugin">');
+  }
+  const manifest = JSON.parse(el.textContent) as { id?: string; title?: string };
+  if (!manifest.id || !manifest.title) throw new Error("manifest 缺 id 或 title");
+  return { id: manifest.id, title: manifest.title, manifest };
+}
+
 /** Admin-only install/update of a plugin (manifest + sandboxed bundle). */
 export async function installPlugin(input: {
   id: string;
