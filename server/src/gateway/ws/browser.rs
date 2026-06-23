@@ -379,4 +379,33 @@ mod tests {
             assert!(!is_terminal_frame(&frame(ft)), "{ft} 不是终态帧");
         }
     }
+
+    /// 工作台帧线格式：`{type:"resource_req", req_id, resource, params}` 必须
+    /// 反序列化进 `ClientFrame::ResourceReq`（serde tag/rename 接线正确）。
+    #[test]
+    fn resource_req_frame_deserializes() {
+        let raw = r#"{"type":"resource_req","req_id":"r1","resource":"fs.ls","params":{"channel_id":"c","path":"notes"}}"#;
+        let frame: ClientFrame = serde_json::from_str(raw).unwrap();
+        match frame {
+            ClientFrame::ResourceReq {
+                req_id,
+                resource,
+                params,
+            } => {
+                assert_eq!(req_id, "r1");
+                assert_eq!(resource, "fs.ls");
+                assert_eq!(params["channel_id"], "c");
+                assert_eq!(params["path"], "notes");
+            }
+            _ => panic!("expected ResourceReq"),
+        }
+    }
+
+    /// 缺省 params 也能反序列化（`#[serde(default)]`）。
+    #[test]
+    fn resource_req_without_params_defaults() {
+        let raw = r#"{"type":"resource_req","req_id":"r2","resource":"fs.ls"}"#;
+        let frame: ClientFrame = serde_json::from_str(raw).unwrap();
+        assert!(matches!(frame, ClientFrame::ResourceReq { .. }));
+    }
 }
