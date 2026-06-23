@@ -326,3 +326,158 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         .unwrap();
     assert_eq!(next_seq, 1, "二次 finalize 不得消费 seq（事务回滚，无洞）");
 }
+
+// ── M2 Slice 0：resource dispatch / fs.* 回归锁 ────────────────────────────────
+//
+// develop 上 `resource::dispatch` 与 `fs.*` 此前零测试覆盖。Slice 1（user→dispatch
+// 桥）会给 dispatch 接入新的 `Principal::user` 入口；这些测试先把现有
+// `Principal::bot` 行为（fs 往返、channel-role 鉴权、未知 verb fallback）锁住，
+// 作为后续改 dispatch 的安全网。
+
+use server::resource::{dispatch, Principal};
+
+async fn seed_bot(db: &PgPool) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO bot_accounts (bot_id, username) VALUES ($1, $2)")
+        .bind(id.to_string())
+        .bind(format!("b-{id}")) // username 唯一
+        .execute(db)
+        .await
+        .unwrap();
+    id
+}
+
+fn req(resource: &str, params: Value) -> Value {
+    serde_json::json!({ "req_id": "t", "resource": resource, "params": params })
+}
+
+/// fs.write → read → ls → edit → read → rm → read(404)，全程经 `dispatch`，
+/// 用 `Principal::bot` 模拟外接 agent 的资源访问路径。
+#[sqlx::test]
+async fn m2_fs_roundtrip_through_dispatch(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    // write（create-only：if_version=0）
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "fs.write",
+            serde_json::json!({ "channel_id": cid, "path": "notes/a.md", "content": "hello", "if_version": 0 }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "fs.write 应成功: {r}");
+    assert_eq!(r["data"]["version"], 1, "新建文件 version=1");
+
+    // read 回来内容一致
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "notes/a.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], true);
+    assert_eq!(r["data"]["content"], "hello");
+
+    // ls 子树含该文件
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.ls", serde_json::json!({ "channel_id": cid, "path": "notes" })),
+    )
+    .await;
+    assert_eq!(r["ok"], true);
+    let paths: Vec<&str> = r["data"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["path"].as_str())
+        .collect();
+    assert!(paths.contains(&"notes/a.md"), "ls 应列出 notes/a.md: {paths:?}");
+
+    // edit：string-replace
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "fs.edit",
+            serde_json::json!({ "channel_id": cid, "path": "notes/a.md", "old_string": "hello", "new_string": "world" }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "fs.edit 应成功: {r}");
+
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "notes/a.md" })),
+    )
+    .await;
+    assert_eq!(r["data"]["content"], "world", "edit 后内容应更新");
+
+    // rm
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.rm", serde_json::json!({ "channel_id": cid, "path": "notes/a.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "fs.rm 应成功: {r}");
+
+    // read → NOT_FOUND
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "notes/a.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "NOT_FOUND", "删后再读应 NOT_FOUND: {r}");
+}
+
+/// 非频道成员的 bot：读写都应 NOT_MEMBER（channel-role 是唯一授权事实源）。
+#[sqlx::test]
+async fn m2_fs_authz_non_member_rejected(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let outsider = seed_bot(&db).await; // 故意不 add_member
+    let who = Principal::bot(outsider);
+    let cid = ch.to_string();
+
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "x.md" })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "NOT_MEMBER", "非成员读应 NOT_MEMBER: {r}");
+
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "x.md", "content": "nope" })),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "NOT_MEMBER", "非成员写应 NOT_MEMBER: {r}");
+}
+
+/// 未知 verb → UNKNOWN_RESOURCE（dispatch fallback 行为锁定）。
+#[sqlx::test]
+async fn m2_dispatch_unknown_resource(db: PgPool) {
+    let r = dispatch(
+        &db,
+        Principal::bot(Uuid::new_v4()),
+        &req("fs.teleport", serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "UNKNOWN_RESOURCE", "未知 verb 应 UNKNOWN_RESOURCE: {r}");
+}
