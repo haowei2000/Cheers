@@ -110,9 +110,10 @@ pub async fn dispatch(
     );
 
     // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
-    let task_context = load_task_context(db, params.trigger_msg_id)
+    let mut task_context = load_task_context(db, params.trigger_msg_id)
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
+    task_context.pinned = load_pinned_context(db, params.channel_id).await;
     let task_frame = build_task_frame(
         task_id,
         params.channel_id,
@@ -218,6 +219,9 @@ struct FailedPlaceholder {
 struct TaskContext {
     trigger_message: Value,
     attachments: Vec<Value>,
+    /// Pinned convention/prompt blocks (formatted) injected into the prompt every
+    /// request — the channel's semantic layer (e.g. a pinned prompt template).
+    pinned: Vec<String>,
 }
 
 impl TaskContext {
@@ -225,6 +229,7 @@ impl TaskContext {
         Self {
             trigger_message: json!({ "msg_id": msg_id }),
             attachments: Vec::new(),
+            pinned: Vec::new(),
         }
     }
 }
@@ -288,7 +293,49 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
             "in_reply_to_msg_id": row.try_get::<Option<String>, _>("in_reply_to_msg_id").ok().flatten(),
         }),
         attachments,
+        pinned: Vec::new(),
     })
+}
+
+/// Read the channel's pinned convention files (paths listed in `.workbench.json`)
+/// and format each into a prompt block. These are injected into the agent prompt on
+/// EVERY request (the semantic layer) — a controlled push, not auto-memory.
+async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
+    let cfg = sqlx::query_scalar::<_, String>(
+        "SELECT content FROM memory_files WHERE channel_id = $1 AND path = '.workbench.json'",
+    )
+    .bind(channel_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten();
+    let Some(cfg) = cfg else {
+        return Vec::new();
+    };
+    let paths: Vec<String> = serde_json::from_str::<Value>(&cfg)
+        .ok()
+        .and_then(|v| {
+            v.get("pinned")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+        })
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for path in paths {
+        if let Ok(Some(content)) = sqlx::query_scalar::<_, String>(
+            "SELECT content FROM memory_files WHERE channel_id = $1 AND path = $2",
+        )
+        .bind(channel_id.to_string())
+        .bind(&path)
+        .fetch_optional(db)
+        .await
+        {
+            if !content.trim().is_empty() {
+                out.push(format!("[Pinned: {path}]\n{content}"));
+            }
+        }
+    }
+    out
 }
 
 async fn mark_placeholder_failed(
@@ -372,6 +419,7 @@ fn build_task_frame(
         },
         "trigger_message": task_context.trigger_message,
         "attachments": task_context.attachments,
+        "pinned": task_context.pinned,
         "session": {
             "id": session_id,
             "provider_session_key": provider_session_key,

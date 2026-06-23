@@ -12,6 +12,10 @@ import type { FsClient } from "./fsClient";
 export interface PanelContext {
   channelId: string;
   fs: FsClient;
+  /** Paths pinned to every bot prompt (the semantic layer — e.g. a prompt template). */
+  pinned: string[];
+  /** Pin / unpin a file path (persisted in .workbench.json). */
+  togglePin: (path: string) => void;
 }
 
 export interface PanelDef {

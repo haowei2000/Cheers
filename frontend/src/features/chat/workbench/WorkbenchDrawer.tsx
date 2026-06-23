@@ -6,7 +6,7 @@ import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegi
 import { seedManifest, type TemplateManifest } from "./manifest";
 import { viewToPanel } from "./lens/LensPanel";
 import { loadWorkspaceTemplates } from "./loadWorkspaceTemplates";
-import "./lens/builtins"; // side-effect: registers the built-in lenses (table/kanban/markdown)
+import "./lens/builtins"; // side-effect: registers built-in lenses (table/kanban/markdown)
 import "./panels/FilePanel"; // side-effect: registers the always-on File panel
 import "./environments"; // side-effect: registers built-in template manifests
 
@@ -17,24 +17,30 @@ interface Props {
   sendResourceReq: SendResourceReq;
 }
 
-// Right-side per-channel workbench. Templates come from two places: built-in manifests
-// (compiled) and runtime manifests dropped into .workbench/templates/ in the channel
-// (loaded as data). Picking one seeds its files and binds the channel via .workbench.json.
-// Panels = the always-on File panel + the active template's views (each via LensPanel).
+// The channel's workbench config (.workbench.json): which template is active and which
+// files are pinned into every bot prompt.
+interface WbConfig {
+  environment?: string | null;
+  pinned?: string[];
+}
+
+// Right-side per-channel workbench. Templates come from built-in manifests (compiled)
+// + runtime manifests in .workbench/templates/ (data). Picking one seeds its files and
+// binds the channel. Panels = always-on File panel + the active template's views.
 export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
-  const [envId, setEnvId] = useState<string | null>(null);
+  const [cfg, setCfg] = useState<WbConfig>({});
   const [workspaceTemplates, setWorkspaceTemplates] = useState<TemplateManifest[]>([]);
   const [active, setActive] = useState<string>("");
   const [busy, setBusy] = useState(false);
 
-  // On open: load the channel's scenario binding + any runtime template manifests.
+  // On open: load the config + any runtime template manifests.
   useEffect(() => {
     if (!open) return;
     let alive = true;
     fs.read(WORKBENCH_CONFIG_PATH)
-      .then((f) => alive && setEnvId(((JSON.parse(f.content) as { environment?: string }).environment) ?? null))
-      .catch(() => alive && setEnvId(null));
+      .then((f) => alive && setCfg(JSON.parse(f.content) as WbConfig))
+      .catch(() => alive && setCfg({}));
     loadWorkspaceTemplates(fs)
       .then((t) => alive && setWorkspaceTemplates(t))
       .catch(() => {});
@@ -43,15 +49,42 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
     };
   }, [open, fs]);
 
+  const writeCfg = useCallback(
+    async (next: WbConfig) => {
+      setCfg(next);
+      try {
+        await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify(next));
+      } catch {
+        /* surfaced elsewhere; cfg state already updated optimistically */
+      }
+    },
+    [fs]
+  );
+
+  const pinned = useMemo(() => cfg.pinned ?? [], [cfg.pinned]);
+  const togglePin = useCallback(
+    (path: string) => {
+      const set = new Set(pinned);
+      if (set.has(path)) set.delete(path);
+      else set.add(path);
+      void writeCfg({ ...cfg, pinned: [...set] });
+    },
+    [cfg, pinned, writeCfg]
+  );
+
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
     for (const e of [...getBuiltinEnvironments(), ...workspaceTemplates]) if (!byId.has(e.id)) byId.set(e.id, e);
     return [...byId.values()];
   }, [workspaceTemplates]);
 
+  const envId = cfg.environment ?? null;
   const env = allEnvs.find((e) => e.id === envId);
   const panels = useMemo(() => [...getPanels(), ...(env?.views.map(viewToPanel) ?? [])], [env]);
-  const ctx: PanelContext = useMemo(() => ({ channelId, fs }), [channelId, fs]);
+  const ctx: PanelContext = useMemo(
+    () => ({ channelId, fs, pinned, togglePin }),
+    [channelId, fs, pinned, togglePin]
+  );
   const activePanel = panels.find((p) => p.id === active) ?? panels[0];
 
   const switchEnv = useCallback(
@@ -60,14 +93,13 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
       try {
         const manifest = allEnvs.find((e) => e.id === id);
         if (manifest) await seedManifest(fs, manifest); // scaffold starter files (idempotent)
-        await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify({ environment: id }));
-        setEnvId(id);
-        setActive(manifest?.views[0]?.id ?? ""); // land on the template's first view (or File)
+        await writeCfg({ ...cfg, environment: id }); // preserve pinned
+        setActive(manifest?.views[0]?.id ?? "");
       } finally {
         setBusy(false);
       }
     },
-    [fs, allEnvs]
+    [fs, cfg, allEnvs, writeCfg]
   );
 
   return (
@@ -94,6 +126,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
               </option>
             ))}
           </select>
+          {pinned.length > 0 && <span className="text-[11px] text-amber-500/80">📌 {pinned.length}</span>}
           {busy && <span className="text-[11px] text-zinc-500">初始化中…</span>}
           <div className="flex-1" />
           <button onClick={onClose} title="Close">
