@@ -106,22 +106,57 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
     };
 
     match result {
-        Ok(data) => json!({
-            "type": "resource_res",
-            "v": 1,
-            "req_id": req_id,
-            "ok": true,
-            "data": data,
-        }),
-        Err((code, msg)) => json!({
-            "type": "resource_res",
-            "v": 1,
-            "req_id": req_id,
-            "ok": false,
-            "code": code,
-            "error": msg,
-        }),
+        Ok(data) => ok_res(req_id, data),
+        Err((code, msg)) => err_res(req_id, &code, &msg),
     }
+}
+
+/// 浏览器用户经 WS 发起的 resource_req 入口。在通用 `dispatch` 之上加「用户路径」
+/// 专属策略：破坏性 `fs.rm` / `fs.mv` 需 owner/admin（bot 路径不受此限——bot 是
+/// 工作区文件的主要作者）。其余 verb 沿用 `dispatch` 内的 channel-role 鉴权。
+pub async fn dispatch_user(db: &PgPool, user_id: Uuid, frame: &Value) -> Value {
+    let resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
+    let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
+    let principal = Principal::user(user_id);
+
+    if matches!(resource, "fs.rm" | "fs.mv") {
+        let params = frame.get("params").cloned().unwrap_or(Value::Null);
+        if let Err((code, msg)) = require_channel_admin(db, &principal, &params).await {
+            return err_res(req_id, &code, &msg);
+        }
+    }
+    dispatch(db, principal, frame).await
+}
+
+/// 破坏性 fs 操作的门控：principal 在目标频道须为 owner/admin。
+async fn require_channel_admin(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+) -> Result<(), (String, String)> {
+    let channel_id = params
+        .get("channel_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<Uuid>().ok())
+        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let membership = authorize_channel_read(db, principal, channel_id).await?;
+    if role_can_admin(&membership.role) {
+        Ok(())
+    } else {
+        Err(permission_denied(
+            "destructive fs ops (rm/mv) require admin or owner",
+        ))
+    }
+}
+
+/// 构造成功的 resource_res 帧。
+fn ok_res(req_id: &str, data: Value) -> Value {
+    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": true, "data": data })
+}
+
+/// 构造失败的 resource_res 帧。
+fn err_res(req_id: &str, code: &str, msg: &str) -> Value {
+    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": false, "code": code, "error": msg })
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
@@ -185,6 +220,11 @@ pub async fn authorize_channel_write(
 
 pub fn role_can_write(role: &str) -> bool {
     matches!(role, "owner" | "admin" | "member")
+}
+
+/// owner/admin —— 破坏性操作（user 路径的 `fs.rm` / `fs.mv`）门控用。
+pub fn role_can_admin(role: &str) -> bool {
+    matches!(role, "owner" | "admin")
 }
 
 #[cfg(test)]
