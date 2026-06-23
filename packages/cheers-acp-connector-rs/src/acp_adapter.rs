@@ -238,7 +238,7 @@ impl RuntimeAdapter for AcpAdapter {
                     })),
                     "clientInfo": {
                         "name": "cce-acp-connector",
-                        "title": "AgentNexus ACP Connector",
+                        "title": "Cheers ACP Connector",
                         "version": env!("CARGO_PKG_VERSION")
                     }
                 }),

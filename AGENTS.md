@@ -2,7 +2,7 @@
 
 > **Language**: English | [中文](AGENTS.zh-CN.md)
 
-Project-specific instructions for coding agents working on AgentNexus.
+Project-specific instructions for coding agents working on Cheers.
 
 This is the English default edition prepared for the open-source documentation set. The full Chinese version is preserved next to this file for readers who prefer Chinese or need the original historical wording.
 
@@ -62,13 +62,13 @@ docker compose up -d --force-recreate --no-deps gateway
 
 ## ACP Connector Release Order (Mandatory)
 
-The TypeScript `packages/agentnexus-acp-connector` npm package has been removed.
-The supported connector is the Rust crate in `packages/agentnexus-acp-connector-rs`.
+The TypeScript `packages/cheers-acp-connector` npm package has been removed.
+The supported connector is the Rust crate in `packages/cheers-acp-connector-rs`.
 
 Required order when connector behavior materially changes:
 
-1. Update `packages/agentnexus-acp-connector-rs/Cargo.toml` and `Cargo.lock` when the Rust connector version or dependencies change.
-2. Run `cargo fmt --check`, `cargo test`, and `cargo check` for `packages/agentnexus-acp-connector-rs`.
+1. Update `packages/cheers-acp-connector-rs/Cargo.toml` and `Cargo.lock` when the Rust connector version or dependencies change.
+2. Run `cargo fmt --check`, `cargo test`, and `cargo check` for `packages/cheers-acp-connector-rs`.
 3. Rebuild and push the `opencode-bot` image from the same merged commit so container deployments contain the new Rust connector and MCP server binaries.
 4. Upgrade machines that run the connector locally by installing the Rust binary from the repo or the approved release artifact, then restart the corresponding connector daemon.
 5. Upgrade container deployments by pulling or deploying the rebuilt `opencode-bot` image and recreating the service.
@@ -79,7 +79,7 @@ Do not reintroduce the old npm connector package or the retired `@haowei0520/acp
 
 External-agent-first: the **Rust gateway** (`server/`) is the only backend, the
 **React frontend** (`frontend/`) is kept, agents connect externally
-(`packages/agentnexus-mcp-server` is the standard bridge). See
+(`packages/cheers-mcp-server` is the standard bridge). See
 [docs/arch/ARCHITECTURE_OVERVIEW.md](docs/arch/ARCHITECTURE_OVERVIEW.md).
 
 ```bash

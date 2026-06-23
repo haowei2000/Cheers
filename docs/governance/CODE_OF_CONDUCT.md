@@ -2,7 +2,7 @@
 
 > **Language**: English | [中文](CODE_OF_CONDUCT.zh-CN.md)
 
-The AgentNexus community wants to maintain a collaborative atmosphere that is professional, friendly, and problem-solving oriented.
+The Cheers community wants to maintain a collaborative atmosphere that is professional, friendly, and problem-solving oriented.
 
 ## Expected Behavior
 

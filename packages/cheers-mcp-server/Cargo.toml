@@ -1,10 +1,10 @@
 [package]
-name = "agentnexus-mcp-server"
+name = "cheers-mcp-server"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "agentnexus-mcp-server"
+name = "cheers-mcp-server"
 path = "src/main.rs"
 
 [dependencies]

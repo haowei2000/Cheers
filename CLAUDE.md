@@ -34,7 +34,7 @@ This is the English default edition prepared for the open-source documentation s
 
 The platform is **external-agent-first** (no Python service): the **Rust gateway**
 (`server/`) is the only backend, the **React frontend** (`frontend/`) is kept, and
-agents connect externally (`packages/agentnexus-mcp-server` is the standard bridge). See
+agents connect externally (`packages/cheers-mcp-server` is the standard bridge). See
 [docs/arch/ARCHITECTURE_OVERVIEW.md](docs/arch/ARCHITECTURE_OVERVIEW.md).
 
 ```bash

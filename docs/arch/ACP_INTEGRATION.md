@@ -1,4 +1,4 @@
-# AgentNexus ACP 接入设计（外部 Agent / Agent Bridge）
+# Cheers ACP 接入设计（外部 Agent / Agent Bridge）
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
@@ -15,7 +15,7 @@
 |------|------|------|
 | Rust Backend 职责 | **全量**：REST API + WS Gateway + Agent Bridge 协议 | 单一 Rust 进程，内部模块边界分明 |
 | 内置 Agent | **无**——平台外接优先，无内置 runtime | Intelligence 来自用户自己连接的外部 ACP Agent |
-| MCP Agent 接入 | **`agentnexus-mcp-server`（stdio）** 作为标准桥 | MCP ↔ Agent Bridge 翻译；agent 和 server 本地共存 |
+| MCP Agent 接入 | **`cheers-mcp-server`（stdio）** 作为标准桥 | MCP ↔ Agent Bridge 翻译；agent 和 server 本地共存 |
 | 资源访问 | **统一 `resource_req/res` 协议**（data channel） | bot 通过协议访问平台资源，不直连 DB |
 | connector 鉴权 | **botToken（agb_）在 Rust Backend 验** | 统一鉴权入口 |
 | 客户端线协议 | **不变** | Bot 输出经 Rust Backend realtime fan-out → 浏览器 |
@@ -27,7 +27,7 @@
 
 ### 形态
 ACP connector 跑在**开发者机器/私有环境**，拉起本地 ACP stdio agent（OpenCode、Claude 兼容），
-**反向连接**到 AgentNexus 服务端，把用户消息/附件转发给本地 agent，再把回复+生成文件流式回传。
+**反向连接**到 Cheers 服务端，把用户消息/附件转发给本地 agent，再把回复+生成文件流式回传。
 
 ### 连接
 三条服务端 WS 端点（`app/api/v1/agent_bridge/routes.py`）：
@@ -103,10 +103,10 @@ Browser / Mobile
 
 ### 3.1 接入方式对比
 
-| 维度 | ACP connector（直连） | agentnexus-mcp-server（MCP 桥） |
+| 维度 | ACP connector（直连） | cheers-mcp-server（MCP 桥） |
 |------|----------------------|-------------------------------|
 | 适用 agent | OpenCode 等原生 ACP agent | Claude / Codex / Cursor 等 MCP agent |
-| 本地组件 | connector + 可选 Daemon | agentnexus-mcp-server（stdio） |
+| 本地组件 | connector + 可选 Daemon | cheers-mcp-server（stdio） |
 | Agent Bridge | connector 直接持有 WS | mcp-server 通过 connector IPC 转发 |
 | 资源访问 | `resource_req` on data WS | MCP tool call → IPC → `resource_req` |
 | 部署 | 用户本地 | 用户本地，和 agent 共存 |

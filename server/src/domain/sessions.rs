@@ -128,7 +128,7 @@ pub async fn acquire_scope_session(
 
     let now = Utc::now();
     let session_id: String = sqlx::query_scalar(
-        "INSERT INTO agentnexus_sessions (
+        "INSERT INTO cheers_sessions (
             session_id, bot_id, provider, provider_account_id, provider_agent_id,
             provider_session_key, provider_session_id, current_scope_type, current_scope_id,
             status, metadata, last_used_at, created_at, updated_at
@@ -191,13 +191,13 @@ async fn upsert_session_binding(
     let (channel_id, topic_id, dm_id, binding_task_id) =
         scope_columns(scope_type, scope_id, task_id.as_deref());
     sqlx::query(
-        "INSERT INTO agentnexus_session_bindings (
+        "INSERT INTO cheers_session_bindings (
             binding_id, session_id, bot_id, provider, provider_account_id, provider_agent_id,
             scope_type, scope_id, channel_id, topic_id, dm_id, task_id, role, created_at
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW()
         )
-        ON CONFLICT ON CONSTRAINT uq_agentnexus_session_binding_scope
+        ON CONFLICT ON CONSTRAINT uq_cheers_session_binding_scope
         DO UPDATE SET
             session_id = EXCLUDED.session_id,
             role = EXCLUDED.role,
@@ -236,7 +236,7 @@ async fn upsert_session_binding(
 pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
     let now = Utc::now();
     sqlx::query(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET status = $1, last_used_at = $2, updated_at = $2
          WHERE session_id = $3",
     )
@@ -253,7 +253,7 @@ pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError
 pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
     let now = Utc::now();
     sqlx::query(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET status = $1, last_used_at = $2, updated_at = $2
          WHERE session_id = $3",
     )
@@ -265,7 +265,7 @@ pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppEr
     .map_err(AppError::Db)?;
 
     sqlx::query(
-        "UPDATE agentnexus_session_bindings
+        "UPDATE cheers_session_bindings
          SET detached_at = COALESCE(detached_at, $1)
          WHERE session_id = $2 AND detached_at IS NULL",
     )
@@ -285,7 +285,7 @@ pub async fn resolve_session_id_by_key(
     provider_session_key: &str,
 ) -> Result<Uuid, AppError> {
     sqlx::query(
-        "SELECT session_id FROM agentnexus_sessions
+        "SELECT session_id FROM cheers_sessions
          WHERE provider = $1
            AND provider_account_id = $2
            AND bot_id = $3
@@ -311,7 +311,7 @@ pub async fn resolve_session_id_by_provider_id(
     provider_session_id: &str,
 ) -> Result<Uuid, AppError> {
     sqlx::query(
-        "SELECT session_id FROM agentnexus_sessions
+        "SELECT session_id FROM cheers_sessions
          WHERE provider = $1
            AND provider_account_id = $2
            AND bot_id = $3
@@ -373,7 +373,7 @@ pub async fn apply_session_update(
     let metadata_json = metadata.map(|value| value.to_string());
 
     let updated: String = sqlx::query_scalar(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET provider_session_id = COALESCE($1, provider_session_id),
              metadata = CASE
                 WHEN $2 IS NULL THEN metadata
@@ -441,7 +441,7 @@ pub async fn apply_runtime_session_ack(
     let metadata_json = metadata.map(|value| value.to_string());
 
     let updated: String = sqlx::query_scalar(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET provider_session_id = COALESCE($1, provider_session_id),
              provider_session_key = COALESCE($2, provider_session_key),
              metadata = CASE

@@ -1,4 +1,4 @@
-# AgentNexus Troubleshooting Q&A
+# Cheers Troubleshooting Q&A
 
 > **Language**: English | [中文](技术排查Q&A.zh-CN.md)
 
@@ -28,7 +28,7 @@ docker compose logs -f postgres
 
 Backend file logs are written to `data/logs` when `LOG_DIR` is enabled:
 
-- `agentnexus.log`: general logs
+- `cheers.log`: general logs
 - `error.log`: errors and tracebacks
 
 ## Frontend Does Not Open
@@ -106,10 +106,10 @@ See [kkFileView Preview Guide](kkFileView配置说明.md) and [RustFS Object Sto
 
 ## Database Inspection
 
-AgentNexus defaults to PostgreSQL. Use the connection values in `.env`:
+Cheers defaults to PostgreSQL. Use the connection values in `.env`:
 
 ```bash
-docker compose exec postgres psql -U "${POSTGRES_USER:-agentnexus}" "${POSTGRES_DB:-agentnexus}"
+docker compose exec postgres psql -U "${POSTGRES_USER:-cheers}" "${POSTGRES_DB:-cheers}"
 ```
 
 Common tables:

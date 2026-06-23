@@ -9,19 +9,19 @@ services:
       - .env
     environment:
       # sqlx 用纯 postgres:// （非 SQLAlchemy 的 +asyncpg）
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-agentnexus}:${POSTGRES_PASSWORD:-agentnexus}@postgres:5432/${POSTGRES_DB:-agentnexus}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cheers}:${POSTGRES_PASSWORD:-cheers}@postgres:5432/${POSTGRES_DB:-cheers}
       - PORT=8000
       - REDIS_URL=redis://redis:6379/0
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
       # JWT RS256：必填，由 .env 提供（缺失则 gateway 启动 panic）
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:-}
       - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY:-}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       # S3 / RustFS
       - S3_ENDPOINT=${STORAGE_S3_ENDPOINT:-http://rustfs:9000}
-      - S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
-      - S3_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-agentnexus-local-access-key}
-      - S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-agentnexus-local-secret-key}
+      - S3_BUCKET=${STORAGE_S3_BUCKET:-cheers-files}
+      - S3_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-cheers-local-access-key}
+      - S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-cheers-local-secret-key}
       # SMTP（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -42,12 +42,12 @@ services:
       start_period: 20s
 
   opencode-bot:
-    image: ${OPENCODE_BOT_IMAGE:-47.99.42.4:5000/ai/agentnexus-opencode:latest}
+    image: ${OPENCODE_BOT_IMAGE:-47.99.42.4:5000/ai/cheers-opencode:latest}
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - AGENTNEXUS_WS_BASE=${OPENCODE_BOT_WS_BASE:-ws://gateway:8000}
+      - CHEERS_WS_BASE=${OPENCODE_BOT_WS_BASE:-ws://gateway:8000}
       - OPENCODE_BOT_USERNAME=${OPENCODE_BOT_USERNAME:-opencode}
       - OPENCODE_BOT_TOKEN=${OPENCODE_BOT_TOKEN:-}
       - OPENCODE_OPENAI_API_KEY=${OPENCODE_OPENAI_API_KEY:-}
@@ -108,13 +108,13 @@ services:
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-agentnexus}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentnexus}
-      - POSTGRES_DB=${POSTGRES_DB:-agentnexus}
+      - POSTGRES_USER=${POSTGRES_USER:-cheers}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-cheers}
+      - POSTGRES_DB=${POSTGRES_DB:-cheers}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentnexus}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cheers}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -136,10 +136,10 @@ services:
       - RUSTFS_ADDRESS=0.0.0.0:9000
       - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
       - RUSTFS_CONSOLE_ENABLE=true
-      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - RUSTFS_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-agentnexus-local-access-key}
-      - RUSTFS_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-agentnexus-local-secret-key}
+      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - RUSTFS_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-cheers-local-access-key}
+      - RUSTFS_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-cheers-local-secret-key}
       - RUSTFS_OBS_LOGGER_LEVEL=${RUSTFS_OBS_LOGGER_LEVEL:-info}
       - RUSTFS_OBJECT_CACHE_ENABLE=${RUSTFS_OBJECT_CACHE_ENABLE:-true}
       - RUSTFS_OBJECT_CACHE_TTL_SECS=${RUSTFS_OBJECT_CACHE_TTL_SECS:-300}

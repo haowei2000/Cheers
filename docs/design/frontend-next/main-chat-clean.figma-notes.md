@@ -1,4 +1,4 @@
-# AgentNexus Main Chat Mockup - Figma Notes
+# Cheers Main Chat Mockup - Figma Notes
 
 > Status: visual direction draft
 > File: `main-chat-clean.svg`

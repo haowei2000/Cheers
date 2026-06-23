@@ -1,4 +1,4 @@
-# AgentNexus 实时线协议规范 (Wire Protocol v2)
+# Cheers 实时线协议规范 (Wire Protocol v2)
 
 > 版本：v2
 > 分支：`break/rust-gateway-arch`

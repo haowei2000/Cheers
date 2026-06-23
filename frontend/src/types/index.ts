@@ -51,8 +51,16 @@ export interface FileInfo {
   download_url?: string | null;
 }
 
+export interface MessageMention {
+  member_id: string;
+  member_type: string;
+  username?: string | null;
+  display_name?: string | null;
+}
+
 export interface Message {
   msg_id: string;
+  channel_seq?: number;
   sender_id: string;
   sender_type: string;
   sender_name?: string;
@@ -69,10 +77,13 @@ export interface Message {
   in_reply_to_msg_id?: string | null;
   files?: FileInfo[];
   file_ids?: string[];
+  mentions?: MessageMention[];
   is_deleted?: boolean;
   is_partial?: boolean;
   error?: string | null;
   _streaming?: boolean;
+  /** Latest agent progress (trace) title shown while streaming. */
+  _trace?: string | null;
 }
 
 export interface MemberItem {

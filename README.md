@@ -1,11 +1,11 @@
-# AgentNexus
+# Cheers
 
 > **Language**: English | [中文](README.zh-CN.md)
 
-[![CI](https://github.com/Grant-Huang/AgentNexus/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Grant-Huang/AgentNexus/actions/workflows/ci.yml)
+[![CI](https://github.com/Grant-Huang/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Grant-Huang/Cheers/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-AgentNexus is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, Agent Bridge providers, HTTP LLM bots, file-aware conversations, and a four-layer channel memory model.
+Cheers is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, Agent Bridge providers, HTTP LLM bots, file-aware conversations, and a four-layer channel memory model.
 
 > Project status: early public preview. Core chat, Bot routing, Agent Bridge connectivity, file preview, and channel memory flows are usable. Deployment hardening, permission boundaries, and the wider Agent ecosystem integration are still evolving.
 
@@ -40,7 +40,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 
 - Backend: Rust + Axum + SQLx (Gateway) and React Frontend
 - Frontend: React, TypeScript, Tailwind CSS, Vite
-- Agent runtime: external ACP agents via `agentnexus-mcp-server` and ACP connectors
+- Agent runtime: external ACP agents via `cheers-mcp-server` and ACP connectors
 - Storage: PostgreSQL for business data and memory, S3-compatible object storage for files, optional kkFileView for complex document preview
 - Deployment: Docker Compose
 
@@ -85,7 +85,7 @@ npm run dev
 
 The platform is **external-agent-first**: there is no built-in bot (the old
 `Coordinator` is gone — routing is a deterministic `@mention → bot` lookup). Connect an
-external ACP agent (OpenCode, Claude, Codex) via `packages/agentnexus-mcp-server` or an
+external ACP agent (OpenCode, Claude, Codex) via `packages/cheers-mcp-server` or an
 ACP connector, then `@` it in a channel. See
 [docs/arch/BUILTIN_AGENT.md](docs/arch/BUILTIN_AGENT.md) and
 [docs/arch/DECENTRALIZED_MESH.md](docs/arch/DECENTRALIZED_MESH.md). Default seed data for

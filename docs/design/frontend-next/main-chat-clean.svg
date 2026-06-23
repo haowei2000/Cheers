@@ -49,7 +49,7 @@
     <g id="agent-streaming-message">
       <circle cx="414" cy="340" r="16" fill="#EEF4FF"/>
       <path d="M407 341c4-9 13-9 18 0M409 347h16" class="iconActive"/>
-      <text x="438" y="335" class="title">AgentNexus ACP</text>
+      <text x="438" y="335" class="title">Cheers ACP</text>
       <text x="548" y="335" class="small">running</text>
       <rect x="438" y="348" width="548" height="112" rx="10" fill="#FFFFFF" stroke="#D6E4FF"/>
       <text x="458" y="376" class="body">BridgeRuntime is loading the provider session and waiting for ACP output.</text>
@@ -130,7 +130,7 @@
   <g id="channel-list-panel" filter="url(#panelShadow)">
     <rect x="98" y="78" width="296" height="778" rx="14" fill="#FFFFFF" stroke="#E4E7EC"/>
     <g id="channel-header">
-      <text x="122" y="116" class="title">AgentNexus</text>
+      <text x="122" y="116" class="title">Cheers</text>
       <text x="122" y="138" class="small">Workspace · live</text>
       <circle cx="358" cy="116" r="5" fill="#16A34A"/>
     </g>

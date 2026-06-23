@@ -4,7 +4,7 @@
 
 ## Supported Versions
 
-AgentNexus is in early public preview. Security fixes are prioritized for:
+Cheers is in early public preview. Security fixes are prioritized for:
 
 - `develop` branch
 - Latest official tag / release
@@ -15,7 +15,7 @@ Whether the old version will be restored or repaired depends on the scope of imp
 
 Please do not disclose vulnerability details in public issues, PRs, or discussion forums.
 
-Prefer using GitHub's private vulnerability reporting / security advisory functionality. If the repository does not have this feature turned on, please report it via the contact information listed in the maintainer's public profile and include `AgentNexus security` in the title.
+Prefer using GitHub's private vulnerability reporting / security advisory functionality. If the repository does not have this feature turned on, please report it via the contact information listed in the maintainer's public profile and include `Cheers security` in the title.
 
 Please try to include in your report:
 

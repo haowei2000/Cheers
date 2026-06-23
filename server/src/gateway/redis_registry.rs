@@ -1,15 +1,15 @@
 /// Redis pub/sub 实现的 BotLocator + BotRegistry。
 ///
 /// BotLocator（派发侧）:
-///   dispatch_task  → PUBLISH agentnexus:bot:{bot_id}:control {task}
-///   send_data      → PUBLISH agentnexus:bot:{bot_id}:data {frame}
+///   dispatch_task  → PUBLISH cheers:bot:{bot_id}:control {task}
+///   send_data      → PUBLISH cheers:bot:{bot_id}:data {frame}
 ///
 /// BotRegistry（连接绑定侧，WS handler 调用）:
-///   bind_control   → SUBSCRIBE agentnexus:bot:{bot_id}:control，spawn 转发任务
-///   bind_data      → SUBSCRIBE agentnexus:bot:{bot_id}:data，spawn 转发任务
+///   bind_control   → SUBSCRIBE cheers:bot:{bot_id}:control，spawn 转发任务
+///   bind_data      → SUBSCRIBE cheers:bot:{bot_id}:data，spawn 转发任务
 ///   unbind         → 取消转发任务，DEL Redis 在线标记
 ///
-/// 在线标记: SET agentnexus:bot:{bot_id}:online 1 EX 30
+/// 在线标记: SET cheers:bot:{bot_id}:online 1 EX 30
 /// （通过 is_bot_online 检查，派发前先确认 bot 是否在线，避免无效 PUBLISH）
 use std::sync::Arc;
 
@@ -22,13 +22,13 @@ use uuid::Uuid;
 use super::registry::{BotLocator, BotRegistry};
 
 fn control_subject(bot_id: Uuid) -> String {
-    format!("agentnexus:bot:{bot_id}:control")
+    format!("cheers:bot:{bot_id}:control")
 }
 fn data_subject(bot_id: Uuid) -> String {
-    format!("agentnexus:bot:{bot_id}:data")
+    format!("cheers:bot:{bot_id}:data")
 }
 fn online_key(bot_id: Uuid) -> String {
-    format!("agentnexus:bot:{bot_id}:online")
+    format!("cheers:bot:{bot_id}:online")
 }
 
 // ── RedisBotLocator（派发侧）─────────────────────────────────────────────────

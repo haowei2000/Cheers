@@ -1,4 +1,4 @@
-//! AgentNexus gateway library.
+//! Cheers gateway library.
 //!
 //! Exposes the gateway's modules so both the `server` binary (`src/main.rs`)
 //! and the integration tests (`tests/`) link against the same real

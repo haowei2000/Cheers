@@ -1,4 +1,4 @@
-# AgentNexus 架构重构总览
+# Cheers 架构重构总览
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
@@ -59,7 +59,7 @@ Browser / Mobile
     ┌──────┴──────────────────────────────────┐
     ▼                                         ▼
 ┌───────────────────────┐     ┌───────────────────────────────┐
-│  外置 ACP Agent        │     │  agentnexus-mcp-server (stdio) │
+│  外置 ACP Agent        │     │  cheers-mcp-server (stdio) │
 │  OpenCode / Codex /   │     │  MCP ↔ Agent Bridge 桥         │
 │  任何 ACP connector   │     │  (Claude / Codex / Cursor 等)   │
 └───────────────────────┘     └───────────────────────────────┘
@@ -70,7 +70,7 @@ Browser / Mobile
 - **没有 NATS**：WS 直连，不需要消息总线（单实例前提，见下文部署模型）
 - **没有 Python REST API**：所有 REST 端点迁移到 Rust
 - **没有内置 Python Agent Service**：平台不提供内置 runtime；bot 全部来自外部连接
-- **`agentnexus-mcp-server`** 是 MCP 能力 agent 接入平台的标准桥，非独立服务
+- **`cheers-mcp-server`** 是 MCP 能力 agent 接入平台的标准桥，非独立服务
 
 > **外置 ACP bot 的本地形态**：外置 bot 通过本地 **Daemon（事件网关）** 接入——Daemon 负责本地事件过滤、设备认证、本地文件白名单（见 [BOT_PERMISSION](./BOT_PERMISSION.md) / [SECURITY](./SECURITY.md)）。
 
@@ -80,7 +80,7 @@ Browser / Mobile
 │  Claude / Codex / OpenCode          │     │  Rust Backend（单实例）  │
 │    │ MCP stdio                       │     │  transport/domain/       │
 │    ▼                                │     │  realtime/agent_bridge   │
-│  agentnexus-mcp-server              │     │                          │
+│  cheers-mcp-server              │     │                          │
 │    │ 或直接 ACP connector + Daemon   │─WSS▶│                          │
 └────────────────────────────────────┘     └──────────────────────────┘
 ```

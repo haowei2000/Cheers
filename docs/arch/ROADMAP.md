@@ -72,7 +72,7 @@ Redis 不再是 fan-out 路径的启动硬依赖。
 
 - **后端补齐**：用核心闭环对照现有 ~32 条路由，补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口。大部分已存在 —— 是补洞，不是新建。
 - **前端（本里程碑真正的工作量）**：打通 `useChatRealtime` 重连 → REST 补齐；流式 bot 回复渲染；mention 选择器（`<@bot>`/`<@user>`）；文件上传/附件 + `<#file>` token；presence；**bot 管理 UI**（注册外接 bot、签发 botToken、查看 config/status）。
-- **connector 通路验证**：一条文档化的 happy-path —— 经 `agentnexus-mcp-server` *或* `agentnexus-acp-connector-rs` 接入 Claude/Codex，@提及、流式、断线重连。
+- **connector 通路验证**：一条文档化的 happy-path —— 经 `cheers-mcp-server` *或* `cheers-acp-connector-rs` 接入 Claude/Codex，@提及、流式、断线重连。
 - 可选：R6 delta 热路径优化（M0 测试就位后才安全）—— 非性能瓶颈则延后。
 
 **验收门**：新用户能 建工作区/频道 → 邀请 → 发带 mention+文件的消息 → 接入外接 agent → @它 → 看它流式回复 → 刷新后看到完整历史。这就是可交付切片。
@@ -121,11 +121,11 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] R3 终态背压修复（fanout 入队失败且终态帧 → 4408 关闭；closers 信号 + browser close_rx；单测 3 项）
   - [x] R5 dispatcher 双派发修复（删前置 SELECT，create_placeholder 返回 rows_affected==1 定胜负；败者不派发 task）
   - [x] R4-2 集成测试（bin→lib + `#[sqlx::test]`，feature `integration` 门控；4 项对真实 PG：I2 gap-free / 流程 2 连续 seq + 流程 8 补齐 / R5 并发只派一次 / 流程 4 done finalize + 幂等）
-- [ ] **M1** 核心闭环可演示
-  - [ ] 后端 CRUD 补洞
-  - [ ] 前端实时 / 流式 / mention / 文件 / presence
-  - [ ] bot 管理 UI
-  - [ ] connector happy-path 文档化验证
+- [x] **M1** 核心闭环可演示 ✅ **2026-06-21 真机验证**（message→@bot→流式→持久化 + mention + 文件 + presence 全链路）
+  - [x] 后端 CRUD 补洞（admin seed 引导 · messages `?since_seq=` 追平 · botToken 签发 `POST /bots/:id/token` · S3 网关代理上传/下载 + 桶引导）
+  - [x] 前端实时 / 流式 / mention / 文件 / presence（全部 ✅）
+  - [x] bot 管理 UI（Settings → Bots：注册 / 签发 token / 加入频道）
+  - [x] connector happy-path 文档化验证（Rust connector + claude-code-acp 真机流式回复；见 [../DEMO_M1.md](../DEMO_M1.md)）
 - [ ] **M2** 功能裁剪（先定表，再实现）
 - [ ] **M3** 加固 & 文档对齐
 - [ ] **M4** 扩容（HA 触发）

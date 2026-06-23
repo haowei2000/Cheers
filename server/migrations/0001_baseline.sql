@@ -1,4 +1,4 @@
--- AgentNexus baseline schema
+-- Cheers baseline schema
 -- 从 Python SQLAlchemy models.py 逐字翻译（对应 Alembic revision 046）
 -- 新建 DB 时由 sqlx migrate 运行；已有 DB 手动标记为已应用（见 README）
 
@@ -423,7 +423,7 @@ CREATE TABLE IF NOT EXISTS agent_bridge_events (
     CONSTRAINT uq_agent_bridge_event_bot_stream_seq UNIQUE (bot_id, stream, seq)
 );
 
-CREATE TABLE IF NOT EXISTS agentnexus_sessions (
+CREATE TABLE IF NOT EXISTS cheers_sessions (
     session_id          VARCHAR(36) PRIMARY KEY,
     bot_id              VARCHAR(36) NOT NULL REFERENCES bot_accounts(bot_id) ON DELETE CASCADE,
     provider            VARCHAR(32) NOT NULL DEFAULT 'generic',
@@ -439,11 +439,11 @@ CREATE TABLE IF NOT EXISTS agentnexus_sessions (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS ix_agentnexus_sessions_bot ON agentnexus_sessions(bot_id, provider, provider_agent_id, provider_account_id);
+CREATE INDEX IF NOT EXISTS ix_cheers_sessions_bot ON cheers_sessions(bot_id, provider, provider_agent_id, provider_account_id);
 
-CREATE TABLE IF NOT EXISTS agentnexus_session_bindings (
+CREATE TABLE IF NOT EXISTS cheers_session_bindings (
     binding_id          VARCHAR(36) PRIMARY KEY,
-    session_id          VARCHAR(36) NOT NULL REFERENCES agentnexus_sessions(session_id) ON DELETE CASCADE,
+    session_id          VARCHAR(36) NOT NULL REFERENCES cheers_sessions(session_id) ON DELETE CASCADE,
     bot_id              VARCHAR(36) NOT NULL REFERENCES bot_accounts(bot_id) ON DELETE CASCADE,
     provider            VARCHAR(32) NOT NULL DEFAULT 'generic',
     provider_account_id VARCHAR(128) NOT NULL,
@@ -457,7 +457,7 @@ CREATE TABLE IF NOT EXISTS agentnexus_session_bindings (
     role                VARCHAR(16) NOT NULL DEFAULT 'primary',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     detached_at         TIMESTAMPTZ,
-    CONSTRAINT uq_agentnexus_session_binding_scope UNIQUE (bot_id, provider, provider_agent_id, provider_account_id, scope_type, scope_id),
-    CONSTRAINT uq_agentnexus_session_binding_session_scope UNIQUE (session_id, scope_type, scope_id)
+    CONSTRAINT uq_cheers_session_binding_scope UNIQUE (bot_id, provider, provider_agent_id, provider_account_id, scope_type, scope_id),
+    CONSTRAINT uq_cheers_session_binding_session_scope UNIQUE (session_id, scope_type, scope_id)
 );
-CREATE INDEX IF NOT EXISTS ix_agentnexus_session_bindings_lookup ON agentnexus_session_bindings(bot_id, provider, provider_agent_id, provider_account_id, scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS ix_cheers_session_bindings_lookup ON cheers_session_bindings(bot_id, provider, provider_agent_id, provider_account_id, scope_type, scope_id);

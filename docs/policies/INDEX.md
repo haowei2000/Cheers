@@ -1,4 +1,4 @@
-# AgentNexus Documentation Index
+# Cheers Documentation Index
 
 > **Language**: English | [中文](INDEX.zh-CN.md)
 

@@ -112,6 +112,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bots::get_bot_status),
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
+        .route("/api/v1/bots/:bot_id/token", post(api::bots::issue_bot_token))
         .route(
             "/api/v1/bots/:bot_id/capability-delegations",
             get(api::acp_capability::list_delegations).post(api::acp_capability::create_delegation),
@@ -128,6 +129,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/capability-delegations/:delegation_id",
             delete(api::acp_capability::revoke_delegation),
         )
+        .route("/api/v1/files", post(api::files::upload_file))
         .route("/api/v1/files/presign", post(api::files::request_presign))
         .route(
             "/api/v1/files/:file_id/confirm",

@@ -1,4 +1,4 @@
-# AgentNexus ACP 连接模型（深挖）
+# Cheers ACP 连接模型（深挖）
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
@@ -68,21 +68,21 @@
 ```
 路由层级：
   bot_id ──→ Rust Backend（唯一连接管理方）
-    └─ scope (workspace) ──→ provider_session_key   (PG: AgentNexusSessionBinding)
+    └─ scope (workspace) ──→ provider_session_key   (PG: CheersSessionBinding)
          └─ data WS 每帧带 channel_id ──→ demux 到对应会话
 ```
 
 - `_primary_scope(trigger)` → `(scope_type, scope_id)`：默认→workspace scope，用于本地 ACP 上下文隔离。
 - `build_provider_session_key(workspace_id, bot_id)` → 稳定 key，本地 agent 据此隔离每会话上下文。当前实现默认：
-  `agentnexus:workspace:{workspace_id}:bot:{bot_id}`。
+  `cheers:workspace:{workspace_id}:bot:{bot_id}`。
 - 单条 data WS 是**多路复用隧道**；`channel_id` 是 demux 维度。**session 不是新的连接层，是 bot 之下的子维度。**
 
 > **「session」二义辨析（两个不同概念，勿混）**：
 > | 名称 | 是什么 | 用途 | 谁产生 id |
 > |------|--------|------|----------|
-> | `provider_session_key`（本文/`AgentNexusSessionBinding`） | 本地 ACP agent 的会话上下文句柄，scope→key 绑定 | **仅本地 agent 隔离上下文**；**不参与回流路由**（§7） | `build_provider_session_key(...)` 派生 |
-> | `AgentNexusSession`（[BOT_PERMISSION](./BOT_PERMISSION.md)/[TASK_DELIVERY](./TASK_DELIVERY.md) 的 `session_id`） | 平台侧任务会话实体，带 `created_by` | 承载 `session` 级 **Grant** 与对象级权限 | 平台创建 |
-> 二者**不是同一个 id**：前者是 demux/上下文维度，后者是权限/生命周期维度。task 帧里的 `session_id` 指**后者**（AgentNexusSession）。grant 的 `scope=session` 校验的也是后者。
+> | `provider_session_key`（本文/`CheersSessionBinding`） | 本地 ACP agent 的会话上下文句柄，scope→key 绑定 | **仅本地 agent 隔离上下文**；**不参与回流路由**（§7） | `build_provider_session_key(...)` 派生 |
+> | `CheersSession`（[BOT_PERMISSION](./BOT_PERMISSION.md)/[TASK_DELIVERY](./TASK_DELIVERY.md) 的 `session_id`） | 平台侧任务会话实体，带 `created_by` | 承载 `session` 级 **Grant** 与对象级权限 | 平台创建 |
+> 二者**不是同一个 id**：前者是 demux/上下文维度，后者是权限/生命周期维度。task 帧里的 `session_id` 指**后者**（CheersSession）。grant 的 `scope=session` 校验的也是后者。
 
 ---
 

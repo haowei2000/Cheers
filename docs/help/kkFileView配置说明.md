@@ -2,14 +2,14 @@
 
 > **Language**: English | [中文](kkFileView配置说明.zh-CN.md)
 
-AgentNexus combines built-in preview for simple files with kkFileView for complex Office, WPS, OFD, archive, CAD, and EPUB previews.
+Cheers combines built-in preview for simple files with kkFileView for complex Office, WPS, OFD, archive, CAD, and EPUB previews.
 
 ## Preview Flow
 
-1. User opens a file preview in AgentNexus.
+1. User opens a file preview in Cheers.
 2. Backend creates a short-lived `public-preview` URL.
 3. The URL is encoded and passed to kkFileView.
-4. kkFileView fetches the source file through AgentNexus.
+4. kkFileView fetches the source file through Cheers.
 5. Backend validates the token and streams the file.
 6. kkFileView renders the preview page.
 
@@ -17,7 +17,7 @@ AgentNexus combines built-in preview for simple files with kkFileView for comple
 
 | Variable | Purpose |
 |---|---|
-| `PUBLIC_BASE_URL` | Public AgentNexus URL kkFileView can call back to |
+| `PUBLIC_BASE_URL` | Public Cheers URL kkFileView can call back to |
 | `KKFILEVIEW_ENABLED` | Enables complex document preview |
 | `KKFILEVIEW_BASE_URL` | Public kkFileView URL returned to the frontend |
 | `KKFILEVIEW_HOST_BIND` | Host bind address; keep local-only in production behind a reverse proxy |
@@ -27,7 +27,7 @@ AgentNexus combines built-in preview for simple files with kkFileView for comple
 
 ## Reverse Proxy
 
-Expose kkFileView under `/preview/` and make sure `/api`, `/ws`, and file preview routes are forwarded to the AgentNexus backend. The kkFileView container must be able to reach `PUBLIC_BASE_URL`.
+Expose kkFileView under `/preview/` and make sure `/api`, `/ws`, and file preview routes are forwarded to the Cheers backend. The kkFileView container must be able to reach `PUBLIC_BASE_URL`.
 
 ## Common Problems
 

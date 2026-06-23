@@ -11,7 +11,7 @@ use crate::daemon::{
 
 #[derive(Debug, Parser)]
 #[command(name = "cce-acp-connector")]
-#[command(about = "AgentNexus ACP connector daemon")]
+#[command(about = "Cheers ACP connector daemon")]
 pub struct Args {
     #[command(subcommand)]
     command: Option<Command>,

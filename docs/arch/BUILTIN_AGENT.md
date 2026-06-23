@@ -5,7 +5,7 @@
 > This document supersedes the earlier "one generic built-in runtime" direction.
 > The platform is **external-agent-first**: there is no built-in Python Agent Service.
 > Intelligence comes entirely from user-connected ACP agents (OpenCode, Claude,
-> Codex, or any ACP-compatible agent). The `agentnexus-mcp-server` package is the
+> Codex, or any ACP-compatible agent). The `cheers-mcp-server` package is the
 > standard bridge for MCP-capable agents to participate as ACP bots.
 
 ---
@@ -18,7 +18,7 @@ There is no built-in runtime. The platform is a pure protocol/data/routing layer
 |---|---|---|
 | **Platform** | REST API, WS gateway, Agent Bridge, Resource API, mesh routing, DB/S3 | Rust Backend |
 | **Intelligence** | LLM reasoning, task execution, memory distillation | User-connected external ACP agent |
-| **Bridge** | MCP ↔ Agent Bridge translation for MCP-capable agents | `agentnexus-mcp-server` (stdio) |
+| **Bridge** | MCP ↔ Agent Bridge translation for MCP-capable agents | `cheers-mcp-server` (stdio) |
 
 A "bot in a channel" is always an external ACP agent connected via a user-owned
 connector or the MCP bridge. The platform never has a process of its own that reasons
@@ -39,9 +39,9 @@ or calls an LLM.
 
 ---
 
-## 3. `agentnexus-mcp-server` is the standard bridge
+## 3. `cheers-mcp-server` is the standard bridge
 
-`packages/agentnexus-mcp-server/` (already implemented) is the canonical way for
+`packages/cheers-mcp-server/` (already implemented) is the canonical way for
 MCP-capable agents (Claude Code, Codex, Cursor-hosted agents, OpenCode) to act as
 ACP bots in the platform.
 
@@ -50,7 +50,7 @@ User's machine
   ├─ Claude / Codex / OpenCode   ← the intelligence; calls LLM, reasons, acts
   │       │ MCP stdio
   │       ▼
-  │  agentnexus-mcp-server       ← translates MCP tools/resources ↔ resource_req/res
+  │  cheers-mcp-server       ← translates MCP tools/resources ↔ resource_req/res
   │       │ Agent Bridge WS
   │       ▼
 Rust Backend                     ← platform; routes tasks, persists messages, fan-out
@@ -119,7 +119,7 @@ Browser / Mobile
                │ Agent Bridge WS (control + data)
     ┌──────────┴──────────┐
     ▼                     ▼
-OpenCode / Codex     agentnexus-mcp-server
+OpenCode / Codex     cheers-mcp-server
 (ACP connector)      (MCP ↔ Agent Bridge bridge)
                           │ MCP stdio
                           ▼

@@ -1,4 +1,4 @@
-# AgentNexus 帮助文档
+# Cheers 帮助文档
 
 > **语言**：中文 | [English](README.md)
 

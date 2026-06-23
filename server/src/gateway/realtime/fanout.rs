@@ -20,6 +20,11 @@ pub trait Fanout: Send + Sync {
 
     /// 广播给指定用户的所有连接（未读通知等 user 级事件）。
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame);
+
+    /// 频道当前在线用户列表（presence）。默认空；进程内实现覆盖。
+    fn online_users(&self, _channel_id: Uuid) -> Vec<Uuid> {
+        Vec::new()
+    }
 }
 
 // ── 进程内实现 ────────────────────────────────────────────────────────────────
@@ -34,6 +39,9 @@ pub struct InProcessFanout {
     /// conn_id → 背压关闭信号端（I6）。终态帧入队失败时触发，
     /// 让该连接的写循环以 4408 关闭，客户端转 REST 补齐。
     closers: DashMap<Uuid, mpsc::Sender<()>>,
+    /// conn_id → user_id。用于把频道订阅（按 conn 记录）映射回在线用户，
+    /// 供 presence 广播使用。
+    conn_users: DashMap<Uuid, Uuid>,
 }
 
 /// 连接的标识符 + 发送端
@@ -49,6 +57,7 @@ impl InProcessFanout {
             channels: DashMap::new(),
             users: DashMap::new(),
             closers: DashMap::new(),
+            conn_users: DashMap::new(),
         })
     }
 
@@ -61,10 +70,28 @@ impl InProcessFanout {
         close_tx: mpsc::Sender<()>,
     ) {
         self.closers.insert(conn_id, close_tx);
+        self.conn_users.insert(conn_id, user_id);
         self.users
             .entry(user_id)
             .or_default()
             .push(ConnSender { conn_id, tx });
+    }
+
+    /// 频道当前在线的去重用户列表（按 conn 订阅映射回 user_id）。
+    pub fn channel_online_users(&self, channel_id: Uuid) -> Vec<Uuid> {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        if let Some(senders) = self.channels.get(&channel_id) {
+            for s in senders.value() {
+                if let Some(uid) = self.conn_users.get(&s.conn_id) {
+                    if seen.insert(*uid) {
+                        out.push(*uid);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// 向一组连接投递一帧。流式帧队列满时静默丢弃（靠 message_done 自愈）；
@@ -103,6 +130,7 @@ impl InProcessFanout {
             senders.retain(|s| s.conn_id != conn_id);
         }
         self.closers.remove(&conn_id);
+        self.conn_users.remove(&conn_id);
     }
 }
 
@@ -112,6 +140,7 @@ impl Default for InProcessFanout {
             channels: DashMap::new(),
             users: DashMap::new(),
             closers: DashMap::new(),
+            conn_users: DashMap::new(),
         }
     }
 }
@@ -128,6 +157,10 @@ impl Fanout for InProcessFanout {
         if let Some(senders) = self.users.get(&user_id) {
             self.deliver(senders.value(), &frame);
         }
+    }
+
+    fn online_users(&self, channel_id: Uuid) -> Vec<Uuid> {
+        self.channel_online_users(channel_id)
     }
 }
 

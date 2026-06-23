@@ -1,16 +1,16 @@
-# AgentNexus Agent Bridge Protocol v1
+# Cheers Agent Bridge Protocol v1
 
 > 状态：架构层规范草案
 > 日期：2026-06-01
-> 适用范围：AgentNexus Rust Backend ↔ AgentNexus Connector
+> 适用范围：Cheers Rust Backend ↔ Cheers Connector
 > 配套：[CLIENT_DAEMON_ARCHITECTURE](./CLIENT_DAEMON_ARCHITECTURE.md) · [AGENT_BRIDGE_ACP_COMPATIBILITY](./AGENT_BRIDGE_ACP_COMPATIBILITY.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md) · [ACP_CONNECTION_MODEL](./ACP_CONNECTION_MODEL.md)
 
-本文定义 **AgentNexus Agent Bridge Protocol** 到底实现什么、如何握手、支持哪些请求和事件、
+本文定义 **Cheers Agent Bridge Protocol** 到底实现什么、如何握手、支持哪些请求和事件、
 以及在整体架构中位于哪一层。
 
 核心结论：
 
-**Agent Bridge Protocol 是 AgentNexus 平台协议，不是 ACP JSON-RPC。**
+**Agent Bridge Protocol 是 Cheers 平台协议，不是 ACP JSON-RPC。**
 
 它连接的是：
 
@@ -60,7 +60,7 @@ Agent Bridge Protocol 负责平台事实：
 
 ```
 Browser / Mobile
-  │ AgentNexus REST + Browser WS
+  │ Cheers REST + Browser WS
   ▼
 Rust Backend
   ├─ API/domain: workspace/channel/message/file/memory/session
@@ -140,7 +140,7 @@ Connector
 ### 2.4 Backend → Connector 发送模型
 
 Backend 向 connector 发消息不是直接调用 ACP，也不是直接访问本地 agent。Backend 只向
-Agent Bridge 的 control/data WS 写 AgentNexus 协议帧。
+Agent Bridge 的 control/data WS 写 Cheers 协议帧。
 
 实现层可以是：
 
@@ -373,7 +373,7 @@ Backend 可以记录 `ready` 信息用于运维状态展示，但不应把 runti
 | 概念 | 生命周期 | 谁创建/控制 | 用途 |
 |------|----------|-------------|------|
 | Bridge connection session | 一次 control/data WS 连接 | Backend 握手时创建 `connection_id` | 连接管理、supersede、日志追踪 |
-| AgentNexus runtime session | 可跨多个 task 复用 | Backend 创建并持久化 `session_id` / `provider_session_key` | 平台侧 agent 上下文、权限 grant、审计 |
+| Cheers runtime session | 可跨多个 task 复用 | Backend 创建并持久化 `session_id` / `provider_session_key` | 平台侧 agent 上下文、权限 grant、审计 |
 | Provider/ACP session | 本地或远端 agent runtime 内部会话 | Connector runtime adapter 创建/恢复 | 映射到 ACP `session/new` / `session/load` 等 |
 | Task / turn | 一次用户触发的 agent run | Backend dispatcher 创建 `task_id` | 让 agent 在某个 session 上处理一次输入 |
 
@@ -504,7 +504,7 @@ runtime_session S
 ### 7.1 `runtime_session_control`（Backend → Connector / control）
 
 Backend 用这个帧显式控制 connector 内部的 runtime session。它控制的是
-AgentNexus runtime session 与 provider/ACP session 的映射，不是一次 task。
+Cheers runtime session 与 provider/ACP session 的映射，不是一次 task。
 
 ```jsonc
 {
@@ -513,8 +513,8 @@ AgentNexus runtime session 与 provider/ACP session 的映射，不是一次 tas
   "request_id": "<uuid>",
   "action": "create",
   "session": {
-    "id": "<agentnexus_session_uuid>",
-    "provider_session_key": "agentnexus:workspace:<workspace_id>:bot:<bot_id>",
+    "id": "<cheers_session_uuid>",
+    "provider_session_key": "cheers:workspace:<workspace_id>:bot:<bot_id>",
     "primary_scope_type": "workspace",
     "primary_scope_id": "<workspace_id>",
     "task_scope_id": "<channel_or_thread_uuid>"
@@ -552,8 +552,8 @@ Connector 必须回：
   "action": "create",
   "ok": true,
   "session": {
-    "id": "<agentnexus_session_uuid>",
-    "provider_session_key": "agentnexus:workspace:<workspace_id>:bot:<bot_id>",
+    "id": "<cheers_session_uuid>",
+    "provider_session_key": "cheers:workspace:<workspace_id>:bot:<bot_id>",
     "provider_session_id": "acp-session-id",
     "status": "active"
   },
@@ -603,8 +603,8 @@ Connector 必须回：
   "depth": 0,
   "trigger": "user_message",
   "placeholder_msg_id": "<uuid>",
-  "provider_session_key": "agentnexus:workspace:<workspace_id>:bot:<bot_id>",
-  "session_id": "<agentnexus_session_uuid>",
+  "provider_session_key": "cheers:workspace:<workspace_id>:bot:<bot_id>",
+  "session_id": "<cheers_session_uuid>",
   "session_policy": {
     "on_missing": "create",
     "on_paused": "resume",
@@ -633,8 +633,8 @@ Connector 必须回：
     "connector_control": {}
   },
   "session": {
-    "id": "<agentnexus_session_uuid>",
-    "provider_session_key": "agentnexus:workspace:<workspace_id>:bot:<bot_id>",
+    "id": "<cheers_session_uuid>",
+    "provider_session_key": "cheers:workspace:<workspace_id>:bot:<bot_id>",
     "primary_scope_type": "workspace",
     "primary_scope_id": "<workspace_id>"
   },
@@ -646,7 +646,7 @@ Connector 必须回：
 
 - `trigger_msg_id` 是触发消息。
 - `placeholder_msg_id` 是 bot 需要用 `delta` / `done` 完成的占位消息。
-- `session_id` 是 AgentNexus 平台 session，不是 ACP session id。
+- `session_id` 是 Cheers 平台 session，不是 ACP session id。
 - `provider_session_key` 是 connector/runtime 侧上下文复用 key。
 - `session_policy` 定义 task 对 runtime session 的隐式 create/resume 行为。
 - `trigger_message` 和 `attachments` 是 task 启动所需的最小上下文。
@@ -664,7 +664,7 @@ Connector 必须回：
   "msg_id": "<placeholder_msg_id>",
   "seq": 7,
   "delta": "partial text",
-  "session_id": "<agentnexus_session_uuid>",
+  "session_id": "<cheers_session_uuid>",
   "provider_session_key": "...",
   "provider_session_id": "runtime-session-id",
   "acp_capability": {}
@@ -688,7 +688,7 @@ Connector 必须回：
   "content": "final answer",
   "file_ids": ["<file_id>"],
   "mention_ids": ["<member_id>"],
-  "session_id": "<agentnexus_session_uuid>",
+  "session_id": "<cheers_session_uuid>",
   "provider_session_key": "...",
   "provider_session_id": "runtime-session-id",
   "acp_capability": {}
@@ -722,7 +722,7 @@ Connector 必须回：
   "client_msg_id": "<uuid>",
   "msg_id": "<placeholder_msg_id>",
   "message": "ACP provider error: rate limit",
-  "session_id": "<agentnexus_session_uuid>",
+  "session_id": "<cheers_session_uuid>",
   "provider_session_key": "...",
   "provider_session_id": "runtime-session-id",
   "acp_capability": {}
@@ -744,7 +744,7 @@ Connector 的协议错误帧。Backend 应返回 `terminal_ack`。
   "in_reply_to_msg_id": null,
   "file_ids": [],
   "mention_ids": [],
-  "session_id": "<agentnexus_session_uuid>",
+  "session_id": "<cheers_session_uuid>",
   "acp_capability": {}
 }
 ```
@@ -808,7 +808,7 @@ Connector 的协议错误帧。Backend 应返回 `terminal_ack`。
   "request_id": "perm_123",
   "task_id": "<uuid>",
   "msg_id": "<placeholder_msg_id>",
-  "session_id": "<agentnexus_session_uuid>",
+  "session_id": "<cheers_session_uuid>",
   "provider_session_key": "...",
   "provider_session_id": "runtime-session-id",
   "title": "Allow file edit?",
@@ -1061,7 +1061,7 @@ Agent Bridge 不能把所有字段都加密。Backend 必须看到路由和权�
   "v": 1,
   "req_id": "r1",
   "resource": "provider.config.update",
-  "session_id": "<agentnexus_session_uuid>",
+  "session_id": "<cheers_session_uuid>",
   "provider_session_key": "...",
   "encrypted": true,
   "encrypted_payload": {
@@ -1072,7 +1072,7 @@ Agent Bridge 不能把所有字段都加密。Backend 必须看到路由和权�
       "type": "resource_req",
       "req_id": "r1",
       "resource": "provider.config.update",
-      "session_id": "<agentnexus_session_uuid>"
+      "session_id": "<cheers_session_uuid>"
     },
     "ciphertext": "base64...",
     "tag": "base64..."
@@ -1233,7 +1233,7 @@ v1.1 再引入 durable event_log，并定义哪些 Backend → Connector event �
 
 ### Step 2：实现 runtime session lifecycle
 
-- Backend 创建/更新 AgentNexus runtime session。
+- Backend 创建/更新 Cheers runtime session。
 - connector 将 `create/pause/terminate/resume` 映射到 ACP/custom runtime adapter。
 - connector 回写 `provider_session_id` 和 session status。
 - 明确 task 的 `session_policy` 只做 lazy ensure，不替代 lifecycle command。
@@ -1267,9 +1267,9 @@ v1.1 再引入 durable event_log，并定义哪些 Backend → Connector event �
 
 ## 13. 一句话原则
 
-**Backend 只实现 AgentNexus 平台协议；connector 负责把 ACP 或任何自定义 runtime 协议翻译成这个平台协议。**
+**Backend 只实现 Cheers 平台协议；connector 负责把 ACP 或任何自定义 runtime 协议翻译成这个平台协议。**
 
 这能同时保住两件事：
 
-- AgentNexus 平台层的权限、消息、文件、审批、配置语义不被 ACP 或 vendor 协议污染。
+- Cheers 平台层的权限、消息、文件、审批、配置语义不被 ACP 或 vendor 协议污染。
 - ACP 和自定义 agent 都能接入，因为差异被限制在 connector adapter 内部。

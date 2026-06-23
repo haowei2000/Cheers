@@ -1,8 +1,8 @@
-# AgentNexus Frontend Operations Manual
+# Cheers Frontend Operations Manual
 
-> **Language**: English | [中文](<AgentNexus 前端操作手册.zh-CN.md>)
+> **Language**: English | [中文](<Cheers 前端操作手册.zh-CN.md>)
 
-User-facing guide for operating the AgentNexus frontend.
+User-facing guide for operating the Cheers frontend.
 
 This is the English default edition prepared for the open-source documentation set. The full Chinese version is preserved next to this file for readers who prefer Chinese or need the original historical wording.
 

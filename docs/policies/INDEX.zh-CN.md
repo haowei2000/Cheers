@@ -1,4 +1,4 @@
-# AgentNexus 文档索引
+# Cheers 文档索引
 
 > **语言**：中文 | [English](INDEX.md)
 

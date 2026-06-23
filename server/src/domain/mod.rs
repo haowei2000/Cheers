@@ -4,4 +4,5 @@ pub mod chains;
 pub mod channel_seq;
 pub mod mentions;
 pub mod messages;
+pub mod seed;
 pub mod sessions;

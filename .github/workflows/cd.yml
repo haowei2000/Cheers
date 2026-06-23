@@ -11,8 +11,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_GATEWAY: ghcr.io/${{ github.repository_owner }}/agentnexus-gateway
-  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/agentnexus-frontend
+  IMAGE_GATEWAY: ghcr.io/${{ github.repository_owner }}/cheers-gateway
+  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/cheers-frontend
 
 jobs:
   changes:

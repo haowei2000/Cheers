@@ -1,4 +1,4 @@
-# AgentNexus Bot 权限模型
+# Cheers Bot 权限模型
 
 > 版本：v7
 > 分支：`break/rust-gateway-arch`
@@ -195,7 +195,7 @@ grant_eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiSldUIn0...
 ```python
 # Session 删除
 def delete_session(session_id, user_id):
-    session = db.get(AgentNexusSession, session_id)
+    session = db.get(CheersSession, session_id)
 
     # 第 1 层: Grant
     grant = evaluate(bot_id=session.bot_id, resource="session", action="delete",
@@ -215,7 +215,7 @@ def delete_session(session_id, user_id):
 ```python
 # Session 停止
 def stop_session(session_id, user_id):
-    session = db.get(AgentNexusSession, session_id)
+    session = db.get(CheersSession, session_id)
 
     # 第 1 层: Grant
     grant = evaluate(...)
@@ -511,14 +511,14 @@ CREATE INDEX idx_grants_expires ON bot_grants(expires_at)
 ### Session 表
 
 ```sql
-ALTER TABLE agentnexus_sessions ADD COLUMN created_by TEXT REFERENCES users(id);
+ALTER TABLE cheers_sessions ADD COLUMN created_by TEXT REFERENCES users(id);
 -- 记录 session 创建者，用于对象级权限检查
 ```
 
 ### Daemon 侧（用户本地）
 
 ```
-~/.agentnexus/
+~/.cheers/
 ├── daemon.json              ← 事件过滤策略（服务端不可修改）
 ├── device.key               ← 设备私钥
 ├── device.cert              ← 设备证书
@@ -652,7 +652,7 @@ Agent 不可修改:
 
 | Phase | 动作 |
 |-------|------|
-| **0** | DB: `bot_grants` 表 + 索引；`agentnexus_sessions.created_by`；按 trust_level 填充默认 grants |
+| **0** | DB: `bot_grants` 表 + 索引；`cheers_sessions.created_by`；按 trust_level 填充默认 grants |
 | **1** | Backend: Grant CRUD API；evaluate()；业务逻辑检查（session 所有权等）；设备注册 |
 | **2** | Daemon: 事件过滤引擎；确认弹窗 |
 | **3** | 前端: Grant 管理 UI；审批卡增强；设备管理 |

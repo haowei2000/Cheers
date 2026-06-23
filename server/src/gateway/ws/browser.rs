@@ -150,6 +150,25 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     state
         .conn_manager
         .on_disconnect(user_id, conn_id, &subscribed);
+    for channel_id in &subscribed {
+        broadcast_presence(&state, *channel_id).await;
+    }
+}
+
+/// 计算频道当前在线用户并广播 presence 帧（订阅/退订/断线时触发）。
+/// presence 非终态帧，队列满时可丢弃——下次变更会再发一次全量。
+async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
+    let user_ids = state.fanout.online_users(channel_id);
+    let frame = WireFrame::channel(
+        channel_id,
+        "presence",
+        serde_json::json!({
+            "channel_id": channel_id,
+            "online_user_ids": user_ids,
+            "count": user_ids.len(),
+        }),
+    );
+    state.fanout.broadcast_channel(channel_id, frame).await;
 }
 
 // ── 鉴权阶段 ─────────────────────────────────────────────────────────────────
@@ -267,6 +286,7 @@ async fn handle_client_frame(
                 Ok(()) => {
                     subscribed.push(channel_id);
                     send_control(socket, &ServerControl::Subscribed { channel_id }).await;
+                    broadcast_presence(state, channel_id).await;
                 }
                 Err(_) => {
                     close(socket, CLOSE_NOT_MEMBER, "not a channel member").await;
@@ -278,6 +298,7 @@ async fn handle_client_frame(
             state.conn_manager.unsubscribe(conn_id, channel_id);
             subscribed.retain(|&id| id != channel_id);
             send_control(socket, &ServerControl::Unsubscribed { channel_id }).await;
+            broadcast_presence(state, channel_id).await;
         }
 
         ClientFrame::Ping => {

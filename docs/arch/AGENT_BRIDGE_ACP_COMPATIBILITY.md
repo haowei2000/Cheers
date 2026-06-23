@@ -4,7 +4,7 @@
 > 日期：2026-06-02
 > 配套：[AGENT_BRIDGE_PROTOCOL](./AGENT_BRIDGE_PROTOCOL.md) · [ACP_CONNECTION_MODEL](./ACP_CONNECTION_MODEL.md) · [ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
 
-本文专门讨论 AgentNexus 当前的服务端 `acp-bridge` 协议与外部 Agent Client Protocol
+本文专门讨论 Cheers 当前的服务端 `acp-bridge` 协议与外部 Agent Client Protocol
 （ACP）的关系，并给出一个能同时兼顾自定义 agent 协议和 ACP 协议的系统边界。
 
 Agent Bridge Protocol 的握手、请求/事件表、时序和实现范围见
@@ -12,7 +12,7 @@ Agent Bridge Protocol 的握手、请求/事件表、时序和实现范围见
 
 这里的核心判断是：
 
-**AgentNexus 服务端不应该直接变成 ACP Server。服务端应保留平台侧 Agent Bridge
+**Cheers 服务端不应该直接变成 ACP Server。服务端应保留平台侧 Agent Bridge
 Protocol，ACP 只作为 connector 面向本地 agent runtime 的一种适配协议。**
 
 换句话说：
@@ -20,11 +20,11 @@ Protocol，ACP 只作为 connector 面向本地 agent runtime 的一种适配协
 ```
 Browser / User
   │
-  │ AgentNexus REST + browser WS
+  │ Cheers REST + browser WS
   ▼
 Rust Backend
   │
-  │ AgentNexus Agent Bridge Protocol
+  │ Cheers Agent Bridge Protocol
   │ control WS + data WS
   ▼
 Connector
@@ -41,15 +41,15 @@ Connector
 
 ## 1. 两个协议解决的问题不同
 
-### 1.1 AgentNexus Agent Bridge Protocol
+### 1.1 Cheers Agent Bridge Protocol
 
-AgentNexus 自定义的 Bridge Protocol 是平台边界协议。它连接的是：
+Cheers 自定义的 Bridge Protocol 是平台边界协议。它连接的是：
 
 ```
-AgentNexus Backend ↔ connector
+Cheers Backend ↔ connector
 ```
 
-它需要表达 AgentNexus 的平台事实：
+它需要表达 Cheers 的平台事实：
 
 - bot 身份、bot token、在线状态、control/data 连接生命周期。
 - workspace/channel/member/message/file/memory 等平台资源。
@@ -58,7 +58,7 @@ AgentNexus Backend ↔ connector
 - 服务端写后投递、channel fanout、持久化与最终一致。
 - capability delegation、平台级资源鉴权和审计。
 
-这些都不是纯粹的 ACP 语义，而是 AgentNexus 作为协作平台必须拥有的语义。
+这些都不是纯粹的 ACP 语义，而是 Cheers 作为协作平台必须拥有的语义。
 
 ### 1.2 ACP
 
@@ -82,8 +82,8 @@ editor / client ↔ coding agent
 - 客户端文件系统、terminal、权限请求。
 - JSON-RPC 错误、`_meta`、下划线自定义方法、自定义 transport。
 
-ACP 不直接建模 AgentNexus 的 workspace/channel/message/fanout/DB 持久化边界。
-因此，把 AgentNexus 服务端协议强行改成 ACP，会把平台语义塞进 ACP 扩展字段里，
+ACP 不直接建模 Cheers 的 workspace/channel/message/fanout/DB 持久化边界。
+因此，把 Cheers 服务端协议强行改成 ACP，会把平台语义塞进 ACP 扩展字段里，
 长期会让协议边界更混乱。
 
 ---
@@ -92,12 +92,12 @@ ACP 不直接建模 AgentNexus 的 workspace/channel/message/fanout/DB 持久化
 
 | 问题 | 决策 |
 |------|------|
-| 服务端 `/ws/acp-bridge/*` 是否直接说 ACP JSON-RPC | 否。保持 AgentNexus Bridge Protocol。 |
+| 服务端 `/ws/acp-bridge/*` 是否直接说 ACP JSON-RPC | 否。保持 Cheers Bridge Protocol。 |
 | ACP 放在哪里 | 放在 connector 的 runtime adapter 层。connector 是 ACP client，本地 agent 是 ACP agent。 |
-| 自定义 agent 协议怎么接 | 自定义 adapter 接入 connector，或高级集成方直接实现 AgentNexus Bridge Protocol。 |
+| 自定义 agent 协议怎么接 | 自定义 adapter 接入 connector，或高级集成方直接实现 Cheers Bridge Protocol。 |
 | 服务端是否关心本地 agent 是 ACP 还是 custom | 默认不关心。服务端只看 connector 上报的能力和平台帧。 |
 | 平台资源访问是否走 ACP `fs/*` | 不直接走。平台资源继续走 `resource_req/resource_res`；connector 可把它暴露给 ACP agent 的 MCP server 或 prompt context。 |
-| AgentNexus MCP stdio 谁注入 | connector 在 ACP `session/new` / `session/load` 中注入 `mcpServers`；ACP agent 按 ACP 标准启动 stdio MCP 子进程；daemon 不直接管理 MCP server。 |
+| Cheers MCP stdio 谁注入 | connector 在 ACP `session/new` / `session/load` 中注入 `mcpServers`；ACP agent 按 ACP 标准启动 stdio MCP 子进程；daemon 不直接管理 MCP server。 |
 | 权限谁裁判 | 服务端裁判平台权限；connector 只负责把 ACP permission request 翻译成平台 `permission_request` 并等待结果。 |
 | 配置谁权威 | 服务端保存平台配置；ACP session config options 由 connector 映射和同步。 |
 | 是否预留 ACP-native remote endpoint | 可以预留，但作为独立 gateway adapter，不替代现有 Bridge Protocol。 |
@@ -122,7 +122,7 @@ Rust Backend 的边界是平台事实和平台安全：
 
 服务端不应该知道 OpenCode、Codex、Claude、某个自定义 agent 的 stdio 细节。
 
-### 3.2 Bridge 层：AgentNexus Bridge Protocol
+### 3.2 Bridge 层：Cheers Bridge Protocol
 
 这是服务端和 connector 的稳定协议。当前已经有两条 WS：
 
@@ -131,7 +131,7 @@ Rust Backend 的边界是平台事实和平台安全：
 | control | Backend ↔ connector | 生命周期、task、cancel、配置、审批结果 |
 | data | Backend ↔ connector | delta/done/send/file/resource/permission_request/session_update |
 
-建议把它正式命名为 **AgentNexus Agent Bridge Protocol**，避免把服务端
+建议把它正式命名为 **Cheers Agent Bridge Protocol**，避免把服务端
 `acp-bridge` 与标准 ACP 混成一件事。
 
 ### 3.3 Adapter 层：connector 内部 runtime adapter
@@ -153,8 +153,8 @@ ACP 只是其中一个实现：
 
 ```ts
 class AcpRuntimeAdapter implements AgentRuntimeAdapter {
-  // AgentNexus task → ACP session/prompt
-  // ACP session/update → AgentNexus delta / trace / permission_request / config_options
+  // Cheers task → ACP session/prompt
+  // ACP session/update → Cheers delta / trace / permission_request / config_options
 }
 ```
 
@@ -162,12 +162,12 @@ class AcpRuntimeAdapter implements AgentRuntimeAdapter {
 
 ```ts
 class CustomHttpRuntimeAdapter implements AgentRuntimeAdapter {
-  // AgentNexus task → vendor HTTP request
-  // vendor stream → AgentNexus delta / done / files
+  // Cheers task → vendor HTTP request
+  // vendor stream → Cheers delta / done / files
 }
 ```
 
-这样，AgentNexus Bridge Protocol 面向服务端保持稳定，connector 内部可替换 runtime。
+这样，Cheers Bridge Protocol 面向服务端保持稳定，connector 内部可替换 runtime。
 
 ---
 
@@ -175,13 +175,13 @@ class CustomHttpRuntimeAdapter implements AgentRuntimeAdapter {
 
 ### 4.1 Task / prompt
 
-AgentNexus 的 `task` 和 ACP session 不是同一个概念：
+Cheers 的 `task` 和 ACP session 不是同一个概念：
 
 - `runtime_session_control` 负责 create/pause/terminate/resume 远端 ACP/custom runtime session。
 - `task` 只是在某个 runtime session 上启动一次 prompt turn / agent run。
 - `task` 可以按 `session_policy` 隐式 create/resume session，但这只是便捷行为，不是概念合并。
 
-| AgentNexus Bridge | ACP | 说明 |
+| Cheers Bridge | ACP | 说明 |
 |-------------------|-----|------|
 | control `runtime_session_control: create` | `session/new` | Backend 显式要求 connector 创建或打开 runtime session。 |
 | control `runtime_session_control: pause` | connector-local park | ACP 无强制等价方法时，由 connector 暂停并保留映射。 |
@@ -196,7 +196,7 @@ AgentNexus 的 `task` 和 ACP session 不是同一个概念：
 
 ### 4.2 Streaming output
 
-| ACP | AgentNexus Bridge |
+| ACP | Cheers Bridge |
 |-----|-------------------|
 | `session/update` + `agent_message_chunk` | data `delta` |
 | `session/update` + plan/tool/status | data `trace` 或 `session_update` |
@@ -208,7 +208,7 @@ AgentNexus 的 `task` 和 ACP session 不是同一个概念：
 
 ### 4.3 Permission
 
-| ACP | AgentNexus Bridge | 谁负责 |
+| ACP | Cheers Bridge | 谁负责 |
 |-----|-------------------|--------|
 | Agent 调 Client `session/request_permission` | data `permission_request` | connector 翻译 |
 | 浏览器用户审批 | browser REST/WS → Backend | Backend 校验用户和频道 |
@@ -220,15 +220,15 @@ AgentNexus 的 `task` 和 ACP session 不是同一个概念：
 
 ### 4.4 Files and resources
 
-| 场景 | AgentNexus Bridge | ACP adapter 行为 |
+| 场景 | Cheers Bridge | ACP adapter 行为 |
 |------|-------------------|------------------|
 | 用户附件给 agent | task attachments / file HTTP endpoint / resource | 转成 ACP image/resource/resourceLink 或下载到本地文件。 |
 | agent 读取频道历史 | data `resource_req: channel.messages/context` | 可由 connector 调用后塞进 prompt，也可通过本地 MCP server 暴露。 |
 | agent 写平台记忆 | data `resource_req: channel.memory.update` | Backend 校验 bot 权限后执行。 |
 | agent 生成文件 | data `file_upload` 或 done `file_ids` | connector 上传到平台，再把 file_id 绑到消息。 |
-| ACP `fs/read_text_file` | 本地工作区文件 | 不等于 AgentNexus channel file。 |
+| ACP `fs/read_text_file` | 本地工作区文件 | 不等于 Cheers channel file。 |
 
-不要把 AgentNexus 平台资源伪装成本地文件系统。平台资源有成员、审计、对象存储、
+不要把 Cheers 平台资源伪装成本地文件系统。平台资源有成员、审计、对象存储、
 频道归属等语义，应继续走 `resource_req/resource_res`。
 
 ### 4.5 MCP stdio 注入边界
@@ -238,17 +238,17 @@ AgentNexus 的 `task` 和 ACP session 不是同一个概念：
 本节只固定 ACP 与 MCP stdio 的兼容边界。
 
 ACP 标准已经提供统一的 MCP 导入面：Client 在 `session/new` / `session/load`
-参数中传 `mcpServers`，ACP agent 作为 MCP client 连接这些 server。AgentNexus
+参数中传 `mcpServers`，ACP agent 作为 MCP client 连接这些 server。Cheers
 应沿用这个标准入口，而不是在 daemon 或 Backend 里另建一套 MCP 生命周期。
 
 当前职责边界固定为：
 
 | 组件 | 职责 | 不负责 |
 |------|------|--------|
-| Rust daemon | 管理 connector 进程生命周期：`start/stop/restart/status/logs`，校验本地 TOML policy，并运行 Rust BridgeRuntime。 | 不直接 `spawn` 或持有 `agentnexus-mcp-server`。 |
+| Rust daemon | 管理 connector 进程生命周期：`start/stop/restart/status/logs`，校验本地 TOML policy，并运行 Rust BridgeRuntime。 | 不直接 `spawn` 或持有 `cheers-mcp-server`。 |
 | connector runtime | 维护 Agent Bridge control/data WS；维护 ACP session；在 `session/new` / `session/load` 中注入 `mcpServers`；提供本机 loopback resource endpoint。 | 不绕过 Backend 做平台权限裁判。 |
-| ACP agent | 根据 ACP `mcpServers` 配置启动 stdio MCP server，并把 tool call 发送给该 MCP server。 | 不理解 AgentNexus 的 token、Grant、channel membership 细节。 |
-| `agentnexus-mcp-server` | 作为 stdio MCP server 暴露 AgentNexus tools；把 tool call 转成 loopback HTTP 调用给 connector。 | 不打开自己的 Agent Bridge WS，不持有 bot token 的第二条连接。 |
+| ACP agent | 根据 ACP `mcpServers` 配置启动 stdio MCP server，并把 tool call 发送给该 MCP server。 | 不理解 Cheers 的 token、Grant、channel membership 细节。 |
+| `cheers-mcp-server` | 作为 stdio MCP server 暴露 Cheers tools；把 tool call 转成 loopback HTTP 调用给 connector。 | 不打开自己的 Agent Bridge WS，不持有 bot token 的第二条连接。 |
 | Rust Backend | 只处理 Agent Bridge `resource_req/resource_res` 和权限、持久化、fanout。 | 不管理本地 ACP/MCP 子进程。 |
 
 目标拓扑：
@@ -258,7 +258,7 @@ Rust daemon
   └─ starts connector runtime
        ├─ Agent Bridge control/data WS ── Rust Backend
        ├─ ACP JSON-RPC stdio ─────────── ACP agent
-       │    └─ starts stdio MCP child ── agentnexus-mcp-server
+       │    └─ starts stdio MCP child ── cheers-mcp-server
        └─ loopback HTTP resource endpoint ◀── MCP tool calls
 ```
 
@@ -272,7 +272,7 @@ Rust daemon
 ```json
 {
   "agent": {
-    "agentnexusMcp": {
+    "cheersMcp": {
       "enabled": true,
       "transport": "stdio"
     }
@@ -286,9 +286,9 @@ Rust daemon
 
 ### 4.6 Config options
 
-ACP 的 session config options 可以作为 AgentNexus bot 设置页的动态选项来源。
+ACP 的 session config options 可以作为 Cheers bot 设置页的动态选项来源。
 
-| ACP | AgentNexus Bridge |
+| ACP | Cheers Bridge |
 |-----|-------------------|
 | `session/new` result `configOptions` | control `config_options` 上报 |
 | `session/update: config_option_update` | control `config_options` 上报 |
@@ -304,7 +304,7 @@ ACP 的 session config options 可以作为 AgentNexus bot 设置页的动态选
 
 ### 5.1 保持一个服务端协议
 
-服务端只维护一套 AgentNexus Bridge Protocol，不为 ACP/custom 分叉：
+服务端只维护一套 Cheers Bridge Protocol，不为 ACP/custom 分叉：
 
 ```
 Backend → connector:
@@ -371,20 +371,20 @@ backend_may_set_cwd = false
 | 路径 | 适用对象 | 代价 | 推荐度 |
 |------|----------|------|--------|
 | 写 connector runtime adapter | 本地/私有 agent、vendor CLI、HTTP agent | 低；复用 bot token、WS、文件、权限、配置 | 首选 |
-| 直接实现 AgentNexus Bridge Protocol | 高级第三方 connector 或云端 agent 服务 | 中；需要完整实现 control/data WS | 可支持 |
+| 直接实现 Cheers Bridge Protocol | 高级第三方 connector 或云端 agent 服务 | 中；需要完整实现 control/data WS | 可支持 |
 | 让服务端直接兼容 vendor 协议 | 每接一个协议改服务端 | 高；污染平台边界 | 不推荐 |
-| 把 AgentNexus 平台语义塞进 ACP `_meta` | 表面标准，实际强耦合 | 高；调试和兼容困难 | 不推荐 |
+| 把 Cheers 平台语义塞进 ACP `_meta` | 表面标准，实际强耦合 | 高；调试和兼容困难 | 不推荐 |
 
 ### 5.4 ACP extensibility 的使用边界
 
-ACP 官方支持 `_meta`、下划线自定义方法和自定义 capabilities。AgentNexus 可以使用这些机制，
+ACP 官方支持 `_meta`、下划线自定义方法和自定义 capabilities。Cheers 可以使用这些机制，
 但只在 connector ↔ ACP agent 这一层使用：
 
-- 可以在 ACP `_meta` 中携带 `agentnexus.taskId`、`agentnexus.msgId`、`traceparent`。
+- 可以在 ACP `_meta` 中携带 `cheers.taskId`、`cheers.msgId`、`traceparent`。
 - 可以通过 ACP capabilities 判断 agent 是否支持 image、embeddedContext、configOptions。
-- 可以在自有 ACP agent 中定义 `_agentnexus/*` 方法，但不能要求所有第三方 ACP agent 支持它。
+- 可以在自有 ACP agent 中定义 `_cheers/*` 方法，但不能要求所有第三方 ACP agent 支持它。
 
-不要把 `_meta` 当成平台协议主通道。平台必需字段应保留在 AgentNexus Bridge Protocol 中。
+不要把 `_meta` 当成平台协议主通道。平台必需字段应保留在 Cheers Bridge Protocol 中。
 
 ---
 
@@ -464,7 +464,7 @@ Browser approval
 
 ### 6.5 resource_req 保持平台协议
 
-`resource_req/resource_res` 应继续作为 AgentNexus 平台资源协议，而不是改造成 ACP `fs/*`。
+`resource_req/resource_res` 应继续作为 Cheers 平台资源协议，而不是改造成 ACP `fs/*`。
 ACP adapter 可以在内部把 resource 内容转成 prompt content 或 MCP tool 结果。
 
 ---
@@ -475,10 +475,10 @@ ACP adapter 可以在内部把 resource 内容转成 prompt content 或 MCP tool
 
 | 当前名称 | 建议名称 | 说明 |
 |----------|----------|------|
-| `acp_bridge.rs` | `agent_bridge.rs` | 服务端说的是 AgentNexus Bridge Protocol。 |
+| `acp_bridge.rs` | `agent_bridge.rs` | 服务端说的是 Cheers Bridge Protocol。 |
 | `/ws/acp-bridge/control` | `/ws/agent-bridge/control` | 不保留旧 WS alias，避免继续把服务端协议误读为 ACP。 |
 | `cce-acp-connector` | Rust connector binary | 旧 TypeScript npm package 已删除，包名只保留为 Rust binary 名称。 |
-| `ACP Connector` | `AgentNexus Connector with ACP adapter` | 对外说明更准确。 |
+| `ACP Connector` | `Cheers Connector with ACP adapter` | 对外说明更准确。 |
 
 命名迁移以正式协议为准：server 侧只暴露 `/ws/agent-bridge/*`，connector 和部署配置同步切换。
 
@@ -486,26 +486,26 @@ ACP adapter 可以在内部把 resource 内容转成 prompt content 或 MCP tool
 
 ## 8. 未来可选：ACP-native remote endpoint
 
-如果未来希望让外部 ACP client 直接连接 AgentNexus，可以新增一个独立 adapter：
+如果未来希望让外部 ACP client 直接连接 Cheers，可以新增一个独立 adapter：
 
 ```
 ACP Client / Editor
   │ ACP JSON-RPC over WS/HTTP
   ▼
-AgentNexus ACP Gateway Adapter
-  │ 内部调用 AgentNexus domain/resource/task APIs
+Cheers ACP Gateway Adapter
+  │ 内部调用 Cheers domain/resource/task APIs
   ▼
 Rust Backend
 ```
 
-这条路的目标是“让 AgentNexus 表现为一个 ACP agent/client endpoint”，不是替代
-Backend ↔ connector 的 AgentNexus Bridge Protocol。
+这条路的目标是“让 Cheers 表现为一个 ACP agent/client endpoint”，不是替代
+Backend ↔ connector 的 Cheers Bridge Protocol。
 
 适合场景：
 
-- IDE 想把 AgentNexus 当成一个远程 agent。
-- 第三方 ACP client 想读取 AgentNexus channel context。
-- AgentNexus 需要参与更大的 ACP 生态。
+- IDE 想把 Cheers 当成一个远程 agent。
+- 第三方 ACP client 想读取 Cheers channel context。
+- Cheers 需要参与更大的 ACP 生态。
 
 不适合当前主链路：
 
@@ -522,7 +522,7 @@ Backend ↔ connector 的 AgentNexus Bridge Protocol。
 - 写定 `control` / `data` 的 Backend → connector 发送帧列表。
 - 统一 error 帧。
 - 在 hello/ready 中加入 protocol version 和 capability fields。
-- 文档中正式使用 AgentNexus Agent Bridge Protocol 这个名称。
+- 文档中正式使用 Cheers Agent Bridge Protocol 这个名称。
 
 ### Phase 2：补齐现有闭环
 
@@ -547,7 +547,7 @@ Backend ↔ connector 的 AgentNexus Bridge Protocol。
 
 ### Phase 5：按需增加 ACP-native gateway
 
-只有当产品明确需要“第三方 ACP client 直接接入 AgentNexus”时再做。
+只有当产品明确需要“第三方 ACP client 直接接入 Cheers”时再做。
 
 ---
 
@@ -555,9 +555,9 @@ Backend ↔ connector 的 AgentNexus Bridge Protocol。
 
 - 不把 Rust Backend 改成直接管理 ACP stdio process。
 - 不让服务端为每个 vendor agent 协议新增分支。
-- 不把 AgentNexus channel/file/memory 权限放到 connector 本地判断。
+- 不把 Cheers channel/file/memory 权限放到 connector 本地判断。
 - 不把 ACP `_meta` 当作平台协议的主数据结构。
-- 不把本地文件系统权限和 AgentNexus 平台文件权限混成一个概念。
+- 不把本地文件系统权限和 Cheers 平台文件权限混成一个概念。
 - 不为了短期编译或联调加临时 fake field，而不解决真实协议契约错位。
 
 ---

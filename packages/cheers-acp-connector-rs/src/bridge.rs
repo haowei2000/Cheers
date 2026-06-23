@@ -101,7 +101,7 @@ mod tests {
             "depth": 0,
             "trigger": "user_message",
             "placeholder_msg_id": "placeholder-1",
-            "provider_session_key": "agentnexus:workspace:w1:bot:b1",
+            "provider_session_key": "cheers:workspace:w1:bot:b1",
             "session_id": "session-1",
             "session_policy": {
                 "on_missing": "create",
@@ -124,7 +124,7 @@ mod tests {
             ],
             "session": {
                 "id": "session-1",
-                "provider_session_key": "agentnexus:workspace:w1:bot:b1",
+                "provider_session_key": "cheers:workspace:w1:bot:b1",
                 "task_scope_id": "task-1"
             },
             "enqueued_at": "2026-06-01T10:15:30Z"
@@ -142,7 +142,7 @@ mod tests {
             } => {
                 assert_eq!(task_id, "task-1");
                 assert_eq!(placeholder_msg_id, "placeholder-1");
-                assert_eq!(provider_session_key, "agentnexus:workspace:w1:bot:b1");
+                assert_eq!(provider_session_key, "cheers:workspace:w1:bot:b1");
                 assert_eq!(
                     session_policy.expect("session_policy").after_task,
                     "keep_active"
