@@ -244,10 +244,7 @@ mod tests {
         headers.insert("authorization".to_string(), "Bearer secret".to_string());
         assert!(request_has_token(&headers, "secret"));
         headers.clear();
-        headers.insert(
-            "x-cheers-loopback-token".to_string(),
-            "secret".to_string(),
-        );
+        headers.insert("x-cheers-loopback-token".to_string(), "secret".to_string());
         assert!(request_has_token(&headers, "secret"));
     }
 }
