@@ -300,7 +300,7 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
 /// Read the channel's pinned convention files (paths listed in `.workbench.json`)
 /// and format each into a prompt block. These are injected into the agent prompt on
 /// EVERY request (the semantic layer) — a controlled push, not auto-memory.
-async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
+pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     let cfg = sqlx::query_scalar::<_, String>(
         "SELECT content FROM memory_files WHERE channel_id = $1 AND path = '.workbench.json'",
     )

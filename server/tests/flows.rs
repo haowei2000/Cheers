@@ -480,6 +480,38 @@ async fn m2_fs_authz_non_member_rejected(db: PgPool) {
     assert_eq!(r["code"], "NOT_MEMBER", "非成员写应 NOT_MEMBER: {r}");
 }
 
+/// pin：`.workbench.json` 的 `pinned` 列表 + 文件内容 → load_pinned_context 格式化块。
+/// 这是「提示词模板每次注入」的网关半边（连接器半边见 bridge_runtime build_prompt 测试）。
+#[sqlx::test]
+async fn m2_pinned_context_from_workbench_config(db: PgPool) {
+    use server::gateway::dispatcher::load_pinned_context;
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    // 写提示词文件 + .workbench.json 的 pin 列表（走真实 fs.* 路径）
+    let _ = dispatch(
+        &db,
+        who,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": "prompts/sys.md", "content": "Always end with ZEBRA.", "if_version": 0 })),
+    )
+    .await;
+    let _ = dispatch(
+        &db,
+        who,
+        &req("fs.write", serde_json::json!({ "channel_id": cid, "path": ".workbench.json", "content": "{\"pinned\":[\"prompts/sys.md\"]}", "if_version": 0 })),
+    )
+    .await;
+
+    let pinned = load_pinned_context(&db, ch).await;
+    assert_eq!(pinned.len(), 1, "应载入 1 个 pin 块: {pinned:?}");
+    assert!(pinned[0].contains("prompts/sys.md"), "块应标注路径: {pinned:?}");
+    assert!(pinned[0].contains("Always end with ZEBRA."), "块应含文件内容: {pinned:?}");
+}
+
 /// 未知 verb → UNKNOWN_RESOURCE（dispatch fallback 行为锁定）。
 #[sqlx::test]
 async fn m2_dispatch_unknown_resource(db: PgPool) {
