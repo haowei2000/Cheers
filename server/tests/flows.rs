@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 use server::domain::channel_seq;
 use server::domain::messages::{self, CreateMessageParams};
+use server::domain::workbench_templates;
 use server::gateway::dispatcher::{self, DispatchParams, DispatchResult};
 use server::gateway::realtime::fanout::{Fanout, InProcessFanout};
 use server::gateway::registry::{BotLocator, InProcessBotLocator};
@@ -600,7 +601,7 @@ async fn m2_user_non_member_rejected(db: PgPool) {
 
 // ── M2 Slice 2：fs.* 写入安全上限（DoS 防护）─────────────────────────────────
 //
-// user 桥让浏览器能写 memory_files（TEXT 入库 + 全量 WS 广播）。单文件硬上限
+// user 桥让浏览器能写 context_files（TEXT 入库 + 全量 WS 广播）。单文件硬上限
 // 256KB，超限回 CONTENT_TOO_LARGE；对 bot 与 user 路径同等生效（安全上限，非授权）。
 
 /// 超 256KB 的写入被拒；append 把已有文件推过上限也被拒（覆盖 update_content 路径）；
@@ -651,4 +652,34 @@ async fn m2_fs_write_size_cap(db: PgPool) {
     )
     .await;
     assert_eq!(r["ok"], true, "正常写入应通过: {r}");
+}
+
+// M2 工作台扩展两类拆分：全局模板（DATA，无 bundle、无沙箱）的 put/list/delete 往返。
+// 模板是全局共享的（不按用户/频道作用域），upsert 幂等，删除返回受影响行数。
+#[sqlx::test]
+async fn m2_global_template_store_roundtrip(db: PgPool) {
+    let manifest = r#"{"id":"research","title":"科研","views":[]}"#;
+
+    // install → list 能看到，manifest 解析回 JSON
+    workbench_templates::put(&db, "research", "科研", manifest, "admin-uid")
+        .await
+        .unwrap();
+    let rows = workbench_templates::list(&db).await.unwrap();
+    assert_eq!(rows.len(), 1, "应有一个全局模板: {rows:?}");
+    assert_eq!(rows[0]["tpl_id"], "research");
+    assert_eq!(rows[0]["title"], "科研");
+    assert_eq!(rows[0]["manifest"]["id"], "research", "manifest 应解析回对象");
+
+    // upsert：同 id 再 put 不新增、只更新标题
+    workbench_templates::put(&db, "research", "科研v2", manifest, "admin-uid")
+        .await
+        .unwrap();
+    let rows = workbench_templates::list(&db).await.unwrap();
+    assert_eq!(rows.len(), 1, "upsert 不应新增行");
+    assert_eq!(rows[0]["title"], "科研v2", "标题应被更新");
+
+    // delete：受影响 1 行；再删 0 行
+    assert_eq!(workbench_templates::delete(&db, "research").await.unwrap(), 1);
+    assert_eq!(workbench_templates::delete(&db, "research").await.unwrap(), 0);
+    assert!(workbench_templates::list(&db).await.unwrap().is_empty());
 }

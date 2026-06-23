@@ -27,7 +27,7 @@
 > a Context = plugin-curated files; the agent always **pulls** (no body injection);
 > authorization is **channel-role only**. See the
 > [⚠️ CURRENT MODEL (2026-06-23)](./context-and-environment.md) declaration at the
-> top of `context-and-environment.md`. The `fs.*` / `memory_files` direction this
+> top of `context-and-environment.md`. The `fs.*` / `context_files` direction this
 > doc already points to is correct; the inline ⚠️ notes mark only the spots that
 > still present a dead concept as live.
 
@@ -175,7 +175,7 @@ re-read on next trigger.
 - The task frame carries `trigger_seq` (the trigger message's `channel_seq`) as a
   reference point; the bot owns its cursor (e.g. in its `channel.memory`). The
   gateway stays stateless about per-bot cursors.
-  > ⚠️ 历史设计，已废弃 — `channel.memory` 指向已删表（用 `fs.*` / `memory_files`）；现行模型下 agent 自管记忆，平台无独立 memory 概念。见 [CURRENT MODEL](./context-and-environment.md)。
+  > ⚠️ 历史设计，已废弃 — `channel.memory` 指向已删表（用 `fs.*` / `context_files`）；现行模型下 agent 自管记忆，平台无独立 memory 概念。见 [CURRENT MODEL](./context-and-environment.md)。
 - Active recovery: `channel.messages.index` returns `{ min_seq, max_seq, count }`
   (+ optional headers without content). Because the stream is contiguous, a bot
   can compute exactly what it is missing and fetch it by range/seq. This is the
@@ -206,16 +206,16 @@ Class 1 — self-maintained (agent read-only; change = domain action; system sta
 
 Class 2 — agent workspace (uniform fs.*; per-path version optimistic lock)
   fs.{ls, read, write(if_version), edit(old→new, if_version), append, rm, mv}
-  ← backed by a NEW memory_files tree (materialized path); replaces the old memory_entries layer model
+  ← backed by a NEW context_files tree (materialized path); replaces the old memory_entries layer model
   ← every write also emits a Class 1 operation event (system-written, different resource → no invariant violation)
 
 Environment layer (sits ABOVE the Resource API)
-  seed  → bulk-write memory_files + inject convention prompt
+  seed  → bulk-write context_files + inject convention prompt
   lens  → file → UI render rules (frontend; not a resource)
   tools? → scenario-specific domain actions (require dynamic per-channel resource registration)
 ```
 
-`memory_files` storage: materialized `path` (subtree via `WHERE path LIKE 'a/b/%'`),
+`context_files` storage: materialized `path` (subtree via `WHERE path LIKE 'a/b/%'`),
 per-node `version` for optimistic locking, partial edit via string-replace, multi-file
 edits wrapped in a DB transaction. Binary/large files stay in `file_records`.
 
@@ -395,7 +395,7 @@ deterministic placeholder id (UUID v5) idempotency; the permission/Grant engine.
 **Missing (net-new):** `channel_seq` (+ allocation), `channels.default_bot_id`,
 Bot@Bot re-entry on finalize (absent in Rust — it lived in the Python
 `trigger_sub_bots_from_mentions`), `task_chains` + chain columns, the dispatch gate,
-`cancel_chain`, `channel_operations` + `channel.activity.read`, `memory_files` +
+`cancel_chain`, `channel_operations` + `channel.activity.read`, `context_files` +
 `fs.*`, `messages.handle_read` `since_seq`/index, dynamic Environment tool registration.
 
 ---
@@ -408,7 +408,7 @@ first** (fewest dependencies, highest value) and pure infra follows.
 1. **Migrations first — lock the schema.** Add: `channels.next_seq` +
    `channels.default_bot_id`; `messages.channel_seq`; `message_mentions` (the @mention
    join table, §2 / [context-and-environment §5.2](./context-and-environment.md));
-   `task_chains` + chain columns; `channel_operations`; `memory_files`. **DROP**:
+   `task_chains` + chain columns; `channel_operations`; `context_files`. **DROP**:
    `memory_entries` (the old layer model — clean rebuild, not coexistence) and the
    legacy `mention_bot_ids` / `mention_user_ids` columns. All ids `VARCHAR(36)` to
    match baseline.
@@ -423,7 +423,7 @@ first** (fewest dependencies, highest value) and pure infra follows.
    re-run `@`-resolution → dispatch next hops with `chain_id` and status gate.
 5. **`cancel_chain`** — flip status + fan-out the existing cancel frame.
 6. **Resource layer** — `since_seq`/index, `channel.activity.read`, `fs.*` +
-   `memory_files` (old `memory.*` retires).
+   `context_files` (old `memory.*` retires).
 7. **Environment dynamic tools** — upgrade the resource static `match` to a registry.
 
 Steps 1–2 already make the system decentralized (routing is the reversal; it does not

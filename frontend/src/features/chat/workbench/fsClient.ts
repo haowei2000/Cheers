@@ -1,6 +1,6 @@
 // Typed fs.* wrappers over the channel WS resource client (`sendResourceReq`).
 // Every workbench plugin reads/writes the channel workspace through this — there
-// is no separate "memory" store; the workspace is just files (memory_files),
+// is no separate "memory" store; the workspace is just files (context_files),
 // reached on demand (pull), authz'd by channel-role on the server.
 
 export type SendResourceReq = (

@@ -138,16 +138,16 @@ Class 1 — 自维护（agent 只读；改 = 域动作；系统盖 channel_seq +
 
 Class 2 — agent 工作区（统一 fs.*；每路径 version 乐观锁）
   fs.{ls, read, write(if_version), edit(old→new, if_version), append, rm, mv}
-  ← 新 memory_files tree（materialized path）；取代旧 memory_entries layer 模型
+  ← 新 context_files tree（materialized path）；取代旧 memory_entries layer 模型
   ← 每次写副带一条 Class 1 操作事件（系统写，不同资源 → 不违反铁律）
 
 Environment 层（位于 Resource API 之上）
-  seed  → 批量写 memory_files + 注入约定 prompt
+  seed  → 批量写 context_files + 注入约定 prompt
   lens  → file → UI 渲染规则（前端；非资源）
   tools? → 场景专属域动作（需按频道动态注册资源）
 ```
 
-`memory_files` 存储：materialized `path`（子树用 `WHERE path LIKE 'a/b/%'`），每节点 `version`
+`context_files` 存储：materialized `path`（子树用 `WHERE path LIKE 'a/b/%'`），每节点 `version`
 做乐观锁，局部编辑用 string-replace，多文件编辑包 DB 事务。二进制/大文件仍存 `file_records`。
 
 ---
@@ -296,7 +296,7 @@ CREATE INDEX ix_bot_runs_chain_status ON bot_runs(chain_id, status);
 
 **缺失（净新增）：** `channel_seq`（+ 分配）、`channels.default_bot_id`、finalize 时的 Bot@Bot
 重入（Rust 侧没有——原在 Python 的 `trigger_sub_bots_from_mentions`）、`task_chains` + 链列、
-派发门禁、`cancel_chain`、`channel_operations` + `channel.activity.read`、`memory_files` +
+派发门禁、`cancel_chain`、`channel_operations` + `channel.activity.read`、`context_files` +
 `fs.*`、`messages.handle_read` 的 `since_seq`/index、Environment 动态工具注册。
 
 ---
@@ -306,14 +306,14 @@ CREATE INDEX ix_bot_runs_chain_status ON bot_runs(chain_id, status);
 每步独立可测。
 
 1. **迁移先行**——`channels.next_seq` + `default_bot_id`、`messages.channel_seq`、`task_chains`、
-   `channel_operations`、`memory_files`。先把表结构钉死。
+   `channel_operations`、`context_files`。先把表结构钉死。
 2. **`channel_seq` 分配**——在 `create_message` 与 finalize 路径加行锁分配，是后续一切的坐标。
 3. **重写 `resolve_bot_triggers`**——all-online-bots → `@mention` + `default_bot`。这一步把系统
    切到去中心化网格（核心行为变更）。
 4. **Bot@Bot 重入 + 链传播 + 派发门禁**——在回复 finalize 处重跑 `@` 解析 → 带 `chain_id` 和
    状态门禁派发下一跳。
 5. **`cancel_chain`**——翻转 status + fan-out 现有 cancel 帧。
-6. **资源层**——`since_seq`/index、`channel.activity.read`、`fs.*` + `memory_files`（旧 `memory.*`
+6. **资源层**——`since_seq`/index、`channel.activity.read`、`fs.*` + `context_files`（旧 `memory.*`
    退场）。
 7. **Environment 动态工具**——把资源静态 `match` 升级成注册表。
 

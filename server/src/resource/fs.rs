@@ -1,6 +1,6 @@
 //! `fs.*` — Class 2 agent workspace file operations (mesh step 6).
 //!
-//! Files live in `memory_files` using materialized paths. Writes are transactional:
+//! Files live in `context_files` using materialized paths. Writes are transactional:
 //! update the file tree, allocate the shared `channel_seq`, then append a
 //! `channel_operations` record. Operations are inert for dispatch and discovered
 //! by bots via `channel.activity.read`.
@@ -22,7 +22,7 @@ pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> Re
     let rows = sqlx::query(
         "SELECT path, version, is_dir, LENGTH(content)::bigint AS size_bytes,
                 created_at, updated_at
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1
            AND ($2 = '' OR path = $2 OR left(path, char_length($2) + 1) = $2 || '/')
          ORDER BY is_dir DESC, path ASC",
@@ -61,7 +61,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 
     let row = sqlx::query(
         "SELECT path, content, version, is_dir, created_at, updated_at
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1 AND path = $2",
     )
     .bind(channel_id.to_string())
@@ -102,7 +102,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     let existing = sqlx::query(
         "SELECT version
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
     )
@@ -120,7 +120,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
             }
         }
         sqlx::query(
-            "UPDATE memory_files
+            "UPDATE context_files
              SET content = $3,
                  is_dir = $4,
                  version = version + 1,
@@ -145,7 +145,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         }
         enforce_channel_file_count(&mut tx, channel_id).await?;
         sqlx::query(
-            "INSERT INTO memory_files (
+            "INSERT INTO context_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
              ) VALUES ($1, $2, $3, $4, 1, $5, $6, $7)
              RETURNING version",
@@ -211,7 +211,7 @@ pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> 
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     let row = sqlx::query(
         "SELECT content, version, is_dir
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
     )
@@ -277,7 +277,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     let existing = sqlx::query(
         "SELECT content, version, is_dir
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1 AND path = $2
          FOR UPDATE",
     )
@@ -301,7 +301,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
         enforce_channel_file_count(&mut tx, channel_id).await?;
         enforce_file_size(append)?;
         sqlx::query(
-            "INSERT INTO memory_files (
+            "INSERT INTO context_files (
                 file_id, channel_id, path, content, version, is_dir, created_by, creator_type
              ) VALUES ($1, $2, $3, $4, 1, FALSE, $5, $6)
              RETURNING version",
@@ -355,7 +355,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     let rows = sqlx::query(
         "SELECT path
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')
          FOR UPDATE",
@@ -376,7 +376,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
     }
 
     let deleted = sqlx::query(
-        "DELETE FROM memory_files
+        "DELETE FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
     )
@@ -441,7 +441,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
     let source_count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
     )
@@ -458,7 +458,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
 
     let target_count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count
-         FROM memory_files
+         FROM context_files
          WHERE channel_id = $1
            AND (path = $2 OR left(path, char_length($2) + 1) = $2 || '/')",
     )
@@ -477,7 +477,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     }
 
     let moved = sqlx::query(
-        "UPDATE memory_files
+        "UPDATE context_files
          SET path = CASE
                  WHEN path = $2 THEN $3
                  ELSE $3 || substring(path from char_length($2) + 1)
@@ -528,7 +528,7 @@ async fn check_fs_write(
         .map(|_| ())
 }
 
-/// 单文件内容硬上限（字节）。`memory_files.content` 是 TEXT 行内存储，写入还会
+/// 单文件内容硬上限（字节）。`context_files.content` 是 TEXT 行内存储，写入还会
 /// 全量经 WS 广播给每个订阅者——无上限即存储耗尽 / 网关 OOM 的口子（user 桥已
 /// 让浏览器能写）。对 bot 与 user 路径同等生效（安全上限，非授权）。
 const MAX_FILE_BYTES: usize = 256 * 1024;
@@ -558,7 +558,7 @@ async fn enforce_channel_file_count(
     channel_id: Uuid,
 ) -> Result<(), (String, String)> {
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM memory_files WHERE channel_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM context_files WHERE channel_id = $1")
             .bind(channel_id.to_string())
             .fetch_one(&mut **tx)
             .await
@@ -580,7 +580,7 @@ async fn update_content(
 ) -> Result<i64, (String, String)> {
     enforce_file_size(content)?;
     sqlx::query(
-        "UPDATE memory_files
+        "UPDATE context_files
          SET content = $3,
              version = version + 1,
              updated_at = NOW()

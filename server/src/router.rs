@@ -69,6 +69,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workbench/plugins/:plugin_id/bundle",
             get(api::workbench::get_bundle),
         )
+        // Global workbench templates (DATA; install/delete = admin, list = any member).
+        .route(
+            "/api/v1/workbench/templates",
+            get(api::workbench::list_templates),
+        )
+        .route(
+            "/api/v1/workbench/templates/:tpl_id",
+            put(api::workbench::put_template).delete(api::workbench::delete_template),
+        )
         .route(
             "/api/v1/workspaces",
             get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace),

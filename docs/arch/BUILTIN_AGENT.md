@@ -46,7 +46,7 @@ or calls an LLM.
 - Hardcoded memory layers (`ANCHOR` / `DECISIONS` / `PROGRESS`) — now files an
   Environment template seeds, if at all.
   (⚠️ The layered `memory_entries` model these names came from is dead — dropped in
-  `0003_decentralized_mesh.sql:89`, replaced by the `memory_files` file tree. There is
+  `0003_decentralized_mesh.sql:89`, replaced by the `context_files` file tree. There is
   no independent memory layer anymore; these are just default Environment-seeded files.
   See CURRENT MODEL.)
 - The "one generic runtime + seeded identity" model from the earlier version of this doc.

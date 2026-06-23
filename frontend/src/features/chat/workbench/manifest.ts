@@ -8,7 +8,7 @@ import { getLens } from "./lens/registry";
 export interface ViewDef {
   id: string;
   title: string;
-  file: string; // path in the channel workspace (memory_files)
+  file: string; // path in the channel workspace (context_files)
   lens: string; // a registered lens id ("table" | "kanban" | "markdown" | ...)
   config?: unknown; // lens-specific config (e.g. table columns)
 }

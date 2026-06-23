@@ -115,7 +115,7 @@ Browser / Mobile
 | 层 | 语言 | 拿走的现有模块 |
 |----|------|--------------|
 | **Rust Backend** | Rust | `api/v1/*` + `services/*` + `features/agent_bridge/` + `db/` |
-| **Python Agent Service** | Python | `features/bot_runtime/` + `features/memory/`（⚠️ 历史设计，已废弃 — `memory_entries` 分层记忆已被 `memory_files` 文件树取代，见 CURRENT MODEL）+ `tools/` |
+| **Python Agent Service** | Python | `features/bot_runtime/` + `features/memory/`（⚠️ 历史设计，已废弃 — `memory_entries` 分层记忆已被 `context_files` 文件树取代，见 CURRENT MODEL）+ `tools/` |
 | **共用** | — | PostgreSQL + Alembic；JWT（RS256）；S3 |
 
 ---

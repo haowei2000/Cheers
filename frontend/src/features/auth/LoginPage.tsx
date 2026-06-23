@@ -24,6 +24,7 @@ export default function LoginPage() {
           user_id: res.user_id,
           display_name: res.display_name,
           username: form.login,
+          role: res.role,
         },
         res.access_token
       );

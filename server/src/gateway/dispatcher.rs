@@ -302,7 +302,7 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
 /// EVERY request (the semantic layer) — a controlled push, not auto-memory.
 pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     let cfg = sqlx::query_scalar::<_, String>(
-        "SELECT content FROM memory_files WHERE channel_id = $1 AND path = '.workbench.json'",
+        "SELECT content FROM context_files WHERE channel_id = $1 AND path = '.workbench.json'",
     )
     .bind(channel_id.to_string())
     .fetch_optional(db)
@@ -323,7 +323,7 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     let mut out = Vec::new();
     for path in paths {
         if let Ok(Some(content)) = sqlx::query_scalar::<_, String>(
-            "SELECT content FROM memory_files WHERE channel_id = $1 AND path = $2",
+            "SELECT content FROM context_files WHERE channel_id = $1 AND path = $2",
         )
         .bind(channel_id.to_string())
         .bind(&path)
