@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Package, X } from "lucide-react";
+import { Package, Upload, X } from "lucide-react";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { getPanels, type PanelContext } from "./panelRegistry";
 import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
 import { viewToPanel } from "./lens/LensPanel";
 import { loadWorkspaceTemplates } from "./loadWorkspaceTemplates";
-import { listPlugins, type PluginMeta } from "./sandbox/api";
+import { installPlugin, listPlugins, parsePluginHtml, type PluginMeta } from "./sandbox/api";
 import { pluginToPanels } from "./sandbox/SandboxPanel";
+import { useAuthStore } from "@/stores/authStore";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
 import "./panels/FilePanel";
@@ -38,6 +39,16 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const pluginFileRef = useRef<HTMLInputElement>(null);
+  const token = useAuthStore((s) => s.token);
+  const isAdmin = useMemo(() => {
+    try {
+      const role = (JSON.parse(atob((token ?? "").split(".")[1] ?? "")) as { role?: string }).role;
+      return role === "system_admin" || role === "admin";
+    } catch {
+      return false;
+    }
+  }, [token]);
 
   const reloadTemplates = useCallback(async () => {
     const t = await loadWorkspaceTemplates(fs);
@@ -123,6 +134,32 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
     [installManifest]
   );
 
+  // ── server-level plugin install (admin): upload a .html bundle with embedded manifest ──
+  const reloadPlugins = useCallback(async () => {
+    setServerPlugins(await listPlugins());
+  }, []);
+  const installPluginFromHtml = useCallback(
+    async (html: string) => {
+      try {
+        const { id, title, manifest } = parsePluginHtml(html);
+        await installPlugin({ id, title, manifest, bundle: html });
+        await reloadPlugins();
+        setNotice(`已安装插件：${title}（全频道可见，在「场景」选 🧩）`);
+      } catch (e) {
+        setNotice(`安装失败：${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [reloadPlugins]
+  );
+  const onPickPlugin = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      if (f) void f.text().then(installPluginFromHtml);
+      e.target.value = "";
+    },
+    [installPluginFromHtml]
+  );
+
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
     for (const e of [...getBuiltinEnvironments(), ...workspaceTemplates]) if (!byId.has(e.id)) byId.set(e.id, e);
@@ -202,6 +239,16 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
             <Package className="w-3.5 h-3.5" /> 装模板
           </button>
           <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
+          {isAdmin && (
+            <button
+              onClick={() => pluginFileRef.current?.click()}
+              title="上传插件（admin）：选一个 .html 插件文件，全频道安装"
+              className="flex items-center gap-1 text-xs text-amber-400/90 hover:text-amber-300"
+            >
+              <Upload className="w-3.5 h-3.5" /> 上传插件
+            </button>
+          )}
+          <input ref={pluginFileRef} type="file" accept=".html,text/html" onChange={onPickPlugin} className="hidden" />
           {pinned.length > 0 && <span className="text-[11px] text-amber-500/80">📌 {pinned.length}</span>}
           <div className="flex-1" />
           <button onClick={onClose} title="Close">

@@ -2,6 +2,11 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <!-- Embedded plugin manifest: the host reads this on upload to register the plugin.
+         type="application/json" => inert (never executed), data only. -->
+    <script type="application/json" id="cheers-plugin">
+      { "id": "sandbox-notes", "title": "Sandbox Notes", "panels": [{ "id": "notes", "title": "Notes" }] }
+    </script>
     <style>
       body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; display: flex; flex-direction: column; height: 100vh; }
       header { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #27272a; }
