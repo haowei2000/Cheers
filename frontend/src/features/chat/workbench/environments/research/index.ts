@@ -1,9 +1,9 @@
-import { registerEnvironment } from "../environmentRegistry";
-import type { FsClient } from "../fsClient";
-import { ResourceError } from "../../hooks/useChatRealtime";
-import { journalsPanel, type Journal } from "../panels/JournalsPanel";
-import { progressPanel, type Board } from "../panels/ProgressPanel";
-import { reviewPanel, type Review } from "../panels/ReviewPanel";
+import { registerEnvironment } from "../../environmentRegistry";
+import type { FsClient } from "../../fsClient";
+import { ResourceError } from "../../../hooks/useChatRealtime";
+import { journalsPanel, type Journal } from "./JournalsPanel";
+import { progressPanel, type Board } from "./ProgressPanel";
+import { reviewPanel, type Review } from "./ReviewPanel";
 
 const SEED_JOURNALS: Journal[] = [
   { name: "Nature", impact: "50.5", deadline: "", status: "候选" },
