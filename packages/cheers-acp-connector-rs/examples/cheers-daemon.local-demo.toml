@@ -59,7 +59,12 @@ backend_may_set_cwd = true
 
 [accounts.demo.policy.env]
 inherit = false
-allow = ["HOME", "PATH"]
+# The ACP agent needs its model credential. The connector clears the child env
+# and copies only allow-listed vars from ITS OWN environment, so the relevant
+# key MUST be (a) listed here AND (b) exported in the shell that runs the
+# connector. Add whichever your agent uses (Anthropic API key and/or the
+# Claude subscription OAuth token).
+allow = ["HOME", "PATH", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
 
 [accounts.demo.policy.config]
 backend_may_set_model = false
