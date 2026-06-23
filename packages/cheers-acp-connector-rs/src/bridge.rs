@@ -669,6 +669,10 @@ pub enum ControlInbound {
         trigger_message: Option<Value>,
         #[serde(default)]
         attachments: Vec<AttachmentInfo>,
+        /// Pinned context blocks (already formatted strings) prepended to the prompt
+        /// every request — the channel's "convention prompt" (e.g. a prompt template).
+        #[serde(default)]
+        pinned: Vec<String>,
         #[serde(default)]
         binding_config: Option<Value>,
         #[serde(default)]

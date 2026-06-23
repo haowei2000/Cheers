@@ -231,6 +231,7 @@ impl RuntimeContext {
                 session_id,
                 trigger_message,
                 attachments,
+                pinned,
                 ..
             } => {
                 let task = TaskCommand {
@@ -241,6 +242,7 @@ impl RuntimeContext {
                     session_id,
                     trigger_message,
                     attachments,
+                    pinned,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -739,6 +741,7 @@ impl RuntimeContext {
                     session_id: Some(session.id.clone()),
                     trigger_message: None,
                     attachments: Vec::new(),
+                    pinned: Vec::new(),
                 };
                 let options = SessionStartOptions {
                     cwd: self
@@ -1416,6 +1419,8 @@ struct TaskCommand {
     session_id: Option<String>,
     trigger_message: Option<Value>,
     attachments: Vec<AttachmentInfo>,
+    /// Pinned convention/prompt blocks, prepended to the prompt every request.
+    pinned: Vec<String>,
 }
 
 enum RuntimeInput {
@@ -2001,6 +2006,12 @@ fn build_prompt(
                 .unwrap_or_default(),
         ),
     ];
+    // Pinned convention/prompt blocks — sent every request (the semantic layer).
+    for block in &task.pinned {
+        if !block.trim().is_empty() {
+            parts.push(block.clone());
+        }
+    }
     if let Some(text) = task
         .trigger_message
         .as_ref()
@@ -2378,6 +2389,7 @@ mod tests {
                 image_b64: None,
                 extra: serde_json::Map::new(),
             }],
+            pinned: vec!["[Pinned: prompts/review.md]\nYou are a strict reviewer.".to_string()],
         };
         let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
         let text = prompt[0]["text"].as_str().expect("text block");
@@ -2385,6 +2397,10 @@ mod tests {
         assert!(text.contains("report.pdf"));
         assert!(text.contains("channel_id=channel-1"));
         assert!(text.contains("channel_name=\"#general\""));
+        assert!(
+            text.contains("You are a strict reviewer."),
+            "pinned convention block must be injected every prompt"
+        );
     }
 
     fn test_prompt_policy(allow_attachments: bool) -> PromptPolicy {
@@ -2483,6 +2499,7 @@ mod tests {
             session_id: None,
             trigger_message: Some(json!({"text": "@testbot hello"})),
             attachments: Vec::new(),
+            pinned: Vec::new(),
         };
         let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
         let text = prompt[0]["text"].as_str().expect("text block");
@@ -2510,6 +2527,7 @@ mod tests {
             session_id: None,
             trigger_message: None,
             attachments: Vec::new(),
+            pinned: Vec::new(),
         };
         let prompt = build_prompt(&task, &test_prompt_policy(false), None);
         let text = prompt[0]["text"].as_str().expect("text block");
