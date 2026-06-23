@@ -18,11 +18,14 @@ export function SandboxRenderer({
   plugin,
   rendererId,
   path,
+  readChannel,
 }: {
   fs: FsClient;
   plugin: PluginMeta;
   rendererId: string;
   path: string;
+  // host API: a whitelisted, channel-scoped reader for channel.* verbs (info/members/…)
+  readChannel: (resource: string, params: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [bundle, setBundle] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -65,11 +68,28 @@ export function SandboxRenderer({
     const handler = (e: MessageEvent) => {
       const win = iframeRef.current?.contentWindow;
       if (!win || e.source !== win) return; // only THIS iframe
-      const m = e.data as { type?: string; content?: string; reason?: string };
+      const m = e.data as {
+        type?: string;
+        content?: string;
+        reason?: string;
+        reqId?: number;
+        resource?: string;
+        params?: Record<string, unknown>;
+      };
       if (!m || typeof m !== "object") return;
       if (m.type === "cheers:ready") {
         setUnsupported(null);
         void sendRender(win);
+      } else if (m.type === "cheers:resource") {
+        // host API: whitelisted channel.* read, scoped to THIS channel (forced by readChannel)
+        readChannel(m.resource ?? "", m.params ?? {})
+          .then((data) => win.postMessage({ type: "cheers:resource:result", reqId: m.reqId, ok: true, data }, "*"))
+          .catch((rerr) =>
+            win.postMessage(
+              { type: "cheers:resource:result", reqId: m.reqId, ok: false, error: rerr instanceof Error ? rerr.message : "error" },
+              "*"
+            )
+          );
       } else if (m.type === "cheers:unsupported") {
         // the renderer inspected the content and can't render it (its final judgment)
         setUnsupported(typeof m.reason === "string" ? m.reason : "");
@@ -92,7 +112,7 @@ export function SandboxRenderer({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [fs, plugin.plugin_id, rendererId, path]);
+  }, [fs, plugin.plugin_id, rendererId, path, readChannel]);
 
   if (err) return <div className="p-3 text-amber-500 text-xs">渲染器加载失败：{err}</div>;
   if (bundle === null) return <div className="p-3 text-zinc-500 text-xs">加载渲染器…</div>;

@@ -4,11 +4,9 @@ import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { getPanels, type PanelContext } from "./panelRegistry";
 import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
-import { viewToPanel } from "./lens/LensPanel";
 import { viewToTab } from "./renderers/ViewTab";
 import { listGlobalTemplates } from "./templatesApi";
 import { listPlugins, type PluginMeta } from "./sandbox/api";
-import { pluginToPanels } from "./sandbox/SandboxPanel";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
 import "./panels/FilePanel";
@@ -29,7 +27,7 @@ interface WbConfig {
   /** path -> renderer id: which renderer opens a file (File panel renderer picker). */
   bindings?: Record<string, string>;
   /** Files surfaced as workbench tabs, in order. */
-  views?: { path: string; title?: string }[];
+  views?: { path: string; title?: string; renderer?: string; config?: unknown }[];
 }
 
 // Regenerated into `.workbench.json._doc` on every write, so anyone (human or AI) opening
@@ -190,20 +188,27 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
   const sessionIds = useMemo(() => new Set(sessionTemplates.map((t) => t.id)), [sessionTemplates]);
 
   const selectedId = cfg.environment ?? null;
-  const template = allEnvs.find((e) => e.id === selectedId);
-  const plugin = serverPlugins.find((p) => p.plugin_id === selectedId);
+  // Tabs come ONLY from .workbench.json views now (+ the always-on Files panel). The old
+  // parallel sources — a template's lens views, a sandbox plugin's panels — are retired;
+  // a template instead migrates its views into .workbench.json on activation (below).
   const panels = useMemo(
-    () => [
-      ...getPanels(), // built-in (Files)
-      ...views.map(viewToTab), // .workbench.json views → tabs (the current model)
-      // legacy: a scenario template's lens views, or a legacy sandbox plugin's panels
-      ...(template?.views.map(viewToPanel) ?? (plugin ? pluginToPanels(plugin) : [])),
-    ],
-    [views, template, plugin]
+    () => [...getPanels(), ...views.map(viewToTab)],
+    [views]
   );
   const ctx: PanelContext = useMemo(
-    () => ({ channelId, fs, pinned, togglePin, plugins: serverPlugins, bindings, setBinding, views, toggleView }),
-    [channelId, fs, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView]
+    () => ({
+      channelId,
+      fs,
+      sendResourceReq,
+      pinned,
+      togglePin,
+      plugins: serverPlugins,
+      bindings,
+      setBinding,
+      views,
+      toggleView,
+    }),
+    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView]
   );
   const activePanel = panels.find((p) => p.id === active) ?? panels[0];
 
@@ -212,18 +217,27 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
       setBusy(true);
       try {
         const manifest = allEnvs.find((e) => e.id === id);
-        if (manifest) await seedManifest(fs, manifest); // data templates scaffold; plugins don't
-        await writeCfg({ ...cfg, environment: id });
-        const p = serverPlugins.find((x) => x.plugin_id === id);
-        setActive(manifest?.views[0]?.id ?? (p ? pluginToPanels(p)[0]?.id ?? "" : ""));
+        let nextViews = views;
+        if (manifest) {
+          await seedManifest(fs, manifest); // seed the scenario's starter files
+          // migrate the template's declarative views into .workbench.json (additive,
+          // idempotent): each {file,lens,config} becomes a tab bound to a built-in lens.
+          const have = new Set(views.map((v) => v.path));
+          const add = manifest.views
+            .filter((v) => !have.has(v.file))
+            .map((v) => ({ path: v.file, title: v.title, renderer: `builtin:${v.lens}`, config: v.config }));
+          nextViews = [...views, ...add];
+        }
+        await writeCfg({ ...cfg, environment: id, views: nextViews });
+        setActive(`view:${manifest?.views[0]?.file ?? ""}`);
       } finally {
         setBusy(false);
       }
     },
-    [fs, cfg, allEnvs, serverPlugins, writeCfg]
+    [fs, cfg, allEnvs, views, writeCfg]
   );
 
-  const nothingInstalled = allEnvs.length === 0 && serverPlugins.length === 0;
+  const nothingInstalled = allEnvs.length === 0;
 
   return (
     <>
@@ -254,15 +268,8 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
                 {e.title}
               </option>
             ))}
-            {/* Only legacy "scenario" plugins (declare panels) appear here; renderer
-                plugins (declare renderers) are picked per-file in the File panel. */}
-            {serverPlugins
-              .filter((p) => p.manifest.panels?.length)
-              .map((p) => (
-                <option key={p.plugin_id} value={p.plugin_id}>
-                  🧩 {p.title}
-                </option>
-              ))}
+            {/* Plugins are no longer scenarios — they're renderers picked per-file in the
+                File panel. The scenario dropdown lists data templates only. */}
           </select>
           <button
             onClick={() => fileRef.current?.click()}

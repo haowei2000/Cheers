@@ -80,18 +80,24 @@ function RawFileView({ fs, path }: { fs: FsClient; path: string }) {
   );
 }
 
-// A workbench tab declared in .workbench.json `views`: render the file with its bound
-// renderer; if unbound, fall back to the raw text view. The tab layout is per-channel
-// workbench config — the file itself stays pure content.
-export function viewToTab(view: { path: string; title?: string }): PanelDef {
+// A workbench tab declared in .workbench.json `views`: render the file with the view's
+// renderer (a template migrates its lens+config here) — or, failing that, the file's
+// binding; if neither, fall back to raw text. The tab layout is per-channel workbench
+// config — the file itself stays pure content.
+export function viewToTab(view: {
+  path: string;
+  title?: string;
+  renderer?: string;
+  config?: unknown;
+}): PanelDef {
   return {
     id: `view:${view.path}`,
     title: view.title || view.path.split("/").pop() || view.path,
     render: (ctx: PanelContext) => {
-      const rid = ctx.bindings[view.path];
+      const rid = view.renderer ?? ctx.bindings[view.path];
       const renderer = rid ? getRenderer(rid, ctx.plugins) : undefined;
       return renderer ? (
-        <RendererHost ctx={ctx} path={view.path} renderer={renderer} />
+        <RendererHost ctx={ctx} path={view.path} renderer={renderer} config={view.config} />
       ) : (
         <RawFileView fs={ctx.fs} path={view.path} />
       );

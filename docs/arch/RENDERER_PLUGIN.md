@@ -64,6 +64,32 @@
 | plugin → host | `cheers:unsupported` | `{ reason? }` | 看了内容渲染不了(最终裁决)→ host 显示「该渲染器无法渲染此文件」 |
 | plugin → host | `cheers:save` | `{ content }` | 把当前这一个文件存回去 |
 | host → plugin | `cheers:saved` | `{ ok, version, error? }` | 乐观锁写入结果;`ok` 时更新你手里的 `version` |
+| plugin → host | `cheers:resource` | `{ reqId, resource, params }` | **host API**:读频道信息(见下白名单),`channel_id` 由 host 强制为当前频道 |
+| host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | 读取结果 |
+
+### 3.1 Host API:读频道信息
+
+除了 `fs`(只能动被指派的那一个文件),渲染器还能读**当前频道**的若干信息,经 `cheers:resource` 代理。host 只放行白名单内的**只读** verb,并强制 `channel_id` = 当前频道(你读不到别的频道):
+
+| resource | 内容 |
+|---|---|
+| `channel.info` | 频道元信息(名称等) |
+| `channel.members` | 成员列表 |
+| `channel.messages` | 历史消息 |
+| `channel.activity.read` / `channel.messages.index` | 活动 / 消息索引 |
+
+```js
+function res(resource, params) {
+  return new Promise(function (ok) {
+    var id = ++rid; pendingRes[id] = ok;
+    parent.postMessage({ type: "cheers:resource", reqId: id, resource: resource, params: params || {} }, "*");
+  });
+}
+// window.onmessage 里:if (m.type==="cheers:resource:result"){ var p=pendingRes[m.reqId]; if(p){delete pendingRes[m.reqId]; p(m);} }
+var info = await res("channel.info", {});   // → { ok, data }
+```
+
+> **信任与外泄**:沙箱 iframe 隔离的是 token/DOM,**不隔离网络**——拿到数据的插件理论上能 fetch 到外部。所以 ① 这些 verb 全部**只读**且服务端仍按你的 channel-role 鉴权;② 插件是 **admin 安装**的(装的人为其背书);③ 白名单刻意保守。要给更敏感的能力,应走显式同意,别直接加进白名单。
 
 要点:
 

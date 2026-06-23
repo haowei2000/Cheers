@@ -18,9 +18,9 @@ export interface PluginMeta {
   manifest: {
     id?: string;
     title?: string;
-    // legacy "scenario" plugins declare panels (init/fs protocol, SandboxPanel)
-    panels?: { id: string; title: string }[];
-    // renderer plugins declare renderers (render/save protocol, SandboxRenderer)
+    // renderer plugins declare renderers (render/save protocol, SandboxRenderer). The old
+    // `panels` scenario-plugin protocol is retired; an installed plugin without `renderers`
+    // simply contributes nothing.
     renderers?: { id: string; title: string; match?: RendererMatch }[];
   };
 }
