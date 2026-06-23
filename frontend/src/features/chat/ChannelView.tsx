@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Hash, Users, Loader2 } from "lucide-react";
+import { Hash, Users, Loader2, PanelRight } from "lucide-react";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers } from "@/api/channels";
 import { MessageList } from "./MessageList";
 import { MessageComposer, type MentionCandidate } from "./MessageComposer";
 import { useChatRealtime } from "./hooks/useChatRealtime";
+import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, Channel } from "@/types";
 
@@ -182,7 +183,7 @@ export function ChannelView({ channel }: Props) {
     );
   }, []);
 
-  useChatRealtime(channel?.channel_id ?? null, {
+  const { sendResourceReq } = useChatRealtime(channel?.channel_id ?? null, {
     onMessage: handleMessage,
     onStreamDelta: handleStreamDelta,
     onStreamDone: handleStreamDone,
@@ -191,6 +192,7 @@ export function ChannelView({ channel }: Props) {
     onPresence: (_ids, count) => setOnlineCount(count),
     onBotTrace: handleBotTrace,
   });
+  const [wbOpen, setWbOpen] = useState(false);
 
   async function handleSend(
     content: string,
@@ -242,6 +244,13 @@ export function ChannelView({ channel }: Props) {
             {mentionables.length || "Members"}
           </span>
         </div>
+        <button
+          onClick={() => setWbOpen(true)}
+          title="Workbench"
+          className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+        >
+          <PanelRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Messages */}
@@ -265,6 +274,13 @@ export function ChannelView({ channel }: Props) {
         channelName={channel.name}
         mentionables={mentionables}
         onSend={handleSend}
+      />
+
+      <WorkbenchDrawer
+        open={wbOpen}
+        onClose={() => setWbOpen(false)}
+        channelId={channel.channel_id}
+        sendResourceReq={sendResourceReq}
       />
     </div>
   );
