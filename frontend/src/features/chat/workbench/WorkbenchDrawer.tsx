@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Package, Upload, X } from "lucide-react";
+import { Clock, Package, X } from "lucide-react";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { getPanels, type PanelContext } from "./panelRegistry";
 import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
 import { viewToPanel } from "./lens/LensPanel";
-import { loadWorkspaceTemplates } from "./loadWorkspaceTemplates";
-import { installPlugin, listPlugins, parsePluginHtml, type PluginMeta } from "./sandbox/api";
+import { viewToTab } from "./renderers/ViewTab";
+import { listGlobalTemplates } from "./templatesApi";
+import { listPlugins, type PluginMeta } from "./sandbox/api";
 import { pluginToPanels } from "./sandbox/SandboxPanel";
-import { useAuthStore } from "@/stores/authStore";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
 import "./panels/FilePanel";
@@ -22,39 +22,42 @@ interface Props {
 }
 
 interface WbConfig {
+  /** Self-documenting field (regenerated on every write) — for humans/AI reading the file. */
+  _doc?: string;
   environment?: string | null;
   pinned?: string[];
+  /** path -> renderer id: which renderer opens a file (File panel renderer picker). */
+  bindings?: Record<string, string>;
+  /** Files surfaced as workbench tabs, in order. */
+  views?: { path: string; title?: string }[];
 }
 
+// Regenerated into `.workbench.json._doc` on every write, so anyone (human or AI) opening
+// the file understands the schema without external docs. NOT a free-form comment — the UI
+// rewrites this file, so only fields (like this one) survive; see docs/arch/WORKBENCH.md.
+const WB_DOC =
+  "工作台配置（per-channel，由工作台 UI 维护，可手改）。" +
+  "views=顶部 tab 的精选文件[{path,title}]，用各文件 bindings 里绑定的渲染器渲染（未绑定则原文）；" +
+  "bindings=文件路径→渲染器 id；pinned=每次注入 bot 提示词的文件。" +
+  "文件本身只是内容，类型与渲染由本文件决定、不写进文件。";
+
 // Right-side per-channel workbench. Scenarios come from three places:
-//  - per-channel DATA templates (lens-rendered, drop-to-install JSON manifests)
-//  - SERVER-LEVEL plugins (admin-installed, sandboxed code rendered in an iframe)
-//  - the always-on File panel
+//  - GLOBAL templates (DATA, admin-installed, lens-rendered) — shared by every channel
+//  - SESSION templates (DATA, temporarily uploaded here, this browser session only)
+//  - SERVER-LEVEL plugins (CODE, admin-installed, sandboxed iframe)
+// plus the always-on File panel. Installing global templates / plugins lives in
+// Settings → Workbench extensions (admin); the drawer only CONSUMES them, and offers
+// a no-persistence temporary upload to anyone.
 export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
-  const [workspaceTemplates, setWorkspaceTemplates] = useState<TemplateManifest[]>([]);
+  const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
+  const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
   const [serverPlugins, setServerPlugins] = useState<PluginMeta[]>([]);
   const [active, setActive] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const pluginFileRef = useRef<HTMLInputElement>(null);
-  const token = useAuthStore((s) => s.token);
-  const isAdmin = useMemo(() => {
-    try {
-      const role = (JSON.parse(atob((token ?? "").split(".")[1] ?? "")) as { role?: string }).role;
-      return role === "system_admin" || role === "admin";
-    } catch {
-      return false;
-    }
-  }, [token]);
-
-  const reloadTemplates = useCallback(async () => {
-    const t = await loadWorkspaceTemplates(fs);
-    setWorkspaceTemplates(t);
-    return t;
-  }, [fs]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,20 +65,25 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
     fs.read(WORKBENCH_CONFIG_PATH)
       .then((f) => alive && setCfg(JSON.parse(f.content) as WbConfig))
       .catch(() => alive && setCfg({}));
-    void reloadTemplates();
+    listGlobalTemplates()
+      .then((t) => alive && setGlobalTemplates(t))
+      .catch(() => {});
     listPlugins()
       .then((p) => alive && setServerPlugins(p))
       .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [open, fs, reloadTemplates]);
+  }, [open, fs]);
 
   const writeCfg = useCallback(
     async (next: WbConfig) => {
       setCfg(next);
       try {
-        await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify(next));
+        // strip any stale _doc, regenerate it fresh, pretty-print for human/AI readability
+        const { _doc: _drop, ...rest } = next;
+        const body = { _doc: WB_DOC, ...rest };
+        await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify(body, null, 2));
       } catch {
         /* optimistic */
       }
@@ -94,24 +102,62 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
     [cfg, pinned, writeCfg]
   );
 
-  const installManifest = useCallback(
-    async (text: string) => {
-      let m: unknown;
+  const bindings = useMemo(() => cfg.bindings ?? {}, [cfg.bindings]);
+  const setBinding = useCallback(
+    (path: string, rendererId: string | null) => {
+      const next = { ...bindings };
+      if (rendererId) next[path] = rendererId;
+      else delete next[path];
+      void writeCfg({ ...cfg, bindings: next });
+    },
+    [cfg, bindings, writeCfg]
+  );
+
+  const views = useMemo(() => cfg.views ?? [], [cfg.views]);
+  const toggleView = useCallback(
+    (path: string, title?: string) => {
+      const exists = views.some((v) => v.path === path);
+      const next = exists
+        ? views.filter((v) => v.path !== path)
+        : [...views, { path, title: title || path.split("/").pop() || path }];
+      void writeCfg({ ...cfg, views: next });
+    },
+    [cfg, views, writeCfg]
+  );
+
+  // Temporary upload: validate a manifest, keep it in THIS session only (never persisted,
+  // never shared), and activate it. Activating still seeds the scenario's data files into
+  // the channel — that's the point of opening the scenario — but the template DEFINITION
+  // is ephemeral. To share a template across channels/users, an admin installs it as a
+  // global template in Settings → Workbench extensions.
+  const loadTemporary = useCallback(
+    (text: string) => {
+      let parsed: unknown;
       try {
-        m = JSON.parse(text);
+        parsed = JSON.parse(text);
       } catch {
         setNotice("不是合法 JSON");
         return;
       }
-      if (!validateManifest(m)) {
+      if (!validateManifest(parsed)) {
         setNotice("无效模板：缺 id/title/views，或引用了未知 lens");
         return;
       }
-      await fs.write(`.workbench/templates/${m.id}.json`, JSON.stringify(m, null, 2));
-      await reloadTemplates();
-      setNotice(`已安装模板：${m.title} — 在「场景」里选它`);
+      const m = parsed;
+      setSessionTemplates((prev) => [m, ...prev.filter((x) => x.id !== m.id)]);
+      setBusy(true);
+      void (async () => {
+        try {
+          await seedManifest(fs, m);
+          await writeCfg({ ...cfg, environment: m.id });
+          setActive(m.views[0]?.id ?? "");
+          setNotice(`已临时加载：${m.title}（仅本会话；要全局共享请到 设置 → Workbench extensions）`);
+        } finally {
+          setBusy(false);
+        }
+      })();
     },
-    [fs, reloadTemplates]
+    [fs, cfg, writeCfg]
   );
 
   const onDrop = useCallback(
@@ -119,63 +165,45 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
       e.preventDefault();
       setBusy(false);
       const file = e.dataTransfer.files?.[0];
-      if (file && file.name.endsWith(".json")) void file.text().then(installManifest);
+      if (file && file.name.endsWith(".json")) void file.text().then(loadTemporary);
       else setNotice("请拖入一个 .json 模板文件");
     },
-    [installManifest]
+    [loadTemporary]
   );
 
   const onPickFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) void file.text().then(installManifest);
+      if (file) void file.text().then(loadTemporary);
       e.target.value = "";
     },
-    [installManifest]
+    [loadTemporary]
   );
 
-  // ── server-level plugin install (admin): upload a .html bundle with embedded manifest ──
-  const reloadPlugins = useCallback(async () => {
-    setServerPlugins(await listPlugins());
-  }, []);
-  const installPluginFromHtml = useCallback(
-    async (html: string) => {
-      try {
-        const { id, title, manifest } = parsePluginHtml(html);
-        await installPlugin({ id, title, manifest, bundle: html });
-        await reloadPlugins();
-        setNotice(`已安装插件：${title}（全频道可见，在「场景」选 🧩）`);
-      } catch (e) {
-        setNotice(`安装失败：${e instanceof Error ? e.message : String(e)}`);
-      }
-    },
-    [reloadPlugins]
-  );
-  const onPickPlugin = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const f = e.target.files?.[0];
-      if (f) void f.text().then(installPluginFromHtml);
-      e.target.value = "";
-    },
-    [installPluginFromHtml]
-  );
-
+  // Session templates first so a temporary upload overrides a same-id global for this session.
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
-    for (const e of [...getBuiltinEnvironments(), ...workspaceTemplates]) if (!byId.has(e.id)) byId.set(e.id, e);
+    for (const e of [...sessionTemplates, ...globalTemplates, ...getBuiltinEnvironments()])
+      if (!byId.has(e.id)) byId.set(e.id, e);
     return [...byId.values()];
-  }, [workspaceTemplates]);
+  }, [sessionTemplates, globalTemplates]);
+  const sessionIds = useMemo(() => new Set(sessionTemplates.map((t) => t.id)), [sessionTemplates]);
 
   const selectedId = cfg.environment ?? null;
   const template = allEnvs.find((e) => e.id === selectedId);
   const plugin = serverPlugins.find((p) => p.plugin_id === selectedId);
   const panels = useMemo(
-    () => [...getPanels(), ...(template?.views.map(viewToPanel) ?? (plugin ? pluginToPanels(plugin) : []))],
-    [template, plugin]
+    () => [
+      ...getPanels(), // built-in (Files)
+      ...views.map(viewToTab), // .workbench.json views → tabs (the current model)
+      // legacy: a scenario template's lens views, or a legacy sandbox plugin's panels
+      ...(template?.views.map(viewToPanel) ?? (plugin ? pluginToPanels(plugin) : [])),
+    ],
+    [views, template, plugin]
   );
   const ctx: PanelContext = useMemo(
-    () => ({ channelId, fs, pinned, togglePin }),
-    [channelId, fs, pinned, togglePin]
+    () => ({ channelId, fs, pinned, togglePin, plugins: serverPlugins, bindings, setBinding, views, toggleView }),
+    [channelId, fs, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView]
   );
   const activePanel = panels.find((p) => p.id === active) ?? panels[0];
 
@@ -222,33 +250,28 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
             <option value="">通用</option>
             {allEnvs.map((e) => (
               <option key={e.id} value={e.id}>
+                {sessionIds.has(e.id) ? "⏱ " : ""}
                 {e.title}
               </option>
             ))}
-            {serverPlugins.map((p) => (
-              <option key={p.plugin_id} value={p.plugin_id}>
-                🧩 {p.title}
-              </option>
-            ))}
+            {/* Only legacy "scenario" plugins (declare panels) appear here; renderer
+                plugins (declare renderers) are picked per-file in the File panel. */}
+            {serverPlugins
+              .filter((p) => p.manifest.panels?.length)
+              .map((p) => (
+                <option key={p.plugin_id} value={p.plugin_id}>
+                  🧩 {p.title}
+                </option>
+              ))}
           </select>
           <button
             onClick={() => fileRef.current?.click()}
-            title="装数据模板：选一个 manifest .json"
+            title="临时装模板：选一个 manifest .json，仅本会话生效（全局安装在 设置 → Workbench extensions）"
             className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100"
           >
-            <Package className="w-3.5 h-3.5" /> 装模板
+            <Clock className="w-3.5 h-3.5" /> 临时模板
           </button>
           <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
-          {isAdmin && (
-            <button
-              onClick={() => pluginFileRef.current?.click()}
-              title="上传插件（admin）：选一个 .html 插件文件，全频道安装"
-              className="flex items-center gap-1 text-xs text-amber-400/90 hover:text-amber-300"
-            >
-              <Upload className="w-3.5 h-3.5" /> 上传插件
-            </button>
-          )}
-          <input ref={pluginFileRef} type="file" accept=".html,text/html" onChange={onPickPlugin} className="hidden" />
           {pinned.length > 0 && <span className="text-[11px] text-amber-500/80">📌 {pinned.length}</span>}
           <div className="flex-1" />
           <button onClick={onClose} title="Close">
@@ -283,12 +306,15 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
           {nothingInstalled && selectedId === null ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-500 text-xs p-6 text-center">
               <Package className="w-8 h-8 text-zinc-700" />
-              <div>还没有场景。服务器级插件由管理员安装；数据模板可拖入或点上方「装模板」。</div>
+              <div>
+                还没有场景。全局模板和插件由管理员在 设置 → Workbench extensions 安装；也可拖入 .json
+                或点上方「临时模板」仅本会话试用。
+              </div>
               <button
-                onClick={() => void installManifest(JSON.stringify(researchExample))}
+                onClick={() => loadTemporary(JSON.stringify(researchExample))}
                 className="mt-1 px-3 py-1 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
               >
-                装示例模板：科研
+                临时试用：科研
               </button>
             </div>
           ) : (

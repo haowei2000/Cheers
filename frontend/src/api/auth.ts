@@ -5,6 +5,7 @@ export interface LoginResponse {
   token_type: string;
   user_id: string;
   display_name: string | null;
+  role: string;
 }
 
 export async function login(credentials: {

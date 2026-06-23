@@ -3,16 +3,21 @@ import { FileText, FolderOpen, RefreshCw, Save, Trash2 } from "lucide-react";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import { registerPanel, type PanelContext } from "../panelRegistry";
 import type { FsEntry } from "../fsClient";
+import { candidatesFor, getRenderer } from "../renderers/registry";
+import { RendererHost } from "../renderers/RendererHost";
 
 function errMsg(e: unknown): string {
   if (e instanceof ResourceError) return `${e.code}: ${e.message}`;
   return e instanceof Error ? e.message : "error";
 }
 
-// The File plugin: browse + edit the channel workspace fs (memory_files).
-// File content is rendered ONLY inside a <textarea> (inert text — no HTML
-// execution), so stored content cannot XSS co-channel users.
-function FilePanel({ fs }: PanelContext) {
+// The File plugin: browse the channel workspace (context_files), and open a file with
+// a chosen RENDERER (default "原文" = raw textarea; or a built-in lens / installed
+// renderer plugin). The renderer choice is a per-file binding (path -> renderer id)
+// persisted in .workbench.json. Raw content is rendered ONLY inside a <textarea>
+// (inert text — no HTML execution), so stored content cannot XSS co-channel users.
+function FilePanel({ ctx }: { ctx: PanelContext }) {
+  const { fs, plugins, bindings, setBinding, views, toggleView } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState("");
@@ -156,31 +161,76 @@ function FilePanel({ fs }: PanelContext) {
             <FolderOpen className="w-4 h-4" /> Select a file
           </div>
         ) : (
-          <>
-            <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
-              <span className="text-xs text-zinc-300 truncate">{selected}</span>
-              {dirty && <span className="text-[10px] text-amber-500">●</span>}
-              <div className="flex-1" />
-              <button
-                onClick={() => void save()}
-                disabled={!dirty}
-                className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
-              >
-                <Save className="w-3.5 h-3.5" /> Save
-              </button>
-            </div>
-            {/* textarea = inert text rendering; never dangerouslySetInnerHTML */}
-            <textarea
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                setDirty(true);
-              }}
-              spellCheck={false}
-              disabled={loading}
-              className="flex-1 resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-3 outline-none"
-            />
-          </>
+          (() => {
+            // content-aware: only renderers that ACCEPT this file's content are offered
+            const candidates = candidatesFor(selected, content, plugins);
+            const boundId = bindings[selected];
+            const renderer = boundId ? getRenderer(boundId, plugins) : undefined;
+            return (
+              <>
+                <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
+                  <span className="text-xs text-zinc-300 truncate">{selected}</span>
+                  {!renderer && dirty && <span className="text-[10px] text-amber-500">●</span>}
+                  <div className="flex-1" />
+                  {/* renderer picker: default 原文 (raw textarea), or a lens / plugin renderer */}
+                  <select
+                    value={boundId ?? ""}
+                    onChange={(e) => setBinding(selected, e.target.value || null)}
+                    title="用哪个渲染器打开此文件（默认：原文）"
+                    className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[120px]"
+                  >
+                    <option value="">原文</option>
+                    {/* most-specific first; plugin source shown so same-named ones differ */}
+                    {candidates.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title}
+                        {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {/* surface this file as a workbench tab (toggle), persisted in views */}
+                  <button
+                    onClick={() => toggleView(selected)}
+                    title={views.some((v) => v.path === selected) ? "从顶部 tab 移除" : "把此文件设为顶部 tab"}
+                    className={`text-xs ${
+                      views.some((v) => v.path === selected)
+                        ? "text-amber-400"
+                        : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {views.some((v) => v.path === selected) ? "✓ Tab" : "设为 Tab"}
+                  </button>
+                  {!renderer && (
+                    <button
+                      onClick={() => void save()}
+                      disabled={!dirty}
+                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
+                    >
+                      <Save className="w-3.5 h-3.5" /> Save
+                    </button>
+                  )}
+                </div>
+                {renderer ? (
+                  // the chosen renderer owns load/edit/save for this one file
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <RendererHost ctx={ctx} path={selected} renderer={renderer} />
+                  </div>
+                ) : (
+                  // textarea = inert text rendering; never dangerouslySetInnerHTML
+                  <textarea
+                    value={content}
+                    onChange={(e) => {
+                      setContent(e.target.value);
+                      setDirty(true);
+                    }}
+                    spellCheck={false}
+                    disabled={loading}
+                    className="flex-1 resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-3 outline-none"
+                  />
+                )}
+              </>
+            );
+          })()
         )}
         {status && (
           <div className="px-3 py-1 text-[11px] text-zinc-500 border-t border-zinc-800 flex-shrink-0">
@@ -195,7 +245,7 @@ function FilePanel({ fs }: PanelContext) {
 registerPanel({
   id: "files",
   title: "Files",
-  render: (ctx) => <FilePanel {...ctx} />,
+  render: (ctx) => <FilePanel ctx={ctx} />,
 });
 
 export default FilePanel;

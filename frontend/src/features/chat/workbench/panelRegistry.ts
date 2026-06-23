@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { FsClient } from "./fsClient";
+import type { PluginMeta } from "./sandbox/api";
 
 // The frontend "plugin" seam (the locked model's Environment/Lens idea): a
 // workbench panel = a ViewPanel over the channel workspace. A plugin registers a
@@ -16,6 +17,16 @@ export interface PanelContext {
   pinned: string[];
   /** Pin / unpin a file path (persisted in .workbench.json). */
   togglePin: (path: string) => void;
+  /** Installed server-level renderer plugins (the renderer picker's candidate source). */
+  plugins: PluginMeta[];
+  /** path -> renderer id: which renderer opens a file. Persisted in .workbench.json. */
+  bindings: Record<string, string>;
+  /** Set (or clear, with null) a file's renderer binding. */
+  setBinding: (path: string, rendererId: string | null) => void;
+  /** Files surfaced as workbench tabs (the scenario's curated views). In .workbench.json. */
+  views: { path: string; title?: string }[];
+  /** Toggle a file as a workbench tab. */
+  toggleView: (path: string, title?: string) => void;
 }
 
 export interface PanelDef {

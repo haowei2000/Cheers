@@ -1,11 +1,21 @@
 # Building a Workbench Template
 
+> **现状提示(2026-06-23)**:模板现在是**声明式 manifest JSON**(`{id,title,views:[{file,lens,config}],seed}`),
+> 由内置 lens(`table`/`kanban`/`markdown`)渲染——不必再手写 `PanelDef`/`registerEnvironment`
+> 组件(下文那套是编译进仓库的旧路径,仍可用但非首选)。装一个模板有三条路:
+> ① **全局**:admin 在 *设置 → Workbench extensions* 上传 `.json`(进 `workbench_templates` 表,全频道可见);
+> ② **临时**:任何人在工作台抽屉点「临时模板」上传 `.json`(仅本浏览器会话,不入库、不共享);
+> ③ **内置**:把 manifest 编译进前端。代码渲染器(沙箱插件)是另一类,走 `.html` + `/workbench/plugins`,
+> 见 [docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md)「两类插件」。
+>
+> 下面这份指南描述的是更早的「每个面板一个 PanelDef 组件」写法,保留作参考。
+
 A **workbench template** (an *Environment*) turns a channel into a scenario — e.g. a
 research channel with **目标期刊 / 进度看板 / 论文审阅** boards. This guide is for
 third-party developers who want to ship their own template.
 
 The whole point: **a template is just frontend code over files.** Your boards are
-plain files in the channel workspace (`memory_files`). There is **no backend, no new
+plain files in the channel workspace (`context_files`). There is **no backend, no new
 table, no separate store** to write. And because the bot reaches the same files via
 its `fs_*` tools, your boards are automatically **shared human↔bot state**.
 
@@ -196,7 +206,7 @@ That's it. Reload the dev server → Workbench → scenario picker → **Reading
 
 1. **Files only.** Store your data as files under your template's namespace
    (`<your-id>/...`) in the channel workspace. No new tables, no backend, no separate
-   "memory"/"context" store — it's all `memory_files`.
+   "memory"/"context" store — it's all `context_files`.
 2. **Namespace your paths.** Prefix every file with your template id
    (`reading/list.json`, not `list.json`) so templates don't collide.
 3. **Size limits.** ≤ **256 KB per file** (`CONTENT_TOO_LARGE`) and ≤ **1024 files per
@@ -220,7 +230,7 @@ That's it. Reload the dev server → Workbench → scenario picker → **Reading
 
 ## How the bot shares your boards (for free)
 
-Your files live at `<your-id>/*.json` in `memory_files`. The bot reaches the **same
+Your files live at `<your-id>/*.json` in `context_files`. The bot reaches the **same
 paths** through its `fs_read` / `fs_write` MCP tools. So this just works:
 
 > `@bot read reading/list.json and mark "Attention Is All You Need" as done`

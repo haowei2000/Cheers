@@ -71,7 +71,7 @@ gateway/
     │       ├── members.rs
     │       ├── messages.rs
     │       ├── files.rs
-    │       ├── memory.rs       ← 写操作调 permission::evaluate()  ⚠️ 历史设计，已废弃 — memory_entries 表已 DROP，改用 fs.* / memory_files，见 CURRENT MODEL
+    │       ├── memory.rs       ← 写操作调 permission::evaluate()  ⚠️ 历史设计，已废弃 — memory_entries 表已 DROP，改用 fs.* / context_files，见 CURRENT MODEL
     │       └── context.rs      ← 聚合查询
     │
     └── infra/                  ── 【基础设施】外部依赖封装 ──

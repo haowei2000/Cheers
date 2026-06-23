@@ -1,8 +1,8 @@
 import type { TemplateManifest } from "./manifest";
 
-// Built-in templates are registered here at import time (compiled in). Workspace
-// templates are loaded at runtime per-channel (see loadWorkspaceTemplates) and merged
-// in by the workbench — they are NOT added to this global registry.
+// Built-in templates are registered here at import time (compiled in). GLOBAL templates
+// (admin-installed, server-level) and SESSION templates (temporarily uploaded) are fetched
+// at runtime by the workbench and merged in there — they are NOT added to this registry.
 const registry: TemplateManifest[] = [];
 
 export function registerEnvironment(m: TemplateManifest): void {

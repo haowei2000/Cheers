@@ -22,7 +22,7 @@
 | `history_pages` `bulletin_issues` | Lens 渲染 / 摘要页 |
 | `todo_items` `prompt_templates` `keychain_items` `ai_models` | 次级产品面 |
 
-> **记忆/文件已落地，不在「无实现」之列**：`memory_entries`（旧分层记忆模型）已在 `0003_decentralized_mesh.sql:89` **DROP**；`memory_files`（「Agent 记忆即文件系统」）的 `fs.*` 读写在 `server/src/resource/fs.rs` **已实现并接线**。M2 的「Agent 记忆」=`memory_files` 上 `/memory/*` 约定子树的**策展视图（Memory 插件）**，**不新建表**。
+> **记忆/文件已落地，不在「无实现」之列**：`memory_entries`（旧分层记忆模型）已在 `0003_decentralized_mesh.sql:89` **DROP**；`context_files`（「Agent 记忆即文件系统」）的 `fs.*` 读写在 `server/src/resource/fs.rs` **已实现并接线**。M2 的「Agent 记忆」=`context_files` 上 `/memory/*` 约定子树的**策展视图（Memory 插件）**，**不新建表**。
 
 前端同样是**薄切片**（27 文件、~1.8k 行）：登录 + 基础聊天 + 设置页。无 bot 管理 UI、无文件 UI、无权限 UI、无任何次级功能。
 
@@ -86,12 +86,12 @@ Redis 不再是 fan-out 路径的启动硬依赖。
 
 **范围已拍板（2026-06-23）**——v1 = 统一工作台 + DM/topic；权限不实现；其余延后/砍。
 
-> **概念锁定：没有独立的「memory」概念。** 平台只拥有**共享文件**（channel workspace = `memory_files`）；bot 拥有它**自己**的记忆（外部 agent 的本地上下文），平台不碰、不抢——否则两份记忆争权威（external-agent-first 打破了奠基 doc「平台拥有 runtime」的前提）。agent 一律 **pull**；workbench 用**插件**策展若干「**Context**」=就是文件。详见 [context-and-environment.md](./context-and-environment.md) 的「现行模型」声明。
+> **概念锁定：没有独立的「memory」概念。** 平台只拥有**共享文件**（channel workspace = `context_files`）；bot 拥有它**自己**的记忆（外部 agent 的本地上下文），平台不碰、不抢——否则两份记忆争权威（external-agent-first 打破了奠基 doc「平台拥有 runtime」的前提）。agent 一律 **pull**；workbench 用**插件**策展若干「**Context**」=就是文件。详见 [context-and-environment.md](./context-and-environment.md) 的「现行模型」声明。
 
 | 功能 | 需要 | v1 决策 |
 |---|---|---|
 | **统一工作台 + 插件系统**（workbench = 面板宿主；插件 = 初始化文件 + ViewPanel + `fs.*` 读写，即奠基的 Environment/Lens） | 后端 `ResourceRegistry` 重构（注册 verb，非 plugin）+ 前端 ViewPanel 注册 + `user→dispatch` 桥 + 2 个内置插件 | ✅ **进**（本里程碑核心） |
-| ├ **File 插件** | 通用文件树 + 编辑器，读写 `memory_files`（`fs.*` 后端已实现，缺 UI + 测试） | ✅ 内置 |
+| ├ **File 插件** | 通用文件树 + 编辑器，读写 `context_files`（`fs.*` 后端已实现，缺 UI + 测试） | ✅ 内置 |
 | └ **Context 插件**（取代「Agent 记忆」） | 策展特定共享文件（`project.md`/约定/术语表…）= Environment/Lens；**无独立 memory、无 push 正文**，agent 经 `fs.*` pull，存在性经系统提示告知（semantic） | ✅ 内置 |
 | 安全 blocker（上 UI 前必做） | `fs.*` 写入硬大小上限 + 每频道配额；内容 inert 渲染防存储型 XSS；限制 member 的 `rm`/`mv` | ✅ 进（随工作台） |
 | DM/topic resource scope | resource 协议扩出 `channel.*`（未决 #10）；DM/topic 的创建/成员/capability scope **均净新建** | ⏸ **进，但范围大**（评审定为「建设非验证」）→ 拆子切片或踢出 v1 |
@@ -139,7 +139,7 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [ ] `ResourceRegistry` 重构 **YAGNI 延后**：v1 插件不新增后端 verb，保留 `match` 的编译期穷尽检查；待真有外部插件加新 verb 再做
   - [ ] 后端：`user→dispatch` 桥（浏览器 WS 今天**无资源请求通道**，`dispatch` 只被 `Principal::bot` 调过）+ 该入口的鉴权契约（限制 member 的 `rm`/`mv`）
   - [ ] 安全 blocker：`fs.*` 写入硬大小上限 + 配额；内容 inert 渲染防存储型 XSS
-  - [ ] File 插件：文件树 + 编辑器，读写 `memory_files`（`fs.*` 已实现，补 UI + 集成测试）
+  - [ ] File 插件：文件树 + 编辑器，读写 `context_files`（`fs.*` 已实现，补 UI + 集成测试）
   - [ ] Context 插件（取代「Agent 记忆」）：策展共享文件 + 面板 + 初始化脚手架；**无 push 正文**，存在性经系统提示告知（**不**用已删的 `memory_entries`）
   - [ ] DM/topic resource scope：净新建（创建/成员/`CAPABILITY_SCOPE_*`）→ 拆子切片或踢出 v1
   - [ ] Grant/trust_level：已在 BOT_PERMISSION.md 标注废弃（R13）—— **不实现**

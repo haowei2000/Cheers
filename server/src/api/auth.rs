@@ -17,6 +17,7 @@ pub struct LoginResponse {
     pub token_type: String,
     pub user_id: String,
     pub display_name: Option<String>,
+    pub role: String,
 }
 
 /// POST /api/v1/auth/login
@@ -38,5 +39,6 @@ pub async fn login(
         token_type: "bearer".into(),
         user_id: user.id,
         display_name: user.display_name,
+        role: user.role,
     }))
 }

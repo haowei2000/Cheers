@@ -331,7 +331,7 @@ services:
 - [x] Redis Fanout + BotRegistry
 - [x] REST 核心端点（bots / channels / files / friends / mcp / workspaces）
 - [x] sqlx 迁移文件（baseline + permission）
-- [ ] **(1) 网格 schema**：加 `channels.next_seq`/`default_bot_id`、`messages.channel_seq`、`message_mentions`(join 表)、`task_chains`+chain 列、`channel_operations`、`memory_files`；**DROP** `memory_entries` 和 `mention_bot_ids`/`mention_user_ids`；ids 一律 `VARCHAR(36)`
+- [ ] **(1) 网格 schema**：加 `channels.next_seq`/`default_bot_id`、`messages.channel_seq`、`message_mentions`(join 表)、`task_chains`+chain 列、`channel_operations`、`context_files`；**DROP** `memory_entries` 和 `mention_bot_ids`/`mention_user_ids`；ids 一律 `VARCHAR(36)`
 - [ ] **(2) 重写 `resolve_bot_triggers`**（行为反转，不依赖 seq）：写入时解析 `@`→`message_mentions`，读它 + 回落 `default_bot_id`（覆盖 workspace 级）。完成此步系统即去中心化
 - [ ] **(3) `channel_seq` 分配**：`create_message` 改成事务（现状是裸 INSERT）；双路径——用户消息 INSERT 时分配、bot 占位 finalize 时分配
 - [ ] **(4)** Bot@Bot 重入 + chain 传播 + 派发门

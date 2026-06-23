@@ -1,9 +1,28 @@
 import { apiFetch, apiJson } from "@/api/client";
 
+// What a renderer ACCEPTS — declared by the renderer, evaluated cheaply by the host to
+// build the candidate list (no plugin boot). A renderer is offered for a file only if
+// its content passes this. The fine "can I really render this" judgment still happens
+// inside the renderer at render time (it may reply cheers:unsupported).
+export interface RendererMatch {
+  format?: string; // "markdown" | "json" | "toml" | "xml" | "text" (by file extension)
+  glob?: string; // optional path glob, e.g. "reviews/*.md"
+  requireAll?: string[]; // content must contain ALL of these substrings (e.g. md headings)
+  requireAny?: string[]; // content must contain AT LEAST ONE of these
+  jsonHas?: string[]; // json only: parsed object must have ALL these top-level keys
+}
+
 export interface PluginMeta {
   plugin_id: string;
   title: string;
-  manifest: { id?: string; title?: string; panels?: { id: string; title: string }[] };
+  manifest: {
+    id?: string;
+    title?: string;
+    // legacy "scenario" plugins declare panels (init/fs protocol, SandboxPanel)
+    panels?: { id: string; title: string }[];
+    // renderer plugins declare renderers (render/save protocol, SandboxRenderer)
+    renderers?: { id: string; title: string; match?: RendererMatch }[];
+  };
 }
 
 /** Installed server-level plugins (metadata; bundles fetched lazily per panel). */
@@ -45,4 +64,12 @@ export async function installPlugin(input: {
     body: JSON.stringify({ title: input.title, manifest: input.manifest, bundle: input.bundle }),
   });
   if (!res.ok) throw new Error(`install ${res.status}: ${await res.text()}`);
+}
+
+/** Admin-only uninstall of a plugin. */
+export async function deletePlugin(pluginId: string): Promise<void> {
+  const res = await apiFetch(`/workbench/plugins/${encodeURIComponent(pluginId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`delete ${res.status}: ${await res.text()}`);
 }

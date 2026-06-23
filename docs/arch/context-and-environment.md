@@ -20,7 +20,7 @@
 > model is therefore:
 >
 > - **No platform "memory" concept.** The platform owns **shared files** (per-channel
->   workspace = `memory_files`). The bot owns its own memory; the platform never pushes a
+>   workspace = `context_files`). The bot owns its own memory; the platform never pushes a
 >   competing one.
 > - **Files are the only substrate.** Some files are **"Contexts"** — curated,
 >   plugin-maintained files (`project.md`, conventions, glossary…). A Context *is a file*,
@@ -35,7 +35,7 @@
 >
 > **Dead concepts — do NOT implement (kept for history only):**
 > `memory_entries` (the ANCHOR/DECISIONS/PROGRESS *layer model* — `DROP`ped in
-> `0003_decentralized_mesh.sql:89`; superseded by the `memory_files` tree) ·
+> `0003_decentralized_mesh.sql:89`; superseded by the `context_files` tree) ·
 > `channel.memory` / `channel.memory.update` verbs (point at the dropped table — use
 > `fs.*`) · `Grant` / `trust_level` fine-grained authz (**R13** — channel-role is the only
 > authz source). Sections below that rely on these describe the *original* design, not
@@ -118,7 +118,7 @@ The dividing judge is **where the source of truth lives**:
 | | Class 1: self-maintained | Class 2: agent-edited |
 |---|---|---|
 | Examples | conversation history, file index, member roster | progress.md, anchor.md, any scenario file |
-| Truth | **elsewhere** (messages / file_records / membership) | **the file itself** (the memory tree) |
+| Truth | **elsewhere** (messages / file_records / membership) | **the file itself** (the `context_files` tree) |
 | The "file" is | a projection/render of other data | first-class content |
 | Read | per-purpose tool / Resource (heterogeneous) | uniform `fs.read` |
 | Change | **no "edit the file"** — only domain actions | uniform `fs.write` / `fs.edit` |
@@ -147,7 +147,7 @@ the invariant, not "only the agent writes.")
 
 #### Storage
 
-- **New table** (e.g. `memory_files`), do not overload the existing
+- **New table** (e.g. `context_files`), do not overload the existing
   `memory_entries` (its ANCHOR/DECISIONS/PROGRESS layer model would clash).
 - **Materialized path** (`path = 'notes/2026-05-30.md'`); list a subtree with
   `WHERE path LIKE 'a/b/%'`. Folders are virtual (derived from path prefixes)

@@ -135,7 +135,7 @@
             { "title": "REST API", "body": "9 个 handler：auth · workspaces · channels · messages · bots · files · friends · capability · mcp。Mention 解析 + bot trigger 派发。另有 3 条 WS（browser / bridge-control / bridge-data）。" },
             { "title": "进程内 Dispatch (R1-A)", "body": "bot task 经 `InProcessBotLocator` 直接 try_send 到 control WS；session 命中即在线，无 Redis 往返。`create_placeholder` 原子 INSERT 单点定胜负（R5）。" },
             { "title": "WS Gateway + Agent Bridge", "body": "browser fan-out（`InProcessFanout`，终态帧背压关连接 R3）、control/data WS、stream registry（`claim_finalize` 守卫）、supersede、bot@bot 链（深度 ≤ 5）。" },
-            { "title": "Resource API", "body": "统一鉴权：`channel.*` 读 / membership-role 写 / `fs.*`（agent 工作区文件，落 `memory_files`）。session_id 已移除。" }
+            { "title": "Resource API", "body": "统一鉴权：`channel.*` 读 / membership-role 写 / `fs.*`（agent 工作区文件，落 `context_files`）。session_id 已移除。" }
           ]
         },
         {
@@ -247,7 +247,7 @@
             "bot_accounts · friendships",
             "cheers_sessions (+ bindings)",
             "acp_capability（delegations + reject_logs）",
-            "`memory_files`（agent 工作区 `fs.*`，`resource/fs.rs`，14 条 SQL）"
+            "`context_files`（agent 工作区 `fs.*`，`resource/fs.rs`，14 条 SQL）"
           ]
         },
         {
@@ -317,7 +317,7 @@
         { "title": "server/src/gateway/dispatcher.rs", "href": "../../server/src/gateway/dispatcher.rs", "description": "R5 原子占位单点定胜负" },
         { "title": "server/src/gateway/stream.rs", "href": "../../server/src/gateway/stream.rs", "description": "claim_finalize 三态守卫 + seq 盖戳" },
         { "title": "server/tests/flows.rs", "href": "../../server/tests/flows.rs", "description": "R4-2 白盒集成测试（feature 门控）" },
-        { "title": "server/src/resource/fs.rs", "href": "../../server/src/resource/fs.rs", "description": "memory_files 文件域 handler（已实现）" },
+        { "title": "server/src/resource/fs.rs", "href": "../../server/src/resource/fs.rs", "description": "context_files 文件域 handler（已实现）" },
         { "title": "packages/…/bridge_runtime.rs", "href": "../../packages/cheers-acp-connector-rs/src/bridge_runtime.rs", "description": "BridgeRuntime → AccountRuntime → AcpAdapter" },
         { "title": "M1 Demo Runbook", "href": "DEMO_M1.md", "description": "全流程：infra → gateway → frontend → bot/token → connector → @bot 流式" },
         { "title": "Engineering Roadmap (M0/M1 看板)", "href": "ROADMAP.md", "description": "里程碑 / 依赖 / 验收门；M1 已勾选" },
