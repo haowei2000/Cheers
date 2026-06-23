@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { FsClient } from "./fsClient";
+import type { FsClient, SendResourceReq } from "./fsClient";
 import type { PluginMeta } from "./sandbox/api";
 
 // The frontend "plugin" seam (the locked model's Environment/Lens idea): a
@@ -13,6 +13,8 @@ import type { PluginMeta } from "./sandbox/api";
 export interface PanelContext {
   channelId: string;
   fs: FsClient;
+  /** Raw resource client (any verb). Used to proxy whitelisted channel.* reads to plugins. */
+  sendResourceReq: SendResourceReq;
   /** Paths pinned to every bot prompt (the semantic layer — e.g. a prompt template). */
   pinned: string[];
   /** Pin / unpin a file path (persisted in .workbench.json). */
@@ -23,8 +25,10 @@ export interface PanelContext {
   bindings: Record<string, string>;
   /** Set (or clear, with null) a file's renderer binding. */
   setBinding: (path: string, rendererId: string | null) => void;
-  /** Files surfaced as workbench tabs (the scenario's curated views). In .workbench.json. */
-  views: { path: string; title?: string }[];
+  /** Files surfaced as workbench tabs (the scenario's curated views). In .workbench.json.
+   *  `renderer`/`config` are optional: a template migrates its view's lens+config here;
+   *  otherwise the file's binding (or default) decides. */
+  views: { path: string; title?: string; renderer?: string; config?: unknown }[];
   /** Toggle a file as a workbench tab. */
   toggleView: (path: string, title?: string) => void;
 }
