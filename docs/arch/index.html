@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgentNexus Architecture Status</title>
+  <title>Cheers Architecture Status</title>
   <style>
 :root {
   color-scheme: light;
@@ -863,7 +863,7 @@ tr:last-child td { border-bottom: 0; }
       <div class="topbar-inner">
         <div class="brand">
           <span class="brand-mark">AN</span>
-          <span>AgentNexus Architecture</span>
+          <span>Cheers Architecture</span>
         </div>
         <nav class="nav" aria-label="Page navigation">
           <a href="#status"><span class="dot done" aria-hidden="true"></span>状态</a>
@@ -877,14 +877,14 @@ tr:last-child td { border-bottom: 0; }
     </header>
     <div class="hero">
       <div class="hero-inner">
-        <p class="eyebrow">Architecture status · 2026-06-20</p>
-        <h1>去中心化 Agent 网格 · M0 夯实地基</h1>
-        <p class="lead">AgentNexus 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。</p>
+        <p class="eyebrow">Architecture status · 2026-06-22</p>
+        <h1>去中心化 Agent 网格 · M1 核心闭环真机验证</h1>
+        <p class="lead">Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。M0 夯实地基已并入 develop；M1 核心闭环（message→@bot→流式→持久化 + mention + 文件 + presence）已于 2026-06-22 用真实 Rust connector + claude-code-acp ACP agent 端到端真机验证。</p>
         <div class="meta-row" aria-label="Audit metadata">
-          <span class="pill">实测日期 2026-06-20</span>
-          <span class="pill">branch develop</span>
-          <span class="pill">HEAD 5c58c57</span>
-          <span class="pill done">M0 已并入 develop（PR #25）</span>
+          <span class="pill">实测日期 2026-06-22</span>
+          <span class="pill">branch demo/main</span>
+          <span class="pill">HEAD 5a0ffc5</span>
+          <span class="pill done">M1 核心闭环真机验证 2026-06-22</span>
         </div>
       </div>
     </div>
@@ -893,62 +893,62 @@ tr:last-child td { border-bottom: 0; }
         <div class="section-heading">
           <div>
             <h2 id="status-title">一眼看状态</h2>
-            <p>M0 的 6 个改造项已全部实现、测试覆盖、CI 全绿，并经 PR #25 合入 <code>develop</code>（test 阶段）。M0 工程目标达成；<code>develop → main</code>（prod 晋级）是独立发布步骤、由你定。</p>
+            <p>M1 核心闭环已端到端真机验证：seed admin 登录 → 建工作区/频道 → @bot mention → 真实 ACP agent 流式回复 → 落库 → 刷新/重连按 channel_seq 追平。mention 选择器、文件附件、presence、agent trace 进度全部打通。M0 的 6 项改造仍在下方「M0 账本」留底。</p>
           </div>
         </div>
         <div class="status-band">
           <div class="band-top">
             <div class="verdict done">
-              <strong>6/6</strong>
-              <span>M0 改造项已实现 + 测试覆盖（R1-A · R2 · R3 · R4-1 · R4-2 · R5）</span>
+              <strong>M1 ✓</strong>
+              <span>核心闭环 message→@bot→流式→持久化 + mention + 文件 + presence 真机验证（2026-06-22）</span>
             </div>
             <div class="counters">
               <div class="counter done">
-                <strong>21 + 29 + 4</strong>
-                <span>测试：server 单测 · connector · 集成（真实 PG，已接 CI）</span>
+                <strong>真机</strong>
+                <span>Rust connector + claude-code-acp 真实 Claude 流式回复，端到端跑通</span>
               </div>
               <div class="counter done">
-                <strong>进程内</strong>
-                <span>fan-out / 路由 / 流注册表（R1-A；Redis 仍 parked）</span>
+                <strong>网关代理</strong>
+                <span>文件上传/下载经 gateway SigV4 代理（aws-sdk-s3）+ 桶引导，往返校验</span>
               </div>
               <div class="counter done">
-                <strong>已接 CI</strong>
-                <span><code>gateway-integration</code>：Postgres service + <code>--features integration</code>；真 CI 两轮全绿</span>
+                <strong>presence</strong>
+                <span>在线用户按 conn→user 去重，subscribe/断线广播 <code>presence</code> 帧</span>
               </div>
               <div class="counter done">
-                <strong>已并入</strong>
-                <span>M0 经 PR #25（merge <code>5c58c57</code>）合入 develop，CI 全绿</span>
+                <strong>可观测</strong>
+                <span>dispatch→delta→done 全量日志 + <code>trace</code> 帧转 UI agent 进度</span>
               </div>
             </div>
           </div>
           <div class="status-chips" aria-label="Workstream status chips">
-            <a class="rchip done" href="#r1a">
-              <b>R1-A</b>
-              <span>进程内部署</span>
+            <a class="rchip done" href="#ledger">
+              <b>闭环</b>
+              <span>@bot 流式回复</span>
             </a>
-            <a class="rchip done" href="#r2">
-              <b>R2</b>
-              <span>绑定竞态</span>
+            <a class="rchip done" href="#ledger">
+              <b>mention</b>
+              <span>@bot/@user 选择器</span>
             </a>
-            <a class="rchip done" href="#r3">
-              <b>R3</b>
-              <span>终态背压</span>
+            <a class="rchip done" href="#ledger">
+              <b>files</b>
+              <span>附件上传/下载</span>
             </a>
-            <a class="rchip done" href="#r41">
-              <b>R4-1</b>
-              <span>纯逻辑单测</span>
+            <a class="rchip done" href="#ledger">
+              <b>presence</b>
+              <span>在线人数</span>
             </a>
-            <a class="rchip done" href="#r42">
-              <b>R4-2</b>
-              <span>白盒集成</span>
+            <a class="rchip done" href="#ledger">
+              <b>trace</b>
+              <span>agent 进度字幕</span>
             </a>
-            <a class="rchip done" href="#r5">
-              <b>R5</b>
-              <span>双派发</span>
+            <a class="rchip done" href="#ledger">
+              <b>connector</b>
+              <span>真机 happy-path</span>
             </a>
-            <a class="rchip done" href="#r42">
-              <b>CI</b>
-              <span>集成 job 已接</span>
+            <a class="rchip done" href="#ledger">
+              <b>M0</b>
+              <span>6/6 留底 →</span>
             </a>
           </div>
         </div>
@@ -1005,7 +1005,7 @@ tr:last-child td { border-bottom: 0; }
         </div>
         <div class="overview">
           <div class="overview-what">
-            <p>平台是「外接 agent 优先」：没有内置 Python runtime。Rust gateway（<code>server/</code>，9 个顶层模块）是唯一后端；React 前端（<code>frontend/</code>）；agent 作为外部进程，经 Agent Bridge 的两条 WS（control + data）接入。标准桥是 <code>agentnexus-mcp-server</code>。</p>
+            <p>平台是「外接 agent 优先」：没有内置 Python runtime。Rust gateway（<code>server/</code>，9 个顶层模块）是唯一后端；React 前端（<code>frontend/</code>）；agent 作为外部进程，经 Agent Bridge 的两条 WS（control + data）接入。标准桥是 <code>cheers-mcp-server</code>。</p>
             <p>浏览器走 REST + 一条 browser WS：订阅频道、收消息与流式 delta。bot 经 connector 接入：本地 ACP agent（配置驱动，example 指向 <code>claude-agent-acp</code>）说 ACP stdio；MCP 工具调用经 connector 的 loopback HTTP 回到后端的 resource 协议。整条链路当前为单实例进程内（R1-A）。</p>
           </div>
           <ul class="principles">
@@ -1074,7 +1074,7 @@ tr:last-child td { border-bottom: 0; }
               </div>
               <div class="node">
                 <strong>Frontend (frontend/)</strong>
-                <span>React 18 + Vite 6 + TS + Tailwind + Zustand + TanStack Query。3-panel 布局，<code>useChatRealtime</code> 原生 WS + 指数退避重连，react-markdown + highlight.js，JWT。新 src 仅 27 文件 ~2k LOC。</span>
+                <span>React 18 + Vite 6 + TS + Tailwind + Zustand。3-panel 布局，<code>useChatRealtime</code> 原生 WS + 指数退避重连 + 重连按 <code>since_seq</code> 追平；@mention 选择器、文件附件（📎 上传 + 鉴权下载 chip）、presence 在线数、streaming + agent trace「思考中」字幕、Settings→Bots 管理 UI（注册/签发 token/加频道）。M1 已补齐 chat + bot 管理面。</span>
               </div>
             </div>
           </div>
@@ -1113,7 +1113,7 @@ tr:last-child td { border-bottom: 0; }
                 <span><code>adapter.command</code> 指定，持久 stdio；example 与 README 用 <code>/opt/homebrew/bin/claude-agent-acp</code>。agent 无关，provider 鉴权在 agent 进程内（不在 connector）。</span>
               </div>
               <div class="node">
-                <strong>agentnexus-mcp-server</strong>
+                <strong>cheers-mcp-server</strong>
                 <span>18 个 MCP tools（channel info / messages / files / <code>fs.*</code>）。注入为标准 ACP stdio（<code>mcpServers</code> 的 command/args/env），非 HTTP/SSE。</span>
               </div>
               <div class="node">
@@ -1251,7 +1251,7 @@ tr:last-child td { border-bottom: 0; }
               <li>users · workspaces · channels · channel_memberships</li>
               <li>messages · message_mentions · file_records</li>
               <li>bot_accounts · friendships</li>
-              <li>agentnexus_sessions (+ bindings)</li>
+              <li>cheers_sessions (+ bindings)</li>
               <li>acp_capability（delegations + reject_logs）</li>
               <li><code>memory_files</code>（agent 工作区 <code>fs.*</code>，<code>resource/fs.rs</code>，14 条 SQL）</li>
             </ul>
@@ -1284,13 +1284,13 @@ tr:last-child td { border-bottom: 0; }
             </ul>
           </div>
         </div>
-        <p class="note">前端同为薄切片：仅 3 个 feature 区（auth / chat / settings），无 bot 管理 UI、无文件 UI、无权限 UI——这些属 M1 的前端工作量。</p>
+        <p class="note">前端 M1 已补齐：chat 实时 / 流式 / mention / 文件 / presence / agent-trace + Settings→Bots 管理 UI（注册外接 bot、签发 botToken、加入频道）。仅权限 UI 仍缺（随 M2 权限范围定）。</p>
       </section>
       <section id="changes" aria-labelledby="changes-title">
         <div class="section-heading">
           <div>
-            <h2 id="changes-title">M0 改动（按依赖链逐项提交）</h2>
-            <p>本里程碑按依赖链推完：部署决策 + 装配 → 纯逻辑单测安全网 → 终态背压与双派发竞态修复 → bin→lib 重构 → 白盒集成测试。每项独立提交，文档（ROADMAP / DATA_FLOW）同步刷新至 v1.5。</p>
+            <h2 id="changes-title">M1 改动（按可演示闭环逐项提交）</h2>
+            <p>M1 把「消息 + 外接 bot」闭环打通到真机可演示：先夯实后端缺口（admin seed / since_seq / botToken 签发），再补齐前端实时·流式·mention·文件·presence 与 bot 管理 UI，最后用真实 Rust connector + claude-code-acp 端到端验证，并补全链路观测。M0 改动见下方「M0 账本」。</p>
           </div>
         </div>
         <div class="timeline">
@@ -1306,57 +1306,45 @@ tr:last-child td { border-bottom: 0; }
             <tbody>
               <tr>
                 <td>gateway</td>
-                <td>R1-A 回退进程内</td>
-                <td><code>main.rs</code> 装配 in-process fan-out/locator；Redis 退出启动路径；redis_* parked</td>
-                <td class="commit"><code>169362a</code></td>
+                <td>核心闭环后端补洞</td>
+                <td>admin seed 引导（空库本不可登录）· messages <code>?since_seq=</code> 追平 · <code>POST /bots/:id/token</code> 签发 Agent Bridge token（SHA-256 入库，原 create_bot 从不签发）</td>
+                <td class="commit"><code>06d14d7</code></td>
               </tr>
               <tr>
-                <td>gateway+connector</td>
-                <td>R4-1 纯逻辑单测</td>
-                <td>21 项 I4/I7/finalize/role/backoff/mention/terminal；提取 <code>claim_finalize</code> 三态守卫</td>
-                <td class="commit"><code>bd5c6f4</code></td>
-              </tr>
-              <tr>
-                <td>gateway</td>
-                <td>R3 终态帧背压</td>
-                <td>入队 <code>Full</code> + 终态 → <code>closers</code> 信号 → browser <code>close_rx</code> 4408 关连接</td>
-                <td class="commit"><code>9049598</code></td>
-              </tr>
-              <tr>
-                <td>gateway</td>
-                <td>R5 dispatcher 双派发</td>
-                <td>删前置 SELECT；<code>create_placeholder</code> 返回 <code>rows_affected()==1</code> 定胜负</td>
-                <td class="commit"><code>740ed40</code></td>
-              </tr>
-              <tr>
-                <td>server</td>
-                <td>bin→lib 拆分</td>
-                <td>新增 <code>src/lib.rs</code>；main.rs 薄壳；解锁白盒集成测试</td>
-                <td class="commit"><code>dfa3eec</code></td>
-              </tr>
-              <tr>
-                <td>server</td>
-                <td>R4-2 白盒集成测试</td>
-                <td><code>#[sqlx::test]</code> 隔离 DB + feature 门控；4 项对真实 PG</td>
-                <td class="commit"><code>8e55486</code></td>
-              </tr>
-              <tr>
-                <td>ci</td>
-                <td>R4-2 集成测试接入 CI</td>
-                <td>新增 <code>gateway-integration</code>：Postgres service + <code>--features integration</code>；真 CI 两轮全绿</td>
-                <td class="commit"><code>df8a6d4</code></td>
+                <td>frontend</td>
+                <td>核心闭环前端</td>
+                <td>重连 <code>since_seq</code> 自愈 · 消息排序修正（null-seq 占位置底）· 流式渲染 · @mention 选择器 → mention_ids · Settings→Bots 管理 UI</td>
+                <td class="commit"><code>06d14d7</code></td>
               </tr>
               <tr>
                 <td>docs</td>
-                <td>状态页重构为 ground-truth 仪表盘（本页）</td>
-                <td>多 agent 校正过期断言 + 可读性重设计</td>
-                <td class="commit"><code>871b4f3</code></td>
+                <td>M1 demo runbook + connector 配置</td>
+                <td><code>docs/DEMO_M1.md</code> 全流程 + <code>examples/cheers-daemon.local-demo.toml</code></td>
+                <td class="commit"><code>06d14d7</code></td>
               </tr>
               <tr>
-                <td>merge</td>
-                <td>M0 合入 develop</td>
-                <td>PR #25 合并（merge <code>5c58c57</code>），develop 上 CI 全绿；develop→main prod 晋级待定</td>
-                <td class="commit"><code>5c58c57</code></td>
+                <td>gateway</td>
+                <td>文件存储（S3 代理）</td>
+                <td>接通已声明未用的 <code>aws-sdk-s3</code>：<code>infra/s3.rs</code> SigV4 client + 桶引导；<code>POST /api/v1/files</code> 网关代理上传；preview/download 改签名 <code>get_object</code>（原为未签名 reqwest）</td>
+                <td class="commit"><code>8c93b8d</code></td>
+              </tr>
+              <tr>
+                <td>frontend</td>
+                <td>文件附件 UI</td>
+                <td>composer 📎 上传 → 附 <code>file_ids</code>；MessageItem 鉴权 fetch 下载 chip；<code>&lt;#file&gt;</code> token 渲染</td>
+                <td class="commit"><code>8c93b8d</code></td>
+              </tr>
+              <tr>
+                <td>gateway+frontend</td>
+                <td>presence 在线状态</td>
+                <td><code>InProcessFanout</code> 加 <code>conn→user</code> 映射 + <code>online_users</code>；<code>browser.rs</code> 在 subscribe/退订/断线广播去重 <code>presence</code> 帧；前端频道头显在线数</td>
+                <td class="commit"><code>8c93b8d</code></td>
+              </tr>
+              <tr>
+                <td>observability</td>
+                <td>全链路日志 + agent trace</td>
+                <td>dispatch / per-delta / done 全量日志；<code>trace</code> 帧不再 unknown，转 <code>bot_trace</code> 给浏览器；UI 显示 agent「思考中」字幕</td>
+                <td class="commit"><code>5a0ffc5</code></td>
               </tr>
             </tbody>
           </table>
@@ -1366,37 +1354,42 @@ tr:last-child td { border-bottom: 0; }
         <div class="section-heading">
           <div>
             <h2 id="backlog-title">后续工作</h2>
-            <p>M0 已经 PR #25 合入 <code>develop</code>（CI 全绿），并正在晋级 <code>develop → main</code>（prod）。之后进入 M1 核心闭环。</p>
+            <p>M1 核心闭环已真机验证并提交于 <code>demo/main</code>（3 个 commit）。下一步是 <code>demo/main → develop → main</code> 发布与 M2 功能裁剪。</p>
           </div>
         </div>
         <div class="backlog-grid">
           <article class="backlog-card">
-            <span class="badge mostly">发布 · 进行中</span>
-            <h3>develop → main（prod 晋级）</h3>
-            <p>M0 在 <code>develop</code>（test）CI 全绿；正在晋级到 <code>main</code>：push main 触发 <code>cd.yml</code> 构建并推送 gateway/frontend 镜像到 ghcr（<code>DEPLOY_ENABLED</code> 未开，无 live SSH 部署）。</p>
+            <span class="badge done">M1 · 前端 ✓</span>
+            <h3>前端核心闭环（已完成）</h3>
+            <p>重连 <code>since_seq</code> 追平 · @mention 选择器 · 文件上传 + 鉴权下载 chip · presence 在线数 · streaming + agent trace 字幕 · Settings→Bots 管理 UI。2026-06-22 真机验证。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">M1 · 前端</span>
-            <h3>前端核心闭环</h3>
-            <p><code>useChatRealtime</code> 重连后 REST 补齐、mention 选择器（<code>&lt;@bot&gt;</code>/<code>&lt;@user&gt;</code>）、文件上传 + <code>&lt;#file&gt;</code> token、presence、bot 管理 UI（注册外接 bot / 签发 botToken / 看 config·status）。</p>
+            <span class="badge done">M1 · 后端 ✓</span>
+            <h3>CRUD 补洞 + 文件 + presence（已完成）</h3>
+            <p>admin seed · messages <code>?since_seq=</code> · <code>POST /bots/:id/token</code> 签发 · S3 网关代理上传/下载 + 桶引导 · presence 广播 · dispatch/delta/done 日志 + <code>trace</code> 转 UI。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge open">M1 · 后端</span>
-            <h3>CRUD 补洞</h3>
-            <p>对照核心闭环补齐 channels / memberships / messages-since-seq / files / bots / workspaces 的 CRUD 缺口——大多已存在，是补洞不是新建。</p>
+            <span class="badge done">M1 · 验证 ✓</span>
+            <h3>connector happy-path（已真机验证）</h3>
+            <p>真实 Rust connector + claude-code-acp 接入：@提及 → 流式 → 重连追平，端到端跑通。两处真机集成坑已记录（MCP schema 不匹配 → 关注入；CLAUDECODE 嵌套守卫 → unset）。见 <code>docs/DEMO_M1.md</code>。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge mostly">M1 · 验证</span>
-            <h3>connector happy-path 文档化</h3>
-            <p>经 <code>agentnexus-mcp-server</code> 或 <code>acp-connector-rs</code> 接入一条文档化通路：@提及 → 流式 → 断线重连。MCP 注入已是标准 ACP stdio（18 tools 在 mock loopback 上验证过）。</p>
+            <span class="badge mostly">发布 · 待办</span>
+            <h3>demo/main → develop → main</h3>
+            <p>M1 在 <code>demo/main</code>（3 commit，未推远端）；待并入 <code>develop</code> 再晋级 <code>main</code>（push main 触发 <code>cd.yml</code> 构建并推 ghcr 镜像，<code>DEPLOY_ENABLED</code> 未开、无 live SSH 部署）。</p>
           </article>
           <article class="backlog-card">
             <span class="badge future">M2 · 裁剪</span>
             <h3>schema-only 功能定范围</h3>
-            <p>对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。不得把只有 schema 的功能标成「完成」。</p>
+            <p>对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。权限 UI 随之定。不得把只有 schema 的功能标成「完成」。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge future">M3/M4 · 加固</span>
+            <h3>E2EE / ACP 端点 Noise 通道（分层可选，非默认）</h3>
+            <p>现状：<code>acp_security</code>（X25519-ECDH + AES-256-GCM，即 Noise 式握手）只落字段 + hello 协商，内容加解密未实装。决策：分层 + 按 bot opt-in + 不设平台全局默认——全局 E2EE 会让服务端读不到内容，废掉 search / RAG / 摘要 / 文件提取等「agent 处理内容」核心能力（且内置 LLM worker 仍需解密 → 对运营方仍非 E2EE）。钩子已留（<code>acp_security</code> 配置 + <code>E2EE_REQUIRED</code> / <code>DECRYPT_FAILED</code> 错误码）。优先级取决于威胁模型：自部署单租户 TLS 足矣；要「运营方也读不到」才升级为旗舰项。推 M3/M4，见 <code>docs/arch/E2EE_NOTES.md</code>（威胁模型层级 A/B/C）。</p>
           </article>
         </div>
-        <p class="note">M0 验收门全绿并已落地 <code>develop</code>：工作树干净 ✓ · <code>cargo test</code> 单测 + 集成两段接 CI、真 CI 全绿（<code>gateway-check</code> + <code>gateway-integration</code>）✓ · 不变量 I1/I2/I4/I6/I7 各有覆盖 ✓ · Redis 不再是 fan-out 启动硬依赖 ✓ · 经 PR #25（merge <code>5c58c57</code>）合入 develop ✓。<code>develop → main</code> 的 prod 晋级是独立发布步骤。</p>
+        <p class="note">M1 验收门全绿：新用户能 建工作区/频道 → 发带 mention+文件的消息 → 接入外接 agent → @它 → 看真实 Claude 流式回复 → 刷新看到完整历史 ✓。server <code>cargo build</code> + frontend <code>tsc</code> / <code>vite build</code> 全绿；文件上传下载往返、presence 去重、agent trace 转 UI 均真机验证。遗留：bot resource 层 <code>resource/files.rs</code> 仍 <code>content:null</code>（Phase 2）；<code>Makefile</code>/<code>.env.example</code> 为旧 gateway/Python 期。</p>
       </section>
       <section id="sources" aria-labelledby="sources-title">
         <div class="section-heading">
@@ -1430,13 +1423,17 @@ tr:last-child td { border-bottom: 0; }
             <strong>server/src/resource/fs.rs</strong>
             <span>memory_files 文件域 handler（已实现）</span>
           </a>
-          <a class="source-link" href="../../packages/agentnexus-acp-connector-rs/src/bridge_runtime.rs">
+          <a class="source-link" href="../../packages/cheers-acp-connector-rs/src/bridge_runtime.rs">
             <strong>packages/…/bridge_runtime.rs</strong>
             <span>BridgeRuntime → AccountRuntime → AcpAdapter</span>
           </a>
+          <a class="source-link" href="DEMO_M1.md">
+            <strong>M1 Demo Runbook</strong>
+            <span>全流程：infra → gateway → frontend → bot/token → connector → @bot 流式</span>
+          </a>
           <a class="source-link" href="ROADMAP.md">
-            <strong>Engineering Roadmap (M0 看板)</strong>
-            <span>里程碑 / 依赖 / 验收门，v1.5</span>
+            <strong>Engineering Roadmap (M0/M1 看板)</strong>
+            <span>里程碑 / 依赖 / 验收门；M1 已勾选</span>
           </a>
           <a class="source-link" href="DATA_FLOW_AND_REFACTOR_PLAN.md">
             <strong>Data Flow &amp; Refactor Plan</strong>
@@ -1450,7 +1447,7 @@ tr:last-child td { border-bottom: 0; }
       </section>
     </main>
     <footer class="footer">
-      <p>基于 2026-06-20 对当前代码的实测快照（M0 经 PR #25 合入 <code>develop</code> @ 5c58c57，CI 全绿；正在晋级 <code>develop → main</code>，prod CD 推镜像、无 live deploy）。事实经多 agent ground-truth 校正：ACP agent 为配置驱动（example <code>claude-agent-acp</code>，非 OpenCode）· MCP 注入为标准 ACP stdio · Redis 是 parked 非移除 · <code>memory_files</code> 已实现（非 schema-only）· CI 集成 job 已接线并在真 CI 全绿。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
+      <p>基于 2026-06-22 对当前代码的实测快照（M1 核心闭环真机验证，branch <code>demo/main</code> @ 5a0ffc5；M0 经 PR #25 合入 develop @ 5c58c57）。M1 用真实 Rust connector + claude-code-acp ACP agent 端到端验证：@bot 流式回复 · 文件网关代理上传/下载（aws-sdk-s3 SigV4）· presence 去重 · agent <code>trace</code> 转 UI。全流程见 <code>docs/DEMO_M1.md</code>。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
     </footer>
   </div>
 </body>

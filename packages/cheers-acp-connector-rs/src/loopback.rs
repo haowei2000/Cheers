@@ -203,7 +203,7 @@ fn request_has_token(headers: &BTreeMap<String, String>, expected: &str) -> bool
         .map(|value| value == expected)
         .unwrap_or(false)
         || headers
-            .get("x-agentnexus-loopback-token")
+            .get("x-cheers-loopback-token")
             .map(|value| value == expected)
             .unwrap_or(false)
 }
@@ -244,10 +244,7 @@ mod tests {
         headers.insert("authorization".to_string(), "Bearer secret".to_string());
         assert!(request_has_token(&headers, "secret"));
         headers.clear();
-        headers.insert(
-            "x-agentnexus-loopback-token".to_string(),
-            "secret".to_string(),
-        );
+        headers.insert("x-cheers-loopback-token".to_string(), "secret".to_string());
         assert!(request_has_token(&headers, "secret"));
     }
 }

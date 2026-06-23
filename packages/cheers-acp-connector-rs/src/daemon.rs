@@ -145,8 +145,8 @@ pub async fn start_daemon(options: StartDaemonOptions) -> anyhow::Result<DaemonM
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
-        .env("AGENTNEXUS_ACP_DAEMON", "1")
-        .env("AGENTNEXUS_ACP_DAEMON_NAME", &name);
+        .env("CHEERS_ACP_DAEMON", "1")
+        .env("CHEERS_ACP_DAEMON_NAME", &name);
     set_process_group(&mut command);
     let child = command.spawn().context("failed to start daemon process")?;
     let pid = child.id();
@@ -309,11 +309,11 @@ async fn tail_file(path: &Path, lines: usize) -> anyhow::Result<String> {
 }
 
 fn default_home_dir() -> anyhow::Result<PathBuf> {
-    if let Ok(home) = env::var("AGENTNEXUS_ACP_HOME") {
+    if let Ok(home) = env::var("CHEERS_ACP_HOME") {
         return Ok(PathBuf::from(home));
     }
     let home = env::var("HOME").map_err(|_| anyhow!("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".agentnexus/acp-connector"))
+    Ok(PathBuf::from(home).join(".cheers/acp-connector"))
 }
 
 fn safe_name(name: &str) -> String {
@@ -537,14 +537,14 @@ mod tests {
         let metadata: DaemonMetadata = serde_json::from_value(json!({
             "name": "opencode-main",
             "pid": 1234,
-            "config_path": "/tmp/agentnexus-daemon.toml",
+            "config_path": "/tmp/cheers-daemon.toml",
             "started_at": "2026-06-02T00:00:00Z",
             "cwd": "/tmp",
             "argv": [
                 "/usr/local/bin/cce-acp-connector",
                 "run",
                 "--config",
-                "/tmp/agentnexus-daemon.toml",
+                "/tmp/cheers-daemon.toml",
                 "--name",
                 "opencode-main"
             ],
@@ -564,7 +564,7 @@ mod tests {
             "/usr/local/bin/cce-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
-            "/tmp/agentnexus-daemon.toml".to_string(),
+            "/tmp/cheers-daemon.toml".to_string(),
             "--name".to_string(),
             "opencode-main".to_string(),
         ];
@@ -587,16 +587,16 @@ mod tests {
             "/Users/me/bin/cce-acp-connector".to_string(),
             "run".to_string(),
             "--config".to_string(),
-            "/tmp/agentnexus-daemon.toml".to_string(),
+            "/tmp/cheers-daemon.toml".to_string(),
             "--name".to_string(),
             "opencode-main".to_string(),
         ];
         assert!(command_text_matches_expected(
-            "/Users/me/bin/cce-acp-connector run --config /tmp/agentnexus-daemon.toml --name opencode-main",
+            "/Users/me/bin/cce-acp-connector run --config /tmp/cheers-daemon.toml --name opencode-main",
             &expected,
         ));
         assert!(!command_text_matches_expected(
-            "/Users/me/bin/cce-acp-connector run --config /tmp/agentnexus-daemon.toml --name other",
+            "/Users/me/bin/cce-acp-connector run --config /tmp/cheers-daemon.toml --name other",
             &expected,
         ));
     }

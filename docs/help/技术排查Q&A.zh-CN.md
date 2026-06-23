@@ -1,4 +1,4 @@
-# AgentNexus 技术排查 Q&A
+# Cheers 技术排查 Q&A
 
 > **语言**：中文 | [English](技术排查Q&A.md)
 
@@ -30,7 +30,7 @@ docker compose logs -f postgres
 
 后端文件日志默认写入 `data/logs`，常见文件：
 
-- `agentnexus.log`：通用日志
+- `cheers.log`：通用日志
 - `error.log`：错误日志
 
 ## 三、常见问题
@@ -124,7 +124,7 @@ docker compose logs --tail=200 kkfileview
 Docker 内部可先进入 postgres：
 
 ```bash
-docker compose exec postgres psql -U "${POSTGRES_USER:-agentnexus}" "${POSTGRES_DB:-agentnexus}"
+docker compose exec postgres psql -U "${POSTGRES_USER:-cheers}" "${POSTGRES_DB:-cheers}"
 ```
 
 常看表：

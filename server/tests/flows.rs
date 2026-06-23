@@ -5,7 +5,7 @@
 //! 的 Postgres（CLAUDE.md：URL 走环境变量，不硬编码端口），例如：
 //!
 //! ```bash
-//! DATABASE_URL=postgres://agentnexus:agentnexus@localhost:5432/agentnexus \
+//! DATABASE_URL=postgres://cheers:cheers@localhost:5432/cheers \
 //!   cargo test --test flows
 //! ```
 //!
@@ -212,7 +212,7 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
         bot_id: bot,
         channel_id: ch,
         depth: 0,
-        provider_session_key: "agentnexus:test".into(),
+        provider_session_key: "cheers:test".into(),
         session_id: None,
     };
 
@@ -284,7 +284,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
             bot_id: bot,
             channel_id: ch,
             depth: 0,
-            provider_session_key: "agentnexus:test".into(),
+            provider_session_key: "cheers:test".into(),
             session_id: None,
         },
     )

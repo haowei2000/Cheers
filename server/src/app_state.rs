@@ -15,6 +15,8 @@ use crate::{
 pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Config>,
+    /// S3 / RustFS client for gateway-proxied file upload/download.
+    pub s3: aws_sdk_s3::Client,
     /// 广播给浏览器连接的 fan-out 实现（可替换：单实例=进程内，多实例=Redis）。
     pub fanout: Arc<dyn Fanout>,
     /// 浏览器 WS 连接管理器（subscribe/unsubscribe + 成员资格缓存）。

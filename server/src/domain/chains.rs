@@ -104,7 +104,7 @@ fn mentioned_bots(mentions: &[Mention]) -> Vec<Uuid> {
 }
 
 fn provider_session_key_for_bot_workspace(workspace_id: Uuid, bot_id: Uuid) -> String {
-    format!("agentnexus:workspace:{workspace_id}:bot:{bot_id}")
+    format!("cheers:workspace:{workspace_id}:bot:{bot_id}")
 }
 
 async fn resolve_channel_workspace_id(db: &PgPool, channel_id: Uuid) -> Result<Uuid, sqlx::Error> {

@@ -25,8 +25,8 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
                COALESCE(u.display_name, b.display_name) AS display_name,
                COALESCE(u.username, b.username) AS username
         FROM channel_memberships cm
-        LEFT JOIN users u ON cm.member_type = 'user' AND u.id = cm.member_id
-        LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.id = cm.member_id
+        LEFT JOIN users u ON cm.member_type = 'user' AND u.user_id = cm.member_id
+        LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.bot_id = cm.member_id
         WHERE cm.channel_id = $1
         LIMIT $2
         "#,

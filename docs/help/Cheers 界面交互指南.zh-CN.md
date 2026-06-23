@@ -1,6 +1,6 @@
-# AgentNexus 界面交互指南
+# Cheers 界面交互指南
 
-> **语言**：中文 | [English](<AgentNexus 界面交互指南.md>)
+> **语言**：中文 | [English](<Cheers 界面交互指南.md>)
 
 ## 1. 界面元素详解
 
@@ -232,4 +232,4 @@
 
 ---
 
-*本指南适用于 AgentNexus v1.0 及以上版本的界面交互*
+*本指南适用于 Cheers v1.0 及以上版本的界面交互*

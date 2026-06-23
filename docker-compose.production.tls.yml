@@ -3,8 +3,8 @@ services:
     ports:
       - "${BACKEND_HOST_BIND:-127.0.0.1}:${BACKEND_HOST_PORT:-8000}:8000"
     environment:
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-https://agentnexus.example.com}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-https://cheers.example.com}
 
   frontend:
     ports:
@@ -15,8 +15,8 @@ services:
       - "${RUSTFS_API_HOST_BIND:-127.0.0.1}:${RUSTFS_API_HOST_PORT:-9000}:9000"
       - "${RUSTFS_CONSOLE_HOST_BIND:-127.0.0.1}:${RUSTFS_CONSOLE_HOST_PORT:-9001}:9001"
     environment:
-      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
+      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
 
   kkfileview:
     ports:
@@ -34,8 +34,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - APP_DOMAIN=${APP_DOMAIN:-agentnexus.example.com}
-      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
+      - APP_DOMAIN=${APP_DOMAIN:-cheers.example.com}
+      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-cheers-files}
       - TLS_CERT_FILE=${TLS_CERT_FILE:-/etc/caddy/certs/fullchain.pem}
       - TLS_KEY_FILE=${TLS_KEY_FILE:-/etc/caddy/certs/privkey.pem}
     depends_on:

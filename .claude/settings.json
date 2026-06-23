@@ -3,7 +3,7 @@
     "allow": [
       "Bash(curl:*)",
       "Bash(grep:*)",
-      "Bash(docker exec agentnexus-postgres-1:*)",
+      "Bash(docker exec cheers-postgres-1:*)",
       "Bash(docker logs:*)",
       "Bash(docker ps:*)",
       "Bash(lsof:*)",

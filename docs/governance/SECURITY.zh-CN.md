@@ -4,7 +4,7 @@
 
 ## Supported Versions
 
-AgentNexus 处于早期公开预览阶段。安全修复优先面向：
+Cheers 处于早期公开预览阶段。安全修复优先面向：
 
 - `develop` 分支
 - 最新正式 tag / release
@@ -15,7 +15,7 @@ AgentNexus 处于早期公开预览阶段。安全修复优先面向：
 
 请不要在公开 Issue、PR 或讨论区披露漏洞细节。
 
-优先使用 GitHub 的 private vulnerability reporting / security advisory 功能。如果仓库未开启该功能，请通过维护者公开资料中列出的联系方式报告，并在标题中包含 `AgentNexus security`。
+优先使用 GitHub 的 private vulnerability reporting / security advisory 功能。如果仓库未开启该功能，请通过维护者公开资料中列出的联系方式报告，并在标题中包含 `Cheers security`。
 
 报告中请尽量包含：
 

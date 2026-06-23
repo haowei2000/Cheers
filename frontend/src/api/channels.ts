@@ -21,9 +21,20 @@ export async function createChannel(data: {
   name: string;
   type?: string;
   purpose?: string;
+  initial_bot_ids?: string[];
 }): Promise<Channel> {
   return apiJson<Channel>("/channels", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export async function addChannelMember(
+  channelId: string,
+  member: { member_id: string; member_type: "user" | "bot"; role?: string }
+): Promise<void> {
+  await apiJson(`/channels/${channelId}/members`, {
+    method: "POST",
+    body: JSON.stringify(member),
   });
 }

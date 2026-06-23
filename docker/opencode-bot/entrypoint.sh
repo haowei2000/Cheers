@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-CONFIG_PATH="${OPENCODE_BOT_CONFIG_PATH:-/app/config/agentnexus-daemon.toml}"
+CONFIG_PATH="${OPENCODE_BOT_CONFIG_PATH:-/app/config/cheers-daemon.toml}"
 STATE_DIR="${OPENCODE_STATE_DIR:-/app/state}"
 OPENCODE_HOME="${OPENCODE_HOME:-/app/state/opencode}"
 export OPENCODE_HOME
@@ -39,12 +39,12 @@ function opencodeModel(provider, model) {
   return model.includes("/") ? model : `${provider}/${model}`;
 }
 
-const configPath = env("OPENCODE_BOT_CONFIG_PATH", "/app/config/agentnexus-daemon.toml");
+const configPath = env("OPENCODE_BOT_CONFIG_PATH", "/app/config/cheers-daemon.toml");
 const stateDir = env("OPENCODE_STATE_DIR", "/app/state");
 const username = env("OPENCODE_BOT_USERNAME", "opencode").trim() || "opencode";
 const botToken = requireEnv("OPENCODE_BOT_TOKEN");
 const apiKey = requireEnv("OPENCODE_OPENAI_API_KEY");
-const wsBase = env("AGENTNEXUS_WS_BASE", "ws://gateway:8000").replace(/\/+$/, "");
+const wsBase = env("CHEERS_WS_BASE", "ws://gateway:8000").replace(/\/+$/, "");
 const controlUrl = env("OPENCODE_BOT_CONTROL_URL", `${wsBase}/ws/agent-bridge/control`);
 const dataUrl = env("OPENCODE_BOT_DATA_URL", `${wsBase}/ws/agent-bridge/data`);
 const cwd = path.resolve(env("OPENCODE_WORKSPACE_DIR", "/workspace"));
@@ -102,7 +102,7 @@ function tomlInlineTable(record) {
     .join(", ")} }`;
 }
 
-const statePath = path.join(stateDir, "agentnexus-acp-state.json");
+const statePath = path.join(stateDir, "cheers-acp-state.json");
 const logDir = path.join(stateDir, "logs");
 const accountKey = tomlKey(username);
 const envSet = {
@@ -187,9 +187,9 @@ allow = true
 include_metadata = true
 
 [accounts.${accountKey}.policy.mcp]
-inject_agentnexus = true
+inject_cheers = true
 backend_may_inject_extra_servers = false
-allowed_servers = ["agentnexus"]
+allowed_servers = ["cheers"]
 
 [accounts.${accountKey}.policy.loopback]
 request_timeout_ms = 600000

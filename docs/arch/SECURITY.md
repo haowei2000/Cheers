@@ -1,10 +1,10 @@
-# AgentNexus 安全架构
+# Cheers 安全架构
 
 > 版本：v1
 > 分支：`break/rust-gateway-arch`
 > 配套：[BOT_PERMISSION](./BOT_PERMISSION.md) · [ACP_INTEGRATION](./ACP_INTEGRATION.md)
 
-本文定义 AgentNexus 的安全架构，包括传输安全、设备认证、三方安全边界，以及 bot 级可选端到端加密（**当前可选**，默认关闭）。
+本文定义 Cheers 的安全架构，包括传输安全、设备认证、三方安全边界，以及 bot 级可选端到端加密（**当前可选**，默认关闭）。
 
 > **范围定调（已锁定）**：本期主线依旧是 **层级 A —— 传输安全 + 静态加密 + 设备认证**。
 > **ACP 端点 E2EE 改为 bot 可选项**：默认关闭，默认行为等同明文；若 `binding_config.acp_security.enabled=true`，网关走可选协商通道（目前为字段下发，不含 payload 加解密）。
@@ -92,10 +92,10 @@ Agent 不可修改:
 Daemon 硬编码 Platform 证书指纹，防止 CA 被攻破时的中间人攻击。
 
 ```jsonc
-// ~/.agentnexus/daemon.json
+// ~/.cheers/daemon.json
 {
   "platform": {
-    "url": "wss://agentnexus.com",
+    "url": "wss://cheers.com",
     "cert_pinning": {
       "enabled": true,
       "sha256_pins": [

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AgentNexus (智枢协作平台) is a Slack-like multi-agent + human collaboration chat hub. Users @mention bots in channels; an orchestrator dispatches requests to LLM-backed bots and writes replies back to the channel in real time via WebSocket.
+Cheers (智枢协作平台) is a Slack-like multi-agent + human collaboration chat hub. Users @mention bots in channels; an orchestrator dispatches requests to LLM-backed bots and writes replies back to the channel in real time via WebSocket.
 
 ## Branch Strategy
 
@@ -156,7 +156,7 @@ Tools are defined in `backend/app/services/adapters/channel_bot.py` (`_make_tool
 
 ### Database
 
-- **Main DB**: PostgreSQL (`DATABASE_URL`, default `postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus`)
+- **Main DB**: PostgreSQL (`DATABASE_URL`, default `postgresql+asyncpg://postgres:postgres@localhost:5432/cheers`)
 - **Context Store**: PostgreSQL (`CONTEXT_DB_URL`, defaults to same DB as main; stores four-layer memory in `context_store` table)
 - Tables managed by Alembic migrations; run `alembic upgrade head` before first start
 - All IDs are `String(36)` UUIDs
@@ -178,8 +178,8 @@ All REST routes are prefixed under `/api/`:
 
 Key env vars (all have defaults in `config.py`):
 ```
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus
-CONTEXT_DB_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/cheers
+CONTEXT_DB_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/cheers
 GUIDE_LLM_BASE_URL=http://localhost:11434/v1
 GUIDE_LLM_MODEL=llama3.2
 SYSTEM_LLM_API_KEY=

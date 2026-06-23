@@ -52,7 +52,7 @@ impl Config {
             s3_endpoint: require_any(&["S3_ENDPOINT", "STORAGE_S3_ENDPOINT"]),
             s3_bucket: env::var("S3_BUCKET")
                 .or_else(|_| env::var("STORAGE_S3_BUCKET"))
-                .unwrap_or_else(|_| "agentnexus".into()),
+                .unwrap_or_else(|_| "cheers".into()),
             s3_access_key: require_any(&["S3_ACCESS_KEY", "STORAGE_S3_ACCESS_KEY"]),
             s3_secret_key: require_any(&["S3_SECRET_KEY", "STORAGE_S3_SECRET_KEY"]),
             s3_region: env::var("S3_REGION")

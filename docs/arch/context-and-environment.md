@@ -2,7 +2,7 @@
 
 > **Status**: Design (v1) · **Decided**: 2026-05-30 · **Language**: English default
 >
-> This document records the agreed architecture for how AgentNexus builds context
+> This document records the agreed architecture for how Cheers builds context
 > for bots, how channel memory is modeled, and how per-scenario "Environments"
 > are packaged as registrable plugins. It is design intent — verify against code
 > (`gateway/src/acp_bridge/resource/`, `backend/app/features/memory/`,
@@ -11,7 +11,7 @@
 ## 1. The problem this solves
 
 External agents (ACP bots reverse-connected through the connector, and third-party
-MCP hosts) need to **read and operate** AgentNexus. Two layers were separated early:
+MCP hosts) need to **read and operate** Cheers. Two layers were separated early:
 
 - **Capability layer (HOW)** — what an agent can actually execute: read messages,
   list members, edit memory. Strongly typed, discoverable, authenticated,
@@ -26,7 +26,7 @@ that channel's messages."
 
 ### MCP exposure split (already prototyped)
 
-- **Local stdio MCP** (`packages/agentnexus-mcp-server/`) — for the project's own
+- **Local stdio MCP** (`packages/cheers-mcp-server/`) — for the project's own
   reverse-connected ACP bot. Co-located with the agent, gets the bound channel via
   env injection. **This is the primary channel.** Most mature MCP transport.
 - **Remote HTTP MCP** (`backend/app/api/v1/mcp/`) — for third-party MCP hosts
@@ -176,9 +176,9 @@ currently returns metadata with `content: null` — the body is a pull concern.)
 
 - **Reads → Resources** (URI-addressable), plus a tool version as fallback where
   the host can't let the model self-fetch resources:
-  - `agentnexus://channel/{cid}/memory` → whole tree outline (also pushed)
-  - `agentnexus://channel/{cid}/memory/{path}` → one file (ResourceTemplate)
-  - `agentnexus://channel/{cid}/members`, `/history?page=N`, `/file/{id}`
+  - `cheers://channel/{cid}/memory` → whole tree outline (also pushed)
+  - `cheers://channel/{cid}/memory/{path}` → one file (ResourceTemplate)
+  - `cheers://channel/{cid}/members`, `/history?page=N`, `/file/{id}`
 - **Writes → Tools** (Grant-gated): `fs.write / edit / rm / mv` for class 2;
   `post_message`, `upload_file`, `invite_member` (domain actions) for class 1.
 - **Conventions → Prompt** (MCP Prompts or direct system-prompt injection) —

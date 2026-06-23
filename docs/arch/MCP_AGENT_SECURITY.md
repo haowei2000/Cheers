@@ -2,7 +2,7 @@
 
 > 配套：[ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [BOT_PERMISSION](./BOT_PERMISSION.md)
 
-本文描述 `agentnexus-mcp-server` 的运行拓扑，以及"权限边界在 connector 层"这一核心设计原则。
+本文描述 `cheers-mcp-server` 的运行拓扑，以及"权限边界在 connector 层"这一核心设计原则。
 
 ---
 
@@ -16,7 +16,7 @@
 │  └──────────────────────┬────────────────────────────────────┘  │
 │                         │ stdio（MCP JSON-RPC）                  │
 │  ┌──────────────────────▼────────────────────────────────────┐  │
-│  │  agentnexus-mcp-server（Rust stdio 子进程）                │  │
+│  │  cheers-mcp-server（Rust stdio 子进程）                │  │
 │  │  · 由 connector 启动，注入 env vars                        │  │
 │  │  · 把 MCP tool call 翻译成 resource 请求                   │  │
 │  │  · 转发给 connector（HTTP loopback）                       │  │
@@ -32,7 +32,7 @@
 └────────────────────────┼───────────────────────────────────────┘
                          │ WebSocket（data channel）
                          ▼
-              AgentNexus Gateway（Rust）
+              Cheers Gateway（Rust）
               · 用 WS 连接的 bot identity 检查 membership
               · 用 session_id 检查 Grant
               · 返回结果或 NOT_MEMBER / PERMISSION_DENIED
@@ -48,12 +48,12 @@
 
 | 变量 | 含义 |
 |---|---|
-| `AGENTNEXUS_RESOURCE_URL` | connector 监听的 loopback HTTP 地址，MCP server 转发目标 |
-| `AGENTNEXUS_CHANNEL_ID` | 当前 session 绑定的频道，工具调用的默认 `channel_id` |
-| `AGENTNEXUS_BOT_ID` | bot UUID，仅用于日志诊断 |
-| `AGENTNEXUS_REQUEST_TIMEOUT_MS` | 单次 resource round-trip 超时（默认 30s） |
+| `CHEERS_RESOURCE_URL` | connector 监听的 loopback HTTP 地址，MCP server 转发目标 |
+| `CHEERS_CHANNEL_ID` | 当前 session 绑定的频道，工具调用的默认 `channel_id` |
+| `CHEERS_BOT_ID` | bot UUID，仅用于日志诊断 |
+| `CHEERS_REQUEST_TIMEOUT_MS` | 单次 resource round-trip 超时（默认 30s） |
 
-`AGENTNEXUS_CHANNEL_ID` 是其中最重要的：agent 调用工具时可以不传 `channel_id`，MCP server 自动填入当前 session 绑定的频道。
+`CHEERS_CHANNEL_ID` 是其中最重要的：agent 调用工具时可以不传 `channel_id`，MCP server 自动填入当前 session 绑定的频道。
 
 ---
 
@@ -77,7 +77,7 @@
 
 **安全性**：agent 是 LLM，其 context window 可能被 prompt injection 攻击读取。如果 bot token 或 session key 出现在工具参数里，攻击者可以通过构造特殊输入来提取凭证。把 token 封在 connector 进程中，agent 即使被攻击也无法拿到任何凭证。
 
-**声明式授权**：管理员在 AgentNexus 后台为 bot 配置 Grant（能写哪些频道、能做哪些操作），这是离线配置，不依赖 agent 的运行时行为。agent 调工具时不需要"申请"权限，gateway 自动根据 Grant 决策。
+**声明式授权**：管理员在 Cheers 后台为 bot 配置 Grant（能写哪些频道、能做哪些操作），这是离线配置，不依赖 agent 的运行时行为。agent 调工具时不需要"申请"权限，gateway 自动根据 Grant 决策。
 
 **零差异**：这套机制对内置 bot 和外置 ACP bot 完全一样，没有任何特权通道。
 
@@ -110,7 +110,7 @@
 | 文件 | 职责 |
 |---|---|
 | `index.ts` | 入口：读 config，创建 transport / client / MCP server，注册工具，连接 stdio |
-| `config.ts` | 从 env vars 解析 `ServerConfig`，`AGENTNEXUS_RESOURCE_URL` 必填 |
+| `config.ts` | 从 env vars 解析 `ServerConfig`，`CHEERS_RESOURCE_URL` 必填 |
 | `transport.ts` | HTTP loopback 通信层（`HttpLoopbackTransport`），把 `ResourceRequest` POST 给 connector |
 | `client.ts` | 类型化 API 包装，每个方法对应一个 gateway resource，处理 `channel_id` 默认值 |
 | `tools.ts` | MCP 工具注册，参数 schema（zod）+ description，LLM 可调用的最终接口 |

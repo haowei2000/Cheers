@@ -1,4 +1,4 @@
-# AgentNexus Agent 任务投递契约 (Task Delivery v2)
+# Cheers Agent 任务投递契约 (Task Delivery v2)
 
 > 版本：v2
 > 分支：`break/rust-gateway-arch`
@@ -48,7 +48,7 @@
   "channel_id": "<uuid>",           // 目标频道
   "msg_id": "<uuid>",               // 触发消息（幂等键）
   "trigger": "user_message",        // 判别式
-  "session_id": "<uuid>",           // AgentNexusSession id
+  "session_id": "<uuid>",           // CheersSession id
   "enqueued_at": "<RFC3339>"
 }
 ```

@@ -2,7 +2,7 @@
 
 > **Language**: English | [中文](prompt-template-operations.zh-CN.md)
 
-This guide explains how AgentNexus prompt templates are stored, selected, rendered, and operated. It reflects the current implementation in `backend/app/core/prompt_templates.py`, `backend/app/features/bot_runtime/adapters/prompt_template.py`, the Bot runtime pipeline, and the frontend settings UI.
+This guide explains how Cheers prompt templates are stored, selected, rendered, and operated. It reflects the current implementation in `backend/app/core/prompt_templates.py`, `backend/app/features/bot_runtime/adapters/prompt_template.py`, the Bot runtime pipeline, and the frontend settings UI.
 
 ## Scope
 
@@ -59,7 +59,7 @@ Variable names are word-style identifiers (`letters`, `digits`, and `_`). Spaces
 
 Known variables are replaced. Unknown variables are preserved literally, so `{{unknown_var}}` remains in the final prompt. The rendered user text is stripped at both ends.
 
-`system_prompt` is not rendered with template variables. For HTTP and Agent Bridge Bots, AgentNexus prepends the Bot identity before the selected system prompt:
+`system_prompt` is not rendered with template variables. For HTTP and Agent Bridge Bots, Cheers prepends the Bot identity before the selected system prompt:
 
 ```text
 你在当前频道中的名称是「<bot display name or username>」。
@@ -102,7 +102,7 @@ Memory is rendered as compact XML, for example:
 
 ## Effective Template Priority
 
-AgentNexus resolves the effective template in this order:
+Cheers resolves the effective template in this order:
 
 1. **Single-message override**: `Message.content_data.prompt_template_override_id`.
 2. **Channel Bot override**: `ChannelMembership.template_id`, valid for the Bot membership in the current channel.
@@ -324,7 +324,7 @@ Question:
 ### Agent Bridge Task Template
 
 ```text
-Task from AgentNexus
+Task from Cheers
 Channel: {{channel_name}}
 Sender: {{sender_name}}
 

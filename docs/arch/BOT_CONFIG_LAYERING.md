@@ -1,11 +1,11 @@
-# AgentNexus Bot 配置分级设计
+# Cheers Bot 配置分级设计
 
 > 版本：v0.1 设计草稿（仅设计，不含实现）
 > 分支：`break/rust-gateway-arch`
 > 前提：**不考虑多租户**。基于现有 `bot_accounts` / `ChannelMembership` schema。
 
 本文回答「一个 Bot 有多个配置项该怎么管理」。结论先行：
-**AgentNexus 现在已经在分级，只是较窄、合并逻辑隐式。** 本文把现状显式化，
+**Cheers 现在已经在分级，只是较窄、合并逻辑隐式。** 本文把现状显式化，
 并给出最小、可扩展的补强方案——**不引入与本项目不匹配的表结构**。
 
 ---
@@ -34,7 +34,7 @@
 | **频道级覆盖** | `ChannelMembership.template_id`（注释：channel-level prompt-template override, bot only） | **已存在**，但只能换 prompt 模板 |
 | **密钥** | `bot_account.bot_token_hash` / `bot_token_prefix`（哈希，明文仅创建/轮换时返回） | ✅ 不进 JSONB |
 
-对照常见的「配置分层」建议，AgentNexus **已满足**：密钥分离、模型/提示词复用、Bot 级覆盖、频道级覆盖（窄）。
+对照常见的「配置分层」建议，Cheers **已满足**：密钥分离、模型/提示词复用、Bot 级覆盖、频道级覆盖（窄）。
 
 ---
 
@@ -132,13 +132,13 @@ effective_config  →  adapter / pipeline
 
 | 不引入 | 原因 |
 |--------|------|
-| `principals` 统一身份表 | AgentNexus 的 `users` 与 `bot_accounts` 已分离，无 principals 抽象，引入是大重构 |
+| `principals` 统一身份表 | Cheers 的 `users` 与 `bot_accounts` 已分离，无 principals 抽象，引入是大重构 |
 | `tenant_configs` / `tenant_id` / 租户级继承 | **不考虑多租户** |
 | `capability_grants` 独立权限引擎 | 当前权限靠 `binding_type`/`scope` 已够；无多租户下属过度设计 |
 | `bot_versions`（本期） | 有价值，但需回滚/灰度时再上，避免现在拖慢 |
 | 把配置「全摊进 `bot_accounts` 字段」 | 用 JSONB override + 复用库表，已比摊字段更好 |
 
-> 词汇对齐：外部资料常用 `room`=本项目 `channel`、`tenant`=`workspace`。本设计一律用 AgentNexus 术语。
+> 词汇对齐：外部资料常用 `room`=本项目 `channel`、`tenant`=`workspace`。本设计一律用 Cheers 术语。
 
 ---
 

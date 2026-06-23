@@ -1,8 +1,8 @@
-# AgentNexus Agent Bridge Integration Guide
+# Cheers Agent Bridge Integration Guide
 
 > **Language**: English | [中文](AgentBridge接入指南.zh-CN.md)
 
-Agent Bridge lets external providers such as local ACP agents appear as AgentNexus Bots. A user mentions a Bot in a channel or DM; AgentNexus sends the task to the provider over WebSocket; the provider returns streaming text, final replies, and optional files.
+Agent Bridge lets external providers such as local ACP agents appear as Cheers Bots. A user mentions a Bot in a channel or DM; Cheers sends the task to the provider over WebSocket; the provider returns streaming text, final replies, and optional files.
 
 > **OpenClaw deprecation notice**
 >
@@ -20,8 +20,8 @@ Agent Bridge lets external providers such as local ACP agents appear as AgentNex
 Default local variables:
 
 ```bash
-export AGENTNEXUS_BASE_URL=http://localhost:8000
-export AGENTNEXUS_WS_BASE=ws://localhost:8000
+export CHEERS_BASE_URL=http://localhost:8000
+export CHEERS_WS_BASE=ws://localhost:8000
 ```
 
 Use `wss://` behind HTTPS reverse proxies.
@@ -42,7 +42,7 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 
 Recommended UI flow:
 
-1. Open AgentNexus frontend.
+1. Open Cheers frontend.
 2. Go to Manage -> Bot Management.
 3. Create a Bot and choose **Agent Bridge Bot**.
 4. Set `bridge_provider` to `acp` for local ACP agents. Use `openclaw` only for legacy OpenClaw deployments.
@@ -52,7 +52,7 @@ Recommended UI flow:
 Registration API:
 
 ```bash
-curl -X POST "$AGENTNEXUS_BASE_URL/docs/agent-bridge/register" \
+curl -X POST "$CHEERS_BASE_URL/docs/agent-bridge/register" \
   -H "Content-Type: application/json" \
   -d '{
     "username": "my-agent",
@@ -78,7 +78,7 @@ ACP-capable agent; new deployments must not use the old OpenClaw package path.
 Install:
 
 ```bash
-cargo install --path packages/agentnexus-acp-connector-rs --locked
+cargo install --path packages/cheers-acp-connector-rs --locked
 cce-acp-connector --help
 ```
 
@@ -115,7 +115,7 @@ docker compose --profile opencode-bot up -d --wait
 
 ```bash
 curl -H "X-Agent-Bridge-Token: <AGENT_BRIDGE_TOKEN>" \
-  "$AGENTNEXUS_BASE_URL/api/v1/agent-bridge/status"
+  "$CHEERS_BASE_URL/api/v1/agent-bridge/status"
 ```
 
 Common WebSocket close codes:
@@ -129,7 +129,7 @@ Common WebSocket close codes:
 ## Best Practices
 
 - Treat `bot_token` as a secret.
-- Store one provider account per AgentNexus Bot.
+- Store one provider account per Cheers Bot.
 - Reconnect both control and data planes.
 - Add the Bot to a channel before expecting messages.
 - Use structured `error` events for provider failures.

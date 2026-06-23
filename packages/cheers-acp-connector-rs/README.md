@@ -1,6 +1,6 @@
 # cce-acp-connector Rust daemon
 
-Rust local daemon for the AgentNexus ACP connector.
+Rust local daemon for the Cheers ACP connector.
 
 This binary owns daemon lifecycle commands: `start`, `stop`, `restart`,
 `status`, and `logs`. Its `run` command validates the local TOML security
@@ -31,9 +31,9 @@ state_path = "state.json"
 log_dir = "logs"
 
 [accounts.haowei_claude.bridge]
-control_url = "wss://agentnexus.example.com/ws/agent-bridge/control"
-data_url = "wss://agentnexus.example.com/ws/agent-bridge/data"
-bot_token_env = "AGENTNEXUS_CLAUDE_BOT_TOKEN"
+control_url = "wss://cheers.example.com/ws/agent-bridge/control"
+data_url = "wss://cheers.example.com/ws/agent-bridge/data"
+bot_token_env = "CHEERS_CLAUDE_BOT_TOKEN"
 heartbeat_interval_ms = 25000
 ack_timeout_ms = 600000
 
@@ -63,8 +63,8 @@ allow_images = true
 allow_local_file_refs = false
 
 [accounts.haowei_claude.policy.workspace]
-default_cwd = "~/.agentnexus/workspace"
-allowed_roots = ["~/.agentnexus/workspace"]
+default_cwd = "~/.cheers/workspace"
+allowed_roots = ["~/.cheers/workspace"]
 backend_may_set_cwd = true
 
 [accounts.haowei_claude.policy.env]
@@ -100,16 +100,16 @@ allow = true
 include_metadata = true
 
 [accounts.haowei_claude.policy.mcp]
-inject_agentnexus = true
+inject_cheers = true
 backend_may_inject_extra_servers = false
-allowed_servers = ["agentnexus"]
+allowed_servers = ["cheers"]
 
 [accounts.haowei_claude.policy.loopback]
 request_timeout_ms = 600000
 
 [accounts.haowei_claude.security.acp_capability]
 delegation_id = "capability-id-from-backend"
-private_key_env = "AGENTNEXUS_ACP_CAPABILITY_KEY"
+private_key_env = "CHEERS_ACP_CAPABILITY_KEY"
 algorithm = "ed25519"
 kid = "local-main"
 request_id_prefix = "local-main"
@@ -126,12 +126,12 @@ Backend answers with `permission_resolution`. The local daemon only controls
 whether forwarding is allowed and how long it waits.
 
 ```bash
-cd packages/agentnexus-acp-connector-rs
-cargo run --bin cce-acp-connector -- start --config /path/to/agentnexus-daemon.toml --name haowei-claude
+cd packages/cheers-acp-connector-rs
+cargo run --bin cce-acp-connector -- start --config /path/to/cheers-daemon.toml --name haowei-claude
 cargo run --bin cce-acp-connector -- status --name haowei-claude
 cargo run --bin cce-acp-connector -- logs --name haowei-claude --lines 120
 cargo run --bin cce-acp-connector -- stop --name haowei-claude
 ```
 
-Set `AGENTNEXUS_ACP_HOME=/path/to/state` or pass `--home /path/to/state` to
+Set `CHEERS_ACP_HOME=/path/to/state` or pass `--home /path/to/state` to
 change the daemon metadata and log directory.

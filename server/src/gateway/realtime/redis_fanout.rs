@@ -21,17 +21,17 @@ use super::{
 };
 
 // ── Redis key 命名规范 ────────────────────────────────────────────────────────
-// agentnexus:rt:channel:{channel_id}  ← 频道事件
-// agentnexus:rt:user:{user_id}        ← 用户级通知
+// cheers:rt:channel:{channel_id}  ← 频道事件
+// cheers:rt:user:{user_id}        ← 用户级通知
 
-const CHANNEL_PATTERN: &str = "agentnexus:rt:channel:*";
-const USER_PATTERN: &str = "agentnexus:rt:user:*";
+const CHANNEL_PATTERN: &str = "cheers:rt:channel:*";
+const USER_PATTERN: &str = "cheers:rt:user:*";
 
 fn channel_subject(channel_id: Uuid) -> String {
-    format!("agentnexus:rt:channel:{channel_id}")
+    format!("cheers:rt:channel:{channel_id}")
 }
 fn user_subject(user_id: Uuid) -> String {
-    format!("agentnexus:rt:user:{user_id}")
+    format!("cheers:rt:user:{user_id}")
 }
 
 // ── RedisFanout ───────────────────────────────────────────────────────────────
@@ -151,11 +151,11 @@ async fn do_subscribe(client: redis::Client, local: Arc<InProcessFanout>) -> any
         };
 
         // 按主题路由到本地连接
-        if let Some(id_str) = channel.strip_prefix("agentnexus:rt:channel:") {
+        if let Some(id_str) = channel.strip_prefix("cheers:rt:channel:") {
             if let Ok(channel_id) = id_str.parse::<Uuid>() {
                 local.broadcast_channel(channel_id, frame).await;
             }
-        } else if let Some(id_str) = channel.strip_prefix("agentnexus:rt:user:") {
+        } else if let Some(id_str) = channel.strip_prefix("cheers:rt:user:") {
             if let Ok(user_id) = id_str.parse::<Uuid>() {
                 local.broadcast_user(user_id, frame).await;
             }

@@ -1,8 +1,8 @@
-#Contributing to AgentNexus
+#Contributing to Cheers
 
 > **Language**: English | [中文](CONTRIBUTING.zh-CN.md)
 
-Thank you for your willingness to participate in AgentNexus. The project mainly uses Chinese to maintain documents and discussions, and English Issues/PRs are also accepted.
+Thank you for your willingness to participate in Cheers. The project mainly uses Chinese to maintain documents and discussions, and English Issues/PRs are also accepted.
 
 ## Branching rules
 
@@ -38,8 +38,8 @@ npm package changes also require running `npm run lint`, `npm test`, and `npm ru
 
 ## npm package release notes
 
-The legacy `packages/openclaw-channel-agentnexus` and standalone
-`packages/agentnexus-bridge-client` packages have been removed. Do not add new
+The legacy `packages/openclaw-channel-cheers` and standalone
+`packages/cheers-bridge-client` packages have been removed. Do not add new
 release or CI wiring for them.
 
 ## PR requirements

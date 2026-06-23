@@ -1,8 +1,8 @@
-# AgentNexus Roadmap
+# Cheers Roadmap
 
 > **语言**：中文 | [English](ROADMAP.md)
 
-本文档描述 AgentNexus 的里程碑规划与当前进度。详细任务拆解见 [docs/INDEX.zh-CN.md](INDEX.zh-CN.md) 的历史任务记录，完整设计背景可参考 [docs/arch/ARCHITECTURE_OVERVIEW.md](arch/ARCHITECTURE_OVERVIEW.md)。
+本文档描述 Cheers 的里程碑规划与当前进度。详细任务拆解见 [docs/INDEX.zh-CN.md](INDEX.zh-CN.md) 的历史任务记录，完整设计背景可参考 [docs/arch/ARCHITECTURE_OVERVIEW.md](arch/ARCHITECTURE_OVERVIEW.md)。
 
 ---
 

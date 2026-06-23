@@ -2,7 +2,7 @@
 
 > **Language**: English | [中文](RustFS对象存储部署说明.zh-CN.md)
 
-AgentNexus uses RustFS as an S3-compatible object store in the default Docker Compose stack. The storage layer only depends on S3-compatible APIs, so MinIO, AWS S3, Cloudflare R2, or similar services can replace RustFS.
+Cheers uses RustFS as an S3-compatible object store in the default Docker Compose stack. The storage layer only depends on S3-compatible APIs, so MinIO, AWS S3, Cloudflare R2, or similar services can replace RustFS.
 
 ## Required Variables
 
@@ -15,7 +15,7 @@ STORAGE_S3_PUBLIC_ENDPOINT=http://localhost:9000
 STORAGE_S3_REGION=us-east-1
 STORAGE_S3_ACCESS_KEY=<same-as-rustfs-access-key>
 STORAGE_S3_SECRET_KEY=<same-as-rustfs-secret-key>
-STORAGE_S3_BUCKET=agentnexus-files
+STORAGE_S3_BUCKET=cheers-files
 STORAGE_S3_FORCE_PATH_STYLE=true
 STORAGE_S3_AUTO_CREATE_BUCKET=true
 STORAGE_PRESIGN_EXPIRES_SECONDS=900
@@ -48,7 +48,7 @@ RustFS API defaults to port `9000`; the console defaults to `9001`.
 - Replace all example access keys and secrets.
 - Persist RustFS data volumes.
 - Prefer private bucket access with presigned URLs.
-- Let AgentNexus auto-create the bucket in development; pre-create it in production if your operations process requires it.
+- Let Cheers auto-create the bucket in development; pre-create it in production if your operations process requires it.
 
 ## Verification
 

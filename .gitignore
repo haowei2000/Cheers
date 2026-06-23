@@ -74,7 +74,7 @@ docker-compose.yml
 /package-lock.json
 
 # OpenClaw plugin 构建产物（每次 release 时由 npm pack 生成，不入 git）
-packages/openclaw-channel-agentnexus/*.tgz
+packages/openclaw-channel-cheers/*.tgz
 release/*.tgz
 release/*.tar.gz
 .tmp_pytest/

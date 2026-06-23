@@ -1,12 +1,11 @@
 use axum::{
-    body::Body,
-    extract::{Path, State},
+    body::{Body, Bytes},
+    extract::{Path, Query, State},
     http::{header, HeaderValue, StatusCode},
     response::Response,
     Extension, Json,
 };
 use chrono::{DateTime, Duration, Utc};
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -244,22 +243,90 @@ async fn ensure_file_for_access(
     Ok(file)
 }
 
-async fn fetch_file_bytes(file_url: String) -> Result<Vec<u8>, AppError> {
-    let response = Client::new()
-        .get(file_url)
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    pub channel_id: String,
+    pub filename: String,
+    pub content_type: Option<String>,
+}
 
-    if !response.status().is_success() {
-        return Err(AppError::NotFound);
+/// POST /api/v1/files?channel_id=&filename=&content_type= — gateway-proxied
+/// upload. The browser sends the raw file bytes as the request body; the gateway
+/// streams them to object storage with SigV4 (no browser-side S3 signing/CORS)
+/// and records the file as `uploaded` in one round trip.
+pub async fn upload_file(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Query(q): Query<UploadQuery>,
+    body: Bytes,
+) -> Result<Json<Value>, AppError> {
+    let member = sqlx::query(
+        "SELECT c.workspace_id
+         FROM channels c
+         JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+         WHERE c.channel_id = $1 AND cm.member_id = $2 AND cm.member_type = 'user'",
+    )
+    .bind(&q.channel_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Forbidden("not a channel member".into()))?;
+    let workspace_id: Option<String> = member.try_get("workspace_id").ok();
+
+    if body.is_empty() {
+        return Err(AppError::BadRequest("empty file".into()));
     }
+    let filename = safe_filename(&q.filename)?;
+    let content_type = q
+        .content_type
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let size_bytes =
+        i32::try_from(body.len()).map_err(|_| AppError::BadRequest("file too large".into()))?;
+    let file_id = Uuid::new_v4().to_string();
+    let object_key = format!("uploads/{}/{}", file_id, filename);
 
-    response
-        .bytes()
-        .await
-        .map(|b| b.to_vec())
-        .map_err(|e| AppError::Internal(e.to_string()))
+    crate::infra::s3::put_object(
+        &state.s3,
+        &state.config.s3_bucket,
+        &object_key,
+        &content_type,
+        body.to_vec(),
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("upload failed: {e}")))?;
+
+    let expires_at = Utc::now() + Duration::seconds(7 * 24 * 60 * 60);
+    sqlx::query(
+        "INSERT INTO file_records
+            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
+             storage_bucket, original_filename, content_type, size_bytes, status,
+             uploaded_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
+    )
+    .bind(&file_id)
+    .bind(&q.channel_id)
+    .bind(&workspace_id)
+    .bind(&claims.sub)
+    .bind(&object_key)
+    .bind(&state.config.s3_bucket)
+    .bind(&filename)
+    .bind(&content_type)
+    .bind(size_bytes)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "file_id": file_id,
+        "original_filename": filename,
+        "content_type": content_type,
+        "size_bytes": size_bytes,
+        "status": "uploaded",
+        "preview_url": format!("/api/v1/files/{}/preview", file_id),
+        "download_url": format!("/api/v1/files/{}/download", file_id),
+    })))
 }
 
 fn attachment_response(
@@ -452,8 +519,9 @@ pub async fn preview_file(
 ) -> Result<Response, AppError> {
     let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
     let object_key = file.object_key.ok_or_else(|| AppError::NotFound)?;
-    let file_url = resolve_file_url(&state.config, &object_key);
-    let bytes = fetch_file_bytes(file_url).await?;
+    let bytes = crate::infra::s3::get_object(&state.s3, &state.config.s3_bucket, &object_key)
+        .await
+        .map_err(|_| AppError::NotFound)?;
 
     let ttl_seconds = ttl_left_seconds(file.expires_at);
     let filename = file.original_filename.unwrap_or_else(|| file_id.clone());
@@ -474,8 +542,9 @@ pub async fn download_file(
 ) -> Result<Response, AppError> {
     let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
     let object_key = file.object_key.ok_or_else(|| AppError::NotFound)?;
-    let file_url = resolve_file_url(&state.config, &object_key);
-    let bytes = fetch_file_bytes(file_url).await?;
+    let bytes = crate::infra::s3::get_object(&state.s3, &state.config.s3_bucket, &object_key)
+        .await
+        .map_err(|_| AppError::NotFound)?;
 
     let ttl_seconds = ttl_left_seconds(file.expires_at);
     let filename = file.original_filename.unwrap_or_else(|| file_id);

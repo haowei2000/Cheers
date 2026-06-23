@@ -1,8 +1,8 @@
-# AgentNexus UI Interaction Guide
+# Cheers UI Interaction Guide
 
-> **Language**: English | [中文](<AgentNexus 界面交互指南.zh-CN.md>)
+> **Language**: English | [中文](<Cheers 界面交互指南.zh-CN.md>)
 
-Interaction and UX guide for the AgentNexus web interface.
+Interaction and UX guide for the Cheers web interface.
 
 This is the English default edition prepared for the open-source documentation set. The full Chinese version is preserved next to this file for readers who prefer Chinese or need the original historical wording.
 

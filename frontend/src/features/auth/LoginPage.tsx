@@ -44,7 +44,7 @@ export default function LoginPage() {
             <MessageSquare className="w-6 h-6 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
-            ChatEverywhere
+            Cheers
           </h1>
           <p className="text-zinc-500 text-sm mt-1">Sign in to continue</p>
         </div>

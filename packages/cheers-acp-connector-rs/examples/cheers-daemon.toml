@@ -5,9 +5,9 @@ state_path = "state.json"
 log_dir = "logs"
 
 [accounts.local_acp.bridge]
-control_url = "wss://agentnexus.example.com/ws/agent-bridge/control"
-data_url = "wss://agentnexus.example.com/ws/agent-bridge/data"
-bot_token_env = "AGENTNEXUS_BOT_TOKEN"
+control_url = "wss://cheers.example.com/ws/agent-bridge/control"
+data_url = "wss://cheers.example.com/ws/agent-bridge/data"
+bot_token_env = "CHEERS_BOT_TOKEN"
 heartbeat_interval_ms = 25000
 ack_timeout_ms = 600000
 
@@ -37,8 +37,8 @@ allow_images = true
 allow_local_file_refs = false
 
 [accounts.local_acp.policy.workspace]
-default_cwd = "~/.agentnexus/workspace"
-allowed_roots = ["~/.agentnexus/workspace"]
+default_cwd = "~/.cheers/workspace"
+allowed_roots = ["~/.cheers/workspace"]
 backend_may_set_cwd = true
 
 [accounts.local_acp.policy.env]
@@ -74,9 +74,9 @@ allow = true
 include_metadata = true
 
 [accounts.local_acp.policy.mcp]
-inject_agentnexus = true
+inject_cheers = true
 backend_may_inject_extra_servers = false
-allowed_servers = ["agentnexus"]
+allowed_servers = ["cheers"]
 
 [accounts.local_acp.policy.loopback]
 request_timeout_ms = 600000

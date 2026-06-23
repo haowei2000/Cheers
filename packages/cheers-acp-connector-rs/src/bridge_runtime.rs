@@ -318,20 +318,30 @@ impl RuntimeContext {
         let ack_was_pending = self.io.resolve_data_ack(&frame).await;
         match frame {
             DataInbound::ResourceRes { response } => {
-                if let Some(tx) = self
-                    .shared
-                    .lock()
-                    .await
-                    .pending_resources
-                    .remove(&response.req_id)
-                {
-                    let _ = tx.send(LoopbackResponse {
-                        ok: response.ok,
-                        data: response.data,
-                        error: response.error,
-                        code: response.code,
-                    });
-                }
+                let matched = {
+                    let maybe_tx = self
+                        .shared
+                        .lock()
+                        .await
+                        .pending_resources
+                        .remove(&response.req_id);
+                    if let Some(tx) = maybe_tx {
+                        let _ = tx.send(LoopbackResponse {
+                            ok: response.ok,
+                            data: response.data,
+                            error: response.error,
+                            code: response.code,
+                        });
+                        true
+                    } else {
+                        false
+                    }
+                };
+                tracing::debug!(
+                    req_id = %response.req_id,
+                    matched,
+                    "loopback resource_res received"
+                );
             }
             DataInbound::SendAck {
                 permission_resolution,
@@ -393,11 +403,14 @@ impl RuntimeContext {
         request: LoopbackRequest,
     ) -> anyhow::Result<()> {
         let (tx, rx) = oneshot::channel();
+        let req_id = request.req_id.clone();
+        let resource = request.resource.clone();
         self.shared
             .lock()
             .await
             .pending_resources
             .insert(request.req_id.clone(), tx);
+        tracing::debug!(%req_id, %resource, "loopback resource_req sent");
         self.io
             .send_data(DataOutbound::ResourceReq {
                 v: BRIDGE_PROTOCOL_VERSION,
@@ -1073,10 +1086,12 @@ impl RuntimeContext {
                     })
                     .await?;
             }
-        } else {
-            let summary = update_summary(&update);
-            self.trace(&run, kind, "running", "ACP session update", Some(&summary))
-                .await?;
+        } else if let Some((title, status)) = describe_session_update(kind, &update) {
+            // Structure the trace from the ACP update's OWN fields. tool_call /
+            // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
+            // per the ACP schema; we pass those through instead of a generic
+            // label. Noise (usage_update, mode/config) is filtered by the helper.
+            self.trace(&run, kind, &status, &title, None).await?;
         }
         Ok(())
     }
@@ -1098,6 +1113,28 @@ impl RuntimeContext {
             let _ = respond_to.send(PermissionOutcome::Cancelled);
             return Ok(());
         };
+        // Auto-approve locally when configured: the gateway already enforces
+        // resource authz (channel membership + role), so the per-tool ACP prompt
+        // is redundant. Without this, forward_to_backend waits for a backend
+        // approval that never comes and the tool call hangs.
+        if self.config.policy.permission.auto_allow {
+            if let Some(option_id) = permission_option_id_for_resolution(&params, "allow") {
+                self.trace(
+                    &run,
+                    "permission_auto_allowed",
+                    "running",
+                    "Auto-allowed ACP tool permission (local policy)",
+                    None,
+                )
+                .await?;
+                let _ = respond_to.send(PermissionOutcome::Selected { option_id });
+                return Ok(());
+            }
+            tracing::warn!(
+                account = %self.account_id,
+                "permission.auto_allow set but no 'allow' option in params; falling back to forward"
+            );
+        }
         if !self.config.policy.permission.forward_to_backend {
             self.trace(
                 &run,
@@ -1279,22 +1316,24 @@ impl RuntimeContext {
             .as_array()
             .cloned()
             .unwrap_or_default();
-        if self.config.policy.mcp.inject_agentnexus {
+        if self.config.policy.mcp.inject_cheers {
             // Single shared MCP server process across all sessions.
             // CHANNEL_ID is not set via env — the ACP agent must pass
             // channel_id explicitly in every tool call (it knows the
             // channel context from the task trigger).
             // This avoids spawning one process per channel.
             servers.push(json!({
-                "name": "agentnexus",
+                "name": "cheers",
                 "command": resolve_mcp_server_command(),
                 "args": [],
-                "env": {
-                    "AGENTNEXUS_RESOURCE_URL": self.loopback.url.clone(),
-                    "AGENTNEXUS_RESOURCE_TOKEN": self.loopback.token.clone(),
-                    "AGENTNEXUS_BOT_ID": self.account_id.clone(),
-                    "AGENTNEXUS_REQUEST_TIMEOUT_MS": self.config.policy.loopback.request_timeout_ms.to_string()
-                }
+                // ACP (claude-agent-acp >=0.36) requires env as an array of
+                // {name, value} entries, not a map. See session/new schema.
+                "env": [
+                    {"name": "CHEERS_RESOURCE_URL", "value": self.loopback.url.clone()},
+                    {"name": "CHEERS_RESOURCE_TOKEN", "value": self.loopback.token.clone()},
+                    {"name": "CHEERS_BOT_ID", "value": self.account_id.clone()},
+                    {"name": "CHEERS_REQUEST_TIMEOUT_MS", "value": self.config.policy.loopback.request_timeout_ms.to_string()}
+                ]
             }));
         }
         Value::Array(servers)
@@ -1953,9 +1992,9 @@ fn build_prompt(
     channel_name: Option<&str>,
 ) -> Vec<Value> {
     let mut parts = vec![
-        AGENTNEXUS_ACP_OUTPUT_CONTRACT.to_string(),
+        CHEERS_ACP_OUTPUT_CONTRACT.to_string(),
         format!(
-            "AgentNexus channel context: channel_id={}{}",
+            "Cheers channel context: channel_id={}{}",
             task.channel_id,
             channel_name
                 .map(|n| format!(", channel_name=\"{n}\""))
@@ -1971,7 +2010,7 @@ fn build_prompt(
         parts.push(text);
     }
     if policy.allow_attachments && !task.attachments.is_empty() {
-        let mut lines = vec!["AgentNexus attachments:".to_string()];
+        let mut lines = vec!["Cheers attachments:".to_string()];
         for attachment in &task.attachments {
             lines.push(attachment_summary_line(attachment));
         }
@@ -1983,7 +2022,7 @@ fn build_prompt(
     })]
 }
 
-const AGENTNEXUS_ACP_OUTPUT_CONTRACT: &str = "You are replying inside AgentNexus. Stream useful answer text through the ACP session; generated files should be returned as explicit file/resource updates when the runtime supports them.";
+const CHEERS_ACP_OUTPUT_CONTRACT: &str = "You are replying inside Cheers. Stream useful answer text through the ACP session; generated files should be returned as explicit file/resource updates when the runtime supports them.";
 
 fn extract_trigger_text(value: &Value) -> Option<String> {
     value
@@ -2048,12 +2087,30 @@ fn text_from_content(value: &Value) -> Option<String> {
     None
 }
 
-fn update_summary(value: &Value) -> String {
-    value
-        .get("sessionUpdate")
+/// Structure an ACP `session/update` into a UI-facing `(title, status)` trace,
+/// using the update's OWN fields. Returns `None` for non-progress updates
+/// (`usage_update`, mode/config) so they are not surfaced as agent activity.
+///
+/// Grounded in the real ACP schema (verified against claude-agent-acp output):
+/// `tool_call` / `tool_call_update` carry `{ title, kind, status, toolCallId,
+/// content, rawInput, rawOutput }`. The `title` is the agent's own human label
+/// (e.g. the shell command); status-only updates have none, so we skip them and
+/// let the titled call/update be the informative trace.
+fn describe_session_update(kind: &str, update: &Value) -> Option<(String, String)> {
+    let status = update
+        .get("status")
         .and_then(Value::as_str)
-        .map(ToString::to_string)
-        .unwrap_or_else(|| value.to_string())
+        .unwrap_or("running")
+        .to_string();
+    match kind {
+        "tool_call" | "tool_call_update" => update
+            .get("title")
+            .and_then(Value::as_str)
+            .map(|title| (title.to_string(), status)),
+        "agent_thought_chunk" => Some(("Thinking…".to_string(), "running".to_string())),
+        "plan" => Some(("Planning…".to_string(), "running".to_string())),
+        _ => None,
+    }
 }
 
 fn normalize_config_options_report(update: &Value) -> Value {
@@ -2110,7 +2167,7 @@ fn permission_option_id_for_resolution(params: &Value, resolution: &str) -> Opti
 }
 
 fn resolve_mcp_server_command() -> String {
-    if let Ok(path) = env::var("AGENTNEXUS_MCP_SERVER_BIN") {
+    if let Ok(path) = env::var("CHEERS_MCP_SERVER_BIN") {
         if !path.trim().is_empty() {
             return path;
         }
@@ -2118,19 +2175,19 @@ fn resolve_mcp_server_command() -> String {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     if let Some(packages_dir) = manifest_dir.parent() {
         let candidate = packages_dir
-            .join("agentnexus-mcp-server")
+            .join("cheers-mcp-server")
             .join("target")
             .join("debug")
             .join(if cfg!(windows) {
-                "agentnexus-mcp-server.exe"
+                "cheers-mcp-server.exe"
             } else {
-                "agentnexus-mcp-server"
+                "cheers-mcp-server"
             });
         if candidate.exists() {
             return candidate.display().to_string();
         }
     }
-    "agentnexus-mcp-server".to_string()
+    "cheers-mcp-server".to_string()
 }
 
 struct CapabilitySigner {

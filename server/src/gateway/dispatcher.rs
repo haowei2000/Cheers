@@ -102,6 +102,12 @@ pub async fn dispatch(
         }),
     );
     fanout.broadcast_channel(params.channel_id, bubble).await;
+    tracing::debug!(
+        bot_id = %params.bot_id,
+        channel_id = %params.channel_id,
+        placeholder_msg_id = %placeholder_id,
+        "placeholder created and empty bubble fanned out"
+    );
 
     // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
     let task_context = load_task_context(db, params.trigger_msg_id)
@@ -152,6 +158,14 @@ pub async fn dispatch(
         return DispatchResult::BotOffline;
     }
 
+    tracing::info!(
+        bot_id = %params.bot_id,
+        channel_id = %params.channel_id,
+        trigger_msg_id = %params.trigger_msg_id,
+        placeholder_msg_id = %placeholder_id,
+        task_id = %task_id,
+        "task dispatched to bot"
+    );
     DispatchResult::Dispatched {
         placeholder_msg_id: placeholder_id,
     }

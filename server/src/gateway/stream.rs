@@ -39,7 +39,7 @@ pub struct StreamEntry {
     pub channel_id: Uuid,
     /// task id
     pub task_id: Uuid,
-    /// 任务 session（AgentNexusSession.id）——用于会话生命周期更新
+    /// 任务 session（CheersSession.id）——用于会话生命周期更新
     pub session_id: Option<Uuid>,
     /// 是否已 finalize（R4 守卫：finalize 后拒绝迟到 delta）
     pub finalized: bool,

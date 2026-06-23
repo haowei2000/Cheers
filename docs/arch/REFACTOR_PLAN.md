@@ -1,4 +1,4 @@
-# AgentNexus 架构重构规划
+# Cheers 架构重构规划
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
@@ -343,7 +343,7 @@ services:
 
 **收尾**
 - [ ] 旧 Python 单体整体下线（旧 REST API + 旧 bot_runtime + 旧 agent_bridge routes）
-- [ ] `agentnexus-mcp-server` 验证可作为标准接入桥（Claude / Codex 端到端测试）
+- [ ] `cheers-mcp-server` 验证可作为标准接入桥（Claude / Codex 端到端测试）
 - [ ] 集成测试基线通过（见 CLAUDE.md：需 Docker Compose 全栈）
 
 ### Phase 2：网格能力全量 + 全量 REST

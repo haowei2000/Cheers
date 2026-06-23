@@ -15,7 +15,7 @@ struct ServerConfig {
 }
 
 #[derive(Debug, Clone)]
-struct AgentNexusClient {
+struct CheersClient {
     http: Client,
     config: ServerConfig,
 }
@@ -29,30 +29,30 @@ struct ResourceError {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = load_config()?;
-    let client = AgentNexusClient {
+    let client = CheersClient {
         http: Client::builder()
             .timeout(Duration::from_millis(config.request_timeout_ms))
             .build()?,
         config,
     };
     eprintln!(
-        "[agentnexus-mcp] ready (bot={})",
+        "[cheers-mcp] ready (bot={})",
         client.config.bot_id.as_deref().unwrap_or("?"),
     );
     serve_stdio(client).await
 }
 
 fn load_config() -> anyhow::Result<ServerConfig> {
-    let resource_url = env::var("AGENTNEXUS_RESOURCE_URL")
-        .context("AGENTNEXUS_RESOURCE_URL is required (connector loopback resource endpoint)")?;
-    let request_timeout_ms = env::var("AGENTNEXUS_REQUEST_TIMEOUT_MS")
+    let resource_url = env::var("CHEERS_RESOURCE_URL")
+        .context("CHEERS_RESOURCE_URL is required (connector loopback resource endpoint)")?;
+    let request_timeout_ms = env::var("CHEERS_REQUEST_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(30_000);
     Ok(ServerConfig {
         resource_url,
-        resource_token: empty_to_none(env::var("AGENTNEXUS_RESOURCE_TOKEN").ok()),
-        bot_id: empty_to_none(env::var("AGENTNEXUS_BOT_ID").ok()),
+        resource_token: empty_to_none(env::var("CHEERS_RESOURCE_TOKEN").ok()),
+        bot_id: empty_to_none(env::var("CHEERS_BOT_ID").ok()),
         request_timeout_ms,
     })
 }
@@ -68,7 +68,7 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
     })
 }
 
-async fn serve_stdio(client: AgentNexusClient) -> anyhow::Result<()> {
+async fn serve_stdio(client: CheersClient) -> anyhow::Result<()> {
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line = line?;
@@ -102,7 +102,7 @@ fn write_message(value: &Value) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_request(client: &AgentNexusClient, request: &Value) -> Value {
+async fn handle_request(client: &CheersClient, request: &Value) -> Value {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
     let result = match method {
@@ -130,13 +130,13 @@ fn initialize_result() -> Value {
             "tools": {}
         },
         "serverInfo": {
-            "name": "agentnexus",
+            "name": "cheers",
             "version": env!("CARGO_PKG_VERSION")
         }
     })
 }
 
-async fn handle_tool_call(client: &AgentNexusClient, params: &Value) -> Result<Value, Value> {
+async fn handle_tool_call(client: &CheersClient, params: &Value) -> Result<Value, Value> {
     let name = params
         .get("name")
         .and_then(Value::as_str)
@@ -167,7 +167,7 @@ struct ResourceCall {
     params: Map<String, Value>,
 }
 
-impl AgentNexusClient {
+impl CheersClient {
     async fn call(
         &self,
         resource: &str,
@@ -178,7 +178,7 @@ impl AgentNexusClient {
         if let Some(token) = &self.config.resource_token {
             request = request
                 .bearer_auth(token)
-                .header("X-AgentNexus-Loopback-Token", token);
+                .header("X-Cheers-Loopback-Token", token);
         }
         let response = request.send().await.map_err(|err| ResourceError {
             code: if err.is_timeout() {
@@ -239,7 +239,7 @@ impl AgentNexusClient {
 }
 
 fn build_resource_call(
-    client: &AgentNexusClient,
+    client: &CheersClient,
     tool: &str,
     args: &Map<String, Value>,
 ) -> Result<ResourceCall, ResourceError> {
@@ -439,7 +439,7 @@ fn build_resource_call(
 }
 
 fn with_channel(
-    client: &AgentNexusClient,
+    client: &CheersClient,
     args: &Map<String, Value>,
     resource: &'static str,
 ) -> Result<ResourceCall, ResourceError> {
@@ -534,11 +534,11 @@ fn tool_definitions() -> Vec<Value> {
             string_prop("data_b64", "Base64 of the raw file bytes."),
             string_prop("content_type", "MIME type."),
         ], vec!["channel_id", "filename", "data_b64"]), false, false),
-        tool("fs_ls", "List workspace files", "List AgentNexus workspace files under a path prefix.", object_schema(vec![
+        tool("fs_ls", "List workspace files", "List Cheers workspace files under a path prefix.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "Path prefix. Omit or empty string for root."),
         ], vec!["channel_id"]), true, false),
-        tool("fs_read", "Read workspace file", "Read a file from the AgentNexus workspace tree.", object_schema(vec![
+        tool("fs_read", "Read workspace file", "Read a file from the Cheers workspace tree.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
         ], vec!["channel_id", "path"]), true, false),

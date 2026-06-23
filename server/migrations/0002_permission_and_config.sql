@@ -4,9 +4,9 @@
 -- channel_memberships.role plus object-level domain rules. Bot tokens only
 -- authenticate a bot identity; they do not create a separate Grant/RBAC layer.
 
--- ── agentnexus_sessions 扩展列 ────────────────────────────────────────────────
+-- ── cheers_sessions 扩展列 ────────────────────────────────────────────────
 
-ALTER TABLE agentnexus_sessions
+ALTER TABLE cheers_sessions
     ADD COLUMN IF NOT EXISTS created_by VARCHAR(36);
 
 -- ── channel_memberships 扩展列（bot 频道级配置覆盖）──────────────────────────

@@ -457,21 +457,21 @@ async fn resolve_active_session(
     let (query, value) = match locator {
         SessionLocator::SessionId(session_id) => (
             "SELECT session_id, status, current_scope_type, current_scope_id, provider_session_key
-             FROM agentnexus_sessions
+             FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND session_id = $4
              LIMIT 1",
             session_id.to_string(),
         ),
         SessionLocator::ProviderSessionKey(provider_session_key) => (
             "SELECT session_id, status, current_scope_type, current_scope_id, provider_session_key
-             FROM agentnexus_sessions
+             FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_key = $4
              LIMIT 1",
             provider_session_key,
         ),
         SessionLocator::ProviderSessionId(provider_session_id) => (
             "SELECT session_id, status, current_scope_type, current_scope_id, provider_session_key
-             FROM agentnexus_sessions
+             FROM cheers_sessions
              WHERE bot_id = $1 AND provider = $2 AND provider_account_id = $3 AND provider_session_id = $4
              ORDER BY updated_at DESC
              LIMIT 1",

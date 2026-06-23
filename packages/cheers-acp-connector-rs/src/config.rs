@@ -141,6 +141,11 @@ pub struct PermissionPolicy {
     pub forward_to_backend: bool,
     pub wait_timeout_ms: u64,
     pub on_timeout: PermissionTimeoutAction,
+    /// Auto-approve ACP tool-permission requests locally (select the "allow"
+    /// option) without forwarding to the backend. Use when the gateway already
+    /// enforces resource authz (channel membership + role), making the per-tool
+    /// ACP prompt redundant. Default false.
+    pub auto_allow: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +194,7 @@ pub struct SessionUpdatePolicy {
 
 #[derive(Debug, Clone)]
 pub struct McpPolicy {
-    pub inject_agentnexus: bool,
+    pub inject_cheers: bool,
     pub backend_may_inject_extra_servers: bool,
     pub allowed_servers: Vec<String>,
     pub servers: Value,
@@ -429,6 +434,8 @@ struct RawPermissionPolicy {
     wait_timeout_ms: u64,
     #[serde(default = "default_permission_on_timeout")]
     on_timeout: String,
+    #[serde(default)]
+    auto_allow: bool,
 }
 
 impl Default for RawPermissionPolicy {
@@ -437,6 +444,7 @@ impl Default for RawPermissionPolicy {
             forward_to_backend: true,
             wait_timeout_ms: default_permission_wait_timeout_ms(),
             on_timeout: default_permission_on_timeout(),
+            auto_allow: false,
         }
     }
 }
@@ -523,7 +531,7 @@ impl Default for RawSessionUpdatePolicy {
 #[serde(deny_unknown_fields)]
 struct RawMcpPolicy {
     #[serde(default = "default_true")]
-    inject_agentnexus: bool,
+    inject_cheers: bool,
     #[serde(default)]
     backend_may_inject_extra_servers: bool,
     #[serde(default)]
@@ -535,7 +543,7 @@ struct RawMcpPolicy {
 impl Default for RawMcpPolicy {
     fn default() -> Self {
         Self {
-            inject_agentnexus: true,
+            inject_cheers: true,
             backend_may_inject_extra_servers: false,
             allowed_servers: Vec::new(),
             servers: Vec::new(),
@@ -751,6 +759,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             forward_to_backend: raw.permission.forward_to_backend,
             wait_timeout_ms: raw.permission.wait_timeout_ms.max(1),
             on_timeout: PermissionTimeoutAction::from_str(&raw.permission.on_timeout)?,
+            auto_allow: raw.permission.auto_allow,
         },
         send: SendPolicy {
             allow: raw.send.allow,
@@ -771,7 +780,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             include_metadata: raw.session_update.include_metadata,
         },
         mcp: McpPolicy {
-            inject_agentnexus: raw.mcp.inject_agentnexus,
+            inject_cheers: raw.mcp.inject_cheers,
             backend_may_inject_extra_servers: raw.mcp.backend_may_inject_extra_servers,
             allowed_servers: raw.mcp.allowed_servers,
             servers: mcp_servers,
@@ -1077,9 +1086,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
-        std::env::set_var("AGENTNEXUS_TEST_TOKEN", "token-1");
-        std::env::set_var("AGENTNEXUS_TEST_SECRET", "secret-1");
-        let config_path = dir.path().join("agentnexus-daemon.toml");
+        std::env::set_var("CHEERS_TEST_TOKEN", "token-1");
+        std::env::set_var("CHEERS_TEST_SECRET", "secret-1");
+        let config_path = dir.path().join("cheers-daemon.toml");
         std::fs::write(
             &config_path,
             format!(
@@ -1093,7 +1102,7 @@ log_dir = "logs"
 [accounts.local.bridge]
 control_url = "wss://example.test/control"
 data_url = "wss://example.test/data"
-bot_token_env = "AGENTNEXUS_TEST_TOKEN"
+bot_token_env = "CHEERS_TEST_TOKEN"
 heartbeat_interval_ms = 10000
 ack_timeout_ms = 120000
 
@@ -1120,7 +1129,7 @@ max_prompt_bytes = 12345
 
 [accounts.local.policy.env]
 inherit = false
-allow = ["AGENTNEXUS_TEST_SECRET"]
+allow = ["CHEERS_TEST_SECRET"]
 
 [accounts.local.policy.config]
 backend_may_set_model = false
@@ -1186,7 +1195,7 @@ request_timeout_ms = 666000
         assert_eq!(account.policy.prompt.max_prompt_bytes, 12345);
         assert!(!account.agent.inherit_env);
         assert_eq!(
-            account.agent.env.get("AGENTNEXUS_TEST_SECRET"),
+            account.agent.env.get("CHEERS_TEST_SECRET"),
             Some(&"secret-1".to_string())
         );
         assert_eq!(
@@ -1220,7 +1229,7 @@ request_timeout_ms = 666000
     #[tokio::test]
     async fn rejects_inline_or_missing_bot_token_source() {
         let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("agentnexus-daemon.toml");
+        let config_path = dir.path().join("cheers-daemon.toml");
         std::fs::write(
             &config_path,
             r#"

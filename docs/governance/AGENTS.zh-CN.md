@@ -2,15 +2,15 @@
 
 > **语言**：中文 | [English](AGENTS.md)
 
-Project-specific instructions for AI coding agents working on AgentNexus.
+Project-specific instructions for AI coding agents working on Cheers.
 
 ## Project Overview
 
-**AgentNexus（智枢协作平台）** 是一个多智能体与人类协作的聊天枢纽平台，提供类 Slack 的聊天体验，支持 LLM Bot 和四层记忆体系。
+**Cheers（智枢协作平台）** 是一个多智能体与人类协作的聊天枢纽平台，提供类 Slack 的聊天体验，支持 LLM Bot 和四层记忆体系。
 
 **新架构**：Bot = AIModel + PromptTemplate，创建 Bot 只需选择模型和提示词模板。
 
-- **Repository**: AgentNexus
+- **Repository**: Cheers
 - **Purpose**: 人机协作聊天平台，支持多 Agent 在频道中协同工作
 - **Primary Languages/Frameworks**:
   - **后端**: Python 3.13+ / FastAPI / SQLAlchemy / WebSocket
@@ -52,13 +52,13 @@ docker compose up -d --force-recreate --no-deps backend
 
 ## ACP Connector 发布顺序（强制）
 
-TypeScript 版 `packages/agentnexus-acp-connector` npm 包已经删除。当前受支持的
-connector 是 `packages/agentnexus-acp-connector-rs` 下的 Rust crate。
+TypeScript 版 `packages/cheers-acp-connector` npm 包已经删除。当前受支持的
+connector 是 `packages/cheers-acp-connector-rs` 下的 Rust crate。
 
 当 connector 行为有实质性更新时，必须按以下顺序执行：
 
-1. 如果 Rust connector 版本或依赖变化，更新 `packages/agentnexus-acp-connector-rs/Cargo.toml` 和 `Cargo.lock`。
-2. 对 `packages/agentnexus-acp-connector-rs` 运行 `cargo fmt --check`、`cargo test` 和 `cargo check`。
+1. 如果 Rust connector 版本或依赖变化，更新 `packages/cheers-acp-connector-rs/Cargo.toml` 和 `Cargo.lock`。
+2. 对 `packages/cheers-acp-connector-rs` 运行 `cargo fmt --check`、`cargo test` 和 `cargo check`。
 3. 从同一个已合并提交重建并推送 `opencode-bot` 镜像，确保容器部署包含新的 Rust connector 和 MCP server 二进制。
 4. 对本地运行 connector 的机器，从 repo 或批准的 release artifact 安装 Rust binary，并重启对应 connector daemon。
 5. 对容器部署，拉取或部署重建后的 `opencode-bot` 镜像，并重新创建服务。
@@ -296,7 +296,7 @@ docker compose port postgres 5432
 rg -n "^(BACKEND_HOST_PORT|FRONTEND_HOST_PORT|POSTGRES_HOST_PORT|POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB|TEST_DATABASE_URL)=" .env
 ```
 
-`tests/conftest.py` 默认 `TEST_DATABASE_URL` 为 `postgresql+asyncpg://agentnexus:agentnexus@localhost:5433/agentnexus_test`。如果真实 Docker Compose 的 Postgres 宿主机端口或 `.env` 中的账号密码不同，要么用匹配的 `POSTGRES_HOST_PORT=5433` 和测试库启动服务栈，要么在测试命令中显式传入真实映射对应的 `TEST_DATABASE_URL`。服务栈被改过之后，禁止在命令或测试记录中硬编码旧端口。
+`tests/conftest.py` 默认 `TEST_DATABASE_URL` 为 `postgresql+asyncpg://cheers:cheers@localhost:5433/cheers_test`。如果真实 Docker Compose 的 Postgres 宿主机端口或 `.env` 中的账号密码不同，要么用匹配的 `POSTGRES_HOST_PORT=5433` 和测试库启动服务栈，要么在测试命令中显式传入真实映射对应的 `TEST_DATABASE_URL`。服务栈被改过之后，禁止在命令或测试记录中硬编码旧端口。
 
 #### 标准集成测试流程
 
@@ -573,7 +573,7 @@ docker compose logs -f backend
 
 ### 数据持久化
 
-- SQLite 数据存储在 Docker Volume `agentnexus_data`
+- SQLite 数据存储在 Docker Volume `cheers_data`
 - 挂载路径: `/app/data`
 - 包含: 主数据库、Context Store、上传文件、日志
 
