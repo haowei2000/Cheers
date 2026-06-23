@@ -13,9 +13,13 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
 
     authorize_channel_read(db, principal, channel_id).await?;
 
+    // The channels table columns are channel_id / type / purpose — alias them to
+    // the names this handler reads (id / channel_type / topic). (The old query
+    // referenced non-existent id/channel_type/topic columns → "db error".)
     let row = sqlx::query(
-        "SELECT id, name, channel_type, workspace_id, topic, created_at, auto_assist
-         FROM channels WHERE id = $1",
+        "SELECT channel_id AS id, name, type AS channel_type, workspace_id,
+                purpose AS topic, created_at, auto_assist
+         FROM channels WHERE channel_id = $1",
     )
     .bind(channel_id.to_string())
     .fetch_optional(db)
