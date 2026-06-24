@@ -161,6 +161,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/capability-delegations/:delegation_id",
             delete(api::acp_capability::revoke_delegation),
         )
+        .route(
+            "/api/v1/channels/:channel_id/files",
+            get(api::files::list_channel_files),
+        )
         .route("/api/v1/files", post(api::files::upload_file))
         .route("/api/v1/files/presign", post(api::files::request_presign))
         .route(

@@ -132,7 +132,12 @@ fn initialize_result() -> Value {
         "serverInfo": {
             "name": "cheers",
             "version": env!("CARGO_PKG_VERSION")
-        }
+        },
+        // Mental model handed to the agent so it never confuses the two file areas.
+        "instructions": "You have two separate places for files in each channel, and they are DIFFERENT:\n\
+            • DESK (desk_* tools) = YOUR private, editable workspace — notes, boards, plans, prompts — addressed by PATH (e.g. \"progress.md\"). You read and write these freely.\n\
+            • INBOX (inbox_* tools) = files PEOPLE uploaded in the chat (PDF, CSV, images), addressed by FILE_ID (a uuid). They are READ-ONLY and you can never edit them. To hand a finished file back to people as a new attachment, use inbox_deliver (not desk_write — desk files are your private workspace).\n\
+            Rule of thumb: if you're thinking in a PATH it's the desk; if you're holding a FILE_ID it's the inbox. Never desk_write a file_id, and never inbox_open a path. To work on an uploaded file, inbox_open it, then desk_write its content into your workspace."
     })
 }
 
@@ -248,7 +253,7 @@ fn build_resource_call(
         "list_members" => with_channel(client, args, "channel.members"),
         "messages_index" => with_channel(client, args, "channel.messages.index"),
         "get_context" => with_channel(client, args, "channel.context"),
-        "list_files" => with_channel(client, args, "channel.files"),
+        "inbox_list" => with_channel(client, args, "channel.files"),
         "read_messages" => {
             let mut params = Map::new();
             params.insert(
@@ -291,7 +296,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "read_file" => {
+        "inbox_open" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -319,7 +324,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "create_file" => {
+        "inbox_deliver" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -333,7 +338,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_ls" => {
+        "desk_list" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -350,7 +355,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_read" => {
+        "desk_read" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -362,7 +367,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_write" => {
+        "desk_write" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -377,7 +382,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_edit" => {
+        "desk_edit" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -392,7 +397,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_append" => {
+        "desk_append" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -405,7 +410,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_rm" => {
+        "desk_rm" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -418,7 +423,7 @@ fn build_resource_call(
                 params,
             })
         }
-        "fs_mv" => {
+        "desk_mv" => {
             let mut params = Map::new();
             params.insert(
                 "channel_id".to_string(),
@@ -517,10 +522,10 @@ fn tool_definitions() -> Vec<Value> {
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
         ], vec!["channel_id"]), true, false),
         tool("get_context", "Get channel context", "Condensed channel context bundle (topic, pinned info, summary).", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
-        tool("list_files", "List channel files", "Files shared in the channel.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
-        tool("read_file", "Read a channel file", "Fetch a file's content/metadata by id.", object_schema(vec![
+        tool("inbox_list", "List chat attachments (inbox)", "List files people UPLOADED to this channel's chat (pdf/csv/images/docx). Each has a FILE_ID (uuid); open one with inbox_open. Read-only; these are NOT your workspace files — save your own work with desk_* instead.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("inbox_open", "Open a chat attachment by file_id", "Open a channel attachment by its FILE_ID (from inbox_list). Text files (csv/txt/md/json) return content; binaries (image/pdf/docx) return kind:\"binary\" + a download_url, never raw bytes. Attachments are read-only — to edit, copy the content into your workspace with desk_write.", object_schema(vec![
             channel_id_prop(),
-            string_prop("file_id", "File id from list_files."),
+            string_prop("file_id", "File id from inbox_list."),
         ], vec!["channel_id", "file_id"]), true, false),
         tool("post_message", "Post a message", "Send a message to a channel. Use this for proactive / cross-channel posts; the reply to the triggering message goes through the normal agent reply flow, not this tool.", object_schema(vec![
             channel_id_prop(),
@@ -528,44 +533,45 @@ fn tool_definitions() -> Vec<Value> {
             array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs."),
             string_prop("reply_to_msg_id", "msg_id to reply to (threaded reply)."),
         ], vec!["channel_id", "text"]), false, false),
-        tool("create_file", "Create a channel file", "Upload a file into the channel (base64-encoded bytes).", object_schema(vec![
+        tool("inbox_deliver", "Deliver a file to the channel", "Post a NEW file (base64 bytes, <=8MB) into this channel's chat as an attachment people can see and download. For deliverables you hand to people — not your own working notes (use desk_write for those). One-shot, no overwrite; returns the new file_id.", object_schema(vec![
             channel_id_prop(),
             string_prop("filename", "File name."),
             string_prop("data_b64", "Base64 of the raw file bytes."),
             string_prop("content_type", "MIME type."),
         ], vec!["channel_id", "filename", "data_b64"]), false, false),
-        tool("fs_ls", "List workspace files", "List Cheers workspace files under a path prefix.", object_schema(vec![
+        tool("desk_list", "List my workspace (desk) files", "List MY editable workspace files (\"the desk\") under a PATH prefix in this channel — my private working area (notes/boards/plans). NOT chat attachments; for those use inbox_list.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "Path prefix. Omit or empty string for root."),
         ], vec!["channel_id"]), true, false),
-        tool("fs_read", "Read workspace file", "Read a file from the Cheers workspace tree.", object_schema(vec![
+        tool("desk_read", "Read a workspace (desk) file", "Read one of MY workspace files by PATH (e.g. \"progress.md\"); returns text + version. For a file someone uploaded in chat, use inbox_open with its file_id instead.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
         ], vec!["channel_id", "path"]), true, false),
-        tool("fs_write", "Write workspace file", "Create or overwrite a workspace file. Use if_version for optimistic locking.", object_schema(vec![
+        tool("desk_write", "Write a workspace (desk) file", "Create or overwrite one of MY workspace files by PATH (text, <=256KB). if_version for optimistic lock (0 = create-only). Cannot write chat attachments — they are read-only.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
             string_prop("content", "Full file content."),
             number_prop("if_version", "Expected current version. Use 0 for create-only.", Some(0), None),
+            bool_prop("is_dir", "Optional: true to mark this path as a directory node instead of a file."),
         ], vec!["channel_id", "path", "content"]), false, false),
-        tool("fs_edit", "Edit workspace file", "Replace exactly one string occurrence in a workspace file.", object_schema(vec![
+        tool("desk_edit", "Edit a workspace (desk) file", "In one of MY workspace files (by PATH), replace exactly one occurrence of old_string with new_string.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
             string_prop("old_string", "Existing string to replace. Must match exactly once."),
             string_prop("new_string", "Replacement string."),
             number_prop("if_version", "Expected current version.", Some(1), None),
         ], vec!["channel_id", "path", "old_string", "new_string"]), false, false),
-        tool("fs_append", "Append workspace file", "Append content to a workspace file, creating it if missing.", object_schema(vec![
+        tool("desk_append", "Append to a workspace (desk) file", "Append text to one of MY workspace files (by PATH), creating it if missing.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "File path."),
             string_prop("content", "Content to append."),
         ], vec!["channel_id", "path", "content"]), false, false),
-        tool("fs_rm", "Remove workspace file", "Remove a workspace file or subtree.", object_schema(vec![
+        tool("desk_rm", "Remove a workspace (desk) file", "Remove one of MY workspace files or a subtree (by PATH). recursive for a subtree.", object_schema(vec![
             channel_id_prop(),
             string_prop("path", "Path to remove."),
             bool_prop("recursive", "Required when removing a subtree."),
         ], vec!["channel_id", "path"]), false, true),
-        tool("fs_mv", "Move workspace file", "Rename or move a workspace file or subtree.", object_schema(vec![
+        tool("desk_mv", "Move a workspace (desk) file", "Rename or move one of MY workspace files or a subtree (by PATH).", object_schema(vec![
             channel_id_prop(),
             string_prop("from", "Source path."),
             string_prop("to", "Target path."),

@@ -31,6 +31,7 @@ use server::domain::messages::{self, CreateMessageParams};
 use server::domain::dms;
 use server::domain::workbench_templates;
 use server::domain::workspaces;
+use server::resource::files;
 use server::gateway::dispatcher::{self, DispatchParams, DispatchResult};
 use server::gateway::realtime::fanout::{Fanout, InProcessFanout};
 use server::gateway::registry::{BotLocator, InProcessBotLocator};
@@ -750,4 +751,103 @@ async fn dm_find_or_create_dedups_by_pair(db: PgPool) {
 
     // 不能跟自己 DM
     assert!(dms::find_or_create_dm(&db, a, &a.to_string(), false).await.is_err());
+}
+
+// M3 inbox_open(channel.files.read):按 channel_id 限定作用域(修了「永 404」+ 防跨频道猜读),
+// 图片等二进制返回 kind:"binary" 不伪装文本(S3 未初始化时走该分支,无需对象存储)。
+#[sqlx::test]
+async fn m3_channel_files_read_scoped_and_binary(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let other = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    add_member(&db, other, user, "user").await;
+
+    let fid = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO file_records
+            (file_id, channel_id, uploader_id, original_path, original_filename, content_type, object_key, status)
+         VALUES ($1, $2, $3, 'pic.png', 'pic.png', 'image/png', 'k/pic.png', 'uploaded')",
+    )
+    .bind(&fid)
+    .bind(ch.to_string())
+    .bind(user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let principal = Principal::user(user);
+
+    // 正确频道 → 找得到(不再 404),content 为 null。注意:测试环境没 init_s3,
+    // 所以会先命中「对象存储不可用」分支 → kind:"unavailable";text/binary 分类需真实
+    // 对象存储才能走到,由 files.rs 的 is_text 单测覆盖。这里锁定的是「频道作用域 +
+    // status/expiry 闸门」,以及二进制/无存储时绝不返回伪造文本。
+    let r = files::handle_read(&db, &principal, &serde_json::json!({ "channel_id": ch, "file_id": fid }))
+        .await
+        .expect("应能读到该频道的文件");
+    assert_eq!(r["content"], serde_json::Value::Null, "不应返回文本: {r}");
+    assert_eq!(r["kind"], "unavailable");
+    assert_eq!(r["file_id"], fid);
+
+    // 错误频道 → not_found(作用域/安全:不能凭 file_id 猜读别的频道)
+    let r2 = files::handle_read(&db, &principal, &serde_json::json!({ "channel_id": other, "file_id": fid })).await;
+    assert!(r2.is_err(), "跨频道读应被拒");
+
+    // status 非终态(pending)→ not_found:和 REST 下载、inbox_list 口径一致,不能读未确认的字节
+    let pending = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO file_records
+            (file_id, channel_id, uploader_id, original_path, original_filename, content_type, object_key, status)
+         VALUES ($1, $2, $3, 'p.txt', 'p.txt', 'text/plain', 'k/p.txt', 'pending')",
+    )
+    .bind(&pending).bind(ch.to_string()).bind(user.to_string())
+    .execute(&db).await.unwrap();
+    let rp = files::handle_read(&db, &principal, &serde_json::json!({ "channel_id": ch, "file_id": pending })).await;
+    assert!(rp.is_err(), "未上传完成(pending)的文件不应可读");
+
+    // 已过期(expires_at 过去)→ not_found:agent 这道门不能绕过保留策略读到过期文件
+    let expired = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO file_records
+            (file_id, channel_id, uploader_id, original_path, original_filename, content_type, object_key, status, expires_at)
+         VALUES ($1, $2, $3, 'e.txt', 'e.txt', 'text/plain', 'k/e.txt', 'uploaded', NOW() - INTERVAL '1 day')",
+    )
+    .bind(&expired).bind(ch.to_string()).bind(user.to_string())
+    .execute(&db).await.unwrap();
+    let re = files::handle_read(&db, &principal, &serde_json::json!({ "channel_id": ch, "file_id": expired })).await;
+    assert!(re.is_err(), "过期文件不应可读");
+}
+
+// M3 inbox_deliver(channel.files.create):校验 + 鉴权,且绝不再伪造 file_id。
+// 真正的 S3 往返需要 init_s3(测试环境没有),所以这里锁定的是「坏输入早失败」「无存储时
+// 显式报错而非假成功」——后者正是评审里那条 HIGH(撒谎 stub)的回归护栏。
+#[sqlx::test]
+async fn m3_inbox_deliver_validates_and_requires_storage(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let writer = seed_user(&db).await;
+    add_member(&db, ch, writer, "user").await; // role 'member' → 可写
+    let outsider = seed_user(&db).await;
+
+    let p = Principal::user(writer);
+
+    // 非成员 → 鉴权失败(不是 storage 错误)
+    let po = Principal::user(outsider);
+    let denied = files::handle_create(&db, &po, &serde_json::json!({
+        "channel_id": ch, "filename": "r.txt", "data_b64": "aGVsbG8="
+    })).await;
+    assert!(denied.is_err(), "非成员不能投递");
+
+    // 非法 base64 → INVALID_PARAMS(在落地到存储之前就拒)
+    let bad = files::handle_create(&db, &p, &serde_json::json!({
+        "channel_id": ch, "filename": "r.txt", "data_b64": "!!! not base64 !!!"
+    })).await;
+    assert_eq!(bad.unwrap_err().0, "INVALID_PARAMS");
+
+    // 合法 base64,但测试无 init_s3 → 显式 E_STORAGE_UNAVAILABLE,绝不返回伪造的 file_id
+    let nostore = files::handle_create(&db, &p, &serde_json::json!({
+        "channel_id": ch, "filename": "r.txt", "data_b64": "aGVsbG8=" // "hello"
+    })).await;
+    assert_eq!(nostore.unwrap_err().0, "E_STORAGE_UNAVAILABLE");
 }

@@ -1,0 +1,11 @@
+-- Drop the orphaned file_scope_links table.
+--
+-- Originally chat files were meant to be linked to a scope (channel/workspace) through
+-- this join table, and the bot file-access path JOINed it for authorization. That row was
+-- NEVER actually written by any code path, so the table stayed empty and the bot always saw
+-- "no files". The Desk/Inbox rework scopes chat files directly by file_records.channel_id and
+-- authorizes via channel membership (authorize_channel_read), so this table is fully dead.
+--
+-- Per CLAUDE.md "Problem-First Fixing": remove dead schema explicitly rather than leaving it
+-- to rot. Indexes and the FK/unique constraints drop with the table.
+DROP TABLE IF EXISTS file_scope_links;

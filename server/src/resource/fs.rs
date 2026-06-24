@@ -648,6 +648,19 @@ fn extract_channel_id(params: &Value) -> Result<Uuid, (String, String)> {
         .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))
 }
 
+/// A bare uuid as the whole path is almost certainly a misused attachment file_id — the
+/// agent confusing the read-only Inbox (channel.files, by file_id) with the editable
+/// Desk/workspace (fs.*, by path). Reject it with a pointer, turning a silent miss into a
+/// precise, correctable error.
+fn looks_like_file_id(path: &str) -> bool {
+    let b = path.as_bytes();
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => *c == b'-',
+            _ => c.is_ascii_hexdigit(),
+        })
+}
+
 fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, String)> {
     let path = raw.trim().trim_matches('/').to_string();
     if path.is_empty() {
@@ -661,6 +674,14 @@ fn normalize_path(raw: &str, allow_empty: bool) -> Result<String, (String, Strin
         .any(|segment| segment.is_empty() || segment == "." || segment == "..")
     {
         return Err(super::resource_error("BAD_REQUEST", "invalid path"));
+    }
+    if looks_like_file_id(&path) {
+        return Err(super::resource_error(
+            "E_LOOKS_LIKE_FILE_ID",
+            "this looks like an attachment file_id, not a workspace path — chat attachments \
+             are read-only; read them with inbox_open (channel.files.read), they are not \
+             editable workspace files",
+        ));
     }
     Ok(path)
 }

@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import { FileText, FolderOpen, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Download, FileText, FolderOpen, RefreshCw, Save, Trash2 } from "lucide-react";
 import { registerPanel, type PanelContext } from "../panelRegistry";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
 import { candidatesFor, getRenderer } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
+
+// Export bridge: a context file is TEXT, so "download" = save its content as a blob
+// client-side (filename = the path's basename). No backend round-trip needed.
+function downloadText(path: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = path.split("/").pop() || path;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // The File plugin: browse the channel workspace (context_files), and open a file with
 // a chosen RENDERER (default "原文" = raw textarea; or a built-in lens / installed
@@ -147,6 +160,14 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
                       </option>
                     ))}
                   </select>
+                  {/* export bridge: download this context file as a real file */}
+                  <button
+                    onClick={() => downloadText(selected, editor.content)}
+                    title="下载此文件（导出为文件）"
+                    className="text-zinc-500 hover:text-zinc-300"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
                   {/* pin this file's content into every bot prompt (toggle) */}
                   <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
                   {/* surface this file as a workbench tab (toggle), persisted in views */}

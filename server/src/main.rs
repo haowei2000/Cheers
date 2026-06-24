@@ -52,6 +52,8 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = infra::s3::ensure_bucket(&s3, &config.s3_bucket).await {
         tracing::warn!(error = %e, bucket = %config.s3_bucket, "S3 bucket bootstrap failed; file upload/download will be unavailable until storage is reachable");
     }
+    // Let the resource layer (channel.files.read / inbox_open) read chat-file bytes.
+    server::resource::files::init_s3(s3.clone(), config.s3_bucket.clone());
 
     // Single-instance deployment (R1-A): in-process fan-out + bot registry.
     // Redis is NOT a startup dependency on the realtime path. The Redis impls
