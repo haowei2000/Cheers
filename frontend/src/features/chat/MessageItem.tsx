@@ -1,11 +1,10 @@
 import { memo } from "react";
-import { FileText } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { apiFetch } from "@/api/client";
-import type { Message, FileInfo } from "@/types";
+import { FileGrid } from "./fileView";
+import type { Message } from "@/types";
 
 interface Props {
   message: Message;
@@ -114,54 +113,6 @@ export const MessageItem = memo(function MessageItem({
 // Flat <#file:id> tokens render as chips (below), not inline text.
 const FILE_TOKEN = /<#file:[^>]+>/g;
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-async function downloadFile(file: FileInfo) {
-  // The download endpoint is JWT-protected, so fetch with auth then save a blob.
-  try {
-    const res = await apiFetch(`/files/${file.file_id}/download`);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.original_filename || file.file_id;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch {
-    /* ignore download failures */
-  }
-}
-
-function FileChips({ files }: { files: FileInfo[] }) {
-  if (!files.length) return null;
-  return (
-    <div className="mt-1.5 flex flex-wrap gap-2">
-      {files.map((f) => (
-        <button
-          key={f.file_id}
-          type="button"
-          onClick={() => downloadFile(f)}
-          title={f.original_filename || f.file_id}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 transition-colors max-w-[240px]"
-        >
-          <FileText className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-          <span className="truncate">{f.original_filename || "file"}</span>
-          {typeof f.size_bytes === "number" && (
-            <span className="text-zinc-500">{formatBytes(f.size_bytes)}</span>
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function MessageBody({ message }: { message: Message }) {
   const files = message.files ?? [];
   const content = (message.content ?? "").replace(FILE_TOKEN, "").trim();
@@ -216,7 +167,7 @@ function MessageBody({ message }: { message: Message }) {
       {active && message._trace && (
         <p className="text-xs text-zinc-500 italic mt-0.5">{message._trace}</p>
       )}
-      <FileChips files={files} />
+      <FileGrid files={files} className="mt-1.5" />
     </div>
   );
 }

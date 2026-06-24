@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Hash, Users, Loader2, PanelRight } from "lucide-react";
+import { Hash, Users, Loader2, PanelRight, Paperclip } from "lucide-react";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers } from "@/api/channels";
 import { MessageList } from "./MessageList";
 import { MessageComposer, type MentionCandidate } from "./MessageComposer";
 import { useChatRealtime } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
+import { ChannelFilesDialog } from "./ChannelFilesDialog";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, Channel } from "@/types";
 
@@ -193,6 +194,7 @@ export function ChannelView({ channel }: Props) {
     onBotTrace: handleBotTrace,
   });
   const [wbOpen, setWbOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
 
   async function handleSend(
     content: string,
@@ -244,6 +246,14 @@ export function ChannelView({ channel }: Props) {
             {mentionables.length || "Members"}
           </span>
         </div>
+        {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
+        <button
+          onClick={() => setFilesOpen(true)}
+          title="频道文件"
+          className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+        >
+          <Paperclip className="w-4 h-4" />
+        </button>
         <button
           onClick={() => setWbOpen(true)}
           title="Workbench"
@@ -282,6 +292,9 @@ export function ChannelView({ channel }: Props) {
         channelId={channel.channel_id}
         sendResourceReq={sendResourceReq}
       />
+      {filesOpen && (
+        <ChannelFilesDialog channelId={channel.channel_id} onClose={() => setFilesOpen(false)} />
+      )}
     </div>
   );
 }

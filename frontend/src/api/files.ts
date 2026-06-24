@@ -1,6 +1,11 @@
 import { apiJson } from "./client";
 import type { FileInfo } from "@/types";
 
+/** The channel's chat files (file_records / S3 attachments) — its file library. */
+export async function listChannelFiles(channelId: string): Promise<FileInfo[]> {
+  return apiJson<FileInfo[]>(`/channels/${channelId}/files`);
+}
+
 /**
  * Gateway-proxied upload: the file bytes are sent as the request body and the
  * gateway streams them to object storage (SigV4) and records them as uploaded.

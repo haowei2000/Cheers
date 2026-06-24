@@ -250,6 +250,51 @@ pub struct UploadQuery {
     pub content_type: Option<String>,
 }
 
+/// GET /api/v1/channels/:channel_id/files — the channel's CHAT files (file_records /
+/// S3 attachments). Distinct from workbench context_files: this is the channel's file
+/// library, browsed via its own UI. Membership-gated.
+pub async fn list_channel_files(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<Vec<Value>>, AppError> {
+    let member = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
+        )",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db)
+    .await?;
+    if !member && !matches!(claims.role.as_str(), "system_admin" | "admin") {
+        return Err(AppError::Forbidden("channel member required".into()));
+    }
+    let rows = sqlx::query(
+        "SELECT file_id, original_filename, content_type, size_bytes
+         FROM file_records
+         WHERE channel_id = $1 AND status IN ('uploaded', 'converted')
+         ORDER BY created_at DESC
+         LIMIT 200",
+    )
+    .bind(&channel_id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.iter()
+            .map(|r| {
+                json!({
+                    "file_id": r.try_get::<String, _>("file_id").unwrap_or_default(),
+                    "original_filename": r.try_get::<Option<String>, _>("original_filename").unwrap_or(None),
+                    "content_type": r.try_get::<Option<String>, _>("content_type").unwrap_or(None),
+                    "size_bytes": r.try_get::<Option<i32>, _>("size_bytes").unwrap_or(None),
+                })
+            })
+            .collect(),
+    ))
+}
+
 /// POST /api/v1/files?channel_id=&filename=&content_type= — gateway-proxied
 /// upload. The browser sends the raw file bytes as the request body; the gateway
 /// streams them to object storage with SigV4 (no browser-side S3 signing/CORS)
