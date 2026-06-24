@@ -55,6 +55,12 @@ pub struct AddMemberRequest {
     pub role: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct DmCreateRequest {
+    pub target_user_id: Option<String>,
+    pub target_bot_id: Option<String>,
+}
+
 fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
     ChannelDto {
         channel_id: row.try_get("channel_id").unwrap_or_default(),
@@ -138,6 +144,78 @@ pub async fn list_channels(
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows.into_iter().map(dto).collect()))
+}
+
+/// POST /api/v1/channels/dm — find-or-create the DM with one target (user OR bot). A DM is
+/// a type='dm' channel (see CONVERSATION_MODEL.md); the dedup/create lives in domain::dms.
+pub async fn create_dm(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<DmCreateRequest>,
+) -> Result<Json<ChannelDto>, AppError> {
+    let me = Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
+    let (target_id, is_bot) = match (body.target_user_id, body.target_bot_id) {
+        (Some(u), None) => (u, false),
+        (None, Some(b)) => (b, true),
+        _ => {
+            return Err(AppError::BadRequest(
+                "exactly one of target_user_id / target_bot_id".into(),
+            ))
+        }
+    };
+    let channel_id = crate::domain::dms::find_or_create_dm(&state.db, me, &target_id, is_bot).await?;
+    let row = sqlx::query(
+        "SELECT channel_id, workspace_id, name, type, purpose, auto_assist,
+                allow_member_invites, allow_bot_adds
+         FROM channels WHERE channel_id = $1",
+    )
+    .bind(channel_id.to_string())
+    .fetch_one(&state.db)
+    .await?;
+    Ok(Json(dto(row)))
+}
+
+/// GET /api/v1/channels/dm — the caller's DMs (type='dm' channels they're a member of).
+/// Access is membership-driven (independent of the anchor workspace). Each row carries
+/// `peer_name` (the OTHER participant) so the client can label the nameless DM channel.
+pub async fn list_dms(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<Value>>, AppError> {
+    let rows = sqlx::query(
+        "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.purpose, c.auto_assist,
+                c.allow_member_invites, c.allow_bot_adds,
+                COALESCE(
+                  (SELECT COALESCE(u.display_name, u.username) FROM channel_memberships m
+                     JOIN users u ON u.user_id = m.member_id
+                     WHERE m.channel_id = c.channel_id AND m.member_type = 'user'
+                       AND m.member_id <> $1 LIMIT 1),
+                  (SELECT COALESCE(b.display_name, b.username) FROM channel_memberships m
+                     JOIN bot_accounts b ON b.bot_id = m.member_id
+                     WHERE m.channel_id = c.channel_id AND m.member_type = 'bot' LIMIT 1),
+                  'Direct Message'
+                ) AS peer_name
+         FROM channels c
+         JOIN channel_memberships cm
+           ON cm.channel_id = c.channel_id AND cm.member_id = $1 AND cm.member_type = 'user'
+         WHERE c.type = 'dm'
+         ORDER BY c.created_at DESC",
+    )
+    .bind(&claims.sub)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| {
+                let peer: String = r.try_get("peer_name").unwrap_or_default();
+                let mut v = serde_json::to_value(dto(r)).unwrap_or_else(|_| json!({}));
+                if let Value::Object(ref mut m) = v {
+                    m.insert("peer_name".into(), json!(peer));
+                }
+                v
+            })
+            .collect(),
+    ))
 }
 
 pub async fn create_channel(

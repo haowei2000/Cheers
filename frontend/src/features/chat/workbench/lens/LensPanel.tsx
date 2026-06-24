@@ -1,7 +1,8 @@
-import { Pin, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import type { PanelContext, PanelDef } from "../panelRegistry";
 import type { ViewDef } from "../manifest";
 import { useFile } from "../jsonFile";
+import { PinToggle } from "../PinToggle";
 import { getLens } from "./registry";
 
 // The generic panel that powers every declarative view: load the file (parsed by its
@@ -12,7 +13,6 @@ function LensPanel({ ctx, view }: { ctx: PanelContext; view: ViewDef }) {
   const lens = getLens(view.lens);
   const fallback: unknown = view.file.endsWith(".json") ? null : "";
   const { data, setData, save, status } = useFile<unknown>(fs, view.file, fallback);
-  const isPinned = pinned.includes(view.file);
 
   return (
     <div className="flex flex-col h-full text-xs">
@@ -20,12 +20,7 @@ function LensPanel({ ctx, view }: { ctx: PanelContext; view: ViewDef }) {
         <span className="text-zinc-300">{view.title}</span>
         <span className="text-zinc-600 text-[10px] truncate">{view.file}</span>
         <div className="flex-1" />
-        <button
-          onClick={() => togglePin(view.file)}
-          title={isPinned ? "已 pin：每次提示词都发送，点此取消" : "pin：把此文件内容注入每次提示词"}
-        >
-          <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-amber-400 text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} />
-        </button>
+        <PinToggle path={view.file} pinned={pinned} togglePin={togglePin} />
         <button onClick={() => void save(data)} className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
           <Save className="w-3.5 h-3.5" /> 保存
         </button>

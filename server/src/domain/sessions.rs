@@ -8,10 +8,8 @@ use crate::errors::AppError;
 const PROVIDER: &str = "acp";
 const PROVIDER_AGENT_ID: &str = "main";
 
-pub const SESSION_SCOPE_CHANNEL: &str = "channel";
+pub const SESSION_SCOPE_CHANNEL: &str = "channel"; // also covers DM (DM = type='dm' channel)
 pub const SESSION_SCOPE_TASK: &str = "task";
-pub const SESSION_SCOPE_TOPIC: &str = "topic";
-pub const SESSION_SCOPE_DM: &str = "dm";
 pub const SESSION_SCOPE_WORKSPACE: &str = "workspace";
 pub const SESSION_SCOPE_GLOBAL: &str = "global";
 pub const SESSION_SCOPE_USER: &str = "user";
@@ -29,38 +27,21 @@ pub fn normalize_scope_type(raw: &str) -> &str {
     match raw {
         SESSION_SCOPE_CHANNEL
         | SESSION_SCOPE_TASK
-        | SESSION_SCOPE_TOPIC
-        | SESSION_SCOPE_DM
         | SESSION_SCOPE_WORKSPACE
         | SESSION_SCOPE_GLOBAL
         | SESSION_SCOPE_USER => raw,
+        // "dm" (and anything unknown) folds into channel — a DM is a type='dm' channel.
         _ => SESSION_SCOPE_CHANNEL,
     }
 }
 
-fn scope_columns(
-    scope_type: &str,
-    scope_id: &str,
-    task_id: Option<&str>,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
+fn scope_columns(scope_type: &str, scope_id: &str, _task_id: Option<&str>) -> (Option<String>, Option<String>) {
     let scope_id = scope_id.to_string();
     match scope_type {
-        SESSION_SCOPE_CHANNEL => (Some(scope_id), None, None, None),
-        SESSION_SCOPE_TOPIC => (None, Some(scope_id), None, None),
-        SESSION_SCOPE_DM => (None, None, Some(scope_id), None),
-        SESSION_SCOPE_TASK => {
-            let task = scope_id;
-            (None, None, None, Some(task))
-        }
-        SESSION_SCOPE_WORKSPACE | SESSION_SCOPE_GLOBAL | SESSION_SCOPE_USER => {
-            (None, None, None, None)
-        }
-        _ => (Some(scope_id), None, None, None),
+        SESSION_SCOPE_CHANNEL => (Some(scope_id), None),
+        SESSION_SCOPE_TASK => (None, Some(scope_id)),
+        SESSION_SCOPE_WORKSPACE | SESSION_SCOPE_GLOBAL | SESSION_SCOPE_USER => (None, None),
+        _ => (Some(scope_id), None), // dm + unknown → channel
     }
 }
 
@@ -68,20 +49,6 @@ fn fallback_task_id(scope_type: &str, scope_id: &str, provided: Option<&str>) ->
     match scope_type {
         SESSION_SCOPE_TASK => Some(scope_id.to_string()),
         SESSION_SCOPE_CHANNEL => provided.and_then(|v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_string())
-            }
-        }),
-        SESSION_SCOPE_TOPIC => provided.and_then(|v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_string())
-            }
-        }),
-        SESSION_SCOPE_DM => provided.and_then(|v| {
             if v.is_empty() {
                 None
             } else {
@@ -188,14 +155,13 @@ async fn upsert_session_binding(
     task_id: Option<String>,
     role: &str,
 ) -> Result<(), AppError> {
-    let (channel_id, topic_id, dm_id, binding_task_id) =
-        scope_columns(scope_type, scope_id, task_id.as_deref());
+    let (channel_id, binding_task_id) = scope_columns(scope_type, scope_id, task_id.as_deref());
     sqlx::query(
         "INSERT INTO cheers_session_bindings (
             binding_id, session_id, bot_id, provider, provider_account_id, provider_agent_id,
-            scope_type, scope_id, channel_id, topic_id, dm_id, task_id, role, created_at
+            scope_type, scope_id, channel_id, task_id, role, created_at
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW()
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
         )
         ON CONFLICT ON CONSTRAINT uq_cheers_session_binding_scope
         DO UPDATE SET
@@ -208,8 +174,6 @@ async fn upsert_session_binding(
             provider_agent_id = EXCLUDED.provider_agent_id,
             task_id = EXCLUDED.task_id,
             channel_id = EXCLUDED.channel_id,
-            topic_id = EXCLUDED.topic_id,
-            dm_id = EXCLUDED.dm_id,
             created_at = EXCLUDED.created_at
         ",
     )
@@ -222,8 +186,6 @@ async fn upsert_session_binding(
     .bind(scope_type)
     .bind(scope_id)
     .bind(channel_id)
-    .bind(topic_id)
-    .bind(dm_id)
     .bind(binding_task_id.or(task_id))
     .bind(role)
     .execute(db)

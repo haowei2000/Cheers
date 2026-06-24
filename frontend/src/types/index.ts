@@ -24,6 +24,8 @@ export interface Channel {
   purpose?: string | null;
   auto_assist?: boolean;
   unread_count?: number;
+  /** For type='dm': the other participant's name (from GET /channels/dm). */
+  peer_name?: string;
   my_role?: string | null;
   can_manage?: boolean;
 }
@@ -68,7 +70,6 @@ export interface Message {
   created_at?: string;
   msg_type?:
     | "normal"
-    | "topic"
     | "reply"
     | "announcement"
     | "routing"

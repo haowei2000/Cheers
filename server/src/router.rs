@@ -82,6 +82,11 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces",
             get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace),
         )
+        // static segment → matches before :workspace_id
+        .route(
+            "/api/v1/workspaces/personal",
+            get(api::workspaces::get_personal_workspace),
+        )
         .route(
             "/api/v1/workspaces/:workspace_id",
             patch(api::workspaces::update_workspace).delete(api::workspaces::delete_workspace),
@@ -102,6 +107,11 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/channels",
             get(api::channels::list_channels).post(api::channels::create_channel),
+        )
+        // DM: a type='dm' channel. Static segment → matches before :channel_id.
+        .route(
+            "/api/v1/channels/dm",
+            get(api::channels::list_dms).post(api::channels::create_dm),
         )
         .route(
             "/api/v1/channels/:channel_id",

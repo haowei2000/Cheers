@@ -55,6 +55,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
   const [active, setActive] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pinMenu, setPinMenu] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -279,7 +280,41 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
             <Clock className="w-3.5 h-3.5" /> 临时模板
           </button>
           <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
-          {pinned.length > 0 && <span className="text-[11px] text-amber-500/80">📌 {pinned.length}</span>}
+          {pinned.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setPinMenu((o) => !o)}
+                title="已 pin 的文件（点此管理 / 取消）"
+                className="text-[11px] text-amber-500/80 hover:text-amber-400"
+              >
+                📌 {pinned.length}
+              </button>
+              {pinMenu && (
+                <div className="absolute left-0 top-6 z-50 w-64 rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl">
+                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                    Pinned（注入每次提示词）
+                  </div>
+                  {pinned.map((p) => (
+                    <div
+                      key={p}
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-800/60 text-xs text-zinc-300"
+                    >
+                      <span className="truncate flex-1" title={p}>
+                        {p}
+                      </span>
+                      <button
+                        onClick={() => togglePin(p)}
+                        title="取消 pin"
+                        className="text-zinc-500 hover:text-red-400 flex-shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex-1" />
           <button onClick={onClose} title="Close">
             <X className="w-4 h-4 text-zinc-500 hover:text-zinc-200" />

@@ -28,7 +28,9 @@ use uuid::Uuid;
 
 use server::domain::channel_seq;
 use server::domain::messages::{self, CreateMessageParams};
+use server::domain::dms;
 use server::domain::workbench_templates;
+use server::domain::workspaces;
 use server::gateway::dispatcher::{self, DispatchParams, DispatchResult};
 use server::gateway::realtime::fanout::{Fanout, InProcessFanout};
 use server::gateway::registry::{BotLocator, InProcessBotLocator};
@@ -682,4 +684,70 @@ async fn m2_global_template_store_roundtrip(db: PgPool) {
     assert_eq!(workbench_templates::delete(&db, "research").await.unwrap(), 1);
     assert_eq!(workbench_templates::delete(&db, "research").await.unwrap(), 0);
     assert!(workbench_templates::list(&db).await.unwrap().is_empty());
+}
+
+// 会话/工作区模型(2026-06-24):personal workspace 惰性创建,每用户至多一个(偏唯一索引)。
+#[sqlx::test]
+async fn personal_workspace_get_or_create_is_idempotent(db: PgPool) {
+    let user = seed_user(&db).await;
+
+    let ws1 = workspaces::get_or_create_personal_workspace(&db, user).await.unwrap();
+    let ws2 = workspaces::get_or_create_personal_workspace(&db, user).await.unwrap();
+    assert_eq!(ws1, ws2, "同一用户的 personal workspace 必须复用,不新建");
+
+    // kind/owner 正确,且全库该用户只有一个 personal ws
+    let row = sqlx::query("SELECT kind, owner_user_id FROM workspaces WHERE workspace_id = $1")
+        .bind(ws1.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(row.get::<String, _>("kind"), "personal");
+    assert_eq!(row.get::<Option<String>, _>("owner_user_id"), Some(user.to_string()));
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM workspaces WHERE owner_user_id = $1 AND kind = 'personal'",
+    )
+    .bind(user.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(count, 1, "每用户至多一个 personal workspace");
+
+    // 不同用户各自独立
+    let other = seed_user(&db).await;
+    let ws_other = workspaces::get_or_create_personal_workspace(&db, other).await.unwrap();
+    assert_ne!(ws1, ws_other);
+}
+
+// DM = type='dm' channel,按成员对去重、与发起方无关、两人成员、锚在发起方 personal ws。
+#[sqlx::test]
+async fn dm_find_or_create_dedups_by_pair(db: PgPool) {
+    let a = seed_user(&db).await;
+    let b = seed_user(&db).await;
+
+    let dm1 = dms::find_or_create_dm(&db, a, &b.to_string(), false).await.unwrap();
+    let dm2 = dms::find_or_create_dm(&db, a, &b.to_string(), false).await.unwrap();
+    assert_eq!(dm1, dm2, "同一对再建必复用");
+
+    // 对称:b 发起与 a 的 DM,应是同一个(canonical key 与发起方无关)
+    let dm3 = dms::find_or_create_dm(&db, b, &a.to_string(), false).await.unwrap();
+    assert_eq!(dm1, dm3, "DM 按成员对去重,不分发起方");
+
+    // type='dm' + 恰好两人成员
+    let typ: String = sqlx::query_scalar("SELECT type FROM channels WHERE channel_id = $1")
+        .bind(dm1.to_string()).fetch_one(&db).await.unwrap();
+    assert_eq!(typ, "dm");
+    let members: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM channel_memberships WHERE channel_id = $1")
+        .bind(dm1.to_string()).fetch_one(&db).await.unwrap();
+    assert_eq!(members, 2);
+
+    // 锚在发起方(a)的 personal workspace
+    let kind: String = sqlx::query_scalar(
+        "SELECT w.kind FROM channels c JOIN workspaces w ON w.workspace_id = c.workspace_id WHERE c.channel_id = $1",
+    )
+    .bind(dm1.to_string()).fetch_one(&db).await.unwrap();
+    assert_eq!(kind, "personal");
+
+    // 不能跟自己 DM
+    assert!(dms::find_or_create_dm(&db, a, &a.to_string(), false).await.is_err());
 }

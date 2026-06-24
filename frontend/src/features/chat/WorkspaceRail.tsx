@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Settings, LogOut, MessageSquare, Plus } from "lucide-react";
 import toast from "react-hot-toast";
@@ -7,17 +8,26 @@ import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { Workspace } from "@/types";
 
-interface WorkspaceButtonProps {
-  workspace: Workspace;
+// Shared rail-button shell: the left selection indicator bar + hover state. Children are
+// the inner visual (a workspace Avatar, or the personal/brand icon box).
+function RailButton({
+  selected,
+  onClick,
+  title,
+  disabled,
+  children,
+}: {
   selected: boolean;
   onClick: () => void;
-}
-
-function WorkspaceButton({ workspace, selected, onClick }: WorkspaceButtonProps) {
+  title: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
   return (
     <button
       onClick={onClick}
-      title={workspace.name}
+      disabled={disabled}
+      title={title}
       className="group relative w-10 h-10 flex items-center justify-center"
     >
       <div
@@ -26,6 +36,22 @@ function WorkspaceButton({ workspace, selected, onClick }: WorkspaceButtonProps)
           selected ? "h-5" : "h-0 group-hover:h-2"
         )}
       />
+      {children}
+    </button>
+  );
+}
+
+function WorkspaceButton({
+  workspace,
+  selected,
+  onClick,
+}: {
+  workspace: Workspace;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <RailButton selected={selected} onClick={onClick} title={workspace.name}>
       <Avatar
         name={workspace.name}
         src={workspace.avatar_url}
@@ -36,14 +62,17 @@ function WorkspaceButton({ workspace, selected, onClick }: WorkspaceButtonProps)
           selected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
         )}
       />
-    </button>
+    </RailButton>
   );
 }
 
 export function WorkspaceRail() {
   const navigate = useNavigate();
-  const { workspaces, selectedWorkspaceId, selectWorkspace } = useChatStore();
+  const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
+    useChatStore();
   const { user, logout } = useAuthStore();
+  const personalSelected =
+    !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
 
   function handleLogout() {
     logout();
@@ -53,16 +82,36 @@ export function WorkspaceRail() {
 
   return (
     <div className="w-14 bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40">
-      {/* Brand */}
-      <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center mb-1 shadow-md shadow-indigo-500/20">
-        <MessageSquare className="w-5 h-5 text-white" />
-      </div>
+      {/* Personal workspace — the user's home (DMs + private space), the most important
+          one, so it takes the prominent top slot. Selectable; falls back to a static brand
+          mark until it's loaded. */}
+      <RailButton
+        selected={personalSelected}
+        onClick={() => personalWorkspace && selectWorkspace(personalWorkspace.workspace_id)}
+        disabled={!personalWorkspace}
+        title={personalWorkspace ? "Personal（私信 / 个人空间）" : "Cheers"}
+      >
+        <div
+          className={cn(
+            "w-10 h-10 bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 transition-all duration-150",
+            personalSelected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
+          )}
+        >
+          <MessageSquare className="w-5 h-5 text-white" />
+        </div>
+      </RailButton>
 
       <div className="w-8 h-px bg-zinc-700/60 my-1" />
 
-      {/* Workspaces */}
+      {/* Team workspaces (personal is the top slot, never listed here) */}
       <div className="flex flex-col items-center gap-2 flex-1">
-        {workspaces.map((ws) => (
+        {workspaces
+          .filter(
+            (ws) =>
+              ws.kind !== "personal" &&
+              ws.workspace_id !== personalWorkspace?.workspace_id
+          )
+          .map((ws) => (
           <WorkspaceButton
             key={ws.workspace_id}
             workspace={ws}

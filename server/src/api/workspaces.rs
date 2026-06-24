@@ -86,7 +86,8 @@ pub async fn list_workspaces(
         "SELECT w.workspace_id, w.name, w.avatar_url, w.default_bot_id, w.kind
          FROM workspaces w
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = w.workspace_id AND wm.user_id = $1
-         WHERE wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin')
+         WHERE w.kind <> 'personal'
+           AND (wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin'))
          ORDER BY w.created_at DESC",
     )
     .bind(current_user_id(&claims))
@@ -104,6 +105,30 @@ pub async fn list_workspaces(
             })
             .collect(),
     ))
+}
+
+/// GET /api/v1/workspaces/personal — the caller's personal workspace (get-or-create). It's
+/// the user's private space + DM anchor; not membership-listed, so it has its own endpoint.
+pub async fn get_personal_workspace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<WorkspaceDto>, AppError> {
+    let me = Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
+    let ws_id = crate::domain::workspaces::get_or_create_personal_workspace(&state.db, me).await?;
+    let row = sqlx::query(
+        "SELECT workspace_id, name, avatar_url, default_bot_id, kind
+         FROM workspaces WHERE workspace_id = $1",
+    )
+    .bind(ws_id.to_string())
+    .fetch_one(&state.db)
+    .await?;
+    Ok(Json(WorkspaceDto {
+        workspace_id: row.try_get("workspace_id").unwrap_or_default(),
+        name: row.try_get("name").unwrap_or_default(),
+        avatar_url: row.try_get("avatar_url").ok(),
+        default_bot_id: row.try_get("default_bot_id").ok(),
+        kind: row.try_get("kind").unwrap_or_else(|_| "personal".to_string()),
+    }))
 }
 
 pub async fn create_workspace(

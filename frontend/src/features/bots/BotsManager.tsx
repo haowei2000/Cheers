@@ -6,7 +6,6 @@ import {
   Copy,
   Check,
   RefreshCw,
-  X,
   CircleDot,
 } from "lucide-react";
 import {
@@ -16,6 +15,7 @@ import {
   type IssuedToken,
 } from "@/api/bots";
 import { listChannels, addChannelMember } from "@/api/channels";
+import { Dialog } from "@/components/ui/dialog";
 import type { BotItem, Channel } from "@/types";
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
@@ -275,41 +275,28 @@ export function BotsManager() {
 
       {/* Token modal — shown once */}
       {issued && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setIssued(null)}
+        <Dialog
+          title={
+            <span className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-indigo-400" /> Agent Bridge token
+            </span>
+          }
+          onClose={() => setIssued(null)}
+          maxWidth="max-w-lg"
         >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-900 p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-indigo-400" />
-              <h3 className="font-semibold text-zinc-100">Agent Bridge token</h3>
-              <button
-                type="button"
-                onClick={() => setIssued(null)}
-                className="ml-auto text-zinc-500 hover:text-zinc-300"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-xs text-amber-400">
-              {issued.note ?? "Store this token now — shown only once."}
-            </p>
-            <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
-              <code className="text-xs text-emerald-300 break-all">
-                {issued.token}
-              </code>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-500">
-                Set this as <code>bot_token_env</code> for the connector account.
-              </span>
-              <CopyButton value={issued.token} label="Copy token" />
-            </div>
+          <p className="text-xs text-amber-400">
+            {issued.note ?? "Store this token now — shown only once."}
+          </p>
+          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+            <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
           </div>
-        </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-500">
+              Set this as <code>bot_token_env</code> for the connector account.
+            </span>
+            <CopyButton value={issued.token} label="Copy token" />
+          </div>
+        </Dialog>
       )}
     </section>
   );

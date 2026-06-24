@@ -85,6 +85,7 @@ Redis 不再是 fan-out 路径的启动硬依赖。
 即 OVERVIEW 的 Phase 2，**也是必须刻意裁剪范围之处**。对每个 schema-only 功能，明确：*v1 进 / 延后 / 砍掉*。
 
 **范围已拍板（2026-06-23）**——v1 = 统一工作台 + DM/topic；权限不实现；其余延后/砍。
+**范围收窄（2026-06-24）**——**砍掉 topic**，会话域只做 **channel（已有）+ DM**。topic（频道内子话题/线程）从 v1 移除,需要时再单列里程碑。
 
 > **概念锁定：没有独立的「memory」概念。** 平台只拥有**共享文件**（channel workspace = `context_files`）；bot 拥有它**自己**的记忆（外部 agent 的本地上下文），平台不碰、不抢——否则两份记忆争权威（external-agent-first 打破了奠基 doc「平台拥有 runtime」的前提）。agent 一律 **pull**；workbench 用**插件**策展若干「**Context**」=就是文件。详见 [context-and-environment.md](./context-and-environment.md) 的「现行模型」声明。
 
@@ -94,7 +95,8 @@ Redis 不再是 fan-out 路径的启动硬依赖。
 | ├ **File 插件** | 通用文件树 + 编辑器，读写 `context_files`（`fs.*` 后端已实现，缺 UI + 测试） | ✅ 内置 |
 | └ **Context 插件**（取代「Agent 记忆」） | 策展特定共享文件（`project.md`/约定/术语表…）= Environment/Lens；**无独立 memory、无 push 正文**，agent 经 `fs.*` pull，存在性经系统提示告知（semantic） | ✅ 内置 |
 | 安全 blocker（上 UI 前必做） | `fs.*` 写入硬大小上限 + 每频道配额；内容 inert 渲染防存储型 XSS；限制 member 的 `rm`/`mv` | ✅ 进（随工作台） |
-| DM/topic resource scope | resource 协议扩出 `channel.*`（未决 #10）；DM/topic 的创建/成员/capability scope **均净新建** | ⏸ **进，但范围大**（评审定为「建设非验证」）→ 拆子切片或踢出 v1 |
+| **DM**（私信会话域） | DM 频道的创建/成员/capability scope（channel.* 读动词已有,DM 复用 channel 模型） | ✅ **进**（范围收窄 2026-06-24:只做 DM,channel 已有） |
+| ~~topic（频道内子话题/线程）~~ | — | ✂️ **砍**（2026-06-24 移出 v1；需要时单列里程碑） |
 | 权限：Grant/trust_level | — | 📌 **标进 roadmap、不实现**——channel-role 唯一事实源，已在 [BOT_PERMISSION.md](./BOT_PERMISSION.md) 顶部标注废弃（R13） |
 | 文档/RAG + `search` resource | 新 resource 动词 + 检索 | ⏸ **延后**（除非 RAG 成为卖点） |
 | Lens 渲染 v1（`history_pages`）/ 公告页（`bulletin_issues`） | 渲染管线 + UI | ⏸ **延后** |
@@ -141,7 +143,7 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [ ] 安全 blocker：`fs.*` 写入硬大小上限 + 配额；内容 inert 渲染防存储型 XSS
   - [ ] File 插件：文件树 + 编辑器，读写 `context_files`（`fs.*` 已实现，补 UI + 集成测试）
   - [ ] Context 插件（取代「Agent 记忆」）：策展共享文件 + 面板 + 初始化脚手架；**无 push 正文**，存在性经系统提示告知（**不**用已删的 `memory_entries`）
-  - [ ] DM/topic resource scope：净新建（创建/成员/`CAPABILITY_SCOPE_*`）→ 拆子切片或踢出 v1
+  - [ ] DM 会话域：净新建（DM 频道创建/成员/`CAPABILITY_SCOPE_*`，复用 channel 模型）。~~topic 已砍（2026-06-24）~~
   - [ ] Grant/trust_level：已在 BOT_PERMISSION.md 标注废弃（R13）—— **不实现**
   - [ ] 延后/砍：RAG · Lens/公告 · todos/templates/keychain/ai_models
 - [ ] **M3** 加固 & 文档对齐

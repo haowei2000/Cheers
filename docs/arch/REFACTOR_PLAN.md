@@ -349,7 +349,7 @@ services:
 ### Phase 2：网格能力全量 + 全量 REST
 
 - [ ] 全量 REST 端点补齐（当前缺口端点）
-- [ ] DM / topic scope resource（当前只有 `channel.*`）
+- [ ] DM scope resource（当前只有 `channel.*`；topic 已砍 2026-06-24）
 - [ ] bot 权限 channel 覆盖 UI（前端新设置界面）
 - [ ] Environment Lens 渲染（v1 声明式：markdown / kanban / table / timeline）
 

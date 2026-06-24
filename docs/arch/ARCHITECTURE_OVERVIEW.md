@@ -148,7 +148,7 @@ Browser / Mobile
 | Phase | 目标 | 关键动作 |
 |-------|------|---------|
 | **1** | Rust Backend + 新 Agent Service | Rust Backend（已启动）补齐网格 schema + 路由重写；新 Python Agent Service 通用 runtime 从零写；旧 Python 单体整体下线 |
-| **2** | 全量 REST + 网格能力 | 补齐 REST 端点；DM/topic resource；Lens 渲染 v1 |
+| **2** | 全量 REST + 网格能力 | 补齐 REST 端点；DM resource（topic 已砍 2026-06-24）；Lens 渲染 v1 |
 | **3** | 优化 | Agent Service 扩容（多身份分片）；OpenTelemetry；权限审计日志 |
 
 ---
@@ -166,7 +166,7 @@ Browser / Mobile
 | 7 | **token 里无 workspace_id** — 工作区级 / 全局限流需另想办法（resource 限流目前只有 per-bot） | 🔶 留意 |
 | 8 | **Rust Backend 重写范围** — 90 个 REST 端点 + 27 张表 | ⚠️ Phase 1 核心挑战 |
 | 9 | **bot 权限的 channel 覆盖 UI** — 前端需要新的设置界面 | ⚠️ Phase 2 |
-| 10 | **resource 协议缺 DM/topic scope 与 search 资源** — 当前只有 `channel.*`，RAG/检索无对应 resource | 🔶 待补契约 |
+| 10 | **resource 协议缺 DM scope 与 search 资源** — 当前只有 `channel.*`，RAG/检索无对应 resource（topic 已砍 2026-06-24，不再列入） | 🔶 待补契约 |
 | 11 | **presence 来源** — `channel.context.online_users` 在单进程外如何聚合 | 🔶 多实例时再定 |
 
 ---

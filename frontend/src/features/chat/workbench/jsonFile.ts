@@ -81,3 +81,61 @@ export function useFile<T>(fs: FsClient, path: string, fallback: T) {
 
 // Back-compat alias for imperative panels that hand-roll JSON state.
 export const useJsonFile = useFile;
+
+// Raw-TEXT file editor state (no format parsing): load a file as a string, edit, save under
+// the server's optimistic lock (re-read on conflict). Shared by the File panel and the raw
+// view-tab fallback. An empty `path` is inert (nothing to load). `dirty` tracks unsaved edits.
+export function useFileEditor(fs: FsClient, path: string) {
+  const [content, setContent] = useState("");
+  const [version, setVersion] = useState<number | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!path) return;
+    setStatus(null);
+    try {
+      const f = await fs.read(path);
+      setContent(f.content);
+      setVersion(f.version);
+      setDirty(false);
+    } catch (e) {
+      if (e instanceof ResourceError && e.code === "NOT_FOUND") {
+        setContent("");
+        setVersion(null);
+        setDirty(false);
+      } else {
+        setStatus(errMsg(e));
+      }
+    }
+  }, [fs, path]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const edit = useCallback((next: string) => {
+    setContent(next);
+    setDirty(true);
+  }, []);
+
+  const save = useCallback(async () => {
+    if (!path) return;
+    setStatus(null);
+    try {
+      const r = await fs.write(path, content, version ?? 0);
+      setVersion(r.version);
+      setDirty(false);
+      setStatus("已保存");
+    } catch (e) {
+      if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
+        setStatus("有冲突，已重载——请重做改动");
+        await load();
+      } else {
+        setStatus(errMsg(e));
+      }
+    }
+  }, [fs, path, content, version, load]);
+
+  return { content, edit, dirty, status, setStatus, save, reload: load };
+}

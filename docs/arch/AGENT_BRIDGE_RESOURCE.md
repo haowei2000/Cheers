@@ -284,7 +284,7 @@ resource 分**读 / 写**两类，授权强度不同：
         "sender_name": "<string>",
         "content": "<string>",
         "content_data": { ... },
-        "msg_type": "text | topic | announcement | secret | permission | ...",
+        "msg_type": "text | announcement | secret | permission | ...",
         "reply_to_msg_id": "<uuid | null>",
         "file_ids": ["<uuid>", ...],
         "mention_bot_ids": ["<uuid>", ...],
@@ -327,7 +327,7 @@ resource 分**读 / 写**两类，授权强度不同：
   "params": {
     "channel_id": "<uuid>",
     "content": "<string>",
-    "msg_type": "text | topic | announcement",  // 可选，默认 "text"
+    "msg_type": "text | announcement",  // 可选，默认 "text"
     "reply_to_msg_id": "<uuid | null>",          // 可选
     "file_ids": ["<uuid>", ...]                   // 可选
   }

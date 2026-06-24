@@ -10,6 +10,22 @@ export async function getChannel(channelId: string): Promise<Channel> {
   return apiJson<Channel>(`/channels/${channelId}`);
 }
 
+/** The caller's DMs (type='dm' channels). Each carries `peer_name` (the other party). */
+export async function listDms(): Promise<Channel[]> {
+  return apiJson<Channel[]>("/channels/dm");
+}
+
+/** Find-or-create the DM with one target (a user OR a bot). Returns the dm channel. */
+export async function createDm(target: {
+  target_user_id?: string;
+  target_bot_id?: string;
+}): Promise<Channel> {
+  return apiJson<Channel>("/channels/dm", {
+    method: "POST",
+    body: JSON.stringify(target),
+  });
+}
+
 export async function listChannelMembers(
   channelId: string
 ): Promise<MemberItem[]> {

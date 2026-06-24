@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Hash, ChevronDown, ChevronRight, Plus, Bot } from "lucide-react";
+import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel } from "@/types";
+import { NewDmDialog } from "./NewDmDialog";
 
 interface SectionProps {
   label: string;
@@ -77,11 +78,13 @@ interface Props {
 
 export function Sidebar({ workspaceName }: Props) {
   const { channels, selectedChannelId, selectChannel } = useChatStore();
+  const [dmOpen, setDmOpen] = useState(false);
 
   const publicChannels = channels.filter(
     (c) => c.type !== "dm" && c.type !== "private"
   );
   const privateChannels = channels.filter((c) => c.type === "private");
+  const dms = channels.filter((c) => c.type === "dm");
 
   return (
     <div className="w-60 bg-sidebar flex flex-col border-r border-zinc-800/60 flex-shrink-0">
@@ -123,12 +126,35 @@ export function Sidebar({ workspaceName }: Props) {
           </Section>
         )}
 
+        {/* Direct messages — type='dm' channels, labelled by the peer's name. */}
+        <Section label="Direct Messages" onAdd={() => setDmOpen(true)}>
+          {dms.map((ch) => (
+            <button
+              key={ch.channel_id}
+              onClick={() => selectChannel(ch.channel_id)}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-1 rounded-md text-sm transition-colors text-left",
+                selectedChannelId === ch.channel_id
+                  ? "bg-zinc-700/70 text-zinc-50 font-medium"
+                  : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+              )}
+            >
+              <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+              <span className="truncate">{ch.peer_name || ch.name || "Direct Message"}</span>
+            </button>
+          ))}
+          {dms.length === 0 && (
+            <div className="px-3 py-1 text-xs text-zinc-600">点 + 发起私信</div>
+          )}
+        </Section>
+
         {channels.length === 0 && (
           <div className="px-3 py-4 text-xs text-zinc-600 text-center">
             No channels yet
           </div>
         )}
       </div>
+      {dmOpen && <NewDmDialog onClose={() => setDmOpen(false)} />}
     </div>
   );
 }

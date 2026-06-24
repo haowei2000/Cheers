@@ -1,53 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
 import { Save } from "lucide-react";
-import { ResourceError } from "../../hooks/useChatRealtime";
 import type { PanelContext, PanelDef } from "../panelRegistry";
 import type { FsClient } from "../fsClient";
+import { useFileEditor } from "../jsonFile";
 import { RendererHost } from "./RendererHost";
 import { getRenderer } from "./registry";
 
-function errMsg(e: unknown): string {
-  if (e instanceof ResourceError) return `${e.code}: ${e.message}`;
-  return e instanceof Error ? e.message : "error";
-}
-
 // Raw text view for a single file — the safe default when a tab's file has no renderer
-// binding (mirrors the File panel's "原文" mode). Always treats content as text (no
-// format parsing), rendered inert in a <textarea>.
+// binding (mirrors the File panel's "原文" mode). Content is rendered inert in a <textarea>.
 function RawFileView({ fs, path }: { fs: FsClient; path: string }) {
-  const [content, setContent] = useState("");
-  const [version, setVersion] = useState(0);
-  const [dirty, setDirty] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const f = await fs.read(path);
-      setContent(f.content);
-      setVersion(f.version);
-      setDirty(false);
-    } catch (e) {
-      if (!(e instanceof ResourceError && e.code === "NOT_FOUND")) setStatus(errMsg(e));
-    }
-  }, [fs, path]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const save = useCallback(async () => {
-    try {
-      const r = await fs.write(path, content, version);
-      setVersion(r.version);
-      setDirty(false);
-      setStatus("已保存");
-    } catch (e) {
-      if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
-        setStatus("有冲突，已重载——请重做改动");
-        await load();
-      } else setStatus(errMsg(e));
-    }
-  }, [fs, path, content, version, load]);
+  const { content, edit, dirty, status, save } = useFileEditor(fs, path);
 
   return (
     <div className="flex flex-col h-full text-xs">
@@ -64,10 +25,7 @@ function RawFileView({ fs, path }: { fs: FsClient; path: string }) {
       </div>
       <textarea
         value={content}
-        onChange={(e) => {
-          setContent(e.target.value);
-          setDirty(true);
-        }}
+        onChange={(e) => edit(e.target.value)}
         spellCheck={false}
         className="flex-1 resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-3 outline-none"
       />
