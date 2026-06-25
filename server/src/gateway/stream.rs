@@ -251,6 +251,13 @@ pub async fn handle_done(
         .ok()
         .flatten();
 
+    // Resolve attachment metadata (incl. staged files, with status) so the live
+    // frame renders attachments immediately — e.g. a staged file as a clickable
+    // tile to realize — instead of only after a history reload.
+    let files = crate::domain::messages::load_message_files(db, &file_ids)
+        .await
+        .unwrap_or_default();
+
     let wire = WireFrame::channel(
         channel_id,
         "message_done",
@@ -267,7 +274,7 @@ pub async fn handle_done(
             "reply_to_msg_id": reply_to_msg_id,
             "file_ids": file_ids,
             "mentions": mention_dtos(&mentions),
-            "files": [],
+            "files": files,
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
