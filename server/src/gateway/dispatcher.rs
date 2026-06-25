@@ -131,25 +131,8 @@ pub async fn dispatch(
     if !delivered {
         // bot 不在线：清理占位（或标记为失败，让前端看到错误提示）
         if let Ok(Some(failed)) = mark_placeholder_failed(db, placeholder_id).await {
-            let done = WireFrame::channel(
-                failed.channel_id,
-                "message_done",
-                json!({
-                    "v": MESSAGE_SCHEMA_VERSION,
-                    "msg_id": placeholder_id,
-                    "channel_id": failed.channel_id,
-                    "channel_seq": failed.channel_seq,
-                    "sender_id": params.bot_id,
-                    "sender_type": "bot",
-                    "content": "[bot offline]",
-                    "msg_type": "text",
-                    "is_partial": false,
-                    "reply_to_msg_id": null,
-                    "file_ids": [],
-                    "mentions": [],
-                    "files": [],
-                }),
-            );
+            let done =
+                offline_done_frame(failed.channel_id, failed.channel_seq, placeholder_id, params.bot_id);
             fanout.broadcast_channel(failed.channel_id, done).await;
         }
         registry.remove(placeholder_id);
@@ -211,9 +194,38 @@ async fn create_placeholder(
     Ok(result.rows_affected() == 1)
 }
 
-struct FailedPlaceholder {
+pub(crate) struct FailedPlaceholder {
+    pub(crate) channel_id: Uuid,
+    pub(crate) channel_seq: i64,
+}
+
+/// 构造 bot-offline 的 `message_done` 终态帧（占位被 finalize 为 "[bot offline]"）。
+/// 派发期 bot 不在线与孤儿回收器共用此帧形状。
+pub(crate) fn offline_done_frame(
     channel_id: Uuid,
     channel_seq: i64,
+    msg_id: Uuid,
+    bot_id: Uuid,
+) -> WireFrame {
+    WireFrame::channel(
+        channel_id,
+        "message_done",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "channel_seq": channel_seq,
+            "sender_id": bot_id,
+            "sender_type": "bot",
+            "content": "[bot offline]",
+            "msg_type": "text",
+            "is_partial": false,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
+        }),
+    )
 }
 
 struct TaskContext {
@@ -340,7 +352,7 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     out
 }
 
-async fn mark_placeholder_failed(
+pub(crate) async fn mark_placeholder_failed(
     db: &PgPool,
     placeholder_id: Uuid,
 ) -> Result<Option<FailedPlaceholder>, sqlx::Error> {

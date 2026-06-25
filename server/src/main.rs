@@ -86,6 +86,17 @@ async fn main() -> anyhow::Result<()> {
         workspace_rpc,
     };
 
+    // Orphan-placeholder reclaimer (flow 8 gap): finalize placeholders that
+    // never got a `done` (backend restart lost the in-memory registry, or a bot
+    // vanished mid-task) so chat bubbles don't hang on "thinking" forever.
+    gateway::reclaimer::spawn(
+        state.db.clone(),
+        state.stream_registry.clone(),
+        state.fanout.clone(),
+        config.orphan_reclaim_interval_secs,
+        config.orphan_reclaim_threshold_secs,
+    );
+
     let app = router::build(state);
 
     let addr = format!("0.0.0.0:{}", config.port);

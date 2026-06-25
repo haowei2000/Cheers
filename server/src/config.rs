@@ -29,6 +29,12 @@ pub struct Config {
     pub smtp_port: u16,
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
+
+    // 孤儿占位回收器（流程 8 缺口）
+    /// 占位早于该秒数且无存活流时才回收（默认 900 = 15 分钟，给 bot 重启重连留时间）。
+    pub orphan_reclaim_threshold_secs: u64,
+    /// 周期扫描间隔秒数（默认 60；设为 0 则只在启动时扫一次）。
+    pub orphan_reclaim_interval_secs: u64,
 }
 
 impl Config {
@@ -69,6 +75,15 @@ impl Config {
                 .unwrap_or(587),
             smtp_username: env::var("SMTP_USERNAME").ok(),
             smtp_password: env::var("SMTP_PASSWORD").ok(),
+
+            orphan_reclaim_threshold_secs: env::var("ORPHAN_RECLAIM_THRESHOLD_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(900),
+            orphan_reclaim_interval_secs: env::var("ORPHAN_RECLAIM_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60),
         }
     }
 }

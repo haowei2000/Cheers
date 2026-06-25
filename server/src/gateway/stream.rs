@@ -97,6 +97,11 @@ impl StreamRegistry {
         self.entries.remove(&msg_id);
         self.seq_counters.remove(&msg_id);
     }
+
+    /// 是否存在该 msg_id 的存活流（孤儿回收器据此跳过正在流式的占位）。
+    pub fn contains(&self, msg_id: Uuid) -> bool {
+        self.entries.contains_key(&msg_id)
+    }
 }
 
 /// `claim_finalize` 的认领结果（R4 守卫）。
