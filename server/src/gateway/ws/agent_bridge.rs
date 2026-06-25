@@ -777,10 +777,16 @@ async fn handle_permission_request_frame(
     });
     let content_data_for_db = content_data.to_string();
 
-    let mut tx = state.db.begin().await.map_err(|_| "db error")?;
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::gateway::log_db_err("permission_request: begin tx"))?;
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err(
+            "permission_request: allocate channel_seq",
+        ))?;
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -795,8 +801,12 @@ async fn handle_permission_request_frame(
     .bind(channel_seq)
     .execute(&mut *tx)
     .await
-    .map_err(|_| "db error")?;
-    tx.commit().await.map_err(|_| "db error")?;
+    .map_err(crate::gateway::log_db_err(
+        "permission_request: insert message",
+    ))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("permission_request: commit tx"))?;
 
     let wire = WireFrame::channel(
         channel_id,
@@ -838,7 +848,9 @@ async fn ensure_bot_channel_member(
     .bind(bot_id.to_string())
     .fetch_one(db)
     .await
-    .map_err(|_| "db error")?
+    .map_err(crate::gateway::log_db_err(
+        "ensure_bot_channel_member: select membership exists",
+    ))?
     .try_get::<bool, _>("ok")
     .unwrap_or(false);
 

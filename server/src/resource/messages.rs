@@ -29,7 +29,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         let page =
             domain_messages::list_channel_messages_since_seq(db, &channel_id, since_seq, limit)
                 .await
-                .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+                .map_err(super::db_err("messages.read: list since_seq"))?;
         return message_page_response(channel_id, page, limit);
     }
 
@@ -71,7 +71,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         limit,
     )
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("messages.read: list channel messages page"))?;
     message_page_response(channel_id, page, limit)
 }
 
@@ -96,7 +96,7 @@ pub async fn handle_by_seq(db: &PgPool, principal: &Principal, params: &Value) -
     let page =
         domain_messages::list_channel_messages_by_seq(db, &channel_id, min_seq, max_seq, limit)
             .await
-            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+            .map_err(super::db_err("messages.by_seq: list by seq range"))?;
 
     message_page_response(channel_id, page, limit)
 }
@@ -212,10 +212,10 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: begin tx"))?;
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: allocate channel_seq"))?;
     sqlx::query(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -234,13 +234,13 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(channel_seq)
     .execute(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("messages.create: insert message"))?;
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: insert mentions"))?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: commit tx"))?;
 
     let files = load_message_file_refs(db, &file_ids)
         .await
@@ -349,7 +349,9 @@ async fn load_message_file_refs(
     .bind(file_ids)
     .fetch_all(db)
     .await
-    .map_err(|_| ())?;
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "load_message_file_refs: select file records", "resource internal error");
+    })?;
 
     let mut refs = Vec::new();
     for row in rows {

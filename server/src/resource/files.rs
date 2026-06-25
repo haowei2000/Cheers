@@ -59,7 +59,7 @@ pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> 
     .bind(limit)
     .fetch_all(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("files.list: select file records"))?;
 
     let files: Vec<Value> = rows
         .iter()
@@ -150,7 +150,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("files.read: select file record"))?
     .ok_or_else(|| not_found("file"))?;
 
     let filename: Option<String> = row.try_get("original_filename").unwrap_or(None);
@@ -283,7 +283,11 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
 
     crate::infra::s3::put_object(client, bucket, &object_key, &content_type, bytes)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "failed to store file"))?;
+        .map_err(super::internal_err(
+            "INTERNAL_ERROR",
+            "failed to store file",
+            "files.create: s3 put_object",
+        ))?;
 
     // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
     let workspace_id: Option<String> = sqlx::query_scalar(
@@ -292,7 +296,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("files.create: select channel workspace_id"))?;
 
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
     sqlx::query(
@@ -314,7 +318,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(expires_at)
     .execute(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("files.create: insert file record"))?;
 
     Ok(json!({
         "file_id": file_id,
@@ -362,7 +366,7 @@ pub async fn handle_stage(db: &PgPool, principal: &Principal, params: &Value) ->
             .bind(channel_id.to_string())
             .fetch_optional(db)
             .await
-            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+            .map_err(super::db_err("files.stage: select channel workspace_id"))?;
 
     let file_id = Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
@@ -384,7 +388,7 @@ pub async fn handle_stage(db: &PgPool, principal: &Principal, params: &Value) ->
     .bind(expires_at)
     .execute(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("files.stage: insert staged file record"))?;
 
     Ok(json!({
         "file_id": file_id,
@@ -410,7 +414,7 @@ pub async fn handle_realize(db: &PgPool, principal: &Principal, params: &Value) 
     .bind(file_id)
     .fetch_optional(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("files.realize: select staged file record"))?
     .ok_or_else(|| super::not_found("file_record"))?;
 
     let status: String = row.try_get("status").unwrap_or_default();
@@ -463,7 +467,11 @@ pub async fn handle_realize(db: &PgPool, principal: &Principal, params: &Value) 
     let object_key = format!("uploads/{file_id}/{filename}");
     crate::infra::s3::put_object(client, bucket, &object_key, &content_type, bytes)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "failed to store file"))?;
+        .map_err(super::internal_err(
+            "INTERNAL_ERROR",
+            "failed to store file",
+            "files.realize: s3 put_object",
+        ))?;
 
     sqlx::query(
         "UPDATE file_records
@@ -477,7 +485,7 @@ pub async fn handle_realize(db: &PgPool, principal: &Principal, params: &Value) 
     .bind(file_id)
     .execute(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("files.realize: update file record to uploaded"))?;
 
     Ok(json!({
         "file_id": file_id,

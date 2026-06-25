@@ -204,10 +204,10 @@ pub async fn handle_done(
     }
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
-    let mut tx = db.begin().await.map_err(|_| "db error")?;
+    let mut tx = db.begin().await.map_err(crate::gateway::log_db_err("stream.done: begin tx"))?;
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.done: allocate channel_seq"))?;
     let details = sqlx::query(
         "UPDATE messages
          SET channel_seq = $1,
@@ -223,12 +223,12 @@ pub async fn handle_done(
     .bind(msg_id.to_string())
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|_| "db error")?
+    .map_err(crate::gateway::log_db_err("stream.done: finalize message update"))?
     .ok_or("message not found")?;
     mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(|_| "db error")?;
-    tx.commit().await.map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.done: replace mentions"))?;
+    tx.commit().await.map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
 
     let channel_id = details
         .try_get::<String, _>("channel_id")
@@ -237,7 +237,7 @@ pub async fn handle_done(
         .map_err(|_| "invalid channel_id")?;
     let channel_seq = details
         .try_get::<i64, _>("channel_seq")
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.done: read channel_seq column"))?;
     let depth = details.try_get::<i32, _>("depth").unwrap_or(0);
     let file_ids = details
         .try_get::<Vec<String>, _>("file_ids")
@@ -472,10 +472,10 @@ pub async fn handle_send(
         .map_err(mention_parse_error_to_static)?;
 
     // 先落库
-    let mut tx = db.begin().await.map_err(|_| "db error")?;
+    let mut tx = db.begin().await.map_err(crate::gateway::log_db_err("stream.send: begin tx"))?;
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.send: allocate channel_seq"))?;
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -492,11 +492,11 @@ pub async fn handle_send(
     .bind(&reply_to_msg_id)
     .execute(&mut *tx)
     .await
-    .map_err(|_| "db error")?;
+    .map_err(crate::gateway::log_db_err("stream.send: insert message"))?;
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(|_| "db error")?;
-    tx.commit().await.map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.send: insert mentions"))?;
+    tx.commit().await.map_err(crate::gateway::log_db_err("stream.send: commit tx"))?;
 
     // 再 fan-out
     let wire = WireFrame::channel(
@@ -657,11 +657,11 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
     .bind(msg_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(|_| "db error")?
+    .map_err(crate::gateway::log_db_err("verify_ownership: select message"))?
     .ok_or("message not found")?;
 
     // owner 必须是当前 bot
-    let sender_id: String = row.try_get("sender_id").map_err(|_| "db error")?;
+    let sender_id: String = row.try_get("sender_id").map_err(crate::gateway::log_db_err("verify_ownership: read sender_id column"))?;
     if sender_id != bot_id.to_string() {
         return Err("ownership check failed: msg_id not owned by this bot");
     }
@@ -673,7 +673,7 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
         return Err("message already finalized");
     }
 
-    let channel_id_str: String = row.try_get("channel_id").map_err(|_| "db error")?;
+    let channel_id_str: String = row.try_get("channel_id").map_err(crate::gateway::log_db_err("verify_ownership: read channel_id column"))?;
     channel_id_str.parse().map_err(|_| "invalid channel_id")
 }
 

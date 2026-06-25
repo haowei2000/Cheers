@@ -169,6 +169,26 @@ pub fn resource_error(code: &str, msg: impl Into<String>) -> (String, String) {
     (code.to_string(), msg.into())
 }
 
+/// Map an internal failure (DB/IO/etc.) to an opaque client-facing error while
+/// logging the real cause server-side with `ctx` for debugging. The returned
+/// (code, message) is identical to the previous hard-coded form — no client
+/// behavior change.
+pub fn internal_err<E: std::fmt::Display>(
+    code: &'static str,
+    client_msg: &'static str,
+    ctx: &'static str,
+) -> impl FnOnce(E) -> (String, String) {
+    move |e| {
+        tracing::error!(error = %e, ctx = ctx, "resource internal error");
+        resource_error(code, client_msg)
+    }
+}
+
+/// Convenience for the common ("INTERNAL_ERROR", "db error") case.
+pub fn db_err<E: std::fmt::Display>(ctx: &'static str) -> impl FnOnce(E) -> (String, String) {
+    internal_err("INTERNAL_ERROR", "db error", ctx)
+}
+
 pub fn not_member() -> (String, String) {
     resource_error("NOT_MEMBER", "principal is not a member of this channel")
 }
@@ -196,7 +216,7 @@ pub async fn authorize_channel_read(
     .bind(principal.member_type())
     .fetch_optional(db)
     .await
-    .map_err(|_| resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(db_err("authorize_channel_read: select membership role"))?;
 
     row.map(|row| ChannelMembership {
         role: row
