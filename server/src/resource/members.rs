@@ -35,7 +35,7 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
     .bind(limit)
     .fetch_all(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("members.list: select channel memberships"))?;
 
     let members: Vec<Value> = rows
         .iter()

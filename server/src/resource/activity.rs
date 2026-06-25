@@ -101,7 +101,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     .bind(limit)
     .fetch_all(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("activity.read: select channel operations"))?;
 
     let events: Vec<Value> = rows
         .into_iter()
@@ -151,7 +151,7 @@ pub async fn handle_index(db: &PgPool, principal: &Principal, params: &Value) ->
     .bind(channel_id.to_string())
     .fetch_one(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("activity.index: select min/max/count seq"))?;
 
     Ok(json!({
         "channel_id": channel_id,

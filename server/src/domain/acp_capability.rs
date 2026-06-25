@@ -486,7 +486,10 @@ async fn resolve_active_session(
         .bind(&value)
         .fetch_optional(db)
         .await
-        .map_err(|_| CapabilityError::Denied("session lookup failed".into()))?
+        .map_err(|e| {
+            tracing::error!(error = %e, ctx = "session lookup: select capability session", "acp_capability db error");
+            CapabilityError::Denied("session lookup failed".into())
+        })?
         .ok_or_else(|| CapabilityError::Denied("session not found".into()))?;
 
     let status: String = row
@@ -730,7 +733,10 @@ async fn load_delegation(
     .bind(delegation_id)
     .fetch_optional(db)
     .await
-    .map_err(|_| CapabilityError::Denied("db error".into()))?
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "load_delegation: select delegation", "acp_capability db error");
+        CapabilityError::Denied("db error".into())
+    })?
     .ok_or_else(|| CapabilityError::Denied("delegation not found".into()))?;
 
     Ok(DelegationRecord {
@@ -809,7 +815,10 @@ async fn consume_nonce_and_bump(
     .bind(resource)
     .execute(db)
     .await
-    .map_err(|_| CapabilityError::Denied("db error".into()))?
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "consume_nonce_and_bump: insert nonce log", "acp_capability db error");
+        CapabilityError::Denied("db error".into())
+    })?
     .rows_affected();
     if inserted == 0 {
         return Err(CapabilityError::Denied("nonce replay detected".into()));
@@ -825,7 +834,10 @@ async fn consume_nonce_and_bump(
     .bind(delegation_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(|_| CapabilityError::Denied("db error".into()))?
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "consume_nonce_and_bump: bump use_count", "acp_capability db error");
+        CapabilityError::Denied("db error".into())
+    })?
     .ok_or_else(|| CapabilityError::Denied("delegation exhausted".into()))?;
 
     let _updated = updated;

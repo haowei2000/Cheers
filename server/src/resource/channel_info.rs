@@ -24,7 +24,7 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
     .bind(channel_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("channel_info.read: select channel row"))?
     .ok_or_else(|| not_found("channel"))?;
 
     let member_count: i64 =
@@ -32,10 +32,13 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
             .bind(channel_id.to_string())
             .fetch_one(db)
             .await
-            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))
+            .map_err(super::db_err("channel_info.read: count memberships"))
             .and_then(|r| {
-                r.try_get::<i64, _>("cnt")
-                    .map_err(|_| super::resource_error("INTERNAL_ERROR", "count error"))
+                r.try_get::<i64, _>("cnt").map_err(super::internal_err(
+                    "INTERNAL_ERROR",
+                    "count error",
+                    "channel_info.read: read cnt column",
+                ))
             })?;
 
     Ok(serde_json::json!({

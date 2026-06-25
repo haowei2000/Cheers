@@ -31,7 +31,7 @@ pub async fn handle_ls(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .bind(&path)
     .fetch_all(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("fs.ls: select context_files"))?;
 
     let entries: Vec<Value> = rows
         .into_iter()
@@ -68,7 +68,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     .bind(&path)
     .fetch_optional(db)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("fs.read: select context_file"))?
     .ok_or_else(|| super::not_found("file"))?;
 
     Ok(json!({
@@ -99,7 +99,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.write: begin tx"))?;
     let existing = sqlx::query(
         "SELECT version
          FROM context_files
@@ -110,7 +110,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     .bind(&path)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("fs.write: select existing version (FOR UPDATE)"))?;
 
     let version = if let Some(row) = existing {
         let current = row.try_get::<i64, _>("version").unwrap_or(0);
@@ -134,7 +134,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         .bind(is_dir)
         .fetch_one(&mut *tx)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+        .map_err(super::db_err("fs.write: update existing file"))?
         .try_get::<i64, _>("version")
         .unwrap_or(current + 1)
     } else {
@@ -159,7 +159,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
         .bind(principal.member_type())
         .fetch_one(&mut *tx)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+        .map_err(super::db_err("fs.write: insert new file"))?
         .try_get::<i64, _>("version")
         .unwrap_or(1)
     };
@@ -175,7 +175,7 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     .await?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.write: commit tx"))?;
 
     Ok(json!({
         "channel_id": channel_id,
@@ -208,7 +208,7 @@ pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> 
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.edit: begin tx"))?;
     let row = sqlx::query(
         "SELECT content, version, is_dir
          FROM context_files
@@ -219,7 +219,7 @@ pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> 
     .bind(&path)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("fs.edit: select file (FOR UPDATE)"))?
     .ok_or_else(|| super::not_found("file"))?;
     if row.try_get::<bool, _>("is_dir").unwrap_or(false) {
         return Err(super::resource_error(
@@ -255,7 +255,7 @@ pub async fn handle_edit(db: &PgPool, principal: &Principal, params: &Value) -> 
     .await?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.edit: commit tx"))?;
 
     Ok(json!({
         "channel_id": channel_id,
@@ -274,7 +274,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.append: begin tx"))?;
     let existing = sqlx::query(
         "SELECT content, version, is_dir
          FROM context_files
@@ -285,7 +285,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(&path)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("fs.append: select existing (FOR UPDATE)"))?;
 
     let version = if let Some(row) = existing {
         if row.try_get::<bool, _>("is_dir").unwrap_or(false) {
@@ -314,7 +314,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
         .bind(principal.member_type())
         .fetch_one(&mut *tx)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+        .map_err(super::db_err("fs.append: insert new file"))?
         .try_get::<i64, _>("version")
         .unwrap_or(1)
     };
@@ -330,7 +330,7 @@ pub async fn handle_append(db: &PgPool, principal: &Principal, params: &Value) -
     .await?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.append: commit tx"))?;
 
     Ok(json!({
         "channel_id": channel_id,
@@ -352,7 +352,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.rm: begin tx"))?;
     let rows = sqlx::query(
         "SELECT path
          FROM context_files
@@ -364,7 +364,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .bind(&path)
     .fetch_all(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("fs.rm: select subtree (FOR UPDATE)"))?;
     if rows.is_empty() {
         return Err(super::not_found("file"));
     }
@@ -384,7 +384,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .bind(&path)
     .execute(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("fs.rm: delete subtree"))?
     .rows_affected();
     let seq = insert_operation(
         &mut tx,
@@ -397,7 +397,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .await?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.rm: commit tx"))?;
 
     Ok(json!({
         "channel_id": channel_id,
@@ -438,7 +438,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.mv: begin tx"))?;
     let source_count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count
          FROM context_files
@@ -449,7 +449,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .bind(&from)
     .fetch_one(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("fs.mv: count source subtree"))?
     .try_get("count")
     .unwrap_or(0);
     if source_count == 0 {
@@ -466,7 +466,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .bind(&to)
     .fetch_one(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("fs.mv: count target subtree"))?
     .try_get("count")
     .unwrap_or(0);
     if target_count > 0 {
@@ -492,7 +492,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .bind(&to)
     .execute(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("fs.mv: update paths"))?
     .rows_affected();
     let seq = insert_operation(
         &mut tx,
@@ -505,7 +505,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
     .await?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("fs.mv: commit tx"))?;
 
     Ok(json!({
         "channel_id": channel_id,
@@ -562,7 +562,7 @@ async fn enforce_channel_file_count(
             .bind(channel_id.to_string())
             .fetch_one(&mut **tx)
             .await
-            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+            .map_err(super::db_err("enforce_channel_file_count: count files"))?;
     if count >= MAX_CHANNEL_FILES {
         return Err(super::resource_error(
             "CHANNEL_QUOTA_EXCEEDED",
@@ -592,9 +592,9 @@ async fn update_content(
     .bind(content)
     .fetch_one(&mut **tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?
+    .map_err(super::db_err("update_content: update file content"))?
     .try_get::<i64, _>("version")
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))
+    .map_err(super::db_err("update_content: read version column"))
 }
 
 async fn insert_operation(
@@ -607,7 +607,7 @@ async fn insert_operation(
 ) -> Result<i64, (String, String)> {
     let seq = channel_seq::allocate(tx, channel_id)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("insert_operation: allocate channel_seq"))?;
     sqlx::query(
         "INSERT INTO channel_operations (
             id, channel_id, channel_seq, op_type, actor_type, actor_id, target_ref, payload
@@ -623,7 +623,7 @@ async fn insert_operation(
     .bind(payload)
     .execute(&mut **tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("insert_operation: insert channel_operation"))?;
 
     Ok(seq)
 }
