@@ -1,6 +1,6 @@
 # Agent Bridge 资源访问协议 (Resource Protocol v1)
 
-> 版本：v1 草稿
+> 版本：v1.1（2026-06-25，R13 词表刷新 —— §3.4 权威清单以代码为准）
 > 分支：`break/rust-gateway-arch`
 > 适用范围：Bot（内置/外置）通过 Agent Bridge data channel 访问平台资源
 > 配套：[WIRE_PROTOCOL.md](./WIRE_PROTOCOL.md) · [TASK_DELIVERY.md](./TASK_DELIVERY.md) · [FILE_STORAGE.md](./FILE_STORAGE.md)
@@ -133,18 +133,28 @@
 - Backend 按完成顺序返回 `resource_res`（不保证与请求顺序一致）。
 - 单个 `resource_req` 的处理是原子的：要么完整成功，要么返回错误。
 
-### 3.4 权限：读=成员，写=成员+Grant
+### 3.4 权限：读=频道成员，写=channel-role
 
 > ⚠️ 历史设计，已废弃 — 本节描述的 `Grant` / `trust_level` 细粒度授权（R13）不再实现；现行授权以 **channel-role** 为唯一事实源；`channel.memory*` 相关行同样作废（见 CURRENT MODEL）。
+>
+> **现行词表（代码为准，`server/src/resource/mod.rs` dispatch 分支）** —— 本文 §4 各小节按早期版本编写，
+> 实际词表已扩充 mesh step-6（`fs.*`、`activity`、by-seq）与 M3 lazy-deliver（`stage`/`realize`）。
+> 以下为权威清单，与 DATA_FLOW_AND_REFACTOR_PLAN §2.4 对齐：
+>
+> | 读（频道成员即可） | 写（channel role ∈ owner/admin/member；`fs.rm`/`fs.mv` 用户路径需 owner/admin） |
+> |---|---|
+> | `channel.info` `channel.members` `channel.messages` `channel.files` `channel.files.read` `channel.context` `channel.activity.read` `channel.messages.index` `channel.messages.by-seq` `fs.ls` `fs.read` | `channel.messages.create` `channel.files.create` `channel.files.stage` `channel.files.realize` `fs.write` `fs.edit` `fs.append` `fs.rm` `fs.mv` |
+>
+> 已移除/从未实现的动词：`channel.memory` / `channel.memory.update`（`memory_entries` 表已 DROP）、
+> `provider.config.get` / `provider.config.update`（§4.11–4.12 为提案，代码中无对应 dispatch 分支）。
+> 错误码：`UNKNOWN_RESOURCE` / `NOT_MEMBER` / `PERMISSION_DENIED` / `NOT_FOUND` / `INTERNAL_ERROR`。
 
-resource 分**读 / 写**两类，授权强度不同：
+resource 分**读 / 写**两类，授权强度不同（早期表，保留作历史对照，**实际写权限只过 channel-role，不走 Grant**）：
 
 | 类别 | resource | 权限检查 | 失败码 |
 |------|----------|---------|--------|
-| **读** | `channel.info` / `members` / `messages` / `files` / `files.read` / `memory` / `context` | `check_bot_in_channel(bot_id, channel_id)` | `NOT_MEMBER` |
-| **读** | `provider.config.get` | `check_bot_owner(bot_id)` + `evaluate(bot_id, "provider.config", "get", scope="provider")` | `PERMISSION_DENIED` / `E2EE_REQUIRED` |
-| **写** | `channel.messages.create` / `channel.memory.update` / `channel.files.create` / 文件删除 | 频道成员 **且** `evaluate()` 通过 | `NOT_MEMBER` / `PERMISSION_DENIED` |
-| **写** | `provider.config.update` | `check_bot_owner(bot_id)` + `evaluate(bot_id, "provider.config", "update", scope="provider")` | `PERMISSION_DENIED` / `E2EE_REQUIRED` / `VERSION_CONFLICT` |
+| **读** | `channel.info` / `members` / `messages` / `files` / `files.read` / `context` / `activity.read` / `messages.index` / `messages.by-seq` / `fs.ls` / `fs.read` | `authorize_channel_read`（查 channel 成员 role） | `NOT_MEMBER` |
+| **写** | `channel.messages.create` / `channel.files.create` / `channel.files.stage` / `channel.files.realize` / `fs.write` / `fs.edit` / `fs.append` / `fs.rm` / `fs.mv` | 频道成员 **且** `role_can_write`（owner/admin/member） | `NOT_MEMBER` / `PERMISSION_DENIED` |
 
 **写操作的 Grant 映射**（详见 [BOT_PERMISSION §5.3 / §7](./BOT_PERMISSION.md)）：
 

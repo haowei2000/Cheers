@@ -1,5 +1,6 @@
 # Engineering Execution Roadmap
 
+> 版本：v1.6（2026-06-25）—— M3 进行中：R8 错误上下文 · R11 拆 bridge_runtime · R13 文档对齐（本批）
 > 版本：v1.5（2026-06-18）—— M0 完成：R1（进程内）·R3 背压·R4-1 单测·R4-2 集成·R5 双派发
 > 性质：**执行路线图** —— 把架构现状转成可落地的里程碑序列。
 > 与其他文档的关系：
@@ -148,4 +149,6 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] Grant/trust_level：**不实现**（channel-role 唯一事实源）
   - [x] 延后/砍：RAG · Lens/公告 · todos/templates/keychain/ai_models（有意裁掉）
 - [ ] **M3** 加固 & 文档对齐 ← **进行中（分支 `feat/m3-hardening`，2026-06-24 起）**
+  - [x] R8 错误上下文：内部错误改为 `tracing` 记录而非吞掉（不再用 `map_err(|_| "db error")` 静默；commit `e08e5bf1`）
+  - [x] R11 拆 `bridge_runtime.rs`（2.9k 行 → 多个子模块，connector 运行时循环；commit `4377027c`）
 - [ ] **M4** 扩容（HA 触发）

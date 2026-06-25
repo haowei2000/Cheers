@@ -1,11 +1,12 @@
 # Cheers Bot 权限模型
 
-> 版本：v7
+> 版本：v7.1（2026-06-25，R13 现状标注）
 > 分支：`break/rust-gateway-arch`
 > 配套：[ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md)
 
-> **⚠️ R13 / M2 决策（2026-06-23）：`Grant` / `trust_level` 细粒度授权模型已废弃，不实现。**
-> 授权以 **channel-role**（owner / admin / member）为唯一事实来源——读取需频道成员、写入按角色。
+> **⚠️ 现状（R13 / M2 决策，2026-06-23）：写权限 = channel-role 模型；Grant 体系未实现 / 已搁置（R13）。**
+> 授权以 **channel-role**（owner / admin / member）为唯一事实来源——读取需频道成员、写入按角色；
+> 代码里对 `bot_grants` / `trust_level` **零引用**（`permission::evaluate()` 不存在）。
 > schema 里残留的 `Grant` / `trust_level` 字段保留但不接线；本文下述任何 Grant/trust_level 段落仅作历史设计参考。
 
 本文定义 bot 的能力声明、权限控制与安全边界模型。
