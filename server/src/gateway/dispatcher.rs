@@ -235,7 +235,18 @@ impl TaskContext {
 }
 
 async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
-    let row = sqlx::query(
+    #[derive(Debug, sqlx::FromRow)]
+    struct TaskRow {
+        sender_id: Option<String>,
+        content: Option<String>,
+        created_at: Option<chrono::DateTime<chrono::Utc>>,
+        msg_type: Option<String>,
+        in_reply_to_msg_id: Option<String>,
+        file_ids: Option<Value>,
+        sender_name: Option<String>,
+    }
+
+    let row = sqlx::query_as::<_, TaskRow>(
         "SELECT
             m.msg_id,
             m.sender_id,
@@ -257,8 +268,7 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
     .ok()??;
 
     let file_ids = row
-        .try_get::<Value, _>("file_ids")
-        .ok()
+        .file_ids
         .and_then(|value| {
             value.as_array().map(|items| {
                 items
@@ -272,25 +282,17 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
         .iter()
         .map(|file_id| json!({ "file_id": file_id }))
         .collect::<Vec<_>>();
-    let timestamp = row
-        .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-        .ok()
-        .map(|dt| dt.to_rfc3339());
-    let sender_id = row.try_get::<String, _>("sender_id").unwrap_or_default();
-    let sender_name = row
-        .try_get::<Option<String>, _>("sender_name")
-        .ok()
-        .flatten();
+    let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
 
     Some(TaskContext {
         trigger_message: json!({
             "msg_id": msg_id,
-            "user": sender_id,
-            "sender_name": sender_name,
-            "text": row.try_get::<String, _>("content").unwrap_or_default(),
+            "user": row.sender_id.unwrap_or_default(),
+            "sender_name": row.sender_name,
+            "text": row.content.unwrap_or_default(),
             "timestamp": timestamp,
-            "msg_type": row.try_get::<String, _>("msg_type").unwrap_or_else(|_| "text".to_string()),
-            "in_reply_to_msg_id": row.try_get::<Option<String>, _>("in_reply_to_msg_id").ok().flatten(),
+            "msg_type": row.msg_type.unwrap_or_else(|| "text".to_string()),
+            "in_reply_to_msg_id": row.in_reply_to_msg_id,
         }),
         attachments,
         pinned: Vec::new(),

@@ -502,6 +502,15 @@ async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(
 /// 无权限透传的消息列表读取（供 resource 层复用统一消息模型）。
 ///
 /// 返回顺序为创建时间升序（调用者可直接返回）。
+/// Shared SELECT projection + FROM/JOIN for channel message listing.
+/// Callers append their own WHERE / ORDER BY / LIMIT (with placeholders).
+const MESSAGE_LIST_SELECT: &str = "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id";
+
 pub async fn list_channel_messages(
     db: &PgPool,
     channel_id: &Uuid,
@@ -514,31 +523,11 @@ pub async fn list_channel_messages(
 
     let (rows, anchor_found, has_more_before, has_more_after) = match (before, after) {
         (Some(before_id), None) => {
-            let anchor = sqlx::query(
-                "SELECT msg_id, created_at
-                 FROM messages
-                 WHERE msg_id = $1 AND channel_id = $2
-                 LIMIT 1",
-            )
-            .bind(before_id.clone())
-            .bind(channel_id.to_string())
-            .fetch_optional(db)
-            .await
-            .map_err(AppError::Db)?
-            .and_then(|row| {
-                let created_at = row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok();
-                let msg_id = row.try_get::<String, _>("msg_id").ok();
-                created_at.zip(msg_id)
-            });
+            let anchor = fetch_anchor(db, &before_id, channel_id).await?;
 
             if let Some((created_at, anchor_msg_id)) = anchor {
-                let rows = sqlx::query(
-                    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            m.channel_seq, u.display_name AS sender_name,
-                            m.content, m.msg_type, m.is_partial, m.file_ids,
-                            m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                     FROM messages m
-                     LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+                let rows = sqlx::query(&format!(
+                    "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND (
@@ -546,8 +535,8 @@ pub async fn list_channel_messages(
                            OR (m.created_at = $2 AND m.msg_id < $3)
                        )
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $4",
-                )
+                     LIMIT $4"
+                ))
                 .bind(channel_id.to_string())
                 .bind(created_at)
                 .bind(anchor_msg_id)
@@ -557,18 +546,13 @@ pub async fn list_channel_messages(
                 .map_err(AppError::Db)?;
                 (rows, true, true, false)
             } else {
-                let rows = sqlx::query(
-                    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            m.channel_seq, u.display_name AS sender_name,
-                            m.content, m.msg_type, m.is_partial, m.file_ids,
-                            m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                     FROM messages m
-                     LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+                let rows = sqlx::query(&format!(
+                    "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $2",
-                )
+                     LIMIT $2"
+                ))
                 .bind(channel_id.to_string())
                 .bind(requested_limit + 1)
                 .fetch_all(db)
@@ -578,31 +562,11 @@ pub async fn list_channel_messages(
             }
         }
         (None, Some(after_id)) => {
-            let anchor = sqlx::query(
-                "SELECT msg_id, created_at
-                 FROM messages
-                 WHERE msg_id = $1 AND channel_id = $2
-                 LIMIT 1",
-            )
-            .bind(after_id)
-            .bind(channel_id.to_string())
-            .fetch_optional(db)
-            .await
-            .map_err(AppError::Db)?
-            .and_then(|row| {
-                let created_at = row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok();
-                let msg_id = row.try_get::<String, _>("msg_id").ok();
-                created_at.zip(msg_id)
-            });
+            let anchor = fetch_anchor(db, &after_id, channel_id).await?;
 
             if let Some((created_at, anchor_msg_id)) = anchor {
-                let rows = sqlx::query(
-                    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            m.channel_seq, u.display_name AS sender_name,
-                            m.content, m.msg_type, m.is_partial, m.file_ids,
-                            m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                     FROM messages m
-                     LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+                let rows = sqlx::query(&format!(
+                    "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND (
@@ -610,8 +574,8 @@ pub async fn list_channel_messages(
                            OR (m.created_at = $2 AND m.msg_id > $3)
                        )
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $4",
-                )
+                     LIMIT $4"
+                ))
                 .bind(channel_id.to_string())
                 .bind(created_at)
                 .bind(anchor_msg_id)
@@ -625,17 +589,12 @@ pub async fn list_channel_messages(
             }
         }
         (None, None) => {
-            let rows = sqlx::query(
-                "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                        m.channel_seq, u.display_name AS sender_name,
-                        m.content, m.msg_type, m.is_partial, m.file_ids,
-                        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                 FROM messages m
-                 LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+            let rows = sqlx::query(&format!(
+                "{MESSAGE_LIST_SELECT}
                  WHERE m.channel_id = $1 AND m.is_partial = FALSE
                  ORDER BY m.created_at DESC, m.msg_id DESC
-                 LIMIT $2",
-            )
+                 LIMIT $2"
+            ))
             .bind(channel_id.to_string())
             .bind(requested_limit + 1)
             .fetch_all(db)
@@ -670,20 +629,15 @@ pub async fn list_channel_messages_since_seq(
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(
-        "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                m.channel_seq, u.display_name AS sender_name,
-                m.content, m.msg_type, m.is_partial, m.file_ids,
-                m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-         FROM messages m
-         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+    let rows = sqlx::query(&format!(
+        "{MESSAGE_LIST_SELECT}
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq > $2
          ORDER BY m.channel_seq ASC
-         LIMIT $3",
-    )
+         LIMIT $3"
+    ))
     .bind(channel_id.to_string())
     .bind(since_seq.max(0))
     .bind(limit + 1)
@@ -716,21 +670,16 @@ pub async fn list_channel_messages_by_seq(
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(
-        "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                m.channel_seq, u.display_name AS sender_name,
-                m.content, m.msg_type, m.is_partial, m.file_ids,
-                m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-         FROM messages m
-         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+    let rows = sqlx::query(&format!(
+        "{MESSAGE_LIST_SELECT}
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq >= $2
            AND ($3::bigint IS NULL OR m.channel_seq <= $3)
          ORDER BY m.channel_seq ASC
-         LIMIT $4",
-    )
+         LIMIT $4"
+    ))
     .bind(channel_id.to_string())
     .bind(min_seq.max(1))
     .bind(max_seq)
@@ -754,6 +703,35 @@ pub async fn list_channel_messages_by_seq(
         has_more,
         anchor_found: true,
     })
+}
+
+/// (created_at, msg_id) cursor anchor for keyset pagination.
+#[derive(Debug, sqlx::FromRow)]
+struct AnchorRow {
+    created_at: chrono::DateTime<Utc>,
+    msg_id: String,
+}
+
+/// Resolve a pagination anchor message (created_at + msg_id) within a channel.
+/// Returns None if the anchor message does not exist or fails to decode.
+async fn fetch_anchor(
+    db: &PgPool,
+    anchor_id: &str,
+    channel_id: &Uuid,
+) -> Result<Option<(chrono::DateTime<Utc>, String)>, AppError> {
+    let anchor = sqlx::query_as::<_, AnchorRow>(
+        "SELECT msg_id, created_at
+         FROM messages
+         WHERE msg_id = $1 AND channel_id = $2
+         LIMIT 1",
+    )
+    .bind(anchor_id)
+    .bind(channel_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .map(|row| (row.created_at, row.msg_id));
+    Ok(anchor)
 }
 
 async fn hydrate_message_rows(
@@ -838,7 +816,17 @@ async fn load_message_files_map(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query(
+    #[derive(Debug, sqlx::FromRow)]
+    struct FileRow {
+        file_id: String,
+        original_filename: Option<String>,
+        content_type: Option<String>,
+        size_bytes: Option<i32>,
+        status: Option<String>,
+        expires_at: Option<chrono::DateTime<Utc>>,
+    }
+
+    let rows = sqlx::query_as::<_, FileRow>(
         "SELECT file_id, original_filename, content_type, size_bytes, status,
                 expires_at
          FROM file_records
@@ -851,32 +839,16 @@ async fn load_message_files_map(
 
     let mut refs = HashMap::new();
     for row in rows {
-        let file_id = row.try_get::<String, _>("file_id").unwrap_or_default();
-        let size_bytes = row
-            .try_get::<Option<i32>, _>("size_bytes")
-            .ok()
-            .flatten()
-            .map(i64::from);
-
+        let file_id = row.file_id;
         refs.insert(
             file_id.clone(),
             MessageFileRef {
                 file_id: file_id.clone(),
-                original_filename: row
-                    .try_get::<Option<String>, _>("original_filename")
-                    .ok()
-                    .flatten(),
-                content_type: row
-                    .try_get::<Option<String>, _>("content_type")
-                    .ok()
-                    .flatten(),
-                size_bytes,
-                status: row.try_get::<Option<String>, _>("status").ok().flatten(),
-                expires_at: row
-                    .try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at")
-                    .ok()
-                    .flatten()
-                    .map(|at| at.to_rfc3339()),
+                original_filename: row.original_filename,
+                content_type: row.content_type,
+                size_bytes: row.size_bytes.map(i64::from),
+                status: row.status,
+                expires_at: row.expires_at.map(|at| at.to_rfc3339()),
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
             },
@@ -894,7 +866,16 @@ async fn load_message_mentions(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query(
+    #[derive(Debug, sqlx::FromRow)]
+    struct MentionRow {
+        msg_id: String,
+        member_type: String,
+        member_id: String,
+        username: Option<String>,
+        display_name: Option<String>,
+    }
+
+    let rows = sqlx::query_as::<_, MentionRow>(
         "SELECT mm.msg_id,
                 mm.member_type,
                 mm.member_id,
@@ -916,18 +897,16 @@ async fn load_message_mentions(
 
     let mut by_msg = HashMap::new();
     for row in rows {
-        let msg_id = row.try_get::<String, _>("msg_id").unwrap_or_default();
-        let member_type = row.try_get::<String, _>("member_type").unwrap_or_default();
         let mention = MessageMention {
-            member_id: row.try_get::<String, _>("member_id").unwrap_or_default(),
-            member_type,
-            username: row.try_get::<Option<String>, _>("username").ok().flatten(),
-            display_name: row
-                .try_get::<Option<String>, _>("display_name")
-                .ok()
-                .flatten(),
+            member_id: row.member_id,
+            member_type: row.member_type,
+            username: row.username,
+            display_name: row.display_name,
         };
-        by_msg.entry(msg_id).or_insert_with(Vec::new).push(mention);
+        by_msg
+            .entry(row.msg_id)
+            .or_insert_with(Vec::new)
+            .push(mention);
     }
 
     Ok(by_msg)
