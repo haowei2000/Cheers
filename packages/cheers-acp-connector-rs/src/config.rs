@@ -282,6 +282,12 @@ struct RawAdapter {
     command: String,
     #[serde(default)]
     args: Vec<String>,
+    /// Temporary stopgap: force the agent's ACP session mode on session start
+    /// via `session/set_mode` (e.g. "default" to make it ask for permissions).
+    /// The full design moves this into platform bot config — see
+    /// docs/arch/ACP_APPROVAL_FLOW.md.
+    #[serde(default)]
+    permission_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -690,7 +696,7 @@ async fn normalize_account(
             inherit_env: policy.env.inherit,
             request_timeout_ms: policy.sessions.request_timeout_ms,
             prompt_timeout_ms: policy.prompt.max_duration_ms,
-            agent_native_permission_mode: None,
+            agent_native_permission_mode: raw.adapter.permission_mode,
             mcp_servers: policy.mcp.servers.clone(),
             client_capabilities: Some(client_capabilities()),
         },

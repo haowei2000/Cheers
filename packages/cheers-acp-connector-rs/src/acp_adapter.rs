@@ -218,6 +218,37 @@ impl AcpAdapter {
         self.config.request_timeout_ms
     }
 
+    /// Temporary stopgap: if a permission mode is configured, push it to the
+    /// agent via ACP `session/set_mode`. Best-effort — a rejected/unknown mode
+    /// is logged, not fatal. The full design stores this in platform bot config.
+    async fn apply_permission_mode(&mut self, session_id: &str) {
+        let Some(mode) = self.config.agent_native_permission_mode.clone() else {
+            return;
+        };
+        if mode.trim().is_empty() {
+            return;
+        }
+        match self
+            .request(
+                "session/set_mode",
+                json!({ "sessionId": session_id, "modeId": mode }),
+                self.request_timeout_ms(),
+            )
+            .await
+        {
+            Ok(_) => {
+                tracing::info!(account = %self.account_id, mode = %mode, "applied ACP session mode");
+            }
+            Err(err) => {
+                tracing::warn!(
+                    account = %self.account_id,
+                    mode = %mode,
+                    "session/set_mode failed (unknown modeId or agent rejected?): {err}"
+                );
+            }
+        }
+    }
+
     async fn ensure_peer_alive(&mut self) -> anyhow::Result<()> {
         let Some(child) = self.child.as_mut() else {
             return Err(anyhow!("ACP peer is not started"));
@@ -307,6 +338,7 @@ impl RuntimeAdapter for AcpAdapter {
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("ACP session/new did not return sessionId"))?
             .to_string();
+        self.apply_permission_mode(&session_id).await;
         Ok(SessionStartResult {
             session_id,
             metadata: result,
@@ -329,6 +361,7 @@ impl RuntimeAdapter for AcpAdapter {
                 self.request_timeout_ms(),
             )
             .await?;
+        self.apply_permission_mode(session_id).await;
         Ok(SessionLoadResult { metadata: result })
     }
 

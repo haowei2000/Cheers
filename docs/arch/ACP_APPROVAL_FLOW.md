@@ -198,6 +198,33 @@ let outcome = if resolution.resolution == "allow" {
 
 ---
 
+## 8.5 会话模式 / 模型：ACP 原生 session-state（mode & model）
+
+agent 是否「会问权限」由 **ACP session mode** 决定，与模型选择是**对称的一等机制**：
+
+| | 权限/操作模式 | 模型 |
+|---|---|---|
+| 发现（session/new 返回） | `modes: { currentModeId, availableModes[] }` | `models: { currentModelId, availableModels[] }` |
+| 切换 | `session/set_mode { sessionId, modeId }` | `session/set_model { sessionId, modelId }` |
+| 通知（session/update） | `current_mode_update` | `current_model_update` |
+
+claude-code-acp 的 `availableModes` 常见为 `default`(放行白名单、其余询问) / `acceptEdits` / `bypassPermissions` / `plan`。
+
+### 临时方案（已落地）
+连接器 `adapter.permission_mode`（toml）→ 在 `new_session`/`load_session` 后调
+`session/set_mode`（best-effort，未知 modeId 仅告警）。让你现在就能强制 agent 的模式
+（`acp_adapter.rs::apply_permission_mode`）。
+
+### 真正的方案（待做）：mode & model 作为平台 bot config
+- bot config（binding_config）持 `default_mode` + `default_model`。
+- 连接器读 session/new 的 `availableModes/Models` → 上报平台 → bot 设置 UI 渲染下拉。
+- 按 bot 配置的默认值经 `set_mode`/`set_model` 应用；监听 `current_*_update` 回写。
+- 概念锁定：**mode/model 是 bot 的设置项**，运行时落为 ACP session-state，平台不硬编码选项。
+
+> 这与本审批流正交但相邻：mode 决定「**是否产生**审批请求」，本文其余部分决定「**谁能裁决**」。
+
+---
+
 ## 8. 实现落点（file:line 索引）
 
 | 关注点 | 位置 |
