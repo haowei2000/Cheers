@@ -1,0 +1,7 @@
+# Runtime state + personal/debug configs produced by local daemon runs.
+# Tracked example templates (cheers-daemon.toml, cheers-daemon.local-demo.toml)
+# are intentionally NOT ignored.
+state-*.json
+cheers-daemon.claude.toml
+cheers-daemon.codex.toml
+logs-codex/
