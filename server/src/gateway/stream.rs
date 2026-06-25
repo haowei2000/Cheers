@@ -178,9 +178,6 @@ pub async fn handle_done(
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or("missing msg_id")?;
-    let session_id = extract_session_id(frame);
-    let provider_session_key = extract_provider_session_key(frame);
-    let provider_session_id = extract_provider_session_id(frame);
     let entry_session_id = registry
         .entries
         .get(&msg_id)
@@ -300,54 +297,11 @@ pub async fn handle_done(
         }
     }
 
-    if let Some(session_id) = session_id {
-        if let Some(entry_session_id) = entry_session_id {
-            if entry_session_id != session_id {
-                tracing::warn!(
-                    bot_id = %bot_id,
-                    msg_id = %msg_id,
-                    expected = %entry_session_id,
-                    got = %session_id,
-                    "session mismatch: explicit session_id differs from stream entry"
-                );
-                if let Err(e) = sessions::finalize_session(db, entry_session_id).await {
-                    tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-                }
-            } else if let Err(e) = sessions::finalize_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-            }
-        } else if let Err(e) = sessions::finalize_session(db, session_id).await {
+    if let Some(sid) =
+        resolve_session_id(db, bot_id, provider_account_id, frame, entry_session_id).await
+    {
+        if let Err(e) = sessions::finalize_session(db, sid).await {
             tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-        }
-    } else if let Some(entry_session_id) = entry_session_id {
-        if let Err(e) = sessions::finalize_session(db, entry_session_id).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-        }
-    } else if let Some(provider_session_key) = provider_session_key {
-        if let Ok(session_id) = sessions::resolve_session_id_by_key(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_key,
-        )
-        .await
-        {
-            if let Err(e) = sessions::finalize_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-            }
-        }
-    } else if let Some(provider_session_id) = provider_session_id {
-        if let Ok(session_id) = sessions::resolve_session_id_by_provider_id(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_id,
-        )
-        .await
-        {
-            if let Err(e) = sessions::finalize_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-            }
         }
     }
 
@@ -420,6 +374,73 @@ fn extract_provider_session_id(frame: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
+}
+
+/// Pure precedence between an explicit session id and the stream entry id.
+///
+/// - Explicit id present + entry id present + they differ → log the "session
+///   mismatch" warning (once) and prefer the **entry** id.
+/// - Explicit id present + entry id present + equal → use the explicit id.
+/// - Only one of them present → use whichever is present.
+///
+/// No DB access; unit-testable without a live Postgres.
+fn decide_explicit_or_entry(
+    bot_id: Uuid,
+    explicit_session_id: Option<Uuid>,
+    entry_session_id: Option<Uuid>,
+) -> Option<Uuid> {
+    match (explicit_session_id, entry_session_id) {
+        (Some(explicit), Some(entry)) => {
+            if explicit != entry {
+                tracing::warn!(
+                    bot_id = %bot_id,
+                    expected = %entry,
+                    got = %explicit,
+                    "session mismatch: explicit session_id differs from stream entry"
+                );
+                Some(entry)
+            } else {
+                Some(explicit)
+            }
+        }
+        (Some(explicit), None) => Some(explicit),
+        (None, entry) => entry,
+    }
+}
+
+/// Resolve which session_id a done/update frame refers to, by the 4-source
+/// precedence (explicit id > stream entry > provider_session_key > provider_session_id).
+/// On explicit-vs-entry mismatch, logs the warning and prefers the entry id.
+/// Returns None if nothing resolves.
+async fn resolve_session_id(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    frame: &Value,
+    stream_entry_session_id: Option<Uuid>,
+) -> Option<Uuid> {
+    // Sources 1-2: explicit id vs stream entry (pure, no DB).
+    if let Some(sid) =
+        decide_explicit_or_entry(bot_id, extract_session_id(frame), stream_entry_session_id)
+    {
+        return Some(sid);
+    }
+
+    // Source 3: provider_session_key → DB lookup (errors silently ignored).
+    if let Some(key) = extract_provider_session_key(frame) {
+        return sessions::resolve_session_id_by_key(db, bot_id, provider_account_id, &key)
+            .await
+            .ok();
+    }
+
+    // Source 4: provider_session_id → DB lookup (errors silently ignored).
+    if let Some(id) = extract_provider_session_id(frame) {
+        return sessions::resolve_session_id_by_provider_id(db, bot_id, provider_account_id, &id)
+            .await
+            .ok();
+    }
+
+    None
 }
 
 /// 处理 bot 主动发新消息（send 帧）。
@@ -583,62 +604,11 @@ async fn mark_session_alive(
     frame: &Value,
     stream_entry_session_id: Option<Uuid>,
 ) {
-    if let Some(session_id) = extract_session_id(frame) {
-        if let Some(entry_session_id) = stream_entry_session_id {
-            if entry_session_id != session_id {
-                tracing::warn!(
-                    bot_id = %bot_id,
-                    expected = %entry_session_id,
-                    got = %session_id,
-                    "session mismatch: explicit session_id differs from stream entry"
-                );
-                if let Err(e) = sessions::touch_session(db, entry_session_id).await {
-                    tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-                }
-            } else if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
-        } else if let Err(e) = sessions::touch_session(db, session_id).await {
+    if let Some(sid) =
+        resolve_session_id(db, bot_id, provider_account_id, frame, stream_entry_session_id).await
+    {
+        if let Err(e) = sessions::touch_session(db, sid).await {
             tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-        }
-        return;
-    }
-
-    if let Some(session_id) = stream_entry_session_id {
-        if let Err(e) = sessions::touch_session(db, session_id).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-        }
-        return;
-    }
-
-    if let Some(provider_session_key) = extract_provider_session_key(frame) {
-        if let Ok(session_id) = sessions::resolve_session_id_by_key(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_key,
-        )
-        .await
-        {
-            if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
-        }
-        return;
-    }
-
-    if let Some(provider_session_id) = extract_provider_session_id(frame) {
-        if let Ok(session_id) = sessions::resolve_session_id_by_provider_id(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_id,
-        )
-        .await
-        {
-            if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
         }
     }
 }
@@ -690,6 +660,68 @@ mod tests {
             session_id: None,
             finalized: false,
         }
+    }
+
+    // ── R9: session-id 解析优先级（纯逻辑，不依赖 DB）─────────────────────────
+
+    /// Source 1: 显式 session_id 存在且与 entry 一致 → 用显式 id。
+    #[test]
+    fn resolve_explicit_equals_entry_uses_explicit() {
+        let bot = Uuid::new_v4();
+        let sid = Uuid::new_v4();
+        assert_eq!(
+            decide_explicit_or_entry(bot, Some(sid), Some(sid)),
+            Some(sid)
+        );
+    }
+
+    /// Source 1 (mismatch): 显式与 entry 不一致 → 用 **entry** id（并告警）。
+    #[test]
+    fn resolve_explicit_mismatch_prefers_entry() {
+        let bot = Uuid::new_v4();
+        let explicit = Uuid::new_v4();
+        let entry = Uuid::new_v4();
+        assert_ne!(explicit, entry);
+        assert_eq!(
+            decide_explicit_or_entry(bot, Some(explicit), Some(entry)),
+            Some(entry),
+            "mismatch 必须落到 entry_session_id"
+        );
+    }
+
+    /// Source 1（仅显式）：只有显式 id、无 entry → 用显式 id。
+    #[test]
+    fn resolve_explicit_only_uses_explicit() {
+        let bot = Uuid::new_v4();
+        let explicit = Uuid::new_v4();
+        assert_eq!(
+            decide_explicit_or_entry(bot, Some(explicit), None),
+            Some(explicit)
+        );
+    }
+
+    /// Source 2: 无显式 id、有 entry → 用 entry id。
+    #[test]
+    fn resolve_entry_only_uses_entry() {
+        let bot = Uuid::new_v4();
+        let entry = Uuid::new_v4();
+        assert_eq!(decide_explicit_or_entry(bot, None, Some(entry)), Some(entry));
+    }
+
+    /// Sources 1-2 均无 → None（交给 provider_* 的 DB 分支处理）。
+    #[test]
+    fn resolve_no_explicit_no_entry_is_none() {
+        let bot = Uuid::new_v4();
+        assert_eq!(decide_explicit_or_entry(bot, None, None), None);
+    }
+
+    /// extract_session_id 解析帧里的显式 session_id（喂给 source 1）。
+    #[test]
+    fn extract_session_id_parses_frame() {
+        let sid = Uuid::new_v4();
+        let frame = json!({ "session_id": sid.to_string() });
+        assert_eq!(extract_session_id(&frame), Some(sid));
+        assert_eq!(extract_session_id(&json!({})), None);
     }
 
     /// R2 / I7：seq 由 Backend 单调盖戳，从 0 起每帧 +1。
