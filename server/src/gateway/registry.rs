@@ -14,6 +14,8 @@ use uuid::Uuid;
 pub trait BotLocator: Send + Sync {
     async fn dispatch_task(&self, bot_id: Uuid, task: Value) -> bool;
     async fn send_data(&self, bot_id: Uuid, frame: Value) -> bool;
+    /// True when the bot has both a control and a data WS bound (can receive pushes).
+    fn is_online(&self, bot_id: Uuid) -> bool;
 }
 
 /// 【WS 连接层接口】管理 bot 的 control/data WS 连接注册。
@@ -172,6 +174,10 @@ impl BotLocator for InProcessBotLocator {
             }
         }
         false
+    }
+
+    fn is_online(&self, bot_id: Uuid) -> bool {
+        InProcessBotLocator::is_online(self, bot_id)
     }
 }
 

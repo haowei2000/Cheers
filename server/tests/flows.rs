@@ -204,6 +204,9 @@ impl BotLocator for CountingBotLocator {
     async fn send_data(&self, _bot_id: Uuid, _frame: Value) -> bool {
         true
     }
+    fn is_online(&self, _bot_id: Uuid) -> bool {
+        true
+    }
 }
 
 /// 并发双触发同一 (trigger_msg_id, bot_id)：占位由 INSERT…ON CONFLICT 单点定胜负，

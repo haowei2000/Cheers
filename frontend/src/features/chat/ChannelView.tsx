@@ -1,12 +1,16 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Hash, Users, Loader2, PanelRight, Paperclip } from "lucide-react";
+import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree } from "lucide-react";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers } from "@/api/channels";
 import { MessageList } from "./MessageList";
 import { MessageComposer, type MentionCandidate } from "./MessageComposer";
 import { useChatRealtime } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
+import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { ChannelFilesDialog } from "./ChannelFilesDialog";
+import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
+import { ResolveRefContext, type RefClick } from "./workspaceLink";
+import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, Channel } from "@/types";
 
@@ -195,6 +199,64 @@ export function ChannelView({ channel }: Props) {
   });
   const [wbOpen, setWbOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [wsOpen, setWsOpen] = useState(false);
+  const [wsInit, setWsInit] = useState<{ botId?: string; path?: string }>({});
+  const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
+  const [wbTarget, setWbTarget] = useState<string | undefined>(undefined);
+  const [refError, setRefError] = useState<string | null>(null);
+
+  // Resolve a clicked file reference by PROVENANCE and TAKE THE USER TO where it
+  // lives — the channel files view (inbox), the workbench File panel (desk), or the
+  // workspace browser — instead of a silent download. Never assumes the bot followed
+  // a convention; degrades to a clear error popup (not a 404) when it resolves to nothing.
+  const resolveAndOpenRef = useCallback(
+    async ({ senderBotId, ref, files }: RefClick) => {
+      if (!channel) return;
+      const base = ref.split("/").pop() || ref;
+      const openInbox = (fileId: string) => {
+        setFilesFocus(fileId);
+        setFilesOpen(true);
+      };
+      // 1) Strongest signal: a file THIS message attached (an inbox deliverable).
+      const hit = (files || []).find((f) => (f.original_filename || "") === base);
+      if (hit) {
+        openInbox(hit.file_id);
+        return;
+      }
+      try {
+        const r = await resolveRef(channel.channel_id, ref, senderBotId);
+        if (r.store === "inbox" && r.file_id) {
+          openInbox(r.file_id);
+        } else if (r.store === "desk" && r.path) {
+          setWbTarget(r.path);
+          setWbOpen(true);
+        } else if (r.store === "workspace" && r.bot_id && r.path) {
+          // The workspace candidate is unprobed — verify the file actually exists on
+          // the bot's machine before dropping the user into the browser. If it
+          // doesn't, it lives nowhere we can reach → clear error, not a broken view.
+          try {
+            await getWorkspaceFile(channel.channel_id, r.bot_id, r.path);
+            setWsInit({ botId: r.bot_id, path: r.path });
+            setWsOpen(true);
+          } catch (e) {
+            const offline = String(e).includes("offline");
+            setRefError(
+              offline
+                ? `打不开「${base}」:这个文件在 bot「${senderBotId}」的机器上,但它的连接器当前不在线,暂时取不到。`
+                : `没找到「${base}」。\n它不在这条回复的附件、频道 Desk,工作区里也没有这个文件——bot 可能只是提到了它,并没有真的产出或分享。`
+            );
+          }
+        } else {
+          setRefError(
+            `没找到「${base}」。\n它不在这条回复的附件里,也不在频道的 Desk,更不在可达的工作区里——bot 可能提到了这个文件,但并没有真的产出或分享它。`
+          );
+        }
+      } catch (e) {
+        setRefError(`打开「${base}」失败:${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [channel]
+  );
 
   async function handleSend(
     content: string,
@@ -248,14 +310,30 @@ export function ChannelView({ channel }: Props) {
         </div>
         {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
         <button
-          onClick={() => setFilesOpen(true)}
+          onClick={() => {
+            setFilesFocus(undefined);
+            setFilesOpen(true);
+          }}
           title="频道文件"
           className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
         >
           <Paperclip className="w-4 h-4" />
         </button>
         <button
-          onClick={() => setWbOpen(true)}
+          onClick={() => {
+            setWsInit({});
+            setWsOpen(true);
+          }}
+          title="远程工作区"
+          className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+        >
+          <FolderTree className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => {
+            setWbTarget(undefined);
+            setWbOpen(true);
+          }}
           title="Workbench"
           className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
         >
@@ -269,13 +347,15 @@ export function ChannelView({ channel }: Props) {
           <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
         </div>
       ) : (
-        <MessageList
-          messages={messages}
-          currentUserId={user?.user_id}
-          hasMore={hasMore}
-          onLoadMore={loadMore}
-          loading={loadingMore}
-        />
+        <ResolveRefContext.Provider value={resolveAndOpenRef}>
+          <MessageList
+            messages={messages}
+            currentUserId={user?.user_id}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            loading={loadingMore}
+          />
+        </ResolveRefContext.Provider>
       )}
 
       {/* Composer */}
@@ -291,9 +371,23 @@ export function ChannelView({ channel }: Props) {
         onClose={() => setWbOpen(false)}
         channelId={channel.channel_id}
         sendResourceReq={sendResourceReq}
+        openFilePath={wbTarget}
       />
       {filesOpen && (
-        <ChannelFilesDialog channelId={channel.channel_id} onClose={() => setFilesOpen(false)} />
+        <ChannelFilesDialog
+          channelId={channel.channel_id}
+          onClose={() => setFilesOpen(false)}
+          focusFileId={filesFocus}
+        />
+      )}
+      {refError && <ErrorDialog message={refError} onClose={() => setRefError(null)} />}
+      {wsOpen && (
+        <RemoteWorkspaceDialog
+          channelId={channel.channel_id}
+          onClose={() => setWsOpen(false)}
+          initialBotId={wsInit.botId}
+          initialPath={wsInit.path}
+        />
       )}
     </div>
   );

@@ -393,6 +393,41 @@ impl RuntimeContext {
                     }
                 });
             }
+            DataInbound::WorkspaceReq {
+                req_id,
+                op,
+                path,
+                root,
+                content_b64,
+            } => {
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    let frame = match runtime
+                        .handle_workspace_req(&op, &path, root.as_deref(), content_b64.as_deref())
+                        .await
+                    {
+                        Ok(data) => DataOutbound::WorkspaceRes {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            req_id,
+                            ok: true,
+                            data: Some(data),
+                            error: None,
+                            code: None,
+                        },
+                        Err((code, msg)) => DataOutbound::WorkspaceRes {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            req_id,
+                            ok: false,
+                            data: None,
+                            error: Some(msg),
+                            code: Some(code),
+                        },
+                    };
+                    if let Err(e) = runtime.io.send_data(frame).await {
+                        tracing::warn!("workspace_res send failed: {e}");
+                    }
+                });
+            }
             DataInbound::Pong
             | DataInbound::ResumeAck { .. }
             | DataInbound::TerminalAck { .. }
@@ -477,6 +512,142 @@ impl RuntimeContext {
             );
         }
         Ok(())
+    }
+
+    /// Browse/read/write the agent's real workspace for the remote-workspace UI.
+    /// STRICTLY confined to `policy.workspace.allowed_roots`; `..` escapes are
+    /// rejected after canonicalization. Returns Err((code, message)) on violation.
+    async fn handle_workspace_req(
+        &self,
+        op: &str,
+        rel: &str,
+        root: Option<&str>,
+        content_b64: Option<&str>,
+    ) -> Result<Value, (String, String)> {
+        const MAX_READ: u64 = 10 * 1024 * 1024;
+        let err = |c: &str, m: String| (c.to_string(), m);
+
+        let roots = &self.config.policy.workspace.allowed_roots;
+        if roots.is_empty() {
+            return Err(err("E_NO_ROOT", "no workspace roots configured".into()));
+        }
+
+        // Pick the root: an explicit (allow-listed) one, else default_cwd, else first.
+        let chosen_root = match root {
+            Some(r) => {
+                let want = canonical_path(std::path::Path::new(r));
+                roots
+                    .iter()
+                    .find(|ar| canonical_path(ar) == want)
+                    .cloned()
+                    .ok_or_else(|| err("E_FORBIDDEN_ROOT", format!("root not allowed: {r}")))?
+            }
+            None => self
+                .config
+                .policy
+                .workspace
+                .default_cwd
+                .clone()
+                .filter(|c| roots.iter().any(|ar| canonical_path(ar) == canonical_path(c)))
+                .or_else(|| roots.first().cloned())
+                .ok_or_else(|| err("E_NO_ROOT", "no default workspace root".into()))?,
+        };
+        let root_canon = tokio::fs::canonicalize(&chosen_root)
+            .await
+            .map_err(|e| err("E_ROOT_MISSING", format!("root unavailable: {e}")))?;
+        let target = root_canon.join(rel.trim_start_matches('/'));
+
+        match op {
+            "ls" => {
+                let dir = tokio::fs::canonicalize(&target)
+                    .await
+                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
+                if !dir.starts_with(&root_canon) {
+                    return Err(err("E_FORBIDDEN_PATH", "path escapes workspace root".into()));
+                }
+                let mut rd = tokio::fs::read_dir(&dir)
+                    .await
+                    .map_err(|e| err("E_IO", e.to_string()))?;
+                let mut entries = Vec::new();
+                while let Some(ent) = rd.next_entry().await.map_err(|e| err("E_IO", e.to_string()))? {
+                    let name = ent.file_name().to_string_lossy().to_string();
+                    if name == ".git" {
+                        continue;
+                    }
+                    let md = ent.metadata().await.ok();
+                    let p = ent.path();
+                    let rel_path = p
+                        .strip_prefix(&root_canon)
+                        .unwrap_or(&p)
+                        .to_string_lossy()
+                        .to_string();
+                    entries.push(serde_json::json!({
+                        "name": name,
+                        "path": rel_path,
+                        "is_dir": md.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+                        "size_bytes": md.as_ref().map(|m| m.len()).unwrap_or(0),
+                    }));
+                }
+                entries.sort_by(|a, b| {
+                    let (ad, bd) = (a["is_dir"].as_bool().unwrap_or(false), b["is_dir"].as_bool().unwrap_or(false));
+                    bd.cmp(&ad)
+                        .then_with(|| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")))
+                });
+                Ok(serde_json::json!({
+                    "root": root_canon.to_string_lossy(),
+                    "path": rel.trim_start_matches('/'),
+                    "entries": entries,
+                }))
+            }
+            "read" => {
+                let file = tokio::fs::canonicalize(&target)
+                    .await
+                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
+                if !file.starts_with(&root_canon) {
+                    return Err(err("E_FORBIDDEN_PATH", "path escapes workspace root".into()));
+                }
+                let md = tokio::fs::metadata(&file).await.map_err(|e| err("E_IO", e.to_string()))?;
+                if md.is_dir() {
+                    return Err(err("E_IS_DIR", "path is a directory".into()));
+                }
+                if md.len() > MAX_READ {
+                    return Err(err("E_TOO_LARGE", format!("file exceeds {}MB read cap", MAX_READ / 1024 / 1024)));
+                }
+                let bytes = tokio::fs::read(&file).await.map_err(|e| err("E_IO", e.to_string()))?;
+                let filename = file.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
+                let content_type = mime_guess::from_path(&filename)
+                    .first_raw()
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                let is_text = !bytes.contains(&0) && std::str::from_utf8(&bytes).is_ok();
+                Ok(serde_json::json!({
+                    "root": root_canon.to_string_lossy(),
+                    "path": rel.trim_start_matches('/'),
+                    "filename": filename,
+                    "content_type": content_type,
+                    "size_bytes": bytes.len(),
+                    "is_text": is_text,
+                    "content": if is_text { Some(String::from_utf8_lossy(&bytes).to_string()) } else { None },
+                    "content_b64": BASE64.encode(&bytes),
+                }))
+            }
+            "write" => {
+                let b64 = content_b64.ok_or_else(|| err("E_INVALID", "content_b64 required".into()))?;
+                let bytes = BASE64.decode(b64).map_err(|e| err("E_INVALID", format!("bad base64: {e}")))?;
+                let parent = target.parent().ok_or_else(|| err("E_INVALID", "invalid path".into()))?;
+                let parent_canon = tokio::fs::canonicalize(parent)
+                    .await
+                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
+                if !parent_canon.starts_with(&root_canon) {
+                    return Err(err("E_FORBIDDEN_PATH", "path escapes workspace root".into()));
+                }
+                let filename = target.file_name().ok_or_else(|| err("E_INVALID", "no filename".into()))?;
+                let dest = parent_canon.join(filename);
+                tokio::fs::write(&dest, &bytes).await.map_err(|e| err("E_IO", e.to_string()))?;
+                Ok(serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }))
+            }
+            other => Err(err("E_UNKNOWN_OP", format!("unknown workspace op: {other}"))),
+        }
     }
 
     async fn handle_adapter_event(self: Arc<Self>, event: RuntimeEvent) -> anyhow::Result<()> {
@@ -2359,6 +2530,19 @@ fn permission_option_id_for_resolution(params: &Value, resolution: &str) -> Opti
         })
 }
 
+/// Best-effort canonicalization for comparing workspace roots: expands a leading
+/// `~`, then canonicalizes; falls back to the expanded path if it doesn't exist.
+fn canonical_path(p: &std::path::Path) -> std::path::PathBuf {
+    let expanded = if let Ok(rest) = p.strip_prefix("~") {
+        std::env::var_os("HOME")
+            .map(|home| std::path::PathBuf::from(home).join(rest))
+            .unwrap_or_else(|| p.to_path_buf())
+    } else {
+        p.to_path_buf()
+    };
+    std::fs::canonicalize(&expanded).unwrap_or(expanded)
+}
+
 fn resolve_mcp_server_command() -> String {
     if let Ok(path) = env::var("CHEERS_MCP_SERVER_BIN") {
         if !path.trim().is_empty() {
@@ -2490,6 +2674,7 @@ fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         DataOutbound::Auth { .. }
         | DataOutbound::Ping
         | DataOutbound::Resume { .. }
+        | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::FileUpload { .. } => None,
     }
 }
@@ -2509,6 +2694,7 @@ fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityEnvelope) {
         DataOutbound::Auth { .. }
         | DataOutbound::Ping
         | DataOutbound::Resume { .. }
+        | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::FileUpload { .. } => {}
     }
 }

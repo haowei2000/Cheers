@@ -6,4 +6,5 @@ pub mod realtime;
 pub mod redis_registry;
 pub mod registry;
 pub mod stream;
+pub mod workspace_rpc;
 pub mod ws;

@@ -187,6 +187,24 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/files/:file_id/realize",
             post(api::files::realize_file),
         )
+        // ── 远程工作区浏览（按 bot_id 路由到对应连接器机器）──────────────────
+        .route(
+            "/api/v1/channels/:channel_id/workspace/bots",
+            get(api::workspace::list_workspace_bots),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/tree",
+            get(api::workspace::get_tree),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/file",
+            get(api::workspace::get_file).put(api::workspace::put_file),
+        )
+        // 出处解析:把回复里点击的文件引用解析到正确的 store(inbox/desk/workspace)
+        .route(
+            "/api/v1/channels/:channel_id/resolve-ref",
+            post(api::workspace::resolve_ref),
+        )
         .route(
             "/api/v1/friends",
             get(api::friends::list_friends)

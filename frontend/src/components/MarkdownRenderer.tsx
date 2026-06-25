@@ -1,5 +1,7 @@
+import { useContext } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { PathOpenContext, looksLikePath } from "@/features/chat/workspaceLink";
 import hljs from "highlight.js";
 import { cn } from "@/lib/cn";
 
@@ -37,6 +39,7 @@ function CodeBlock({
 }
 
 export function MarkdownRenderer({ content, className }: Props) {
+  const onPath = useContext(PathOpenContext);
   return (
     <ReactMarkdown
       className={cn("prose", className)}
@@ -50,6 +53,19 @@ export function MarkdownRenderer({ content, className }: Props) {
           const text = String(children).replace(/\n$/, "");
           if (language || (cls && cls.includes("language-"))) {
             return <CodeBlock language={language}>{text}</CodeBlock>;
+          }
+          // Linkify a backtick-wrapped path to the remote-workspace browser.
+          if (onPath && looksLikePath(text)) {
+            return (
+              <button
+                type="button"
+                onClick={() => onPath(text)}
+                title="在远程工作区打开"
+                className="bg-zinc-800 px-1 py-0.5 rounded text-sm text-sky-400 hover:text-sky-300 hover:underline"
+              >
+                {children} ↗
+              </button>
+            );
           }
           return <code className="bg-zinc-800 px-1 py-0.5 rounded text-sm">{children}</code>;
         },

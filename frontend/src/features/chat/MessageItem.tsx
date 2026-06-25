@@ -1,9 +1,10 @@
-import { memo } from "react";
+import { memo, useContext } from "react";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
+import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import type { Message } from "@/types";
 
 interface Props {
@@ -114,6 +115,15 @@ export const MessageItem = memo(function MessageItem({
 const FILE_TOKEN = /<#file:[^>]+>/g;
 
 function MessageBody({ message }: { message: Message }) {
+  const resolveRefClick = useContext(ResolveRefContext);
+  // Bind a clicked reference to THIS message's bot + its own attachments, so the
+  // resolver can prefer "a file this turn actually produced" and pick the right
+  // store (multi-bot ambiguity resolved for free).
+  const pathOpen =
+    message.sender_type === "bot" && resolveRefClick
+      ? (ref: string) =>
+          resolveRefClick({ senderBotId: message.sender_id, ref, files: message.files })
+      : null;
   const files = message.files ?? [];
   const content = (message.content ?? "").replace(FILE_TOKEN, "").trim();
   // Treat a pending bot placeholder (is_partial) as active too — the agent
@@ -155,7 +165,9 @@ function MessageBody({ message }: { message: Message }) {
     <div className="relative">
       {content &&
         (hasMarkdown ? (
-          <MarkdownRenderer content={content} className="text-sm" />
+          <PathOpenContext.Provider value={pathOpen}>
+            <MarkdownRenderer content={content} className="text-sm" />
+          </PathOpenContext.Provider>
         ) : (
           <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">
             {content}

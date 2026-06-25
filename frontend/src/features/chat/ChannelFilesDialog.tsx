@@ -9,9 +9,11 @@ import { FileGrid } from "./fileView";
 export function ChannelFilesDialog({
   channelId,
   onClose,
+  focusFileId,
 }: {
   channelId: string;
   onClose: () => void;
+  focusFileId?: string;
 }) {
   const [files, setFiles] = useState<FileInfo[] | null>(null);
 
@@ -35,7 +37,7 @@ export function ChannelFilesDialog({
         </div>
       ) : (
         <div className="max-h-[60vh] overflow-auto">
-          <FileGrid files={files} />
+          <FileGrid files={files} focusFileId={focusFileId} />
         </div>
       )}
     </Dialog>

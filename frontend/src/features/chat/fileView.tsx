@@ -162,13 +162,36 @@ export function FileTile({ file }: { file: FileInfo }) {
   );
 }
 
-export function FileGrid({ files, className = "" }: { files: FileInfo[]; className?: string }) {
+export function FileGrid({
+  files,
+  className = "",
+  focusFileId,
+}: {
+  files: FileInfo[];
+  className?: string;
+  focusFileId?: string;
+}) {
+  const focusRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (focusFileId && focusRef.current) {
+      focusRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [focusFileId]);
   if (!files.length) return null;
   return (
     <div className={`flex flex-wrap gap-2 ${className}`}>
-      {files.map((f) => (
-        <FileTile key={f.file_id} file={f} />
-      ))}
+      {files.map((f) => {
+        const focused = f.file_id === focusFileId;
+        return (
+          <div
+            key={f.file_id}
+            ref={focused ? focusRef : undefined}
+            className={focused ? "rounded-lg ring-2 ring-sky-500/70 ring-offset-2 ring-offset-zinc-900" : undefined}
+          >
+            <FileTile file={f} />
+          </div>
+        );
+      })}
     </div>
   );
 }

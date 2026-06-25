@@ -8,6 +8,7 @@ use crate::{
         realtime::{fanout::Fanout, manager::ConnectionManager},
         registry::{BotLocator, BotRegistry},
         stream::StreamRegistry,
+        workspace_rpc::WorkspaceRpc,
     },
 };
 
@@ -27,4 +28,6 @@ pub struct AppState {
     pub bot_registry: Arc<dyn BotRegistry>,
     /// delta/done 回流注册表（msg_id → StreamEntry）。
     pub stream_registry: Arc<StreamRegistry>,
+    /// 远程工作区 RPC：gateway→connector 的 workspace_req/res 关联表。
+    pub workspace_rpc: Arc<WorkspaceRpc>,
 }

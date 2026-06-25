@@ -73,6 +73,12 @@ impl BotLocator for RedisBotLocator {
             .unwrap_or(0);
         receivers > 0
     }
+
+    fn is_online(&self, _bot_id: Uuid) -> bool {
+        // Multi-instance: liveness would need a Redis presence key; not used in the
+        // single-instance path. Conservatively report false.
+        false
+    }
 }
 
 // ── RedisBotRegistry（连接绑定侧）───────────────────────────────────────────

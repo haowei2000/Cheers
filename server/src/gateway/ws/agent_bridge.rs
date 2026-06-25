@@ -536,6 +536,13 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             let _ = ws_send(socket, &resp).await;
         }
 
+        // ── 远程工作区 RPC 响应（connector → gateway，按 req_id 关联）──────────
+        "workspace_res" => {
+            if let Some(req_id) = frame.get("req_id").and_then(Value::as_str) {
+                state.workspace_rpc.resolve(req_id, frame.clone());
+            }
+        }
+
         // ── 审批请求（转发给频道内用户）─────────────────────────────────────
         "permission_request" => {
             let client_msg_id = client_msg_id(frame);

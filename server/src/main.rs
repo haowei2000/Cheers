@@ -72,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
     let bot_locator = locator as Arc<dyn gateway::registry::BotLocator>;
 
     let stream_registry = StreamRegistry::new();
+    let workspace_rpc = Arc::new(gateway::workspace_rpc::WorkspaceRpc::new());
 
     let state = AppState {
         db,
@@ -82,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
         bot_locator,
         bot_registry,
         stream_registry,
+        workspace_rpc,
     };
 
     let app = router::build(state);

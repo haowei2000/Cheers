@@ -8,4 +8,5 @@ pub mod mcp;
 pub mod messages;
 pub mod middleware;
 pub mod workbench;
+pub mod workspace;
 pub mod workspaces;

@@ -31,6 +31,9 @@ export interface PanelContext {
   views: { path: string; title?: string; renderer?: string; config?: unknown }[];
   /** Toggle a file as a workbench tab. */
   toggleView: (path: string, title?: string) => void;
+  /** Deep-link target: a file path the File panel should auto-open (e.g. from a
+   *  clicked Desk reference in a bot reply). Cleared by the consumer after opening. */
+  openTarget?: string | null;
 }
 
 export interface PanelDef {

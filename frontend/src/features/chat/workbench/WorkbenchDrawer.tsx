@@ -17,6 +17,8 @@ interface Props {
   onClose: () => void;
   channelId: string;
   sendResourceReq: SendResourceReq;
+  /** Deep-link: open the File panel focused on this path (e.g. a clicked Desk ref). */
+  openFilePath?: string;
 }
 
 interface WbConfig {
@@ -46,7 +48,7 @@ const WB_DOC =
 // plus the always-on File panel. Installing global templates / plugins lives in
 // Settings → Workbench extensions (admin); the drawer only CONSUMES them, and offers
 // a no-persistence temporary upload to anyone.
-export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: Props) {
+export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -208,9 +210,15 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq }: P
       setBinding,
       views,
       toggleView,
+      openTarget: openFilePath ?? null,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView]
+    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath]
   );
+
+  // Deep-link: when opened with a target Desk path, focus the always-on File panel.
+  useEffect(() => {
+    if (open && openFilePath) setActive("files");
+  }, [open, openFilePath]);
   const activePanel = panels.find((p) => p.id === active) ?? panels[0];
 
   const switchScenario = useCallback(

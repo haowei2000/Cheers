@@ -956,6 +956,23 @@ pub enum DataInbound {
         remote_ref: String,
         channel_id: String,
     },
+    /// Gateway → connector: browse/read/write the agent's real workspace, confined
+    /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
+    /// correlated by `req_id`. `op` ∈ { "ls", "read", "write" }.
+    #[serde(rename = "workspace_req")]
+    WorkspaceReq {
+        req_id: String,
+        op: String,
+        #[serde(default)]
+        path: String,
+        /// Which allowed root to resolve `path` against (absolute path string).
+        /// Defaults to the connector's default_cwd / first allowed root.
+        #[serde(default)]
+        root: Option<String>,
+        /// base64 file bytes for `op == "write"`.
+        #[serde(default)]
+        content_b64: Option<String>,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -1081,6 +1098,20 @@ pub enum DataOutbound {
         encrypted_payload: Option<Value>,
         #[serde(default)]
         acp_capability: Option<AcpCapabilityEnvelope>,
+    },
+    /// Connector → gateway: reply to a `workspace_req`, correlated by `req_id`.
+    #[serde(rename = "workspace_res")]
+    WorkspaceRes {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        req_id: String,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
     },
     #[serde(rename = "permission_request")]
     PermissionRequest {

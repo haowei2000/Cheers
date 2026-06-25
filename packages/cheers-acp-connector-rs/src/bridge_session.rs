@@ -92,6 +92,7 @@ impl BridgeReady {
                 "permission_request": true,
                 "config_options": true,
                 "trace": true,
+                "workspace": true,
             })),
         }
     }

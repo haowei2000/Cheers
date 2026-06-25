@@ -47,6 +47,12 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
     void refresh();
   }, [refresh]);
 
+  // Deep-link: auto-select a file the user clicked elsewhere (e.g. a Desk ref in a
+  // bot reply). Fires whenever the target path changes.
+  useEffect(() => {
+    if (ctx.openTarget) setSelected(ctx.openTarget);
+  }, [ctx.openTarget]);
+
   const onSave = useCallback(async () => {
     await editor.save();
     void refresh(); // size/quota may have changed; keep the list fresh
