@@ -528,6 +528,14 @@ impl RuntimeContext {
         let (tx, rx) = oneshot::channel();
         let req_id = request.req_id.clone();
         let resource = request.resource.clone();
+        // Captured before request.params is moved into the ResourceReq frame below;
+        // used to attach files the agent creates this turn to its reply (see end).
+        let attach_channel_id = request
+            .params
+            .as_ref()
+            .and_then(|p| p.get("channel_id"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
         self.shared
             .lock()
             .await
@@ -558,6 +566,31 @@ impl RuntimeContext {
             error: Some("resource response timed out".to_string()),
             code: Some("RESOURCE_TIMEOUT".to_string()),
         });
+        // inbox_deliver / inbox_stage create a channel file; record its id on the
+        // active run so the Done reply attaches it as a chat attachment.
+        if response.ok && (resource == "channel.files.create" || resource == "channel.files.stage")
+        {
+            if let Some(file_id) = response
+                .data
+                .as_ref()
+                .and_then(|d| d.get("file_id"))
+                .and_then(Value::as_str)
+            {
+                let runs: Vec<Arc<Mutex<ActiveRun>>> =
+                    self.shared.lock().await.by_msg.values().cloned().collect();
+                for run in runs {
+                    let mut guard = run.lock().await;
+                    let matches = match attach_channel_id.as_deref() {
+                        Some(c) => c == guard.channel_id,
+                        None => true,
+                    };
+                    if matches {
+                        guard.created_file_ids.push(file_id.to_string());
+                        break;
+                    }
+                }
+            }
+        }
         let _ = request.respond_to.send(response);
         Ok(())
     }
@@ -601,6 +634,7 @@ impl RuntimeContext {
             delta_seq: 0,
             trace_seq: 0,
             text: String::new(),
+            created_file_ids: Vec::new(),
             streaming_started: false,
         }));
         {
@@ -682,14 +716,17 @@ impl RuntimeContext {
                     result.stop_reason.as_deref(),
                 )
                 .await?;
-                let final_text = run.lock().await.text.clone();
+                let (final_text, file_ids) = {
+                    let guard = run.lock().await;
+                    (guard.text.clone(), guard.created_file_ids.clone())
+                };
                 let terminal_ack = self
                     .io
                     .send_data_expect_terminal_ack(DataOutbound::Done {
                         v: BRIDGE_PROTOCOL_VERSION,
                         client_msg_id: Uuid::new_v4().to_string(),
                         msg_id: task.msg_id.clone(),
-                        file_ids: Vec::new(),
+                        file_ids,
                         mention_ids: Vec::new(),
                         content: Some(final_text),
                         provider_session_key: Some(task.provider_session_key.clone()),
@@ -1544,6 +1581,10 @@ struct ActiveRun {
     delta_seq: u64,
     trace_seq: u64,
     text: String,
+    /// File ids the agent created this turn via inbox_deliver / inbox_stage
+    /// (channel.files.create / .stage). Attached to the Done reply so they surface
+    /// as chat attachments — a staged file otherwise has no UI entry point to realize.
+    created_file_ids: Vec<String>,
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,

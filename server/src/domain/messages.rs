@@ -822,7 +822,7 @@ fn normalize_message_file_refs(
     normalized
 }
 
-async fn load_message_files(
+pub(crate) async fn load_message_files(
     db: &PgPool,
     file_ids: &[String],
 ) -> Result<Vec<MessageFileRef>, AppError> {
