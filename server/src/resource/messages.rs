@@ -264,6 +264,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         mentions: mention_dtos,
         files,
         created_at: now,
+        content_data: None,
     };
 
     Ok(serde_json::to_value(dto).unwrap_or_else(|_| {

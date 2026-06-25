@@ -6,6 +6,7 @@ import type { Message } from "@/types";
 interface Props {
   messages: Message[];
   currentUserId?: string;
+  channelId?: string;
   hasMore?: boolean;
   onLoadMore?: () => void;
   loading?: boolean;
@@ -14,6 +15,7 @@ interface Props {
 export function MessageList({
   messages,
   currentUserId,
+  channelId,
   hasMore,
   onLoadMore,
   loading,
@@ -97,6 +99,7 @@ export function MessageList({
               message={msg}
               isConsecutive={!!isConsecutive}
               currentUserId={currentUserId}
+              channelId={channelId}
             />
           </div>
         );

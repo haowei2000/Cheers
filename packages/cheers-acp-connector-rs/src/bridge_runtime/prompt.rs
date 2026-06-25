@@ -252,3 +252,52 @@ pub(super) fn resolve_mcp_server_command() -> String {
     }
     "cheers-mcp-server".to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn options() -> Value {
+        json!({
+            "options": [
+                {"optionId": "a1", "kind": "allow_once",    "name": "Allow"},
+                {"optionId": "a2", "kind": "allow_always",  "name": "Allow always"},
+                {"optionId": "r1", "kind": "reject_once",   "name": "Reject"},
+                {"optionId": "r2", "kind": "reject_always", "name": "Reject always"},
+            ]
+        })
+    }
+
+    #[test]
+    fn allow_resolves_to_first_allow_kind() {
+        // "allow" matches the first option whose kind starts with "allow".
+        assert_eq!(
+            permission_option_id_for_resolution(&options(), "allow"),
+            Some("a1".to_string())
+        );
+    }
+
+    #[test]
+    fn reject_resolves_to_reject_kind_not_cancelled() {
+        // Regression: a rejection must map to the reject-kind optionId (ACP
+        // `selected`), never silently collapse to `cancelled`.
+        assert_eq!(
+            permission_option_id_for_resolution(&options(), "reject"),
+            Some("r1".to_string())
+        );
+        // "deny" is accepted as an alias for "reject".
+        assert_eq!(
+            permission_option_id_for_resolution(&options(), "deny"),
+            Some("r1".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_resolution_yields_none() {
+        assert_eq!(
+            permission_option_id_for_resolution(&options(), "maybe"),
+            None
+        );
+    }
+}

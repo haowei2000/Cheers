@@ -153,6 +153,7 @@ pub async fn create_message(
             .collect(),
         files: load_message_files(&db, &file_ids).await?,
         created_at: now,
+        content_data: None,
     };
 
     // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
@@ -507,7 +508,7 @@ async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(
 const MESSAGE_LIST_SELECT: &str = "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
         m.channel_seq, u.display_name AS sender_name,
         m.content, m.msg_type, m.is_partial, m.file_ids,
-        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at, m.content_data
  FROM messages m
  LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id";
 
