@@ -1,6 +1,6 @@
 # Engineering Execution Roadmap
 
-> 版本：v1.6（2026-06-25）—— M3 进行中：R8 错误上下文 · R11 拆 bridge_runtime · R13 文档对齐（本批）
+> 版本：v1.7（2026-06-25）—— M3 收口：R8 错误上下文 · R9 session 解析合并 · R10 sqlx 样板 · R11 拆 bridge_runtime(+impl) · 孤儿占位回收器 · R13 文档对齐（R12 长期搁置）
 > 版本：v1.5（2026-06-18）—— M0 完成：R1（进程内）·R3 背压·R4-1 单测·R4-2 集成·R5 双派发
 > 性质：**执行路线图** —— 把架构现状转成可落地的里程碑序列。
 > 与其他文档的关系：
@@ -148,7 +148,12 @@ R1-B + R7（多实例）· OpenTelemetry · 权限审计日志。即 Phase 3 —
   - [x] DM 会话域：DM = `type='dm'` channel + find-or-create + personal workspace + 前端 UI（迁移 0013–0016）。topic 已砍
   - [x] Grant/trust_level：**不实现**（channel-role 唯一事实源）
   - [x] 延后/砍：RAG · Lens/公告 · todos/templates/keychain/ai_models（有意裁掉）
-- [ ] **M3** 加固 & 文档对齐 ← **进行中（分支 `feat/m3-hardening`，2026-06-24 起）**
-  - [x] R8 错误上下文：内部错误改为 `tracing` 记录而非吞掉（不再用 `map_err(|_| "db error")` 静默；commit `e08e5bf1`）
-  - [x] R11 拆 `bridge_runtime.rs`（2.9k 行 → 多个子模块，connector 运行时循环；commit `4377027c`）
+- [x] **M3** 加固 & 文档对齐 ✅ **收口（分支 `feat/m3-hardening`，2026-06-25）**——加固项全部落地
+  - [x] R8 错误上下文：内部错误改为 `tracing` 记录而非吞掉（`internal_err`/`db_err`/`log_db_err` 助手，76 处转换；输入校验类 `|_|` 有意保留；commit `e08e5bf1`）
+  - [x] R9 session 解析合并：抽 `resolve_session_id` + 纯函数 `decide_explicit_or_entry`，`handle_done`/`mark_session_alive` 两处共用（4 来源优先级 + 6 单测；commit `16eae1f1`）
+  - [x] R10 sqlx 样板削减：`messages.rs`/`dispatcher.rs` DTO 取数改 `query_as` + `#[derive(FromRow)]`（`try_get` 40→18；`stream.rs` 因严格/容错混用有意保留；commit `cda69f71`）
+  - [x] R11 拆 `bridge_runtime.rs`（2.9k 行 → `mod`+`io`/`prompt`/`signing`/`frames`；commit `4377027c`）+ 拆 `RuntimeContext` impl（config/permission 组，`mod.rs` 1973→1576；commit `ae6f35e3`）
+  - [x] 孤儿占位回收器（流程 8 缺口）：启动 + 周期扫描，仅回收「早于 threshold 且无存活流」的占位，finalize 为 `[bot offline]`（env 可调阈值，默认 15min；commit `1e644c8f`）
+  - [x] R13 文档对齐：§2.6 差异表逐条处置（GATEWAY_CODE_ARCH 重写目录树、AGENT_BRIDGE_RESOURCE 刷新词表、BOT_PERMISSION 现状标注；commit `157d7087`）
+  - [ ] R12 UUID 列迁移：长期 / 可选，未启动
 - [ ] **M4** 扩容（HA 触发）
