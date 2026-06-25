@@ -94,6 +94,10 @@ pub struct MessageDto {
     pub mentions: Vec<MessageMention>,
     pub files: Vec<MessageFileRef>,
     pub created_at: DateTime<Utc>,
+    /// Structured payload for system messages (e.g. ACP approval cards). NULL
+    /// for plain chat messages.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub content_data: Option<Value>,
 }
 
 impl MessageDto {
@@ -125,6 +129,7 @@ impl MessageDto {
             mentions: Vec::new(),
             files: Vec::new(),
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
+            content_data: row.try_get::<Value, _>("content_data").ok(),
         }
     }
 }

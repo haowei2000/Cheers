@@ -196,16 +196,19 @@ impl RuntimeContext {
         let Some(pending) = pending else {
             return Ok(());
         };
-        let outcome = if resolution.resolution == "allow" {
-            resolution
-                .option_id
-                .clone()
-                .or_else(|| permission_option_id_for_resolution(&pending.params, "allow"))
-                .map(|option_id| PermissionOutcome::Selected { option_id })
-                .unwrap_or(PermissionOutcome::Cancelled)
-        } else {
-            PermissionOutcome::Cancelled
-        };
+        // ACP has no distinct "deny" outcome: a rejection is `selected` with a
+        // reject-kind optionId. `cancelled` means the whole turn was aborted —
+        // NOT "the user said no". So honor an explicit option_id for BOTH allow
+        // and reject; only fall back to Cancelled when no option can be resolved
+        // (e.g. a bare "cancel" with nothing selected).
+        let outcome = resolution
+            .option_id
+            .clone()
+            .or_else(|| {
+                permission_option_id_for_resolution(&pending.params, &resolution.resolution)
+            })
+            .map(|option_id| PermissionOutcome::Selected { option_id })
+            .unwrap_or(PermissionOutcome::Cancelled);
         let _ = pending.respond_to.send(outcome);
         Ok(())
     }

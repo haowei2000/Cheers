@@ -62,6 +62,31 @@ export interface MessageMention {
   display_name?: string | null;
 }
 
+/** One ACP permission option, as forwarded by the connector (kind passthrough). */
+export interface PermissionOption {
+  option_id?: string;
+  optionId?: string;
+  kind?: string; // allow_once | allow_always | reject_once | reject_always
+  name?: string;
+  description?: string;
+}
+
+/** content_data payload of a `msg_type: "permission"` message. */
+export interface PermissionContentData {
+  kind?: "agent_bridge_permission_request";
+  request_id?: string;
+  title?: string;
+  body?: string;
+  tool?: { name?: string; kind?: string; raw_input?: unknown } | null;
+  options?: PermissionOption[];
+  bot_owner_id?: string;
+  resolved?: boolean;
+  resolved_by?: string;
+  resolved_at?: string;
+  chosen_option_id?: string;
+  chosen_kind?: string;
+}
+
 export interface Message {
   msg_id: string;
   channel_seq?: number;
@@ -84,6 +109,8 @@ export interface Message {
   is_deleted?: boolean;
   is_partial?: boolean;
   error?: string | null;
+  /** Structured payload for system messages (ACP approval cards, etc.). */
+  content_data?: PermissionContentData | Record<string, unknown> | null;
   _streaming?: boolean;
   /** Latest agent progress (trace) title shown while streaming. */
   _trace?: string | null;

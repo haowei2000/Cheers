@@ -5,17 +5,18 @@ import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
+import { PermissionCard } from "./PermissionCard";
 import type { Message } from "@/types";
 
 interface Props {
   message: Message;
   isConsecutive?: boolean;
   currentUserId?: string;
+  channelId?: string;
 }
 
 const SYSTEM_TYPES = new Set([
   "routing",
-  "permission",
   "announcement",
   "notification",
 ]);
@@ -36,6 +37,7 @@ export const MessageItem = memo(function MessageItem({
   message,
   isConsecutive,
   currentUserId,
+  channelId,
 }: Props) {
   if (message.is_deleted) {
     return (
@@ -46,6 +48,16 @@ export const MessageItem = memo(function MessageItem({
           This message was deleted
         </span>
       </div>
+    );
+  }
+
+  if (message.msg_type === "permission") {
+    return (
+      <PermissionCard
+        message={message}
+        channelId={channelId}
+        currentUserId={currentUserId}
+      />
     );
   }
 

@@ -351,6 +351,7 @@ export function ChannelView({ channel }: Props) {
           <MessageList
             messages={messages}
             currentUserId={user?.user_id}
+            channelId={channel.channel_id}
             hasMore={hasMore}
             onLoadMore={loadMore}
             loading={loadingMore}

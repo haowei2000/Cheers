@@ -1,4 +1,5 @@
 pub mod acp_capability;
+pub mod approval;
 pub mod auth;
 pub mod bots;
 pub mod channels;

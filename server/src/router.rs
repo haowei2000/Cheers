@@ -135,6 +135,27 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
             post(api::messages::cancel_message),
         )
+        // ── ACP per-operation approval (docs/arch/ACP_APPROVAL_FLOW.md) ──────
+        .route(
+            "/api/v1/channels/:channel_id/permissions/:request_id/resolve",
+            post(api::approval::resolve_permission),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/permissions/:request_id/request-access",
+            post(api::approval::request_access),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/permissions/audit",
+            get(api::approval::list_audit),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/approvers",
+            get(api::approval::list_approvers).post(api::approval::grant_approver),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/approvers/:user_id",
+            delete(api::approval::revoke_approver),
+        )
         .route(
             "/api/v1/bots",
             get(api::bots::list_bots).post(api::bots::create_bot),
