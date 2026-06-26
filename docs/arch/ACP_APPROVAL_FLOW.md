@@ -29,6 +29,82 @@
 
 ---
 
+## 0.5 权限三层职责模型（**最重要，先读这个**）
+
+> **核心原则**：**「要不要审批」由 agent 侧决定；connector 只决定「审批消息要不要回频道」；平台只决定「谁能裁决 + 审计」。** 平台与 connector **都不执行工具、也不是是否询问的决策者**——真正的执行权限控制在 **agent 侧**（claude-agent-acp + Claude Code 设置）。
+
+```
+┌─ Agent 侧（claude-agent-acp + Claude Code）──────────────────────────┐
+│  决定「这次工具调用要不要审批」：                                      │
+│   · permission mode（default / acceptEdits / plan / bypassPermissions）│
+│   · allow / deny 规则（~/.claude/settings*.json、项目 .claude/…）      │
+│  → 命中 allow 规则 or bypassPermissions → 直接执行，**永不发审批请求**  │
+│  → 否则调用 client.requestPermission（session/request_permission）     │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │ ACP session/request_permission（仅当 agent 决定要问）
+┌───────────────────────────▼─ Connector（daemon，本地事件网关）────────┐
+│  **不执行工具、不决定要不要问**；只决定这条审批请求的去向：            │
+│   · auto_allow=true        → 本地直接答 allow（工具继续），**不回频道** │
+│   · forward_to_backend=true→ 把审批消息**转发回频道**，等人裁决         │
+│   · 两者皆否               → 本地直接拒                                 │
+│   · wait_timeout_ms/on_timeout → 等不到裁决就按超时动作                 │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │ permission_request 帧（仅当 forward_to_backend）
+┌───────────────────────────▼─ Platform（网关 + 前端）──────────────────┐
+│  落库 + 广播审批卡；决定 **谁能点**（bot owner ∪ 委托人，§2）；审计。   │
+│  裁决经控制帧 permission_resolution 回灌给 agent。                      │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+### 怎么配置（按层）
+
+**① Agent 侧 —— 决定「要不要问」**
+
+| 想要的效果 | 配法 |
+|---|---|
+| 风险操作弹审批、安全工具静默 | mode=`default`（默认）+ 把常用安全工具放进 allow 规则 |
+| 编辑文件自动放行、其余照问 | mode=`acceptEdits` |
+| 只读规划、任何动作都先问 | mode=`plan` |
+| **全部静默执行（永不问）** | mode=`bypassPermissions` ← 等于「全权限」 |
+
+- **mode 配在 connector toml**：`[accounts.<name>.adapter] permission_mode = "default"`
+  → connector 在 `session/new`/`load` 后调 `session/set_mode`
+  → claude-agent-acp `session.query.setPermissionMode(modeId)`（`acp-agent.js:1004`）。
+- **allow / deny 规则**：Claude Code 的 `~/.claude/settings.json`、`~/.claude/settings.local.json`、
+  **项目** `<cwd>/.claude/settings.local.json` 的 `permissions.allow[]`。**命中即静默执行,不发审批请求。**
+  > ⚠️ 实战坑：bot 的 cwd（如 `~/.cheers/workspace`）里若 `permissions.allow` 放行了 `mcp__cheers__*`、
+  > `Write`、`Edit`、`Bash(git *)` 等,这些操作**永远不会弹卡**——这是 agent 侧的决定,不是平台的 bug。
+  > 想看到卡片,要么用**没被 allow 的操作**(如裸 `Bash(ls -la)`),要么把对应条目从 allow 列表移除。
+
+**② Connector 侧 —— 决定「要不要回频道」**（`[accounts.<name>.policy.permission]`）
+
+| 字段 | 作用 |
+|---|---|
+| `auto_allow` | true=本地直接放行、**不回频道**；false=按下面转发 |
+| `forward_to_backend` | true=审批消息**转发回频道**等人裁决；false=本地直接拒 |
+| `wait_timeout_ms` / `on_timeout` | 等不到裁决的超时与动作（`cancel`/`deny`） |
+
+> 这就是你说的「connector 只会阻止/放行消息回频道」。它**不改变 agent 是否询问**——agent 没问,这里没东西可转发。
+
+**③ Platform 侧 —— 决定「谁能裁决」+ 审计**：见 §2（裁决人集合）、§4（审计表）。
+
+### 排障：「为什么没弹卡」决策树
+
+```
+agent 直接执行了，没弹卡
+  → agent 侧没发审批请求：mode=bypassPermissions？或该操作命中了 allow 规则？
+     用没被 allow 的裸命令(ls -la / echo)在 default 模式下重试。
+agent 卡住不动、也没卡片
+  → 多半 agent 侧发了请求但 connector 没转发：看 connector stdout 有无
+     "timed out" / send_ack 失败；确认 auto_allow=false 且 forward_to_backend=true。
+卡片出现但没按钮
+  → 你不是 bot owner 也不是委托人（§2）；或前端没加载新构建（硬刷新）。
+点了没反应 / agent 没继续
+  → 网关 resolve 是否 404（旧网关,无端点）；连接器是否仍在线接 permission_resolution。
+```
+
+---
+
 ## 1. ACP 协议：三套枚举（实现的事实来源）
 
 `session/request_permission` 请求经 connector 转发（`acp_adapter.rs:603`），落到三套**互不相同**的枚举：
