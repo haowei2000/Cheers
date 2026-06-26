@@ -8,6 +8,7 @@ pub mod mentions;
 pub mod messages;
 pub mod seed;
 pub mod sessions;
+pub mod trace;
 pub mod workbench_plugins;
 pub mod workspaces;
 pub mod workbench_templates;

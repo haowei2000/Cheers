@@ -98,8 +98,25 @@ pub async fn resolve_permission(
         .ok_or_else(|| AppError::BadRequest("unknown option_id".into()))?
         .to_string();
     let now = chrono::Utc::now().to_rfc3339();
+    let option_id = body.option_id.clone();
 
-    // Audit BEFORE side effects so the record exists even if a downstream step fails.
+    // Atomic finalize FIRST: the `resolved` flag is the single arbiter between
+    // this human resolve (HTTP) and a racing connector timeout/cancel (WS) — they
+    // run on independent tasks. Decide the winner before any audit/trace/dispatch
+    // side effects, so a loser writes no contradictory rows. (The read-side check
+    // above is just a fast path; this compare-and-set is authoritative.)
+    let patch = json!({
+        "resolved": true,
+        "resolved_by": uid.to_string(),
+        "resolved_at": now,
+        "chosen_option_id": option_id,
+        "chosen_kind": kind,
+    });
+    if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await? {
+        return Err(AppError::Conflict("approval already resolved".into()));
+    }
+
+    // Legal audit log — we won the finalize, so this is authoritative.
     approval::record_audit(
         &state.db,
         AuditEvent {
@@ -110,20 +127,48 @@ pub async fn resolve_permission(
             msg_id: Some(pending.msg_id),
             actor_id: Some(uid),
             decision: Some(kind.clone()),
-            option_id: Some(body.option_id.clone()),
+            option_id: Some(option_id.clone()),
             ..Default::default()
         },
     )
     .await?;
 
-    let patch = json!({
-        "resolved": true,
-        "resolved_by": uid.to_string(),
-        "resolved_at": now,
-        "chosen_option_id": body.option_id,
-        "chosen_kind": kind,
-    });
-    approval::patch_content_data(&state.db, pending.msg_id, patch.clone()).await?;
+    // Sibling trace-timeline row for the resolution, anchored to the bot turn
+    // (source_msg_id) so it interleaves with that turn's traces. Best-effort.
+    let resolve_anchor = pending
+        .content_data
+        .get("source_msg_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| pending.msg_id.to_string());
+    if let Err(err) = crate::domain::trace::record(
+        &state.db,
+        crate::domain::trace::TraceEvent {
+            msg_id: resolve_anchor,
+            channel_id: channel_id.to_string(),
+            bot_id: Some(pending.bot_id.to_string()),
+            kind: "approval",
+            phase: "approval".to_string(),
+            status: Some(
+                if kind.starts_with("allow") {
+                    "approved"
+                } else {
+                    "denied"
+                }
+                .to_string(),
+            ),
+            request_id: Some(request_id.clone()),
+            approval_kind: Some("resolved".to_string()),
+            decision: Some(kind.clone()),
+            option_id: Some(option_id.clone()),
+            actor_id: Some(uid.to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %err, "resolve_permission: trace write failed");
+    }
 
     // Push the decision to the bot's connector (control frame → ACP outcome).
     let resolution = if kind.starts_with("allow") { "allow" } else { "reject" };
@@ -133,7 +178,7 @@ pub async fn resolve_permission(
         "request_id": request_id,
         "message_id": pending.msg_id.to_string(),
         "resolution": resolution,
-        "option_id": body.option_id,
+        "option_id": option_id,
         "resolved_by": uid.to_string(),
         "resolved_at": now,
     });
@@ -224,6 +269,52 @@ pub async fn list_audit(
     ensure_member(&state, channel_id, uid, &claims.role).await?;
     let limit = q.limit.clamp(1, 500);
     let events = approval::list_audit(&state.db, channel_id, limit).await?;
+    Ok(Json(json!({ "events": events })))
+}
+
+// ── GET /channels/:cid/messages/:msg_id/trace ───────────────────────────────
+// Durable per-turn agent trace (incl. interleaved approval events) for one bot
+// message. The optional/later frontend timeline reads this; approval_audit
+// (GET .../permissions/audit) stays the separate legal log.
+
+pub async fn list_message_trace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, msg_id)): Path<(Uuid, String)>,
+    Query(q): Query<AuditQuery>,
+) -> Result<Json<Value>, AppError> {
+    let uid = user_id(&claims)?;
+    ensure_member(&state, channel_id, uid, &claims.role).await?;
+    let limit = q.limit.clamp(1, 1000);
+    let events = crate::domain::trace::list_for_message(&state.db, &msg_id, limit).await?;
+    Ok(Json(json!({ "events": events })))
+}
+
+// ── GET /channels/:cid/traces?kind=&limit ───────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ChannelTraceQuery {
+    #[serde(default = "default_audit_limit")]
+    pub limit: i64,
+    pub kind: Option<String>,
+}
+
+pub async fn list_channel_trace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<ChannelTraceQuery>,
+) -> Result<Json<Value>, AppError> {
+    let uid = user_id(&claims)?;
+    ensure_member(&state, channel_id, uid, &claims.role).await?;
+    let limit = q.limit.clamp(1, 500);
+    let events = crate::domain::trace::list_for_channel(
+        &state.db,
+        &channel_id.to_string(),
+        q.kind.as_deref(),
+        limit,
+    )
+    .await?;
     Ok(Json(json!({ "events": events })))
 }
 

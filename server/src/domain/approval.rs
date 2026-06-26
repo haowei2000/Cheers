@@ -295,6 +295,30 @@ pub async fn patch_content_data(
     Ok(())
 }
 
+/// Atomic compare-and-set finalize: merge `patch` only if the card is not yet
+/// resolved. Returns `true` iff this caller won (row updated). The two finalizers
+/// — a human `resolve_permission` (HTTP) and a connector `permission_cancel`
+/// (WS, timeout) — race on independent tasks; without this guard both could pass
+/// a read-side `resolved` check and write contradictory `content_data` + dual
+/// audit/trace rows. The `resolved` flag is the single atomic arbiter.
+pub async fn patch_content_data_if_unresolved(
+    db: &PgPool,
+    msg_id: Uuid,
+    patch: Value,
+) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query(
+        "UPDATE messages
+         SET content_data = COALESCE(content_data, '{}'::jsonb) || $2::jsonb
+         WHERE msg_id = $1
+           AND (content_data->>'resolved' IS NULL OR content_data->>'resolved' = 'false')",
+    )
+    .bind(msg_id.to_string())
+    .bind(patch.to_string())
+    .execute(db)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 /// Look up an option's `kind` by its `optionId` within a permission message's
 /// `content_data.options`. Returns None when the option_id isn't offered.
 pub fn option_kind<'a>(content_data: &'a Value, option_id: &str) -> Option<&'a str> {

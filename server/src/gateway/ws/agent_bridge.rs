@@ -654,6 +654,63 @@ async fn handle_trace_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
         return;
     }
 
+    // Persist the trace durably (best-effort, fire-and-forget — never .await
+    // before the live fan-out below, so a slow DB can't backpressure the
+    // connector frame loop). The write-time allowlist thins high-frequency rows;
+    // kind='approval' is always kept. docs/arch/TRACE_PERSISTENCE.md.
+    if let Some(mid) = msg_id {
+        let phase_s = phase.unwrap_or("").to_string();
+        let kind: &'static str = if phase_s == "approval" {
+            "approval"
+        } else {
+            "trace"
+        };
+        if crate::domain::trace::should_persist(kind, &phase_s) {
+            let ev = crate::domain::trace::TraceEvent {
+                msg_id: mid.to_string(),
+                channel_id: channel_id.to_string(),
+                bot_id: Some(bot.bot_id.to_string()),
+                task_id: frame
+                    .get("task_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                run_id: frame
+                    .get("run_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                stream: frame
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                kind,
+                phase: phase_s,
+                status: status.map(str::to_string),
+                title: title.map(str::to_string),
+                message: frame
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                data: frame.get("data").cloned(),
+                request_id: frame
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                approval_kind: frame
+                    .get("data")
+                    .and_then(|d| d.get("approval_kind"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                ..Default::default()
+            };
+            let db = state.db.clone();
+            tokio::spawn(async move {
+                if let Err(err) = crate::domain::trace::record(&db, ev).await {
+                    tracing::warn!(error = %err, "message_traces persist failed");
+                }
+            });
+        }
+    }
+
     let wire = WireFrame::channel(
         channel_id,
         "bot_trace",
@@ -812,6 +869,67 @@ async fn handle_permission_request_frame(
         .await
         .map_err(crate::gateway::log_db_err("permission_request: commit tx"))?;
 
+    // Audit the request itself so `approval_audit` holds the full
+    // requested → resolved/timeout chain in one place (resolve and timeout are
+    // already audited; this closes the gap at card creation). Best-effort: an
+    // audit-write failure must not block the user-visible card.
+    if let Err(err) = crate::domain::approval::record_audit(
+        &state.db,
+        crate::domain::approval::AuditEvent {
+            event_type: "requested",
+            bot_id: Some(bot.bot_id),
+            channel_id,
+            request_id: frame
+                .get("request_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            msg_id: Some(msg_id),
+            detail: Some(json!({
+                "title": title,
+                "tool": frame.get("tool").cloned().unwrap_or(Value::Null),
+            })),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        tracing::warn!(%channel_id, error = %err, "permission_request: audit write failed");
+    }
+
+    // Mirror the request into the durable trace timeline as an approval event,
+    // anchored to the BOT TURN (source_msg_id, = frame.msg_id) — NOT the
+    // permission card's own msg_id — so it interleaves with that turn's
+    // tool_call/plan traces. Best-effort, after the legal audit write.
+    let trace_anchor = frame
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| msg_id.to_string());
+    if let Err(err) = crate::domain::trace::record(
+        &state.db,
+        crate::domain::trace::TraceEvent {
+            msg_id: trace_anchor,
+            channel_id: channel_id.to_string(),
+            bot_id: Some(bot.bot_id.to_string()),
+            kind: "approval",
+            phase: "approval".to_string(),
+            status: Some("pending".to_string()),
+            title: Some(title.to_string()),
+            message: Some(body.to_string()),
+            data: Some(json!({ "tool": frame.get("tool").cloned().unwrap_or(Value::Null) })),
+            request_id: frame
+                .get("request_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            approval_kind: Some("requested".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        tracing::warn!(%channel_id, error = %err, "permission_request: trace write failed");
+    }
+
     let wire = WireFrame::channel(
         channel_id,
         "message",
@@ -873,11 +991,22 @@ async fn handle_permission_cancel_frame(frame: &Value, state: &AppState, bot: &B
         "resolved_reason": reason,
         "resolved_at": now,
     });
-    if let Err(e) =
-        crate::domain::approval::patch_content_data(&state.db, pending.msg_id, patch.clone()).await
+    // Atomic finalize: bail if a human resolve already won (independent task).
+    // Without this both finalizers could write contradictory content_data + dual
+    // audit/trace rows for the same request.
+    match crate::domain::approval::patch_content_data_if_unresolved(
+        &state.db,
+        pending.msg_id,
+        patch.clone(),
+    )
+    .await
     {
-        tracing::warn!(error = %e, request_id, "permission_cancel: patch failed");
-        return;
+        Ok(false) => return, // already resolved by a human — skip audit/trace/broadcast
+        Ok(true) => {}
+        Err(e) => {
+            tracing::warn!(error = %e, request_id, "permission_cancel: patch failed");
+            return;
+        }
     }
     let _ = crate::domain::approval::record_audit(
         &state.db,
@@ -887,6 +1016,30 @@ async fn handle_permission_cancel_frame(frame: &Value, state: &AppState, bot: &B
             channel_id: pending.channel_id,
             request_id: Some(request_id.to_string()),
             msg_id: Some(pending.msg_id),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    // Sibling trace-timeline row for the expiry, anchored to the bot turn.
+    let cancel_anchor = pending
+        .content_data
+        .get("source_msg_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| pending.msg_id.to_string());
+    let _ = crate::domain::trace::record(
+        &state.db,
+        crate::domain::trace::TraceEvent {
+            msg_id: cancel_anchor,
+            channel_id: pending.channel_id.to_string(),
+            bot_id: Some(pending.bot_id.to_string()),
+            kind: "approval",
+            phase: "approval".to_string(),
+            status: Some("cancelled".to_string()),
+            request_id: Some(request_id.to_string()),
+            approval_kind: Some("expired".to_string()),
+            decision: Some("expired".to_string()),
             ..Default::default()
         },
     )

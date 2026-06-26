@@ -148,6 +148,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/permissions/audit",
             get(api::approval::list_audit),
         )
+        // ── Durable agent-trace timeline (docs/arch/TRACE_PERSISTENCE.md) ─────
+        .route(
+            "/api/v1/channels/:channel_id/messages/:msg_id/trace",
+            get(api::approval::list_message_trace),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/traces",
+            get(api::approval::list_channel_trace),
+        )
         .route(
             "/api/v1/bots/:bot_id/approvers",
             get(api::approval::list_approvers).post(api::approval::grant_approver),
