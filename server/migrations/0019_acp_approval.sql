@@ -39,4 +39,3 @@ CREATE TABLE IF NOT EXISTS approval_audit (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_channel ON approval_audit (channel_id, created_at DESC);
-</content>
