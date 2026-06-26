@@ -625,6 +625,22 @@ async fn handle_peer_notification(
     Ok(())
 }
 
+/// The single allow-list for ACP **agent→client** methods this connector serves.
+///
+/// Cheers is a headless relay client: it deliberately advertises
+/// `clientCapabilities.fs.*` and `terminal` as `false` (`client_capabilities()`),
+/// so a spec-compliant agent never calls `fs/read_text_file`, `fs/write_text_file`,
+/// or any `terminal/*`. The ONLY agent→client method we implement is
+/// `session/request_permission`; everything else is answered with JSON-RPC
+/// `-32601`. This is intentional, not an oversight — see
+/// docs/arch/ACP_FS_PROXY.md (why ACP fs is not proxied) and
+/// docs/arch/ACP_APPROVAL_FLOW.md §0.5 (the permission model). Do NOT flip a
+/// capability to `true` without first implementing the corresponding handler
+/// here, or the connector would advertise a capability it cannot serve.
+fn peer_method_supported(method: &str) -> bool {
+    matches!(method, "session/request_permission")
+}
+
 async fn handle_peer_request(
     account_id: &str,
     writer: &SharedWriter,
@@ -633,7 +649,7 @@ async fn handle_peer_request(
     value: Value,
 ) -> anyhow::Result<()> {
     let method = value.get("method").and_then(Value::as_str).unwrap_or("");
-    if method != "session/request_permission" {
+    if !peer_method_supported(method) {
         write_json_line(
             writer,
             &json!({
@@ -776,6 +792,21 @@ async fn fail_all_pending(pending: &PendingMap, reason: &str) {
 mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn only_request_permission_is_a_supported_peer_method() {
+        // Regression guard: Cheers advertises fs/terminal capabilities as false,
+        // so these agent->client methods MUST stay unsupported (-32601). Flipping
+        // any to supported requires implementing its handler first.
+        assert!(peer_method_supported("session/request_permission"));
+        assert!(!peer_method_supported("fs/read_text_file"));
+        assert!(!peer_method_supported("fs/write_text_file"));
+        assert!(!peer_method_supported("terminal/create"));
+        assert!(!peer_method_supported("terminal/output"));
+        assert!(!peer_method_supported("terminal/wait_for_exit"));
+        assert!(!peer_method_supported("terminal/kill"));
+        assert!(!peer_method_supported("terminal/release"));
+    }
 
     #[test]
     fn permission_options_normalize_acp_option_ids() {

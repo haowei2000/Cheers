@@ -643,6 +643,40 @@ impl RuntimeContext {
                 }
                 let filename = target.file_name().ok_or_else(|| err("E_INVALID", "no filename".into()))?;
                 let dest = parent_canon.join(filename);
+                // Symlink-escape guard: the parent is canonical & in-root, but the
+                // FINAL component is not yet resolved. A symlink at `dest` pointing
+                // outside the root would let `fs::write` follow it and escape
+                // allowed_roots. lstat (no-follow) the final component: refuse to
+                // write through a symlink, and if it's a pre-existing real entry,
+                // re-verify it canonicalizes back inside the root. (A new file under
+                // an already-in-root canonical parent is safe to create.)
+                // Residual: a sub-millisecond TOCTOU between this lstat and the
+                // write, and hardlinks, are not covered here — acceptable for the
+                // human-driven workspace browser; revisit with O_NOFOLLOW if this
+                // path is ever driven by an agent.
+                match tokio::fs::symlink_metadata(&dest).await {
+                    Ok(md) if md.file_type().is_symlink() => {
+                        return Err(err(
+                            "E_FORBIDDEN_PATH",
+                            "refusing to write through a symlink".into(),
+                        ));
+                    }
+                    Ok(md) if md.is_dir() => {
+                        return Err(err("E_IS_DIR", "path is a directory".into()));
+                    }
+                    Ok(_) => {
+                        let dest_canon = tokio::fs::canonicalize(&dest)
+                            .await
+                            .map_err(|e| err("E_IO", e.to_string()))?;
+                        if !dest_canon.starts_with(&root_canon) {
+                            return Err(err(
+                                "E_FORBIDDEN_PATH",
+                                "path escapes workspace root".into(),
+                            ));
+                        }
+                    }
+                    Err(_) => {}
+                }
                 tokio::fs::write(&dest, &bytes).await.map_err(|e| err("E_IO", e.to_string()))?;
                 Ok(serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }))
             }
