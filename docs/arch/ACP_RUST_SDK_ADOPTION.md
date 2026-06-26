@@ -128,9 +128,29 @@ Client.builder()
 - 退役独立 `cheers-mcp-server` 二进制、改 in-process tools。
 - 任何**新增**自主资源 verb / 触达 OS-absolute `fs/*` —— 带真实安全 scope，需重过安全闸。
 
-### 3.5 opaque-relay 门（Tier B 的 make-or-break）
+### 3.5 opaque-relay 门（Tier B 的 make-or-break）—— ✅ **PASS**（2026-06-26，调研 + 对抗复核）
 
-runtime 的入站回调给的是 **typed** `SessionNotification` / `RequestPermissionRequest`，而 connector 是把 `session/update` payload、`tool_call` **整体透传给 Backend** 的。Tier B 必须先判定 `typed → Value` 往返是否**无损**（schema 是否用 `RawValue`/`_meta` 兜住扩展字段）：无损→畅通；有损但 Backend 只消费已知字段→可接受记风险；有损且 Backend 依赖原始形态→**Tier B 阻塞**（等 SDK raw hook 或把 Backend 契约也升 typed）。这是 P0 spike 第一件事。
+**判决：PASS。** runtime crate 提供公开的 **`UntypedMessage { method: String, params: serde_json::Value }`** raw 逃生口（同时 impl `JsonRpcNotification` 与 `JsonRpcRequest<Response = serde_json::Value>`），可**完全绕过 typed 反序列化**，零损耗中继。已对**已发布的 `agent-client-protocol = "1.0.0"`** 源码核实（resolve + 编译通过，API 齐全）。
+
+**入站设计（两条都走 raw，不走 typed-then-`to_value`）**：
+- `session/update`：`on_receive_notification::<UntypedMessage>(...)`，原样转发 `n.params["update"]`（`serde_json::Value`），按 `n.params["sessionId"]` 路由 —— 与现状 `params.get("update")` 逐字节一致。
+- `session/request_permission`：`on_receive_request::<UntypedMessage>(...)` + `Responder<serde_json::Value>`，原样转发整个 `r.params` 给 Backend，再把 Backend 的 `{optionId: …}` 经 `responder.respond(value)` 原样回（identity，不加信封）。
+
+**为什么必须 raw 而非 typed**：typed 路径**确有损** —— `ToolCallUpdateFields.{kind,status}` 用 `DefaultOnError`、`content`/`locations` 用 `VecSkipError`（越界值静默变 null）、未知 `sessionUpdate` 判别式直接**硬报错**、非 `_meta` 顶层键被丢。raw 路径全部规避。（注：`Meta = serde_json::Map<String,Value>`，故 codex `_meta.codex.params.reason` 即使走 typed 也能活，但仍以 raw 为准。）
+
+**实现硬约束（对抗复核补充，非可选）**：`UntypedMessage::matches_method` 对**任意**方法返回 `true` —— 一个 untyped handler 会 type-claim 所有消息。故闭包**必须按 `method` 判断**，对非目标方法返回 `Handled::No { retry: false }` 让其落到默认链（decline 路径无损）。否则会**遮蔽** `fs/*`/`terminal/*` 本该走的默认 `-32601`、以及 `session/cancel` 等。
+
+**P0 必测**：① `_meta.codex.params.{reason,command,cwd}` 经 raw handler 后字节存活（最高价值回归）；② per-method decline —— untyped handler 不遮蔽未支持方法的 `-32601`；③ `responder.respond({optionId})` 回的是裸 `result`（无额外信封）。
+
+### 3.6 Tier B 实现计划（actor 嫁接 develop 的 `AcpRequester`）
+
+develop 的 `AcpRequester`（lock-free、按 id 关联的请求发射器）已是 Tier B 想要的接缝 —— **嫁接而非重构**：
+
+1. **transport —— ✅ 已定**：runtime 的 `AcpAgent` 用 `async_process` 拉起，支持 command/args/env 但**无 `cwd`、无 `env_clear`**（已核实 1.0.0 `acp_agent.rs:147-163`），不满足 connector。方案:**沿用现 `spawn_peer`**（`tokio::process::Command` + `env_clear`/env/cwd/args 全控）拿到 child 的 stdin/stdout,再包进 crate 的 **`ByteStreams`** 基础传输（`pub use ByteStreams`）喂给 `connect_with`。tokio 的 `AsyncRead/Write` 与 crate 的 futures-io 之间大概率需 `tokio_util::compat` 桥接（P1 编译时确认 `ByteStreams::new` 的入参类型）。
+2. **actor**：一个长生命周期 task 跑 `Client.builder().on_receive_notification::<UntypedMessage>(…).on_receive_request::<UntypedMessage>(…).connect_with(transport, |cx| async { 命令循环 })`；`cx: Arc<ConnectionTo<Agent>>` 支持多 session 并发（`send_request(&self)`）。
+3. **出站**：`initialize`/`session.new`/`load`/`prompt`/`cancel`/`set_mode`/`set_config_option` → `cx.send_request`/`send_notification`（typed 出站可复用 Tier A 的 schema 类型）。
+4. **接缝不变**：`AcpRequester::prompt(session_id, Vec<Value>, timeout) -> PromptResult` 与 `RuntimeAdapter` trait 原样；feature/config 开关与现 `acp_adapter.rs` 并存，P3 parity 通过后再删手写传输。
+5. **必须保住的 4 条不变量**：prompt 期间不持 adapter 锁（deadlock fix）、peer 退出 `fail_all_pending`、observability span/trace、`permission_options_from_params` 保持无状态。
 
 ---
 
