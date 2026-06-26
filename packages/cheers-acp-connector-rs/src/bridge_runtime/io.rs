@@ -27,7 +27,10 @@ impl BridgeIoHandle {
         self.data_tx.send(frame).await.context("data writer closed")
     }
 
-    pub(super) async fn send_data_expect_send_ack(&self, frame: DataOutbound) -> anyhow::Result<DataInbound> {
+    pub(super) async fn send_data_expect_send_ack(
+        &self,
+        frame: DataOutbound,
+    ) -> anyhow::Result<DataInbound> {
         let Some(client_msg_id) = send_ack_client_msg_id(&frame).map(ToString::to_string) else {
             return Err(anyhow!("data frame does not carry client_msg_id"));
         };
