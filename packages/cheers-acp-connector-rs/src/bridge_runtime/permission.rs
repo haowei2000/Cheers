@@ -30,12 +30,17 @@ impl RuntimeContext {
         // approval that never comes and the tool call hangs.
         if self.config.policy.permission.auto_allow {
             if let Some(option_id) = permission_option_id_for_resolution(&params, "allow") {
-                self.trace(
+                // phase="approval" so the gateway persists this as a durable
+                // kind='approval' trace row (this path returns early and never
+                // sends a PermissionRequest frame, so it is otherwise invisible
+                // to the gateway). See docs/arch/TRACE_PERSISTENCE.md.
+                self.trace_with_data(
                     &run,
-                    "permission_auto_allowed",
+                    "approval",
                     "running",
                     "Auto-allowed ACP tool permission (local policy)",
                     None,
+                    Some(serde_json::json!({ "kind": "approval", "approval_kind": "auto_allowed" })),
                 )
                 .await?;
                 let _ = respond_to.send(PermissionOutcome::Selected { option_id });
@@ -47,12 +52,13 @@ impl RuntimeContext {
             );
         }
         if !self.config.policy.permission.forward_to_backend {
-            self.trace(
+            self.trace_with_data(
                 &run,
-                "permission_rejected",
+                "approval",
                 "cancelled",
                 "Local daemon policy does not forward permission requests",
                 None,
+                Some(serde_json::json!({ "kind": "approval", "approval_kind": "rejected" })),
             )
             .await?;
             let _ = respond_to.send(PermissionOutcome::Cancelled);
@@ -73,7 +79,11 @@ impl RuntimeContext {
                 guard.session_id.clone(),
             )
         };
-        let options = self.adapter.lock().await.permission_options(&params);
+        // Build options via the free function — do NOT `self.adapter.lock()` here:
+        // `prompt()` holds the adapter Mutex for the whole turn and is blocked
+        // waiting for the very permission answer this handler produces, so locking
+        // the adapter would deadlock the turn until timeout.
+        let options = crate::acp_adapter::permission_options_from_params(&params);
         self.shared
             .lock()
             .await
@@ -90,6 +100,13 @@ impl RuntimeContext {
                 .handle_permission_timeout(timeout_request_id)
                 .await;
         });
+        tracing::info!(
+            account = %self.account_id,
+            request_id = %request_id,
+            has_tool = tool.is_some(),
+            option_count = options.len(),
+            "forwarding ACP permission request to Backend as approval card"
+        );
         let ack = self
             .io
             .send_data_expect_send_ack(DataOutbound::PermissionRequest {
@@ -222,6 +239,12 @@ impl RuntimeContext {
             })
             .map(|option_id| PermissionOutcome::Selected { option_id })
             .unwrap_or(PermissionOutcome::Cancelled);
+        tracing::info!(
+            account = %self.account_id,
+            request_id = %resolution.request_id,
+            outcome = ?outcome,
+            "Backend resolved ACP permission request"
+        );
         let _ = pending.respond_to.send(outcome);
         Ok(())
     }

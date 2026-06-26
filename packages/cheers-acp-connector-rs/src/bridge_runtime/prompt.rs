@@ -1,6 +1,9 @@
 use super::*;
 
-pub(super) fn bridge_ready_from_initialize(initialize: &Value, policy: &LocalPolicy) -> BridgeReady {
+pub(super) fn bridge_ready_from_initialize(
+    initialize: &Value,
+    policy: &LocalPolicy,
+) -> BridgeReady {
     let runtime_name = initialize
         .get("agentInfo")
         .and_then(|value| value.get("name"))
@@ -12,6 +15,12 @@ pub(super) fn bridge_ready_from_initialize(initialize: &Value, policy: &LocalPol
         .and_then(Value::as_str)
         .map(ToString::to_string);
     let mut ready = BridgeReady::acp(runtime_name, runtime_version);
+    // Surface what the agent itself can do, not just local policy. Without this
+    // the platform can't tell that, e.g., images will be silently degraded to a
+    // text summary because the agent never advertised promptCapabilities.image —
+    // so it can warn the user / hide image upload instead of failing quietly.
+    let agent_caps = agent_capability_summary(initialize);
+    let agent_supports_image = agent_caps["prompt_image"].as_bool().unwrap_or(false);
     ready.connector_capabilities = Some(json!({
         "runtime_protocols": ["acp"],
         "runtime_session_control": policy.sessions.create
@@ -19,21 +28,53 @@ pub(super) fn bridge_ready_from_initialize(initialize: &Value, policy: &LocalPol
             || policy.sessions.cancel
             || policy.sessions.terminate,
         "streaming": policy.prompt.allow,
+        // `files` and `images` reflect BOTH local policy and what the agent can
+        // actually accept — the effective capability the platform should rely on.
         "files": policy.file_upload.allow,
+        "images": policy.prompt.allow_images && agent_supports_image,
         "send": policy.send.allow,
         "resource_req": true,
         "permission_request": policy.permission.forward_to_backend,
         "config_options": true,
         "trace": policy.trace.allow,
         "session_update": policy.session_update.allow,
+        "agent_capabilities": agent_caps,
     }));
     ready
 }
 
+/// Distil the agent's advertised ACP `agentCapabilities` into the compact,
+/// snake_cased summary Cheers forwards to the platform. Every field defaults to
+/// `false` when absent so a missing/partial capabilities block is treated as
+/// "unsupported", never assumed.
+pub(super) fn agent_capability_summary(initialize: &Value) -> Value {
+    let caps = initialize.get("agentCapabilities");
+    let cap_bool = |path: &[&str]| -> bool {
+        let mut cursor = caps;
+        for key in path {
+            cursor = cursor.and_then(|value| value.get(*key));
+        }
+        cursor.and_then(Value::as_bool).unwrap_or(false)
+    };
+    json!({
+        "load_session": cap_bool(&["loadSession"]),
+        "prompt_image": cap_bool(&["promptCapabilities", "image"]),
+        "mcp_http": cap_bool(&["mcpCapabilities", "http"]),
+        "mcp_sse": cap_bool(&["mcpCapabilities", "sse"]),
+    })
+}
+
+/// Build the ACP prompt content blocks for a task.
+///
+/// `send_images` MUST already fold in both the local policy (`allow_images`) and
+/// the agent's advertised `promptCapabilities.image`; when it is false, image
+/// attachments degrade to a text summary line rather than being pushed as image
+/// blocks the agent never said it could read.
 pub(super) fn build_prompt(
     task: &TaskCommand,
     policy: &PromptPolicy,
     channel_name: Option<&str>,
+    send_images: bool,
 ) -> Vec<Value> {
     let mut parts = vec![
         CHEERS_ACP_OUTPUT_CONTRACT.to_string(),
@@ -59,20 +100,111 @@ pub(super) fn build_prompt(
     {
         parts.push(text);
     }
+    // Image attachments become real ACP image blocks only when the agent
+    // advertised the capability; everything else (and images we can't send) is
+    // summarized as text so the agent still knows the file exists.
+    let mut image_blocks: Vec<Value> = Vec::new();
     if policy.allow_attachments && !task.attachments.is_empty() {
         let mut lines = vec!["Cheers attachments:".to_string()];
         for attachment in &task.attachments {
+            if send_images {
+                if let Some(block) = image_content_block(attachment) {
+                    image_blocks.push(block);
+                    continue;
+                }
+            }
             lines.push(attachment_summary_line(attachment));
         }
-        parts.push(lines.join("\n"));
+        // Only emit the attachments text section if any attachment fell through
+        // to a summary line (the header alone is noise otherwise).
+        if lines.len() > 1 {
+            parts.push(lines.join("\n"));
+        }
     }
-    vec![json!({
+    let mut blocks = vec![json!({
         "type": "text",
         "text": parts.join("\n\n")
-    })]
+    })];
+    blocks.append(&mut image_blocks);
+    blocks
 }
 
 pub(super) const CHEERS_ACP_OUTPUT_CONTRACT: &str = "You are replying inside Cheers. Stream useful answer text through the ACP session; generated files should be returned as explicit file/resource updates when the runtime supports them.";
+
+/// Map an ACP `StopReason` to a bridge trace status so a remote observer can
+/// tell a clean finish from a refusal / truncation / turn-cap. ACP defines
+/// exactly five reasons; the old code collapsed every non-`cancelled` reason to
+/// "completed", hiding refusals and truncations from the channel.
+/// <https://agentclientprotocol.com/protocol/v1/prompt-turn>
+pub(super) fn stop_reason_to_status(stop_reason: Option<&str>) -> &'static str {
+    match stop_reason {
+        Some("cancelled") => "cancelled",
+        Some("refusal") => "refused",
+        Some("max_tokens") => "truncated",
+        Some("max_turn_requests") => "max_turn_requests",
+        // `end_turn` is the only clean finish; an unknown/absent reason is
+        // treated as completion too (forward-compatible default).
+        _ => "completed",
+    }
+}
+
+/// Determine an MCP server entry's transport. ACP stdio servers are
+/// command-based and are the baseline transport every agent supports; `http`
+/// and `sse` entries carry a `type` discriminator and require the matching
+/// `agentCapabilities.mcpCapabilities`.
+/// <https://agentclientprotocol.com/protocol/v1/schema>
+pub(super) fn mcp_server_transport(server: &Value) -> &'static str {
+    match server.get("type").and_then(Value::as_str) {
+        Some("http") => "http",
+        Some("sse") => "sse",
+        _ => "stdio",
+    }
+}
+
+/// Whether the agent can speak the transport a configured MCP server needs.
+/// stdio is the ACP baseline (always supported); `http`/`sse` require the
+/// matching `agentCapabilities.mcpCapabilities`. Injecting a server the agent
+/// can't reach would make its tools silently unavailable.
+pub(super) fn mcp_server_supported(
+    server: &Value,
+    supports_http: bool,
+    supports_sse: bool,
+) -> bool {
+    match mcp_server_transport(server) {
+        "http" => supports_http,
+        "sse" => supports_sse,
+        _ => true, // stdio baseline
+    }
+}
+
+/// Build an ACP image content block from an attachment, or `None` when it can't
+/// be sent as one. ACP image blocks are `{ type: "image", mimeType, data }` with
+/// base64 `data`. <https://agentclientprotocol.com/protocol/v1/schema>
+///
+/// Two signals must agree: there must be inline base64 `data`, AND the platform
+/// must not have explicitly flagged the attachment as a non-image
+/// (`is_image == false`). We honour the platform's flag rather than guessing
+/// from raw bytes — a PDF, say, carries `is_image: false` and must degrade to a
+/// text summary even on the off chance a base64 blob is attached.
+pub(super) fn image_content_block(attachment: &AttachmentInfo) -> Option<Value> {
+    if attachment.is_image.as_ref().and_then(Value::as_bool) == Some(false) {
+        return None;
+    }
+    let data = attachment.image_b64.as_ref()?;
+    if data.trim().is_empty() {
+        return None;
+    }
+    let mime = attachment
+        .content_type
+        .as_deref()
+        .filter(|ct| ct.starts_with("image/"))
+        .unwrap_or("image/png");
+    Some(json!({
+        "type": "image",
+        "mimeType": mime,
+        "data": data,
+    }))
+}
 
 pub(super) fn extract_trigger_text(value: &Value) -> Option<String> {
     value
@@ -137,29 +269,81 @@ pub(super) fn text_from_content(value: &Value) -> Option<String> {
     None
 }
 
-/// Structure an ACP `session/update` into a UI-facing `(title, status)` trace,
-/// using the update's OWN fields. Returns `None` for non-progress updates
-/// (`usage_update`, mode/config) so they are not surfaced as agent activity.
+/// A UI-facing trace derived from a `session/update`: a human `title`, a
+/// machine `status`, and optional structured `data` for richer remote rendering
+/// (currently the agent plan's to-do entries).
+pub(super) struct SessionUpdateTrace {
+    pub title: String,
+    pub status: String,
+    pub data: Option<Value>,
+}
+
+/// Structure an ACP `session/update` into a UI-facing trace, using the update's
+/// OWN fields. Returns `None` for non-progress updates (`usage_update`,
+/// mode/config) so they are not surfaced as agent activity.
 ///
 /// Grounded in the real ACP schema (verified against claude-agent-acp output):
 /// `tool_call` / `tool_call_update` carry `{ title, kind, status, toolCallId,
 /// content, rawInput, rawOutput }`. The `title` is the agent's own human label
 /// (e.g. the shell command); status-only updates have none, so we skip them and
 /// let the titled call/update be the informative trace.
-pub(super) fn describe_session_update(kind: &str, update: &Value) -> Option<(String, String)> {
+pub(super) fn describe_session_update(kind: &str, update: &Value) -> Option<SessionUpdateTrace> {
     let status = update
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or("running")
         .to_string();
     match kind {
-        "tool_call" | "tool_call_update" => update
-            .get("title")
-            .and_then(Value::as_str)
-            .map(|title| (title.to_string(), status)),
-        "agent_thought_chunk" => Some(("Thinking…".to_string(), "running".to_string())),
-        "plan" => Some(("Planning…".to_string(), "running".to_string())),
+        "tool_call" | "tool_call_update" => {
+            update
+                .get("title")
+                .and_then(Value::as_str)
+                .map(|title| SessionUpdateTrace {
+                    title: title.to_string(),
+                    status,
+                    data: None,
+                })
+        }
+        "agent_thought_chunk" => Some(SessionUpdateTrace {
+            title: "Thinking…".to_string(),
+            status: "running".to_string(),
+            data: None,
+        }),
+        "plan" => Some(describe_plan(update)),
         _ => None,
+    }
+}
+
+/// Build a trace for an ACP `plan` update. The agent's live to-do list
+/// (`entries: [{ content, priority, status }]`) is the single most useful thing
+/// to surface to a remote channel — it lets the people watching see what the
+/// agent intends to do. The old code dropped `entries` entirely and showed only
+/// "Planning…"; here we forward the entries verbatim as trace `data`
+/// (`kind="plan"`) and summarize progress in the title.
+/// <https://agentclientprotocol.com/protocol/v1/agent-plan>
+fn describe_plan(update: &Value) -> SessionUpdateTrace {
+    let entries = update
+        .get("entries")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let total = entries.len();
+    let completed = entries
+        .iter()
+        .filter(|entry| entry.get("status").and_then(Value::as_str) == Some("completed"))
+        .count();
+    let title = if total == 0 {
+        "Planning…".to_string()
+    } else {
+        format!("Plan · {completed}/{total} done")
+    };
+    SessionUpdateTrace {
+        title,
+        status: "running".to_string(),
+        data: Some(json!({
+            "kind": "plan",
+            "entries": entries,
+        })),
     }
 }
 
@@ -175,7 +359,28 @@ pub(super) fn normalize_config_options_report(update: &Value) -> Value {
     })
 }
 
+/// Locate codex's `_meta.codex.params` blob, which carries the richest, most
+/// human-friendly view of a `session/request_permission` (a natural-language
+/// `reason`, the normalized `command`, `cwd`, decisions). Codex-specific and
+/// guarded: returns None for agents that don't populate it.
+fn codex_request_params(params: &Value) -> Option<&Value> {
+    params
+        .get("_meta")
+        .and_then(|m| m.get("codex"))
+        .and_then(|c| c.get("params"))
+}
+
 pub(super) fn permission_body_from_params(params: &Value) -> String {
+    // Prefer codex's explicit human-readable reason (e.g. "Do you want to allow
+    // writing X to /tmp/y?") over the generic fallback — this is the single most
+    // useful line for a human approver.
+    if let Some(reason) = codex_request_params(params)
+        .and_then(|p| p.get("reason"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+    {
+        return reason.to_string();
+    }
     params
         .get("message")
         .or_else(|| params.get("description"))
@@ -209,15 +414,35 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
     // to run — the single most useful thing for a human approver to see.
     let raw_input = tool.get("rawInput").or_else(|| tool.get("raw_input"));
     let locations = tool.get("locations");
+    let status = tool.get("status").and_then(Value::as_str);
+    let tool_call_id = tool
+        .get("toolCallId")
+        .or_else(|| tool.get("tool_call_id"))
+        .and_then(Value::as_str);
+    // codex's normalized full command (e.g. "/bin/zsh -lc '…'") and cwd live in
+    // _meta; fall back to rawInput for the cwd when _meta is absent.
+    let codex = codex_request_params(params);
+    let command = codex.and_then(|p| p.get("command")).and_then(Value::as_str);
+    let cwd = codex
+        .and_then(|p| p.get("cwd"))
+        .and_then(Value::as_str)
+        .or_else(|| raw_input.and_then(|r| r.get("cwd")).and_then(Value::as_str));
     Some(serde_json::json!({
         "title": title,
         "kind": kind,
         "raw_input": raw_input,
         "locations": locations,
+        "status": status,
+        "tool_call_id": tool_call_id,
+        "command": command,
+        "cwd": cwd,
     }))
 }
 
-pub(super) fn permission_option_id_for_resolution(params: &Value, resolution: &str) -> Option<String> {
+pub(super) fn permission_option_id_for_resolution(
+    params: &Value,
+    resolution: &str,
+) -> Option<String> {
     let wanted = match resolution {
         "allow" => "allow",
         "deny" | "reject" => "reject",
@@ -324,6 +549,197 @@ mod tests {
         assert_eq!(
             permission_option_id_for_resolution(&options(), "maybe"),
             None
+        );
+    }
+
+    #[test]
+    fn body_prefers_codex_reason_over_generic_fallback() {
+        let params = json!({
+            "sessionId": "s1",
+            "toolCall": { "kind": "execute" },
+            "_meta": { "codex": { "params": {
+                "reason": "Do you want to allow writing X to /tmp/y?",
+                "command": "/bin/zsh -lc 'echo X > /tmp/y'",
+                "cwd": "/work"
+            }}}
+        });
+        assert_eq!(
+            permission_body_from_params(&params),
+            "Do you want to allow writing X to /tmp/y?"
+        );
+        // Without _meta the generic fallback still applies.
+        assert_eq!(
+            permission_body_from_params(&json!({"toolCall": {"kind": "execute"}})),
+            "ACP agent requested permission to continue."
+        );
+    }
+
+    #[test]
+    fn tool_carries_codex_command_status_and_cwd() {
+        let params = json!({
+            "toolCall": {
+                "kind": "execute",
+                "status": "pending",
+                "toolCallId": "call_1",
+                "rawInput": { "command": "echo X > /tmp/y", "cwd": "/work" }
+            },
+            "_meta": { "codex": { "params": {
+                "command": "/bin/zsh -lc 'echo X > /tmp/y'",
+                "cwd": "/work"
+            }}}
+        });
+        let tool = permission_tool_from_params(&params).expect("tool");
+        assert_eq!(tool["status"], "pending");
+        assert_eq!(tool["tool_call_id"], "call_1");
+        assert_eq!(tool["command"], "/bin/zsh -lc 'echo X > /tmp/y'");
+        assert_eq!(tool["cwd"], "/work");
+        assert_eq!(tool["kind"], "execute");
+    }
+
+    #[test]
+    fn stop_reason_splits_all_five_acp_reasons() {
+        // Regression: refusal / max_tokens / max_turn_requests must NOT collapse
+        // to "completed" — a remote observer has to tell them apart.
+        assert_eq!(stop_reason_to_status(Some("end_turn")), "completed");
+        assert_eq!(stop_reason_to_status(Some("cancelled")), "cancelled");
+        assert_eq!(stop_reason_to_status(Some("refusal")), "refused");
+        assert_eq!(stop_reason_to_status(Some("max_tokens")), "truncated");
+        assert_eq!(
+            stop_reason_to_status(Some("max_turn_requests")),
+            "max_turn_requests"
+        );
+        // Unknown / absent reasons default to a clean completion.
+        assert_eq!(stop_reason_to_status(Some("future_reason")), "completed");
+        assert_eq!(stop_reason_to_status(None), "completed");
+    }
+
+    #[test]
+    fn mcp_transport_detects_http_sse_and_defaults_to_stdio() {
+        assert_eq!(
+            mcp_server_transport(&json!({"name": "x", "command": "y"})),
+            "stdio"
+        );
+        assert_eq!(
+            mcp_server_transport(&json!({"type": "http", "name": "x", "url": "u"})),
+            "http"
+        );
+        assert_eq!(
+            mcp_server_transport(&json!({"type": "sse", "name": "x", "url": "u"})),
+            "sse"
+        );
+    }
+
+    #[test]
+    fn agent_capability_summary_reads_nested_caps_and_defaults_false() {
+        let summary = agent_capability_summary(&json!({
+            "agentCapabilities": {
+                "loadSession": true,
+                "promptCapabilities": { "image": true },
+                "mcpCapabilities": { "http": true, "sse": false }
+            }
+        }));
+        assert_eq!(summary["load_session"], true);
+        assert_eq!(summary["prompt_image"], true);
+        assert_eq!(summary["mcp_http"], true);
+        assert_eq!(summary["mcp_sse"], false);
+
+        // Absent agentCapabilities → every field defaults to false (never assumed).
+        let empty = agent_capability_summary(&json!({}));
+        assert_eq!(empty["load_session"], false);
+        assert_eq!(empty["prompt_image"], false);
+        assert_eq!(empty["mcp_http"], false);
+        assert_eq!(empty["mcp_sse"], false);
+    }
+
+    #[test]
+    fn mcp_server_supported_gates_http_sse_but_never_stdio() {
+        let stdio = json!({"name": "cheers", "command": "bin"});
+        let http = json!({"type": "http", "name": "h", "url": "u"});
+        let sse = json!({"type": "sse", "name": "s", "url": "u"});
+        // stdio (incl. the injected cheers server) is the ACP baseline: always kept.
+        assert!(mcp_server_supported(&stdio, false, false));
+        // http/sse are kept only when the agent advertised the transport.
+        assert!(!mcp_server_supported(&http, false, false));
+        assert!(mcp_server_supported(&http, true, false));
+        assert!(!mcp_server_supported(&sse, false, false));
+        assert!(mcp_server_supported(&sse, false, true));
+    }
+
+    #[test]
+    fn plan_update_forwards_entries_and_summarizes_progress() {
+        let update = json!({
+            "sessionUpdate": "plan",
+            "entries": [
+                {"content": "scope the work", "priority": "high",   "status": "completed"},
+                {"content": "write the fix",  "priority": "medium", "status": "in_progress"},
+                {"content": "add tests",      "priority": "low",    "status": "pending"},
+            ]
+        });
+        let trace = describe_session_update("plan", &update).expect("plan trace");
+        assert_eq!(trace.title, "Plan · 1/3 done");
+        assert_eq!(trace.status, "running");
+        let data = trace.data.expect("plan data forwarded");
+        assert_eq!(data["kind"], "plan");
+        assert_eq!(data["entries"].as_array().unwrap().len(), 3);
+        // Entries are forwarded verbatim so the remote can render a to-do panel.
+        assert_eq!(data["entries"][1]["content"], "write the fix");
+        assert_eq!(data["entries"][1]["status"], "in_progress");
+    }
+
+    #[test]
+    fn empty_plan_falls_back_to_planning_label() {
+        let trace = describe_session_update("plan", &json!({"entries": []})).expect("trace");
+        assert_eq!(trace.title, "Planning…");
+        assert_eq!(
+            trace.data.expect("data")["entries"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn image_block_built_only_when_inline_data_present() {
+        let with_data = AttachmentInfo {
+            file_id: Some("f1".to_string()),
+            filename: Some("shot.png".to_string()),
+            content_type: Some("image/png".to_string()),
+            size_bytes: Some(10),
+            summary: None,
+            is_image: Some(json!(true)),
+            image_b64: Some("aGVsbG8=".to_string()),
+            extra: serde_json::Map::new(),
+        };
+        let block = image_content_block(&with_data).expect("image block");
+        assert_eq!(block["type"], "image");
+        assert_eq!(block["mimeType"], "image/png");
+        assert_eq!(block["data"], "aGVsbG8=");
+
+        // No inline base64 → cannot send an image block.
+        let no_data = AttachmentInfo {
+            image_b64: None,
+            ..with_data.clone()
+        };
+        assert!(image_content_block(&no_data).is_none());
+
+        // Platform explicitly flagged it as a non-image → degrade even if a
+        // base64 blob is somehow attached (honour the platform's signal).
+        let not_image = AttachmentInfo {
+            is_image: Some(json!(false)),
+            ..with_data.clone()
+        };
+        assert!(image_content_block(&not_image).is_none());
+
+        // Non-image content type still defaults the mime to image/png when b64
+        // is present (the b64 is the authoritative signal it's an image).
+        let odd_mime = AttachmentInfo {
+            content_type: Some("application/octet-stream".to_string()),
+            ..with_data
+        };
+        assert_eq!(
+            image_content_block(&odd_mime).expect("block")["mimeType"],
+            "image/png"
         );
     }
 }

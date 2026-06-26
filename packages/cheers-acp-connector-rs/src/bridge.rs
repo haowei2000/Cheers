@@ -280,7 +280,11 @@ mod tests {
         .expect("realize_file frame should deserialize");
 
         match frame {
-            DataInbound::RealizeFile { file_id, remote_ref, channel_id } => {
+            DataInbound::RealizeFile {
+                file_id,
+                remote_ref,
+                channel_id,
+            } => {
                 assert_eq!(file_id, "f-001");
                 assert_eq!(remote_ref, "/home/user/report.pdf");
                 assert_eq!(channel_id, "c-001");

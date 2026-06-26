@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::fs;
 use toml::Value as TomlValue;
 
@@ -916,13 +916,9 @@ fn find_command_in_path(command: &str) -> Option<PathBuf> {
 }
 
 fn client_capabilities() -> Value {
-    json!({
-        "fs": {
-            "readTextFile": false,
-            "writeTextFile": false
-        },
-        "terminal": false
-    })
+    // Single source of truth lives in the ACP protocol layer so the configured
+    // value and the adapter's in-code fallback can never diverge.
+    crate::acp_adapter::default_client_capabilities()
 }
 
 fn toml_values_to_json_array(values: Vec<TomlValue>) -> anyhow::Result<Value> {
@@ -1215,6 +1211,12 @@ request_timeout_ms = 666000
         assert_eq!(
             account.agent.client_capabilities.as_ref().unwrap()["terminal"],
             false
+        );
+        // Dedup invariant: config must advertise EXACTLY the ACP protocol
+        // layer's single source of truth, never a divergent literal.
+        assert_eq!(
+            account.agent.client_capabilities.as_ref().unwrap(),
+            &crate::acp_adapter::default_client_capabilities()
         );
         assert_eq!(account.policy.loopback.request_timeout_ms, 666000);
         assert_eq!(account.policy.permission.wait_timeout_ms, 555000);

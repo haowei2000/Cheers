@@ -217,11 +217,17 @@ impl RuntimeContext {
                 RuntimeInput::SocketClosed(stream) => {
                     // Fail all pending loopback requests immediately so their tasks don't
                     // block until the timeout when the data WS is gone.
-                    let _ = self.runtime_tx.send(RuntimeInput::AbortPendingResources).await;
+                    let _ = self
+                        .runtime_tx
+                        .send(RuntimeInput::AbortPendingResources)
+                        .await;
                     return Err(anyhow!("Agent Bridge {stream} stream closed"));
                 }
                 RuntimeInput::SocketError { stream, error } => {
-                    let _ = self.runtime_tx.send(RuntimeInput::AbortPendingResources).await;
+                    let _ = self
+                        .runtime_tx
+                        .send(RuntimeInput::AbortPendingResources)
+                        .await;
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
                 }
                 RuntimeInput::AbortPendingResources => {
@@ -445,9 +451,9 @@ impl RuntimeContext {
         remote_ref: String,
         channel_id: String,
     ) -> anyhow::Result<()> {
-        let bytes = tokio::fs::read(&remote_ref).await.with_context(|| {
-            format!("realize_file: cannot read local file '{remote_ref}'")
-        })?;
+        let bytes = tokio::fs::read(&remote_ref)
+            .await
+            .with_context(|| format!("realize_file: cannot read local file '{remote_ref}'"))?;
 
         let filename = std::path::Path::new(&remote_ref)
             .file_name()
@@ -548,7 +554,11 @@ impl RuntimeContext {
                 .workspace
                 .default_cwd
                 .clone()
-                .filter(|c| roots.iter().any(|ar| canonical_path(ar) == canonical_path(c)))
+                .filter(|c| {
+                    roots
+                        .iter()
+                        .any(|ar| canonical_path(ar) == canonical_path(c))
+                })
                 .or_else(|| roots.first().cloned())
                 .ok_or_else(|| err("E_NO_ROOT", "no default workspace root".into()))?,
         };
@@ -563,13 +573,20 @@ impl RuntimeContext {
                     .await
                     .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
                 if !dir.starts_with(&root_canon) {
-                    return Err(err("E_FORBIDDEN_PATH", "path escapes workspace root".into()));
+                    return Err(err(
+                        "E_FORBIDDEN_PATH",
+                        "path escapes workspace root".into(),
+                    ));
                 }
                 let mut rd = tokio::fs::read_dir(&dir)
                     .await
                     .map_err(|e| err("E_IO", e.to_string()))?;
                 let mut entries = Vec::new();
-                while let Some(ent) = rd.next_entry().await.map_err(|e| err("E_IO", e.to_string()))? {
+                while let Some(ent) = rd
+                    .next_entry()
+                    .await
+                    .map_err(|e| err("E_IO", e.to_string()))?
+                {
                     let name = ent.file_name().to_string_lossy().to_string();
                     if name == ".git" {
                         continue;
@@ -589,9 +606,16 @@ impl RuntimeContext {
                     }));
                 }
                 entries.sort_by(|a, b| {
-                    let (ad, bd) = (a["is_dir"].as_bool().unwrap_or(false), b["is_dir"].as_bool().unwrap_or(false));
-                    bd.cmp(&ad)
-                        .then_with(|| a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")))
+                    let (ad, bd) = (
+                        a["is_dir"].as_bool().unwrap_or(false),
+                        b["is_dir"].as_bool().unwrap_or(false),
+                    );
+                    bd.cmp(&ad).then_with(|| {
+                        a["name"]
+                            .as_str()
+                            .unwrap_or("")
+                            .cmp(b["name"].as_str().unwrap_or(""))
+                    })
                 });
                 Ok(serde_json::json!({
                     "root": root_canon.to_string_lossy(),
@@ -604,17 +628,31 @@ impl RuntimeContext {
                     .await
                     .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
                 if !file.starts_with(&root_canon) {
-                    return Err(err("E_FORBIDDEN_PATH", "path escapes workspace root".into()));
+                    return Err(err(
+                        "E_FORBIDDEN_PATH",
+                        "path escapes workspace root".into(),
+                    ));
                 }
-                let md = tokio::fs::metadata(&file).await.map_err(|e| err("E_IO", e.to_string()))?;
+                let md = tokio::fs::metadata(&file)
+                    .await
+                    .map_err(|e| err("E_IO", e.to_string()))?;
                 if md.is_dir() {
                     return Err(err("E_IS_DIR", "path is a directory".into()));
                 }
                 if md.len() > MAX_READ {
-                    return Err(err("E_TOO_LARGE", format!("file exceeds {}MB read cap", MAX_READ / 1024 / 1024)));
+                    return Err(err(
+                        "E_TOO_LARGE",
+                        format!("file exceeds {}MB read cap", MAX_READ / 1024 / 1024),
+                    ));
                 }
-                let bytes = tokio::fs::read(&file).await.map_err(|e| err("E_IO", e.to_string()))?;
-                let filename = file.file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
+                let bytes = tokio::fs::read(&file)
+                    .await
+                    .map_err(|e| err("E_IO", e.to_string()))?;
+                let filename = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
                 let content_type = mime_guess::from_path(&filename)
                     .first_raw()
                     .unwrap_or("application/octet-stream")
@@ -632,16 +670,26 @@ impl RuntimeContext {
                 }))
             }
             "write" => {
-                let b64 = content_b64.ok_or_else(|| err("E_INVALID", "content_b64 required".into()))?;
-                let bytes = BASE64.decode(b64).map_err(|e| err("E_INVALID", format!("bad base64: {e}")))?;
-                let parent = target.parent().ok_or_else(|| err("E_INVALID", "invalid path".into()))?;
+                let b64 =
+                    content_b64.ok_or_else(|| err("E_INVALID", "content_b64 required".into()))?;
+                let bytes = BASE64
+                    .decode(b64)
+                    .map_err(|e| err("E_INVALID", format!("bad base64: {e}")))?;
+                let parent = target
+                    .parent()
+                    .ok_or_else(|| err("E_INVALID", "invalid path".into()))?;
                 let parent_canon = tokio::fs::canonicalize(parent)
                     .await
                     .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
                 if !parent_canon.starts_with(&root_canon) {
-                    return Err(err("E_FORBIDDEN_PATH", "path escapes workspace root".into()));
+                    return Err(err(
+                        "E_FORBIDDEN_PATH",
+                        "path escapes workspace root".into(),
+                    ));
                 }
-                let filename = target.file_name().ok_or_else(|| err("E_INVALID", "no filename".into()))?;
+                let filename = target
+                    .file_name()
+                    .ok_or_else(|| err("E_INVALID", "no filename".into()))?;
                 let dest = parent_canon.join(filename);
                 // Symlink-escape guard: the parent is canonical & in-root, but the
                 // FINAL component is not yet resolved. A symlink at `dest` pointing
@@ -677,10 +725,17 @@ impl RuntimeContext {
                     }
                     Err(_) => {}
                 }
-                tokio::fs::write(&dest, &bytes).await.map_err(|e| err("E_IO", e.to_string()))?;
-                Ok(serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }))
+                tokio::fs::write(&dest, &bytes)
+                    .await
+                    .map_err(|e| err("E_IO", e.to_string()))?;
+                Ok(
+                    serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }),
+                )
             }
-            other => Err(err("E_UNKNOWN_OP", format!("unknown workspace op: {other}"))),
+            other => Err(err(
+                "E_UNKNOWN_OP",
+                format!("unknown workspace op: {other}"),
+            )),
         }
     }
 
@@ -826,7 +881,7 @@ impl RuntimeContext {
                 .cwd
                 .as_ref()
                 .map(|path| path.display().to_string()),
-            mcp_servers: self.mcp_servers_for_task(&task),
+            mcp_servers: self.mcp_servers_for_task(&task).await,
         };
         let acp_session_id = self.ensure_acp_session(&task, start_options).await?;
         let run = Arc::new(Mutex::new(ActiveRun {
@@ -867,7 +922,17 @@ impl RuntimeContext {
             .channel_names
             .get(&task.channel_id)
             .cloned();
-        let prompt = build_prompt(&task, &self.config.policy.prompt, channel_name.as_deref());
+        // Only push image content blocks when local policy allows it AND the
+        // agent advertised `promptCapabilities.image`; otherwise images degrade
+        // to a text summary inside build_prompt.
+        let send_images = self.config.policy.prompt.allow_images
+            && self.adapter.lock().await.supports_prompt_image();
+        let prompt = build_prompt(
+            &task,
+            &self.config.policy.prompt,
+            channel_name.as_deref(),
+            send_images,
+        );
         let prompt_size = serde_json::to_vec(&prompt)?.len();
         if prompt_size > self.config.policy.prompt.max_prompt_bytes {
             self.io
@@ -900,23 +965,23 @@ impl RuntimeContext {
             .await
             .inject_fence(acp_session_id.clone())
             .await;
-        let prompt_result = {
-            let mut adapter = self.adapter.lock().await;
-            adapter
-                .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
-                .await
-        };
+        // Lock the adapter only long enough to clone a transport handle, then
+        // await the prompt WITHOUT the lock. The prompt can block for minutes
+        // (e.g. paused on an approval card), so holding the adapter Mutex here
+        // would freeze every other session's turn on this bot. Per-session
+        // ordering is still guaranteed by `session_lock` above; the pending-id
+        // map routes each session's response independently.
+        let requester = self.adapter.lock().await.requester();
+        let prompt_result = requester
+            .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
+            .await;
 
         match prompt_result {
             Ok(result) => {
                 self.trace(
                     &run,
                     "prompt_finished",
-                    if result.stop_reason.as_deref() == Some("cancelled") {
-                        "cancelled"
-                    } else {
-                        "completed"
-                    },
+                    stop_reason_to_status(result.stop_reason.as_deref()),
                     "ACP prompt finished",
                     result.stop_reason.as_deref(),
                 )
@@ -1123,7 +1188,7 @@ impl RuntimeContext {
                         .cwd
                         .as_ref()
                         .map(|path| path.display().to_string()),
-                    mcp_servers: self.mcp_servers_for_task(&task),
+                    mcp_servers: self.mcp_servers_for_task(&task).await,
                 };
                 self.ensure_acp_session(&task, options).await.map(|id| {
                     (
@@ -1271,12 +1336,20 @@ impl RuntimeContext {
                     })
                     .await?;
             }
-        } else if let Some((title, status)) = describe_session_update(kind, &update) {
+        } else if let Some(SessionUpdateTrace {
+            title,
+            status,
+            data,
+        }) = describe_session_update(kind, &update)
+        {
             // Structure the trace from the ACP update's OWN fields. tool_call /
             // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
             // per the ACP schema; we pass those through instead of a generic
-            // label. Noise (usage_update, mode/config) is filtered by the helper.
-            self.trace(&run, kind, &status, &title, None).await?;
+            // label. A `plan` update also carries structured `data` (its to-do
+            // entries) so the channel can render a live task panel. Noise
+            // (usage_update, mode/config) is filtered by the helper.
+            self.trace_with_data(&run, kind, &status, &title, None, data)
+                .await?;
         }
         Ok(())
     }
@@ -1290,15 +1363,47 @@ impl RuntimeContext {
             .clone()
     }
 
-    fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
-        let mut servers = self
+    async fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
+        // stdio MCP is the ACP baseline transport (always supported); only the
+        // optional http/sse transports are gated by mcpCapabilities. We drop a
+        // configured http/sse server the agent can't speak with a LOUD warning
+        // rather than injecting it silently — otherwise the fs-via-MCP virtual
+        // filesystem would just vanish with no signal.
+        let (supports_http, supports_sse) = {
+            let adapter = self.adapter.lock().await;
+            (adapter.supports_mcp_http(), adapter.supports_mcp_sse())
+        };
+        let configured = self
             .config
             .agent
             .mcp_servers
             .as_array()
             .cloned()
             .unwrap_or_default();
+        let mut servers: Vec<Value> = Vec::with_capacity(configured.len() + 1);
+        for server in configured {
+            if mcp_server_supported(&server, supports_http, supports_sse) {
+                servers.push(server);
+            } else {
+                let transport = mcp_server_transport(&server);
+                let name = server
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("<unnamed>");
+                tracing::warn!(
+                    account = %self.account_id,
+                    transport,
+                    server = name,
+                    "dropping MCP server: agent does not advertise the required \
+                     mcpCapabilities transport (its MCP tools will be unavailable)"
+                );
+            }
+        }
         if self.config.policy.mcp.inject_cheers {
+            // The cheers server is stdio (command-based) — the ACP baseline
+            // transport, supported by every agent — so it needs no capability
+            // gate (mcpCapabilities only advertises the optional http/sse
+            // transports).
             // Single shared MCP server process across all sessions.
             // CHANNEL_ID is not set via env — the ACP agent must pass
             // channel_id explicitly in every tool call (it knows the
@@ -1329,6 +1434,21 @@ impl RuntimeContext {
         title: &str,
         message: Option<&str>,
     ) -> anyhow::Result<()> {
+        self.trace_with_data(run, phase, status, title, message, None)
+            .await
+    }
+
+    /// Like [`trace`], but also carries a structured `data` payload (e.g. an
+    /// agent plan's to-do entries) so a remote observer gets more than a label.
+    async fn trace_with_data(
+        &self,
+        run: &Arc<Mutex<ActiveRun>>,
+        phase: &str,
+        status: &str,
+        title: &str,
+        message: Option<&str>,
+        data: Option<Value>,
+    ) -> anyhow::Result<()> {
         if !self.config.policy.trace.allow {
             return Ok(());
         }
@@ -1354,7 +1474,7 @@ impl RuntimeContext {
                 status: Some(status.to_string()),
                 title: Some(title.to_string()),
                 message,
-                data: None,
+                data,
                 acp_capability: None,
             })
             .await
@@ -1415,7 +1535,10 @@ enum RuntimeInput {
     Adapter(RuntimeEvent),
     Loopback(LoopbackRequest),
     SocketClosed(&'static str),
-    SocketError { stream: &'static str, error: String },
+    SocketError {
+        stream: &'static str,
+        error: String,
+    },
     /// Broadcast to all pending loopback requests when the data WS closes mid-flight.
     AbortPendingResources,
 }
@@ -1457,7 +1580,7 @@ mod tests {
             }],
             pinned: vec!["[Pinned: prompts/review.md]\nYou are a strict reviewer.".to_string()],
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
+        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false);
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(text.contains("@bot summarize"));
         assert!(text.contains("report.pdf"));
@@ -1467,6 +1590,64 @@ mod tests {
             text.contains("You are a strict reviewer."),
             "pinned convention block must be injected every prompt"
         );
+    }
+
+    fn image_attachment() -> AttachmentInfo {
+        AttachmentInfo {
+            file_id: Some("img-1".to_string()),
+            filename: Some("shot.png".to_string()),
+            content_type: Some("image/png".to_string()),
+            size_bytes: Some(8),
+            summary: None,
+            is_image: Some(json!(true)),
+            image_b64: Some("aGVsbG8=".to_string()),
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn image_task() -> TaskCommand {
+        TaskCommand {
+            task_id: "task-1".to_string(),
+            channel_id: "channel-1".to_string(),
+            msg_id: "msg-1".to_string(),
+            provider_session_key: "provider".to_string(),
+            session_id: None,
+            trigger_message: Some(json!({"text": "@bot look"})),
+            attachments: vec![image_attachment()],
+            pinned: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn build_prompt_emits_image_block_only_when_capability_allows() {
+        // Agent advertised promptCapabilities.image → real ACP image block, and
+        // no redundant text summary line for that image.
+        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), true);
+        let image = prompt
+            .iter()
+            .find(|block| block["type"] == "image")
+            .expect("image content block present when capability allows");
+        assert_eq!(image["mimeType"], "image/png");
+        assert_eq!(image["data"], "aGVsbG8=");
+        assert!(
+            !prompt[0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Cheers attachments:"),
+            "image sent as a block should not also appear as a text summary"
+        );
+    }
+
+    #[test]
+    fn build_prompt_degrades_image_to_text_when_capability_absent() {
+        // Agent did NOT advertise image support → no image block; the image
+        // degrades to a text summary line so the agent still knows it exists.
+        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), false);
+        assert!(
+            prompt.iter().all(|block| block["type"] != "image"),
+            "no image block may be sent when the agent can't read images"
+        );
+        assert!(prompt[0]["text"].as_str().unwrap().contains("shot.png"));
     }
 
     fn test_prompt_policy(allow_attachments: bool) -> PromptPolicy {
@@ -1567,7 +1748,7 @@ mod tests {
             attachments: Vec::new(),
             pinned: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"));
+        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false);
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
             text.contains("channel_id=550e8400"),
@@ -1595,7 +1776,7 @@ mod tests {
             attachments: Vec::new(),
             pinned: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(false), None);
+        let prompt = build_prompt(&task, &test_prompt_policy(false), None, false);
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
             text.contains("channel_id=chan-1"),
