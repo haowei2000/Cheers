@@ -13,6 +13,11 @@ path = "src/main.rs"
 # capabilities advertisement + permission decisions) from these typed structs
 # instead of hand-written JSON. Stable wire protocol v1 only — no `unstable` features.
 agent-client-protocol-schema = "1.1"
+# Tier B (in progress): official ACP runtime crate. Replaces the hand-rolled
+# JSON-RPC transport, wrapped in an actor so the RuntimeAdapter trait seam is
+# unchanged. Inbound session/update + request_permission relay via `UntypedMessage`
+# raw hooks (zero-loss opaque relay; see ACP_RUST_SDK_ADOPTION.md §3).
+agent-client-protocol = "1"
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
