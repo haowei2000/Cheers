@@ -40,19 +40,9 @@ pub enum PermissionOutcome {
     Cancelled,
 }
 
-impl PermissionOutcome {
-    pub fn to_acp_value(&self) -> Value {
-        match self {
-            Self::Selected { option_id } => serde_json::json!({
-                "outcome": "selected",
-                "optionId": option_id,
-            }),
-            Self::Cancelled => serde_json::json!({
-                "outcome": "cancelled",
-            }),
-        }
-    }
-}
+// The ACP wire form of a permission outcome is produced in `acp_adapter` from
+// the official `RequestPermissionResponse`/`RequestPermissionOutcome` types
+// (`write_permission_response`), so this enum no longer hand-serializes itself.
 
 #[derive(Debug)]
 pub enum RuntimeEvent {

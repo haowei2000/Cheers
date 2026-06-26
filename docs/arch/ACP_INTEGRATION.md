@@ -2,7 +2,7 @@
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
-> 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
+> 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md) · [ACP_RUST_SDK_ADOPTION](./ACP_RUST_SDK_ADOPTION.md)（官方库采用 Tier A/B）
 
 本文确定 **ACP 协议 / ACP connector**（外部 Agent，如 OpenCode、Claude、Codex 等）
 在 Rust Backend 架构下的接入设计。**平台无内置 Agent Service**；见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)。

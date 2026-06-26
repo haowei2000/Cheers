@@ -8,6 +8,11 @@ name = "cce-acp-connector"
 path = "src/main.rs"
 
 [dependencies]
+# Official ACP protocol types (schema crate). Tier A: the connector keeps its
+# own JSON-RPC transport but builds the security-sensitive ACP messages (client
+# capabilities advertisement + permission decisions) from these typed structs
+# instead of hand-written JSON. Stable wire protocol v1 only — no `unstable` features.
+agent-client-protocol-schema = "1.1"
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
