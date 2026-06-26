@@ -13,14 +13,16 @@ interface Props {
   currentUserId?: string;
 }
 
-const HIGH_RISK_KINDS = new Set(["execute", "delete", "move"]);
-
 function optId(o: PermissionOption): string {
   return o.option_id ?? o.optionId ?? "";
 }
 
 function isAllow(kind?: string | null): boolean {
   return (kind ?? "").startsWith("allow");
+}
+
+function isReject(kind?: string | null): boolean {
+  return (kind ?? "").startsWith("reject");
 }
 
 /** Compact, human-readable preview of an ACP toolCall rawInput (the command /
@@ -49,7 +51,15 @@ function previewRawInput(raw: unknown): string | null {
   return String(raw);
 }
 
-/** Interactive ACP approval card (docs/arch/ACP_APPROVAL_FLOW.md). */
+/**
+ * Interactive ACP approval box (docs/arch/ACP_APPROVAL_FLOW.md).
+ *
+ * Design (mockup: AgentNexus/docs/mockups/approve-menu.html): a quiet,
+ * trace-styled menu rendered inline with the bot's reply — command-first, radio
+ * options, minimal footer. While pending it shows expanded (or a one-line
+ * collapsed preview); once resolved it shrinks into a single trace-style line so
+ * the decision settles back into the bot's progress timeline.
+ */
 export function PermissionCard({ message, channelId, currentUserId }: Props) {
   const data = (message.content_data ?? {}) as PermissionContentData;
   const botId = message.sender_id;
@@ -62,6 +72,38 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requested, setRequested] = useState(false);
+  // Pending starts expanded (the user must review); resolved settles collapsed.
+  const [collapsed, setCollapsed] = useState(resolved);
+  useEffect(() => {
+    if (resolved) setCollapsed(true);
+  }, [resolved]);
+
+  const tool = data.tool ?? null;
+  const command =
+    previewRawInput(tool?.raw_input) ??
+    tool?.title ??
+    tool?.name ??
+    data.body ??
+    null;
+  const title = data.title || "Approval needed";
+  const subtitle = `${message.sender_name || "The agent"} is requesting permission.`;
+  const impact = data.body && data.body !== command ? data.body : null;
+
+  // Radio choices are the allow-variants; "Deny" is the footer escape. If the
+  // connector sent no allow option, fall back to showing every option.
+  const allowOptions = useMemo(
+    () => options.filter((o) => isAllow(o.kind)),
+    [options]
+  );
+  const rejectOption = useMemo(
+    () => options.find((o) => isReject(o.kind)),
+    [options]
+  );
+  const radioOptions = allowOptions.length ? allowOptions : options;
+  const [selectedId, setSelectedId] = useState("");
+  useEffect(() => {
+    if (!selectedId && radioOptions[0]) setSelectedId(optId(radioOptions[0]));
+  }, [radioOptions, selectedId]);
 
   // Owner is always an approver; for non-owners, check delegations once.
   useEffect(() => {
@@ -79,16 +121,12 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
     };
   }, [botId, channelId, currentUserId, isOwner, resolved]);
 
-  const tool = data.tool ?? null;
-  const toolKind = tool?.kind;
-  const highRisk = !!toolKind && HIGH_RISK_KINDS.has(toolKind);
-
-  async function onResolve(o: PermissionOption) {
-    if (!channelId || !requestId || busy) return;
+  async function onResolve(id: string) {
+    if (!channelId || !requestId || !id || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await resolvePermission(channelId, requestId, optId(o));
+      await resolvePermission(channelId, requestId, id);
       // The resolved card is broadcast back over WS; no local mutation needed.
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to resolve");
@@ -111,96 +149,175 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
     }
   }
 
-  return (
-    <div className="px-4 py-2">
-      <div className="mx-auto max-w-xl rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-amber-400 text-sm">🔐</span>
-          <span className="text-sm font-medium text-zinc-200">
-            {data.title || "Approval needed"}
-          </span>
-          {toolKind && (
-            <span
-              className={cn(
-                "ml-auto text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded",
-                highRisk
-                  ? "bg-red-500/20 text-red-300"
-                  : "bg-zinc-700/60 text-zinc-300"
-              )}
-            >
-              {toolKind}
-            </span>
+  // ── Resolved: a single quiet trace-style line ────────────────────────────
+  if (resolved) {
+    const expired = data.resolved_kind === "expired";
+    const ok = isAllow(data.chosen_kind);
+    return (
+      <div className="flex items-center gap-2 py-0.5 text-xs">
+        <span
+          className={cn(
+            "font-medium",
+            expired ? "text-zinc-500" : ok ? "text-emerald-400/90" : "text-rose-400/90"
           )}
-        </div>
-
-        {(tool?.title || tool?.name) && (
-          <p className="text-sm text-zinc-300 break-words mb-1">
-            {tool?.title || tool?.name}
-          </p>
-        )}
-        {data.body && !tool?.title && (
-          <p className="text-sm text-zinc-400 whitespace-pre-wrap break-words mb-2">
-            {data.body}
-          </p>
-        )}
-        {previewRawInput(tool?.raw_input) && (
-          <code className="block text-xs text-zinc-400 bg-black/30 rounded px-2 py-1 mb-2 whitespace-pre-wrap break-all max-h-32 overflow-auto">
-            {previewRawInput(tool?.raw_input)}
+        >
+          {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
+        </span>
+        {command && (
+          <code className="font-mono text-zinc-500 truncate min-w-0">
+            {command}
           </code>
         )}
-
-        {resolved ? (
-          <div className="text-xs text-zinc-400 border-t border-zinc-800 pt-2 mt-1">
-            {data.resolved_kind === "expired"
-              ? "⏱ Expired (no decision)"
-              : isAllow(data.chosen_kind)
-                ? "✅ Approved"
-                : "🚫 Rejected"}
-            {data.resolved_by && (
-              <>
-                {" "}
-                · by{" "}
-                <span className="text-zinc-300">
-                  {data.resolved_by.slice(0, 8)}
-                </span>
-              </>
-            )}
-          </div>
-        ) : amApprover ? (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {options.map((o) => (
-              <button
-                key={optId(o)}
-                disabled={busy}
-                onClick={() => onResolve(o)}
-                className={cn(
-                  "text-xs px-3 py-1.5 rounded font-medium disabled:opacity-50 transition-colors",
-                  isAllow(o.kind)
-                    ? "bg-indigo-600 hover:bg-indigo-500 text-white"
-                    : "bg-zinc-700 hover:bg-zinc-600 text-zinc-100"
-                )}
-              >
-                {o.name || o.kind || optId(o)}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-xs text-zinc-500">
-              Waiting for an approver…
-            </span>
-            <button
-              disabled={busy || requested}
-              onClick={onRequestAccess}
-              className="text-xs px-2.5 py-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-200 disabled:opacity-50"
-            >
-              {requested ? "Requested" : "Request access"}
-            </button>
-          </div>
+        {data.resolved_by && (
+          <span className="text-zinc-600 whitespace-nowrap">
+            · {data.resolved_by.slice(0, 8)}
+          </span>
         )}
-
-        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
       </div>
+    );
+  }
+
+  const shell =
+    "max-w-md rounded-lg border border-zinc-800 bg-zinc-900/50 overflow-hidden";
+
+  // ── Pending, not an approver: quiet waiting line ──────────────────────────
+  if (!amApprover) {
+    return (
+      <div className={cn(shell, "flex items-center gap-3 px-3 py-2.5")}>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-zinc-300">{title}</p>
+          {command && (
+            <p className="text-xs font-mono text-zinc-500 truncate mt-0.5">
+              {command}
+            </p>
+          )}
+        </div>
+        <button
+          disabled={busy || requested}
+          onClick={onRequestAccess}
+          className="shrink-0 h-7 px-2.5 text-xs rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {requested ? "Requested" : "Request access"}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Pending, collapsed: one-line preview ──────────────────────────────────
+  if (collapsed) {
+    return (
+      <button
+        onClick={() => setCollapsed(false)}
+        className={cn(
+          shell,
+          "w-full grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-900/70"
+        )}
+      >
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-zinc-200">{title}</p>
+          {command && (
+            <p className="text-xs font-mono text-zinc-500 truncate mt-0.5">
+              {command}
+            </p>
+          )}
+        </div>
+        <span className="flex items-center gap-1.5 text-xs text-zinc-500 whitespace-nowrap">
+          Details <span className="text-zinc-600">⌄</span>
+        </span>
+      </button>
+    );
+  }
+
+  // ── Pending, expanded ─────────────────────────────────────────────────────
+  return (
+    <div className={shell}>
+      <header className="flex items-start justify-between gap-3 px-3 py-2.5 border-b border-zinc-800">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-zinc-200">{title}</p>
+          <p className="text-xs text-zinc-500 mt-0.5">{subtitle}</p>
+        </div>
+        <button
+          onClick={() => setCollapsed(true)}
+          aria-label="Collapse"
+          className="shrink-0 text-zinc-600 hover:text-zinc-300 leading-none"
+        >
+          <span className="inline-block rotate-180 text-sm">⌄</span>
+        </button>
+      </header>
+
+      {command && (
+        <div className="px-3 py-2.5 border-b border-zinc-800 bg-zinc-950/40">
+          <p className="text-[10px] uppercase tracking-wide text-zinc-600 mb-1.5">
+            Command
+          </p>
+          <pre className="m-0 text-xs font-mono text-zinc-300 bg-black/40 border border-zinc-800 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
+            {command}
+          </pre>
+          {impact && <p className="text-xs text-zinc-500 mt-2">{impact}</p>}
+        </div>
+      )}
+
+      <div className="p-1.5 border-b border-zinc-800">
+        {radioOptions.map((o) => {
+          const id = optId(o);
+          const sel = id === selectedId;
+          return (
+            <button
+              key={id}
+              onClick={() => setSelectedId(id)}
+              className={cn(
+                "w-full grid grid-cols-[16px_minmax(0,1fr)] gap-2.5 text-left px-2.5 py-2 rounded-md transition-colors",
+                sel ? "bg-zinc-800/70" : "hover:bg-zinc-800/40"
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-0.5 w-3.5 h-3.5 rounded-full",
+                  sel
+                    ? "border-[4px] border-indigo-400"
+                    : "border border-zinc-600"
+                )}
+              />
+              <span className="min-w-0">
+                <span
+                  className={cn(
+                    "block text-[13px] font-medium leading-tight",
+                    sel ? "text-zinc-100" : "text-zinc-300"
+                  )}
+                >
+                  {o.name || o.kind || id}
+                </span>
+                {o.description && (
+                  <span className="block text-xs text-zinc-500 mt-0.5">
+                    {o.description}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <footer className="flex items-center justify-end gap-2 px-2.5 py-2.5 bg-zinc-900/40">
+        {rejectOption && (
+          <button
+            disabled={busy}
+            onClick={() => onResolve(optId(rejectOption))}
+            className="h-8 px-3 text-xs font-medium rounded-md text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+          >
+            {rejectOption.name || "Deny"}
+          </button>
+        )}
+        <button
+          disabled={busy || !selectedId}
+          onClick={() => onResolve(selectedId)}
+          className="h-8 px-3.5 text-xs font-semibold rounded-md bg-zinc-200 text-zinc-900 hover:bg-white disabled:opacity-50"
+        >
+          {allowOptions.length ? "Approve" : "Confirm"}
+        </button>
+      </footer>
+
+      {error && <p className="text-xs text-rose-400 px-3 pb-2">{error}</p>}
     </div>
   );
 }

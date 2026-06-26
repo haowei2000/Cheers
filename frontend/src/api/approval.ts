@@ -86,3 +86,35 @@ export async function listApprovalAudit(
 ): Promise<{ events: AuditEvent[] }> {
   return apiJson(`/channels/${channelId}/permissions/audit?limit=${limit}`);
 }
+
+// Durable agent-trace timeline (docs/arch/TRACE_PERSISTENCE.md). One row per
+// persisted step of a bot turn; kind="approval" rows carry the approval
+// lifecycle interleaved with tool_call/plan/prompt rows.
+export interface TraceEntry {
+  id: string;
+  msg_id: string;
+  trace_seq: number;
+  kind: string; // "trace" | "approval"
+  phase: string;
+  status?: string | null;
+  title?: string | null;
+  message?: string | null;
+  data?: unknown;
+  request_id?: string | null;
+  approval_kind?: string | null; // requested|auto_allowed|rejected|resolved|expired
+  decision?: string | null;
+  option_id?: string | null;
+  actor_id?: string | null;
+  created_at: string;
+}
+
+/** Fetch the persisted per-turn trace timeline for a bot message. */
+export async function fetchMessageTrace(
+  channelId: string,
+  msgId: string,
+  limit = 500
+): Promise<{ events: TraceEntry[] }> {
+  return apiJson(
+    `/channels/${channelId}/messages/${encodeURIComponent(msgId)}/trace?limit=${limit}`
+  );
+}

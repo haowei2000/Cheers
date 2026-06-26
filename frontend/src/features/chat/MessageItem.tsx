@@ -6,6 +6,7 @@ import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
+import { BotTracePanel } from "./BotTracePanel";
 import type { Message } from "@/types";
 
 interface Props {
@@ -52,12 +53,20 @@ export const MessageItem = memo(function MessageItem({
   }
 
   if (message.msg_type === "permission") {
+    // Render inline in the bot's column (indented past the avatar gutter) so the
+    // approval box reads as part of the bot's reply / trace rather than a
+    // detached centered card.
     return (
-      <PermissionCard
-        message={message}
-        channelId={channelId}
-        currentUserId={currentUserId}
-      />
+      <div className="flex items-start gap-3 px-4 py-0.5">
+        <div className="w-9 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <PermissionCard
+            message={message}
+            channelId={channelId}
+            currentUserId={currentUserId}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -79,6 +88,13 @@ export const MessageItem = memo(function MessageItem({
         </div>
         <div className="flex-1 min-w-0">
           <MessageBody message={message} />
+          {isBot && channelId && !message._streaming && !message.is_partial && (
+            <BotTracePanel
+              key={`trace-${message.msg_id}`}
+              channelId={channelId}
+              msgId={message.msg_id}
+            />
+          )}
         </div>
       </div>
     );
@@ -118,6 +134,13 @@ export const MessageItem = memo(function MessageItem({
 
         {/* Body */}
         <MessageBody message={message} />
+        {isBot && channelId && !message._streaming && !message.is_partial && (
+          <BotTracePanel
+            key={`trace-${message.msg_id}`}
+            channelId={channelId}
+            msgId={message.msg_id}
+          />
+        )}
       </div>
     </div>
   );
