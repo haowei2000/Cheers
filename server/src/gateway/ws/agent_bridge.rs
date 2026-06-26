@@ -568,6 +568,10 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 }
             }
         }
+        // ── 审批终态（超时/取消，连接器本地裁决后通知，避免卡片永久 pending）──
+        "permission_cancel" => {
+            handle_permission_cancel_frame(frame, state, bot).await;
+        }
         "session_update" => {
             if let Err(e) =
                 handle_session_update(&state.db, bot.bot_id, &bot.provider_account_id, frame).await
@@ -831,6 +835,91 @@ async fn handle_permission_request_frame(
     state.fanout.broadcast_channel(channel_id, wire).await;
 
     Ok(msg_id)
+}
+
+/// Finalize a still-pending approval card after the connector reported the ACP
+/// request reached a terminal state locally (timeout / cancel) with no human
+/// decision. Idempotent: skips cards already resolved by a human.
+async fn handle_permission_cancel_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let Some(request_id) = frame.get("request_id").and_then(Value::as_str) else {
+        return;
+    };
+    let reason = frame
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("timeout");
+
+    let pending = match crate::domain::approval::find_pending_by_request_id(&state.db, request_id)
+        .await
+    {
+        Ok(Some(p)) => p,
+        Ok(None) => return, // never forwarded, or already swept
+        Err(e) => {
+            tracing::warn!(error = %e, request_id, "permission_cancel: lookup failed");
+            return;
+        }
+    };
+    // Only this bot's own requests; and skip if a human already resolved it.
+    if pending.bot_id != bot.bot_id
+        || pending.content_data.get("resolved").and_then(Value::as_bool) == Some(true)
+    {
+        return;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let patch = json!({
+        "resolved": true,
+        "resolved_kind": "expired",
+        "resolved_reason": reason,
+        "resolved_at": now,
+    });
+    if let Err(e) =
+        crate::domain::approval::patch_content_data(&state.db, pending.msg_id, patch.clone()).await
+    {
+        tracing::warn!(error = %e, request_id, "permission_cancel: patch failed");
+        return;
+    }
+    let _ = crate::domain::approval::record_audit(
+        &state.db,
+        crate::domain::approval::AuditEvent {
+            event_type: "timeout",
+            bot_id: Some(pending.bot_id),
+            channel_id: pending.channel_id,
+            request_id: Some(request_id.to_string()),
+            msg_id: Some(pending.msg_id),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let mut content_data = pending.content_data.clone();
+    if let (Value::Object(target), Value::Object(src)) = (&mut content_data, &patch) {
+        for (k, v) in src {
+            target.insert(k.clone(), v.clone());
+        }
+    }
+    let wire = WireFrame::channel(
+        pending.channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": pending.msg_id,
+            "channel_id": pending.channel_id,
+            "channel_seq": pending.channel_seq,
+            "sender_type": "bot",
+            "sender_id": pending.bot_id,
+            "content": pending.content,
+            "msg_type": "permission",
+            "is_partial": false,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
+            "content_data": content_data,
+        }),
+    );
+    state.fanout.broadcast_channel(pending.channel_id, wire).await;
+    tracing::info!(request_id, reason, "permission card finalized as expired");
 }
 
 async fn ensure_bot_channel_member(

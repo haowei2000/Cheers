@@ -205,10 +205,38 @@ pub async fn list_audit(
 /// A pending ACP permission message, looked up by its ACP `request_id`.
 pub struct PendingPermission {
     pub msg_id: Uuid,
+    pub channel_id: Uuid,
     pub bot_id: Uuid,
     pub channel_seq: Option<i64>,
     pub content: String,
     pub content_data: Value,
+}
+
+fn row_to_pending(r: sqlx::postgres::PgRow) -> Option<PendingPermission> {
+    let msg_id = r
+        .try_get::<String, _>("msg_id")
+        .ok()
+        .and_then(|s| s.parse::<Uuid>().ok())?;
+    let channel_id = r
+        .try_get::<String, _>("channel_id")
+        .ok()
+        .and_then(|s| s.parse::<Uuid>().ok())?;
+    let bot_id = r
+        .try_get::<String, _>("sender_id")
+        .ok()
+        .and_then(|s| s.parse::<Uuid>().ok())?;
+    Some(PendingPermission {
+        msg_id,
+        channel_id,
+        bot_id,
+        channel_seq: r.try_get::<Option<i64>, _>("channel_seq").ok().flatten(),
+        content: r.try_get::<String, _>("content").unwrap_or_default(),
+        content_data: r
+            .try_get::<Option<Value>, _>("content_data")
+            .ok()
+            .flatten()
+            .unwrap_or(Value::Null),
+    })
 }
 
 /// Find the permission message carrying `request_id` in `channel_id`.
@@ -218,7 +246,7 @@ pub async fn find_pending(
     request_id: &str,
 ) -> Result<Option<PendingPermission>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT msg_id, sender_id, channel_seq, content, content_data
+        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
          FROM messages
          WHERE channel_id = $1 AND msg_type = 'permission'
            AND content_data->>'request_id' = $2
@@ -228,27 +256,25 @@ pub async fn find_pending(
     .bind(request_id)
     .fetch_optional(db)
     .await?;
-    Ok(row.and_then(|r| {
-        let msg_id = r
-            .try_get::<String, _>("msg_id")
-            .ok()
-            .and_then(|s| s.parse::<Uuid>().ok())?;
-        let bot_id = r
-            .try_get::<String, _>("sender_id")
-            .ok()
-            .and_then(|s| s.parse::<Uuid>().ok())?;
-        Some(PendingPermission {
-            msg_id,
-            bot_id,
-            channel_seq: r.try_get::<Option<i64>, _>("channel_seq").ok().flatten(),
-            content: r.try_get::<String, _>("content").unwrap_or_default(),
-            content_data: r
-                .try_get::<Option<Value>, _>("content_data")
-                .ok()
-                .flatten()
-                .unwrap_or(Value::Null),
-        })
-    }))
+    Ok(row.and_then(row_to_pending))
+}
+
+/// Find the permission message by `request_id` alone (request_id is a globally
+/// unique UUID). Used by the bridge path (timeout/cancel) which has no channel.
+pub async fn find_pending_by_request_id(
+    db: &PgPool,
+    request_id: &str,
+) -> Result<Option<PendingPermission>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+         FROM messages
+         WHERE msg_type = 'permission' AND content_data->>'request_id' = $1
+         LIMIT 1",
+    )
+    .bind(request_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.and_then(row_to_pending))
 }
 
 /// Merge `patch` into the permission message's `content_data` (top-level keys).

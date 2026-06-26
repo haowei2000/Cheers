@@ -60,6 +60,9 @@ impl RuntimeContext {
         }
         let request_id = Uuid::new_v4().to_string();
         let body = permission_body_from_params(&params);
+        // Extract the structured tool detail BEFORE `params` is moved into
+        // pending_permissions, so the channel card can show what's being approved.
+        let tool = permission_tool_from_params(&params);
         let (channel_id, task_id, msg_id, provider_session_key, session_id) = {
             let guard = run.lock().await;
             (
@@ -102,7 +105,7 @@ impl RuntimeContext {
                 session_id,
                 title: Some("ACP permission request".to_string()),
                 body,
-                tool: None,
+                tool,
                 options,
                 acp_capability: None,
             })
@@ -175,6 +178,16 @@ impl RuntimeContext {
             }
         };
         let _ = pending.respond_to.send(outcome);
+        // Tell the gateway to finalize the (still-pending) channel card so it
+        // doesn't hang forever. Best-effort: the ACP turn is already answered.
+        let _ = self
+            .io
+            .send_data(DataOutbound::PermissionCancel {
+                v: BRIDGE_PROTOCOL_VERSION,
+                request_id: request_id.clone(),
+                reason: "timeout".to_string(),
+            })
+            .await;
         tracing::warn!(
             account = %self.account_id,
             request_id = %request_id,

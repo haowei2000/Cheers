@@ -77,12 +77,20 @@ export interface PermissionContentData {
   request_id?: string;
   title?: string;
   body?: string;
-  tool?: { name?: string; kind?: string; raw_input?: unknown } | null;
+  tool?: {
+    title?: string | null;
+    name?: string;
+    kind?: string | null;
+    raw_input?: unknown;
+    locations?: unknown;
+  } | null;
   options?: PermissionOption[];
   bot_owner_id?: string;
   resolved?: boolean;
   resolved_by?: string;
   resolved_at?: string;
+  resolved_kind?: string; // "expired" when finalized by timeout/cancel
+  resolved_reason?: string;
   chosen_option_id?: string;
   chosen_kind?: string;
 }

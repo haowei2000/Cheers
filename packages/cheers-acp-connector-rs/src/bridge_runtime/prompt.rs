@@ -191,6 +191,32 @@ pub(super) fn permission_body_from_params(params: &Value) -> String {
         .to_string()
 }
 
+/// Extract a compact, structured tool descriptor from an ACP
+/// `session/request_permission` params object so the channel approval card can
+/// show WHAT is being approved (command / path / diff) and a risk badge.
+/// Returns None when there is no `toolCall` (e.g. a plain message permission).
+pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
+    let tool = params.get("toolCall").or_else(|| params.get("tool"))?;
+    if !tool.is_object() {
+        return None;
+    }
+    let title = tool
+        .get("title")
+        .or_else(|| tool.get("name"))
+        .and_then(Value::as_str);
+    let kind = tool.get("kind").and_then(Value::as_str);
+    // rawInput carries the actual command / file path / content the agent wants
+    // to run — the single most useful thing for a human approver to see.
+    let raw_input = tool.get("rawInput").or_else(|| tool.get("raw_input"));
+    let locations = tool.get("locations");
+    Some(serde_json::json!({
+        "title": title,
+        "kind": kind,
+        "raw_input": raw_input,
+        "locations": locations,
+    }))
+}
+
 pub(super) fn permission_option_id_for_resolution(params: &Value, resolution: &str) -> Option<String> {
     let wanted = match resolution {
         "allow" => "allow",

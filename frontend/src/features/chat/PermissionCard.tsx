@@ -19,8 +19,34 @@ function optId(o: PermissionOption): string {
   return o.option_id ?? o.optionId ?? "";
 }
 
-function isAllow(kind?: string): boolean {
+function isAllow(kind?: string | null): boolean {
   return (kind ?? "").startsWith("allow");
+}
+
+/** Compact, human-readable preview of an ACP toolCall rawInput (the command /
+ *  file path / content the agent wants to run). */
+function previewRawInput(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const cmd = o.command ?? o.cmd;
+    if (typeof cmd === "string") return cmd;
+    const path = o.file_path ?? o.filePath ?? o.path;
+    if (typeof path === "string") {
+      const content = o.content ?? o.new_string ?? o.contents;
+      return typeof content === "string"
+        ? `${path}  (${content.length} chars)`
+        : path;
+    }
+    try {
+      const s = JSON.stringify(raw);
+      return s.length > 300 ? `${s.slice(0, 300)}…` : s;
+    } catch {
+      return null;
+    }
+  }
+  return String(raw);
 }
 
 /** Interactive ACP approval card (docs/arch/ACP_APPROVAL_FLOW.md). */
@@ -107,20 +133,29 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
           )}
         </div>
 
-        {data.body && (
+        {(tool?.title || tool?.name) && (
+          <p className="text-sm text-zinc-300 break-words mb-1">
+            {tool?.title || tool?.name}
+          </p>
+        )}
+        {data.body && !tool?.title && (
           <p className="text-sm text-zinc-400 whitespace-pre-wrap break-words mb-2">
             {data.body}
           </p>
         )}
-        {tool?.name && (
-          <code className="block text-xs text-zinc-400 bg-black/30 rounded px-2 py-1 mb-2 break-all">
-            {tool.name}
+        {previewRawInput(tool?.raw_input) && (
+          <code className="block text-xs text-zinc-400 bg-black/30 rounded px-2 py-1 mb-2 whitespace-pre-wrap break-all max-h-32 overflow-auto">
+            {previewRawInput(tool?.raw_input)}
           </code>
         )}
 
         {resolved ? (
           <div className="text-xs text-zinc-400 border-t border-zinc-800 pt-2 mt-1">
-            {isAllow(data.chosen_kind) ? "✅ Approved" : "🚫 Rejected"}
+            {data.resolved_kind === "expired"
+              ? "⏱ Expired (no decision)"
+              : isAllow(data.chosen_kind)
+                ? "✅ Approved"
+                : "🚫 Rejected"}
             {data.resolved_by && (
               <>
                 {" "}

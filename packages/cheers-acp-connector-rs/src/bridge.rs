@@ -1135,12 +1135,27 @@ pub enum DataOutbound {
         #[serde(default)]
         title: Option<String>,
         body: String,
+        /// Structured tool detail derived from the ACP `toolCall`
+        /// (title / kind / raw_input / locations) so the channel card can show
+        /// WHAT is being approved + a risk badge. None when the agent sent no
+        /// toolCall (e.g. a plain message permission).
         #[serde(default)]
-        tool: Option<String>,
+        tool: Option<Value>,
         #[serde(default)]
         options: Vec<PermissionOption>,
         #[serde(default)]
         acp_capability: Option<AcpCapabilityEnvelope>,
+    },
+    /// Tell the gateway a previously-forwarded permission request reached a
+    /// terminal state locally (timeout / agent cancel) with no human decision,
+    /// so the channel card stops hanging "pending" forever.
+    #[serde(rename = "permission_cancel")]
+    PermissionCancel {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        /// "timeout" | "cancelled"
+        reason: String,
     },
     #[serde(rename = "session_update")]
     SessionUpdate {
