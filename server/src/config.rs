@@ -1,5 +1,18 @@
 use std::env;
 
+/// Browser origins allowed when CORS_ALLOWED_ORIGINS is unset (local dev). This
+/// is a fail-closed allowlist — NOT a wildcard — so an unconfigured deployment
+/// still rejects arbitrary cross-origin callers. Production must set the env var.
+const DEV_DEFAULT_ORIGINS: &[&str] = &[
+    "http://localhost",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:30080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:30080",
+];
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
@@ -10,8 +23,6 @@ pub struct Config {
     pub jwt_private_key_pem: String,
     // 公钥：PEM 格式，用于验签
     pub jwt_public_key_pem: String,
-    // 迁移窗口期间同时接受旧 HS256 token 的密钥（可选）
-    pub jwt_legacy_hs256_secret: Option<String>,
 
     // Redis
     pub redis_url: String,
@@ -59,7 +70,6 @@ impl Config {
 
             jwt_private_key_pem: require("JWT_PRIVATE_KEY"),
             jwt_public_key_pem: require("JWT_PUBLIC_KEY"),
-            jwt_legacy_hs256_secret: env::var("JWT_SECRET_KEY").ok(),
 
             redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
 
@@ -101,6 +111,21 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(120),
+        }
+    }
+
+    /// Browser origins allowed for both CORS and the WebSocket `Origin` check.
+    /// Falls back to the localhost dev allowlist (never wildcard) when
+    /// CORS_ALLOWED_ORIGINS is unset.
+    pub fn allowed_origins(&self) -> Vec<String> {
+        match self.cors_allowed_origins.as_deref() {
+            Some(s) if !s.trim().is_empty() => s
+                .split(',')
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+                .collect(),
+            _ => DEV_DEFAULT_ORIGINS.iter().map(|s| s.to_string()).collect(),
         }
     }
 }

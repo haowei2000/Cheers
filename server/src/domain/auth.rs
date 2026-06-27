@@ -8,12 +8,16 @@ use crate::{api::middleware::Claims, config::Config, errors::AppError};
 
 pub fn create_access_token(config: &Config, user_id: Uuid, role: &str) -> Result<String, AppError> {
     let now = chrono::Utc::now();
+    let iat = now.timestamp() as u64;
     let exp = (now + chrono::Duration::hours(24)).timestamp() as u64;
     let claims = Claims {
         sub: user_id.to_string(),
         role: role.to_string(),
         exp,
-        iat: now.timestamp() as u64,
+        iat,
+        nbf: iat,
+        iss: crate::api::middleware::JWT_ISSUER.to_string(),
+        token_version: 0,
     };
 
     let mut header = Header::new(Algorithm::RS256);
@@ -42,7 +46,7 @@ pub async fn authenticate(
     let row = sqlx::query(
         "SELECT user_id, password_hash, display_name, role
          FROM users
-         WHERE username = $1 OR email = $1
+         WHERE (username = $1 OR email = $1) AND is_deleted = FALSE
          LIMIT 1",
     )
     .bind(login)

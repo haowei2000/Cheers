@@ -5,7 +5,8 @@ use axum::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
     },
-    response::Response,
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -64,7 +65,17 @@ enum ServerControl {
 // ── Axum upgrade handler ──────────────────────────────────────────────────────
 
 /// axum 路由挂载：`Router::new().route("/ws", get(ws_handler))`
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    // CSWSH guard: reject browser upgrades from non-allowlisted origins before
+    // upgrading. Native clients send no Origin and fall through to token auth.
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    if !crate::infra::http::ws_origin_allowed(origin, &state.config.allowed_origins()) {
+        return (StatusCode::FORBIDDEN, "origin not allowed").into_response();
+    }
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
