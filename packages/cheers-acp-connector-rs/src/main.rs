@@ -1,4 +1,5 @@
 mod acp_adapter;
+mod acp_runtime;
 mod bridge;
 mod bridge_runtime;
 mod bridge_session;
