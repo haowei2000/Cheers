@@ -43,7 +43,9 @@ spec:
               valueFrom:
                 secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: S3_SECRET_KEY }
           readinessProbe:
-            httpGet: { path: /rustfs/health/live, port: api }
+            # rustfs serves /rustfs/health/live with 403 (auth) even when healthy,
+            # which httpGet treats as a failure — so probe the port instead.
+            tcpSocket: { port: api }
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:

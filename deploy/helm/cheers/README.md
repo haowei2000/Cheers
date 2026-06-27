@@ -33,20 +33,29 @@ deploy/helm/cheers/
 ## Local dev (Docker Desktop k8s / kind / minikube)
 
 ```bash
-# 1) build the app images so the cluster can pull them locally
+# 1) build the app images and load them into the cluster
 docker build -t cheers/gateway:dev server
-docker build -t cheers/frontend:dev \
-  --build-arg VITE_API_PROXY_TARGET=http://gateway:8000 \
-  --build-arg VITE_WS_PROXY_TARGET=ws://gateway:8000 frontend
-# kind only: kind load docker-image cheers/gateway:dev cheers/frontend:dev
+docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
+kind load docker-image cheers/gateway:dev cheers/frontend:dev --name <cluster>
 
-# 2) install
-helm upgrade --install cheers deploy/helm/cheers \
-  -n cheers --create-namespace -f deploy/helm/cheers/values-dev.yaml
+# 2) generate the RS256 JWT keypair the gateway requires
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/jwt_priv.pem
+openssl rsa -in /tmp/jwt_priv.pem -pubout -out /tmp/jwt_pub.pem
 
-# 3) open the UI (NodePort 30080 on Docker Desktop), sign in admin / admin12345
+# 3) install (postgres/rustfs pull from a mirror if docker.io is slow for you)
+helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
+  -f deploy/helm/cheers/values-dev.yaml \
+  --set-file secrets.jwtPrivateKey=/tmp/jwt_priv.pem \
+  --set-file secrets.jwtPublicKey=/tmp/jwt_pub.pem
+
+# 4) open the UI (NodePort 30080), sign in admin / admin12345
 open http://localhost:30080
 ```
+
+> **Behind a proxy (e.g. Karing/Clash on `127.0.0.1`)**: a kind node can't reach a
+> host-loopback proxy, so image pulls fail. Point the node's containerd at the
+> host via `host.docker.internal`, or create the cluster with
+> `HTTP_PROXY=http://host.docker.internal:<port>`.
 
 ## Production
 
