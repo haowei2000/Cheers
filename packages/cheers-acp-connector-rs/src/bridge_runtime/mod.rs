@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use crate::acp_adapter::AcpAdapter;
+use crate::acp_runtime::AcpAdapterKind;
 use crate::bridge::{
     AcpCapabilityEnvelope, AcpSecurityHello, AttachmentInfo, ConfigStatusRejectedField,
     ConnectorControlSettings, ControlInbound, ControlOutbound, DataInbound, DataOutbound,
@@ -32,9 +32,7 @@ use crate::config::{
     PromptPolicy,
 };
 use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
-use crate::runtime_adapter::{
-    PermissionOutcome, RuntimeAdapter, RuntimeEvent, SessionStartOptions,
-};
+use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
 use crate::state::SessionStateStore;
 
 const SOCKET_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -78,7 +76,7 @@ impl AccountRuntime {
     async fn run(self) -> anyhow::Result<()> {
         let (runtime_tx, mut runtime_rx) = mpsc::channel(512);
         let (adapter_tx, mut adapter_rx) = mpsc::channel(512);
-        let mut adapter = AcpAdapter::new(
+        let mut adapter = AcpAdapterKind::new(
             self.account_id.clone(),
             self.config.agent.clone(),
             adapter_tx,
@@ -181,7 +179,7 @@ struct RuntimeContext {
     account_id: String,
     config: AccountConfig,
     state: Arc<Mutex<SessionStateStore>>,
-    adapter: Arc<Mutex<AcpAdapter>>,
+    adapter: Arc<Mutex<AcpAdapterKind>>,
     loopback: LoopbackHandle,
     io: BridgeIoHandle,
     shared: Arc<Mutex<SharedRuntimeState>>,
