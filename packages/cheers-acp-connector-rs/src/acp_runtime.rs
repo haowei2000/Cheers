@@ -410,6 +410,50 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
     }
 }
 
+/// The only agent→client *notification* the headless relay serves; every other
+/// notification is declined (`Handled::No`) so the runtime applies its default
+/// handling. Pure so the opaque-relay routing is unit-testable.
+fn runtime_serves_notification(method: &str) -> bool {
+    method == "session/update"
+}
+
+/// The only agent→client *request* the headless relay serves; every other
+/// request is declined so the runtime answers JSON-RPC `-32601` (Cheers
+/// advertises no fs/* or terminal capabilities — docs/arch/ACP_FS_PROXY.md).
+fn runtime_serves_request(method: &str) -> bool {
+    method == "session/request_permission"
+}
+
+/// Extract `(sessionId, update)` from a `session/update` notification's params.
+/// The `update` value is forwarded to the backend **verbatim** (opaque relay) —
+/// no field is dropped, renamed, or normalized. Returns `None` when there is no
+/// usable sessionId (nothing to relay).
+fn session_update_parts(params: &Value) -> Option<(String, Value)> {
+    let session_id = params.get("sessionId").and_then(|v| v.as_str())?;
+    if session_id.is_empty() {
+        return None;
+    }
+    let update = params.get("update").cloned().unwrap_or(Value::Null);
+    Some((session_id.to_string(), update))
+}
+
+/// Serialize a resolved [`PermissionOutcome`] into the exact ACP
+/// `RequestPermissionResponse` wire shape the agent expects — a **bare** result
+/// (`{"outcome":{"outcome":"selected","optionId":…}}` /
+/// `{"outcome":{"outcome":"cancelled"}}`), no JSON-RPC envelope. Uses the typed
+/// schema rather than hand-written JSON so a crate upgrade can't silently drift
+/// the bytes; the `permission_response_is_wire_compatible` test pins them.
+fn permission_response_value(outcome: PermissionOutcome) -> Value {
+    let acp_outcome = match outcome {
+        PermissionOutcome::Selected { option_id } => {
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
+        }
+        PermissionOutcome::Cancelled => RequestPermissionOutcome::Cancelled,
+    };
+    serde_json::to_value(RequestPermissionResponse::new(acp_outcome))
+        .unwrap_or_else(|_| json!({ "outcome": { "outcome": "cancelled" } }))
+}
+
 /// The connection actor: spawns the agent child with full env/cwd control,
 /// wraps its stdio in the runtime's `ByteStreams` transport, registers the raw
 /// inbound hooks, and drives the outbound command loop until the handle drops.
@@ -465,20 +509,13 @@ async fn run_actor(
             async move |msg: UntypedMessage, cx: ConnectionTo<Agent>| {
                 // Only session/update is relayed; decline everything else so it
                 // falls through to the runtime's default handling.
-                if msg.method != "session/update" {
+                if !runtime_serves_notification(&msg.method) {
                     return Ok(Handled::No {
                         message: (msg, cx),
                         retry: false,
                     });
                 }
-                let acp_session_id = msg
-                    .params
-                    .get("sessionId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                if !acp_session_id.is_empty() {
-                    let update = msg.params.get("update").cloned().unwrap_or(Value::Null);
+                if let Some((acp_session_id, update)) = session_update_parts(&msg.params) {
                     let _ = event_notif
                         .send(RuntimeEvent::SessionUpdate {
                             acp_session_id,
@@ -497,7 +534,7 @@ async fn run_actor(
                 // Only session/request_permission is served; decline everything
                 // else so the runtime answers with JSON-RPC -32601 (the headless
                 // relay advertises no fs/terminal capabilities).
-                if msg.method != "session/request_permission" {
+                if !runtime_serves_request(&msg.method) {
                     return Ok(Handled::No {
                         message: (msg, responder),
                         retry: false,
@@ -535,16 +572,7 @@ async fn run_actor(
                         rx.await.unwrap_or(PermissionOutcome::Cancelled)
                     }
                 };
-                let acp_outcome = match outcome {
-                    PermissionOutcome::Selected { option_id } => {
-                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                            option_id,
-                        ))
-                    }
-                    PermissionOutcome::Cancelled => RequestPermissionOutcome::Cancelled,
-                };
-                let result = serde_json::to_value(RequestPermissionResponse::new(acp_outcome))
-                    .unwrap_or_else(|_| json!({ "outcome": { "outcome": "cancelled" } }));
+                let result = permission_response_value(outcome);
                 responder.respond(result)?;
                 Ok(Handled::Yes)
             },
@@ -853,5 +881,109 @@ impl AcpRequesterKind {
             Self::HandRolled(r) => r.prompt(session_id, prompt, timeout_ms).await,
             Self::Runtime(r) => r.prompt(session_id, prompt, timeout_ms).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tier B opaque-relay P0 regression tests (docs/arch/ACP_RUST_SDK_ADOPTION.md
+    //! §3.5). The inbound hooks themselves need a live connection, so we pin the
+    //! pure decision logic they delegate to: ① relay verbatim, ② per-method
+    //! decline, ③ bare permission-response wire shape.
+    use super::*;
+
+    // ── ② per-method decline ─────────────────────────────────────────────────
+    #[test]
+    fn only_session_update_notification_is_served() {
+        // session/update is the sole agent→client notification we relay; every
+        // other one is declined so the runtime applies its default handling.
+        assert!(runtime_serves_notification("session/update"));
+        assert!(!runtime_serves_notification("session/request_permission"));
+        assert!(!runtime_serves_notification("fs/read_text_file"));
+        assert!(!runtime_serves_notification("terminal/output"));
+        assert!(!runtime_serves_notification("something/else"));
+    }
+
+    #[test]
+    fn only_request_permission_request_is_served() {
+        // Mirrors the legacy path's regression guard: Cheers advertises fs/terminal
+        // as false, so these agent→client requests MUST stay declined (-32601) on
+        // the runtime path too — flipping any to served needs a handler first.
+        assert!(runtime_serves_request("session/request_permission"));
+        assert!(!runtime_serves_request("fs/read_text_file"));
+        assert!(!runtime_serves_request("fs/write_text_file"));
+        assert!(!runtime_serves_request("terminal/create"));
+        assert!(!runtime_serves_request("terminal/output"));
+        assert!(!runtime_serves_request("terminal/wait_for_exit"));
+        assert!(!runtime_serves_request("terminal/kill"));
+        assert!(!runtime_serves_request("terminal/release"));
+        assert!(!runtime_serves_request("session/cancel"));
+    }
+
+    // ── ③ bare {optionId} permission-response wire shape ─────────────────────
+    #[test]
+    fn permission_response_is_wire_compatible() {
+        // The runtime path must emit the exact same bare ACP result the legacy
+        // path pins (no JSON-RPC envelope, no stray keys), so the agent parses it.
+        assert_eq!(
+            permission_response_value(PermissionOutcome::Selected {
+                option_id: "allow_once".to_string()
+            }),
+            json!({"outcome": {"outcome": "selected", "optionId": "allow_once"}})
+        );
+        assert_eq!(
+            permission_response_value(PermissionOutcome::Cancelled),
+            json!({"outcome": {"outcome": "cancelled"}})
+        );
+    }
+
+    // ── ① opaque relay: session/update forwarded verbatim ────────────────────
+    #[test]
+    fn session_update_relay_preserves_nested_meta_verbatim() {
+        // The opaque-relay guarantee: the `update` value (including agent-specific
+        // _meta such as codex's normalized command/cwd) reaches the backend
+        // byte-for-byte — no field dropped, renamed, or normalized.
+        let update = json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_1",
+            "kind": "execute",
+            "rawInput": { "command": "printf hi > x.txt" },
+            "_meta": { "codex": { "params": {
+                "command": "/bin/zsh -lc \"printf hi > x.txt\"",
+                "cwd": "/work"
+            }}}
+        });
+        let params = json!({ "sessionId": "s1", "update": update });
+        let (session_id, relayed) = session_update_parts(&params).expect("relayed");
+        assert_eq!(session_id, "s1");
+        assert_eq!(relayed, update); // verbatim — the whole nested _meta survives
+
+        // No usable sessionId → nothing to relay (handler still returns Handled::Yes).
+        assert!(session_update_parts(&json!({ "sessionId": "", "update": update })).is_none());
+        assert!(session_update_parts(&json!({ "update": update })).is_none());
+    }
+
+    // ── ① opaque relay: request_permission option passthrough ────────────────
+    #[test]
+    fn permission_options_pass_through_codex_option_kinds() {
+        // The runtime path delegates option extraction to the shared helper; the
+        // agent's option ids + kinds (incl. codex's execpolicy-amendment variant,
+        // whose kind is allow_always) must pass through so the backend maps
+        // allow/reject correctly.
+        let params = json!({
+            "sessionId": "s1",
+            "options": [
+                {"optionId": "allow_once", "kind": "allow_once", "name": "Allow Once"},
+                {"optionId": "allow_always", "kind": "allow_always", "name": "Allow for Session"},
+                {"optionId": "accept_execpolicy_amendment", "kind": "allow_always", "name": "Allow and Remember Command Pattern"},
+                {"optionId": "reject_once", "kind": "reject_once", "name": "Reject"}
+            ]
+        });
+        let options = crate::acp_adapter::permission_options_from_params(&params);
+        assert_eq!(options.len(), 4);
+        assert_eq!(options[0].option_id, "allow_once");
+        assert_eq!(options[0].kind.as_deref(), Some("allow_once"));
+        assert_eq!(options[3].option_id, "reject_once");
+        assert_eq!(options[3].kind.as_deref(), Some("reject_once"));
     }
 }
