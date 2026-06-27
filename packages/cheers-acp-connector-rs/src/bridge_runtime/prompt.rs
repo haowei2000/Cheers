@@ -371,15 +371,27 @@ fn codex_request_params(params: &Value) -> Option<&Value> {
 }
 
 pub(super) fn permission_body_from_params(params: &Value) -> String {
+    let codex = codex_request_params(params);
     // Prefer codex's explicit human-readable reason (e.g. "Do you want to allow
     // writing X to /tmp/y?") over the generic fallback — this is the single most
     // useful line for a human approver.
-    if let Some(reason) = codex_request_params(params)
+    if let Some(reason) = codex
         .and_then(|p| p.get("reason"))
         .and_then(Value::as_str)
         .filter(|s| !s.trim().is_empty())
     {
         return reason.to_string();
+    }
+    // codex without a reason still hands us the normalized command — show that
+    // instead of the generic line so the approver sees *something* concrete. The
+    // card also renders the command in its own block, so the frontend dedupes
+    // when body == tool.command (impact line is hidden).
+    if let Some(command) = codex
+        .and_then(|p| p.get("command"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+    {
+        return command.to_string();
     }
     params
         .get("message")
@@ -566,6 +578,19 @@ mod tests {
         assert_eq!(
             permission_body_from_params(&params),
             "Do you want to allow writing X to /tmp/y?"
+        );
+        // codex with a command but no reason: fall back to the command itself
+        // (more concrete than the generic line; deduped against tool.command).
+        let no_reason = json!({
+            "toolCall": { "kind": "execute" },
+            "_meta": { "codex": { "params": {
+                "command": "/bin/zsh -lc 'echo X > /tmp/y'",
+                "cwd": "/work"
+            }}}
+        });
+        assert_eq!(
+            permission_body_from_params(&no_reason),
+            "/bin/zsh -lc 'echo X > /tmp/y'"
         );
         // Without _meta the generic fallback still applies.
         assert_eq!(
