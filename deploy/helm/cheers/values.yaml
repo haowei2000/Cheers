@@ -84,7 +84,12 @@ secrets:
   s3AccessKey: cheers-local-access-key
   s3SecretKey: cheers-local-secret-key
   adminPassword: admin12345
-  jwtSecretKey: "dev-change-me-jwt-secret"
+  # RS256 PEM keypair — the gateway requires BOTH. Provide via `--set-file`
+  # (dev) or an existing Secret (prod). Generate:
+  #   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out priv.pem
+  #   openssl rsa -in priv.pem -pubout -out pub.pem
+  jwtPrivateKey: ""
+  jwtPublicKey: ""
 
 # ── Ingress (path-routes /api + /ws to the gateway, everything else to the
 #    frontend; when disabled, reach the frontend Service directly) ───────────

@@ -40,9 +40,12 @@ spec:
             - name: ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: ADMIN_PASSWORD }
-            - name: JWT_SECRET_KEY
+            - name: JWT_PRIVATE_KEY
               valueFrom:
-                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: JWT_SECRET_KEY }
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: JWT_PRIVATE_KEY }
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: JWT_PUBLIC_KEY }
             - name: PORT
               value: {{ .Values.gateway.port | quote }}
             - name: DATABASE_URL
