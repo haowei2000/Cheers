@@ -169,8 +169,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       <div className="flex items-center gap-2 py-0.5 text-xs">
         <span
           className={cn(
-            "font-medium",
-            expired ? "text-zinc-500" : ok ? "text-emerald-400/90" : "text-rose-400/90"
+            expired ? "text-zinc-500" : ok ? "text-zinc-400" : "text-rose-400/70"
           )}
         >
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}

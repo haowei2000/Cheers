@@ -5,7 +5,8 @@ import {
   Wrench,
   ListTodo,
   ShieldCheck,
-  CheckCircle2,
+  Check,
+  X,
   XCircle,
   Clock,
   Zap,
@@ -22,38 +23,42 @@ interface Props {
 
 /** Icon + tone + short label for a persisted trace row. Approval rows get the
  *  shield/check/x family; agent-progress rows map by phase. */
+// Keep the timeline quiet and monochrome (Codex/Claude style): icons carry the
+// category, but the palette stays muted zinc so steps read as ambient progress
+// rather than a loud status board. Color is reserved for genuine failures (and a
+// soft amber for a still-pending approval).
 function eventMeta(e: TraceEntry): { Icon: LucideIcon; tone: string; label: string } {
   if (e.kind === "approval") {
     const ak = e.approval_kind ?? "";
     if (ak === "resolved") {
       const ok = (e.decision ?? "").startsWith("allow");
       return ok
-        ? { Icon: CheckCircle2, tone: "text-emerald-400", label: "Approved" }
-        : { Icon: XCircle, tone: "text-rose-400", label: "Denied" };
+        ? { Icon: Check, tone: "text-zinc-500", label: "Approved" }
+        : { Icon: X, tone: "text-rose-400/70", label: "Denied" };
     }
     if (ak === "expired" || ak === "rejected") {
-      return { Icon: XCircle, tone: "text-zinc-500", label: ak === "expired" ? "Expired" : "Rejected" };
+      return { Icon: X, tone: "text-zinc-600", label: ak === "expired" ? "Expired" : "Rejected" };
     }
     if (ak === "auto_allowed") {
-      return { Icon: CheckCircle2, tone: "text-emerald-400/80", label: "Auto-allowed" };
+      return { Icon: Check, tone: "text-zinc-500", label: "Auto-allowed" };
     }
-    return { Icon: ShieldCheck, tone: "text-amber-400", label: "Approval" };
+    return { Icon: ShieldCheck, tone: "text-amber-400/70", label: "Approval" };
   }
   switch (e.phase) {
     case "tool_call":
     case "tool_call_update":
-      return { Icon: Wrench, tone: "text-orange-400", label: "Tool" };
+      return { Icon: Wrench, tone: "text-zinc-500", label: "Tool" };
     case "plan":
-      return { Icon: ListTodo, tone: "text-sky-400", label: "Plan" };
+      return { Icon: ListTodo, tone: "text-zinc-500", label: "Plan" };
     case "prompt_finished":
-      return { Icon: CheckCircle2, tone: "text-emerald-400", label: "Done" };
+      return { Icon: Check, tone: "text-zinc-500", label: "Done" };
     case "prompt_started":
-      return { Icon: Zap, tone: "text-zinc-400", label: "Start" };
+      return { Icon: Zap, tone: "text-zinc-500", label: "Start" };
     case "prompt_failed":
     case "terminal_ack_failed":
-      return { Icon: XCircle, tone: "text-rose-400", label: "Failed" };
+      return { Icon: XCircle, tone: "text-rose-400/70", label: "Failed" };
     default:
-      return { Icon: Clock, tone: "text-zinc-500", label: e.phase || "Event" };
+      return { Icon: Clock, tone: "text-zinc-600", label: e.phase || "Event" };
   }
 }
 
@@ -110,36 +115,37 @@ export function BotTracePanel({ channelId, msgId }: Props) {
       </button>
 
       {expanded && events && events.length > 0 && (
-        <div className="mt-1 rounded-md border border-zinc-800 bg-zinc-900/40 divide-y divide-zinc-800/70 overflow-hidden">
+        <div className="mt-1.5 ml-[5px] flex flex-col gap-1 border-l border-zinc-800/70 pl-3">
           {events.map((e) => {
             const { Icon, tone, label } = eventMeta(e);
             const isApproval = e.kind === "approval";
             return (
-              <div key={e.id} className="flex items-start gap-2 px-2.5 py-1.5">
-                <Icon className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", tone)} />
+              <div key={e.id} className="flex items-baseline gap-2 min-w-0">
+                <Icon className={cn("w-3 h-3 shrink-0 translate-y-[2px]", tone)} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-2 min-w-0">
                     <span
                       className={cn(
-                        "text-xs truncate",
-                        isApproval ? "text-zinc-200 font-medium" : "text-zinc-300"
+                        "text-[11px] truncate",
+                        isApproval ? "text-zinc-400" : "text-zinc-500"
                       )}
                     >
                       {e.title || label}
                     </span>
-                    <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">
-                      {label}
-                      {e.status ? ` · ${e.status}` : ""}
-                    </span>
+                    {e.status && (
+                      <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">
+                        {e.status}
+                      </span>
+                    )}
                   </div>
                   {isApproval && e.decision && (
-                    <div className="text-[11px] text-zinc-500">
+                    <div className="text-[10px] text-zinc-600 truncate">
                       {e.decision}
                       {e.actor_id ? ` · ${e.actor_id.slice(0, 8)}` : ""}
                     </div>
                   )}
                   {!isApproval && e.message && (
-                    <div className="text-[11px] text-zinc-500 truncate">
+                    <div className="text-[10px] text-zinc-600 truncate">
                       {e.message}
                     </div>
                   )}
