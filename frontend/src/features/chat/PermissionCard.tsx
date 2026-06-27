@@ -79,7 +79,10 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   }, [resolved]);
 
   const tool = data.tool ?? null;
+  // Prefer the connector's normalized command (e.g. "/bin/zsh -lc \"…\"") over
+  // the raw, often-escaped toolCall.rawInput.command before falling back.
   const command =
+    (tool?.command?.trim() ? tool.command : null) ??
     previewRawInput(tool?.raw_input) ??
     tool?.title ??
     tool?.name ??
