@@ -843,11 +843,12 @@ async fn handle_permission_request_frame(
         .begin()
         .await
         .map_err(crate::gateway::log_db_err("permission_request: begin tx"))?;
-    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
-        .await
-        .map_err(crate::gateway::log_db_err(
-            "permission_request: allocate channel_seq",
-        ))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "permission_request: allocate channel_seq",
+            ))?;
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -967,112 +968,38 @@ async fn handle_permission_cancel_frame(frame: &Value, state: &AppState, bot: &B
         .and_then(Value::as_str)
         .unwrap_or("timeout");
 
-    let pending = match crate::domain::approval::find_pending_by_request_id(&state.db, request_id)
-        .await
-    {
-        Ok(Some(p)) => p,
-        Ok(None) => return, // never forwarded, or already swept
-        Err(e) => {
-            tracing::warn!(error = %e, request_id, "permission_cancel: lookup failed");
-            return;
-        }
-    };
+    let pending =
+        match crate::domain::approval::find_pending_by_request_id(&state.db, request_id).await {
+            Ok(Some(p)) => p,
+            Ok(None) => return, // never forwarded, or already swept
+            Err(e) => {
+                tracing::warn!(error = %e, request_id, "permission_cancel: lookup failed");
+                return;
+            }
+        };
     // Only this bot's own requests; and skip if a human already resolved it.
     if pending.bot_id != bot.bot_id
-        || pending.content_data.get("resolved").and_then(Value::as_bool) == Some(true)
+        || pending
+            .content_data
+            .get("resolved")
+            .and_then(Value::as_bool)
+            == Some(true)
     {
         return;
     }
 
-    let now = chrono::Utc::now().to_rfc3339();
-    let patch = json!({
-        "resolved": true,
-        "resolved_kind": "expired",
-        "resolved_reason": reason,
-        "resolved_at": now,
-    });
-    // Atomic finalize: bail if a human resolve already won (independent task).
-    // Without this both finalizers could write contradictory content_data + dual
-    // audit/trace rows for the same request.
-    match crate::domain::approval::patch_content_data_if_unresolved(
+    // Shared finalize (atomic CAS + audit + trace + broadcast); identical to the
+    // server-side TTL sweeper so the two paths can never diverge.
+    if crate::gateway::approval_sweeper::finalize_expired(
         &state.db,
-        pending.msg_id,
-        patch.clone(),
+        &state.fanout,
+        &pending,
+        reason,
     )
     .await
     {
-        Ok(false) => return, // already resolved by a human — skip audit/trace/broadcast
-        Ok(true) => {}
-        Err(e) => {
-            tracing::warn!(error = %e, request_id, "permission_cancel: patch failed");
-            return;
-        }
+        tracing::info!(request_id, reason, "permission card finalized as expired");
     }
-    let _ = crate::domain::approval::record_audit(
-        &state.db,
-        crate::domain::approval::AuditEvent {
-            event_type: "timeout",
-            bot_id: Some(pending.bot_id),
-            channel_id: pending.channel_id,
-            request_id: Some(request_id.to_string()),
-            msg_id: Some(pending.msg_id),
-            ..Default::default()
-        },
-    )
-    .await;
-
-    // Sibling trace-timeline row for the expiry, anchored to the bot turn.
-    let cancel_anchor = pending
-        .content_data
-        .get("source_msg_id")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| pending.msg_id.to_string());
-    let _ = crate::domain::trace::record(
-        &state.db,
-        crate::domain::trace::TraceEvent {
-            msg_id: cancel_anchor,
-            channel_id: pending.channel_id.to_string(),
-            bot_id: Some(pending.bot_id.to_string()),
-            kind: "approval",
-            phase: "approval".to_string(),
-            status: Some("cancelled".to_string()),
-            request_id: Some(request_id.to_string()),
-            approval_kind: Some("expired".to_string()),
-            decision: Some("expired".to_string()),
-            ..Default::default()
-        },
-    )
-    .await;
-
-    let mut content_data = pending.content_data.clone();
-    if let (Value::Object(target), Value::Object(src)) = (&mut content_data, &patch) {
-        for (k, v) in src {
-            target.insert(k.clone(), v.clone());
-        }
-    }
-    let wire = WireFrame::channel(
-        pending.channel_id,
-        "message",
-        json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": pending.msg_id,
-            "channel_id": pending.channel_id,
-            "channel_seq": pending.channel_seq,
-            "sender_type": "bot",
-            "sender_id": pending.bot_id,
-            "content": pending.content,
-            "msg_type": "permission",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
-            "content_data": content_data,
-        }),
-    );
-    state.fanout.broadcast_channel(pending.channel_id, wire).await;
-    tracing::info!(request_id, reason, "permission card finalized as expired");
 }
 
 async fn ensure_bot_channel_member(
