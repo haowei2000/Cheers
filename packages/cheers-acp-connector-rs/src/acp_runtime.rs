@@ -421,6 +421,7 @@ async fn run_actor(
 
     let event_notif = event_tx.clone();
     let event_req = event_tx;
+    let account_req = account_id.clone();
 
     let result = Client
         .builder()
@@ -467,6 +468,14 @@ async fn run_actor(
                         retry: false,
                     });
                 }
+                // Observability (mirrors the hand-rolled path): the raw params are
+                // exactly what the backend approval card is built from, so log them
+                // to see what the agent (e.g. codex) actually sent.
+                tracing::info!(
+                    account = %account_req,
+                    raw = %msg.params,
+                    "session/request_permission raw params (runtime)"
+                );
                 let acp_session_id = msg
                     .params
                     .get("sessionId")
