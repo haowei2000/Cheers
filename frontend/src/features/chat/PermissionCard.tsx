@@ -72,6 +72,11 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requested, setRequested] = useState(false);
+  // Set when the resolve is recorded server-side but couldn't be delivered to the
+  // agent (delivered:false) — e.g. the connector/session is offline. The card still
+  // collapses to "✓ Approved"; without this the resolver would read that as "the
+  // agent ran it", when in fact the agent may never receive the decision.
+  const [undelivered, setUndelivered] = useState(false);
   // Pending starts expanded (the user must review); resolved settles collapsed.
   const [collapsed, setCollapsed] = useState(resolved);
   useEffect(() => {
@@ -129,8 +134,12 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await resolvePermission(channelId, requestId, id);
+      const res = await resolvePermission(channelId, requestId, id);
       // The resolved card is broadcast back over WS; no local mutation needed.
+      // Delivery to the agent is best-effort: the gateway finalizes the card even
+      // when the connector/session is gone (delivered:false). Surface that so the
+      // collapsed "✓ Approved" isn't misread as "the agent acted on it".
+      if (res && res.delivered === false) setUndelivered(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to resolve");
     } finally {
@@ -174,6 +183,14 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         {data.resolved_by && (
           <span className="text-zinc-600 whitespace-nowrap">
             · {data.resolved_by.slice(0, 8)}
+          </span>
+        )}
+        {undelivered && (
+          <span
+            className="text-amber-400/90 whitespace-nowrap"
+            title="The decision was recorded but couldn't be delivered to the agent (the connector or session may be offline). The agent may not act on it."
+          >
+            · ⚠ not delivered
           </span>
         )}
       </div>
