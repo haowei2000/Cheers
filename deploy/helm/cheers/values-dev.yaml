@@ -1,0 +1,38 @@
+# Local dev overlay (Docker Desktop k8s / kind / minikube).
+#   helm upgrade --install cheers deploy/helm/cheers \
+#     -n cheers --create-namespace -f deploy/helm/cheers/values-dev.yaml
+
+gateway:
+  image:
+    # Build + load locally, e.g.:
+    #   docker build -t cheers/gateway:dev server
+    #   kind load docker-image cheers/gateway:dev   (kind)
+    tag: dev
+    pullPolicy: IfNotPresent
+  corsAllowedOrigins: "" # allow all in dev
+
+frontend:
+  image:
+    tag: dev
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    nodePort: 30080 # http://localhost:30080 on Docker Desktop k8s
+
+postgres:
+  persistence:
+    size: 2Gi
+
+rustfs:
+  persistence:
+    size: 4Gi
+
+redis:
+  enabled: false # single instance → in-process fan-out
+
+# Dev secrets are the chart defaults (admin / admin12345). Fine for local only.
+secrets:
+  create: true
+
+ingress:
+  enabled: false

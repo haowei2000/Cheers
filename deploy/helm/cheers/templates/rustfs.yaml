@@ -1,0 +1,90 @@
+{{- if .Values.rustfs.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "cheers.rustfs.fullname" . }}
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+spec:
+  serviceName: {{ include "cheers.rustfs.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "cheers.selectorLabels" (dict "ctx" . "component" "rustfs") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cheers.selectorLabels" (dict "ctx" . "component" "rustfs") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: false
+      containers:
+        - name: rustfs
+          image: {{ .Values.rustfs.image }}
+          ports:
+            - name: api
+              containerPort: {{ .Values.rustfs.apiPort }}
+            - name: console
+              containerPort: {{ .Values.rustfs.consolePort }}
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_ADDRESS
+              value: "0.0.0.0:{{ .Values.rustfs.apiPort }}"
+            - name: RUSTFS_CONSOLE_ADDRESS
+              value: "0.0.0.0:{{ .Values.rustfs.consolePort }}"
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "true"
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: S3_ACCESS_KEY }
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: S3_SECRET_KEY }
+          readinessProbe:
+            httpGet: { path: /rustfs/health/live, port: api }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.rustfs.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      {{- if not .Values.rustfs.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.rustfs.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.rustfs.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.rustfs.persistence.size | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cheers.rustfs.fullname" . }}
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+spec:
+  selector:
+    {{- include "cheers.selectorLabels" (dict "ctx" . "component" "rustfs") | nindent 4 }}
+  ports:
+    - name: api
+      port: {{ .Values.rustfs.apiPort }}
+      targetPort: api
+    - name: console
+      port: {{ .Values.rustfs.consolePort }}
+      targetPort: console
+{{- end }}
