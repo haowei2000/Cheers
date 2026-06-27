@@ -11,8 +11,8 @@
 //! method is declined (`Handled::No`) so the runtime answers it with `-32601`,
 //! preserving the connector's headless-relay posture.
 //!
-//! Not yet wired into `bridge_runtime::run` (that swap is feature-flagged and
-//! lands separately); this module is self-contained and compiled but unselected.
+//! Selected at startup by [`AcpAdapterKind`] when `CHEERS_ACP_RUNTIME=1`; the
+//! default stays the hand-rolled transport until the runtime path reaches parity.
 #![allow(dead_code)]
 
 use std::process::Stdio;
@@ -95,19 +95,7 @@ impl RuntimeAcpAdapter {
             .cmd_tx
             .as_ref()
             .ok_or_else(|| anyhow!("ACP runtime adapter is not started (method={method})"))?;
-        let (reply_tx, reply_rx) = oneshot::channel();
-        cmd_tx
-            .send(Command::Request {
-                method: method.to_string(),
-                params,
-                timeout_ms,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| anyhow!("ACP runtime actor is gone (method={method})"))?;
-        reply_rx
-            .await
-            .map_err(|_| anyhow!("ACP runtime actor dropped reply (method={method})"))?
+        request_via(cmd_tx, method, params, timeout_ms).await
     }
 
     async fn notify(&self, method: &str, params: Value) -> anyhow::Result<()> {
@@ -122,6 +110,65 @@ impl RuntimeAcpAdapter {
             })
             .await
             .map_err(|_| anyhow!("ACP runtime actor is gone (method={method})"))
+    }
+
+    // --- Concrete API `bridge_runtime::run` needs beyond the RuntimeAdapter
+    // trait (mirrors `AcpAdapter`), so the runtime adapter is a structural
+    // drop-in behind `AcpAdapterKind`. ---
+
+    /// A cheap, clone-able issuer for the lock-free concurrent-prompt path
+    /// (the runtime-backed equivalent of `AcpAdapter::requester`).
+    pub fn requester(&self) -> RuntimeRequester {
+        RuntimeRequester {
+            cmd_tx: self.cmd_tx.clone(),
+        }
+    }
+
+    /// Injects a `LoadSessionFence` into the same FIFO as history-replay
+    /// `session/update`s, so it arrives only after every preceding update.
+    pub async fn inject_fence(&self, acp_session_id: impl Into<String>) {
+        let _ = self
+            .event_tx
+            .send(RuntimeEvent::LoadSessionFence {
+                acp_session_id: acp_session_id.into(),
+            })
+            .await;
+    }
+
+    fn agent_capabilities(&self) -> Option<&Value> {
+        self.initialize_response
+            .as_ref()
+            .and_then(|value| value.get("agentCapabilities"))
+    }
+
+    pub fn supports_load_session(&self) -> bool {
+        self.agent_capability_bool(&["loadSession"])
+    }
+
+    pub fn supports_prompt_image(&self) -> bool {
+        self.agent_capability_bool(&["promptCapabilities", "image"])
+    }
+
+    pub fn supports_mcp_http(&self) -> bool {
+        self.agent_capability_bool(&["mcpCapabilities", "http"])
+    }
+
+    pub fn supports_mcp_sse(&self) -> bool {
+        self.agent_capability_bool(&["mcpCapabilities", "sse"])
+    }
+
+    fn agent_capability_bool(&self, path: &[&str]) -> bool {
+        let mut node = match self.agent_capabilities() {
+            Some(node) => node,
+            None => return false,
+        };
+        for key in path {
+            node = match node.get(key) {
+                Some(child) => child,
+                None => return false,
+            };
+        }
+        node.as_bool().unwrap_or(false)
     }
 }
 
@@ -526,4 +573,241 @@ fn spawn_stderr_reader(account_id: String, stderr: tokio::process::ChildStderr) 
             tracing::info!(account = %account_id, "[acp stderr] {line}");
         }
     });
+}
+
+/// Sends a request `Command` to the actor and awaits the typed reply. Shared by
+/// `RuntimeAcpAdapter::request` and `RuntimeRequester::prompt`.
+async fn request_via(
+    cmd_tx: &mpsc::Sender<Command>,
+    method: &str,
+    params: Value,
+    timeout_ms: u64,
+) -> anyhow::Result<Value> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(Command::Request {
+            method: method.to_string(),
+            params,
+            timeout_ms,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| anyhow!("ACP runtime actor is gone (method={method})"))?;
+    reply_rx
+        .await
+        .map_err(|_| anyhow!("ACP runtime actor dropped reply (method={method})"))?
+}
+
+/// Lock-free issuer for the concurrent-prompt path — the runtime-backed
+/// equivalent of [`crate::acp_adapter::AcpRequester`]. Holds only the actor
+/// command channel, so `prompt` can be awaited concurrently across sessions.
+#[derive(Clone)]
+pub struct RuntimeRequester {
+    cmd_tx: Option<mpsc::Sender<Command>>,
+}
+
+impl RuntimeRequester {
+    pub async fn prompt(
+        &self,
+        session_id: &str,
+        prompt: Vec<Value>,
+        timeout_ms: u64,
+    ) -> anyhow::Result<PromptResult> {
+        let cmd_tx = self
+            .cmd_tx
+            .as_ref()
+            .ok_or_else(|| anyhow!("ACP runtime adapter is not started (prompt)"))?;
+        let result = request_via(
+            cmd_tx,
+            "session/prompt",
+            json!({ "sessionId": session_id, "prompt": prompt }),
+            timeout_ms,
+        )
+        .await?;
+        Ok(PromptResult {
+            stop_reason: result
+                .get("stopReason")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string),
+        })
+    }
+}
+
+/// Whether the official runtime transport (Tier B) is selected. Default off;
+/// `CHEERS_ACP_RUNTIME=1` (or `true`) opts in. This is the dev cutover switch
+/// while the runtime path reaches parity with the hand-rolled transport.
+fn runtime_transport_enabled() -> bool {
+    std::env::var("CHEERS_ACP_RUNTIME")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Startup-selected ACP transport. Both variants share the `RuntimeEvent`
+/// channel and expose the same surface, so `bridge_runtime::run` is agnostic to
+/// which one backs it.
+pub enum AcpAdapterKind {
+    HandRolled(crate::acp_adapter::AcpAdapter),
+    Runtime(RuntimeAcpAdapter),
+}
+
+/// The requester counterpart of [`AcpAdapterKind`].
+pub enum AcpRequesterKind {
+    HandRolled(crate::acp_adapter::AcpRequester),
+    Runtime(RuntimeRequester),
+}
+
+impl AcpAdapterKind {
+    /// Builds the transport selected by `CHEERS_ACP_RUNTIME` (default: hand-rolled).
+    pub fn new(
+        account_id: impl Into<String>,
+        config: StdioAgentConfig,
+        event_tx: mpsc::Sender<RuntimeEvent>,
+    ) -> Self {
+        let account_id = account_id.into();
+        if runtime_transport_enabled() {
+            tracing::info!(
+                account = %account_id,
+                "ACP transport: official runtime crate (CHEERS_ACP_RUNTIME)"
+            );
+            Self::Runtime(RuntimeAcpAdapter::new(account_id, config, event_tx))
+        } else {
+            Self::HandRolled(crate::acp_adapter::AcpAdapter::new(
+                account_id, config, event_tx,
+            ))
+        }
+    }
+
+    pub async fn start(&mut self) -> anyhow::Result<Value> {
+        match self {
+            Self::HandRolled(a) => a.start().await,
+            Self::Runtime(a) => a.start().await,
+        }
+    }
+
+    pub async fn stop(&mut self) -> anyhow::Result<()> {
+        match self {
+            Self::HandRolled(a) => a.stop().await,
+            Self::Runtime(a) => a.stop().await,
+        }
+    }
+
+    pub async fn new_session(
+        &mut self,
+        options: SessionStartOptions,
+    ) -> anyhow::Result<SessionStartResult> {
+        match self {
+            Self::HandRolled(a) => a.new_session(options).await,
+            Self::Runtime(a) => a.new_session(options).await,
+        }
+    }
+
+    pub async fn load_session(
+        &mut self,
+        session_id: &str,
+        options: SessionStartOptions,
+    ) -> anyhow::Result<SessionLoadResult> {
+        match self {
+            Self::HandRolled(a) => a.load_session(session_id, options).await,
+            Self::Runtime(a) => a.load_session(session_id, options).await,
+        }
+    }
+
+    pub async fn cancel(&mut self, session_id: &str) -> anyhow::Result<()> {
+        match self {
+            Self::HandRolled(a) => a.cancel(session_id).await,
+            Self::Runtime(a) => a.cancel(session_id).await,
+        }
+    }
+
+    pub async fn set_config_option(
+        &mut self,
+        session_id: &str,
+        config_id: &str,
+        value: &str,
+    ) -> anyhow::Result<Value> {
+        match self {
+            Self::HandRolled(a) => a.set_config_option(session_id, config_id, value).await,
+            Self::Runtime(a) => a.set_config_option(session_id, config_id, value).await,
+        }
+    }
+
+    pub async fn apply_settings(
+        &mut self,
+        settings: &ConnectorControlSettings,
+    ) -> anyhow::Result<ConfigApplyResult> {
+        match self {
+            Self::HandRolled(a) => a.apply_settings(settings).await,
+            Self::Runtime(a) => a.apply_settings(settings).await,
+        }
+    }
+
+    pub fn permission_options(&self, params: &Value) -> Vec<PermissionOption> {
+        match self {
+            Self::HandRolled(a) => a.permission_options(params),
+            Self::Runtime(a) => a.permission_options(params),
+        }
+    }
+
+    pub fn requester(&self) -> AcpRequesterKind {
+        match self {
+            Self::HandRolled(a) => AcpRequesterKind::HandRolled(a.requester()),
+            Self::Runtime(a) => AcpRequesterKind::Runtime(a.requester()),
+        }
+    }
+
+    pub async fn inject_fence(&self, acp_session_id: impl Into<String>) {
+        match self {
+            Self::HandRolled(a) => a.inject_fence(acp_session_id).await,
+            Self::Runtime(a) => a.inject_fence(acp_session_id).await,
+        }
+    }
+
+    pub fn supports_load_session(&self) -> bool {
+        match self {
+            Self::HandRolled(a) => a.supports_load_session(),
+            Self::Runtime(a) => a.supports_load_session(),
+        }
+    }
+
+    pub fn supports_prompt_image(&self) -> bool {
+        match self {
+            Self::HandRolled(a) => a.supports_prompt_image(),
+            Self::Runtime(a) => a.supports_prompt_image(),
+        }
+    }
+
+    pub fn supports_mcp_http(&self) -> bool {
+        match self {
+            Self::HandRolled(a) => a.supports_mcp_http(),
+            Self::Runtime(a) => a.supports_mcp_http(),
+        }
+    }
+
+    pub fn supports_mcp_sse(&self) -> bool {
+        match self {
+            Self::HandRolled(a) => a.supports_mcp_sse(),
+            Self::Runtime(a) => a.supports_mcp_sse(),
+        }
+    }
+
+    pub fn initialize_response(&self) -> Option<&Value> {
+        match self {
+            Self::HandRolled(a) => a.initialize_response(),
+            Self::Runtime(a) => a.initialize_response(),
+        }
+    }
+}
+
+impl AcpRequesterKind {
+    pub async fn prompt(
+        &self,
+        session_id: &str,
+        prompt: Vec<Value>,
+        timeout_ms: u64,
+    ) -> anyhow::Result<PromptResult> {
+        match self {
+            Self::HandRolled(r) => r.prompt(session_id, prompt, timeout_ms).await,
+            Self::Runtime(r) => r.prompt(session_id, prompt, timeout_ms).await,
+        }
+    }
 }
