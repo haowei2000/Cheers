@@ -35,6 +35,14 @@ pub struct Config {
     pub orphan_reclaim_threshold_secs: u64,
     /// 周期扫描间隔秒数（默认 60；设为 0 则只在启动时扫一次）。
     pub orphan_reclaim_interval_secs: u64,
+
+    // 审批卡 server 端兜底 TTL 扫描
+    /// 待审批卡片超过该秒数仍未解决则扫为 expired（默认 1800 = 30 分钟）。
+    /// 是连接器自身权限超时之上的兜底——正常情况下连接器先发 permission_cancel，
+    /// 本扫描只兜底「连接器进程在超时前就死掉」导致卡片永久 pending 的情况。
+    pub approval_card_ttl_secs: u64,
+    /// 审批卡扫描间隔秒数（默认 120；设为 0 则只在启动时扫一次）。
+    pub approval_sweep_interval_secs: u64,
 }
 
 impl Config {
@@ -84,6 +92,15 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(60),
+
+            approval_card_ttl_secs: env::var("APPROVAL_CARD_TTL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1800),
+            approval_sweep_interval_secs: env::var("APPROVAL_SWEEP_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(120),
         }
     }
 }

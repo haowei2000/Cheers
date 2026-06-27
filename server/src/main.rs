@@ -97,6 +97,16 @@ async fn main() -> anyhow::Result<()> {
         config.orphan_reclaim_threshold_secs,
     );
 
+    // Approval-card TTL sweeper: finalize permission cards that were never
+    // resolved and whose connector died before its own timeout could cancel
+    // them, so they don't hang pending forever (no other server-side expiry).
+    gateway::approval_sweeper::spawn(
+        state.db.clone(),
+        state.fanout.clone(),
+        config.approval_sweep_interval_secs,
+        config.approval_card_ttl_secs,
+    );
+
     let app = router::build(state);
 
     let addr = format!("0.0.0.0:{}", config.port);
