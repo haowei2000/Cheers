@@ -112,6 +112,39 @@ impl RuntimeAcpAdapter {
             .map_err(|_| anyhow!("ACP runtime actor is gone (method={method})"))
     }
 
+    /// Pushes the configured permission mode to the agent via `session/set_mode`
+    /// (best-effort), mirroring the hand-rolled adapter. Without this the agent
+    /// keeps its native policy — e.g. codex self-approves and never sends
+    /// `session/request_permission`, so no approval card is ever produced.
+    async fn apply_permission_mode(&self, session_id: &str) {
+        let Some(mode) = self.config.agent_native_permission_mode.clone() else {
+            return;
+        };
+        if mode.trim().is_empty() {
+            return;
+        }
+        match self
+            .request(
+                "session/set_mode",
+                json!({ "sessionId": session_id, "modeId": mode }),
+                self.request_timeout_ms(),
+            )
+            .await
+        {
+            Ok(_) => tracing::info!(
+                account = %self.account_id,
+                session = %session_id,
+                mode = %mode,
+                "applied ACP session mode (runtime)"
+            ),
+            Err(err) => tracing::warn!(
+                account = %self.account_id,
+                mode = %mode,
+                "session/set_mode failed (runtime: unknown modeId or agent rejected?): {err}"
+            ),
+        }
+    }
+
     // --- Concrete API `bridge_runtime::run` needs beyond the RuntimeAdapter
     // trait (mirrors `AcpAdapter`), so the runtime adapter is a structural
     // drop-in behind `AcpAdapterKind`. ---
@@ -258,6 +291,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("ACP session/new did not return sessionId"))?
             .to_string();
+        self.apply_permission_mode(&session_id).await;
         Ok(SessionStartResult {
             session_id,
             metadata: result,
@@ -276,6 +310,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
                 self.request_timeout_ms(),
             )
             .await?;
+        self.apply_permission_mode(session_id).await;
         Ok(SessionLoadResult { metadata: result })
     }
 
@@ -471,7 +506,7 @@ async fn run_actor(
                 // Observability (mirrors the hand-rolled path): the raw params are
                 // exactly what the backend approval card is built from, so log them
                 // to see what the agent (e.g. codex) actually sent.
-                tracing::info!(
+                tracing::debug!(
                     account = %account_req,
                     raw = %msg.params,
                     "session/request_permission raw params (runtime)"
