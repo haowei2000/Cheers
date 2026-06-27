@@ -7,6 +7,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use agent_client_protocol_schema::v1::{
+    ClientCapabilities, Implementation, RequestPermissionOutcome, RequestPermissionResponse,
+    SelectedPermissionOutcome,
+};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -64,13 +68,14 @@ fn negotiate_protocol_version(returned: Option<u64>) -> VersionDecision {
 /// reuses THIS function so the configured value and the in-code fallback can
 /// never silently diverge.
 pub(crate) fn default_client_capabilities() -> Value {
-    json!({
-        "fs": {
-            "readTextFile": false,
-            "writeTextFile": false
-        },
-        "terminal": false
-    })
+    // The locked-down posture (no fs, no terminal) IS the official
+    // `ClientCapabilities::default()` — a type-asserted invariant rather than
+    // hand-written JSON, so it cannot silently drift across a crate upgrade.
+    // Both `ClientCapabilities` and `FileSystemCapabilities` are
+    // `#[skip_serializing_none]`, so this serializes to exactly
+    // `{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}`.
+    serde_json::to_value(ClientCapabilities::default())
+        .expect("serializing default ACP client capabilities is infallible")
 }
 
 #[derive(Debug)]
@@ -467,6 +472,11 @@ impl AcpRequester {
 impl RuntimeAdapter for AcpAdapter {
     async fn start(&mut self) -> anyhow::Result<Value> {
         self.spawn_peer().await?;
+        // clientInfo built from the official `Implementation` type instead of
+        // hand-written JSON. (protocolVersion stays `ACP_PROTOCOL_VERSION` — the
+        // connector's single-source-of-truth const, equal to ProtocolVersion::V1.)
+        let mut client_info = Implementation::new("cce-acp-connector", env!("CARGO_PKG_VERSION"));
+        client_info.title = Some("Cheers ACP Connector".to_string());
         let response = self
             .request(
                 "initialize",
@@ -477,11 +487,7 @@ impl RuntimeAdapter for AcpAdapter {
                         .client_capabilities
                         .clone()
                         .unwrap_or_else(default_client_capabilities),
-                    "clientInfo": {
-                        "name": "cce-acp-connector",
-                        "title": "Cheers ACP Connector",
-                        "version": env!("CARGO_PKG_VERSION")
-                    }
+                    "clientInfo": client_info,
                 }),
                 self.request_timeout_ms(),
             )
@@ -942,19 +948,7 @@ async fn handle_peer_request(
             id,
             "session/request_permission missing sessionId; replying cancelled"
         );
-        write_json_line(
-            writer,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "outcome": {
-                        "outcome": "cancelled"
-                    }
-                }
-            }),
-        )
-        .await?;
+        write_permission_response(writer, id, RequestPermissionOutcome::Cancelled).await?;
         return Ok(());
     }
 
@@ -986,18 +980,38 @@ async fn handle_peer_request(
         outcome = ?outcome,
         "ACP permission resolved; replying outcome to agent"
     );
+    let acp_outcome = match outcome {
+        PermissionOutcome::Selected { option_id } => {
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
+        }
+        PermissionOutcome::Cancelled => RequestPermissionOutcome::Cancelled,
+    };
+    write_permission_response(writer, id, acp_outcome).await?;
+    Ok(())
+}
+
+/// Writes a JSON-RPC success reply carrying an ACP `RequestPermissionResponse`.
+///
+/// The response shape is owned by the official `agent-client-protocol-schema`
+/// types (`{"outcome":{"outcome":"selected","optionId":...}}` /
+/// `{"outcome":{"outcome":"cancelled"}}`) rather than hand-written JSON — see the
+/// `permission_response_is_wire_compatible` test pinning the exact bytes.
+async fn write_permission_response(
+    writer: &SharedWriter,
+    id: u64,
+    outcome: RequestPermissionOutcome,
+) -> anyhow::Result<()> {
+    let result = serde_json::to_value(RequestPermissionResponse::new(outcome))
+        .context("failed to serialize ACP permission response")?;
     write_json_line(
         writer,
         &json!({
             "jsonrpc": "2.0",
             "id": id,
-            "result": {
-                "outcome": outcome.to_acp_value()
-            }
+            "result": result,
         }),
     )
-    .await?;
-    Ok(())
+    .await
 }
 
 async fn write_json_line(writer: &SharedWriter, value: &Value) -> anyhow::Result<()> {
@@ -1169,11 +1183,43 @@ mod tests {
     #[test]
     fn default_client_capabilities_advertise_no_fs_or_terminal() {
         // The single source of truth config.rs delegates to: Cheers serves no
-        // fs/* or terminal, so all must be false.
+        // fs/* or terminal, so all must be false. Now backed by the official
+        // `ClientCapabilities::default()` — this test fails the day a crate
+        // upgrade makes that default permissive, guarding the locked-down posture
+        // cemented in docs/arch/ACP_FS_PROXY.md.
         let caps = default_client_capabilities();
         assert_eq!(caps["fs"]["readTextFile"], false);
         assert_eq!(caps["fs"]["writeTextFile"], false);
         assert_eq!(caps["terminal"], false);
+        // The typed default must serialize to exactly the locked-down wire shape
+        // config.rs exact-compares against (no stray `_meta`/extra keys).
+        assert_eq!(
+            caps,
+            json!({"fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false})
+        );
+    }
+
+    #[test]
+    fn permission_response_is_wire_compatible() {
+        // The typed schema response must serialize to the exact ACP wire shape the
+        // connector emitted before adopting `agent-client-protocol-schema`
+        // (replacing the removed `PermissionOutcome::to_acp_value` helper).
+        let selected = serde_json::to_value(RequestPermissionResponse::new(
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                "allow-1".to_string(),
+            )),
+        ))
+        .unwrap();
+        assert_eq!(
+            selected,
+            json!({"outcome": {"outcome": "selected", "optionId": "allow-1"}})
+        );
+
+        let cancelled = serde_json::to_value(RequestPermissionResponse::new(
+            RequestPermissionOutcome::Cancelled,
+        ))
+        .unwrap();
+        assert_eq!(cancelled, json!({"outcome": {"outcome": "cancelled"}}));
     }
 
     #[test]
