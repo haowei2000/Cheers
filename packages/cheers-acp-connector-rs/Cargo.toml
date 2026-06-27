@@ -18,6 +18,9 @@ agent-client-protocol-schema = "1.1"
 # unchanged. Inbound session/update + request_permission relay via `UntypedMessage`
 # raw hooks (zero-loss opaque relay; see ACP_RUST_SDK_ADOPTION.md §3).
 agent-client-protocol = "1"
+# Tier B: adapt tokio ChildStdin/ChildStdout (tokio::io) to the futures_io
+# AsyncRead/AsyncWrite that the runtime crate's `ByteStreams` transport expects.
+tokio-util = { version = "0.7", features = ["compat"] }
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
