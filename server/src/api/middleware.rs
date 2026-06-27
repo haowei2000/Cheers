@@ -6,6 +6,7 @@ use axum::{
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 
 use crate::app_state::AppState;
 
@@ -44,6 +45,26 @@ pub async fn jwt_auth(
 
     let claims =
         verify_rs256(&token, &state.config.jwt_public_key_pem).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    // Session revocation + account status (W6): reject deleted/suspended users
+    // and JWTs that predate a forced logout (token_version bump). A token with no
+    // token_version claim defaults to 0, matching a fresh user's row, so existing
+    // sessions survive the W6 rollout. One indexed PK lookup per authed request;
+    // move to a Redis cache if it ever shows up on the hot path.
+    let row = sqlx::query(
+        "SELECT token_version, is_suspended, is_deleted FROM users WHERE user_id = $1",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::UNAUTHORIZED)?;
+    let db_version: i32 = row.try_get("token_version").unwrap_or(0);
+    let suspended: bool = row.try_get("is_suspended").unwrap_or(false);
+    let deleted: bool = row.try_get("is_deleted").unwrap_or(false);
+    if deleted || suspended || (claims.token_version as i64) < db_version as i64 {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
     req.extensions_mut().insert(claims);
     Ok(next.run(req).await)

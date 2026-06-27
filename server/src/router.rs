@@ -272,6 +272,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
                 .delete(api::friends::remove_friend),
         )
         .route("/api/v1/friends/search", get(api::friends::search_users))
+        .route(
+            "/api/v1/users/:user_id/suspend",
+            post(api::users::suspend_user),
+        )
+        .route(
+            "/api/v1/users/:user_id/unsuspend",
+            post(api::users::unsuspend_user),
+        )
         .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route(
             "/api/v1/mcp/parse-claude-config",

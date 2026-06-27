@@ -48,7 +48,8 @@ pub async fn login(
         .parse()
         .map_err(|_| AppError::Internal("invalid user id".into()))?;
 
-    let token = auth::create_access_token(&state.config, user_uuid, &user.role)?;
+    let token =
+        auth::create_access_token(&state.config, user_uuid, &user.role, user.token_version as i64)?;
 
     Ok(Json(LoginResponse {
         access_token: token,
