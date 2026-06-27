@@ -83,6 +83,12 @@ export interface PermissionContentData {
     kind?: string | null;
     raw_input?: unknown;
     locations?: unknown;
+    // Normalized by the connector from the agent's _meta (e.g. codex's
+    // `_meta.codex.params.command`/`cwd`) — cleaner than raw_input.command.
+    command?: string | null;
+    cwd?: string | null;
+    status?: string | null;
+    tool_call_id?: string | null;
   } | null;
   options?: PermissionOption[];
   bot_owner_id?: string;
