@@ -40,7 +40,9 @@ impl RuntimeContext {
                     "running",
                     "Auto-allowed ACP tool permission (local policy)",
                     None,
-                    Some(serde_json::json!({ "kind": "approval", "approval_kind": "auto_allowed" })),
+                    Some(
+                        serde_json::json!({ "kind": "approval", "approval_kind": "auto_allowed" }),
+                    ),
                 )
                 .await?;
                 let _ = respond_to.send(PermissionOutcome::Selected { option_id });
