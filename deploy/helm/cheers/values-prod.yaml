@@ -1,0 +1,71 @@
+# Production overlay. Edit the registry/host/secret references before use.
+#   helm upgrade --install cheers deploy/helm/cheers \
+#     -n cheers --create-namespace -f deploy/helm/cheers/values-prod.yaml
+
+# Pull app images from your registry.
+imageRegistry: "registry.example.com/cheers"
+imagePullSecrets:
+  - name: registry-cred
+
+gateway:
+  image:
+    repository: gateway
+    tag: "" # defaults to Chart.appVersion; pin a real tag in CI
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  corsAllowedOrigins: "https://cheers.example.com"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "2", memory: 1Gi }
+
+frontend:
+  image:
+    repository: frontend
+    tag: ""
+  replicaCount: 2
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+
+postgres:
+  # For real workloads prefer a managed DB: set enabled=false and point
+  # secrets + the DATABASE_URL helper at it. Bundled PG is single-replica.
+  enabled: true
+  persistence:
+    size: 50Gi
+    storageClass: "" # set your cluster's class
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "2", memory: 2Gi }
+
+rustfs:
+  enabled: true
+  persistence:
+    size: 100Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+
+# Multi-instance gateway → Redis-backed fan-out/registry.
+redis:
+  enabled: true
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+
+# Provide real secrets out-of-band (sealed-secrets / external-secrets / kubectl),
+# then reference them — do NOT ship prod creds in values.
+secrets:
+  create: false
+  existingSecret: cheers-secrets # must hold POSTGRES_PASSWORD, S3_ACCESS_KEY,
+  #                                S3_SECRET_KEY, ADMIN_PASSWORD, JWT_SECRET_KEY
+
+ingress:
+  enabled: true
+  className: nginx
+  host: cheers.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" # WebSocket
+  tls:
+    - secretName: cheers-tls
+      hosts:
+        - cheers.example.com

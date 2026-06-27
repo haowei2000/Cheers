@@ -1,0 +1,101 @@
+# Default values for the Cheers chart. Overridden by values-dev.yaml /
+# values-prod.yaml. Secrets here are DEV defaults — override in prod.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Applied to every image as a default registry prefix (e.g. "ghcr.io/you").
+imageRegistry: ""
+imagePullSecrets: []
+
+# ── Gateway (Rust server/, the only backend) ──────────────────────────────
+gateway:
+  image:
+    repository: cheers/gateway
+    tag: "" # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  port: 8000
+  # Non-secret env. Secret env (DB pw, S3 keys, admin pw, JWT) come from the Secret.
+  adminUsername: admin
+  adminDisplayName: "Demo Admin"
+  corsAllowedOrigins: "" # empty = allow all (dev). Set explicit origins in prod.
+  s3Region: us-east-1
+  extraEnv: {} # map of EXTRA_VAR: value
+  resources: {}
+  #  requests: { cpu: 100m, memory: 128Mi }
+  #  limits:   { cpu: "1",  memory: 512Mi }
+  service:
+    type: ClusterIP
+
+# ── Frontend (nginx serving the Vite build, proxies /api+/ws → gateway) ────
+frontend:
+  image:
+    repository: cheers/frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  port: 80
+  resources: {}
+  service:
+    # ClusterIP for ingress; NodePort for quick local access without ingress.
+    type: ClusterIP
+    nodePort: "" # only when type=NodePort
+
+# ── Postgres (bundled; for prod consider a managed DB + postgres.enabled=false) ─
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  database: cheers
+  username: cheers
+  # password → Secret (secrets.postgresPassword)
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  resources: {}
+
+# ── RustFS (S3-compatible object store; the gateway auto-creates the bucket) ─
+rustfs:
+  enabled: true
+  image: rustfs/rustfs:latest
+  bucket: cheers-files
+  apiPort: 9000
+  consolePort: 9001
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  resources: {}
+
+# ── Redis (ONLY needed for multi-instance HA fan-out; single instance uses
+#    the in-process DashMap, so default off) ─────────────────────────────────
+redis:
+  enabled: false
+  image: redis:7-alpine
+  resources: {}
+
+# ── Secrets. create=true renders a Secret from the values below (dev). In prod,
+#    set create=false and point existingSecret at a Secret with the same keys. ─
+secrets:
+  create: true
+  existingSecret: ""
+  postgresPassword: cheers
+  s3AccessKey: cheers-local-access-key
+  s3SecretKey: cheers-local-secret-key
+  adminPassword: admin12345
+  # RS256 PEM keypair — the gateway requires BOTH. Provide via `--set-file`
+  # (dev) or an existing Secret (prod). Generate:
+  #   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out priv.pem
+  #   openssl rsa -in priv.pem -pubout -out pub.pem
+  jwtPrivateKey: ""
+  jwtPublicKey: ""
+
+# ── Ingress (path-routes /api + /ws to the gateway, everything else to the
+#    frontend; when disabled, reach the frontend Service directly) ───────────
+ingress:
+  enabled: false
+  className: ""
+  host: cheers.local
+  annotations: {}
+  tls: [] # [{ secretName: cheers-tls, hosts: [cheers.example.com] }]

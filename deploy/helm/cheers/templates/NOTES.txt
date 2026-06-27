@@ -1,0 +1,28 @@
+Cheers is deployed (release: {{ .Release.Name }}, namespace: {{ .Release.Namespace }}).
+
+Components:
+  gateway   {{ include "cheers.gateway.fullname" . }}   (Rust server, :{{ .Values.gateway.port }})
+  frontend  {{ include "cheers.frontend.fullname" . }}  (nginx SPA, :{{ .Values.frontend.port }})
+{{- if .Values.postgres.enabled }}
+  postgres  {{ include "cheers.postgres.fullname" . }}  (:5432, db {{ .Values.postgres.database }})
+{{- end }}
+{{- if .Values.rustfs.enabled }}
+  rustfs    {{ include "cheers.rustfs.fullname" . }}     (S3, :{{ .Values.rustfs.apiPort }})
+{{- end }}
+{{- if .Values.redis.enabled }}
+  redis     {{ include "cheers.redis.fullname" . }}      (:6379, HA fan-out)
+{{- end }}
+
+Access the UI:
+{{- if .Values.ingress.enabled }}
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else if eq .Values.frontend.service.type "NodePort" }}
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "cheers.frontend.fullname" . }} -o jsonpath='{.spec.ports[0].nodePort}'
+  then open http://<node-ip>:<nodePort>/
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cheers.frontend.fullname" . }} 8080:{{ .Values.frontend.port }}
+  then open http://localhost:8080/
+{{- end }}
+
+Sign in with the seeded admin: {{ .Values.gateway.adminUsername }} / (secrets.adminPassword)
+{{- if .Values.secrets.create }} — DEV default is in values.yaml; CHANGE IT for anything real.{{ end }}
