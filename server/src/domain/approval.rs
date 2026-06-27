@@ -259,6 +259,31 @@ pub async fn find_pending(
     Ok(row.and_then(row_to_pending))
 }
 
+/// Still-pending permission cards older than `ttl_secs` that no one ever
+/// resolved — orphaned when the connector died **before** its own timeout could
+/// send `permission_cancel`. The TTL is a server-side backstop *above* the
+/// connector's request timeout (the connector's cancel is the primary path; this
+/// only catches the dead-connector case). Oldest first; bounded per sweep so one
+/// tick can't stall on a huge backlog (the rest drain on the next tick).
+pub async fn find_expired_pending(
+    db: &PgPool,
+    ttl_secs: u64,
+) -> Result<Vec<PendingPermission>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+         FROM messages
+         WHERE msg_type = 'permission'
+           AND created_at < NOW() - make_interval(secs => $1)
+           AND (content_data->>'resolved' IS NULL OR content_data->>'resolved' = 'false')
+         ORDER BY created_at ASC
+         LIMIT 200",
+    )
+    .bind(ttl_secs as f64)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().filter_map(row_to_pending).collect())
+}
+
 /// Find the permission message by `request_id` alone (request_id is a globally
 /// unique UUID). Used by the bridge path (timeout/cancel) which has no channel.
 pub async fn find_pending_by_request_id(

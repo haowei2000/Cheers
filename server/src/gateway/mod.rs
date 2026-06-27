@@ -1,3 +1,4 @@
+pub mod approval_sweeper;
 pub mod dispatcher;
 pub mod realtime;
 pub mod reclaimer;
