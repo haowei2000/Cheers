@@ -91,6 +91,15 @@ fn preset_for(agent_type: &str) -> AgentPreset {
     }
 }
 
+/// Posture envelope for an agent type: `(preset default mode, L0 allowed_modes)`.
+/// The owner posture API/UI uses this to validate a requested mode and populate
+/// the dropdown — it mirrors the same per-agent `preset_for` source of truth that
+/// renders the connector TOML, so platform and connector agree on selectable modes.
+pub fn posture_preset(agent_type: &str) -> (Option<&'static str>, &'static [&'static str]) {
+    let p = preset_for(agent_type);
+    (p.permission_mode, p.allowed_modes)
+}
+
 /// Inputs for [`render_toml`]. `account_id` is the TOML table key under
 /// `[accounts.<id>...]` and the daemon `--name`; it is sanitized for you.
 pub struct RenderParams<'a> {

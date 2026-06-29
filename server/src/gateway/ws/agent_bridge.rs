@@ -101,6 +101,23 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         return;
     }
 
+    // Connect-sync the persisted L1 posture mode (Axis A): a reconnecting connector
+    // boots from its TOML default, so re-push any owner override made while it was
+    // offline. The connector re-clamps via L0 (both gates) — we only transport it.
+    if let Some(mode) = bot
+        .connector_config
+        .as_ref()
+        .and_then(|c| c.get("agentNativePermissionMode"))
+        .and_then(Value::as_str)
+    {
+        let cfg = json!({
+            "type": "config_update",
+            "v": BRIDGE_PROTOCOL_VERSION,
+            "settings": { "agentNativePermissionMode": mode },
+        });
+        let _ = ws_send(&mut socket, &cfg).await;
+    }
+
     tracing::info!(bot_id = %bot.bot_id, "control connected");
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
