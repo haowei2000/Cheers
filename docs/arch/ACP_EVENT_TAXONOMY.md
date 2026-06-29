@@ -1,5 +1,13 @@
 # ACP Event Taxonomy — by origin (agent-produced vs user-side)
 
+> **Status: "wire all ACP events into Cheers" — Phases 0–6 complete + verified on kind.**
+> 0 registry (`domain/acp_events.rs`) · 1 uniform passthrough (`acp_event` frame +
+> `acp_event_log`) · 2 single chokepoint (`domain/acp_policy.rs`) · 3 vocabulary derived
+> from the registry · 4 enforcement (prompt/cancel INITIATE, RESPOND; set_mode/set_config
+> reserved, live-SEE read-time) · 5 timeline read API + `BotActivitySection` UI · 6 verified
+> (matrix renders the full vocab; the timeline shows the live stream classified by home).
+
+
 > Foundation for the event-centric permission model (agent / connector / Cheers).
 > Sources: the live agent `@agentclientprotocol/claude-agent-acp@0.36.1`
 > (`dist/acp-agent.js` — authoritative for what flows in practice), the ACP method
