@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
@@ -126,21 +126,33 @@ async fn ensure_channel_admin(
     }
 }
 
+#[derive(Deserialize)]
+pub struct ListChannelsQuery {
+    pub workspace_id: Option<String>,
+}
+
 pub async fn list_channels(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
+    Query(q): Query<ListChannelsQuery>,
 ) -> Result<Json<Vec<ChannelDto>>, AppError> {
+    // Scope to one workspace when `?workspace_id=` is given (the sidebar always
+    // passes it). The handler previously ignored the param entirely, leaking
+    // every workspace's channels into whichever one you had selected.
     let rows = sqlx::query(
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1
-         WHERE c.type != 'dm' AND (cm.member_id IS NOT NULL OR wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin'))
+         WHERE c.type != 'dm'
+           AND (cm.member_id IS NOT NULL OR wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin'))
+           AND ($3::text IS NULL OR c.workspace_id = $3)
          ORDER BY c.created_at DESC",
     )
     .bind(&claims.sub)
     .bind(&claims.role)
+    .bind(&q.workspace_id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows.into_iter().map(dto).collect()))
