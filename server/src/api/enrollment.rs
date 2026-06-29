@@ -16,7 +16,8 @@ use std::collections::HashMap;
 
 use axum::{
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{header, HeaderMap},
+    response::IntoResponse,
     Extension, Json,
 };
 use serde::Deserialize;
@@ -334,6 +335,55 @@ pub async fn get_connector_config(
         },
         "note": "Issue the bot token separately (POST /api/v1/bots/{bot_id}/token) and write it to <config_dir>/<token_file> (chmod 600).",
     })))
+}
+
+/// The mode-2 installer, embedded at compile time so it ships inside the
+/// gateway binary (the container has no repo checkout). `__CHEERS_API_BASE__`
+/// is substituted per request from the caller's Host so the one-liner is
+/// self-configuring.
+const INSTALL_SCRIPT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/install.sh"));
+
+/// Derive the gateway API base the installer should call, from the inbound
+/// request's Host (set by nginx) + forwarded proto. Falls back to the
+/// configured public base's host, then localhost.
+fn resolve_api_base(state: &AppState, headers: &HeaderMap) -> String {
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|h| !h.is_empty());
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .unwrap_or("http");
+    match host {
+        Some(h) => format!("{proto}://{h}/api/v1"),
+        None => {
+            // No Host (shouldn't happen behind nginx) — best-effort from config.
+            let _ = state; // kept for future use of connector_public_base host
+            "http://localhost:8000/api/v1".to_string()
+        }
+    }
+}
+
+/// GET /api/v1/install.sh — PUBLIC. Serves the mode-2 connector installer with
+/// the API base baked in. No secrets here; the script reads the one-time code
+/// from CHEERS_ENROLL_CODE at runtime and redeems it itself.
+pub async fn install_script(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let api_base = resolve_api_base(&state, &headers);
+    let body = INSTALL_SCRIPT.replace("__CHEERS_API_BASE__", &api_base);
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/x-shellscript; charset=utf-8",
+        )],
+        body,
+    )
 }
 
 /// GET /api/v1/ops/connector-discovery — authed. Where should a connector dial?

@@ -325,6 +325,9 @@ fn build_public_routes() -> Router<AppState> {
             "/api/v1/enrollment/redeem",
             post(api::enrollment::redeem_enrollment_code),
         )
+        // Public, no secrets: the mode-2 connector installer, served with the
+        // API base baked in (reachable via the existing nginx /api proxy).
+        .route("/api/v1/install.sh", get(api::enrollment::install_script))
 }
 
 fn build_ws_routes() -> Router<AppState> {
