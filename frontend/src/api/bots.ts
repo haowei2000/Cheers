@@ -165,15 +165,33 @@ export interface PermissionRule {
   updated_at?: string;
 }
 
+/** Axis A posture: the agent's session mode + the L0-allowed choices. */
+export interface Posture {
+  agent_type: string;
+  /** Current desired mode (persisted override, else the preset default). */
+  permission_mode: string | null;
+  /** L0 allowed_modes; empty = the agent advertises its own (no envelope). */
+  allowed_modes: string[];
+}
+
 export interface BotPermissions {
   rules: PermissionRule[];
   /** ACP-standard kinds the matrix pre-renders as rows. */
   standard_kinds: string[];
+  posture: Posture;
 }
 
 /** Owner/admin: read all per-operation rules + the standard kind vocabulary. */
 export async function getBotPermissions(botId: string): Promise<BotPermissions> {
   return apiJson<BotPermissions>(`/bots/${botId}/permissions`);
+}
+
+/** Owner/admin: set the agent's posture mode (clamped by L0 allowed_modes). */
+export async function setBotPosture(botId: string, permission_mode: string): Promise<void> {
+  await apiJson(`/bots/${botId}/permissions/posture`, {
+    method: "PUT",
+    body: JSON.stringify({ permission_mode }),
+  });
 }
 
 /** Owner/admin: set the decision for one (channel, kind). Omit channel_id for bot-wide. */

@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { ShieldCheck, X, RotateCcw } from "lucide-react";
 import {
   getBotPermissions,
+  setBotPosture,
   upsertBotRule,
   deleteBotRule,
   listBotApprovers,
@@ -11,6 +12,7 @@ import {
   type Decision,
   type PermissionRule,
   type BotApprover,
+  type Posture,
 } from "@/api/bots";
 import { listChannelMembers } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
@@ -50,6 +52,7 @@ export function BotPermissionsDialog({
   const [scope, setScope] = useState<string>(BOT_WIDE); // "" = bot-wide default
   const [rules, setRules] = useState<PermissionRule[]>([]);
   const [kinds, setKinds] = useState<string[]>([]);
+  const [posture, setPosture] = useState<Posture | null>(null);
   const [approvers, setApprovers] = useState<BotApprover[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
@@ -60,7 +63,11 @@ export function BotPermissionsDialog({
     const p = await getBotPermissions(bot.bot_id);
     setRules(p.rules);
     setKinds(p.standard_kinds);
+    setPosture(p.posture);
   }, [bot.bot_id]);
+
+  const changePosture = (mode: string) =>
+    run("posture", () => setBotPosture(bot.bot_id, mode), loadRules);
 
   const loadChannelScoped = useCallback(async () => {
     if (!scope) {
@@ -190,6 +197,44 @@ export function BotPermissionsDialog({
               : "Applies to every channel unless a channel overrides it."}
           </span>
         </div>
+
+        {/* Posture (Axis A): the agent's session mode (when does it ask?). */}
+        {posture && (
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-zinc-300">Agent posture</span>
+              {posture.allowed_modes.length > 0 ? (
+                <select
+                  value={posture.permission_mode ?? ""}
+                  disabled={busy === "posture"}
+                  onChange={(e) => changePosture(e.target.value)}
+                  className="rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+                >
+                  {posture.permission_mode == null && <option value="">(unset)</option>}
+                  {posture.allowed_modes.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-[11px] text-zinc-600">
+                  {posture.agent_type} advertises its own modes — no preset envelope
+                </span>
+              )}
+              <span className="ml-auto text-[11px] text-zinc-600">
+                agent: <code className="text-zinc-500">{posture.agent_type}</code>
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-600 mt-2 leading-relaxed">
+              The session mode controls <em>when the agent asks</em> (e.g.{" "}
+              <code className="text-zinc-500">default</code> = prompt per tool,{" "}
+              <code className="text-zinc-500">plan</code> = no execution). Pushed to the live
+              connector via <code className="text-zinc-500">set_mode</code>, clamped by the host’s
+              L0 allow-list.
+            </p>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-sm text-zinc-500 px-1 py-6 text-center">Loading…</p>

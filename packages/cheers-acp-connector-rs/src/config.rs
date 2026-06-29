@@ -161,9 +161,9 @@ pub struct PermissionPolicy {
 impl PermissionPolicy {
     /// L0 clamp: whether the platform may switch the session to `mode`. Requires
     /// `backend_may_set_mode`; then `mode` must be in `allowed_modes` (empty = any).
-    /// Pure string match — no agent-specific semantics. Used by the L2
-    /// `session/set_mode` path (wiring pending — see task L2).
-    #[allow(dead_code)]
+    /// Pure string match — no agent-specific semantics. Consulted (alongside
+    /// `backend_may_set_native_options`) when the backend pushes a posture mode via
+    /// `config_update` → `agentNativePermissionMode`.
     pub fn may_set_mode(&self, mode: &str) -> bool {
         self.backend_may_set_mode
             && (self.allowed_modes.is_empty() || self.allowed_modes.iter().any(|m| m == mode))

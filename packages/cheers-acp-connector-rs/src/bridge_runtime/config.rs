@@ -65,15 +65,26 @@ impl RuntimeContext {
                 reason: "local daemon policy does not allow Backend to set model".to_string(),
             });
         }
-        if settings.agent_native_permission_mode.is_some()
-            && !self.config.policy.config.backend_may_set_native_options
-        {
-            settings.agent_native_permission_mode = None;
-            rejected.push(ConfigStatusRejectedField {
-                field: "agentNativePermissionMode".to_string(),
-                reason: "local daemon policy does not allow Backend to set native options"
-                    .to_string(),
-            });
+        // Posture mode (ACP session/set_mode modeId). Defense-in-depth L0: the
+        // backend may set it only if BOTH the native-options gate is open AND the
+        // mode passes the set-mode envelope (allowed_modes). Either gate closed →
+        // reject. The envelope is a pure string match — the connector never
+        // interprets a mode's meaning (ACP-generic; see BOT_CONFIG_GOVERNANCE.md).
+        if let Some(mode) = settings.agent_native_permission_mode.clone() {
+            let native_ok = self.config.policy.config.backend_may_set_native_options;
+            let envelope_ok = self.config.policy.permission.may_set_mode(&mode);
+            if !native_ok || !envelope_ok {
+                settings.agent_native_permission_mode = None;
+                let reason = if !native_ok {
+                    "local daemon policy does not allow Backend to set native options".to_string()
+                } else {
+                    format!("mode {mode:?} is not in the L0 allowed_modes envelope")
+                };
+                rejected.push(ConfigStatusRejectedField {
+                    field: "agentNativePermissionMode".to_string(),
+                    reason,
+                });
+            }
         }
         (settings, rejected)
     }
