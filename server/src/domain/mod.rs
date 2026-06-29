@@ -3,6 +3,7 @@ pub mod approval;
 pub mod auth;
 pub mod chains;
 pub mod channel_seq;
+pub mod connector_config;
 pub mod dms;
 pub mod mentions;
 pub mod messages;

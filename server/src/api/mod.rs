@@ -3,6 +3,7 @@ pub mod approval;
 pub mod auth;
 pub mod bots;
 pub mod channels;
+pub mod enrollment;
 pub mod files;
 pub mod friends;
 pub mod mcp;
