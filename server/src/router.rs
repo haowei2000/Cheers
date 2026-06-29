@@ -273,6 +273,17 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/friends/search", get(api::friends::search_users))
         .route(
+            "/api/v1/friends/requests",
+            get(api::friends::list_friend_requests),
+        )
+        .route(
+            "/api/v1/friends/requests/:user_id/accept",
+            post(api::friends::accept_friend),
+        )
+        .route("/api/v1/friends/blocks", get(api::friends::list_blocks))
+        .route("/api/v1/friends/block", post(api::friends::block_user))
+        .route("/api/v1/friends/unblock", post(api::friends::unblock_user))
+        .route(
             "/api/v1/users/:user_id/suspend",
             post(api::users::suspend_user),
         )

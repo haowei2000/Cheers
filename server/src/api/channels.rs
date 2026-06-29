@@ -146,6 +146,33 @@ pub async fn list_channels(
     Ok(Json(rows.into_iter().map(dto).collect()))
 }
 
+/// Whether two users may open a DM: they're accepted friends or already share a
+/// channel (audit/W7 — blocks cold-DM-to-strangers spam). Bot DMs aren't gated.
+async fn users_can_dm(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
+    // A block in either direction overrides everything — no DM.
+    if crate::api::friends::is_blocked(db, a, b).await? {
+        return Ok(false);
+    }
+    let ok: bool = sqlx::query(
+        "SELECT (
+            EXISTS(SELECT 1 FROM friendships
+                   WHERE status = 'accepted'
+                     AND ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)))
+            OR EXISTS(SELECT 1 FROM channel_memberships ma
+                      JOIN channel_memberships mb ON ma.channel_id = mb.channel_id
+                      WHERE ma.member_type = 'user' AND mb.member_type = 'user'
+                        AND ma.member_id = $1 AND mb.member_id = $2)
+         ) AS ok",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_one(db)
+    .await?
+    .try_get("ok")
+    .unwrap_or(false);
+    Ok(ok)
+}
+
 /// POST /api/v1/channels/dm — find-or-create the DM with one target (user OR bot). A DM is
 /// a type='dm' channel (see CONVERSATION_MODEL.md); the dedup/create lives in domain::dms.
 pub async fn create_dm(
@@ -163,6 +190,11 @@ pub async fn create_dm(
             ))
         }
     };
+    if !is_bot && !users_can_dm(&state.db, &claims.sub, &target_id.to_string()).await? {
+        return Err(AppError::Forbidden(
+            "you can only DM friends or people you share a channel with".into(),
+        ));
+    }
     let channel_id = crate::domain::dms::find_or_create_dm(&state.db, me, &target_id, is_bot).await?;
     let row = sqlx::query(
         "SELECT channel_id, workspace_id, name, type, purpose, auto_assist,
