@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Settings, LogOut, MessageSquare, Plus, Users } from "lucide-react";
 import toast from "react-hot-toast";
@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
+import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
 import type { Workspace } from "@/types";
 
 // Shared rail-button shell: the left selection indicator bar + hover state. Children are
@@ -71,6 +72,7 @@ export function WorkspaceRail() {
   const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
     useChatStore();
   const { user, logout } = useAuthStore();
+  const [wsOpen, setWsOpen] = useState(false);
   const personalSelected =
     !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
 
@@ -122,6 +124,7 @@ export function WorkspaceRail() {
 
         <button
           title="Add workspace"
+          onClick={() => setWsOpen(true)}
           className="w-10 h-10 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-600 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -163,6 +166,8 @@ export function WorkspaceRail() {
           className="cursor-pointer hover:opacity-80 transition-opacity"
         />
       </div>
+
+      {wsOpen && <NewWorkspaceDialog onClose={() => setWsOpen(false)} />}
     </div>
   );
 }
