@@ -125,6 +125,9 @@ impl BotRegistry for Arc<RedisBotRegistry> {
     fn unbind_data(&self, bot_id: Uuid) {
         (**self).unbind_data(bot_id)
     }
+    fn kick(&self, bot_id: Uuid) {
+        (**self).kick(bot_id)
+    }
 }
 
 impl BotRegistry for RedisBotRegistry {
@@ -211,6 +214,23 @@ impl BotRegistry for RedisBotRegistry {
 
     fn unbind_data(&self, _bot_id: Uuid) {
         // Redis 模式下 data TX 不在 cancel_map 里，无需额外操作
+    }
+
+    fn kick(&self, bot_id: Uuid) {
+        // Fire supersede (closes the live control WS), drop the cancel tokens so the
+        // forward loops exit, then clear the online marker.
+        if let Some((_, tokens)) = self.cancel_map.remove(&bot_id) {
+            if let Some(tx) = tokens.supersede_tx {
+                let _ = tx.send(());
+            }
+        }
+        let mut publisher = self.publisher.clone();
+        tokio::spawn(async move {
+            let _: redis::RedisResult<()> = redis::cmd("DEL")
+                .arg(online_key(bot_id))
+                .query_async(&mut publisher)
+                .await;
+        });
     }
 }
 

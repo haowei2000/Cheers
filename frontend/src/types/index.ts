@@ -146,10 +146,14 @@ export interface BotItem {
   display_name?: string;
   intro?: string;
   avatar_url?: string;
-  status?: string;
   scope?: "private" | "friend" | "everyone";
   binding_type?: string;
+  /** Live: a connector bridge is bound right now (from the registry). */
   is_online?: boolean;
+  /** Admin kill-switch: the bot is disabled and cannot connect. */
+  is_disabled?: boolean;
+  /** Whether the caller (admin or owner) may manage this bot. */
+  can_manage?: boolean;
 }
 
 export interface WsEvent {
