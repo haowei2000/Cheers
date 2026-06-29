@@ -1,4 +1,5 @@
 pub mod acp_capability;
+pub mod acp_events;
 pub mod approval;
 pub mod auth;
 pub mod bot_event_policy;

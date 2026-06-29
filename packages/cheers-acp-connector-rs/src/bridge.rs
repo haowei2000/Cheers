@@ -1211,6 +1211,27 @@ pub enum DataOutbound {
         #[serde(default)]
         acp_capability: Option<AcpCapabilityEnvelope>,
     },
+    /// Generic ACP-event passthrough (docs/arch/ACP_EVENT_TAXONOMY.md): forwards an
+    /// ACP `session/update` verbatim so Cheers sees the full event surface. `name`
+    /// is the registry name (e.g. `session/update:tool_call`); `payload` is the raw
+    /// update. The connector stays ACP-generic — it never interprets the payload.
+    #[serde(rename = "acp_event")]
+    AcpEvent {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        name: String,
+        #[serde(default)]
+        channel_id: Option<String>,
+        #[serde(default)]
+        task_id: Option<String>,
+        #[serde(default)]
+        msg_id: Option<String>,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        provider_session_key: Option<String>,
+        payload: Value,
+    },
 }
 
 pub struct BridgeWebSocket {

@@ -629,9 +629,50 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             handle_trace_frame(frame, state, bot).await;
         }
 
+        // ── generic ACP event passthrough (docs/arch/ACP_EVENT_TAXONOMY.md) ──
+        // The connector forwards every ACP session/update verbatim; classify via
+        // the acp_events registry and record to acp_event_log (skip streaming chunks).
+        "acp_event" => {
+            handle_acp_event_frame(frame, state, bot).await;
+        }
+
         other => {
             tracing::debug!(bot_id = %bot.bot_id, frame_type = other, "unknown data frame");
         }
+    }
+}
+
+/// Persist a generic ACP event (the complete-stream passthrough). Best-effort:
+/// a log-write failure must never disrupt the live agent. Streaming text chunks
+/// are dropped here (the bot's message already carries the text).
+async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let name = frame
+        .get("name")
+        .or_else(|| frame.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if name.is_empty() || !crate::domain::acp_events::should_log(name) {
+        return;
+    }
+    let home = crate::domain::acp_events::classify(name)
+        .map(|e| e.home.as_str())
+        .unwrap_or("");
+    let payload = frame.get("payload").cloned().unwrap_or(Value::Null);
+    if let Err(err) = sqlx::query(
+        "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(bot.bot_id.to_string())
+    .bind(frame.get("channel_id").and_then(Value::as_str))
+    .bind(frame.get("session_id").and_then(Value::as_str))
+    .bind(name)
+    .bind(home)
+    .bind(payload.to_string())
+    .execute(&state.db)
+    .await
+    {
+        tracing::warn!(bot_id = %bot.bot_id, %name, error = %err, "acp_event log write failed");
     }
 }
 

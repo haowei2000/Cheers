@@ -109,6 +109,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         | DataOutbound::Resume { .. }
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::PermissionCancel { .. }
+        | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. } => None,
     }
 }
@@ -130,6 +131,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::Resume { .. }
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::PermissionCancel { .. }
+        | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. } => {}
     }
 }

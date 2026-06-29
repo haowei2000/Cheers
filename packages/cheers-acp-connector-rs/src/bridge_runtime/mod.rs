@@ -1311,6 +1311,39 @@ impl RuntimeContext {
         let Some(run) = run else {
             return Ok(());
         };
+
+        // Generic complete-stream passthrough (docs/arch/ACP_EVENT_TAXONOMY.md):
+        // forward every NON-streaming session/update to the gateway verbatim so
+        // Cheers sees the full ACP event surface (the gateway's acp_events registry
+        // classifies + logs it). The text-token chunks already go out as Delta, so
+        // skip them here. Best-effort — the log must never disrupt the turn. The
+        // connector stays ACP-generic: it labels by the ACP subtype, never interprets.
+        if !matches!(kind, "agent_message_chunk" | "agent_thought_chunk") {
+            let (channel_id, task_id, msg_id, session_id, psk) = {
+                let g = run.lock().await;
+                (
+                    g.channel_id.clone(),
+                    g.task_id.clone(),
+                    g.msg_id.clone(),
+                    g.session_id.clone(),
+                    g.provider_session_key.clone(),
+                )
+            };
+            let _ = self
+                .io
+                .send_data(DataOutbound::AcpEvent {
+                    v: BRIDGE_PROTOCOL_VERSION,
+                    name: format!("session/update:{kind}"),
+                    channel_id: Some(channel_id),
+                    task_id: Some(task_id),
+                    msg_id: Some(msg_id),
+                    session_id,
+                    provider_session_key: Some(psk),
+                    payload: update.clone(),
+                })
+                .await;
+        }
+
         if kind == "agent_message_chunk" {
             if let Some(text) = text_from_content(update.get("content").unwrap_or(&Value::Null)) {
                 let mut guard = run.lock().await;
