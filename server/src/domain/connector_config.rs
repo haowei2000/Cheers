@@ -48,9 +48,13 @@ fn preset_for(agent_type: &str) -> AgentPreset {
         "claude" => AgentPreset {
             command: "claude-agent-acp",
             env_allow: &["HOME", "PATH", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
-            // "plan": respect the allow-list but ASK for anything not pre-approved,
-            // so risky tools raise an in-channel approval card.
-            permission_mode: Some("plan"),
+            // "default" = Claude's "prompts for dangerous operations" mode, which
+            // routes un-pre-approved tools through ACP request_permission → an
+            // in-channel approval card. ("plan" was wrong: it means "no tool
+            // execution", not "ask per tool" — see BOT_CONFIG_GOVERNANCE.md §3.)
+            // This is only the DEFAULT; the live value is meant to be platform-set
+            // (L1/L2) and clamped by an L0 gate — that plumbing is still TODO.
+            permission_mode: Some("default"),
             needs_edit: false,
         },
         "codex" => AgentPreset {
