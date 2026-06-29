@@ -6,6 +6,8 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
+# assets/ holds files embedded via include_str! (e.g. the mode-2 install.sh).
+COPY assets ./assets
 RUN cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────

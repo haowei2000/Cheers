@@ -11,15 +11,20 @@ import {
   ArrowLeft,
   AlertTriangle,
   Loader2,
+  Ticket,
+  Trash2,
 } from "lucide-react";
 import {
   createBot,
   issueBotToken,
   getConnectorConfig,
   getConnectorDiscovery,
+  mintEnrollmentCode,
+  revokeEnrollmentCodes,
   type AgentType,
   type ConnectorConfig,
   type ConnectorDiscovery,
+  type EnrollmentCode,
   type IssuedToken,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
@@ -351,7 +356,6 @@ export function BotOnboardingWizard({
                 icon={<Terminal className="w-5 h-5 text-indigo-300" />}
                 title="Install script"
                 desc="One command on the host redeems a code, writes everything, installs a keep-alive service, and starts it."
-                badge="Step 3"
                 onClick={() => pickMode("script")}
               />
               <ModeCard
@@ -388,11 +392,11 @@ export function BotOnboardingWizard({
                 onGenToken={genToken}
               />
             )}
-            {(mode === "script" || mode === "agent") && (
-              <ComingSoonPanel
-                mode={mode}
-                discovery={discovery}
-              />
+            {mode === "script" && (
+              <ScriptPanel bot={bot} agentType={agentType} discovery={discovery} />
+            )}
+            {mode === "agent" && (
+              <ComingSoonPanel mode={mode} discovery={discovery} />
             )}
             <div className="flex items-center justify-between">
               <button
@@ -587,6 +591,124 @@ cce-acp-connector status --name ${accountId}`}
           (<code className="text-zinc-500">cargo build --release</code>).
         </p>
       </div>
+    </div>
+  );
+}
+
+function ScriptPanel({
+  bot,
+  agentType,
+  discovery,
+}: {
+  bot: BotItem;
+  agentType: AgentType;
+  discovery: ConnectorDiscovery | null;
+}) {
+  const [code, setCode] = useState<EnrollmentCode | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const installUrl = `${window.location.origin}/api/v1/install.sh`;
+  const command = code
+    ? `CHEERS_ENROLL_CODE='${code.code}' bash <(curl -fsSL ${installUrl})`
+    : "";
+
+  async function mint() {
+    setError(null);
+    setBusy(true);
+    try {
+      setCode(await mintEnrollmentCode(bot.bot_id, agentType));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    setError(null);
+    setBusy(true);
+    try {
+      await revokeEnrollmentCodes(bot.bot_id);
+      setCode(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-zinc-500">
+        One command on the agent's machine for{" "}
+        <span className="text-zinc-300">@{bot.username}</span> ({agentType}):
+        redeem a one-time code, write the config + 0600 token, install a
+        keep-alive service, and start.
+      </p>
+      {error && <p className="text-xs text-red-400 break-words">{error}</p>}
+
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-zinc-300">
+            1. Mint a one-time code
+          </span>
+          <div className="flex items-center gap-2">
+            {code && (
+              <button
+                type="button"
+                onClick={revoke}
+                disabled={busy}
+                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Revoke
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={mint}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            >
+              {busy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Ticket className="w-3.5 h-3.5" />
+              )}
+              {code ? "New code" : "Mint code"}
+            </button>
+          </div>
+        </div>
+        {code && (
+          <p className="text-xs text-amber-400">
+            Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.{" "}
+            {code.live_codes} live code{code.live_codes === 1 ? "" : "s"} for this bot.
+          </p>
+        )}
+      </div>
+
+      {code && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+          <span className="text-xs font-semibold text-zinc-300">
+            2. Run on the agent's machine
+          </span>
+          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+            <pre className="text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all">
+              {command}
+            </pre>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-600">
+              Tip: prepend a space so the code stays out of shell history
+              (<code className="text-zinc-500">HISTCONTROL=ignorespace</code>).
+            </span>
+            <CopyBtn value={command} label="Copy command" />
+          </div>
+          {discovery && !discovery.configured && (
+            <ReachabilityNote reachability={discovery} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
