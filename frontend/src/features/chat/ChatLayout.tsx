@@ -50,7 +50,7 @@ export default function ChatLayout() {
   return (
     <div className="flex h-full bg-zinc-950">
       <WorkspaceRail />
-      <Sidebar workspaceName={selectedWorkspace?.name} />
+      <Sidebar workspace={selectedWorkspace} />
       <main className="flex-1 min-w-0 flex flex-col">
         <ChannelView channel={selectedChannel} />
       </main>

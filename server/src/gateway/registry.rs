@@ -41,6 +41,11 @@ pub trait BotRegistry: Send + Sync {
 
     /// data WS 断线时清除 data_tx，保留 control session。
     fn unbind_data(&self, bot_id: Uuid);
+
+    /// 强制踢掉 bot 的实时会话（管理员禁用时用）。移除 session 并向 control WS
+    /// 发 supersede 信号让其关闭;之后 is_online 立即变 false,派发也会失败。
+    /// 配合连接门禁(is_disabled),被禁用的 bot 无法重连。
+    fn kick(&self, bot_id: Uuid);
 }
 
 // ── Bot 会话（单 bot 的连接状态）─────────────────────────────────────────────
@@ -154,6 +159,16 @@ impl BotRegistry for InProcessBotLocator {
         if let Some(mut s) = self.sessions.get_mut(&bot_id) {
             s.data_tx = None;
         }
+    }
+
+    fn kick(&self, bot_id: Uuid) {
+        // Same teardown as a supersede, minus the new session: drop the session
+        // (so is_online → false, dispatch → false) and fire supersede_tx to close
+        // the live control WS. Also clear any stashed pre-control data_tx.
+        if let Some((_, old)) = self.sessions.remove(&bot_id) {
+            let _ = old.supersede_tx.send(());
+        }
+        self.pending_data.remove(&bot_id);
     }
 }
 

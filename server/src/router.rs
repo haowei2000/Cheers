@@ -112,10 +112,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces",
             get(api::workspaces::list_workspaces).post(api::workspaces::create_workspace),
         )
-        // static segment → matches before :workspace_id
+        // static segments → match before :workspace_id
         .route(
             "/api/v1/workspaces/personal",
             get(api::workspaces::get_personal_workspace),
+        )
+        .route(
+            "/api/v1/workspaces/invites",
+            get(api::workspaces::list_my_invites),
         )
         .route(
             "/api/v1/workspaces/:workspace_id",
@@ -124,6 +128,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/workspaces/:workspace_id/invite",
             post(api::workspaces::invite_workspace_member),
+        )
+        .route(
+            "/api/v1/workspaces/:workspace_id/accept",
+            post(api::workspaces::accept_invite),
+        )
+        .route(
+            "/api/v1/workspaces/:workspace_id/decline",
+            post(api::workspaces::decline_invite),
         )
         .route(
             "/api/v1/workspaces/:workspace_id/members",
@@ -160,6 +172,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/channels/:channel_id/messages",
             post(api::messages::send_message).get(api::messages::list_messages),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/read",
+            post(api::channels::mark_channel_read),
         )
         .route(
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
@@ -204,6 +220,8 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bots::get_bot_status),
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
+        .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))
+        .route("/api/v1/bots/:bot_id/enable", post(api::bots::enable_bot))
         .route("/api/v1/bots/:bot_id/token", post(api::bots::issue_bot_token))
         // ── Bot onboarding: one-time enrollment codes + connector config ─────
         .route(

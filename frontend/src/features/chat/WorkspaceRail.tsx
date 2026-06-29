@@ -1,12 +1,14 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, MessageSquare, Plus, Users } from "lucide-react";
+import { Settings, LogOut, MessageSquare, Plus, Users, Mail } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
+import { listWorkspaces, listMyInvites } from "@/api/workspaces";
 import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
+import { WorkspaceInvitesDialog } from "./WorkspaceInvitesDialog";
 import type { Workspace } from "@/types";
 
 // Shared rail-button shell: the left selection indicator bar + hover state. Children are
@@ -71,10 +73,30 @@ export function WorkspaceRail() {
   const navigate = useNavigate();
   const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
     useChatStore();
+  const setWorkspaces = useChatStore((s) => s.setWorkspaces);
   const { user, logout } = useAuthStore();
   const [wsOpen, setWsOpen] = useState(false);
+  const [invitesOpen, setInvitesOpen] = useState(false);
+  const [inviteCount, setInviteCount] = useState(0);
   const personalSelected =
     !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
+
+  function refreshInvites() {
+    listMyInvites()
+      .then((inv) => setInviteCount(inv.length))
+      .catch(() => setInviteCount(0));
+  }
+
+  // Pending-invite count for the rail badge. Polled once on mount (no WS event).
+  useEffect(() => {
+    refreshInvites();
+  }, []);
+
+  // After accepting/declining, the workspace list and the badge both change.
+  function onInvitesChanged() {
+    listWorkspaces().then(setWorkspaces).catch(() => {});
+    refreshInvites();
+  }
 
   function handleLogout() {
     logout();
@@ -133,6 +155,19 @@ export function WorkspaceRail() {
 
       {/* Bottom actions */}
       <div className="flex flex-col items-center gap-2 mt-auto">
+        {inviteCount > 0 && (
+          <button
+            onClick={() => setInvitesOpen(true)}
+            title="工作空间邀请"
+            className="relative w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          >
+            <Mail className="w-4 h-4" />
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center">
+              {inviteCount}
+            </span>
+          </button>
+        )}
+
         <button
           onClick={() => navigate("/friends")}
           title="Friends"
@@ -168,6 +203,12 @@ export function WorkspaceRail() {
       </div>
 
       {wsOpen && <NewWorkspaceDialog onClose={() => setWsOpen(false)} />}
+      {invitesOpen && (
+        <WorkspaceInvitesDialog
+          onClose={() => setInvitesOpen(false)}
+          onChanged={onInvitesChanged}
+        />
+      )}
     </div>
   );
 }
