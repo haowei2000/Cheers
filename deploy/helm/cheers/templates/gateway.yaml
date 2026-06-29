@@ -96,3 +96,6 @@ spec:
     - name: http
       port: {{ .Values.gateway.port }}
       targetPort: http
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
