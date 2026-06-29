@@ -12,10 +12,15 @@ use serde_json::{json, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
+use std::collections::HashMap;
+
 use crate::{
     api::middleware::Claims,
     app_state::AppState,
-    domain::approval::{self, AuditEvent},
+    domain::{
+        approval::{self, AuditEvent},
+        bot_event_policy::{self, Capability},
+    },
     errors::AppError,
     gateway::realtime::frame::WireFrame,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
@@ -26,6 +31,69 @@ fn user_id(claims: &Claims) -> Result<Uuid, AppError> {
         .sub
         .parse()
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))
+}
+
+/// The caller's channel role for the event-policy `SEE` matrix (default `member`).
+async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
+    sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .bind(uid.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string())
+}
+
+/// Read-time SEE filter (docs/arch/ACP_EVENT_TAXONOMY.md): drop the trace rows whose
+/// bot's event policy denies this user `SEE` for the row's class. A row's class is
+/// `permission_request` for `kind="approval"`, else `tool_call` (the execution-detail
+/// class). Rows with no `bot_id` (system traces) pass. Platform admins bypass.
+async fn filter_traces_by_see(
+    state: &AppState,
+    channel_id: Uuid,
+    uid: Uuid,
+    claims_role: &str,
+    events: Vec<Value>,
+) -> Vec<Value> {
+    if matches!(claims_role, "system_admin" | "admin") {
+        return events;
+    }
+    let role = channel_role(state, channel_id, uid).await;
+    let uid_s = uid.to_string();
+    let chan_s = channel_id.to_string();
+    // Load each referenced bot's rules once.
+    let mut rules_by_bot: HashMap<String, Vec<bot_event_policy::Rule>> = HashMap::new();
+    for ev in &events {
+        if let Some(bid) = ev.get("bot_id").and_then(Value::as_str) {
+            if !rules_by_bot.contains_key(bid) {
+                let rules = bot_event_policy::load_rules(&state.db, bid)
+                    .await
+                    .unwrap_or_default();
+                rules_by_bot.insert(bid.to_string(), rules);
+            }
+        }
+    }
+    events
+        .into_iter()
+        .filter(|ev| {
+            let Some(bid) = ev.get("bot_id").and_then(Value::as_str) else {
+                return true; // non-bot trace: no policy
+            };
+            let Some(rules) = rules_by_bot.get(bid) else {
+                return true;
+            };
+            let class = match ev.get("kind").and_then(Value::as_str) {
+                Some("approval") => bot_event_policy::EV_PERMISSION_REQUEST,
+                _ => bot_event_policy::EV_TOOL_CALL,
+            };
+            bot_event_policy::resolve_access(rules, &chan_s, &uid_s, &role, class, Capability::See)
+        })
+        .collect()
 }
 
 /// Channel-membership gate (system_admin/admin bypass), mirroring messages.rs.
@@ -98,8 +166,27 @@ pub async fn resolve_permission(
         .and_then(|t| t.get("kind"))
         .and_then(Value::as_str)
         .unwrap_or("*");
-    if !approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await? {
-        return Err(AppError::Forbidden("not an approver for this bot".into()));
+    // Who may answer a permission_request = bot owner OR a per-kind approver
+    // (approval_delegations) OR a RESPOND grant in the event-policy matrix. All three
+    // compose; default is owner/approver-only (no loosening). See ACP_EVENT_TAXONOMY.md.
+    let may_respond = approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind)
+        .await?
+        || {
+            let role = channel_role(&state, channel_id, uid).await;
+            bot_event_policy::resolve(
+                &state.db,
+                &pending.bot_id.to_string(),
+                &channel_id.to_string(),
+                &uid.to_string(),
+                &role,
+                bot_event_policy::EV_PERMISSION_REQUEST,
+                Capability::Respond,
+            )
+            .await
+            .unwrap_or(false)
+        };
+    if !may_respond {
+        return Err(AppError::Forbidden("not authorized to resolve this bot's permission".into()));
     }
 
     let kind = approval::option_kind(&pending.content_data, &body.option_id)
@@ -295,6 +382,7 @@ pub async fn list_message_trace(
     ensure_member(&state, channel_id, uid, &claims.role).await?;
     let limit = q.limit.clamp(1, 1000);
     let events = crate::domain::trace::list_for_message(&state.db, &msg_id, limit).await?;
+    let events = filter_traces_by_see(&state, channel_id, uid, &claims.role, events).await;
     Ok(Json(json!({ "events": events })))
 }
 
@@ -323,6 +411,7 @@ pub async fn list_channel_trace(
         limit,
     )
     .await?;
+    let events = filter_traces_by_see(&state, channel_id, uid, &claims.role, events).await;
     Ok(Json(json!({ "events": events })))
 }
 

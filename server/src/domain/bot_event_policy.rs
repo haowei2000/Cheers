@@ -200,6 +200,68 @@ pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, Ap
         .collect())
 }
 
+/// Upsert one access rule (owner API). `allow=false` stores a `deny`.
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_rule(
+    db: &PgPool,
+    bot_id: &str,
+    channel_id: &str,
+    subject_kind: &str,
+    subject_id: &str,
+    event_class: &str,
+    capability: Capability,
+    allow: bool,
+    updated_by: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO bot_event_access
+            (bot_id, channel_id, subject_kind, subject_id, event_class, capability,
+             decision, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (bot_id, channel_id, subject_kind, subject_id, event_class, capability)
+         DO UPDATE SET decision = EXCLUDED.decision,
+                       updated_by = EXCLUDED.updated_by, updated_at = NOW()",
+    )
+    .bind(bot_id)
+    .bind(channel_id)
+    .bind(subject_kind)
+    .bind(subject_id)
+    .bind(event_class)
+    .bind(capability.as_str())
+    .bind(if allow { "allow" } else { "deny" })
+    .bind(updated_by)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Delete one access rule; returns true if a row was removed.
+#[allow(clippy::too_many_arguments)]
+pub async fn delete_rule(
+    db: &PgPool,
+    bot_id: &str,
+    channel_id: &str,
+    subject_kind: &str,
+    subject_id: &str,
+    event_class: &str,
+    capability: Capability,
+) -> Result<bool, AppError> {
+    let res = sqlx::query(
+        "DELETE FROM bot_event_access
+         WHERE bot_id = $1 AND channel_id = $2 AND subject_kind = $3
+           AND subject_id = $4 AND event_class = $5 AND capability = $6",
+    )
+    .bind(bot_id)
+    .bind(channel_id)
+    .bind(subject_kind)
+    .bind(subject_id)
+    .bind(event_class)
+    .bind(capability.as_str())
+    .execute(db)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

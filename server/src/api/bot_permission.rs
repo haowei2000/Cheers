@@ -18,6 +18,7 @@ use crate::{
     api::middleware::Claims,
     app_state::AppState,
     domain::{
+        bot_event_policy::{self, Capability},
         bot_permission::{self, Decision, BOT_WIDE},
         connector_config,
     },
@@ -208,6 +209,106 @@ pub async fn delete_rule(
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let channel = normalize_channel(q.channel_id);
     let removed = bot_permission::delete_rule(&state.db, &bot_id, &channel, &q.operation_kind).await?;
+    if !removed {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ── Event-access matrix (INITIATE / SEE / RESPOND) ──────────────────────────
+// docs/arch/ACP_EVENT_TAXONOMY.md — the per-(subject × event-class × capability)
+// authorization keyed on channel role with per-user overrides.
+
+fn parse_capability(raw: &str) -> Result<Capability, AppError> {
+    Capability::parse(raw)
+        .ok_or_else(|| AppError::BadRequest(format!("capability must be initiate|see|respond, got {raw:?}")))
+}
+
+/// GET /bots/:bot_id/event-access — owner/admin: the rules + the event vocabulary.
+pub async fn list_event_access(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let rules = bot_event_policy::list_rules_json(&state.db, &bot_id).await?;
+    Ok(Json(json!({
+        "rules": rules,
+        "initiate_events": bot_event_policy::INITIATE_EVENTS,
+        "see_events": bot_event_policy::SEE_EVENTS,
+        "respond_events": bot_event_policy::RESPOND_EVENTS,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct UpsertEventRuleRequest {
+    pub channel_id: Option<String>,
+    pub subject_kind: String, // "role" | "user"
+    pub subject_id: String,   // role name | user_id | "*"
+    pub event_class: String,
+    pub capability: String,   // initiate | see | respond
+    pub decision: String,     // allow | deny
+}
+
+/// PUT /bots/:bot_id/event-access — owner/admin upsert one rule.
+pub async fn upsert_event_rule(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Json(body): Json<UpsertEventRuleRequest>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let subject_kind = match body.subject_kind.trim() {
+        k @ ("role" | "user") => k,
+        other => return Err(AppError::BadRequest(format!("subject_kind must be role|user, got {other:?}"))),
+    };
+    let event_class = body.event_class.trim();
+    if event_class.is_empty() {
+        return Err(AppError::BadRequest("event_class required".into()));
+    }
+    let capability = parse_capability(body.capability.trim())?;
+    let allow = match body.decision.trim() {
+        "allow" => true,
+        "deny" => false,
+        other => return Err(AppError::BadRequest(format!("decision must be allow|deny, got {other:?}"))),
+    };
+    let subject_id = body.subject_id.trim();
+    if subject_id.is_empty() {
+        return Err(AppError::BadRequest("subject_id required".into()));
+    }
+    let channel = normalize_channel(body.channel_id);
+    bot_event_policy::upsert_rule(
+        &state.db, &bot_id, &channel, subject_kind, subject_id, event_class, capability, allow,
+        &claims.sub,
+    )
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct DeleteEventRuleQuery {
+    pub channel_id: Option<String>,
+    pub subject_kind: String,
+    pub subject_id: String,
+    pub event_class: String,
+    pub capability: String,
+}
+
+/// DELETE /bots/:bot_id/event-access — owner/admin remove one rule.
+pub async fn delete_event_rule(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Query(q): Query<DeleteEventRuleQuery>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let capability = parse_capability(q.capability.trim())?;
+    let channel = normalize_channel(q.channel_id);
+    let removed = bot_event_policy::delete_rule(
+        &state.db, &bot_id, &channel, q.subject_kind.trim(), q.subject_id.trim(),
+        q.event_class.trim(), capability,
+    )
+    .await?;
     if !removed {
         return Err(AppError::NotFound);
     }
