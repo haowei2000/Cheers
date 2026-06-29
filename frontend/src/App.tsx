@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
 const ChatLayout = lazy(() => import("@/features/chat/ChatLayout"));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
+const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
 
 function Spinner() {
   return (
@@ -38,6 +39,14 @@ export default function App() {
           element={
             <RequireAuth>
               <SettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/friends/*"
+          element={
+            <RequireAuth>
+              <FriendsPage />
             </RequireAuth>
           }
         />
