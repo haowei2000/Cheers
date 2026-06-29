@@ -97,13 +97,28 @@ pub async fn mint_enrollment_code(
             .filter(|s| !s.trim().is_empty()),
     );
 
-    // Per-bot cap.
+    let code = generate_enrollment_code();
+    let code_hash = hash_enrollment_code(&code);
+    let code_id = Uuid::new_v4().to_string();
+
+    // Cap check + insert run in one transaction guarded by a per-owner advisory
+    // lock (audit follow-up L1): previously the two COUNT(*)s and the INSERT were
+    // independent autocommit statements, so two interleaved mints could both pass
+    // a sub-cap count and both insert, racing past the caps. The xact lock
+    // serializes a single owner's concurrent mints (the realistic race: double
+    // submit / retry); it's released on commit or on rollback when `tx` drops.
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)")
+        .bind(&claims.sub)
+        .execute(&mut *tx)
+        .await?;
+
     let live_for_bot: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM enrollment_codes
          WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
     )
     .bind(&bot_id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
     if live_for_bot >= MAX_LIVE_CODES_PER_BOT {
         return Err(AppError::Forbidden(format!(
@@ -117,17 +132,13 @@ pub async fn mint_enrollment_code(
          WHERE created_by = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
     )
     .bind(&claims.sub)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
     if live_for_owner >= MAX_LIVE_CODES_PER_OWNER {
         return Err(AppError::Forbidden(format!(
             "too many live enrollment codes (max {MAX_LIVE_CODES_PER_OWNER} per user); revoke some first"
         )));
     }
-
-    let code = generate_enrollment_code();
-    let code_hash = hash_enrollment_code(&code);
-    let code_id = Uuid::new_v4().to_string();
 
     let row = sqlx::query(
         "INSERT INTO enrollment_codes
@@ -141,9 +152,10 @@ pub async fn mint_enrollment_code(
     .bind(&claims.sub)
     .bind(&agent_type)
     .bind(ENROLLMENT_TTL_SECS)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
     let expires_at: chrono::DateTime<chrono::Utc> = row.try_get("expires_at")?;
+    tx.commit().await?;
 
     let (public_base, configured) = resolve_public_base(&state);
 
@@ -347,17 +359,29 @@ const INSTALL_SCRIPT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/
 /// request's Host (set by nginx) + forwarded proto. Falls back to the
 /// configured public base's host, then localhost.
 fn resolve_api_base(state: &AppState, headers: &HeaderMap) -> String {
+    // Reflect the Host into the served install.sh body, so only accept a strict
+    // host:port charset (defense-in-depth; the HTTP layer already rejects CR/LF,
+    // and the caller is piping the result into their own shell — but a clean host
+    // keeps the script body free of anything surprising).
+    fn safe_host(h: &str) -> bool {
+        !h.is_empty()
+            && h.len() <= 255
+            && h.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'))
+    }
     let host = headers
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
-        .filter(|h| !h.is_empty());
-    let proto = headers
+        .filter(|h| safe_host(h));
+    let proto = match headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
-        .filter(|p| !p.is_empty())
-        .unwrap_or("http");
+    {
+        Some("https") => "https",
+        _ => "http",
+    };
     match host {
         Some(h) => format!("{proto}://{h}/api/v1"),
         None => {
