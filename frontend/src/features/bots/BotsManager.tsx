@@ -7,6 +7,7 @@ import {
   Check,
   RefreshCw,
   CircleDot,
+  Wand2,
 } from "lucide-react";
 import {
   listBots,
@@ -16,6 +17,7 @@ import {
 } from "@/api/bots";
 import { listChannels, addChannelMember } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
+import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import type { BotItem, Channel } from "@/types";
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
@@ -150,6 +152,7 @@ export function BotsManager() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<IssuedToken | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -204,8 +207,16 @@ export function BotsManager() {
         Bots
         <button
           type="button"
+          onClick={() => setWizardOpen(true)}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium normal-case tracking-normal text-white hover:bg-indigo-500"
+        >
+          <Wand2 className="w-3.5 h-3.5" />
+          Connect an agent
+        </button>
+        <button
+          type="button"
           onClick={refresh}
-          className="ml-auto text-zinc-500 hover:text-zinc-300"
+          className="text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -297,6 +308,14 @@ export function BotsManager() {
             <CopyButton value={issued.token} label="Copy token" />
           </div>
         </Dialog>
+      )}
+
+      {wizardOpen && (
+        <BotOnboardingWizard
+          bots={bots}
+          onClose={() => setWizardOpen(false)}
+          onDone={refresh}
+        />
       )}
     </section>
   );

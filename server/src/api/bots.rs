@@ -48,7 +48,7 @@ pub struct BotCreateRequest {
 /// Per-user cap on bot creation for non-admins (resource-abuse bound, audit H1).
 const MAX_BOTS_PER_USER: i64 = 50;
 
-fn is_admin(claims: &Claims) -> bool {
+pub(crate) fn is_admin(claims: &Claims) -> bool {
     matches!(claims.role.as_str(), "system_admin" | "admin")
 }
 
@@ -65,7 +65,7 @@ async fn bot_owner(state: &AppState, bot_id: &str) -> Result<Option<String>, App
 /// Authorize a privileged bot op (issue token, edit/delete): admin or the bot's
 /// creator. A legacy bot with `created_by = NULL` is admin-only (never matches a
 /// caller), so consolidating callers onto this helper can't open an authz bypass.
-async fn ensure_bot_owner_or_admin(
+pub(crate) async fn ensure_bot_owner_or_admin(
     state: &AppState,
     claims: &Claims,
     bot_id: &str,
@@ -295,19 +295,49 @@ pub async fn get_bot_status(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_visible(&state, &claims, &bot_id).await?;
-    let row =
-        sqlx::query("SELECT bot_id, status, binding_type FROM bot_accounts WHERE bot_id = $1")
-            .bind(&bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
+    let row = sqlx::query(
+        "SELECT bot_id, status, binding_type, created_by FROM bot_accounts WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     let status: String = row.try_get("status").unwrap_or_else(|_| "offline".into());
+
+    // bridge_connected is the LIVE truth from the connection registry (a control
+    // + data WS are bound right now), distinct from the persisted `status` flag.
+    // A bot can be status="online" (eligible to connect) yet have no live bridge.
+    let bridge_connected = Uuid::parse_str(&bot_id)
+        .ok()
+        .map(|id| state.bot_locator.is_online(id))
+        .unwrap_or(false);
+
+    // Live enrollment-code count is owner/admin-only: it reveals pending onboarding
+    // secrets' existence, which a channel-mate (visible-but-not-owner) shouldn't see.
+    let owner = row.try_get::<Option<String>, _>("created_by").ok().flatten();
+    let is_owner_or_admin = is_admin(&claims) || owner.as_deref() == Some(claims.sub.as_str());
+    let live_codes: Option<i64> = if is_owner_or_admin {
+        Some(
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM enrollment_codes
+                 WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
+            )
+            .bind(&bot_id)
+            .fetch_one(&state.db)
+            .await?,
+        )
+    } else {
+        None
+    };
+
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or(bot_id),
         "status": status,
         "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
         "connection_status": if status == "offline" { "offline" } else { "online" },
         "is_online": status != "offline",
+        "bridge_connected": bridge_connected,
+        "live_enrollment_codes": live_codes,
     })))
 }
 
@@ -331,6 +361,35 @@ pub async fn test_bot(
     ))
 }
 
+/// Mint (or rotate) a bot's Agent Bridge token. Returns `(plaintext, prefix)`;
+/// only the SHA-256 is persisted, and the control/data WS authenticates by
+/// matching that hash. This is the **single** token-mint path — `issue_bot_token`
+/// (manual rotate) and `enrollment::redeem` (one-time onboarding) both call here
+/// so a rotated token can never come from two divergent code paths. Authorization
+/// is the caller's responsibility (see `ensure_bot_owner_or_admin` / the
+/// single-use enrollment code). NotFound if the bot row is gone.
+pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, String), AppError> {
+    let token = generate_bot_token();
+    let token_hash = hash_bot_token(&token);
+    let token_prefix = token[..token.len().min(12)].to_string();
+
+    let updated = sqlx::query(
+        "UPDATE bot_accounts
+         SET bot_token_hash = $1, bot_token_prefix = $2, bot_token_rotated_at = NOW()
+         WHERE bot_id = $3",
+    )
+    .bind(&token_hash)
+    .bind(&token_prefix)
+    .bind(bot_id)
+    .execute(&state.db)
+    .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok((token, token_prefix))
+}
+
 /// POST /api/v1/bots/{bot_id}/token — issue (or rotate) the bot's Agent Bridge
 /// token. The plaintext is returned **once**; only its SHA-256 is persisted, and
 /// the Agent Bridge control/data WS authenticates by matching that hash.
@@ -343,24 +402,7 @@ pub async fn issue_bot_token(
     // bot's creator or an admin may issue/rotate it.
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
 
-    let token = generate_bot_token();
-    let token_hash = hash_bot_token(&token);
-    let token_prefix = &token[..token.len().min(12)];
-
-    let updated = sqlx::query(
-        "UPDATE bot_accounts
-         SET bot_token_hash = $1, bot_token_prefix = $2, bot_token_rotated_at = NOW()
-         WHERE bot_id = $3",
-    )
-    .bind(&token_hash)
-    .bind(token_prefix)
-    .bind(&bot_id)
-    .execute(&state.db)
-    .await?;
-
-    if updated.rows_affected() == 0 {
-        return Err(AppError::NotFound);
-    }
+    let (token, token_prefix) = mint_bot_token(&state, &bot_id).await?;
 
     Ok(Json(json!({
         "bot_id": bot_id,
