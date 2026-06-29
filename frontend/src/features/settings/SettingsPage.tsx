@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { BotsManager } from "@/features/bots/BotsManager";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
+import { AdminUsers } from "./AdminUsers";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -75,6 +76,9 @@ export default function SettingsPage() {
 
         {/* Workbench extensions (admin-only; renders null otherwise) */}
         <WorkbenchManager />
+
+        {/* User suspension (admin-only; renders null otherwise) */}
+        <AdminUsers />
 
         {/* Danger zone */}
         <section>
