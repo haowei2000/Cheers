@@ -96,6 +96,20 @@ agent-initiated tool-use reads (`RealizeFile`, `WorkspaceReq`).
     approvers, generalized).
 - **Agent:** owns *when* it asks (its mode) and *what* it emits.
 
+## Enforcement status (Phase 4)
+
+| Capability · event | Enforced where |
+|---|---|
+| INITIATE · `prompt` | `create_message` (bot trigger) |
+| INITIATE · `cancel` | `cancel_message` endpoint |
+| SEE · `tool_call` / others (persisted) | trace read endpoints (read-time filter) |
+| RESPOND · `permission_request` | `resolve_permission` (owner ∪ approvers ∪ matrix) |
+| INITIATE · `set_mode` | **reserved** — posture is a *bot-wide, owner/admin* setting (`PUT /permissions/posture`); the per-channel matrix row has no runtime action to gate yet |
+| INITIATE · `set_config_option` | **reserved** — Cheers exposes no runtime model/effort-change action yet |
+| SEE · live frames (`output`, live `permission_request` card) | **read-time only** — live broadcast is channel-wide; per-subscriber live filtering deliberately deferred (low value, invasive) |
+
+All gates run through the single `acp_policy::allows(…, acp_event_name, capability)` chokepoint.
+
 > Net: the permission system reduces to **(a) the connector's event-type allow-list** +
 > **(b) Cheers's two (user × event) matrices (initiate / see+respond)**. `request_permission`
 > is just the one agent event that needs a user response, so "approvers" is the

@@ -199,6 +199,38 @@ pub async fn cancel_message(
     .and_then(|raw| raw.parse::<Uuid>().ok())
     .ok_or(AppError::NotFound)?;
 
+    // INITIATE(cancel) gate (docs/arch/ACP_EVENT_TAXONOMY.md): may this user cancel
+    // the bot's running turn here? Default-allow for members; an owner can deny it
+    // per role/user via the event matrix. Fail-open on a rules error.
+    let role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .bind(user_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string());
+    let may_cancel = crate::domain::acp_policy::allows(
+        &state.db,
+        &bot_id.to_string(),
+        &channel_id.to_string(),
+        &user_id.to_string(),
+        &role,
+        "session/cancel",
+        crate::domain::bot_event_policy::Capability::Initiate,
+    )
+    .await
+    .unwrap_or(true);
+    if !may_cancel {
+        return Err(AppError::Forbidden(
+            "not authorized to cancel this bot here".into(),
+        ));
+    }
+
     let frame = serde_json::json!({
         "type": "cancel",
         "msg_id": msg_id,
