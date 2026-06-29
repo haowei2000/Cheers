@@ -20,6 +20,10 @@ pub struct ChannelDto {
     pub auto_assist: bool,
     pub allow_member_invites: bool,
     pub allow_bot_adds: bool,
+    /// Messages newer than the caller's `last_read_at` not sent by the caller.
+    /// 0 for queries that don't compute it (create/get/update single-channel).
+    #[serde(default)]
+    pub unread_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +75,7 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         auto_assist: row.try_get("auto_assist").unwrap_or(false),
         allow_member_invites: row.try_get("allow_member_invites").unwrap_or(true),
         allow_bot_adds: row.try_get("allow_bot_adds").unwrap_or(true),
+        unread_count: row.try_get("unread_count").unwrap_or(0),
     }
 }
 
@@ -141,7 +146,14 @@ pub async fn list_channels(
     // every workspace's channels into whichever one you had selected.
     let rows = sqlx::query(
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
-                c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at
+                c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
+                COALESCE((
+                    SELECT count(*) FROM messages m
+                    WHERE m.channel_id = c.channel_id
+                      AND m.is_partial = FALSE
+                      AND m.sender_id <> $1
+                      AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                ), 0) AS unread_count
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1
@@ -229,6 +241,13 @@ pub async fn list_dms(
     let rows = sqlx::query(
         "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.purpose, c.auto_assist,
                 c.allow_member_invites, c.allow_bot_adds,
+                COALESCE((
+                    SELECT count(*) FROM messages msg
+                    WHERE msg.channel_id = c.channel_id
+                      AND msg.is_partial = FALSE
+                      AND msg.sender_id <> $1
+                      AND msg.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                ), 0) AS unread_count,
                 COALESCE(
                   (SELECT COALESCE(u.display_name, u.username) FROM channel_memberships m
                      JOIN users u ON u.user_id = m.member_id
@@ -473,4 +492,23 @@ pub async fn remove_channel_member(
         .execute(&state.db)
         .await?;
     Ok(Json(json!({"removed": true})))
+}
+
+/// POST /api/v1/channels/{channel_id}/read — mark the channel read for the caller
+/// by stamping `last_read_at = now()`. This is what clears the unread badge
+/// computed in `list_channels` / `list_dms`. No-op (0 rows) if not a member.
+pub async fn mark_channel_read(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    sqlx::query(
+        "UPDATE channel_memberships SET last_read_at = NOW()
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(json!({"ok": true})))
 }

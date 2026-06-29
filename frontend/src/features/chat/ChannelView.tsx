@@ -1,13 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree } from "lucide-react";
+import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings } from "lucide-react";
 import { listMessages, sendMessage } from "@/api/messages";
-import { listChannelMembers } from "@/api/channels";
+import { listChannelMembers, markChannelRead } from "@/api/channels";
+import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { MessageComposer, type MentionCandidate } from "./MessageComposer";
 import { useChatRealtime } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { ChannelFilesDialog } from "./ChannelFilesDialog";
+import { ChannelSettingsDialog } from "./ChannelSettingsDialog";
 import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
@@ -50,6 +52,7 @@ interface Props {
 
 export function ChannelView({ channel }: Props) {
   const user = useAuthStore((s) => s.user);
+  const patchChannel = useChatStore((s) => s.patchChannel);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -84,6 +87,14 @@ export function ChannelView({ channel }: Props) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [channel?.channel_id]);
+
+  // Opening a channel marks it read: clear the badge optimistically, then stamp
+  // last_read_at server-side so list_channels stops counting it.
+  useEffect(() => {
+    if (!channel) return;
+    if ((channel.unread_count ?? 0) > 0) patchChannel(channel.channel_id, { unread_count: 0 });
+    markChannelRead(channel.channel_id).catch(() => {});
+  }, [channel?.channel_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mention candidates = channel members (users + bots).
   useEffect(() => {
@@ -199,6 +210,7 @@ export function ChannelView({ channel }: Props) {
   });
   const [wbOpen, setWbOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
   const [wsInit, setWsInit] = useState<{ botId?: string; path?: string }>({});
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
@@ -339,6 +351,15 @@ export function ChannelView({ channel }: Props) {
         >
           <PanelRight className="w-4 h-4" />
         </button>
+        {channel.type !== "dm" && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="频道设置"
+            className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -380,6 +401,9 @@ export function ChannelView({ channel }: Props) {
           onClose={() => setFilesOpen(false)}
           focusFileId={filesFocus}
         />
+      )}
+      {settingsOpen && (
+        <ChannelSettingsDialog channel={channel} onClose={() => setSettingsOpen(false)} />
       )}
       {refError && <ErrorDialog message={refError} onClose={() => setRefError(null)} />}
       {wsOpen && (

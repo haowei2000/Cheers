@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, type FormEvent } from "react";
+import toast from "react-hot-toast";
 import {
   Bot,
   Plus,
@@ -8,11 +9,15 @@ import {
   RefreshCw,
   CircleDot,
   Wand2,
+  Ban,
+  Power,
 } from "lucide-react";
 import {
   listBots,
   createBot,
   issueBotToken,
+  disableBot,
+  enableBot,
   type IssuedToken,
 } from "@/api/bots";
 import { listChannels, addChannelMember } from "@/api/channels";
@@ -51,15 +56,37 @@ function BotCard({
   channels,
   onIssue,
   onError,
+  onChanged,
 }: {
   bot: BotItem;
   channels: Channel[];
   onIssue: (botId: string) => void;
   onError: (msg: string) => void;
+  onChanged: () => void;
 }) {
   const [channelId, setChannelId] = useState("");
   const [added, setAdded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [toggling, setToggling] = useState(false);
+
+  async function toggleDisabled() {
+    if (toggling) return;
+    setToggling(true);
+    try {
+      if (bot.is_disabled) {
+        await enableBot(bot.bot_id);
+        toast.success(`已启用 ${bot.display_name || bot.username}`);
+      } else {
+        await disableBot(bot.bot_id);
+        toast.success(`已禁用 ${bot.display_name || bot.username}（连接已断开）`);
+      }
+      onChanged();
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setToggling(false);
+    }
+  }
 
   async function add() {
     if (!channelId || busy) return;
@@ -90,13 +117,20 @@ function BotCard({
           </p>
           <p className="text-xs text-zinc-500">@{bot.username}</p>
         </div>
+        {bot.is_disabled && (
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-red-400">
+            <Ban className="w-3 h-3" />
+            已禁用
+          </span>
+        )}
         <span
-          className={`ml-auto inline-flex items-center gap-1 text-[11px] ${
-            bot.status === "online" ? "text-emerald-400" : "text-zinc-500"
+          className={`${bot.is_disabled ? "" : "ml-auto"} inline-flex items-center gap-1 text-[11px] ${
+            bot.is_online ? "text-emerald-400" : "text-zinc-500"
           }`}
+          title={bot.is_online ? "连接器已接入" : "连接器未接入"}
         >
           <CircleDot className="w-3 h-3" />
-          {bot.status ?? "unknown"}
+          {bot.is_online ? "online" : "offline"}
         </span>
       </div>
 
@@ -138,6 +172,31 @@ function BotCard({
         >
           {added ? "Added ✓" : "Add"}
         </button>
+        {bot.can_manage && (
+          <button
+            type="button"
+            onClick={toggleDisabled}
+            disabled={toggling}
+            title={bot.is_disabled ? "启用机器人" : "禁用机器人（断开连接器并阻止重连）"}
+            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
+              bot.is_disabled
+                ? "border-emerald-700 text-emerald-300 hover:bg-emerald-950/40"
+                : "border-red-800 text-red-300 hover:bg-red-950/40"
+            }`}
+          >
+            {bot.is_disabled ? (
+              <span className="inline-flex items-center gap-1">
+                <Power className="w-3.5 h-3.5" />
+                启用
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <Ban className="w-3.5 h-3.5" />
+                禁用
+              </span>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -278,6 +337,7 @@ export function BotsManager() {
                 channels={channels}
                 onIssue={onIssue}
                 onError={setError}
+                onChanged={refresh}
               />
             ))}
           </div>
