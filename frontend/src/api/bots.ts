@@ -33,13 +33,24 @@ export interface IssuedToken {
 }
 
 /** Issue/rotate the bot's Agent Bridge token. Plaintext is returned once. */
+/** Admin/owner kill-switch: disable the bot + kick its live connector. */
+export async function disableBot(botId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/disable`, { method: "POST" });
+}
+
+/** Re-enable a disabled bot (admin/owner). */
+export async function enableBot(botId: string): Promise<void> {
+  await apiJson(`/bots/${botId}/enable`, { method: "POST" });
+}
+
 export async function issueBotToken(botId: string): Promise<IssuedToken> {
   return apiJson<IssuedToken>(`/bots/${botId}/token`, { method: "POST" });
 }
 
 export interface BotStatus {
   bot_id: string;
-  status: string;
+  /** Admin kill-switch flag (distinct from live connectivity). */
+  is_disabled: boolean;
   is_online: boolean;
   connection_status?: string;
   /** Live truth from the connection registry: a connector is bound right now. */

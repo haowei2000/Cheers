@@ -220,6 +220,8 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bots::get_bot_status),
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
+        .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))
+        .route("/api/v1/bots/:bot_id/enable", post(api::bots::enable_bot))
         .route("/api/v1/bots/:bot_id/token", post(api::bots::issue_bot_token))
         // ── Bot onboarding: one-time enrollment codes + connector config ─────
         .route(

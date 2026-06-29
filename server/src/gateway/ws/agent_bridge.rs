@@ -1202,7 +1202,7 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     let token_hash = hash_bot_token(token);
 
     let row = sqlx::query(
-        "SELECT bot_id, username, display_name, status, binding_config, created_by
+        "SELECT bot_id, username, display_name, is_disabled, binding_config, created_by
          FROM bot_accounts WHERE bot_token_hash = $1",
     )
     .bind(&token_hash)
@@ -1212,8 +1212,10 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     .flatten()
     .ok_or(AuthFailure::InvalidToken)?;
 
-    let status: String = row.try_get("status").unwrap_or_default();
-    if status != "online" {
+    // Admin kill-switch: a disabled bot may not establish the bridge, so a kicked
+    // connector can't immediately reconnect.
+    let is_disabled: bool = row.try_get("is_disabled").unwrap_or(false);
+    if is_disabled {
         return Err(AuthFailure::BotUnavailable);
     }
 
