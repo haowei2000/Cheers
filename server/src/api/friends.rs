@@ -110,6 +110,11 @@ pub async fn add_friend(
     if !exists {
         return Err(AppError::NotFound);
     }
+    if is_blocked(&state.db, &claims.sub, &body.friend_id).await? {
+        return Err(AppError::Forbidden(
+            "cannot send a request to a blocked user".into(),
+        ));
+    }
     let pair = pair_key(&claims.sub, &body.friend_id);
     // If a relationship row already exists, branch on its state instead of
     // blindly auto-accepting (the old behavior): a pending request the OTHER
@@ -234,4 +239,101 @@ pub async fn accept_friend(
         return Err(AppError::NotFound);
     }
     Ok(Json(json!({"friend_id": user_id, "status": "accepted"})))
+}
+
+// ── Blocking (W11) ───────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct BlockRequest {
+    pub user_id: String,
+}
+
+/// Whether a block exists in either direction between two users. Used to gate
+/// friend requests and DMs (a block is mutual in effect).
+pub(crate) async fn is_blocked(
+    db: &sqlx::PgPool,
+    a: &str,
+    b: &str,
+) -> Result<bool, AppError> {
+    let ok: bool = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM user_blocks
+            WHERE (blocker_id = $1 AND blocked_id = $2)
+               OR (blocker_id = $2 AND blocked_id = $1)
+         ) AS ok",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_one(db)
+    .await?
+    .try_get("ok")
+    .unwrap_or(false);
+    Ok(ok)
+}
+
+/// POST /api/v1/friends/block — block a user; also drops any existing
+/// friendship / pending request between the two.
+pub async fn block_user(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<BlockRequest>,
+) -> Result<Json<Value>, AppError> {
+    if body.user_id == claims.sub {
+        return Err(AppError::BadRequest("cannot block yourself".into()));
+    }
+    sqlx::query("DELETE FROM friendships WHERE pair_key = $1")
+        .bind(pair_key(&claims.sub, &body.user_id))
+        .execute(&state.db)
+        .await?;
+    sqlx::query(
+        "INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(&claims.sub)
+    .bind(&body.user_id)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(json!({"user_id": body.user_id, "blocked": true})))
+}
+
+/// POST /api/v1/friends/unblock — lift a block.
+pub async fn unblock_user(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<BlockRequest>,
+) -> Result<Json<Value>, AppError> {
+    sqlx::query("DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2")
+        .bind(&claims.sub)
+        .bind(&body.user_id)
+        .execute(&state.db)
+        .await?;
+    Ok(Json(json!({"user_id": body.user_id, "blocked": false})))
+}
+
+/// GET /api/v1/friends/blocks — users the caller has blocked.
+pub async fn list_blocks(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<Value>>, AppError> {
+    let rows = sqlx::query(
+        "SELECT b.blocked_id, u.username, u.display_name, u.avatar_url
+         FROM user_blocks b JOIN users u ON u.user_id = b.blocked_id
+         WHERE b.blocker_id = $1
+         ORDER BY u.username",
+    )
+    .bind(&claims.sub)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| {
+                json!({
+                    "user_id": r.try_get::<String, _>("blocked_id").unwrap_or_default(),
+                    "username": r.try_get::<String, _>("username").unwrap_or_default(),
+                    "display_name": r.try_get::<String, _>("display_name").ok(),
+                    "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
+                })
+            })
+            .collect(),
+    ))
 }

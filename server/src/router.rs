@@ -280,6 +280,9 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/friends/requests/:user_id/accept",
             post(api::friends::accept_friend),
         )
+        .route("/api/v1/friends/blocks", get(api::friends::list_blocks))
+        .route("/api/v1/friends/block", post(api::friends::block_user))
+        .route("/api/v1/friends/unblock", post(api::friends::unblock_user))
         .route(
             "/api/v1/users/:user_id/suspend",
             post(api::users::suspend_user),

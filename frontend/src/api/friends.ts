@@ -58,5 +58,34 @@ export function acceptFriendRequest(userId: string): Promise<FriendActionResult>
   );
 }
 
+export interface BlockedUser {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+}
+
+export function blockUser(
+  userId: string
+): Promise<{ user_id: string; blocked: boolean }> {
+  return apiJson("/friends/block", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export function unblockUser(
+  userId: string
+): Promise<{ user_id: string; blocked: boolean }> {
+  return apiJson("/friends/unblock", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export function listBlocks(): Promise<BlockedUser[]> {
+  return apiJson<BlockedUser[]>("/friends/blocks");
+}
+
 export { searchUsers };
 export type { UserSearchResult };

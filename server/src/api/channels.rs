@@ -149,6 +149,10 @@ pub async fn list_channels(
 /// Whether two users may open a DM: they're accepted friends or already share a
 /// channel (audit/W7 — blocks cold-DM-to-strangers spam). Bot DMs aren't gated.
 async fn users_can_dm(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
+    // A block in either direction overrides everything — no DM.
+    if crate::api::friends::is_blocked(db, a, b).await? {
+        return Ok(false);
+    }
     let ok: bool = sqlx::query(
         "SELECT (
             EXISTS(SELECT 1 FROM friendships

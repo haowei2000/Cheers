@@ -8,6 +8,7 @@ import {
   X,
   Search,
   Clock,
+  Ban,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
@@ -19,12 +20,16 @@ import {
   acceptFriendRequest,
   sendFriendRequest,
   searchUsers,
+  blockUser,
+  unblockUser,
+  listBlocks,
   type Friend,
   type FriendRequestItem,
   type UserSearchResult,
+  type BlockedUser,
 } from "@/api/friends";
 
-type Tab = "friends" | "requests" | "add";
+type Tab = "friends" | "requests" | "add" | "blocked";
 
 export default function FriendsPage() {
   const navigate = useNavigate();
@@ -70,11 +75,15 @@ export default function FriendsPage() {
             <TabBtn active={tab === "add"} onClick={() => setTab("add")}>
               Add
             </TabBtn>
+            <TabBtn active={tab === "blocked"} onClick={() => setTab("blocked")}>
+              Blocked
+            </TabBtn>
           </div>
 
           {tab === "friends" && <FriendsTab />}
           {tab === "requests" && <RequestsTab onChange={refreshIncoming} />}
           {tab === "add" && <AddTab />}
+          {tab === "blocked" && <BlockedTab />}
         </div>
       </div>
     </div>
@@ -130,6 +139,22 @@ function FriendsTab() {
     }
   }
 
+  async function block(f: Friend) {
+    if (
+      !window.confirm(
+        `Block ${f.display_name || f.username}? This also removes the friendship.`
+      )
+    )
+      return;
+    try {
+      await blockUser(f.friend_id);
+      setFriends((prev) => prev.filter((x) => x.friend_id !== f.friend_id));
+      toast.success("User blocked");
+    } catch {
+      toast.error("Failed to block");
+    }
+  }
+
   if (loading) return <Empty>Loading…</Empty>;
   if (!friends.length)
     return <Empty>No friends yet. Use the Add tab to find people.</Empty>;
@@ -144,6 +169,9 @@ function FriendsTab() {
           id={f.friend_id}
           avatar={f.avatar_url}
         >
+          <IconBtn title="Block" onClick={() => block(f)} danger>
+            <Ban className="w-4 h-4" />
+          </IconBtn>
           <IconBtn title="Remove friend" onClick={() => remove(f)} danger>
             <UserMinus className="w-4 h-4" />
           </IconBtn>
@@ -329,6 +357,55 @@ function AddTab() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function BlockedTab() {
+  const [blocked, setBlocked] = useState<BlockedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    listBlocks()
+      .then(setBlocked)
+      .catch(() => toast.error("Failed to load blocked users"))
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function unblock(u: BlockedUser) {
+    try {
+      await unblockUser(u.user_id);
+      setBlocked((p) => p.filter((x) => x.user_id !== u.user_id));
+      toast.success("Unblocked");
+    } catch {
+      toast.error("Failed to unblock");
+    }
+  }
+
+  if (loading) return <Empty>Loading…</Empty>;
+  if (!blocked.length) return <Empty>No blocked users.</Empty>;
+  return (
+    <div className="space-y-1">
+      {blocked.map((u) => (
+        <Row
+          key={u.user_id}
+          name={u.display_name || u.username}
+          sub={`@${u.username}`}
+          id={u.user_id}
+          avatar={u.avatar_url}
+        >
+          <button
+            onClick={() => unblock(u)}
+            className="text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors"
+          >
+            Unblock
+          </button>
+        </Row>
+      ))}
     </div>
   );
 }
