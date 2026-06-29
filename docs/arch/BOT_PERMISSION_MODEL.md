@@ -91,7 +91,17 @@ approvers/rules) · approver (resolve `ask`) · user (invoke). Maps onto existin
 
 ## Phasing
 
-1. **Posture plumbing** *(mostly done; one blocker)* — ✅ L1 persists the desired mode in `binding_config.connector_control.agentNativePermissionMode`; owner API `GET` (returns `posture{agent_type,permission_mode,allowed_modes}`) + `PUT /bots/:id/permissions/posture` (validated against L0 `allowed_modes`); ✅ L2 push — the gateway sends a `config_update` frame on owner change **and** connect-sync after `hello`; the connector clamps `agentNativePermissionMode` with **both** L0 gates (`backend_may_set_native_options` AND the `allowed_modes` envelope, defense-in-depth) then applies via `session/set_mode`; ✅ frontend "Agent posture" dropdown in `BotPermissionsDialog`. **Still pending: the bypass flag** (task #18) — `claude-agent-acp` launches with `--allow-dangerously-skip-permissions`, so `request_permission` never fires; until that's resolved the posture/rules affect a live agent's *ask* behavior only once the agent actually asks.
+1. **Posture plumbing** *(mostly done; one blocker)* — ✅ L1 persists the desired mode in `binding_config.connector_control.agentNativePermissionMode`; owner API `GET` (returns `posture{agent_type,permission_mode,allowed_modes}`) + `PUT /bots/:id/permissions/posture` (validated against L0 `allowed_modes`); ✅ L2 push — the gateway sends a `config_update` frame on owner change **and** connect-sync after `hello`; the connector clamps `agentNativePermissionMode` with **both** L0 gates (`backend_may_set_native_options` AND the `allowed_modes` envelope, defense-in-depth) then applies via `session/set_mode`; ✅ frontend "Agent posture" dropdown in `BotPermissionsDialog`.
+
+   **Bypass-flag correction (task #18 — was a misdiagnosis):** reading
+   `claude-agent-acp@0.36.1` `canUseTool`, `allowDangerouslySkipPermissions: ALLOW_BYPASS`
+   does **not** skip prompts — it only makes `bypassPermissions` an *available mode*. The
+   real gate is `if (currentModeId === "bypassPermissions") allow;`; for every other mode
+   (`default`/`acceptEdits`/`plan`/`dontAsk`) it calls `requestPermission` → our card fires.
+   So nothing in the external package needs patching: the fix is to *actively set the mode to
+   `default`* (the posture plumbing above) and keep `bypassPermissions` out of `allowed_modes`
+   (the claude preset already does). Remaining: an **e2e confirmation** (task #22) with the
+   host connector rebuilt on these changes — a live tool-use should now surface a card.
 2. **Authorization rules** ✅ done — `bot_permission_rules` table + most-specific resolution; per-kind **approvers `operation_kind`** column (`*`=any); gateway evaluation wired into `request_permission` (`allow`→auto-approve, `deny`→auto-reject, `ask`→approvers card); owner API for rules (`GET/PUT/DELETE /bots/:id/permissions[/rules]`) and kind-aware approvers (`POST/DELETE /bots/:id/approvers`).
 3. **Owner page** ✅ done — `BotPermissionsDialog`: scope selector (bot-wide / per-channel) + the per-operation matrix (decision dropdown + per-kind approver chips). Opened from the bot card's **权限** button (owner/admin only).
 4. **Verify** — API + UI verified end-to-end on kind (rules CRUD, 400 on bad decision, kind-scoped approver grant/list/revoke, matrix renders). Live-agent auto-resolution awaits Phase 1's bypass-flag fix.
