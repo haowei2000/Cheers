@@ -259,3 +259,74 @@ export async function revokeBotApprover(
     method: "DELETE",
   });
 }
+
+// ── Event-access matrix (INITIATE / SEE / RESPOND) ────────────────────────────
+// docs/arch/ACP_EVENT_TAXONOMY.md — per (subject × event-class × capability)
+// authorization, subject = channel role (with per-user overrides).
+
+export type Capability = "initiate" | "see" | "respond";
+export type SubjectKind = "role" | "user";
+
+export interface EventRule {
+  channel_id: string; // "" = bot-wide
+  subject_kind: SubjectKind;
+  subject_id: string; // role name | user_id | "*"
+  event_class: string;
+  capability: Capability;
+  decision: "allow" | "deny";
+  updated_by?: string | null;
+  updated_at?: string;
+}
+
+export interface EventAccess {
+  rules: EventRule[];
+  initiate_events: string[];
+  see_events: string[];
+  respond_events: string[];
+}
+
+/** Owner/admin: read the event-access rules + the event vocabulary. */
+export async function getEventAccess(botId: string): Promise<EventAccess> {
+  return apiJson<EventAccess>(`/bots/${botId}/event-access`);
+}
+
+/** Owner/admin: upsert one (subject × event-class × capability) rule. */
+export async function upsertEventRule(
+  botId: string,
+  rule: {
+    channel_id?: string;
+    subject_kind: SubjectKind;
+    subject_id: string;
+    event_class: string;
+    capability: Capability;
+    decision: "allow" | "deny";
+  }
+): Promise<void> {
+  await apiJson(`/bots/${botId}/event-access`, {
+    method: "PUT",
+    body: JSON.stringify(rule),
+  });
+}
+
+/** Owner/admin: delete one event-access rule (back to the membership default). */
+export async function deleteEventRule(
+  botId: string,
+  q: {
+    channel_id?: string;
+    subject_kind: SubjectKind;
+    subject_id: string;
+    event_class: string;
+    capability: Capability;
+  }
+): Promise<void> {
+  const params = new URLSearchParams({
+    subject_kind: q.subject_kind,
+    subject_id: q.subject_id,
+    event_class: q.event_class,
+    capability: q.capability,
+  });
+  if (q.channel_id) params.set("channel_id", q.channel_id);
+  await apiJson(`/bots/${botId}/event-access?${params.toString()}`, {
+    method: "DELETE",
+  });
+}

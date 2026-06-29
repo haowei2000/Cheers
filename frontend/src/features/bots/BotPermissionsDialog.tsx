@@ -17,6 +17,7 @@ import {
 import { listChannelMembers } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
+import { BotEventAccessSection } from "./BotEventAccessSection";
 import type { BotItem, Channel, MemberItem } from "@/types";
 
 const ANY_KIND = "*";
@@ -236,6 +237,12 @@ export function BotPermissionsDialog({
           </div>
         )}
 
+        {/* Event-access matrix (Axis: per-user authz) — the primary control. */}
+        <BotEventAccessSection botId={bot.bot_id} scope={scope} members={members} />
+
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500 pt-1">
+          Auto-answer policy (per tool kind)
+        </div>
         {loading ? (
           <p className="text-sm text-zinc-500 px-1 py-6 text-center">Loading…</p>
         ) : (
