@@ -50,12 +50,6 @@ fn safe_filename(raw: &str) -> Result<String, AppError> {
     Ok(name.to_string())
 }
 
-fn sanitize_disposition_name(raw: &str) -> String {
-    raw.chars()
-        .filter(|ch| !matches!(ch, '\\' | '"' | '\n' | '\r'))
-        .collect()
-}
-
 fn resolve_expires_in(seconds: Option<i64>) -> i64 {
     const MIN_SECONDS: i64 = 60;
     const MAX_SECONDS: i64 = 7 * 24 * 60 * 60;
@@ -381,35 +375,9 @@ fn attachment_response(
     inline: bool,
     ttl_seconds: Option<i64>,
 ) -> Response {
-    let mut response = Response::new(Body::from(bytes));
-    *response.status_mut() = StatusCode::OK;
-
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_str(content_type.unwrap_or("application/octet-stream"))
-            .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
-    );
-
-    let disposition = if inline { "inline" } else { "attachment" };
-    let safe_name = sanitize_disposition_name(filename);
-    let content_disposition = format!("{}; filename=\"{}\"", disposition, safe_name);
-    headers.insert(
-        header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&content_disposition)
-            .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
-    );
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    if let Some(ttl) = ttl_seconds {
-        if ttl > 0 {
-            let value = format!("private, max-age={ttl}");
-            if let Ok(hv) = HeaderValue::from_str(&value) {
-                headers.insert(header::CACHE_CONTROL, hv);
-            }
-        }
-    }
-
-    response
+    // Delegate to the shared hardened builder (nosniff + active-type download +
+    // CSP sandbox) so every file-serving path applies the same anti-XSS policy.
+    crate::infra::http::file_response(bytes, filename, content_type, inline, ttl_seconds)
 }
 
 fn ttl_left_seconds(expires_at: Option<DateTime<Utc>>) -> Option<i64> {

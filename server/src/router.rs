@@ -5,13 +5,19 @@
 //! - `authed`: endpoints requiring JWT middleware.
 //! - `ws_routes`: WebSocket upgrade and Agent Bridge endpoints.
 
+use std::time::Duration;
+
 use axum::{
-    http::HeaderValue,
+    extract::DefaultBodyLimit,
+    http::{header, HeaderValue, Method},
     middleware,
     routing::{delete, get, patch, post, put},
     Router,
 };
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    timeout::TimeoutLayer,
+};
 
 use crate::{
     api::{self, middleware::jwt_auth},
@@ -28,29 +34,53 @@ pub fn build(state: AppState) -> Router {
         .merge(build_public_routes())
         .merge(build_authed_routes(state.clone()))
         .merge(build_ws_routes())
+        // Explicit request-body cap (audit H3/M5): replaces the implicit 2MB
+        // default with an intentional 16 MiB ceiling sized for attachments.
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        // Backstop request timeout so a stuck handler can't pin a worker; set
+        // generously so legitimate slow connector RPCs aren't cut off.
+        .layer(TimeoutLayer::new(Duration::from_secs(120)))
+        // CORS stays outermost so 4xx / timeout / 413 responses still carry the
+        // CORS headers the browser needs to read them.
         .layer(cors)
         .with_state(state)
 }
 
 fn build_cors(state: &AppState) -> CorsLayer {
-    let mut cors = CorsLayer::new().allow_methods(Any).allow_headers(Any);
-
-    let configured = state
+    // Fail-closed: never reflect `Any` origin. An unset CORS_ALLOWED_ORIGINS
+    // falls back to a localhost dev allowlist (see Config::allowed_origins), and
+    // we warn so a production deploy can't silently ship a wide-open policy.
+    if state
         .config
         .cors_allowed_origins
         .as_deref()
-        .unwrap_or("")
-        .split(',')
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| HeaderValue::from_str(s).ok())
+        .unwrap_or("")
+        .is_empty()
+    {
+        tracing::warn!(
+            "CORS_ALLOWED_ORIGINS not set — using localhost dev allowlist; set it explicitly in production"
+        );
+    }
+
+    let origins = state
+        .config
+        .allowed_origins()
+        .into_iter()
+        .filter_map(|s| HeaderValue::from_str(&s).ok())
         .collect::<Vec<_>>();
 
-    if configured.is_empty() {
-        cors.allow_origin(Any)
-    } else {
-        cors.allow_origin(AllowOrigin::list(configured))
-    }
+    CorsLayer::new()
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_origin(AllowOrigin::list(origins))
 }
 
 fn build_authed_routes(state: AppState) -> Router<AppState> {
@@ -242,6 +272,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
                 .delete(api::friends::remove_friend),
         )
         .route("/api/v1/friends/search", get(api::friends::search_users))
+        .route(
+            "/api/v1/users/:user_id/suspend",
+            post(api::users::suspend_user),
+        )
+        .route(
+            "/api/v1/users/:user_id/unsuspend",
+            post(api::users::unsuspend_user),
+        )
         .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route(
             "/api/v1/mcp/parse-claude-config",

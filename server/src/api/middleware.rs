@@ -6,16 +6,32 @@ use axum::{
 };
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 
 use crate::app_state::AppState;
 
-/// JWT Claims（RS256，payload 不变：{sub, role, exp, iat}）
+/// Issuer claim pinned on every gateway-minted JWT and verified on every request.
+pub const JWT_ISSUER: &str = "cheers-gateway";
+
+fn default_issuer() -> String {
+    JWT_ISSUER.to_string()
+}
+
+/// JWT Claims（RS256）。新增字段对旧 token 前向兼容：`nbf`/`iss` 缺失时按 serde
+/// 默认填充，`token_version` 缺失视为 0（会话吊销 W6 用，避免升级后全员掉线）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // user_id
     pub role: String,
     pub exp: u64,
     pub iat: u64,
+    #[serde(default)]
+    pub nbf: u64,
+    #[serde(default = "default_issuer")]
+    pub iss: String,
+    /// 会话吊销版本（W6）。旧 token 无此字段 → 反序列化为 0。
+    #[serde(default)]
+    pub token_version: u64,
 }
 
 /// 从 Authorization: Bearer <token> 提取 user_id，注入请求扩展。
@@ -27,17 +43,28 @@ pub async fn jwt_auth(
 ) -> Result<Response, StatusCode> {
     let token = extract_bearer(req.headers()).ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let claims = verify_rs256(&token, &state.config.jwt_public_key_pem)
-        .or_else(|_| {
-            // 迁移窗口期间同时接受旧 HS256 token
-            state
-                .config
-                .jwt_legacy_hs256_secret
-                .as_deref()
-                .ok_or(())
-                .and_then(|secret| verify_hs256(&token, secret).map_err(|_| ()))
-        })
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let claims =
+        verify_rs256(&token, &state.config.jwt_public_key_pem).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    // Session revocation + account status (W6): reject deleted/suspended users
+    // and JWTs that predate a forced logout (token_version bump). A token with no
+    // token_version claim defaults to 0, matching a fresh user's row, so existing
+    // sessions survive the W6 rollout. One indexed PK lookup per authed request;
+    // move to a Redis cache if it ever shows up on the hot path.
+    let row = sqlx::query(
+        "SELECT token_version, is_suspended, is_deleted FROM users WHERE user_id = $1",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::UNAUTHORIZED)?;
+    let db_version: i32 = row.try_get("token_version").unwrap_or(0);
+    let suspended: bool = row.try_get("is_suspended").unwrap_or(false);
+    let deleted: bool = row.try_get("is_deleted").unwrap_or(false);
+    if deleted || suspended || (claims.token_version as i64) < db_version as i64 {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
     req.extensions_mut().insert(claims);
     Ok(next.run(req).await)
@@ -56,28 +83,16 @@ pub fn verify_token(
     token: &str,
     state: &crate::app_state::AppState,
 ) -> Result<Claims, &'static str> {
-    verify_rs256(token, &state.config.jwt_public_key_pem)
-        .or_else(|_| {
-            state
-                .config
-                .jwt_legacy_hs256_secret
-                .as_deref()
-                .ok_or("no hs256 secret")
-                .and_then(|s| verify_hs256(token, s).map_err(|_| "invalid hs256 token"))
-        })
-        .map_err(|_| "invalid or expired token")
+    verify_rs256(token, &state.config.jwt_public_key_pem).map_err(|_| "invalid or expired token")
 }
 
 fn verify_rs256(token: &str, public_key_pem: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     let key = DecodingKey::from_rsa_pem(public_key_pem.as_bytes())?;
+    // Algorithm is pinned by the decoding-key type (RS256); also enforce exp + nbf
+    // and require our own issuer so tokens minted for another service can't be reused.
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = true;
-    decode::<Claims>(token, &key, &validation).map(|d| d.claims)
-}
-
-fn verify_hs256(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let key = DecodingKey::from_secret(secret.as_bytes());
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.validate_exp = true;
+    validation.validate_nbf = true;
+    validation.set_issuer(&[JWT_ISSUER]);
     decode::<Claims>(token, &key, &validation).map(|d| d.claims)
 }
