@@ -29,7 +29,6 @@ pub struct BotAcpSecurityConfig {
 
 #[derive(Deserialize)]
 pub struct BotCreateRequest {
-    pub bot_id: Option<String>,
     pub username: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
@@ -46,33 +45,131 @@ pub struct BotCreateRequest {
     pub acp_security: Option<BotAcpSecurityConfig>,
 }
 
+/// Per-user cap on bot creation for non-admins (resource-abuse bound, audit H1).
+const MAX_BOTS_PER_USER: i64 = 50;
+
+fn is_admin(claims: &Claims) -> bool {
+    matches!(claims.role.as_str(), "system_admin" | "admin")
+}
+
+/// Fetch a bot's `created_by` owner; NotFound if the bot doesn't exist.
+async fn bot_owner(state: &AppState, bot_id: &str) -> Result<Option<String>, AppError> {
+    let row = sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
+        .bind(bot_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(row.try_get::<Option<String>, _>("created_by").ok().flatten())
+}
+
+/// Authorize a privileged bot op (issue token, edit/delete): admin or the bot's
+/// creator. A legacy bot with `created_by = NULL` is admin-only (never matches a
+/// caller), so consolidating callers onto this helper can't open an authz bypass.
+async fn ensure_bot_owner_or_admin(
+    state: &AppState,
+    claims: &Claims,
+    bot_id: &str,
+) -> Result<(), AppError> {
+    let owner = bot_owner(state, bot_id).await?;
+    if is_admin(claims) || owner.as_deref() == Some(claims.sub.as_str()) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "only the bot owner or an admin may do this".into(),
+        ))
+    }
+}
+
+/// Whether `claims` may see a bot: admin, owner, or a member of a channel the
+/// bot is in. Gates non-destructive reads (status/test). Returns NotFound for
+/// both missing and forbidden so it isn't an existence oracle.
+async fn ensure_bot_visible(
+    state: &AppState,
+    claims: &Claims,
+    bot_id: &str,
+) -> Result<(), AppError> {
+    if is_admin(claims) {
+        bot_owner(state, bot_id).await?; // existence → correct 404
+        return Ok(());
+    }
+    let visible: bool = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM bot_accounts b
+            WHERE b.bot_id = $1 AND (
+                b.created_by = $2
+                OR EXISTS (
+                    SELECT 1 FROM channel_memberships bcm
+                    JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id
+                    WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
+                      AND ucm.member_id = $2 AND ucm.member_type = 'user'
+                )
+            )
+        ) AS ok",
+    )
+    .bind(bot_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db)
+    .await?
+    .try_get("ok")
+    .unwrap_or(false);
+    if visible {
+        Ok(())
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
 pub async fn list_bots(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
+    // IDOR fix (audit H2): scope to bots the caller owns or shares a channel
+    // with (admins see all). binding_config (connector wiring) is redacted for
+    // non-owners even when the bot is visible via a shared channel.
+    let admin = is_admin(&claims);
     let rows = sqlx::query(
         "SELECT bot_id, username, display_name, description, avatar_url, status, scope,
-                binding_type, bridge_provider, model_id, template_id, intro, binding_config, created_at
-         FROM bot_accounts
+                binding_type, bridge_provider, model_id, template_id, intro, binding_config,
+                created_by
+         FROM bot_accounts b
+         WHERE $1
+            OR b.created_by = $2
+            OR EXISTS (
+                SELECT 1 FROM channel_memberships bcm
+                JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id
+                WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
+                  AND ucm.member_id = $2 AND ucm.member_type = 'user'
+            )
          ORDER BY username",
     )
+    .bind(admin)
+    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(rows.into_iter().map(|r| json!({
-        "bot_id": r.try_get::<String, _>("bot_id").unwrap_or_default(),
-        "username": r.try_get::<String, _>("username").unwrap_or_default(),
-        "display_name": r.try_get::<String, _>("display_name").ok(),
-        "description": r.try_get::<String, _>("description").ok(),
-        "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
-        "status": r.try_get::<String, _>("status").unwrap_or_else(|_| "online".into()),
-        "scope": r.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
-        "binding_type": r.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
-        "bridge_provider": r.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
-        "model_id": r.try_get::<String, _>("model_id").ok(),
-        "template_id": r.try_get::<String, _>("template_id").ok(),
-        "intro": r.try_get::<String, _>("intro").ok(),
-        "binding_config": r.try_get::<Value, _>("binding_config").ok(),
-    })).collect()))
+    Ok(Json(rows.into_iter().map(|r| {
+        let created_by = r.try_get::<Option<String>, _>("created_by").ok().flatten();
+        let is_owner = created_by.as_deref() == Some(claims.sub.as_str());
+        let binding_config = if admin || is_owner {
+            r.try_get::<Value, _>("binding_config").ok()
+        } else {
+            None
+        };
+        json!({
+            "bot_id": r.try_get::<String, _>("bot_id").unwrap_or_default(),
+            "username": r.try_get::<String, _>("username").unwrap_or_default(),
+            "display_name": r.try_get::<String, _>("display_name").ok(),
+            "description": r.try_get::<String, _>("description").ok(),
+            "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
+            "status": r.try_get::<String, _>("status").unwrap_or_else(|_| "online".into()),
+            "scope": r.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
+            "binding_type": r.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
+            "bridge_provider": r.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
+            "model_id": r.try_get::<String, _>("model_id").ok(),
+            "template_id": r.try_get::<String, _>("template_id").ok(),
+            "intro": r.try_get::<String, _>("intro").ok(),
+            "binding_config": binding_config,
+        })
+    }).collect()))
 }
 
 pub async fn create_bot(
@@ -83,8 +180,23 @@ pub async fn create_bot(
     if body.username.trim().is_empty() {
         return Err(AppError::BadRequest("username is required".into()));
     }
+    // Resource-abuse bound (audit H1): cap how many bots a non-admin can own.
+    if !is_admin(&claims) {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM bot_accounts WHERE created_by = $1")
+                .bind(&claims.sub)
+                .fetch_one(&state.db)
+                .await?;
+        if count >= MAX_BOTS_PER_USER {
+            return Err(AppError::Forbidden(format!(
+                "bot limit reached ({MAX_BOTS_PER_USER} per user)"
+            )));
+        }
+    }
     let binding_config = normalize_binding_config(body.binding_config, body.acp_security)?;
-    let bot_id = body.bot_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    // Always server-generate the id (audit H1): a client-supplied bot_id allowed
+    // ID squatting and collision-as-existence-oracle.
+    let bot_id = Uuid::new_v4().to_string();
     let status = body.status.unwrap_or_else(|| "online".into());
     let scope = body.scope.unwrap_or_else(|| "friend".into());
     let binding_type = body.binding_type.unwrap_or_else(|| "http".into());
@@ -179,9 +291,10 @@ fn normalize_binding_config(
 
 pub async fn get_bot_status(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    ensure_bot_visible(&state, &claims, &bot_id).await?;
     let row =
         sqlx::query("SELECT bot_id, status, binding_type FROM bot_accounts WHERE bot_id = $1")
             .bind(&bot_id)
@@ -200,9 +313,10 @@ pub async fn get_bot_status(
 
 pub async fn test_bot(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    ensure_bot_visible(&state, &claims, &bot_id).await?;
     let exists = sqlx::query("SELECT EXISTS(SELECT 1 FROM bot_accounts WHERE bot_id = $1) AS ok")
         .bind(&bot_id)
         .fetch_one(&state.db)
@@ -226,23 +340,8 @@ pub async fn issue_bot_token(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     // The token grants the connector authority to act as this bot, so only the
-    // bot's creator or an admin may issue/rotate it (else any logged-in user
-    // could hijack or DoS another tenant's bot).
-    let owner: Option<String> =
-        sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
-            .bind(&bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?
-            .try_get::<Option<String>, _>("created_by")
-            .ok()
-            .flatten();
-    let is_admin = matches!(claims.role.as_str(), "system_admin" | "admin");
-    if !is_admin && owner.as_deref() != Some(claims.sub.as_str()) {
-        return Err(AppError::Forbidden(
-            "only the bot owner or an admin may issue its token".into(),
-        ));
-    }
+    // bot's creator or an admin may issue/rotate it.
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
 
     let token = generate_bot_token();
     let token_hash = hash_bot_token(&token);

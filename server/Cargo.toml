@@ -18,7 +18,7 @@ integration = []
 tokio        = { version = "1",   features = ["full"] }
 axum         = { version = "0.7", features = ["ws", "macros"] }
 tower        = "0.4"
-tower-http   = { version = "0.5", features = ["cors", "trace"] }
+tower-http   = { version = "0.5", features = ["cors", "trace", "timeout"] }
 
 # ── 数据库 ───────────────────────────────────────────────────────────────────
 sqlx = { version = "0.8", features = [
@@ -69,6 +69,7 @@ futures-util = "0.3"
 # ── 密码 / 哈希 ───────────────────────────────────────────────────────────────
 sha2    = "0.10"
 hex     = "0.4"
+getrandom = "0.2"
 bcrypt  = "0.15"
 base64  = "0.22"
 ed25519-dalek = "1"

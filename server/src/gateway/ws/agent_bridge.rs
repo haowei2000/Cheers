@@ -1228,12 +1228,19 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
         .flatten();
     let provider_account_id = resolve_bot_provider_account_id(binding_config.as_ref())
         .unwrap_or_else(|| bot_id.to_string());
+    // H6 (non-breaking): honor an explicit require_capability, else enforce only
+    // when the bot has an active capability delegation. A bot that never opted
+    // into signed capabilities keeps working with an unsigned data plane.
+    let require_capability = match resolve_bot_require_capability(binding_config.as_ref()) {
+        Some(explicit) => explicit,
+        None => bot_has_active_delegation(db, &bot_id).await,
+    };
     Ok(BotInfo {
         bot_id,
         provider_account_id,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),
-        require_capability: resolve_bot_require_capability(binding_config.as_ref()),
+        require_capability,
         acp_security: resolve_bot_acp_security(binding_config.as_ref()),
         connector_config: resolve_bot_connector_config(binding_config.as_ref()),
         owner_id: row
@@ -1243,12 +1250,37 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     })
 }
 
-fn resolve_bot_require_capability(binding_config: Option<&Value>) -> bool {
+/// Explicit `acp_security.require_capability` setting, or None when unset. When
+/// None the gateway defaults to "enforce iff the bot has an active capability
+/// delegation" (see resolve_bot): bots that opted into signed capabilities are
+/// fail-closed, bots that never did keep working unsigned (audit H6,
+/// non-breaking rollout).
+fn resolve_bot_require_capability(binding_config: Option<&Value>) -> Option<bool> {
     binding_config
         .and_then(|cfg| cfg.get("acp_security"))
         .and_then(|acp| acp.get("require_capability"))
         .and_then(Value::as_bool)
-        .unwrap_or(false)
+}
+
+/// Whether a bot has at least one active (non-revoked, in-status, non-expired,
+/// not uses-exhausted) capability delegation.
+async fn bot_has_active_delegation(db: &PgPool, bot_id: &Uuid) -> bool {
+    sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM acp_capability_delegations
+            WHERE bot_id = $1
+              AND revoked = FALSE
+              AND status = 'active'
+              AND (expires_at IS NULL OR expires_at > NOW())
+              AND (max_uses IS NULL OR use_count < max_uses)
+        ) AS ok",
+    )
+    .bind(bot_id.to_string())
+    .fetch_one(db)
+    .await
+    .ok()
+    .and_then(|row| row.try_get::<bool, _>("ok").ok())
+    .unwrap_or(false)
 }
 
 fn resolve_bot_provider_account_id(binding_config: Option<&Value>) -> Option<String> {
