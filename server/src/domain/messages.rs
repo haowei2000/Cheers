@@ -201,13 +201,13 @@ pub async fn create_message(
         // trigger a `prompt` for THIS bot here? The message still posts to the channel;
         // we only skip waking the bot. Fail-open on a rules error (membership already
         // passed, and absence-of-policy = allowed).
-        let may_prompt = crate::domain::bot_event_policy::resolve(
+        let may_prompt = crate::domain::acp_policy::allows(
             db,
             &bot_id.to_string(),
             &params.channel_id.to_string(),
             &params.user_id.to_string(),
             &sender_role,
-            crate::domain::bot_event_policy::EV_PROMPT,
+            "session/prompt",
             crate::domain::bot_event_policy::Capability::Initiate,
         )
         .await

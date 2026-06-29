@@ -173,13 +173,13 @@ pub async fn resolve_permission(
         .await?
         || {
             let role = channel_role(&state, channel_id, uid).await;
-            bot_event_policy::resolve(
+            crate::domain::acp_policy::allows(
                 &state.db,
                 &pending.bot_id.to_string(),
                 &channel_id.to_string(),
                 &uid.to_string(),
                 &role,
-                bot_event_policy::EV_PERMISSION_REQUEST,
+                "session/request_permission",
                 Capability::Respond,
             )
             .await
