@@ -205,6 +205,20 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
         .route("/api/v1/bots/:bot_id/token", post(api::bots::issue_bot_token))
+        // ── Bot onboarding: one-time enrollment codes + connector config ─────
+        .route(
+            "/api/v1/bots/:bot_id/enrollment",
+            post(api::enrollment::mint_enrollment_code)
+                .delete(api::enrollment::revoke_enrollment_codes),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/connector-config",
+            get(api::enrollment::get_connector_config),
+        )
+        .route(
+            "/api/v1/ops/connector-discovery",
+            get(api::enrollment::connector_discovery),
+        )
         .route(
             "/api/v1/bots/:bot_id/capability-delegations",
             get(api::acp_capability::list_delegations).post(api::acp_capability::create_delegation),
@@ -304,6 +318,13 @@ fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login))
+        // Public, code-authenticated: a host redeems a one-time enrollment code
+        // for a freshly rotated bot token + connector config. No JWT — the code
+        // IS the credential (rate-limited + single-use + short TTL).
+        .route(
+            "/api/v1/enrollment/redeem",
+            post(api::enrollment::redeem_enrollment_code),
+        )
 }
 
 fn build_ws_routes() -> Router<AppState> {
