@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, MessageSquare, Plus } from "lucide-react";
+import { Settings, LogOut, MessageSquare, Plus, Users } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
@@ -130,6 +130,14 @@ export function WorkspaceRail() {
 
       {/* Bottom actions */}
       <div className="flex flex-col items-center gap-2 mt-auto">
+        <button
+          onClick={() => navigate("/friends")}
+          title="Friends"
+          className="w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+        >
+          <Users className="w-4 h-4" />
+        </button>
+
         <button
           onClick={() => navigate("/settings")}
           title="Settings"
