@@ -54,3 +54,38 @@ export async function addChannelMember(
     body: JSON.stringify(member),
   });
 }
+
+export async function removeChannelMember(
+  channelId: string,
+  memberId: string
+): Promise<void> {
+  await apiJson(`/channels/${channelId}/members/${memberId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateChannel(
+  channelId: string,
+  patch: {
+    name?: string;
+    purpose?: string | null;
+    type?: string;
+    auto_assist?: boolean;
+    allow_member_invites?: boolean;
+    allow_bot_adds?: boolean;
+  }
+): Promise<Channel> {
+  return apiJson<Channel>(`/channels/${channelId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  await apiJson(`/channels/${channelId}`, { method: "DELETE" });
+}
+
+/** Clear the caller's unread badge for a channel (stamps last_read_at server-side). */
+export async function markChannelRead(channelId: string): Promise<void> {
+  await apiJson(`/channels/${channelId}/read`, { method: "POST" });
+}
