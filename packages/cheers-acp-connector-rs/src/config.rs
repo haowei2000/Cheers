@@ -146,6 +146,28 @@ pub struct PermissionPolicy {
     /// enforces resource authz (channel membership + role), making the per-tool
     /// ACP prompt redundant. Default false.
     pub auto_allow: bool,
+    // ── L0 set-mode envelope (ACP-generic; see BOT_CONFIG_GOVERNANCE.md) ──
+    /// Whether the platform may change the session permission mode at runtime
+    /// (L2 `session/set_mode`). Default true.
+    pub backend_may_set_mode: bool,
+    /// Opaque allow-list of ACP modeIds the platform may select via set_mode. The
+    /// connector clamps a platform request by exact string match (it has NO notion
+    /// of what any mode means — that's agent-specific). Empty = allow any mode the
+    /// agent advertised in `session/new` → `availableModes`. The host (or the
+    /// gateway's per-agent preset) decides which ids belong here.
+    pub allowed_modes: Vec<String>,
+}
+
+impl PermissionPolicy {
+    /// L0 clamp: whether the platform may switch the session to `mode`. Requires
+    /// `backend_may_set_mode`; then `mode` must be in `allowed_modes` (empty = any).
+    /// Pure string match — no agent-specific semantics. Used by the L2
+    /// `session/set_mode` path (wiring pending — see task L2).
+    #[allow(dead_code)]
+    pub fn may_set_mode(&self, mode: &str) -> bool {
+        self.backend_may_set_mode
+            && (self.allowed_modes.is_empty() || self.allowed_modes.iter().any(|m| m == mode))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,6 +464,10 @@ struct RawPermissionPolicy {
     on_timeout: String,
     #[serde(default)]
     auto_allow: bool,
+    #[serde(default = "default_true")]
+    backend_may_set_mode: bool,
+    #[serde(default)]
+    allowed_modes: Vec<String>,
 }
 
 impl Default for RawPermissionPolicy {
@@ -451,6 +477,8 @@ impl Default for RawPermissionPolicy {
             wait_timeout_ms: default_permission_wait_timeout_ms(),
             on_timeout: default_permission_on_timeout(),
             auto_allow: false,
+            backend_may_set_mode: true,
+            allowed_modes: Vec::new(),
         }
     }
 }
@@ -766,6 +794,8 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             wait_timeout_ms: raw.permission.wait_timeout_ms.max(1),
             on_timeout: PermissionTimeoutAction::from_str(&raw.permission.on_timeout)?,
             auto_allow: raw.permission.auto_allow,
+            backend_may_set_mode: raw.permission.backend_may_set_mode,
+            allowed_modes: raw.permission.allowed_modes,
         },
         send: SendPolicy {
             allow: raw.send.allow,

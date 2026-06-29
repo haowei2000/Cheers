@@ -39,6 +39,11 @@ struct AgentPreset {
     env_allow: &'static [&'static str],
     /// adapter.permission_mode (session/set_mode stopgap); None omits the key.
     permission_mode: Option<&'static str>,
+    /// policy.permission.allowed_modes — opaque ACP modeIds the platform may select
+    /// at runtime (L0 set-mode envelope). Agent-SPECIFIC, so it lives here, not in
+    /// the shared template or the connector. Empty = any mode the agent advertises.
+    /// (Omitting an agent's bypass mode is how we keep bypass off by default.)
+    allowed_modes: &'static [&'static str],
     /// True when `command` is a placeholder the user must replace before it runs.
     needs_edit: bool,
 }
@@ -55,12 +60,17 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             // This is only the DEFAULT; the live value is meant to be platform-set
             // (L1/L2) and clamped by an L0 gate — that plumbing is still TODO.
             permission_mode: Some("default"),
+            // Claude's advertised modes minus "bypassPermissions" → the platform
+            // can switch posture but can't opt into bypass by default.
+            allowed_modes: &["default", "plan", "acceptEdits", "dontAsk", "auto"],
             needs_edit: false,
         },
         "codex" => AgentPreset {
             command: "codex-acp",
             env_allow: &["HOME", "PATH", "OPENAI_API_KEY"],
             permission_mode: None,
+            // We don't presume codex's modeIds; empty = any mode it advertises.
+            allowed_modes: &[],
             needs_edit: false,
         },
         "opencode" => AgentPreset {
@@ -68,12 +78,14 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             command: "opencode-acp",
             env_allow: &["HOME", "PATH"],
             permission_mode: None,
+            allowed_modes: &[],
             needs_edit: true,
         },
         _ => AgentPreset {
             command: "/path/to/your-acp-agent",
             env_allow: &["HOME", "PATH"],
             permission_mode: None,
+            allowed_modes: &[],
             needs_edit: true,
         },
     }
@@ -161,6 +173,13 @@ pub fn render_toml(params: &RenderParams) -> String {
         None => String::new(),
     };
 
+    let allowed_modes = preset
+        .allowed_modes
+        .iter()
+        .map(|v| toml_str(v))
+        .collect::<Vec<_>>()
+        .join(", ");
+
     let edit_banner = if preset.needs_edit {
         "#\n# ⚠ adapter.command below is a PLACEHOLDER — replace it with your ACP\n#   agent binary (absolute path or a command on PATH) before starting.\n"
     } else {
@@ -231,6 +250,13 @@ on_timeout         = "cancel"
 # auto_allow = false routes each ACP tool-permission prompt to the channel so a
 # human (owner / delegate) decides. Set true to approve locally and skip cards.
 auto_allow         = false
+# ── L0 set-mode envelope (host-sovereign; see BOT_CONFIG_GOVERNANCE.md) ──
+# backend_may_set_mode: may the platform change the session permission mode at
+#   runtime (L2 session/set_mode). allowed_modes: opaque ACP modeIds the platform
+#   may select (empty = any mode the agent advertises in session/new). The connector
+#   matches these by exact string — it has no notion of what a mode means.
+backend_may_set_mode = true
+allowed_modes        = [{allowed_modes}]
 
 [accounts.{id}.policy.send]
 allow          = true
@@ -257,6 +283,7 @@ request_timeout_ms = 30000
         command = toml_str(preset.command),
         permission_mode_line = permission_mode_line,
         env_allow = env_allow,
+        allowed_modes = allowed_modes,
     )
 }
 
@@ -313,7 +340,11 @@ mod tests {
             token_ref: TokenRef::Env("CHEERS_CLAUDE_BOT_TOKEN".into()),
         });
         assert!(toml.contains("bot_token_env         = \"CHEERS_CLAUDE_BOT_TOKEN\""));
-        assert!(toml.contains("permission_mode = \"plan\""));
+        // "default" = prompts per tool (not "plan", which means no execution).
+        assert!(toml.contains("permission_mode = \"default\""));
+        // L0 set-mode envelope: claude's safe modes, no "bypassPermissions".
+        assert!(toml.contains(r#"allowed_modes        = ["default", "plan", "acceptEdits", "dontAsk", "auto"]"#));
+        assert!(!toml.contains("bypassPermissions"));
         assert!(toml.contains("\"ANTHROPIC_API_KEY\""));
         assert!(toml.contains("command = \"claude-agent-acp\""));
     }
