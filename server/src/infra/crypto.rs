@@ -11,13 +11,29 @@ pub fn hash_bot_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// 生成新的 botToken：`agb_<128-bit hex>`。明文仅在签发时返回一次，
+/// 生成新的 botToken：`agb_<256-bit hex>`。明文仅在签发时返回一次，
 /// 服务端只持久化其 SHA-256（见 [`hash_bot_token`]）。
 pub fn generate_bot_token() -> String {
-    // 32 bytes straight from the OS CSPRNG → an unambiguous 256-bit token,
-    // hex-encoded. (The old UUIDv4 concat was CSPRNG-backed too, but this is
-    // clearer and full-entropy.)
+    generate_prefixed_secret(BOT_TOKEN_PREFIX)
+}
+
+/// Onboarding enrollment-code 明文前缀（一次性、短时，换取 botToken）。
+pub const ENROLLMENT_CODE_PREFIX: &str = "agbenr_";
+
+/// 生成一次性 enrollment code：`agbenr_<256-bit hex>`。只在铸造时返回一次，
+/// 服务端只存其 SHA-256（用 [`hash_enrollment_code`]）。
+pub fn generate_enrollment_code() -> String {
+    generate_prefixed_secret(ENROLLMENT_CODE_PREFIX)
+}
+
+/// enrollment code 的 SHA-256（同 [`hash_bot_token`] 的算法）。
+pub fn hash_enrollment_code(code: &str) -> String {
+    hash_bot_token(code)
+}
+
+/// 32 字节 OS CSPRNG → 256-bit 十六进制秘密，带可识别前缀。
+fn generate_prefixed_secret(prefix: &str) -> String {
     let mut bytes = [0u8; 32];
     getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
-    format!("{BOT_TOKEN_PREFIX}{}", hex::encode(bytes))
+    format!("{prefix}{}", hex::encode(bytes))
 }
