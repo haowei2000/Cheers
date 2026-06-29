@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel } from "@/types";
 import { NewDmDialog } from "./NewDmDialog";
+import { NewChannelDialog } from "./NewChannelDialog";
 
 interface SectionProps {
   label: string;
@@ -77,8 +78,10 @@ interface Props {
 }
 
 export function Sidebar({ workspaceName }: Props) {
-  const { channels, selectedChannelId, selectChannel } = useChatStore();
+  const { channels, selectedChannelId, selectChannel, selectedWorkspaceId } =
+    useChatStore();
   const [dmOpen, setDmOpen] = useState(false);
+  const [channelOpen, setChannelOpen] = useState(false);
 
   const publicChannels = channels.filter(
     (c) => c.type !== "dm" && c.type !== "private"
@@ -100,18 +103,16 @@ export function Sidebar({ workspaceName }: Props) {
 
       {/* Channel list */}
       <div className="flex-1 overflow-y-auto py-3 px-2">
-        {publicChannels.length > 0 && (
-          <Section label="Channels" onAdd={() => {}}>
-            {publicChannels.map((ch) => (
-              <ChannelItem
-                key={ch.channel_id}
-                channel={ch}
-                selected={selectedChannelId === ch.channel_id}
-                onClick={() => selectChannel(ch.channel_id)}
-              />
-            ))}
-          </Section>
-        )}
+        <Section label="Channels" onAdd={() => setChannelOpen(true)}>
+          {publicChannels.map((ch) => (
+            <ChannelItem
+              key={ch.channel_id}
+              channel={ch}
+              selected={selectedChannelId === ch.channel_id}
+              onClick={() => selectChannel(ch.channel_id)}
+            />
+          ))}
+        </Section>
 
         {privateChannels.length > 0 && (
           <Section label="Private" defaultOpen>
@@ -155,6 +156,12 @@ export function Sidebar({ workspaceName }: Props) {
         )}
       </div>
       {dmOpen && <NewDmDialog onClose={() => setDmOpen(false)} />}
+      {channelOpen && selectedWorkspaceId && (
+        <NewChannelDialog
+          workspaceId={selectedWorkspaceId}
+          onClose={() => setChannelOpen(false)}
+        />
+      )}
     </div>
   );
 }
