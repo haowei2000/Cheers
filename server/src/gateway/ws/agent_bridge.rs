@@ -808,23 +808,6 @@ async fn handle_terminal_frame(
     }
 }
 
-/// Pick the first ACP permission option whose `kind` begins with `prefix`
-/// (e.g. "allow" / "reject"), returning `(option_id, option_kind)`. Used to
-/// auto-resolve an allow/deny Axis-B rule against the agent's offered options.
-fn pick_permission_option(options: Option<&Value>, prefix: &str) -> Option<(String, String)> {
-    options?.as_array()?.iter().find_map(|o| {
-        let kind = o.get("kind").and_then(Value::as_str)?;
-        if !kind.starts_with(prefix) {
-            return None;
-        }
-        let id = o
-            .get("option_id")
-            .or_else(|| o.get("optionId"))
-            .and_then(Value::as_str)?;
-        Some((id.to_string(), kind.to_string()))
-    })
-}
-
 async fn handle_permission_request_frame(
     frame: &Value,
     state: &AppState,
@@ -837,39 +820,9 @@ async fn handle_permission_request_frame(
         .ok_or("missing channel_id")?;
     ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
 
-    // ── Axis B: per-operation rule eval (docs/arch/BOT_PERMISSION_MODEL.md) ──
-    // Decide BEFORE creating a pending card: allow → auto-approve, deny →
-    // auto-reject (a resolved card, no human needed); ask → fall through to the
-    // normal pending card. Default-safe: any error or no matching rule → Ask.
-    let request_id_str = frame.get("request_id").and_then(Value::as_str);
-    let op_kind = frame
-        .get("tool")
-        .and_then(|t| t.get("kind"))
-        .and_then(Value::as_str)
-        .unwrap_or(crate::domain::bot_permission::ANY_KIND);
-    let decision = crate::domain::bot_permission::resolve(
-        &state.db,
-        &bot.bot_id.to_string(),
-        &channel_id.to_string(),
-        op_kind,
-    )
-    .await
-    .unwrap_or(crate::domain::bot_permission::Decision::Ask);
-    // For an auto decision, pick a concrete option (allow*/reject*) to send back.
-    // (option_id, option_kind, resolution); None ⇒ keep the card pending ('ask',
-    // or allow/deny with no matching option offered — safer to ask a human).
-    use crate::domain::bot_permission::Decision;
-    let auto: Option<(String, String, &'static str)> = match (decision, request_id_str) {
-        (Decision::Allow, Some(_)) => {
-            pick_permission_option(frame.get("options"), "allow").map(|(id, k)| (id, k, "allow"))
-        }
-        (Decision::Deny, Some(_)) => {
-            pick_permission_option(frame.get("options"), "reject").map(|(id, k)| (id, k, "reject"))
-        }
-        _ => None,
-    };
-    let now = chrono::Utc::now().to_rfc3339();
-
+    // The agent decides WHEN to ask (its mode); Cheers always surfaces the ask as a
+    // pending card and routes the answer to RESPOND-authorized users (see
+    // docs/arch/ACP_EVENT_TAXONOMY.md). No per-tool-kind auto-answer here.
     let msg_id = Uuid::new_v4();
     let title = frame
         .get("title")
@@ -888,7 +841,7 @@ async fn handle_permission_request_frame(
     } else {
         format!("{title}\n\n{body}")
     };
-    let mut content_data = json!({
+    let content_data = json!({
         "kind": "agent_bridge_permission_request",
         "request_id": frame.get("request_id").cloned().unwrap_or(Value::Null),
         "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
@@ -903,15 +856,6 @@ async fn handle_permission_request_frame(
         "resolved": false,
         "bot_owner_id": bot.owner_id.clone(),
     });
-    // Bake the auto decision into the card so clients render it resolved, not pending.
-    if let (Some((opt_id, opt_kind, _resolution)), Value::Object(obj)) = (&auto, &mut content_data) {
-        obj.insert("resolved".into(), json!(true));
-        obj.insert("resolved_by".into(), json!("system"));
-        obj.insert("resolved_at".into(), json!(now.clone()));
-        obj.insert("chosen_option_id".into(), json!(opt_id));
-        obj.insert("chosen_kind".into(), json!(opt_kind));
-        obj.insert("auto".into(), json!(true));
-    }
     let content_data_for_db = content_data.to_string();
 
     let mut tx = state
@@ -1005,45 +949,6 @@ async fn handle_permission_request_frame(
     .await
     {
         tracing::warn!(%channel_id, error = %err, "permission_request: trace write failed");
-    }
-
-    // Auto decision: push the resolution to the connector + audit it, so an
-    // allow/deny rule never waits on a human. Pending 'ask' cards skip this and
-    // are resolved later via the HTTP resolve_permission path.
-    if let (Some((opt_id, opt_kind, resolution)), Some(request_id)) = (&auto, request_id_str) {
-        let frame_out = json!({
-            "type": "permission_resolution",
-            "v": 1,
-            "request_id": request_id,
-            "message_id": msg_id.to_string(),
-            "resolution": resolution,
-            "option_id": opt_id,
-            "resolved_by": "system",
-            "resolved_at": now,
-        });
-        let delivered = state.bot_locator.dispatch_task(bot.bot_id, frame_out).await;
-        if let Err(err) = crate::domain::approval::record_audit(
-            &state.db,
-            crate::domain::approval::AuditEvent {
-                event_type: "resolved",
-                bot_id: Some(bot.bot_id),
-                channel_id,
-                request_id: Some(request_id.to_string()),
-                msg_id: Some(msg_id),
-                decision: Some(opt_kind.clone()),
-                option_id: Some(opt_id.clone()),
-                detail: Some(json!({ "auto": true, "rule": resolution })),
-                ..Default::default()
-            },
-        )
-        .await
-        {
-            tracing::warn!(%channel_id, error = %err, "permission auto-resolve: audit write failed");
-        }
-        tracing::info!(
-            %channel_id, request_id, resolution, delivered, op_kind,
-            "permission auto-resolved by Axis-B rule"
-        );
     }
 
     let wire = WireFrame::channel(

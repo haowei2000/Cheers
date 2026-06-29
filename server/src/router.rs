@@ -227,10 +227,6 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bot_permission::list_permissions),
         )
         .route(
-            "/api/v1/bots/:bot_id/permissions/rules",
-            put(api::bot_permission::upsert_rule).delete(api::bot_permission::delete_rule),
-        )
-        .route(
             "/api/v1/bots/:bot_id/permissions/posture",
             put(api::bot_permission::set_posture),
         )

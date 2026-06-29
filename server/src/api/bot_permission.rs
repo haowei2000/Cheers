@@ -1,7 +1,6 @@
-//! Owner API for Axis B of the bot permission model
-//! (docs/arch/BOT_PERMISSION_MODEL.md): per-`(bot, channel, operation_kind)`
-//! authorization rules (`allow` / `deny` / `ask`). The "who approves an ask"
-//! half lives in the kind-aware approvers API (api/approval.rs).
+//! Owner API for bot permissions (docs/arch/ACP_EVENT_TAXONOMY.md):
+//! - posture (the agent's session mode) — `GET /permissions`, `PUT /permissions/posture`;
+//! - the event-access matrix (INITIATE / SEE / RESPOND) — `…/event-access`.
 //!
 //! All routes are owner-or-admin gated (`bots::ensure_bot_owner_or_admin`).
 
@@ -18,8 +17,7 @@ use crate::{
     api::middleware::Claims,
     app_state::AppState,
     domain::{
-        bot_event_policy::{self, Capability},
-        bot_permission::{self, Decision, BOT_WIDE},
+        bot_event_policy::{self, Capability, BOT_WIDE},
         connector_config,
     },
     errors::AppError,
@@ -62,17 +60,6 @@ fn normalize_channel(raw: Option<String>) -> String {
     }
 }
 
-fn parse_decision_strict(raw: &str) -> Result<Decision, AppError> {
-    match raw {
-        "allow" => Ok(Decision::Allow),
-        "deny" => Ok(Decision::Deny),
-        "ask" => Ok(Decision::Ask),
-        other => Err(AppError::BadRequest(format!(
-            "decision must be allow|deny|ask, got {other:?}"
-        ))),
-    }
-}
-
 // ── GET /bots/:bot_id/permissions ───────────────────────────────────────────
 
 pub async fn list_permissions(
@@ -81,15 +68,11 @@ pub async fn list_permissions(
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let rules = bot_permission::list_rules_json(&state.db, &bot_id).await?;
     let (agent_type, current) = load_posture(&state, &bot_id).await?;
     let (default_mode, allowed) = connector_config::posture_preset(&agent_type);
     let permission_mode = current.or_else(|| default_mode.map(str::to_string));
     Ok(Json(json!({
-        "rules": rules,
-        // ACP-standard kinds the UI pre-renders as matrix rows (any kind works).
-        "standard_kinds": bot_permission::STANDARD_KINDS,
-        // Axis A posture: the agent's session mode + the L0-allowed choices.
+        // Posture: the agent's session mode + the L0-allowed choices.
         "posture": {
             "agent_type": agent_type,
             "permission_mode": permission_mode,
@@ -161,58 +144,6 @@ pub async fn set_posture(
         Err(_) => false,
     };
     Ok(Json(json!({ "ok": true, "permission_mode": mode, "delivered": delivered })))
-}
-
-// ── PUT /bots/:bot_id/permissions/rules ─────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct UpsertRuleRequest {
-    /// Channel UUID string; absent/empty = the bot-wide default.
-    pub channel_id: Option<String>,
-    /// ACP toolCall.kind; `*` = catch-all.
-    pub operation_kind: String,
-    /// `allow` | `deny` | `ask`.
-    pub decision: String,
-}
-
-pub async fn upsert_rule(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(bot_id): Path<String>,
-    Json(body): Json<UpsertRuleRequest>,
-) -> Result<Json<Value>, AppError> {
-    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let kind = body.operation_kind.trim();
-    if kind.is_empty() {
-        return Err(AppError::BadRequest("operation_kind required".into()));
-    }
-    let decision = parse_decision_strict(body.decision.trim())?;
-    let channel = normalize_channel(body.channel_id);
-    bot_permission::upsert_rule(&state.db, &bot_id, &channel, kind, decision, &claims.sub).await?;
-    Ok(Json(json!({ "ok": true })))
-}
-
-// ── DELETE /bots/:bot_id/permissions/rules?channel_id=&operation_kind= ───────
-
-#[derive(Deserialize)]
-pub struct DeleteRuleQuery {
-    pub channel_id: Option<String>,
-    pub operation_kind: String,
-}
-
-pub async fn delete_rule(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(bot_id): Path<String>,
-    Query(q): Query<DeleteRuleQuery>,
-) -> Result<Json<Value>, AppError> {
-    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let channel = normalize_channel(q.channel_id);
-    let removed = bot_permission::delete_rule(&state.db, &bot_id, &channel, &q.operation_kind).await?;
-    if !removed {
-        return Err(AppError::NotFound);
-    }
-    Ok(Json(json!({ "ok": true })))
 }
 
 // ── Event-access matrix (INITIATE / SEE / RESPOND) ──────────────────────────

@@ -149,23 +149,10 @@ export async function getEnrollmentGuidance(): Promise<EnrollmentGuidance> {
   return apiJson<EnrollmentGuidance>(`/enrollment/guidance`);
 }
 
-// ── Axis B: per-operation permission rules + per-kind approvers ───────────────
-// docs/arch/BOT_PERMISSION_MODEL.md. A rule decides allow/deny/ask per ACP
-// operation_kind; approvers decide WHO resolves an 'ask' for that kind.
+// ── Bot posture (the agent's session mode) ────────────────────────────────────
+// docs/arch/ACP_EVENT_TAXONOMY.md.
 
-export type Decision = "allow" | "deny" | "ask";
-
-export interface PermissionRule {
-  /** "" = bot-wide default (applies to every channel). */
-  channel_id: string;
-  /** ACP toolCall.kind; "*" = catch-all (any kind). */
-  operation_kind: string;
-  decision: Decision;
-  updated_by?: string | null;
-  updated_at?: string;
-}
-
-/** Axis A posture: the agent's session mode + the L0-allowed choices. */
+/** Posture: the agent's session mode + the L0-allowed choices. */
 export interface Posture {
   agent_type: string;
   /** Current desired mode (persisted override, else the preset default). */
@@ -175,13 +162,10 @@ export interface Posture {
 }
 
 export interface BotPermissions {
-  rules: PermissionRule[];
-  /** ACP-standard kinds the matrix pre-renders as rows. */
-  standard_kinds: string[];
   posture: Posture;
 }
 
-/** Owner/admin: read all per-operation rules + the standard kind vocabulary. */
+/** Owner/admin: read the bot's posture. */
 export async function getBotPermissions(botId: string): Promise<BotPermissions> {
   return apiJson<BotPermissions>(`/bots/${botId}/permissions`);
 }
@@ -191,30 +175,6 @@ export async function setBotPosture(botId: string, permission_mode: string): Pro
   await apiJson(`/bots/${botId}/permissions/posture`, {
     method: "PUT",
     body: JSON.stringify({ permission_mode }),
-  });
-}
-
-/** Owner/admin: set the decision for one (channel, kind). Omit channel_id for bot-wide. */
-export async function upsertBotRule(
-  botId: string,
-  rule: { channel_id?: string; operation_kind: string; decision: Decision }
-): Promise<void> {
-  await apiJson(`/bots/${botId}/permissions/rules`, {
-    method: "PUT",
-    body: JSON.stringify(rule),
-  });
-}
-
-/** Owner/admin: clear a rule, letting (channel, kind) fall back to the next match. */
-export async function deleteBotRule(
-  botId: string,
-  q: { channel_id?: string; operation_kind: string }
-): Promise<void> {
-  const params = new URLSearchParams();
-  if (q.channel_id) params.set("channel_id", q.channel_id);
-  params.set("operation_kind", q.operation_kind);
-  await apiJson(`/bots/${botId}/permissions/rules?${params.toString()}`, {
-    method: "DELETE",
   });
 }
 
