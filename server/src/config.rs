@@ -35,6 +35,12 @@ pub struct Config {
     pub s3_region: String,
     pub cors_allowed_origins: Option<String>,
 
+    /// Public WS base the connector dials to reach this gateway's agent-bridge,
+    /// e.g. `ws://localhost:30080` (via the frontend proxy for local kind) or
+    /// `wss://cheers.example.com` for prod. Surfaced by GET /ops/connector-discovery
+    /// so onboarding-generated configs point somewhere actually reachable.
+    pub connector_public_base: Option<String>,
+
     // SMTP（可选，不配置则不发邮件）
     pub smtp_host: Option<String>,
     pub smtp_port: u16,
@@ -83,6 +89,9 @@ impl Config {
                 .or_else(|_| env::var("STORAGE_S3_REGION"))
                 .unwrap_or_else(|_| "us-east-1".into()),
             cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            connector_public_base: env::var("CHEERS_CONNECTOR_PUBLIC_BASE")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
 
