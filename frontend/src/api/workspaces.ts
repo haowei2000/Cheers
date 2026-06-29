@@ -89,6 +89,23 @@ export async function listMyInvites(): Promise<WorkspaceInvite[]> {
   return apiJson<WorkspaceInvite[]>("/workspaces/invites");
 }
 
+/** Change a member's workspace role (admin only; refuses to demote the last owner). */
+export async function setWorkspaceMemberRole(
+  workspaceId: string,
+  userId: string,
+  role: string
+): Promise<void> {
+  await apiJson(`/workspaces/${workspaceId}/members/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+/** The caller leaves a workspace (any member except the last owner; not personal). */
+export async function leaveWorkspace(workspaceId: string): Promise<void> {
+  await apiJson(`/workspaces/${workspaceId}/leave`, { method: "POST" });
+}
+
 export async function acceptInvite(workspaceId: string): Promise<void> {
   await apiJson(`/workspaces/${workspaceId}/accept`, { method: "POST" });
 }

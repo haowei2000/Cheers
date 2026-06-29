@@ -56,6 +56,11 @@ pub struct InviteMemberRequest {
     pub role: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct RoleUpdateRequest {
+    pub role: String,
+}
+
 fn current_user_id(claims: &Claims) -> String {
     claims.sub.clone()
 }
@@ -452,4 +457,99 @@ pub async fn remove_workspace_member(
         .execute(&state.db)
         .await?;
     Ok(Json(serde_json::json!({"removed": true})))
+}
+
+/// Count active 'owner' members — used by the last-owner guards so a leave/demote
+/// can't orphan the workspace.
+async fn workspace_owner_count(state: &AppState, workspace_id: &str) -> Result<i64, AppError> {
+    Ok(sqlx::query_scalar(
+        "SELECT count(*) FROM workspace_memberships
+         WHERE workspace_id = $1 AND role = 'owner' AND status = 'active'",
+    )
+    .bind(workspace_id)
+    .fetch_one(&state.db)
+    .await?)
+}
+
+/// POST /api/v1/workspaces/{workspace_id}/leave — the caller removes their OWN
+/// membership. Any member may leave EXCEPT the last owner (transfer or delete first)
+/// and the personal workspace. Distinct from remove_workspace_member (admin-only).
+pub async fn leave_workspace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(workspace_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let me = current_user_id(&claims);
+    let role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2",
+    )
+    .bind(&workspace_id)
+    .bind(&me)
+    .fetch_optional(&state.db)
+    .await?;
+    let role = role.ok_or(AppError::NotFound)?;
+
+    let kind: Option<String> =
+        sqlx::query_scalar("SELECT kind FROM workspaces WHERE workspace_id = $1")
+            .bind(&workspace_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if kind.as_deref() == Some("personal") {
+        return Err(AppError::BadRequest("cannot leave your personal workspace".into()));
+    }
+    if role == "owner" && workspace_owner_count(&state, &workspace_id).await? <= 1 {
+        return Err(AppError::Forbidden(
+            "you are the last owner — transfer ownership or delete the workspace first".into(),
+        ));
+    }
+    sqlx::query("DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2")
+        .bind(&workspace_id)
+        .bind(&me)
+        .execute(&state.db)
+        .await?;
+    Ok(Json(serde_json::json!({ "left": true })))
+}
+
+/// PATCH /api/v1/workspaces/{workspace_id}/members/{user_id} — change a member's
+/// role (admin-only). Refuses to demote the last owner (would orphan the workspace).
+pub async fn set_workspace_member_role(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((workspace_id, user_id)): Path<(String, String)>,
+    Json(body): Json<RoleUpdateRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    ensure_workspace_admin(
+        &state,
+        &workspace_id,
+        &current_user_id(&claims),
+        &claims.role,
+    )
+    .await?;
+    let role = body.role;
+    if !matches!(role.as_str(), "owner" | "admin" | "member") {
+        return Err(AppError::BadRequest(
+            "role must be owner, admin, or member".into(),
+        ));
+    }
+    let current: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2",
+    )
+    .bind(&workspace_id)
+    .bind(&user_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let current = current.ok_or(AppError::NotFound)?;
+    if current == "owner" && role != "owner" && workspace_owner_count(&state, &workspace_id).await? <= 1
+    {
+        return Err(AppError::Forbidden(
+            "can't demote the last owner — promote another owner first".into(),
+        ));
+    }
+    sqlx::query("UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2")
+        .bind(&workspace_id)
+        .bind(&user_id)
+        .bind(&role)
+        .execute(&state.db)
+        .await?;
+    Ok(Json(serde_json::json!({ "user_id": user_id, "role": role })))
 }

@@ -144,7 +144,12 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/workspaces/:workspace_id/members/:user_id",
-            delete(api::workspaces::remove_workspace_member),
+            patch(api::workspaces::set_workspace_member_role)
+                .delete(api::workspaces::remove_workspace_member),
+        )
+        .route(
+            "/api/v1/workspaces/:workspace_id/leave",
+            post(api::workspaces::leave_workspace),
         )
         .route(
             "/api/v1/channels",
@@ -167,7 +172,12 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/channels/:channel_id/members/:member_id",
-            delete(api::channels::remove_channel_member),
+            patch(api::channels::set_channel_member_role)
+                .delete(api::channels::remove_channel_member),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/leave",
+            post(api::channels::leave_channel),
         )
         .route(
             "/api/v1/channels/:channel_id/messages",

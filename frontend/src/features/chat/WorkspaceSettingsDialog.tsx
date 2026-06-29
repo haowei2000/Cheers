@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, UserPlus, X } from "lucide-react";
+import { Trash2, UserPlus, X, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -11,6 +11,8 @@ import {
   removeWorkspaceMember,
   updateWorkspace,
   deleteWorkspace,
+  setWorkspaceMemberRole,
+  leaveWorkspace,
   type WorkspaceMember,
 } from "@/api/workspaces";
 import { searchUsers, type UserSearchResult } from "@/api/users";
@@ -134,6 +136,28 @@ export function WorkspaceSettingsDialog({
     }
   }
 
+  async function changeRole(m: WorkspaceMember, role: string) {
+    try {
+      await setWorkspaceMemberRole(workspace.workspace_id, m.user_id, role);
+      await refreshMembers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "改角色失败");
+    }
+  }
+
+  async function leave() {
+    if (!confirm(`退出工作空间「${workspace.name}」？`)) return;
+    try {
+      await leaveWorkspace(workspace.workspace_id);
+      setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
+      selectWorkspace(personalWorkspace?.workspace_id ?? null);
+      toast.success("已退出工作空间");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "退出失败");
+    }
+  }
+
   return (
     <Dialog title={`工作空间设置 · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
@@ -177,7 +201,21 @@ export function WorkspaceSettingsDialog({
                           <span className="ml-1.5 text-[10px] text-amber-400">待接受</span>
                         )}
                       </p>
-                      <p className="text-[11px] text-zinc-500">{m.role}</p>
+                      {m.user_id !== me?.user_id ? (
+                        <select
+                          value={m.role}
+                          onChange={(e) => void changeRole(m, e.target.value)}
+                          className="mt-0.5 bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 outline-none"
+                        >
+                          {ROLES.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="text-[11px] text-zinc-500">{m.role}</p>
+                      )}
                     </div>
                     {m.user_id !== me?.user_id && m.role !== "owner" && (
                       <button
@@ -261,6 +299,18 @@ export function WorkspaceSettingsDialog({
             </div>
           </>
         )}
+
+        {/* Leave — available to any member (the backend blocks the last owner). */}
+        <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-zinc-200">退出工作空间</p>
+            <p className="text-xs text-zinc-500 mt-0.5">把自己移出该工作空间。</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void leave()}>
+            <LogOut className="w-3.5 h-3.5" />
+            退出
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

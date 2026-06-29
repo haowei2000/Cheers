@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, UserPlus, X } from "lucide-react";
+import { Trash2, UserPlus, X, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -10,7 +10,11 @@ import {
   removeChannelMember,
   updateChannel,
   deleteChannel,
+  leaveChannel,
+  setChannelMemberRole,
 } from "@/api/channels";
+
+const CHANNEL_ROLES = ["owner", "admin", "member", "readonly"] as const;
 import { searchUsers, type UserSearchResult } from "@/api/users";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
@@ -130,6 +134,28 @@ export function ChannelSettingsDialog({
     }
   }
 
+  async function changeRole(m: MemberItem, role: string) {
+    try {
+      await setChannelMemberRole(channel.channel_id, m.member_id, role);
+      await refreshMembers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "改角色失败");
+    }
+  }
+
+  async function leave() {
+    if (!confirm(`退出频道「${channel.name}」？`)) return;
+    try {
+      await leaveChannel(channel.channel_id);
+      setChannels(channels.filter((c) => c.channel_id !== channel.channel_id));
+      selectChannel(null);
+      toast.success("已退出频道");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "退出失败");
+    }
+  }
+
   return (
     <Dialog title={`频道设置 · ${channel.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
@@ -179,7 +205,21 @@ export function ChannelSettingsDialog({
                       <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
                     )}
                   </p>
-                  <p className="text-[11px] text-zinc-500">{m.role ?? "member"}</p>
+                  {canManage && m.member_type === "user" && m.member_id !== me?.user_id ? (
+                    <select
+                      value={m.role ?? "member"}
+                      onChange={(e) => void changeRole(m, e.target.value)}
+                      className="mt-0.5 bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 outline-none"
+                    >
+                      {CHANNEL_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-[11px] text-zinc-500">{m.role ?? "member"}</p>
+                  )}
                 </div>
                 {canManage && m.member_id !== me?.user_id && m.role !== "owner" && (
                   <button
@@ -245,6 +285,18 @@ export function ChannelSettingsDialog({
             </Button>
           </div>
         )}
+
+        {/* Leave — available to any member (the backend blocks the last owner). */}
+        <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-zinc-200">退出频道</p>
+            <p className="text-xs text-zinc-500 mt-0.5">把自己移出该频道。</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void leave()}>
+            <LogOut className="w-3.5 h-3.5" />
+            退出
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

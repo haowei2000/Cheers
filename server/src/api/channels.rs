@@ -60,6 +60,11 @@ pub struct AddMemberRequest {
 }
 
 #[derive(Deserialize)]
+pub struct MemberRoleRequest {
+    pub role: String,
+}
+
+#[derive(Deserialize)]
 pub struct DmCreateRequest {
     pub target_user_id: Option<String>,
     pub target_bot_id: Option<String>,
@@ -492,6 +497,99 @@ pub async fn remove_channel_member(
         .execute(&state.db)
         .await?;
     Ok(Json(json!({"removed": true})))
+}
+
+/// Count human 'owner' members of a channel — used by the last-owner guards so a
+/// leave/demote can't orphan the channel (leave it with no owner who can manage it).
+async fn channel_owner_count(state: &AppState, channel_id: &str) -> Result<i64, AppError> {
+    Ok(sqlx::query_scalar(
+        "SELECT count(*) FROM channel_memberships
+         WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner'",
+    )
+    .bind(channel_id)
+    .fetch_one(&state.db)
+    .await?)
+}
+
+/// POST /api/v1/channels/{channel_id}/leave — the caller removes their OWN
+/// membership. Any member may leave EXCEPT the last owner (must transfer or delete
+/// first) and DMs (leaving a DM is meaningless). Distinct from remove_channel_member,
+/// which is admin-only.
+pub async fn leave_channel(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?;
+    let role = role.ok_or(AppError::NotFound)?;
+
+    let channel_type: Option<String> =
+        sqlx::query_scalar("SELECT type FROM channels WHERE channel_id = $1")
+            .bind(&channel_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if channel_type.as_deref() == Some("dm") {
+        return Err(AppError::BadRequest("cannot leave a direct message".into()));
+    }
+    if role == "owner" && channel_owner_count(&state, &channel_id).await? <= 1 {
+        return Err(AppError::Forbidden(
+            "you are the last owner — transfer ownership or delete the channel first".into(),
+        ));
+    }
+    sqlx::query(
+        "DELETE FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(json!({ "left": true })))
+}
+
+/// PATCH /api/v1/channels/{channel_id}/members/{member_id} — change a member's role
+/// (admin-only). Refuses to demote the last owner, which would orphan the channel.
+pub async fn set_channel_member_role(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, member_id)): Path<(String, String)>,
+    Json(body): Json<MemberRoleRequest>,
+) -> Result<Json<Value>, AppError> {
+    ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
+    let role = body.role;
+    if !matches!(role.as_str(), "owner" | "admin" | "member" | "readonly") {
+        return Err(AppError::BadRequest(
+            "role must be owner, admin, member, or readonly".into(),
+        ));
+    }
+    let current: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM channel_memberships WHERE channel_id = $1 AND member_id = $2",
+    )
+    .bind(&channel_id)
+    .bind(&member_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let current = current.ok_or(AppError::NotFound)?;
+    if current == "owner" && role != "owner" && channel_owner_count(&state, &channel_id).await? <= 1
+    {
+        return Err(AppError::Forbidden(
+            "can't demote the last owner — promote another owner first".into(),
+        ));
+    }
+    sqlx::query("UPDATE channel_memberships SET role = $3 WHERE channel_id = $1 AND member_id = $2")
+        .bind(&channel_id)
+        .bind(&member_id)
+        .bind(&role)
+        .execute(&state.db)
+        .await?;
+    Ok(Json(json!({ "member_id": member_id, "role": role })))
 }
 
 /// POST /api/v1/channels/{channel_id}/read — mark the channel read for the caller

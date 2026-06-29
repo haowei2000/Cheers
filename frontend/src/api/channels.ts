@@ -89,3 +89,20 @@ export async function deleteChannel(channelId: string): Promise<void> {
 export async function markChannelRead(channelId: string): Promise<void> {
   await apiJson(`/channels/${channelId}/read`, { method: "POST" });
 }
+
+/** Change a channel member's role (admin/owner only; refuses to demote the last owner). */
+export async function setChannelMemberRole(
+  channelId: string,
+  memberId: string,
+  role: string
+): Promise<void> {
+  await apiJson(`/channels/${channelId}/members/${memberId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+/** The caller leaves a channel (any member except the last owner; not for DMs). */
+export async function leaveChannel(channelId: string): Promise<void> {
+  await apiJson(`/channels/${channelId}/leave`, { method: "POST" });
+}
