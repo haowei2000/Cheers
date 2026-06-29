@@ -268,6 +268,24 @@ export async function upsertEventRule(
   });
 }
 
+/** One row of the complete ACP event timeline (acp_event_log). */
+export interface AcpEventRow {
+  name: string;
+  home: string;
+  channel_id?: string | null;
+  session_id?: string | null;
+  payload?: unknown;
+  created_at: string;
+}
+
+/** Owner/admin: read the bot's recent ACP events (everything it emitted). */
+export async function getBotAcpEvents(
+  botId: string,
+  limit = 100
+): Promise<{ events: AcpEventRow[] }> {
+  return apiJson(`/bots/${botId}/acp-events?limit=${limit}`);
+}
+
 /** Owner/admin: delete one event-access rule (back to the membership default). */
 export async function deleteEventRule(
   botId: string,

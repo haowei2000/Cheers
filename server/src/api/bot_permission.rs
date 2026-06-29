@@ -245,3 +245,51 @@ pub async fn delete_event_rule(
     }
     Ok(Json(json!({ "ok": true })))
 }
+
+// ── GET /bots/:bot_id/acp-events — the complete ACP event timeline ──────────
+// docs/arch/ACP_EVENT_TAXONOMY.md Phase 5: read the acp_event_log the passthrough
+// populates, so the owner can see *everything the bot did* (classified by home).
+
+#[derive(Deserialize)]
+pub struct AcpEventsQuery {
+    #[serde(default = "default_event_limit")]
+    pub limit: i64,
+}
+
+fn default_event_limit() -> i64 {
+    100
+}
+
+pub async fn list_acp_events(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Query(q): Query<AcpEventsQuery>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let limit = q.limit.clamp(1, 500);
+    let rows = sqlx::query(
+        "SELECT name, home, channel_id, session_id, payload, created_at
+         FROM acp_event_log WHERE bot_id = $1
+         ORDER BY created_at DESC LIMIT $2",
+    )
+    .bind(&bot_id)
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await?;
+    let events: Vec<Value> = rows
+        .into_iter()
+        .map(|r| {
+            json!({
+                "name": r.try_get::<String, _>("name").unwrap_or_default(),
+                "home": r.try_get::<String, _>("home").unwrap_or_default(),
+                "channel_id": r.try_get::<Option<String>, _>("channel_id").ok().flatten(),
+                "session_id": r.try_get::<Option<String>, _>("session_id").ok().flatten(),
+                "payload": r.try_get::<Option<Value>, _>("payload").ok().flatten(),
+                "created_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "events": events })))
+}

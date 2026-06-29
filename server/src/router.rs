@@ -238,6 +238,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
                 .delete(api::bot_permission::delete_event_rule),
         )
         .route(
+            "/api/v1/bots/:bot_id/acp-events",
+            get(api::bot_permission::list_acp_events),
+        )
+        .route(
             "/api/v1/bots",
             get(api::bots::list_bots).post(api::bots::create_bot),
         )
