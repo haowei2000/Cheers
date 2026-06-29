@@ -55,6 +55,17 @@ pub async fn send_message(
         return Err(AppError::BadRequest("content cannot be empty".into()));
     }
 
+    // Block enforcement on an *existing* DM: create_dm gates opening a DM, but a
+    // block placed afterwards must also stop further sends. If this is a 1:1 DM
+    // and either side has blocked the other, refuse before persisting.
+    if let Some(peer_id) = dm_peer(&state, channel_id, user_id).await? {
+        if crate::api::friends::is_blocked(&state.db, &user_id.to_string(), &peer_id).await? {
+            return Err(AppError::Forbidden(
+                "you can't message a user you've blocked or who has blocked you".into(),
+            ));
+        }
+    }
+
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
@@ -199,6 +210,29 @@ pub async fn cancel_message(
         msg_id: msg_id.to_string(),
         delivered,
     }))
+}
+
+/// For a 1:1 DM channel, the *other* user member's id (None for non-DM channels
+/// or self-DMs/bot-DMs). Used to enforce blocking on ongoing DM sends.
+async fn dm_peer(
+    state: &AppState,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    let peer = sqlx::query(
+        "SELECT cm.member_id
+         FROM channels c
+         JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+        WHERE c.channel_id = $1 AND c.type = 'dm'
+          AND cm.member_type = 'user' AND cm.member_id <> $2
+        LIMIT 1",
+    )
+    .bind(channel_id.to_string())
+    .bind(user_id.to_string())
+    .fetch_optional(&state.db)
+    .await?
+    .and_then(|row| row.try_get::<String, _>("member_id").ok());
+    Ok(peer)
 }
 
 async fn ensure_channel_member(

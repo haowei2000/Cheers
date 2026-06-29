@@ -23,6 +23,16 @@ pub struct WorkspaceMemberDto {
     pub username: String,
     pub display_name: Option<String>,
     pub role: String,
+    /// 'active' (joined) or 'pending' (invited, not yet accepted).
+    pub status: String,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceInviteDto {
+    pub workspace_id: String,
+    pub name: String,
+    pub role: String,
+    pub invited_by: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -85,7 +95,8 @@ pub async fn list_workspaces(
     let rows = sqlx::query(
         "SELECT w.workspace_id, w.name, w.avatar_url, w.default_bot_id, w.kind
          FROM workspaces w
-         LEFT JOIN workspace_memberships wm ON wm.workspace_id = w.workspace_id AND wm.user_id = $1
+         LEFT JOIN workspace_memberships wm
+                ON wm.workspace_id = w.workspace_id AND wm.user_id = $1 AND wm.status = 'active'
          WHERE w.kind <> 'personal'
            AND (wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin'))
          ORDER BY w.created_at DESC",
@@ -244,11 +255,11 @@ pub async fn list_workspace_members(
     )
     .await?;
     let rows = sqlx::query(
-        "SELECT u.user_id, u.username, u.display_name, wm.role
+        "SELECT u.user_id, u.username, u.display_name, wm.role, wm.status
          FROM workspace_memberships wm
          JOIN users u ON u.user_id = wm.user_id
          WHERE wm.workspace_id = $1
-         ORDER BY u.username",
+         ORDER BY wm.status, u.username",
     )
     .bind(&workspace_id)
     .fetch_all(&state.db)
@@ -260,6 +271,7 @@ pub async fn list_workspace_members(
                 username: r.try_get("username").unwrap_or_default(),
                 display_name: r.try_get("display_name").ok(),
                 role: r.try_get("role").unwrap_or_else(|_| "member".to_string()),
+                status: r.try_get("status").unwrap_or_else(|_| "active".to_string()),
             })
             .collect(),
     ))
@@ -296,9 +308,10 @@ pub async fn add_workspace_member(
     }
     let user_id = resolve_user_id(&state, body.identifier.trim()).await?;
     sqlx::query(
-        "INSERT INTO workspace_memberships (workspace_id, user_id, role)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role",
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+         VALUES ($1, $2, $3, 'active')
+         ON CONFLICT (workspace_id, user_id)
+            DO UPDATE SET role = EXCLUDED.role, status = 'active'",
     )
     .bind(&workspace_id)
     .bind(&user_id)
@@ -306,17 +319,119 @@ pub async fn add_workspace_member(
     .execute(&state.db)
     .await?;
     Ok(Json(
-        serde_json::json!({"workspace_id": workspace_id, "user_id": user_id, "role": role}),
+        serde_json::json!({"workspace_id": workspace_id, "user_id": user_id, "role": role, "status": "active"}),
     ))
 }
 
+/// POST /api/v1/workspaces/{workspace_id}/invite — admin invites a user, who must
+/// then accept. Unlike `add_workspace_member`, this creates a *pending* row that
+/// does not grant access until the invitee accepts (see `accept_invite`).
 pub async fn invite_workspace_member(
-    state: State<AppState>,
-    claims: Extension<Claims>,
-    path: Path<String>,
-    body: Json<InviteMemberRequest>,
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(workspace_id): Path<String>,
+    Json(body): Json<InviteMemberRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    add_workspace_member(state, claims, path, body).await
+    ensure_workspace_admin(
+        &state,
+        &workspace_id,
+        &current_user_id(&claims),
+        &claims.role,
+    )
+    .await?;
+    let role = body.role.unwrap_or_else(|| "member".into());
+    if !matches!(role.as_str(), "owner" | "admin" | "member") {
+        return Err(AppError::BadRequest(
+            "role must be owner, admin, or member".into(),
+        ));
+    }
+    let user_id = resolve_user_id(&state, body.identifier.trim()).await?;
+    // DO NOTHING on conflict: never downgrade an already-active member to pending,
+    // and a repeat invite is idempotent.
+    let res = sqlx::query(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status, invited_by, invited_at)
+         VALUES ($1, $2, $3, 'pending', $4, NOW())
+         ON CONFLICT (workspace_id, user_id) DO NOTHING",
+    )
+    .bind(&workspace_id)
+    .bind(&user_id)
+    .bind(&role)
+    .bind(current_user_id(&claims))
+    .execute(&state.db)
+    .await?;
+    let already_member = res.rows_affected() == 0;
+    Ok(Json(serde_json::json!({
+        "workspace_id": workspace_id,
+        "user_id": user_id,
+        "role": role,
+        "status": if already_member { "exists" } else { "pending" },
+    })))
+}
+
+/// GET /api/v1/workspaces/invites — the caller's pending workspace invites.
+pub async fn list_my_invites(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<WorkspaceInviteDto>>, AppError> {
+    let rows = sqlx::query(
+        "SELECT w.workspace_id, w.name, wm.role,
+                COALESCE(iu.display_name, iu.username) AS invited_by
+         FROM workspace_memberships wm
+         JOIN workspaces w ON w.workspace_id = wm.workspace_id
+         LEFT JOIN users iu ON iu.user_id = wm.invited_by
+         WHERE wm.user_id = $1 AND wm.status = 'pending'
+         ORDER BY wm.invited_at DESC NULLS LAST",
+    )
+    .bind(current_user_id(&claims))
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| WorkspaceInviteDto {
+                workspace_id: r.try_get("workspace_id").unwrap_or_default(),
+                name: r.try_get("name").unwrap_or_default(),
+                role: r.try_get("role").unwrap_or_else(|_| "member".to_string()),
+                invited_by: r.try_get("invited_by").ok(),
+            })
+            .collect(),
+    ))
+}
+
+/// POST /api/v1/workspaces/{workspace_id}/accept — accept a pending invite.
+pub async fn accept_invite(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(workspace_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let res = sqlx::query(
+        "UPDATE workspace_memberships SET status = 'active'
+         WHERE workspace_id = $1 AND user_id = $2 AND status = 'pending'",
+    )
+    .bind(&workspace_id)
+    .bind(current_user_id(&claims))
+    .execute(&state.db)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(serde_json::json!({"workspace_id": workspace_id, "status": "active"})))
+}
+
+/// POST /api/v1/workspaces/{workspace_id}/decline — decline a pending invite.
+pub async fn decline_invite(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(workspace_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    sqlx::query(
+        "DELETE FROM workspace_memberships
+         WHERE workspace_id = $1 AND user_id = $2 AND status = 'pending'",
+    )
+    .bind(&workspace_id)
+    .bind(current_user_id(&claims))
+    .execute(&state.db)
+    .await?;
+    Ok(Json(serde_json::json!({"declined": true})))
 }
 
 pub async fn remove_workspace_member(
