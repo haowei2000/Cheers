@@ -26,28 +26,48 @@ pub const SUBJECT_USER: &str = "user";
 pub const ANY_SUBJECT: &str = "*"; // role wildcard
 pub const BOT_WIDE: &str = ""; // channel_id sentinel for "all channels"
 
-// ── Event classes (the ACP-event taxonomy, opaque strings) ──────────────────
+// ── Event-class strings referenced directly by the resolver/filter. The full
+//    vocabulary is DERIVED from the acp_events registry (single source of truth)
+//    via initiate_events()/see_events()/respond_events() below. ──────────────
 pub const EV_PROMPT: &str = "prompt";
-pub const EV_SET_MODE: &str = "set_mode";
-pub const EV_CANCEL: &str = "cancel";
-pub const EV_OUTPUT: &str = "output";
 pub const EV_TOOL_CALL: &str = "tool_call";
-pub const EV_PLAN: &str = "plan";
-pub const EV_TRACE: &str = "trace";
 pub const EV_PERMISSION_REQUEST: &str = "permission_request";
 
+/// Distinct event-classes the registry models for a capability, deduped in
+/// registry order. `SEE` also includes `respond`-capable classes (you must see a
+/// thing to answer it). This is the matrix vocabulary — it can't drift from the
+/// registry because it's computed from it.
+fn events_for(cap: Capability) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for e in crate::domain::acp_events::REGISTRY {
+        let matches = match cap {
+            Capability::Initiate => e.capability == Some("initiate"),
+            Capability::See => matches!(e.capability, Some("see") | Some("respond")),
+            Capability::Respond => e.capability == Some("respond"),
+        };
+        if matches {
+            if let Some(class) = e.event_class {
+                if !out.contains(&class) {
+                    out.push(class);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Event classes a subject can be authorized to **INITIATE** (user→agent).
-pub const INITIATE_EVENTS: &[&str] = &[EV_PROMPT, EV_SET_MODE, EV_CANCEL];
+pub fn initiate_events() -> Vec<&'static str> {
+    events_for(Capability::Initiate)
+}
 /// Event classes a subject can be authorized to **SEE** (agent→user).
-pub const SEE_EVENTS: &[&str] = &[
-    EV_OUTPUT,
-    EV_TOOL_CALL,
-    EV_PLAN,
-    EV_TRACE,
-    EV_PERMISSION_REQUEST,
-];
+pub fn see_events() -> Vec<&'static str> {
+    events_for(Capability::See)
+}
 /// Event classes a subject can be authorized to **RESPOND** to (agent request).
-pub const RESPOND_EVENTS: &[&str] = &[EV_PERMISSION_REQUEST];
+pub fn respond_events() -> Vec<&'static str> {
+    events_for(Capability::Respond)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Capability {

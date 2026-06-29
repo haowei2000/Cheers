@@ -165,9 +165,9 @@ pub async fn list_event_access(
     let rules = bot_event_policy::list_rules_json(&state.db, &bot_id).await?;
     Ok(Json(json!({
         "rules": rules,
-        "initiate_events": bot_event_policy::INITIATE_EVENTS,
-        "see_events": bot_event_policy::SEE_EVENTS,
-        "respond_events": bot_event_policy::RESPOND_EVENTS,
+        "initiate_events": bot_event_policy::initiate_events(),
+        "see_events": bot_event_policy::see_events(),
+        "respond_events": bot_event_policy::respond_events(),
     })))
 }
 
