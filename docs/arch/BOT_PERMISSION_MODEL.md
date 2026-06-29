@@ -46,8 +46,34 @@ This **generalizes** today's binary approvers: a rule's `kind` lets the owner sa
 "auto-allow `read`, ask for `edit`, deny `execute`" — using ACP's own
 `toolCall.kind` vocabulary. `'*'` = catch-all; `channel=''` = bot-wide default.
 
-Approvers (existing `bot↔channel↔user` table) answer *who* may approve when a rule
-resolves to `ask` (optionally narrowed per kind later).
+Approvers answer *who* may approve when a rule resolves to `ask`. **The "who" is
+scoped per operation kind:** the existing `bot↔channel↔user` approvers table gains
+an `operation_kind` column (`'*'` = all kinds — today's behavior). So the owner can
+grant "Alice may approve `edit`, Bob may approve `execute`."
+
+## The owner page — per-ACP-operation permission matrix
+
+The bot owner gets one page that, **per ACP operation**, controls the decision and
+*who* may approve. Two sections:
+
+- **Posture (Axis A):** the bot's `permission_mode` (ask-per-tool=`default` / plan /
+  acceptEdits / …), pickable only within the L0 `allowed_modes`.
+- **Operation matrix (Axis B):** one row per `operation_kind` the bot uses, each with
+  a **decision** (allow / deny / ask) and, when `ask`, the **approver list** (which
+  users may approve that operation). `'*'` row = the default for any other kind.
+
+```
+ Operation (kind)   Decision      Approvers (when "ask")
+ ───────────────    ─────────     ──────────────────────
+ read               [ allow ▾ ]   —
+ edit               [ ask   ▾ ]   [ Alice ✕ ] [ + add ]
+ execute            [ ask   ▾ ]   [ Bob ✕ ]   [ + add ]
+ delete             [ deny  ▾ ]   —
+ *  (any other)     [ ask   ▾ ]   [ owner ]   [ + add ]
+```
+
+Writes go to `bot_permission_rules` (decision) + the per-kind approvers (who); reads
+hydrate from both. Owner/admin only (`ensure_bot_owner_or_admin`).
 
 ## Roles over the bot (management authz)
 
@@ -59,16 +85,16 @@ approvers/rules) · approver (resolve `ask`) · user (invoke). Maps onto existin
 
 - L0: connector TOML `policy.*` (exists).
 - L1: `bot_accounts` + `binding_config` (permission_mode, model). Optional per-channel: `ChannelMembership.bot_override_config`.
-- **Axis B (new):** `bot_permission_rules(bot_id, channel_id, operation_kind, decision)` — `decision ∈ {allow,deny,ask}`; `channel_id=''` bot-wide; `operation_kind='*'` catch-all.
-- Approvers: existing table (who resolves `ask`).
+- **Axis B (new):** `bot_permission_rules(bot_id, channel_id, operation_kind, decision)` — `decision ∈ {allow,deny,ask}`; `channel_id=''` bot-wide; `operation_kind='*'` catch-all. ✅ table + resolution built.
+- Approvers: existing `bot↔channel↔user` table **+ new `operation_kind` column** (`'*'` = all) — the per-operation "who".
 - Audit: existing audit events.
 
 ## Phasing
 
-1. **Posture plumbing** — L1 persist `permission_mode` + L2 push (clamped by L0). + **resolve the bypass flag** (task #18) so `request_permission` actually fires — this gates everything observable.
-2. **Authorization rules** — `bot_permission_rules` table + gateway evaluation at `request_permission` (most-specific-wins) + owner API.
-3. **Frontend** — bot permission panel: posture (mode within allowed set) + the per-kind rule grid + approver management.
-4. **Verify** — end-to-end: per-kind allow/deny/ask → card → decision.
+1. **Posture plumbing** *(pending)* — L1 persist `permission_mode` + L2 push (clamped by L0), + **resolve the bypass flag** (task #18) so `request_permission` actually fires. This gates everything *observable through a live agent prompt*; the rules/approvers/page below are independent of it and already verifiable via the API + UI.
+2. **Authorization rules** ✅ done — `bot_permission_rules` table + most-specific resolution; per-kind **approvers `operation_kind`** column (`*`=any); gateway evaluation wired into `request_permission` (`allow`→auto-approve, `deny`→auto-reject, `ask`→approvers card); owner API for rules (`GET/PUT/DELETE /bots/:id/permissions[/rules]`) and kind-aware approvers (`POST/DELETE /bots/:id/approvers`).
+3. **Owner page** ✅ done — `BotPermissionsDialog`: scope selector (bot-wide / per-channel) + the per-operation matrix (decision dropdown + per-kind approver chips). Opened from the bot card's **权限** button (owner/admin only).
+4. **Verify** — API + UI verified end-to-end on kind (rules CRUD, 400 on bad decision, kind-scoped approver grant/list/revoke, matrix renders). Live-agent auto-resolution awaits Phase 1's bypass-flag fix.
 
 ## Invariants
 

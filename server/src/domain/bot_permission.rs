@@ -7,12 +7,21 @@
 //! catch-all. Resolution is **most-specific-wins**, and the safe default for an
 //! unmatched request is `Ask` (never a silent allow).
 
+use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 
 use crate::errors::AppError;
 
 pub const ANY_KIND: &str = "*";
 pub const BOT_WIDE: &str = ""; // channel_id sentinel for "all channels"
+
+/// The ACP-standard `toolCall.kind` vocabulary — a UI hint for the owner matrix's
+/// default rows. The gateway never *requires* a kind to be in this list (any
+/// opaque string from a request is matched as-is); this is purely so the page can
+/// pre-render a sensible set of operations. Keep aligned with the ACP `ToolKind`.
+pub const STANDARD_KINDS: &[&str] = &[
+    "read", "edit", "delete", "move", "search", "execute", "fetch", "other",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -99,6 +108,80 @@ pub async fn resolve(
 ) -> Result<Decision, AppError> {
     let rules = load_rules(db, bot_id).await?;
     Ok(resolve_decision(&rules, channel_id, kind))
+}
+
+/// List a bot's rules as JSON (for the owner API), newest-touched first.
+pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, AppError> {
+    let rows = sqlx::query(
+        "SELECT channel_id, operation_kind, decision, updated_by, updated_at
+         FROM bot_permission_rules WHERE bot_id = $1
+         ORDER BY updated_at DESC",
+    )
+    .bind(bot_id)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            json!({
+                "channel_id": r.try_get::<String, _>("channel_id").unwrap_or_default(),
+                "operation_kind": r.try_get::<String, _>("operation_kind")
+                    .unwrap_or_else(|_| ANY_KIND.to_string()),
+                "decision": r.try_get::<String, _>("decision").unwrap_or_else(|_| "ask".into()),
+                "updated_by": r.try_get::<Option<String>, _>("updated_by").ok().flatten(),
+                "updated_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
+                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+            })
+        })
+        .collect())
+}
+
+/// Upsert one rule (most-specific key = `(bot, channel, kind)`). `channel_id=""`
+/// is bot-wide; `operation_kind="*"` is the catch-all.
+pub async fn upsert_rule(
+    db: &PgPool,
+    bot_id: &str,
+    channel_id: &str,
+    operation_kind: &str,
+    decision: Decision,
+    updated_by: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO bot_permission_rules
+            (bot_id, channel_id, operation_kind, decision, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (bot_id, channel_id, operation_kind)
+         DO UPDATE SET decision = EXCLUDED.decision,
+                       updated_by = EXCLUDED.updated_by, updated_at = NOW()",
+    )
+    .bind(bot_id)
+    .bind(channel_id)
+    .bind(operation_kind)
+    .bind(decision.as_str())
+    .bind(updated_by)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Delete one rule. Returns true if a row was removed. Deleting a rule makes its
+/// `(channel, kind)` fall back to the next-most-specific rule (or `Ask`).
+pub async fn delete_rule(
+    db: &PgPool,
+    bot_id: &str,
+    channel_id: &str,
+    operation_kind: &str,
+) -> Result<bool, AppError> {
+    let res = sqlx::query(
+        "DELETE FROM bot_permission_rules
+         WHERE bot_id = $1 AND channel_id = $2 AND operation_kind = $3",
+    )
+    .bind(bot_id)
+    .bind(channel_id)
+    .bind(operation_kind)
+    .execute(db)
+    .await?;
+    Ok(res.rows_affected() > 0)
 }
 
 #[cfg(test)]

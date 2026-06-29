@@ -221,6 +221,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/approvers/:user_id",
             delete(api::approval::revoke_approver),
         )
+        // ── Axis B: per-operation permission rules (owner matrix) ────────────
+        .route(
+            "/api/v1/bots/:bot_id/permissions",
+            get(api::bot_permission::list_permissions),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/permissions/rules",
+            put(api::bot_permission::upsert_rule).delete(api::bot_permission::delete_rule),
+        )
         .route(
             "/api/v1/bots",
             get(api::bots::list_bots).post(api::bots::create_bot),

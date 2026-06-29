@@ -90,7 +90,15 @@ pub async fn resolve_permission(
     if pending.content_data.get("resolved").and_then(Value::as_bool) == Some(true) {
         return Err(AppError::Conflict("approval already resolved".into()));
     }
-    if !approval::is_approver(&state.db, pending.bot_id, channel_id, uid).await? {
+    // The operation_kind being approved (opaque ACP toolCall.kind) scopes which
+    // delegates may resolve it; the owner may always resolve. Default '*'.
+    let op_kind = pending
+        .content_data
+        .get("tool")
+        .and_then(|t| t.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("*");
+    if !approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await? {
         return Err(AppError::Forbidden("not an approver for this bot".into()));
     }
 
@@ -341,10 +349,19 @@ pub async fn list_approvers(
     })))
 }
 
+/// Default ACP operation_kind when a caller doesn't scope the grant/revoke: the
+/// `*` catch-all (preserves the pre-per-operation behavior).
+fn any_kind() -> String {
+    "*".into()
+}
+
 #[derive(Deserialize)]
 pub struct GrantRequest {
     pub channel_id: Uuid,
     pub user_id: Uuid,
+    /// ACP operation_kind this delegate may approve; `*` = any. Defaults to `*`.
+    #[serde(default = "any_kind")]
+    pub operation_kind: String,
 }
 
 pub async fn grant_approver(
@@ -358,7 +375,15 @@ pub async fn grant_approver(
     // A non-member can't usefully approve; keep the delegation meaningful.
     ensure_member(&state, body.channel_id, body.user_id, "member").await?;
 
-    approval::grant_approver(&state.db, bot_id, body.channel_id, body.user_id, uid).await?;
+    approval::grant_approver(
+        &state.db,
+        bot_id,
+        body.channel_id,
+        body.user_id,
+        &body.operation_kind,
+        uid,
+    )
+    .await?;
     approval::record_audit(
         &state.db,
         AuditEvent {
@@ -367,6 +392,7 @@ pub async fn grant_approver(
             channel_id: body.channel_id,
             actor_id: Some(uid),
             target_user_id: Some(body.user_id),
+            detail: Some(json!({ "operation_kind": body.operation_kind })),
             ..Default::default()
         },
     )
@@ -377,6 +403,8 @@ pub async fn grant_approver(
 #[derive(Deserialize)]
 pub struct RevokeQuery {
     pub channel_id: Uuid,
+    #[serde(default = "any_kind")]
+    pub operation_kind: String,
 }
 
 pub async fn revoke_approver(
@@ -388,7 +416,15 @@ pub async fn revoke_approver(
     let uid = user_id(&claims)?;
     require_bot_owner(&state, bot_id, uid, &claims.role).await?;
 
-    let revoked = approval::revoke_approver(&state.db, bot_id, q.channel_id, target_user, uid).await?;
+    let revoked = approval::revoke_approver(
+        &state.db,
+        bot_id,
+        q.channel_id,
+        target_user,
+        &q.operation_kind,
+        uid,
+    )
+    .await?;
     if !revoked {
         return Err(AppError::NotFound);
     }
@@ -400,6 +436,7 @@ pub async fn revoke_approver(
             channel_id: q.channel_id,
             actor_id: Some(uid),
             target_user_id: Some(target_user),
+            detail: Some(json!({ "operation_kind": q.operation_kind })),
             ..Default::default()
         },
     )

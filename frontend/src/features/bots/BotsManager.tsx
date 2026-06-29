@@ -11,6 +11,7 @@ import {
   Wand2,
   Ban,
   Power,
+  ShieldCheck,
 } from "lucide-react";
 import {
   listBots,
@@ -23,6 +24,7 @@ import {
 import { listChannels, addChannelMember } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
+import { BotPermissionsDialog } from "./BotPermissionsDialog";
 import type { BotItem, Channel } from "@/types";
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
@@ -68,6 +70,7 @@ function BotCard({
   const [added, setAdded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [permsOpen, setPermsOpen] = useState(false);
 
   async function toggleDisabled() {
     if (toggling) return;
@@ -175,6 +178,19 @@ function BotCard({
         {bot.can_manage && (
           <button
             type="button"
+            onClick={() => setPermsOpen(true)}
+            title="权限矩阵：按 ACP 操作设置 允许/拒绝/询问 及审批人"
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
+          >
+            <span className="inline-flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              权限
+            </span>
+          </button>
+        )}
+        {bot.can_manage && (
+          <button
+            type="button"
             onClick={toggleDisabled}
             disabled={toggling}
             title={bot.is_disabled ? "启用机器人" : "禁用机器人（断开连接器并阻止重连）"}
@@ -198,6 +214,14 @@ function BotCard({
           </button>
         )}
       </div>
+
+      {permsOpen && (
+        <BotPermissionsDialog
+          bot={bot}
+          channels={channels}
+          onClose={() => setPermsOpen(false)}
+        />
+      )}
     </div>
   );
 }

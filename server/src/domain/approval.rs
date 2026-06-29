@@ -21,13 +21,15 @@ pub async fn bot_owner(db: &PgPool, bot_id: Uuid) -> Result<Option<Uuid>, sqlx::
         .and_then(|s| s.parse::<Uuid>().ok()))
 }
 
-/// True when `user_id` may resolve approvals for `bot_id` in `channel_id`:
-/// the bot owner, or an active (un-revoked) delegate.
+/// True when `user_id` may resolve approvals for `bot_id` in `channel_id` for an
+/// operation of `kind`: the bot owner, or an active (un-revoked) delegate scoped
+/// to that `kind` or to the `*` catch-all. Pass `"*"` to match any delegation.
 pub async fn is_approver(
     db: &PgPool,
     bot_id: Uuid,
     channel_id: Uuid,
     user_id: Uuid,
+    kind: &str,
 ) -> Result<bool, sqlx::Error> {
     if bot_owner(db, bot_id).await? == Some(user_id) {
         return Ok(true);
@@ -35,30 +37,35 @@ pub async fn is_approver(
     let row = sqlx::query(
         "SELECT EXISTS(
             SELECT 1 FROM approval_delegations
-            WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3 AND revoked_at IS NULL
+            WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3
+              AND (operation_kind = $4 OR operation_kind = '*')
+              AND revoked_at IS NULL
         ) AS ok",
     )
     .bind(bot_id.to_string())
     .bind(channel_id.to_string())
     .bind(user_id.to_string())
+    .bind(kind)
     .fetch_one(db)
     .await?;
     Ok(row.try_get::<bool, _>("ok").unwrap_or(false))
 }
 
-/// Grant (or re-activate) approver rights. Idempotent upsert: a revoked row is
-/// re-activated by clearing `revoked_at`.
+/// Grant (or re-activate) approver rights for one `operation_kind` (`"*"` = any).
+/// Idempotent upsert: a revoked row is re-activated by clearing `revoked_at`.
 pub async fn grant_approver(
     db: &PgPool,
     bot_id: Uuid,
     channel_id: Uuid,
     target_user: Uuid,
+    operation_kind: &str,
     granted_by: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO approval_delegations (id, bot_id, channel_id, user_id, granted_by)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (bot_id, channel_id, user_id)
+        "INSERT INTO approval_delegations
+            (id, bot_id, channel_id, user_id, operation_kind, granted_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (bot_id, channel_id, user_id, operation_kind)
          DO UPDATE SET revoked_at = NULL, revoked_by = NULL,
                        granted_by = EXCLUDED.granted_by, granted_at = NOW()",
     )
@@ -66,42 +73,47 @@ pub async fn grant_approver(
     .bind(bot_id.to_string())
     .bind(channel_id.to_string())
     .bind(target_user.to_string())
+    .bind(operation_kind)
     .bind(granted_by.to_string())
     .execute(db)
     .await?;
     Ok(())
 }
 
-/// Revoke approver rights. Returns true if an active delegation was revoked.
+/// Revoke approver rights for one `operation_kind` (`"*"` = the catch-all row).
+/// Returns true if an active delegation was revoked.
 pub async fn revoke_approver(
     db: &PgPool,
     bot_id: Uuid,
     channel_id: Uuid,
     target_user: Uuid,
+    operation_kind: &str,
     revoked_by: Uuid,
 ) -> Result<bool, sqlx::Error> {
     let res = sqlx::query(
         "UPDATE approval_delegations
-         SET revoked_at = NOW(), revoked_by = $4
-         WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3 AND revoked_at IS NULL",
+         SET revoked_at = NOW(), revoked_by = $5
+         WHERE bot_id = $1 AND channel_id = $2 AND user_id = $3
+           AND operation_kind = $4 AND revoked_at IS NULL",
     )
     .bind(bot_id.to_string())
     .bind(channel_id.to_string())
     .bind(target_user.to_string())
+    .bind(operation_kind)
     .bind(revoked_by.to_string())
     .execute(db)
     .await?;
     Ok(res.rows_affected() > 0)
 }
 
-/// List active delegates for a (bot, channel).
+/// List active delegates for a (bot, channel), each with its `operation_kind`.
 pub async fn list_approvers(
     db: &PgPool,
     bot_id: Uuid,
     channel_id: Uuid,
 ) -> Result<Vec<Value>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT user_id, granted_by, granted_at
+        "SELECT user_id, operation_kind, granted_by, granted_at
          FROM approval_delegations
          WHERE bot_id = $1 AND channel_id = $2 AND revoked_at IS NULL
          ORDER BY granted_at DESC",
@@ -115,6 +127,8 @@ pub async fn list_approvers(
         .map(|r| {
             json!({
                 "user_id": r.try_get::<String, _>("user_id").unwrap_or_default(),
+                "operation_kind": r.try_get::<String, _>("operation_kind")
+                    .unwrap_or_else(|_| "*".into()),
                 "granted_by": r.try_get::<String, _>("granted_by").unwrap_or_default(),
                 "granted_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("granted_at")
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
