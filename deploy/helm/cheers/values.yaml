@@ -27,6 +27,11 @@ gateway:
   #  limits:   { cpu: "1",  memory: 512Mi }
   service:
     type: ClusterIP
+    # Only honored when type=NodePort. Lets a connector dial the agent-bridge
+    # directly (the host must map this port, e.g. kind extraPortMappings).
+    # Locally the agent-bridge is also reachable via the frontend NodePort,
+    # which nginx proxies (/ws/* → gateway) — see CHEERS_CONNECTOR_PUBLIC_BASE.
+    nodePort: "" # only when type=NodePort
 
 # ── Frontend (nginx serving the Vite build, proxies /api+/ws → gateway) ────
 frontend:

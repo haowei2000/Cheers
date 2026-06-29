@@ -10,6 +10,12 @@ gateway:
     tag: dev
     pullPolicy: IfNotPresent
   corsAllowedOrigins: "" # allow all in dev
+  extraEnv:
+    # Public WS base a host connector dials to reach the agent-bridge. The
+    # frontend NodePort (30080) is host-mapped by kind and its nginx proxies
+    # /ws/* → gateway, so onboarding-generated connector configs point here and
+    # work without a port-forward. GET /api/v1/ops/connector-discovery reports it.
+    CHEERS_CONNECTOR_PUBLIC_BASE: "ws://localhost:30080"
 
 frontend:
   image:
