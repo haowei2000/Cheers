@@ -5,6 +5,7 @@ import { getBotPermissions, setBotPosture, type Posture } from "@/api/bots";
 import { listChannelMembers } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
 import { BotEventAccessSection } from "./BotEventAccessSection";
+import { BotActivitySection } from "./BotActivitySection";
 import type { BotItem, Channel, MemberItem } from "@/types";
 
 const BOT_WIDE = "";
@@ -129,6 +130,9 @@ export function BotPermissionsDialog({
 
         {/* Event-access matrix — the per-user authorization (the primary control). */}
         <BotEventAccessSection botId={bot.bot_id} scope={scope} members={members} />
+
+        {/* Recent ACP activity — the complete event timeline (read-only). */}
+        <BotActivitySection botId={bot.bot_id} />
       </div>
     </Dialog>
   );
