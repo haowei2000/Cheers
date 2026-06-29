@@ -183,7 +183,45 @@ pub async fn create_message(
     // ── 5. 解析 bot 触发，派发 task ───────────────────────────────────
     let bots = resolve_bot_triggers(db, params.channel_id, &mentions).await;
     info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
+    // Sender's channel role (for the INITIATE matrix); default 'member'.
+    let sender_role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(params.channel_id.to_string())
+    .bind(params.user_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string());
     for bot_id in bots {
+        // Event-policy INITIATE gate (docs/arch/ACP_EVENT_TAXONOMY.md): may THIS user
+        // trigger a `prompt` for THIS bot here? The message still posts to the channel;
+        // we only skip waking the bot. Fail-open on a rules error (membership already
+        // passed, and absence-of-policy = allowed).
+        let may_prompt = crate::domain::bot_event_policy::resolve(
+            db,
+            &bot_id.to_string(),
+            &params.channel_id.to_string(),
+            &params.user_id.to_string(),
+            &sender_role,
+            crate::domain::bot_event_policy::EV_PROMPT,
+            crate::domain::bot_event_policy::Capability::Initiate,
+        )
+        .await
+        .unwrap_or(true);
+        if !may_prompt {
+            info!(
+                bot_id = %bot_id,
+                user_id = %params.user_id,
+                role = %sender_role,
+                "INITIATE(prompt) denied by bot_event_policy; message posted, bot not triggered"
+            );
+            continue;
+        }
+
         let provider_session_key = provider_session_key_for_bot_workspace(workspace_id, bot_id);
         let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
             .await
