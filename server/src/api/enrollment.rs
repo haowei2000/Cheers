@@ -386,6 +386,41 @@ pub async fn install_script(
     )
 }
 
+/// Natural-language prompt handed to a user's own agent (mode 1). `{INSTALL_URL}`
+/// is filled server-side; `{ENROLL_CODE}` is filled client-side from a minted
+/// code so the secret never rides in this GET. Mode 1 is honestly mode 2 driven
+/// by the agent — hence the keep-alive emphasis.
+const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat workspace as a long-running bot connector. Please set yourself up on THIS machine:
+
+1. Run this exact command in a terminal. It redeems a one-time code, writes a connector config + a 0600 token file, installs a keep-alive service, and starts the connector:
+
+   CHEERS_ENROLL_CODE='{ENROLL_CODE}' bash <(curl -fsSL {INSTALL_URL})
+
+2. If it reports that `cce-acp-connector` is missing, build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
+
+3. Make sure the connector keeps running in the BACKGROUND after this task ends (the install script sets up a launchd/systemd unit for this). If it only runs while you are active, the bot will go offline the moment your turn finishes.
+
+The code is single-use and expires in ~15 minutes. Do not echo it back or save it anywhere except by running the command above."#;
+
+/// GET /api/v1/enrollment/guidance — authed. Returns the mode-1 agent prompt
+/// template (with the install URL baked in) plus the install URL, so the wizard
+/// and any programmatic caller share one prompt. The client fills {ENROLL_CODE}.
+pub async fn guidance(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    let api_base = resolve_api_base(&state, &headers);
+    let install_url = format!("{api_base}/install.sh");
+    let prompt_template = GUIDANCE_TEMPLATE.replace("{INSTALL_URL}", &install_url);
+    Ok(Json(json!({
+        "install_url": install_url,
+        "prompt_template": prompt_template,
+        "code_placeholder": "{ENROLL_CODE}",
+        "note": "Fill {ENROLL_CODE} with a freshly minted one-time code before handing this to your agent.",
+    })))
+}
+
 /// GET /api/v1/ops/connector-discovery — authed. Where should a connector dial?
 /// Lets the wizard show the reachable control/data URLs (and whether the deploy
 /// has an explicit public base configured vs. the port-forward fallback).

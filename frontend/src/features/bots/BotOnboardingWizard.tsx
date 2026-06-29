@@ -21,10 +21,12 @@ import {
   getConnectorDiscovery,
   mintEnrollmentCode,
   revokeEnrollmentCodes,
+  getEnrollmentGuidance,
   type AgentType,
   type ConnectorConfig,
   type ConnectorDiscovery,
   type EnrollmentCode,
+  type EnrollmentGuidance,
   type IssuedToken,
 } from "@/api/bots";
 import { Dialog } from "@/components/ui/dialog";
@@ -362,7 +364,6 @@ export function BotOnboardingWizard({
                 icon={<Sparkles className="w-5 h-5 text-indigo-300" />}
                 title="Let your agent connect itself"
                 desc="Paste a prompt to your own agent; it follows Cheers' guidance to run the installer."
-                badge="Step 4"
                 onClick={() => pickMode("agent")}
               />
             </div>
@@ -396,7 +397,7 @@ export function BotOnboardingWizard({
               <ScriptPanel bot={bot} agentType={agentType} discovery={discovery} />
             )}
             {mode === "agent" && (
-              <ComingSoonPanel mode={mode} discovery={discovery} />
+              <AgentPanel bot={bot} agentType={agentType} discovery={discovery} />
             )}
             <div className="flex items-center justify-between">
               <button
@@ -713,34 +714,123 @@ function ScriptPanel({
   );
 }
 
-function ComingSoonPanel({
-  mode,
+function AgentPanel({
+  bot,
+  agentType,
   discovery,
 }: {
-  mode: "script" | "agent";
+  bot: BotItem;
+  agentType: AgentType;
   discovery: ConnectorDiscovery | null;
 }) {
-  const title =
-    mode === "script" ? "Install script" : "Let your agent connect itself";
+  const [code, setCode] = useState<EnrollmentCode | null>(null);
+  const [guidance, setGuidance] = useState<EnrollmentGuidance | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getEnrollmentGuidance()
+      .then(setGuidance)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  const prompt =
+    code && guidance
+      ? guidance.prompt_template.replace(guidance.code_placeholder, code.code)
+      : "";
+
+  async function mint() {
+    setError(null);
+    setBusy(true);
+    try {
+      setCode(await mintEnrollmentCode(bot.bot_id, agentType));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    setError(null);
+    setBusy(true);
+    try {
+      await revokeEnrollmentCodes(bot.bot_id);
+      setCode(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 space-y-2">
-      <p className="text-sm font-medium text-zinc-200">{title}</p>
+    <div className="space-y-3">
       <p className="text-xs text-zinc-500">
-        {mode === "script"
-          ? "Lands next: a one-command installer that redeems an enrollment code, writes the config + 0600 token, installs a launchd/systemd keep-alive unit, and starts the connector."
-          : "Lands after the installer: paste a natural-language prompt to your own agent and it follows Cheers' guidance to run the installer for you."}
+        Hand your own agent a prompt and it runs the installer for you. Honest
+        framing: this is the install script (mode 2), driven by your agent — so
+        it must leave a background service running, or{" "}
+        <span className="text-zinc-300">@{bot.username}</span> goes offline when
+        the agent's turn ends.
       </p>
-      {discovery && (
-        <p className="text-xs text-zinc-600">
-          Connector will dial{" "}
-          <code className="text-zinc-500">{discovery.control_url}</code>
-          {!discovery.configured && " (via port-forward until a public base is set)"}.
-        </p>
+      {error && <p className="text-xs text-red-400 break-words">{error}</p>}
+
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-zinc-300">
+            1. Mint a one-time code
+          </span>
+          <div className="flex items-center gap-2">
+            {code && (
+              <button
+                type="button"
+                onClick={revoke}
+                disabled={busy}
+                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Revoke
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={mint}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            >
+              {busy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Ticket className="w-3.5 h-3.5" />
+              )}
+              {code ? "New code" : "Mint code"}
+            </button>
+          </div>
+        </div>
+        {code && (
+          <p className="text-xs text-amber-400">
+            Single-use, expires in ~{Math.round(code.ttl_secs / 60)} min.
+          </p>
+        )}
+      </div>
+
+      {code && guidance && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+          <span className="text-xs font-semibold text-zinc-300">
+            2. Paste this to your agent
+          </span>
+          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3 max-h-56 overflow-y-auto">
+            <pre className="text-[11px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
+              {prompt}
+            </pre>
+          </div>
+          <div className="flex items-center justify-end">
+            <CopyBtn value={prompt} label="Copy prompt" />
+          </div>
+          {discovery && !discovery.configured && (
+            <ReachabilityNote reachability={discovery} />
+          )}
+        </div>
       )}
-      <p className="text-xs text-zinc-600">
-        For now use <span className="text-zinc-400">Manual</span> — it's fully
-        working.
-      </p>
     </div>
   );
 }

@@ -125,3 +125,15 @@ export interface ConnectorDiscovery {
 export async function getConnectorDiscovery(): Promise<ConnectorDiscovery> {
   return apiJson<ConnectorDiscovery>(`/ops/connector-discovery`);
 }
+
+export interface EnrollmentGuidance {
+  install_url: string;
+  prompt_template: string;
+  code_placeholder: string;
+  note?: string;
+}
+
+/** Mode-1 prompt template (install URL baked in); client fills the code. */
+export async function getEnrollmentGuidance(): Promise<EnrollmentGuidance> {
+  return apiJson<EnrollmentGuidance>(`/enrollment/guidance`);
+}
