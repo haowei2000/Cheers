@@ -311,6 +311,11 @@ pub async fn add_workspace_member(
             "role must be owner, admin, or member".into(),
         ));
     }
+    if role == "owner" && !caller_workspace_is_owner(&state, &workspace_id, &claims).await? {
+        return Err(AppError::Forbidden(
+            "only an owner or a system admin can add a member as owner".into(),
+        ));
+    }
     let user_id = resolve_user_id(&state, body.identifier.trim()).await?;
     sqlx::query(
         "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
@@ -348,6 +353,11 @@ pub async fn invite_workspace_member(
     if !matches!(role.as_str(), "owner" | "admin" | "member") {
         return Err(AppError::BadRequest(
             "role must be owner, admin, or member".into(),
+        ));
+    }
+    if role == "owner" && !caller_workspace_is_owner(&state, &workspace_id, &claims).await? {
+        return Err(AppError::Forbidden(
+            "only an owner or a system admin can invite a member as owner".into(),
         ));
     }
     let user_id = resolve_user_id(&state, body.identifier.trim()).await?;
@@ -459,16 +469,26 @@ pub async fn remove_workspace_member(
     Ok(Json(serde_json::json!({"removed": true})))
 }
 
-/// Count active 'owner' members — used by the last-owner guards so a leave/demote
-/// can't orphan the workspace.
-async fn workspace_owner_count(state: &AppState, workspace_id: &str) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar(
-        "SELECT count(*) FROM workspace_memberships
-         WHERE workspace_id = $1 AND role = 'owner' AND status = 'active'",
+/// Whether the caller may grant/revoke the OWNER rank in this workspace: a global
+/// admin, or a member whose own role is 'owner'. A plain 'admin' can manage members
+/// but must NOT be able to mint owners (privilege escalation).
+async fn caller_workspace_is_owner(
+    state: &AppState,
+    workspace_id: &str,
+    claims: &Claims,
+) -> Result<bool, AppError> {
+    if matches!(claims.role.as_str(), "system_admin" | "admin") {
+        return Ok(true);
+    }
+    let role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM workspace_memberships
+         WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'",
     )
     .bind(workspace_id)
-    .fetch_one(&state.db)
-    .await?)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(role.as_deref() == Some("owner"))
 }
 
 /// POST /api/v1/workspaces/{workspace_id}/leave — the caller removes their OWN
@@ -497,21 +517,42 @@ pub async fn leave_workspace(
     if kind.as_deref() == Some("personal") {
         return Err(AppError::BadRequest("cannot leave your personal workspace".into()));
     }
-    if role == "owner" && workspace_owner_count(&state, &workspace_id).await? <= 1 {
-        return Err(AppError::Forbidden(
-            "you are the last owner — transfer ownership or delete the workspace first".into(),
-        ));
-    }
-    sqlx::query("DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2")
+
+    if role == "owner" {
+        // Owner leaving reduces the owner count — serialize against concurrent
+        // owner leaves/demotes: lock the owner rows, re-count, delete, in one tx.
+        let mut tx = state.db.begin().await?;
+        let owners = sqlx::query(
+            "SELECT 1 FROM workspace_memberships
+             WHERE workspace_id = $1 AND role = 'owner' AND status = 'active' FOR UPDATE",
+        )
         .bind(&workspace_id)
-        .bind(&me)
-        .execute(&state.db)
+        .fetch_all(&mut *tx)
         .await?;
+        if owners.len() <= 1 {
+            return Err(AppError::Forbidden(
+                "you are the last owner — transfer ownership or delete the workspace first".into(),
+            ));
+        }
+        sqlx::query("DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2")
+            .bind(&workspace_id)
+            .bind(&me)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+    } else {
+        sqlx::query("DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2")
+            .bind(&workspace_id)
+            .bind(&me)
+            .execute(&state.db)
+            .await?;
+    }
     Ok(Json(serde_json::json!({ "left": true })))
 }
 
 /// PATCH /api/v1/workspaces/{workspace_id}/members/{user_id} — change a member's
-/// role (admin-only). Refuses to demote the last owner (would orphan the workspace).
+/// role (admin-only). Only an owner/global-admin may grant 'owner' or touch an
+/// existing owner; refuses to demote the last owner; can't change your own role.
 pub async fn set_workspace_member_role(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -525,6 +566,11 @@ pub async fn set_workspace_member_role(
         &claims.role,
     )
     .await?;
+    if user_id == current_user_id(&claims) {
+        return Err(AppError::BadRequest(
+            "use leave or transfer ownership to change your own role".into(),
+        ));
+    }
     let role = body.role;
     if !matches!(role.as_str(), "owner" | "admin" | "member") {
         return Err(AppError::BadRequest(
@@ -539,17 +585,46 @@ pub async fn set_workspace_member_role(
     .fetch_optional(&state.db)
     .await?;
     let current = current.ok_or(AppError::NotFound)?;
-    if current == "owner" && role != "owner" && workspace_owner_count(&state, &workspace_id).await? <= 1
+
+    // Privilege guard: granting 'owner' or modifying an existing owner requires the
+    // caller to be an owner (or global admin) — a plain 'admin' can't mint/seize owner.
+    if (role == "owner" || current == "owner")
+        && !caller_workspace_is_owner(&state, &workspace_id, &claims).await?
     {
         return Err(AppError::Forbidden(
-            "can't demote the last owner — promote another owner first".into(),
+            "only an owner or a system admin can grant or change the owner role".into(),
         ));
     }
-    sqlx::query("UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2")
+
+    if current == "owner" && role != "owner" {
+        // Demoting an owner reduces the owner count — serialize like leave.
+        let mut tx = state.db.begin().await?;
+        let owners = sqlx::query(
+            "SELECT 1 FROM workspace_memberships
+             WHERE workspace_id = $1 AND role = 'owner' AND status = 'active' FOR UPDATE",
+        )
         .bind(&workspace_id)
-        .bind(&user_id)
-        .bind(&role)
-        .execute(&state.db)
+        .fetch_all(&mut *tx)
         .await?;
+        if owners.len() <= 1 {
+            return Err(AppError::Forbidden(
+                "can't demote the last owner — promote another owner first".into(),
+            ));
+        }
+        sqlx::query("UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2")
+            .bind(&workspace_id)
+            .bind(&user_id)
+            .bind(&role)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+    } else {
+        sqlx::query("UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2")
+            .bind(&workspace_id)
+            .bind(&user_id)
+            .bind(&role)
+            .execute(&state.db)
+            .await?;
+    }
     Ok(Json(serde_json::json!({ "user_id": user_id, "role": role })))
 }

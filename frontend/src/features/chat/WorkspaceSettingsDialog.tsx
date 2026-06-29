@@ -300,17 +300,22 @@ export function WorkspaceSettingsDialog({
           </>
         )}
 
-        {/* Leave — available to any member (the backend blocks the last owner). */}
-        <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-zinc-200">退出工作空间</p>
-            <p className="text-xs text-zinc-500 mt-0.5">把自己移出该工作空间。</p>
+        {/* Leave — only for actual members (the backend blocks the last owner).
+            Non-admins can't list members but reached this from their own workspace,
+            so they're members; a global admin viewing a workspace they're not in has
+            the member list loaded without themselves in it → hide. */}
+        {(!canManage || members.some((m) => m.user_id === me?.user_id)) && (
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">退出工作空间</p>
+              <p className="text-xs text-zinc-500 mt-0.5">把自己移出该工作空间。</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => void leave()}>
+              <LogOut className="w-3.5 h-3.5" />
+              退出
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => void leave()}>
-            <LogOut className="w-3.5 h-3.5" />
-            退出
-          </Button>
-        </div>
+        )}
       </div>
     </Dialog>
   );

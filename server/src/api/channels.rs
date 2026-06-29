@@ -466,6 +466,13 @@ pub async fn add_channel_member(
             "role must be owner, admin, member, or readonly".into(),
         ));
     }
+    // Only an owner (or global admin) may add a member straight in as 'owner' —
+    // otherwise a plain 'admin' could mint a co-owner and seize the channel.
+    if role == "owner" && !caller_channel_is_owner(&state, &channel_id, &claims).await? {
+        return Err(AppError::Forbidden(
+            "only an owner or a system admin can add a member as owner".into(),
+        ));
+    }
     sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, $3, $4, $5)
@@ -499,16 +506,26 @@ pub async fn remove_channel_member(
     Ok(Json(json!({"removed": true})))
 }
 
-/// Count human 'owner' members of a channel — used by the last-owner guards so a
-/// leave/demote can't orphan the channel (leave it with no owner who can manage it).
-async fn channel_owner_count(state: &AppState, channel_id: &str) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar(
-        "SELECT count(*) FROM channel_memberships
-         WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner'",
+/// Whether the caller may grant/revoke the OWNER rank in this channel: a global
+/// admin, or a member whose own channel role is 'owner'. Plain channel 'admin's
+/// can manage members but must NOT be able to mint owners (privilege escalation).
+async fn caller_channel_is_owner(
+    state: &AppState,
+    channel_id: &str,
+    claims: &Claims,
+) -> Result<bool, AppError> {
+    if matches!(claims.role.as_str(), "system_admin" | "admin") {
+        return Ok(true);
+    }
+    let role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
     )
     .bind(channel_id)
-    .fetch_one(&state.db)
-    .await?)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(role.as_deref() == Some("owner"))
 }
 
 /// POST /api/v1/channels/{channel_id}/leave — the caller removes their OWN
@@ -538,24 +555,48 @@ pub async fn leave_channel(
     if channel_type.as_deref() == Some("dm") {
         return Err(AppError::BadRequest("cannot leave a direct message".into()));
     }
-    if role == "owner" && channel_owner_count(&state, &channel_id).await? <= 1 {
-        return Err(AppError::Forbidden(
-            "you are the last owner — transfer ownership or delete the channel first".into(),
-        ));
+
+    if role == "owner" {
+        // Owner leaving reduces the owner count, so serialize against concurrent
+        // owner leaves/demotes: lock the owner rows, re-count, delete, all in one tx.
+        let mut tx = state.db.begin().await?;
+        let owners = sqlx::query(
+            "SELECT 1 FROM channel_memberships
+             WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
+        )
+        .bind(&channel_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        if owners.len() <= 1 {
+            return Err(AppError::Forbidden(
+                "you are the last owner — transfer ownership or delete the channel first".into(),
+            ));
+        }
+        sqlx::query(
+            "DELETE FROM channel_memberships
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        )
+        .bind(&channel_id)
+        .bind(&claims.sub)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+    } else {
+        sqlx::query(
+            "DELETE FROM channel_memberships
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        )
+        .bind(&channel_id)
+        .bind(&claims.sub)
+        .execute(&state.db)
+        .await?;
     }
-    sqlx::query(
-        "DELETE FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
-    )
-    .bind(&channel_id)
-    .bind(&claims.sub)
-    .execute(&state.db)
-    .await?;
     Ok(Json(json!({ "left": true })))
 }
 
-/// PATCH /api/v1/channels/{channel_id}/members/{member_id} — change a member's role
-/// (admin-only). Refuses to demote the last owner, which would orphan the channel.
+/// PATCH /api/v1/channels/{channel_id}/members/{member_id} — change a HUMAN member's
+/// role (admin-only). Only an owner/global-admin may grant 'owner' or touch an
+/// existing owner; refuses to demote the last owner; can't change your own role.
 pub async fn set_channel_member_role(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -563,6 +604,11 @@ pub async fn set_channel_member_role(
     Json(body): Json<MemberRoleRequest>,
 ) -> Result<Json<Value>, AppError> {
     ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
+    if member_id == claims.sub {
+        return Err(AppError::BadRequest(
+            "use leave or transfer ownership to change your own role".into(),
+        ));
+    }
     let role = body.role;
     if !matches!(role.as_str(), "owner" | "admin" | "member" | "readonly") {
         return Err(AppError::BadRequest(
@@ -570,25 +616,61 @@ pub async fn set_channel_member_role(
         ));
     }
     let current: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM channel_memberships WHERE channel_id = $1 AND member_id = $2",
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
     )
     .bind(&channel_id)
     .bind(&member_id)
     .fetch_optional(&state.db)
     .await?;
     let current = current.ok_or(AppError::NotFound)?;
-    if current == "owner" && role != "owner" && channel_owner_count(&state, &channel_id).await? <= 1
+
+    // Privilege guard: granting 'owner' or modifying an existing owner requires the
+    // caller to be an owner (or global admin) — a plain 'admin' can't mint/seize owner.
+    if (role == "owner" || current == "owner")
+        && !caller_channel_is_owner(&state, &channel_id, &claims).await?
     {
         return Err(AppError::Forbidden(
-            "can't demote the last owner — promote another owner first".into(),
+            "only an owner or a system admin can grant or change the owner role".into(),
         ));
     }
-    sqlx::query("UPDATE channel_memberships SET role = $3 WHERE channel_id = $1 AND member_id = $2")
+
+    if current == "owner" && role != "owner" {
+        // Demoting an owner reduces the owner count — serialize like leave.
+        let mut tx = state.db.begin().await?;
+        let owners = sqlx::query(
+            "SELECT 1 FROM channel_memberships
+             WHERE channel_id = $1 AND member_type = 'user' AND role = 'owner' FOR UPDATE",
+        )
+        .bind(&channel_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        if owners.len() <= 1 {
+            return Err(AppError::Forbidden(
+                "can't demote the last owner — promote another owner first".into(),
+            ));
+        }
+        sqlx::query(
+            "UPDATE channel_memberships SET role = $3
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        )
+        .bind(&channel_id)
+        .bind(&member_id)
+        .bind(&role)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+    } else {
+        sqlx::query(
+            "UPDATE channel_memberships SET role = $3
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+        )
         .bind(&channel_id)
         .bind(&member_id)
         .bind(&role)
         .execute(&state.db)
         .await?;
+    }
     Ok(Json(json!({ "member_id": member_id, "role": role })))
 }
 

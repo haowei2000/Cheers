@@ -286,17 +286,20 @@ export function ChannelSettingsDialog({
           </div>
         )}
 
-        {/* Leave — available to any member (the backend blocks the last owner). */}
-        <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-zinc-200">退出频道</p>
-            <p className="text-xs text-zinc-500 mt-0.5">把自己移出该频道。</p>
+        {/* Leave — only for actual members (the backend blocks the last owner).
+            myRole is undefined for a global admin viewing a channel they're not in. */}
+        {myRole && (
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">退出频道</p>
+              <p className="text-xs text-zinc-500 mt-0.5">把自己移出该频道。</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => void leave()}>
+              <LogOut className="w-3.5 h-3.5" />
+              退出
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => void leave()}>
-            <LogOut className="w-3.5 h-3.5" />
-            退出
-          </Button>
-        </div>
+        )}
       </div>
     </Dialog>
   );
