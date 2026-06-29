@@ -154,13 +154,23 @@ pub async fn list_bots(
         } else {
             None
         };
+        // LIVE connectivity from the connection registry — the only honest "online"
+        // signal. `status` is a persisted enable flag that's set 'online' at creation
+        // and never flipped, so it can't tell a connected bot from a dead one. All
+        // bots dispatch through the WS bridge (see gateway::dispatcher), so the
+        // registry is authoritative for every binding type.
+        let bot_id = r.try_get::<String, _>("bot_id").unwrap_or_default();
+        let is_online = Uuid::parse_str(&bot_id)
+            .map(|id| state.bot_locator.is_online(id))
+            .unwrap_or(false);
         json!({
-            "bot_id": r.try_get::<String, _>("bot_id").unwrap_or_default(),
+            "bot_id": bot_id,
             "username": r.try_get::<String, _>("username").unwrap_or_default(),
             "display_name": r.try_get::<String, _>("display_name").ok(),
             "description": r.try_get::<String, _>("description").ok(),
             "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
             "status": r.try_get::<String, _>("status").unwrap_or_else(|_| "online".into()),
+            "is_online": is_online,
             "scope": r.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
             "binding_type": r.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
             "bridge_provider": r.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
@@ -334,8 +344,11 @@ pub async fn get_bot_status(
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or(bot_id),
         "status": status,
         "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
-        "connection_status": if status == "offline" { "offline" } else { "online" },
-        "is_online": status != "offline",
+        // `connection_status`/`is_online` are LIVE (bridge bound right now); `status`
+        // is the separate persisted enable flag. Don't conflate them — a bot can be
+        // status='online' (eligible) yet have no live connector.
+        "connection_status": if bridge_connected { "online" } else { "offline" },
+        "is_online": bridge_connected,
         "bridge_connected": bridge_connected,
         "live_enrollment_codes": live_codes,
     })))

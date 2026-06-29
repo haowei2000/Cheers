@@ -92,11 +92,12 @@ function BotCard({
         </div>
         <span
           className={`ml-auto inline-flex items-center gap-1 text-[11px] ${
-            bot.status === "online" ? "text-emerald-400" : "text-zinc-500"
+            bot.is_online ? "text-emerald-400" : "text-zinc-500"
           }`}
+          title={bot.is_online ? "连接器已接入" : "连接器未接入"}
         >
           <CircleDot className="w-3 h-3" />
-          {bot.status ?? "unknown"}
+          {bot.is_online ? "online" : "offline"}
         </span>
       </div>
 
