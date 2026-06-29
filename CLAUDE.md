@@ -68,7 +68,8 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 ```
 
 ```bash
-# Redeploy after a code change: rebuild → reload into kind → roll the pod
+# Redeploy after a code change: rebuild → reload into kind → roll the pod.
+# Shortcut for all of the below: ./scripts/redeploy.sh [gateway|frontend|both]
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend  # gateway: docker build -t cheers/gateway:dev server
 kind load docker-image cheers/frontend:dev --name cheers
 kubectl -n cheers rollout restart deployment/cheers-frontend   # or deployment/cheers-gateway
