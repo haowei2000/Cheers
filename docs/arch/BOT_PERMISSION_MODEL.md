@@ -4,6 +4,29 @@
 > [BOT_CONFIG_GOVERNANCE.md](./BOT_CONFIG_GOVERNANCE.md) (the L0/L1/L2 sovereignty
 > axis) and the ACP method surface. **The ACP operation is the unit of permission.**
 
+## Event-centric model (current direction)
+
+The model is decomposed **by ACP event** (see [ACP_EVENT_TAXONOMY.md](./ACP_EVENT_TAXONOMY.md)),
+with one clean question per layer:
+
+- **Agent** — produces agent→client events and consumes the responses; owns *when* it
+  asks (its mode) and *what* it emits.
+- **Connector** — the host firewall: which ACP **event-types** are let through at all
+  (e.g. may `fs/write` pass? may a `kind=execute` tool call pass?). User-independent.
+- **Cheers** — two **`(subject × event-class × capability)`** matrices, subject = channel
+  **role** (`owner`/`admin`/`member`/`*`) with **per-user overrides**, defaulting from
+  **channel membership** (members may INITIATE+SEE; RESPOND is owner/approver-only):
+  - **INITIATE** (user→agent): `prompt`, `set_mode`, `cancel` — who may cause it.
+  - **SEE** (agent→user): `output`, `tool_call`, `plan`, `trace`, `permission_request` —
+    who may view it; **RESPOND** adds, for `permission_request`, *who may answer it*.
+
+Data: `bot_event_access` (migration 0029) + the pure resolver in
+`server/src/domain/bot_event_policy.rs`. The older **Axis B** (`bot_permission_rules`,
+per `operation_kind` → allow/deny/ask) is reframed as the bot owner's **auto-answer
+policy** for `request_permission` (the bot's *behavior*, not per-user); it composes with
+the RESPOND matrix (who is asked when the answer is "ask"). The Axis-A posture knob is the
+`set_mode` INITIATE event.
+
 ## Core principle
 
 Every bot action is an **ACP operation** — a method, or a tool surfaced via
