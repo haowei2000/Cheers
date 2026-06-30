@@ -8,7 +8,7 @@
 //
 // ViewBoards have their OWN registry and their OWN host (ViewBoardDrawer) — they are
 // not workbench panels.
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useEffect } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
 import type { SendResourceReq } from "./fsClient";
 import { useResourceQuery } from "./useResourceQuery";
@@ -20,6 +20,10 @@ export interface ViewBoardContext {
   sendResourceReq: SendResourceReq;
   /** The composer's selected session ("" / null = Auto / All sessions). */
   selectedSessionId?: string | null;
+  /** Live-push: a monotonic per-board counter (board id → tick). When this board's
+   *  tick bumps (a board_signal arrived over the WS), the board re-fetches — no
+   *  manual refresh. */
+  boardTick?: Record<string, number>;
 }
 
 export interface ViewBoardDef<T> {
@@ -69,6 +73,14 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
     );
     const onRefresh = useCallback(() => refetch(), [refetch]);
     const Icon = def.icon;
+
+    // Live-push: re-fetch when this board's tick bumps (a board_signal arrived).
+    const tick = ctx.boardTick?.[def.id] ?? 0;
+    useEffect(() => {
+      if (tick > 0) refetch();
+      // refetch is stable per (verb, params); tick is the live-push trigger.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tick]);
 
     return (
       <div className="flex flex-col h-full text-sm">

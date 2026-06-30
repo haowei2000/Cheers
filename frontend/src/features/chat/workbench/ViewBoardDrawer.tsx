@@ -11,6 +11,7 @@ import { getViewBoards, type ViewBoardContext } from "./viewBoard";
 import "./panels/PlanBoardPanel";
 import "./panels/CostPanel";
 import "./panels/SessionsPanel";
+import "./panels/ActivityPanel";
 
 interface Props {
   open: boolean;
@@ -19,6 +20,8 @@ interface Props {
   sendResourceReq: SendResourceReq;
   /** Composer's selected session ("" = Auto/all) — session-scoped boards filter to it. */
   selectedSessionId?: string | null;
+  /** Live-push ticks (board id → counter) from the WS board_signal stream. */
+  boardTick?: Record<string, number>;
   /** When the Workbench drawer is also open, dock to its left so both show. */
   shiftedForWorkbench?: boolean;
 }
@@ -31,6 +34,7 @@ export function ViewBoardDrawer({
   channelId,
   sendResourceReq,
   selectedSessionId,
+  boardTick,
   shiftedForWorkbench,
 }: Props) {
   const boards = getViewBoards();
@@ -38,8 +42,13 @@ export function ViewBoardDrawer({
   const activeBoard = boards.find((b) => b.id === active) ?? boards[0];
 
   const ctx: ViewBoardContext = useMemo(
-    () => ({ channelId, sendResourceReq, selectedSessionId: selectedSessionId ?? null }),
-    [channelId, sendResourceReq, selectedSessionId]
+    () => ({
+      channelId,
+      sendResourceReq,
+      selectedSessionId: selectedSessionId ?? null,
+      boardTick,
+    }),
+    [channelId, sendResourceReq, selectedSessionId, boardTick]
   );
 
   return (
