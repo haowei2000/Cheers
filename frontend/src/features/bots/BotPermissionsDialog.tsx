@@ -2,58 +2,43 @@ import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { ShieldCheck } from "lucide-react";
 import { getBotPermissions, setBotPosture, type Posture } from "@/api/bots";
-import { listChannelMembers } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
-import { BotEventAccessSection } from "./BotEventAccessSection";
+import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
 import { BotActivitySection } from "./BotActivitySection";
-import type { BotItem, Channel, MemberItem } from "@/types";
-
-const BOT_WIDE = "";
+import type { BotItem, Channel } from "@/types";
 
 /**
- * Bot permissions (docs/arch/ACP_EVENT_TAXONOMY.md): the agent's **posture**
- * (session mode) + the **event-access matrix** (who can INITIATE/SEE/RESPOND per
- * ACP event, by channel role with per-user overrides). The agent decides *when*
- * it asks; Cheers decides *who* can act — there is no per-tool-kind auto-answer.
+ * Bot permissions (docs/arch/ACP_EVENT_TAXONOMY.md), permission-FIRST: the agent's
+ * posture (session mode), then a permission list — pick a permission to see/edit
+ * every authorization domain (user / role / group) that holds it — plus the live
+ * ACP activity timeline. Scope is chosen per-grant, not page-wide.
  */
 export function BotPermissionsDialog({
   bot,
-  channels,
   onClose,
 }: {
   bot: BotItem;
   channels: Channel[];
   onClose: () => void;
 }) {
-  const [scope, setScope] = useState<string>(BOT_WIDE); // "" = bot-wide default
   const [posture, setPosture] = useState<Posture | null>(null);
-  const [members, setMembers] = useState<MemberItem[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const loadPosture = useCallback(async () => {
     const p = await getBotPermissions(bot.bot_id);
     setPosture(p.posture);
   }, [bot.bot_id]);
 
-  const loadMembers = useCallback(async () => {
-    if (!scope) {
-      setMembers([]);
-      return;
-    }
-    const m = await listChannelMembers(scope);
-    setMembers(m.filter((x) => x.member_type === "user"));
-  }, [scope]);
-
   useEffect(() => {
-    Promise.all([loadPosture(), loadMembers()]).catch((e) => toast.error(String(e)));
-  }, [loadPosture, loadMembers]);
+    loadPosture().catch((e) => toast.error(String(e)));
+  }, [loadPosture]);
 
   const changePosture = (mode: string) => {
-    setBusy("posture");
+    setBusy(true);
     setBotPosture(bot.bot_id, mode)
       .then(loadPosture)
       .catch((e) => toast.error(String(e)))
-      .finally(() => setBusy(null));
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -68,28 +53,6 @@ export function BotPermissionsDialog({
       maxWidth="max-w-2xl"
     >
       <div className="space-y-4">
-        {/* Scope selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500">Scope</span>
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            className="rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500/60"
-          >
-            <option value={BOT_WIDE}>Bot-wide default (all channels)</option>
-            {channels.map((c) => (
-              <option key={c.channel_id} value={c.channel_id}>
-                #{c.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-[11px] text-zinc-600">
-            {scope
-              ? "Channel-specific rules override the bot-wide default."
-              : "Applies to every channel unless a channel overrides it."}
-          </span>
-        </div>
-
         {/* Posture: the agent's session mode (when does it ask?). */}
         {posture && (
           <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
@@ -98,7 +61,7 @@ export function BotPermissionsDialog({
               {posture.allowed_modes.length > 0 ? (
                 <select
                   value={posture.permission_mode ?? ""}
-                  disabled={busy === "posture"}
+                  disabled={busy}
                   onChange={(e) => changePosture(e.target.value)}
                   className="rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
                 >
@@ -128,8 +91,8 @@ export function BotPermissionsDialog({
           </div>
         )}
 
-        {/* Event-access matrix — the per-user authorization (the primary control). */}
-        <BotEventAccessSection botId={bot.bot_id} scope={scope} members={members} />
+        {/* Permission-first authorization: permission → its grants (domains). */}
+        <BotPermissionGrantsSection botId={bot.bot_id} />
 
         {/* Recent ACP activity — the complete event timeline (read-only). */}
         <BotActivitySection botId={bot.bot_id} />
