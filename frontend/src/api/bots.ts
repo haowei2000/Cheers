@@ -238,8 +238,25 @@ export interface EventRule {
   updated_at?: string;
 }
 
+/** Effective decision for one (event × role) cell of the baseline matrix. */
+export interface EffectiveDecision {
+  allow: boolean;
+  /** "rule" = a stored bot-wide grant decided it; "default" = membership default. */
+  source: "default" | "rule";
+}
+
+/** One row of the read-only effective-defaults matrix: an event with its per-role
+ *  decision at bot-wide scope (before any channel / user / group override). */
+export interface EffectiveCell {
+  capability: Capability;
+  event_class: string;
+  roles: Record<string, EffectiveDecision>;
+}
+
 export interface EventAccess {
   rules: EventRule[];
+  /** Read-only baseline: effective decision per (capability × event × role), bot-wide. */
+  effective: EffectiveCell[];
   initiate_events: string[];
   see_events: string[];
   respond_events: string[];

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { X, Plus } from "lucide-react";
 import {
@@ -14,6 +14,8 @@ import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
+// Real channel roles shown as columns in the effective-defaults matrix (no `*`).
+const MATRIX_ROLES = ["owner", "admin", "member"] as const;
 const CAP_ORDER: Capability[] = ["initiate", "see", "respond"];
 const CAP_BADGE: Record<Capability, string> = {
   initiate: "bg-sky-950/60 border-sky-900 text-sky-200",
@@ -160,6 +162,79 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           </button>
         )}
       </div>
+
+      {/* Effective defaults (read-only): the baseline decision per event × role at
+          bot-wide scope, so members-can-cancel-by-default etc. is visible, not just
+          the explicit overrides below. */}
+      {access.effective && access.effective.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-zinc-800">
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-900/40">
+            <p className="text-[11px] font-medium text-zinc-300">Effective defaults · Bot-wide</p>
+            <span className="text-[10px] text-zinc-600">
+              <span className="text-indigo-400">•</span> = set by a grant · channel / user / group
+              grants can narrow this per scope
+            </span>
+          </div>
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-zinc-500">
+                <th className="px-2.5 py-1 text-left font-normal">Event</th>
+                {MATRIX_ROLES.map((r) => (
+                  <th key={r} className="px-2 py-1 text-center font-normal">
+                    {r}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {CAP_ORDER.map((cap) => {
+                const cells = access.effective.filter((c) => c.capability === cap);
+                if (cells.length === 0) return null;
+                return (
+                  <Fragment key={cap}>
+                    <tr>
+                      <td
+                        colSpan={1 + MATRIX_ROLES.length}
+                        className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-600"
+                      >
+                        {cap}
+                      </td>
+                    </tr>
+                    {cells.map((c) => (
+                      <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
+                        <td className="px-2.5 py-1">
+                          <code className="text-zinc-300">{c.event_class}</code>
+                        </td>
+                        {MATRIX_ROLES.map((role) => {
+                          const d = c.roles[role];
+                          if (!d) {
+                            return (
+                              <td key={role} className="px-2 py-1 text-center text-zinc-700">
+                                —
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={role} className="px-2 py-1 text-center">
+                              <span
+                                className={d.allow ? "text-emerald-400" : "text-zinc-600"}
+                                title={d.source === "rule" ? "set by a grant" : "membership default"}
+                              >
+                                {d.allow ? "✓" : "✗"}
+                                {d.source === "rule" && <span className="text-indigo-400">•</span>}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* New-grant form */}
       {creating && (

@@ -337,6 +337,51 @@ pub async fn resolve(
     ))
 }
 
+/// Channel roles surfaced in the owner UI's effective-defaults matrix. `*` is a
+/// rule *subject*, not a real role, so it's excluded here.
+pub const MATRIX_ROLES: &[&str] = &["owner", "admin", "member"];
+
+/// The effective **bot-wide** decision per `(capability, event_class, role)` for a
+/// generic member with no per-user / per-group / per-channel override. Backs the
+/// read-only "effective defaults" matrix in the owner UI, so the baseline (e.g.
+/// "members may cancel by default") is visible — not just the explicit overrides.
+///
+/// Each cell carries `source`: `"rule"` when a stored bot-wide role/`*` rule decided
+/// it, else `"default"` (the membership default). Resolution reuses [`resolve_access`]
+/// so this view can never drift from the real gate. An empty user id + empty groups
+/// make the user/group tiers no-ops, leaving `role ▸ ∗ ▸ default` — the per-role
+/// baseline. (A user subject_id is never empty — see `upsert_rule` validation — so the
+/// empty id matches no stored rule.)
+pub fn effective_matrix(rules: &[Rule]) -> Vec<Value> {
+    const NO_USER: &str = "";
+    let mut out = Vec::new();
+    for cap in [Capability::Initiate, Capability::See, Capability::Respond] {
+        for ec in events_for(cap) {
+            let mut by_role = serde_json::Map::new();
+            for &role in MATRIX_ROLES {
+                let allow = resolve_access(rules, BOT_WIDE, NO_USER, role, &[], ec, cap);
+                let from_rule = rules.iter().any(|r| {
+                    r.channel_id == BOT_WIDE
+                        && r.subject_kind == SUBJECT_ROLE
+                        && (r.subject_id == role || r.subject_id == ANY_SUBJECT)
+                        && r.event_class == ec
+                        && r.capability == cap.as_str()
+                });
+                by_role.insert(
+                    role.to_string(),
+                    json!({ "allow": allow, "source": if from_rule { "rule" } else { "default" } }),
+                );
+            }
+            out.push(json!({
+                "capability": cap.as_str(),
+                "event_class": ec,
+                "roles": Value::Object(by_role),
+            }));
+        }
+    }
+    out
+}
+
 /// List a bot's access rules as JSON (for the owner API), newest-touched first.
 pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, AppError> {
     let rows = sqlx::query(
@@ -546,6 +591,38 @@ mod tests {
         let ev = initiate_events();
         assert!(ev.contains(&"set_mode"));
         assert!(ev.contains(&"set_config_option"));
+    }
+
+    #[test]
+    fn effective_matrix_surfaces_defaults_and_overrides() {
+        let find = |m: &[Value], cap: &str, ec: &str| -> Value {
+            m.iter()
+                .find(|c| c["capability"] == cap && c["event_class"] == ec)
+                .cloned()
+                .unwrap_or_else(|| panic!("no {cap}/{ec} cell"))
+        };
+
+        // No rules: cancel is member-allow by default; set_mode is member-deny;
+        // respond/permission_request is deny for everyone (must be granted).
+        let m = effective_matrix(&[]);
+        let cancel = find(&m, "initiate", "cancel");
+        assert_eq!(cancel["roles"]["member"]["allow"], json!(true));
+        assert_eq!(cancel["roles"]["member"]["source"], json!("default"));
+        assert_eq!(find(&m, "initiate", "set_mode")["roles"]["member"]["allow"], json!(false));
+        assert_eq!(
+            find(&m, "respond", EV_PERMISSION_REQUEST)["roles"]["owner"]["allow"],
+            json!(false)
+        );
+
+        // A bot-wide deny for members flips the member cancel cell and tags it as a
+        // rule — owner/admin stay on the default-allow baseline.
+        let rules = vec![rule(BOT_WIDE, SUBJECT_ROLE, "member", "cancel", Capability::Initiate, false)];
+        let m2 = effective_matrix(&rules);
+        let cancel2 = find(&m2, "initiate", "cancel");
+        assert_eq!(cancel2["roles"]["member"]["allow"], json!(false));
+        assert_eq!(cancel2["roles"]["member"]["source"], json!("rule"));
+        assert_eq!(cancel2["roles"]["admin"]["allow"], json!(true));
+        assert_eq!(cancel2["roles"]["admin"]["source"], json!("default"));
     }
 
     #[test]
