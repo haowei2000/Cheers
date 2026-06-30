@@ -18,6 +18,21 @@ pub trait Fanout: Send + Sync {
     /// 广播给订阅了指定频道的所有浏览器连接。
     async fn broadcast_channel(&self, channel_id: Uuid, frame: WireFrame);
 
+    /// Broadcast to a channel, but only to connections whose user is in
+    /// `allowed_users` — the live per-subscriber SEE filter (the caller computes
+    /// the allowed set from bot_event_policy). Used for agent-produced events
+    /// (bot traces, permission cards). Default impl falls back to a full broadcast,
+    /// so a SEE-unaware transport never silently *drops* an event.
+    async fn broadcast_channel_to_users(
+        &self,
+        channel_id: Uuid,
+        frame: WireFrame,
+        allowed_users: Vec<Uuid>,
+    ) {
+        let _ = &allowed_users;
+        self.broadcast_channel(channel_id, frame).await;
+    }
+
     /// 广播给指定用户的所有连接（未读通知等 user 级事件）。
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame);
 
@@ -150,6 +165,30 @@ impl Fanout for InProcessFanout {
     async fn broadcast_channel(&self, channel_id: Uuid, frame: WireFrame) {
         if let Some(senders) = self.channels.get(&channel_id) {
             self.deliver(senders.value(), &frame);
+        }
+    }
+
+    async fn broadcast_channel_to_users(
+        &self,
+        channel_id: Uuid,
+        frame: WireFrame,
+        allowed_users: Vec<Uuid>,
+    ) {
+        use std::collections::HashSet;
+        let allow: HashSet<Uuid> = allowed_users.into_iter().collect();
+        if let Some(senders) = self.channels.get(&channel_id) {
+            let filtered: Vec<ConnSender> = senders
+                .value()
+                .iter()
+                .filter(|s| {
+                    self.conn_users
+                        .get(&s.conn_id)
+                        .map(|u| allow.contains(&*u))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect();
+            self.deliver(&filtered, &frame);
         }
     }
 
