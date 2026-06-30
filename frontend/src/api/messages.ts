@@ -30,7 +30,14 @@ export async function listMessages(
 export async function sendMessage(
   channelId: string,
   content: string,
-  opts: { file_ids?: string[]; mention_ids?: string[]; reply_to_msg_id?: string } = {}
+  opts: {
+    file_ids?: string[];
+    mention_ids?: string[];
+    reply_to_msg_id?: string;
+    // Route the prompt to a specific session in this channel (a bot's "other" or
+    // primary session). Omit to use mention-based routing → the channel primary.
+    session_id?: string;
+  } = {}
 ): Promise<Message> {
   return apiJson<Message>(`/channels/${channelId}/messages`, {
     method: "POST",

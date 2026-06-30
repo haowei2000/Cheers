@@ -1,10 +1,12 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings } from "lucide-react";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers, markChannelRead } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { MessageComposer, type MentionCandidate } from "./MessageComposer";
+import { SessionSwitcher } from "./SessionSwitcher";
+import { ComposerBotSettings } from "./ComposerBotSettings";
 import { useChatRealtime } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
@@ -60,6 +62,27 @@ export function ChannelView({ channel }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  // Composer session target: "" = Auto (mention routing → primary); else a session_id.
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  // Bots @mentioned in the current draft (from the composer), so we can show their
+  // mode/config controls inline when the caller is allowed to change them.
+  const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
+
+  // Bots in the channel, derived from the mention candidates — the switcher lists
+  // each bot's sessions under it.
+  const switcherBots = useMemo(
+    () =>
+      mentionables
+        .filter((m) => m.type === "bot")
+        .map((m) => ({ botId: m.id, name: m.label })),
+    [mentionables]
+  );
+
+  // A different channel means a different session set — drop any prior target.
+  useEffect(() => {
+    setSelectedSessionId("");
+    setMentionedBots([]);
+  }, [channel?.channel_id]);
 
   // Highest delivered channel_seq, used as the reconnect/refresh catch-up cursor.
   const lastSeqRef = useRef(0);
@@ -280,6 +303,7 @@ export function ChannelView({ channel }: Props) {
     await sendMessage(channel.channel_id, content, {
       ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
       ...(fileIds.length ? { file_ids: fileIds } : {}),
+      ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
     });
   }
 
@@ -294,8 +318,10 @@ export function ChannelView({ channel }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Channel header */}
-      <div className="flex items-center gap-3 px-4 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+      {/* Channel header — `relative z-30` lifts the header's stacking context (it
+          already makes one via backdrop-blur) above the message list, so header
+          dropdowns like the session panel render over the chat, not under it. */}
+      <div className="relative z-30 flex items-center gap-3 px-4 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
         <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
         <span className="font-semibold text-zinc-100 text-sm">
           {channel.name}
@@ -387,6 +413,22 @@ export function ChannelView({ channel }: Props) {
         channelId={channel.channel_id}
         channelName={channel.name}
         mentionables={mentionables}
+        toolbar={
+          <>
+            <SessionSwitcher
+              channelId={channel.channel_id}
+              bots={switcherBots}
+              value={selectedSessionId}
+              onChange={setSelectedSessionId}
+            />
+            <ComposerBotSettings
+              channelId={channel.channel_id}
+              bots={mentionedBots.map((m) => ({ botId: m.id, name: m.label }))}
+              selectedSessionId={selectedSessionId}
+            />
+          </>
+        }
+        onMentionsChange={setMentionedBots}
         onSend={handleSend}
       />
 

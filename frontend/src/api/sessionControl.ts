@@ -11,6 +11,11 @@ export interface SessionInfo {
   is_primary: boolean;
   status: string;
   last_used_at: string;
+  /** Per-session mode/config overrides (set via set_mode / set_config_option). */
+  session_config?: {
+    permission_mode?: string;
+    config_options?: Record<string, string>;
+  };
 }
 
 export async function listChannelBotSessions(
@@ -43,6 +48,8 @@ export interface SessionControls {
   can_create_session: boolean;
   can_close_session: boolean;
   allowed_modes: string[];
+  /** The agent's preset mode — the effective mode when no per-session override is set. */
+  current_mode?: string;
   config_options: ConfigOption[];
 }
 

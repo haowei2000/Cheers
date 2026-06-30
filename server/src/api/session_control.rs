@@ -375,13 +375,17 @@ pub async fn session_controls(
         .await
         .unwrap_or(false);
     let agent_type = bot_agent_type(&state, bot_id).await;
-    let (_, allowed_modes) = connector_config::posture_preset(&agent_type);
+    let (default_mode, allowed_modes) = connector_config::posture_preset(&agent_type);
     Ok(Json(json!({
         "can_set_mode": can_set_mode,
         "can_set_config_option": can_set_config_option,
         "can_create_session": can_create_session,
         "can_close_session": can_close_session,
         "allowed_modes": allowed_modes,
+        // The agent's preset mode — the session's effective mode when no per-session
+        // override is set. Lets the UI show the current mode read-only even without a
+        // set_mode grant. Per-session overrides come from each session's session_config.
+        "current_mode": default_mode.unwrap_or(""),
         "config_options": advertised_config_options(&state, bot_id).await,
     })))
 }

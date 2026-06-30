@@ -84,13 +84,18 @@ export function SessionControlButton({ channelId }: { channelId: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Agent session mode / config"
-        className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+        className={
+          "flex items-center justify-center w-7 h-7 rounded transition-colors " +
+          (open
+            ? "bg-zinc-800 text-zinc-100"
+            : "text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800")
+        }
       >
         <SlidersHorizontal className="w-4 h-4" />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-72 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl space-y-3">
-          <p className="text-[11px] uppercase tracking-wider text-zinc-500">Agent session</p>
+        <div className="absolute right-0 z-50 mt-1.5 w-80 rounded-lg border border-zinc-600 bg-zinc-900 p-3 shadow-2xl ring-1 ring-black/40 space-y-3">
+          <p className="text-[11px] uppercase tracking-wider text-zinc-400">Agent session</p>
           {bots.map((b) => (
             <BotSessionControls key={b.botId} channelId={channelId} bot={b} />
           ))}
@@ -132,30 +137,15 @@ function BotSessionControls({ channelId, bot }: { channelId: string; bot: Grante
   }
 
   const sel =
-    "rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40";
+    "rounded-md bg-zinc-900 border border-zinc-600 px-1.5 py-1 text-[11px] text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40";
 
   return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2 space-y-1.5">
+    <div className="rounded-md border border-zinc-700 bg-zinc-800 p-2.5 space-y-2">
       <div className="flex items-center gap-1.5">
-        <span className="text-xs font-medium text-zinc-200 truncate flex-1">{bot.name}</span>
-        {bot.controls.can_create_session && (
-          <button
-            type="button"
-            disabled={busy}
-            title="New session"
-            onClick={() =>
-              run(async () => {
-                const s = await createChannelBotSession(channelId, bot.botId);
-                await loadSessions();
-                setTarget(s.session_id);
-              })
-            }
-            className="inline-flex items-center gap-0.5 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-zinc-800"
-          >
-            <Plus className="w-3 h-3" />
-            new
-          </button>
-        )}
+        <span className="text-xs font-medium text-zinc-100 truncate flex-1">{bot.name}</span>
+        <span className="text-[10px] text-zinc-400">
+          {sessions.length} session{sessions.length === 1 ? "" : "s"}
+        </span>
       </div>
 
       <label className="flex items-center gap-1.5">
@@ -229,6 +219,24 @@ function BotSessionControls({ channelId, bot }: { channelId: string; bot: Grante
             </select>
           </label>
         ))}
+
+      {bot.controls.can_create_session && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              const s = await createChannelBotSession(channelId, bot.botId);
+              await loadSessions();
+              setTarget(s.session_id);
+            })
+          }
+          className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-500/50 bg-indigo-600/20 px-2 py-1.5 text-[11px] font-medium text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {busy ? "创建中…" : "新建 session"}
+        </button>
+      )}
     </div>
   );
 }

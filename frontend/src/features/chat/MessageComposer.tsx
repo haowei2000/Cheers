@@ -2,8 +2,11 @@ import {
   useState,
   useRef,
   useCallback,
+  useMemo,
+  useEffect,
   type KeyboardEvent,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { SendHorizontal, Bot, User, Paperclip, X, FileText } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -22,6 +25,11 @@ interface Props {
   channelName?: string;
   disabled?: boolean;
   mentionables?: MentionCandidate[];
+  /** Optional controls rendered just above the input row (e.g. a session switcher). */
+  toolbar?: ReactNode;
+  /** Fires with the bots currently @mentioned in the draft (token still present),
+      so the parent can surface per-bot controls contextual to the mention. */
+  onMentionsChange?: (mentionedBots: MentionCandidate[]) => void;
   onSend: (
     content: string,
     mentionIds: string[],
@@ -41,6 +49,8 @@ export function MessageComposer({
   channelName,
   disabled,
   mentionables = [],
+  toolbar,
+  onMentionsChange,
   onSend,
 }: Props) {
   const [text, setText] = useState("");
@@ -52,6 +62,19 @@ export function MessageComposer({
   const [picker, setPicker] = useState<PickerState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Bots whose "@label" token still survives in the draft — the live mention set
+  // (mirrors submit()'s routing filter). Emitted up so the parent can show the
+  // mentioned bot's session controls. Keyed by id so we only notify on change.
+  const mentionedBots = useMemo(
+    () => picked.filter((p) => p.type === "bot" && text.includes(`@${p.label}`)),
+    [picked, text]
+  );
+  const mentionKey = mentionedBots.map((b) => b.id).join(",");
+  useEffect(() => {
+    onMentionsChange?.(mentionedBots);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mentionKey]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || !channelId) return;
@@ -273,6 +296,8 @@ export function MessageComposer({
         className="hidden"
         onChange={(e) => void handleFiles(e.target.files)}
       />
+
+      {toolbar && <div className="mb-2 flex flex-wrap items-center gap-2">{toolbar}</div>}
 
       <div
         className={cn(

@@ -219,7 +219,7 @@ pub async fn list_channel_sessions(
     let rows = sqlx::query(
         // No detached_at filter: bindings are detached on every finalize, but an
         // idle session stays addressable. Exclude only truly-closed sessions.
-        "SELECT s.session_id, b.role, s.status, s.provider_session_key, s.last_used_at
+        "SELECT s.session_id, b.role, s.status, s.provider_session_key, s.last_used_at, s.metadata
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
          WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
@@ -236,6 +236,14 @@ pub async fn list_channel_sessions(
         .into_iter()
         .map(|r| {
             let role: String = r.try_get("role").unwrap_or_default();
+            // The session's mode/config overrides (set via set_mode / set_config_option),
+            // so the UI can show each session's *current* mode + config values.
+            let session_config = r
+                .try_get::<Option<Value>, _>("metadata")
+                .ok()
+                .flatten()
+                .and_then(|m| m.get("session_config").cloned())
+                .unwrap_or_else(|| json!({}));
             json!({
                 "session_id": r.try_get::<String, _>("session_id").unwrap_or_default(),
                 "role": role.clone(),
@@ -243,6 +251,7 @@ pub async fn list_channel_sessions(
                 "status": r.try_get::<String, _>("status").unwrap_or_default(),
                 "last_used_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("last_used_at")
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "session_config": session_config,
             })
         })
         .collect())
