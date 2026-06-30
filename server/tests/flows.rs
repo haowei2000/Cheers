@@ -1103,3 +1103,37 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
     assert_eq!(denied["ok"], false);
     assert_eq!(denied["code"].as_str(), Some("NOT_MEMBER"));
 }
+
+#[sqlx::test]
+async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let bot_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
+    for i in 0..3 {
+        messages::create_message(&db, &fanout, &registry, &bot_locator, CreateMessageParams {
+            user_id: user, channel_id: ch, content: format!("m{i}"),
+            msg_type: None, reply_to_msg_id: None, file_ids: vec![], mention_ids: vec![],
+            session_id: None,
+        }).await.unwrap();
+    }
+    let cid = ch.to_string();
+
+    // desc=true → newest-first (the Activity board feed): seq 3,2,1.
+    let r = dispatch(&db, Principal::user(user),
+        &req("channel.activity.read", serde_json::json!({ "channel_id": cid, "desc": true }))).await;
+    assert_eq!(r["ok"], true, "activity.read 应成功: {r}");
+    let seqs: Vec<i64> = r["data"]["events"].as_array().unwrap().iter()
+        .filter_map(|e| e["channel_seq"].as_i64()).collect();
+    assert_eq!(seqs, vec![3, 2, 1], "desc 最新在前");
+
+    // default (asc) preserves the bot's forward-cursor read: seq 1,2,3.
+    let r2 = dispatch(&db, Principal::user(user),
+        &req("channel.activity.read", serde_json::json!({ "channel_id": cid }))).await;
+    let seqs2: Vec<i64> = r2["data"]["events"].as_array().unwrap().iter()
+        .filter_map(|e| e["channel_seq"].as_i64()).collect();
+    assert_eq!(seqs2, vec![1, 2, 3], "默认 asc 最旧在前");
+}

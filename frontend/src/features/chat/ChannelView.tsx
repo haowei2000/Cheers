@@ -287,6 +287,8 @@ export function ChannelView({ channel }: Props) {
     onReady: handleReady,
     onPresence: (_ids, count) => setOnlineCount(count),
     onBotTrace: handleBotTrace,
+    onBoardSignal: (board) =>
+      setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 })),
   });
   // Keep a stable ref so loadCommands can reach the latest resource client
   // without re-subscribing the realtime hook.
@@ -298,6 +300,9 @@ export function ChannelView({ channel }: Props) {
   }, [loadCommands]);
   const [wbOpen, setWbOpen] = useState(false);
   const [vbOpen, setVbOpen] = useState(false);
+  // Live-push: per-board tick bumped by board_signal frames (and new messages for
+  // "activity"); the ViewBoards re-fetch when their tick changes — no manual refresh.
+  const [boardTick, setBoardTick] = useState<Record<string, number>>({});
   const [filesOpen, setFilesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
@@ -521,6 +526,7 @@ export function ChannelView({ channel }: Props) {
         channelId={channel.channel_id}
         sendResourceReq={sendResourceReq}
         selectedSessionId={selectedSessionId}
+        boardTick={boardTick}
         shiftedForWorkbench={wbOpen}
       />
       {filesOpen && (

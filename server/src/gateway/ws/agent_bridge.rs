@@ -701,6 +701,12 @@ async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) 
         let channel_id = frame.get("channel_id").and_then(Value::as_str);
         let session_id = frame.get("session_id").and_then(Value::as_str);
         let bot_id = bot.bot_id.to_string();
+        // Which ViewBoard this update feeds (for the live-push nudge below).
+        let board = match &parsed {
+            ParsedUpdate::AvailableCommands(_) => "commands",
+            ParsedUpdate::Plan(_) => "plan",
+            ParsedUpdate::Usage(_) => "cost",
+        };
         match parsed {
             ParsedUpdate::AvailableCommands(ac) => {
                 crate::domain::commands_store::record(&state.db, channel_id, &bot_id, session_id, &ac)
@@ -712,6 +718,18 @@ async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) 
             ParsedUpdate::Usage(u) => {
                 crate::domain::usage_store::record(&state.db, channel_id, &bot_id, session_id, &u).await
             }
+        }
+        // Live-push: nudge the channel's ViewBoards to re-pull. These board events
+        // don't otherwise fan out to browsers (DECENTRALIZED_MESH §6: realtime is
+        // conversational-only), so the board is pull-only without this signal. The
+        // frame carries no data — boards re-fetch via their own authz'd *.read verb.
+        if let Some(cid) = channel_id.and_then(|s| s.parse::<Uuid>().ok()) {
+            let wire = WireFrame::channel(
+                cid,
+                "board_signal",
+                json!({ "channel_id": cid, "board": board }),
+            );
+            state.fanout.broadcast_channel(cid, wire).await;
         }
     }
 }

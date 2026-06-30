@@ -30,8 +30,16 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .and_then(|v| v.as_i64())
         .unwrap_or(50)
         .clamp(1, 200);
+    // Board mode: `desc` returns the LATEST events first (an activity feed); the
+    // default (asc) is the bot's forward-cursor read. The direction is a validated
+    // literal (never user text), so the runtime replace below can't inject.
+    let order = if params.get("desc").and_then(|v| v.as_bool()).unwrap_or(false) {
+        "DESC"
+    } else {
+        "ASC"
+    };
 
-    let rows = sqlx::query(
+    let base_query =
         r#"
         SELECT event_type, channel_seq, created_at, payload
         FROM (
@@ -94,8 +102,9 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         ) events
         ORDER BY channel_seq ASC
         LIMIT $3
-        "#,
-    )
+        "#;
+    let query = base_query.replace("channel_seq ASC", &format!("channel_seq {order}"));
+    let rows = sqlx::query(&query)
     .bind(channel_id.to_string())
     .bind(since_seq)
     .bind(limit)

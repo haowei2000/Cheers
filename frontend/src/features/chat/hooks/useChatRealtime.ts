@@ -15,6 +15,10 @@ interface Callbacks {
   onPresence?: (userIds: string[], count: number) => void;
   /** Agent progress (trace) for a streaming bot message. */
   onBotTrace?: (msgId: string | null, title: string | null) => void;
+  /** ViewBoard live-push: a board's underlying data changed → re-pull that board.
+   *  `board` is e.g. "plan" | "cost" | "commands" (gateway board_signal) or
+   *  "activity" (synthesized here on each new message). */
+  onBoardSignal?: (board: string) => void;
 }
 
 const BASE_DELAY = 1000;
@@ -132,6 +136,8 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
       // Broadcast frames
       if (type === "message") {
         cbsRef.current.onMessage(data as unknown as Message);
+        // A new message advances the channel's activity stream → nudge the board.
+        cbsRef.current.onBoardSignal?.("activity");
       } else if (type === "message_stream") {
         const d = data as { msg_id: string; delta: string };
         cbsRef.current.onStreamDelta(d.msg_id, d.delta ?? "");
@@ -157,6 +163,8 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
           status?: string | null;
         };
         cbsRef.current.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
+      } else if (type === "board_signal") {
+        cbsRef.current.onBoardSignal?.((data as { board?: string }).board ?? "");
       }
     };
 
