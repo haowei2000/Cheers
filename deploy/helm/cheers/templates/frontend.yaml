@@ -28,6 +28,21 @@ data:
         try_files $uri $uri/ /index.html;
       }
 
+      # The SPA shell must never be cached. Without this, the browser heuristically
+      # caches index.html (it has Last-Modified/ETag but no Cache-Control), so after
+      # a redeploy it keeps serving an old index.html that points at old, now-absent
+      # hashed chunks — the new build stays invisible until a manual hard refresh.
+      # The content-hashed assets under /assets are safe to cache and fall through to
+      # nginx defaults. NOTE: setting add_header in a location drops the inherited
+      # security headers, so they are repeated here.
+      location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+      }
+
       location /api {
         proxy_pass http://{{ $gw }};
         proxy_set_header Host $host;
