@@ -1,11 +1,18 @@
 // Sessions inspector — a ViewBoard listing every live session bound to the channel
-// (channel.sessions.read), across all bots: primary + "other", with status + mode.
-// The channel-wide view behind the composer's SessionSwitcher; the row matching the
-// composer's selected session is highlighted.
+// (channel.sessions.read), grouped by bot: primary + "other", with status + mode.
+// The row matching the composer's selected session is highlighted.
 //
-// Not session-scoped (it LISTS sessions). Read-only — create/close/set_mode live in
-// the session-control surface, not here. All ids/values render as inert text.
-import { Layers, CircleDot } from "lucide-react";
+// Lightweight control (the ViewBoard kind that "acts on" rather than authors): each
+// bot the caller can create on gets a "+ New session" button (gated by the same
+// can_create_session as the header session control; reuses createChannelBotSession).
+// All ids/values render as inert text.
+import { useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { Layers, CircleDot, Plus } from "lucide-react";
+import {
+  getSessionControls,
+  createChannelBotSession,
+} from "@/api/sessionControl";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
 
 interface SessionRow {
@@ -22,8 +29,6 @@ interface SessionsRead {
   sessions: SessionRow[];
 }
 
-// Status → dot color. Active/busy = working; idle = parked; paused = held;
-// error/revoked = trouble. Unknown falls back to a neutral dot.
 function statusColor(s: string): string {
   switch (s) {
     case "active":
@@ -49,8 +54,96 @@ function fmtTime(iso: string): string {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SessionsBody({ data, ctx }: { data: SessionsRead; ctx: ViewBoardContext }) {
+function SessionRowView({ s, selected }: { s: SessionRow; selected: string }) {
+  const isSelected = selected && s.session_id === selected;
+  const mode = typeof s.session_config?.mode === "string" ? s.session_config.mode : null;
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 text-xs ${
+        isSelected ? "bg-emerald-500/10" : "hover:bg-zinc-800/40"
+      }`}
+    >
+      <span className="font-mono text-zinc-200">{s.session_id.slice(0, 8)}</span>
+      <span
+        className={`text-[10px] px-1 py-0.5 rounded ${
+          s.is_primary ? "bg-zinc-700 text-zinc-200" : "bg-zinc-800 text-zinc-500"
+        }`}
+      >
+        {s.is_primary ? "primary" : "other"}
+      </span>
+      {mode && <span className="text-[10px] text-zinc-500">{mode}</span>}
+      <div className="flex-1" />
+      <span className="inline-flex items-center gap-1 text-zinc-400">
+        <CircleDot className={`w-3 h-3 ${statusColor(s.status)}`} />
+        {s.status}
+      </span>
+      <span className="tabular-nums text-zinc-600 w-24 text-right">{fmtTime(s.last_used_at)}</span>
+    </div>
+  );
+}
+
+function SessionsBody({
+  data,
+  ctx,
+  refetch,
+}: {
+  data: SessionsRead;
+  ctx: ViewBoardContext;
+  refetch: () => void;
+}) {
   const sessions = data.sessions ?? [];
+  const selected = ctx.selectedSessionId || "";
+
+  // Group sessions by bot (primary first within each bot — the read verb already
+  // orders by bot, then primary, then last-used).
+  const byBot = useMemo(() => {
+    const m = new Map<string, SessionRow[]>();
+    for (const s of sessions) {
+      const arr = m.get(s.bot_id) ?? [];
+      arr.push(s);
+      m.set(s.bot_id, arr);
+    }
+    return m;
+  }, [sessions]);
+  const botIds = useMemo(() => [...byBot.keys()], [byBot]);
+  const botKey = botIds.join(",");
+
+  // Which bots the caller may create a session on (same gate as the header control).
+  const [canCreate, setCanCreate] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      botIds.map(async (bid) => {
+        try {
+          const c = await getSessionControls(ctx.channelId, bid);
+          return [bid, c.can_create_session] as const;
+        } catch {
+          return [bid, false] as const;
+        }
+      })
+    ).then((pairs) => {
+      if (!cancelled) setCanCreate(Object.fromEntries(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx.channelId, botKey]);
+
+  const [busyBot, setBusyBot] = useState<string | null>(null);
+  async function createFor(botId: string) {
+    setBusyBot(botId);
+    try {
+      await createChannelBotSession(ctx.channelId, botId);
+      refetch();
+      toast.success("New session created");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusyBot(null);
+    }
+  }
+
   if (sessions.length === 0) {
     return (
       <div className="px-3 py-6 text-xs text-zinc-600 flex items-center gap-2">
@@ -59,57 +152,33 @@ function SessionsBody({ data, ctx }: { data: SessionsRead; ctx: ViewBoardContext
       </div>
     );
   }
-  const selected = ctx.selectedSessionId || "";
+
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-zinc-500 border-b border-zinc-800">
-          <th className="text-left font-normal px-3 py-1.5">Bot</th>
-          <th className="text-left font-normal px-2 py-1.5">Session</th>
-          <th className="text-left font-normal px-2 py-1.5">Mode</th>
-          <th className="text-left font-normal px-3 py-1.5">Status</th>
-          <th className="text-right font-normal px-3 py-1.5">Last used</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sessions.map((s) => {
-          const isSelected = selected && s.session_id === selected;
-          const mode = typeof s.session_config?.mode === "string" ? s.session_config.mode : null;
-          return (
-            <tr
-              key={s.session_id}
-              className={`border-b border-zinc-900 text-zinc-300 ${
-                isSelected ? "bg-emerald-500/10" : "hover:bg-zinc-800/40"
-              }`}
-            >
-              <td className="px-3 py-1.5 font-mono text-zinc-400 truncate max-w-[100px]">
-                {s.bot_id.slice(0, 8)}
-              </td>
-              <td className="px-2 py-1.5">
-                <span className="font-mono text-zinc-200">{s.session_id.slice(0, 8)}</span>
-                <span
-                  className={`ml-1.5 text-[10px] px-1 py-0.5 rounded ${
-                    s.is_primary ? "bg-zinc-700 text-zinc-200" : "bg-zinc-800 text-zinc-500"
-                  }`}
-                >
-                  {s.is_primary ? "primary" : "other"}
-                </span>
-              </td>
-              <td className="px-2 py-1.5 text-zinc-400">{mode ?? "—"}</td>
-              <td className="px-3 py-1.5">
-                <span className="inline-flex items-center gap-1">
-                  <CircleDot className={`w-3 h-3 ${statusColor(s.status)}`} />
-                  <span className="text-zinc-400">{s.status}</span>
-                </span>
-              </td>
-              <td className="px-3 py-1.5 text-right tabular-nums text-zinc-500">
-                {fmtTime(s.last_used_at)}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="py-1">
+      {botIds.map((botId) => (
+        <div key={botId} className="mb-2">
+          <div className="flex items-center gap-2 px-3 py-1 text-[11px] text-zinc-500 border-b border-zinc-800/60">
+            <span className="font-mono text-zinc-400 truncate">{botId.slice(0, 8)}</span>
+            <span className="text-zinc-600">· {byBot.get(botId)!.length} session{byBot.get(botId)!.length === 1 ? "" : "s"}</span>
+            <div className="flex-1" />
+            {canCreate[botId] && (
+              <button
+                type="button"
+                disabled={busyBot === botId}
+                onClick={() => createFor(botId)}
+                className="inline-flex items-center gap-1 rounded border border-indigo-500/40 bg-indigo-600/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
+              >
+                <Plus className="w-3 h-3" />
+                {busyBot === botId ? "…" : "New session"}
+              </button>
+            )}
+          </div>
+          {byBot.get(botId)!.map((s) => (
+            <SessionRowView key={s.session_id} s={s} selected={selected} />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -120,5 +189,5 @@ registerViewBoard<SessionsRead>({
   verb: "channel.sessions.read",
   sessionScoped: false,
   makeParams: (ctx) => ({ channel_id: ctx.channelId }),
-  render: (data, ctx) => <SessionsBody data={data} ctx={ctx} />,
+  render: (data, ctx, refetch) => <SessionsBody data={data} ctx={ctx} refetch={refetch} />,
 });
