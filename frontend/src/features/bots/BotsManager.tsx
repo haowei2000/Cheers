@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, type FormEvent } from "react";
+import { useEffect, useState, useCallback, useRef, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import {
   Bot,
@@ -12,6 +12,7 @@ import {
   Ban,
   Power,
   ShieldCheck,
+  MoreVertical,
 } from "lucide-react";
 import {
   listBots,
@@ -53,6 +54,70 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
   );
 }
 
+type MenuItem = {
+  label: string;
+  icon: typeof KeyRound;
+  onClick: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+};
+
+/** Tiny kebab (⋮) menu for a card's secondary actions; closes on outside-click/Escape. */
+function CardMenu({ items }: { items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="More actions"
+        className="rounded-lg border border-zinc-700 px-2 py-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+      >
+        <MoreVertical className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              disabled={it.disabled}
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors disabled:opacity-40 ${
+                it.danger
+                  ? "text-red-300 hover:bg-red-950/40"
+                  : "text-zinc-300 hover:bg-zinc-800"
+              }`}
+            >
+              <it.icon className="w-3.5 h-3.5" />
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BotCard({
   bot,
   channels,
@@ -78,10 +143,10 @@ function BotCard({
     try {
       if (bot.is_disabled) {
         await enableBot(bot.bot_id);
-        toast.success(`已启用 ${bot.display_name || bot.username}`);
+        toast.success(`Enabled ${bot.display_name || bot.username}`);
       } else {
         await disableBot(bot.bot_id);
-        toast.success(`已禁用 ${bot.display_name || bot.username}（连接已断开）`);
+        toast.success(`Disabled ${bot.display_name || bot.username} (connector disconnected)`);
       }
       onChanged();
     } catch (e) {
@@ -123,14 +188,14 @@ function BotCard({
         {bot.is_disabled && (
           <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-red-400">
             <Ban className="w-3 h-3" />
-            已禁用
+            Disabled
           </span>
         )}
         <span
           className={`${bot.is_disabled ? "" : "ml-auto"} inline-flex items-center gap-1 text-[11px] ${
             bot.is_online ? "text-emerald-400" : "text-zinc-500"
           }`}
-          title={bot.is_online ? "连接器已接入" : "连接器未接入"}
+          title={bot.is_online ? "Connector attached" : "Connector not attached"}
         >
           <CircleDot className="w-3 h-3" />
           {bot.is_online ? "online" : "offline"}
@@ -146,15 +211,6 @@ function BotCard({
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onIssue(bot.bot_id)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 transition-colors"
-        >
-          <KeyRound className="w-3.5 h-3.5" />
-          Issue token
-        </button>
-
         <select
           value={channelId}
           onChange={(e) => setChannelId(e.target.value)}
@@ -175,52 +231,40 @@ function BotCard({
         >
           {added ? "Added ✓" : "Add"}
         </button>
+
         {bot.can_manage && (
-          <button
-            type="button"
-            onClick={() => setPermsOpen(true)}
-            title="权限矩阵：按 ACP 操作设置 允许/拒绝/询问 及审批人"
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
-          >
-            <span className="inline-flex items-center gap-1">
+          <>
+            <button
+              type="button"
+              onClick={() => setPermsOpen(true)}
+              title="Permissions: who can initiate / see / respond to this agent's ACP events"
+              className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
+            >
               <ShieldCheck className="w-3.5 h-3.5" />
-              权限
-            </span>
-          </button>
-        )}
-        {bot.can_manage && (
-          <button
-            type="button"
-            onClick={toggleDisabled}
-            disabled={toggling}
-            title={bot.is_disabled ? "启用机器人" : "禁用机器人（断开连接器并阻止重连）"}
-            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
-              bot.is_disabled
-                ? "border-emerald-700 text-emerald-300 hover:bg-emerald-950/40"
-                : "border-red-800 text-red-300 hover:bg-red-950/40"
-            }`}
-          >
-            {bot.is_disabled ? (
-              <span className="inline-flex items-center gap-1">
-                <Power className="w-3.5 h-3.5" />
-                启用
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1">
-                <Ban className="w-3.5 h-3.5" />
-                禁用
-              </span>
-            )}
-          </button>
+              Permissions
+            </button>
+            <CardMenu
+              items={[
+                {
+                  label: "Issue token",
+                  icon: KeyRound,
+                  onClick: () => onIssue(bot.bot_id),
+                },
+                {
+                  label: bot.is_disabled ? "Enable bot" : "Disable bot",
+                  icon: bot.is_disabled ? Power : Ban,
+                  danger: !bot.is_disabled,
+                  disabled: toggling,
+                  onClick: toggleDisabled,
+                },
+              ]}
+            />
+          </>
         )}
       </div>
 
       {permsOpen && (
-        <BotPermissionsDialog
-          bot={bot}
-          channels={channels}
-          onClose={() => setPermsOpen(false)}
-        />
+        <BotPermissionsDialog bot={bot} onClose={() => setPermsOpen(false)} />
       )}
     </div>
   );
