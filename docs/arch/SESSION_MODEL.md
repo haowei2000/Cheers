@@ -48,6 +48,50 @@ sessions)` ▸ `session override (per-session)`.
   `mode_set` frame (ACP `session/set_mode`), which validates the value against `allowed_modes`.
   It must NOT travel `config_option_set` (that checks only the config *id*, not the value).
 
+## ⚠️ Breaking changes vs. prior behavior
+
+This refactor changes behavior/data in ways that are **not** backwards-compatible with
+the pre-2026-06-30 model. Ordered by impact:
+
+1. **Session scope: workspace → channel (behavioral break).** Previously one ACP session
+   per `(workspace, bot)` — keyed `cheers:workspace:{ws}:bot:{bot}` — was **shared by all
+   channels** of that workspace. Now it's per `(channel, bot)` (`cheers:channel:{ch}:bot`).
+   Consequences:
+   - **Cross-channel shared context is gone.** A bot no longer carries one conversation across
+     every channel in a workspace; each channel has its own context.
+   - **Existing workspace sessions are orphaned, not migrated.** They simply go idle; the first
+     message in each channel after deploy creates a *fresh* channel session (new agent context).
+   - Anything that assumed "one session per workspace per bot" (dashboards, external tooling,
+     manual queries) must switch to the channel grain.
+
+2. **`set_mode` / `set_config_option` are now grantable + deny-default (model/contract change).**
+   They were *excluded from the INITIATE matrix* (owner-only by construction, not in the
+   vocabulary). Now they're in `initiate_events()`, **deny-by-default but grantable**
+   (`OWNER_DEFAULT_INITIATE`). Runtime effect with **no** rule is unchanged (still owner-only),
+   so existing deployments don't silently widen — but the **contract changed**: they now appear
+   in the Grants UI, `GET /event-access.initiate_events` now lists them, and new session-scoped
+   endpoints exist. Any doc/test asserting "excluded from the matrix" is now wrong
+   (`ACP_EVENT_TAXONOMY.md` updated).
+
+3. **Binding uniqueness changed (schema, migration `0033`).** Dropped the constraint
+   `uq_cheers_session_binding_scope` (one binding per `(bot, scope)`) and replaced it with a
+   **primary-only** partial unique `uq_cheers_session_binding_primary WHERE role='primary'`.
+   Applied automatically by sqlx migrations on gateway startup; any code doing
+   `ON CONFLICT ON CONSTRAINT uq_cheers_session_binding_scope` would break (the gateway's
+   `upsert_session_binding` was updated to the partial-index conflict target).
+
+4. **Connector bridge protocol additions — requires connector rebuild.** New inbound frame
+   `mode_set` (session-targeted `session/set_mode`, value-clamped by `allowed_modes`) and a
+   `configOptions` field on `config_update.settings`. An **un-rebuilt old connector** will
+   `serde`-fold `mode_set` into its `Unknown` variant and **silently ignore it** — so delegated
+   *mode* changes are no-ops until the host connector is rebuilt (`cargo build --release` +
+   `launchctl kickstart -k`). Config-option changes ride the pre-existing `config_option_set`
+   frame and work without a rebuild.
+
+5. **Message API (additive, non-breaking).** `SendMessageRequest`/`CreateMessageParams` gained
+   an optional `session_id` (default = the channel's primary session). `GET /permissions` gained
+   `config_options`. These are additive — old clients keep working.
+
 ## Known v1 limitation
 
 A delegated session override is persisted (`cheers_sessions.metadata.session_config`) and pushed

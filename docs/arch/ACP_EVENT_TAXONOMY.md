@@ -4,7 +4,8 @@
 > 0 registry (`domain/acp_events.rs`) · 1 uniform passthrough (`acp_event` frame +
 > `acp_event_log`) · 2 single chokepoint (`domain/acp_policy.rs`) · 3 vocabulary derived
 > from the registry · 4 enforcement (prompt/cancel INITIATE, RESPOND; set_mode/set_config
-> reserved, live-SEE read-time) · 5 timeline read API + `BotActivitySection` UI · 6 verified
+> now GRANTABLE + session-scoped — see [SESSION_MODEL.md](SESSION_MODEL.md); live-SEE read-time)
+> · 5 timeline read API + `BotActivitySection` UI · 6 verified
 > (matrix renders the full vocab; the timeline shows the live stream classified by home).
 
 
@@ -115,7 +116,7 @@ agent-initiated tool-use reads (`RealizeFile`, `WorkspaceReq`).
 | **SEE · live `bot_trace`** | **per-subscriber live filter** — `handle_trace_frame` → `allowed_seers` → `broadcast_channel_to_users` (SEE `tool_call`; approval traces → `permission_request`) |
 | **SEE · live `permission_request` card** | **per-subscriber live filter** — `handle_permission_request_frame` filters the card broadcast by SEE; RESPOND still gates who may answer |
 | SEE · `output` (bot's chat reply) | **membership-level** — a conversation reply isn't hidden per-member (incoherent, and would mean filtering every token) |
-| `set_mode` / `set_config_option` | **owner-only**, via `PUT /permissions/posture` — they are *bot-global* settings, so they're **excluded from the per-channel INITIATE matrix** (no decorative rows) |
+| `set_mode` / `set_config_option` | **deny-default but GRANTABLE** (`OWNER_DEFAULT_INITIATE`). Owner sets the bot-level default via `PUT /permissions/posture` · `/config-option`; a channel member with an explicit INITIATE grant may change a *session's* mode/config via `POST /channels/:ch/bots/:bot/sessions/:sid/mode` · `/config-option` (fail-closed, value-clamped by L0). They DO appear in the INITIATE matrix now. See [SESSION_MODEL.md](SESSION_MODEL.md). ⚠️ **Changed** — previously excluded/owner-only. |
 
 Per-subscriber SEE: the caller computes the allowed-user set (`allowed_seers`: online users × channel role × bot rules; platform admins bypass; fail-open) and the fanout delivers only to those connections (`broadcast_channel_to_users`, in-process + Redis see-subject). All authorization runs through the single `acp_policy::allows(…)` chokepoint.
 
