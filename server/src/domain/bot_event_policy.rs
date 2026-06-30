@@ -38,6 +38,9 @@ pub const EV_PERMISSION_REQUEST: &str = "permission_request";
 /// thing to answer it). This is the matrix vocabulary — it can't drift from the
 /// registry because it's computed from it.
 fn events_for(cap: Capability) -> Vec<&'static str> {
+    // Bot-GLOBAL owner settings (the posture endpoint), not per-channel member
+    // actions — excluded from the INITIATE matrix so it shows no decorative rows.
+    const OWNER_ONLY_INITIATE: &[&str] = &["set_mode", "set_config_option"];
     let mut out: Vec<&'static str> = Vec::new();
     for e in crate::domain::acp_events::REGISTRY {
         let matches = match cap {
@@ -47,6 +50,9 @@ fn events_for(cap: Capability) -> Vec<&'static str> {
         };
         if matches {
             if let Some(class) = e.event_class {
+                if cap == Capability::Initiate && OWNER_ONLY_INITIATE.contains(&class) {
+                    continue;
+                }
                 if !out.contains(&class) {
                     out.push(class);
                 }

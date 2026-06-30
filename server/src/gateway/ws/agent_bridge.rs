@@ -781,7 +781,82 @@ async fn handle_trace_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
             "message": frame.get("message").and_then(Value::as_str),
         }),
     );
-    state.fanout.broadcast_channel(channel_id, wire).await;
+    // Live per-subscriber SEE (docs/arch/ACP_EVENT_TAXONOMY.md): the bot's internal
+    // activity is gated by SEE(tool_call); approval traces by SEE(permission_request).
+    // Members an owner denied SEE for don't receive the live frame.
+    let see_class = if phase == Some("approval") {
+        crate::domain::bot_event_policy::EV_PERMISSION_REQUEST
+    } else {
+        crate::domain::bot_event_policy::EV_TOOL_CALL
+    };
+    let allowed = allowed_seers(state, bot.bot_id, channel_id, see_class).await;
+    state
+        .fanout
+        .broadcast_channel_to_users(channel_id, wire, allowed)
+        .await;
+}
+
+/// Live per-subscriber SEE (docs/arch/ACP_EVENT_TAXONOMY.md): the online channel
+/// users allowed to SEE an agent event of `event_class` for `bot`. Platform admins
+/// bypass; absent rules → members allowed (the default). Fail-open on a rules error
+/// (return everyone online) so a query hiccup never *hides* the bot's activity.
+async fn allowed_seers(
+    state: &AppState,
+    bot_id: Uuid,
+    channel_id: Uuid,
+    event_class: &str,
+) -> Vec<Uuid> {
+    let online = state.fanout.online_users(channel_id);
+    if online.is_empty() {
+        return Vec::new();
+    }
+    let rules =
+        match crate::domain::bot_event_policy::load_rules(&state.db, &bot_id.to_string()).await {
+            Ok(r) => r,
+            Err(_) => return online,
+        };
+    let mut chan_role: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut platform_admin: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(rows) = sqlx::query(
+        "SELECT cm.member_id, cm.role AS crole, u.role AS prole
+         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
+         WHERE cm.channel_id = $1 AND cm.member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .fetch_all(&state.db)
+    .await
+    {
+        for r in rows {
+            let mid: String = r.try_get("member_id").unwrap_or_default();
+            if let Ok(Some(c)) = r.try_get::<Option<String>, _>("crole") {
+                chan_role.insert(mid.clone(), c);
+            }
+            if matches!(
+                r.try_get::<Option<String>, _>("prole").ok().flatten().as_deref(),
+                Some("system_admin") | Some("admin")
+            ) {
+                platform_admin.insert(mid);
+            }
+        }
+    }
+    online
+        .into_iter()
+        .filter(|uid| {
+            let id = uid.to_string();
+            if platform_admin.contains(&id) {
+                return true;
+            }
+            let role = chan_role.get(&id).map(String::as_str).unwrap_or("member");
+            crate::domain::bot_event_policy::resolve_access(
+                &rules,
+                &channel_id.to_string(),
+                &id,
+                role,
+                event_class,
+                crate::domain::bot_event_policy::Capability::See,
+            )
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1012,7 +1087,19 @@ async fn handle_permission_request_frame(
             "content_data": content_data,
         }),
     );
-    state.fanout.broadcast_channel(channel_id, wire).await;
+    // Live per-subscriber SEE: only members allowed to SEE permission_request get
+    // the card frame (RESPOND still separately gates who may *answer* it).
+    let allowed = allowed_seers(
+        state,
+        bot.bot_id,
+        channel_id,
+        crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
+    )
+    .await;
+    state
+        .fanout
+        .broadcast_channel_to_users(channel_id, wire, allowed)
+        .await;
 
     Ok(msg_id)
 }

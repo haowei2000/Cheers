@@ -104,19 +104,20 @@ agent-initiated tool-use reads (`RealizeFile`, `WorkspaceReq`).
     approvers, generalized).
 - **Agent:** owns *when* it asks (its mode) and *what* it emits.
 
-## Enforcement status (Phase 4)
+## Enforcement status (complete)
 
 | Capability · event | Enforced where |
 |---|---|
 | INITIATE · `prompt` | `create_message` (bot trigger) |
 | INITIATE · `cancel` | `cancel_message` endpoint |
-| SEE · `tool_call` / others (persisted) | trace read endpoints (read-time filter) |
 | RESPOND · `permission_request` | `resolve_permission` (owner ∪ approvers ∪ matrix) |
-| INITIATE · `set_mode` | **reserved** — posture is a *bot-wide, owner/admin* setting (`PUT /permissions/posture`); the per-channel matrix row has no runtime action to gate yet |
-| INITIATE · `set_config_option` | **reserved** — Cheers exposes no runtime model/effort-change action yet |
-| SEE · live frames (`output`, live `permission_request` card) | **read-time only** — live broadcast is channel-wide; per-subscriber live filtering deliberately deferred (low value, invasive) |
+| SEE · `tool_call`/`plan`/`thought` (persisted) | trace read endpoints (read-time filter) |
+| **SEE · live `bot_trace`** | **per-subscriber live filter** — `handle_trace_frame` → `allowed_seers` → `broadcast_channel_to_users` (SEE `tool_call`; approval traces → `permission_request`) |
+| **SEE · live `permission_request` card** | **per-subscriber live filter** — `handle_permission_request_frame` filters the card broadcast by SEE; RESPOND still gates who may answer |
+| SEE · `output` (bot's chat reply) | **membership-level** — a conversation reply isn't hidden per-member (incoherent, and would mean filtering every token) |
+| `set_mode` / `set_config_option` | **owner-only**, via `PUT /permissions/posture` — they are *bot-global* settings, so they're **excluded from the per-channel INITIATE matrix** (no decorative rows) |
 
-All gates run through the single `acp_policy::allows(…, acp_event_name, capability)` chokepoint.
+Per-subscriber SEE: the caller computes the allowed-user set (`allowed_seers`: online users × channel role × bot rules; platform admins bypass; fail-open) and the fanout delivers only to those connections (`broadcast_channel_to_users`, in-process + Redis see-subject). All authorization runs through the single `acp_policy::allows(…)` chokepoint.
 
 > Net: the permission system reduces to **(a) the connector's event-type allow-list** +
 > **(b) Cheers's two (user × event) matrices (initiate / see+respond)**. `request_permission`
