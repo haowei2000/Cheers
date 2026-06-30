@@ -1,19 +1,17 @@
-// ① Plan board panel — renders the agent's live plan (channel.plan.read) as a
-// structured, status-grouped board: in_progress / pending / completed columns
-// plus a completed/total progress bar per bot. Registered into the workbench like
-// FilePanel.
+// ① Plan board — a session-scoped ViewBoard rendering the agent's live plan
+// (channel.plan.read) as a status-grouped board (in_progress / pending / completed)
+// with a completed/total progress bar per (bot, session). The ViewBoard wrapper owns
+// the toolbar (title + session-scope badge + refresh) and fetch; this file only
+// declares the verb + renders the data.
 //
-// SECURITY: every string here (entry content, bot/session ids) is agent-authored
-// and therefore UNTRUSTED — it is rendered as inert text only, never via
-// dangerouslySetInnerHTML.
+// SECURITY: every string here (entry content, bot/session ids) is agent-authored and
+// UNTRUSTED — rendered as inert text only, never via dangerouslySetInnerHTML.
 //
-// v1 is READ-ONLY: no reorder, no @bot-dispatch.
-// TODO(phase-A follow-up): allow reordering plan entries and dispatching a
-// re-plan / step to the owning bot (would need a write verb + drag handles here).
+// v1 is READ-ONLY. TODO(phase-A follow-up): reorder entries + dispatch a re-plan/step
+// to the owning bot (needs a write verb + drag handles here).
 import { useMemo } from "react";
-import { CircleDot, Circle, CheckCircle2, ClipboardList, RefreshCw } from "lucide-react";
-import { registerPanel, type PanelContext } from "../panelRegistry";
-import { useResourceQuery } from "../useResourceQuery";
+import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
+import { registerViewBoard, channelSessionParams } from "../viewBoard";
 
 interface PlanEntry {
   content: string;
@@ -35,12 +33,10 @@ interface PlanReadResponse {
   plans: BotPlan[];
 }
 
-// Status buckets in the order we surface them: active work first, then queued,
-// then done. Anything with an unknown/missing status falls into "pending".
-const GROUPS: { key: string; label: string; statuses: string[] }[] = [
-  { key: "in_progress", label: "In progress", statuses: ["in_progress"] },
-  { key: "pending", label: "Pending", statuses: ["pending"] },
-  { key: "completed", label: "Completed", statuses: ["completed"] },
+const GROUPS: { key: string; label: string }[] = [
+  { key: "in_progress", label: "In progress" },
+  { key: "pending", label: "Pending" },
+  { key: "completed", label: "Completed" },
 ];
 
 function groupFor(status?: string | null): string {
@@ -74,7 +70,6 @@ function PlanCard({ plan }: { plan: BotPlan }) {
 
   return (
     <div className="border border-zinc-800 rounded-md mb-3 overflow-hidden">
-      {/* header: bot + progress */}
       <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
@@ -87,7 +82,6 @@ function PlanCard({ plan }: { plan: BotPlan }) {
             {completed}/{total}
           </span>
         </div>
-        {/* progress bar */}
         <div className="mt-1.5 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
           <div
             className="h-full rounded-full bg-emerald-500 transition-[width]"
@@ -96,7 +90,6 @@ function PlanCard({ plan }: { plan: BotPlan }) {
         </div>
       </div>
 
-      {/* status-grouped entries */}
       <div className="p-2">
         {GROUPS.map((g) => {
           const items = grouped[g.key];
@@ -137,55 +130,34 @@ function PlanCard({ plan }: { plan: BotPlan }) {
   );
 }
 
-function PlanBoardPanel({ ctx }: { ctx: PanelContext }) {
-  const { data, loading, error, refetch } = useResourceQuery<PlanReadResponse>(
-    ctx.sendResourceReq,
-    "channel.plan.read",
-    { channel_id: ctx.channelId },
-    Boolean(ctx.channelId)
-  );
-
-  const plans = data?.plans ?? [];
-
+function PlanBody({ data }: { data: PlanReadResponse }) {
+  const plans = data.plans ?? [];
+  if (plans.length === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-2 text-zinc-600">
+        <ClipboardList className="w-5 h-5" />
+        <span className="text-xs">No plan yet</span>
+        <span className="text-[11px] text-zinc-700">
+          A plan appears here when an agent shares one.
+        </span>
+      </div>
+    );
+  }
   return (
-    <div className="flex h-full flex-col text-sm">
-      {/* toolbar */}
-      <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
-        <span className="text-xs text-zinc-400">Plan</span>
-        {loading && <span className="text-[11px] text-zinc-600">loading…</span>}
-        <div className="flex-1" />
-        <button onClick={() => refetch()} title="Refresh" disabled={loading}>
-          <RefreshCw
-            className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${
-              loading ? "animate-spin" : ""
-            }`}
-          />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-auto p-3">
-        {error ? (
-          <div className="text-xs text-red-400">{error}</div>
-        ) : plans.length === 0 && !loading ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-zinc-600">
-            <ClipboardList className="w-5 h-5" />
-            <span className="text-xs">No plan yet</span>
-            <span className="text-[11px] text-zinc-700">
-              A plan appears here when an agent shares one.
-            </span>
-          </div>
-        ) : (
-          plans.map((p) => <PlanCard key={`${p.bot_id}:${p.session_id}`} plan={p} />)
-        )}
-      </div>
+    <div className="p-3">
+      {plans.map((p) => (
+        <PlanCard key={`${p.bot_id}:${p.session_id}`} plan={p} />
+      ))}
     </div>
   );
 }
 
-registerPanel({
+registerViewBoard<PlanReadResponse>({
   id: "plan",
   title: "Plan",
-  render: (ctx) => <PlanBoardPanel ctx={ctx} />,
+  icon: ClipboardList,
+  verb: "channel.plan.read",
+  sessionScoped: true,
+  makeParams: channelSessionParams,
+  render: (data) => <PlanBody data={data} />,
 });
-
-export default PlanBoardPanel;

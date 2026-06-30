@@ -966,6 +966,22 @@ async fn phasea_usage_read_sums_tokens_as_i64(db: PgPool) {
     assert_eq!(b["cost_usd"].as_f64(), Some(1.5));
     let cw = b["context_window"].as_i64().expect("context_window 非空");
     assert!(cw == 200_000 || cw == 190_000, "context_window = 最新一行: {cw}");
+
+    // Session scope: a 2nd session's usage must NOT bleed into a per-session read.
+    usage_store::record(&db, Some(&cid), &bid, Some("s2"), &Usage {
+        input_tokens: Some(1000), output_tokens: None, total_tokens: Some(1000),
+        context_window: Some(50_000), cost_usd: Some(9.0),
+    }).await;
+    let s1 = dispatch(&db, Principal::bot(bot),
+        &req("channel.usage.read", serde_json::json!({ "channel_id": cid, "session_id": "s1" }))).await;
+    let b1 = &s1["data"]["bots"].as_array().unwrap()[0];
+    assert_eq!(b1["input_tokens"].as_i64(), Some(300), "session=s1 只累计 s1 的两条快照");
+    assert_eq!(b1["cost_usd"].as_f64(), Some(1.5));
+    let s2 = dispatch(&db, Principal::bot(bot),
+        &req("channel.usage.read", serde_json::json!({ "channel_id": cid, "session_id": "s2" }))).await;
+    let b2 = &s2["data"]["bots"].as_array().unwrap()[0];
+    assert_eq!(b2["input_tokens"].as_i64(), Some(1000));
+    assert_eq!(b2["cost_usd"].as_f64(), Some(9.0));
 }
 
 #[sqlx::test]
@@ -1013,6 +1029,19 @@ async fn phasea_plan_read_returns_progress_and_upserts(db: PgPool) {
     assert_eq!(p["total"].as_i64(), Some(3));
     assert_eq!(p["completed"].as_i64(), Some(2));
     assert_eq!(p["entries"].as_array().unwrap().len(), 3);
+
+    // Session scope (ViewBoard follows the selected session): a 2nd session, then filter.
+    plan_store::record(&db, Some(&cid), &bid, Some("sess-2"), &Plan {
+        entries: vec![PlanEntry { content: "other".into(), priority: None, status: Some("pending".into()) }],
+    }).await;
+    let all = dispatch(&db, Principal::bot(bot),
+        &req("channel.plan.read", serde_json::json!({ "channel_id": cid }))).await;
+    assert_eq!(all["data"]["plans"].as_array().unwrap().len(), 2, "无 session_id 返回两会话");
+    let one = dispatch(&db, Principal::bot(bot),
+        &req("channel.plan.read", serde_json::json!({ "channel_id": cid, "session_id": "sess-2" }))).await;
+    let scoped = one["data"]["plans"].as_array().unwrap();
+    assert_eq!(scoped.len(), 1, "session_id=sess-2 只返回该会话");
+    assert_eq!(scoped[0]["session_id"].as_str(), Some("sess-2"));
 }
 
 #[sqlx::test]
