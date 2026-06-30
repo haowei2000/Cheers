@@ -690,6 +690,16 @@ impl RuntimeAdapter for AcpAdapter {
         .await
     }
 
+    async fn set_mode(&mut self, session_id: &str, mode: &str) -> anyhow::Result<()> {
+        self.request(
+            "session/set_mode",
+            json!({ "sessionId": session_id, "modeId": mode }),
+            self.request_timeout_ms(),
+        )
+        .await
+        .map(|_| ())
+    }
+
     async fn apply_settings(
         &mut self,
         settings: &ConnectorControlSettings,

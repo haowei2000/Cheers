@@ -753,6 +753,23 @@ pub enum ControlInbound {
         #[serde(default)]
         updated_at: Option<String>,
     },
+    // Session-targeted mode change (ACP session/set_mode). Distinct from the
+    // bot-wide config_update.agentNativePermissionMode AND from config_option_set:
+    // it value-gates on the L0 allowed_modes envelope (config_option_set checks
+    // only the config id), so a delegated mode change can't escape the clamp.
+    #[serde(rename = "mode_set")]
+    ModeSet {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        provider_session_key: Option<String>,
+        mode: String,
+        #[serde(default)]
+        updated_at: Option<String>,
+    },
     #[serde(rename = "permission_resolution")]
     PermissionResolution {
         #[serde(default = "default_bridge_protocol_version")]

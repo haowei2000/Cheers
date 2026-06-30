@@ -234,6 +234,92 @@ impl RuntimeContext {
         }
     }
 
+    pub(super) async fn handle_mode_set(
+        &self,
+        request_id: String,
+        session_id: Option<String>,
+        provider_session_key: Option<String>,
+        mode: String,
+    ) -> anyhow::Result<()> {
+        // L0 value-clamp: unlike config_option_set (which checks only the config
+        // id), mode is validated against the allowed_modes envelope — so a
+        // delegated mode change can never select a value outside the host's L0.
+        if !self.config.policy.permission.may_set_mode(&mode) {
+            self.io
+                .send_control(ControlOutbound::ConfigOptionStatus {
+                    v: BRIDGE_PROTOCOL_VERSION,
+                    request_id,
+                    ok: false,
+                    session_id,
+                    provider_session_key,
+                    config_id: Some("mode".to_string()),
+                    value: Some(mode),
+                    options: None,
+                    error: Some("mode is not in the L0 allowed_modes envelope".to_string()),
+                    code: Some("LOCAL_POLICY_DENIED".to_string()),
+                })
+                .await?;
+            return Ok(());
+        }
+        let acp_session_id = match (&session_id, &provider_session_key) {
+            (Some(id), _) => Some(id.clone()),
+            (_, Some(key)) => self.state.lock().await.get(&self.account_id, key),
+            _ => None,
+        };
+        let Some(acp_session_id) = acp_session_id else {
+            self.io
+                .send_control(ControlOutbound::ConfigOptionStatus {
+                    v: BRIDGE_PROTOCOL_VERSION,
+                    request_id,
+                    ok: false,
+                    session_id,
+                    provider_session_key,
+                    config_id: Some("mode".to_string()),
+                    value: Some(mode),
+                    options: None,
+                    error: Some("runtime session is not active".to_string()),
+                    code: Some("SESSION_NOT_FOUND".to_string()),
+                })
+                .await?;
+            return Ok(());
+        };
+        let result = self.adapter.lock().await.set_mode(&acp_session_id, &mode).await;
+        match result {
+            Ok(()) => {
+                self.io
+                    .send_control(ControlOutbound::ConfigOptionStatus {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        request_id,
+                        ok: true,
+                        session_id,
+                        provider_session_key,
+                        config_id: Some("mode".to_string()),
+                        value: Some(mode),
+                        options: None,
+                        error: None,
+                        code: None,
+                    })
+                    .await
+            }
+            Err(err) => {
+                self.io
+                    .send_control(ControlOutbound::ConfigOptionStatus {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        request_id,
+                        ok: false,
+                        session_id,
+                        provider_session_key,
+                        config_id: Some("mode".to_string()),
+                        value: Some(mode),
+                        options: None,
+                        error: Some(err.to_string()),
+                        code: Some("MODE_SET_FAILED".to_string()),
+                    })
+                    .await
+            }
+        }
+    }
+
     fn config_option_allowed(&self, config_id: &str) -> bool {
         self.config
             .policy

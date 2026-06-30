@@ -308,6 +308,16 @@ impl RuntimeContext {
                 )
                 .await?;
             }
+            ControlInbound::ModeSet {
+                request_id,
+                session_id,
+                provider_session_key,
+                mode,
+                ..
+            } => {
+                self.handle_mode_set(request_id, session_id, provider_session_key, mode)
+                    .await?;
+            }
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
             }

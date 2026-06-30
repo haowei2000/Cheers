@@ -94,6 +94,8 @@ pub trait RuntimeAdapter: Send {
         config_id: &str,
         value: &str,
     ) -> anyhow::Result<Value>;
+    /// Set the session mode via ACP `session/set_mode` (session-targeted).
+    async fn set_mode(&mut self, session_id: &str, mode: &str) -> anyhow::Result<()>;
     async fn apply_settings(
         &mut self,
         settings: &ConnectorControlSettings,

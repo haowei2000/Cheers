@@ -196,6 +196,18 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/bots/:bot_id/sessions",
             get(api::session_control::list_sessions).post(api::session_control::create_session),
         )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/session-controls",
+            get(api::session_control::session_controls),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/sessions/:session_id/mode",
+            post(api::session_control::set_session_mode),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/sessions/:session_id/config-option",
+            post(api::session_control::set_session_config_option),
+        )
         // ── ACP per-operation approval (docs/arch/ACP_APPROVAL_FLOW.md) ──────
         .route(
             "/api/v1/channels/:channel_id/permissions/:request_id/resolve",
