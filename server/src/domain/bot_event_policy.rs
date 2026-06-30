@@ -39,9 +39,6 @@ pub const EV_PERMISSION_REQUEST: &str = "permission_request";
 /// thing to answer it). This is the matrix vocabulary — it can't drift from the
 /// registry because it's computed from it.
 fn events_for(cap: Capability) -> Vec<&'static str> {
-    // Bot-GLOBAL owner settings (the posture endpoint), not per-channel member
-    // actions — excluded from the INITIATE matrix so it shows no decorative rows.
-    const OWNER_ONLY_INITIATE: &[&str] = &["set_mode", "set_config_option"];
     let mut out: Vec<&'static str> = Vec::new();
     for e in crate::domain::acp_events::REGISTRY {
         let matches = match cap {
@@ -51,9 +48,6 @@ fn events_for(cap: Capability) -> Vec<&'static str> {
         };
         if matches {
             if let Some(class) = e.event_class {
-                if cap == Capability::Initiate && OWNER_ONLY_INITIATE.contains(&class) {
-                    continue;
-                }
                 if !out.contains(&class) {
                     out.push(class);
                 }
@@ -106,6 +100,23 @@ impl Capability {
 /// SEE; RESPOND is denied by default (only the bot owner or an explicit grant).
 pub fn default_access(capability: Capability) -> bool {
     !matches!(capability, Capability::Respond)
+}
+
+/// INITIATE event-classes that DEFAULT to owner-only: a plain member may NOT
+/// initiate these unless an explicit allow rule grants it. They change the
+/// agent's session config (mode / config options), so even though INITIATE is
+/// otherwise member-allowed, these must be deny-by-default. They ARE grantable
+/// per-subject (unlike a hard owner-only), which is what enables delegation.
+pub const OWNER_DEFAULT_INITIATE: &[&str] = &["set_mode", "set_config_option"];
+
+/// The membership default for a specific `(event_class, capability)` when no rule
+/// matches — like [`default_access`] but deny-by-default for the owner-default
+/// INITIATE classes above.
+pub fn default_access_for(event_class: &str, capability: Capability) -> bool {
+    if capability == Capability::Initiate && OWNER_DEFAULT_INITIATE.contains(&event_class) {
+        return false;
+    }
+    default_access(capability)
 }
 
 /// One stored access rule.
@@ -171,7 +182,7 @@ pub fn resolve_access(
         .or_else(|| group_at(BOT_WIDE))
         .or_else(|| one(BOT_WIDE, SUBJECT_ROLE, role))
         .or_else(|| one(BOT_WIDE, SUBJECT_ROLE, ANY_SUBJECT))
-        .unwrap_or_else(|| default_access(capability))
+        .unwrap_or_else(|| default_access_for(event_class, capability))
 }
 
 // ── Dynamic group membership (friends | channel:<id> | workspace:<id>) ──────
@@ -504,6 +515,37 @@ mod tests {
         ];
         let both = vec!["friends".to_string(), "workspace:w1".to_string()];
         assert!(!resolve_access(&rules, "c1", "u1", "member", &both, EV_TOOL_CALL, Capability::See));
+    }
+
+    #[test]
+    fn owner_default_initiate_denies_members_but_is_grantable() {
+        // set_mode / set_config_option default to OWNER-only even for INITIATE:
+        // a plain member with no rule is denied.
+        assert!(!allows(&[], "c1", "u1", "member", "set_mode", Capability::Initiate));
+        assert!(!allows(&[], "c1", "u1", "member", "set_config_option", Capability::Initiate));
+        // ...but an explicit allow rule widens it (delegation).
+        let granted = vec![rule("c1", SUBJECT_USER, "u1", "set_mode", Capability::Initiate, true)];
+        assert!(allows(&granted, "c1", "u1", "member", "set_mode", Capability::Initiate));
+        assert!(!allows(&granted, "c1", "u2", "member", "set_mode", Capability::Initiate));
+        // a role grant works too (e.g. admins may change mode).
+        let by_role = vec![rule("c1", SUBJECT_ROLE, "admin", "set_config_option", Capability::Initiate, true)];
+        assert!(allows(&by_role, "c1", "u9", "admin", "set_config_option", Capability::Initiate));
+        assert!(!allows(&by_role, "c1", "u1", "member", "set_config_option", Capability::Initiate));
+    }
+
+    #[test]
+    fn ordinary_initiate_classes_stay_member_default() {
+        // prompt/cancel remain member-allowed by default (unchanged).
+        assert!(allows(&[], "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
+        assert!(allows(&[], "c1", "u1", "member", "cancel", Capability::Initiate));
+    }
+
+    #[test]
+    fn owner_default_classes_are_grantable_vocabulary() {
+        // They must appear in the INITIATE vocabulary so the owner UI can grant them.
+        let ev = initiate_events();
+        assert!(ev.contains(&"set_mode"));
+        assert!(ev.contains(&"set_config_option"));
     }
 
     #[test]
