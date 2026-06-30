@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings } from "lucide-react";
+import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard } from "lucide-react";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers, markChannelRead } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
@@ -13,6 +13,7 @@ import { SessionSwitcher } from "./SessionSwitcher";
 import { ComposerBotSettings } from "./ComposerBotSettings";
 import { useChatRealtime } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
+import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { ChannelFilesDialog } from "./ChannelFilesDialog";
 import { ChannelSettingsDialog } from "./ChannelSettingsDialog";
@@ -296,6 +297,7 @@ export function ChannelView({ channel }: Props) {
     void loadCommands();
   }, [loadCommands]);
   const [wbOpen, setWbOpen] = useState(false);
+  const [vbOpen, setVbOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
@@ -432,11 +434,20 @@ export function ChannelView({ channel }: Props) {
           <FolderTree className="w-4 h-4" />
         </button>
         <button
+          onClick={() => setVbOpen((v) => !v)}
+          title="ViewBoard — live plan / cost / activity (instrument plane)"
+          className={`flex items-center justify-center w-7 h-7 rounded hover:bg-zinc-800 ${
+            vbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
+          }`}
+        >
+          <LayoutDashboard className="w-4 h-4" />
+        </button>
+        <button
           onClick={() => {
             setWbTarget(undefined);
             setWbOpen(true);
           }}
-          title="Workbench"
+          title="Workbench — file workspace"
           className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
         >
           <PanelRight className="w-4 h-4" />
@@ -502,7 +513,15 @@ export function ChannelView({ channel }: Props) {
         channelId={channel.channel_id}
         sendResourceReq={sendResourceReq}
         openFilePath={wbTarget}
+      />
+
+      <ViewBoardDrawer
+        open={vbOpen}
+        onClose={() => setVbOpen(false)}
+        channelId={channel.channel_id}
+        sendResourceReq={sendResourceReq}
         selectedSessionId={selectedSessionId}
+        shiftedForWorkbench={wbOpen}
       />
       {filesOpen && (
         <ChannelFilesDialog

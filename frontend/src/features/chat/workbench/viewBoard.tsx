@@ -1,19 +1,26 @@
-// ViewBoard — the second kind of workbench panel.
+// ViewBoard — the channel's instrument / observability plane, SEPARATE from the
+// Workbench. The Workbench is a *file-based workspace* (context_files, fs.*, editable,
+// rendered via lenses/plugins). A ViewBoard is NOT file-based: it renders a live,
+// read-only *projection* of agent activity / session state from a resource verb
+// (*.read), keyed by channel + optionally the selected session. Truth lives in the
+// event/session/usage stores, not in a file. Maps to the two-class data model:
+// Class 2 (agent-edited files) → Workbench; Class 1 (self-maintained state) → ViewBoard.
 //
-// The File panel is *file-backed*: it browses `context_files` and renders them via
-// renderer plugins/lenses, and the user edits them. A ViewBoard is a *data-view*:
-// it reads server-derived, read-only data from a resource verb (e.g. channel.plan.read,
-// channel.usage.read) and renders it. Plan and Cost are ViewBoards.
-//
-// This helper owns the shared chrome every ViewBoard needs — the fetch
-// (useResourceQuery), the toolbar (title + session-scope badge + refresh), and the
-// loading/error states — so each board only declares its verb + params + a render of
-// the data. ViewBoards register through the normal panelRegistry (kind: "viewboard"),
-// which also makes the drawer render them regardless of an active environment.
+// ViewBoards have their OWN registry and their OWN host (ViewBoardDrawer) — they are
+// not workbench panels.
 import { type ReactNode, useCallback } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
-import { registerPanel, type PanelContext, type PanelDef } from "./panelRegistry";
+import type { SendResourceReq } from "./fsClient";
 import { useResourceQuery } from "./useResourceQuery";
+
+/** The minimal context a ViewBoard needs — channel + resource client + the selected
+ *  session. No files / pins / plugins (that's the Workbench's PanelContext). */
+export interface ViewBoardContext {
+  channelId: string;
+  sendResourceReq: SendResourceReq;
+  /** The composer's selected session ("" / null = Auto / All sessions). */
+  selectedSessionId?: string | null;
+}
 
 export interface ViewBoardDef<T> {
   id: string;
@@ -22,23 +29,38 @@ export interface ViewBoardDef<T> {
   /** The resource verb to read (e.g. "channel.plan.read"). */
   verb: string;
   /** Build the verb params from ctx. Session-scoped boards add session_id here. */
-  makeParams: (ctx: PanelContext) => Record<string, unknown>;
-  /** When true, show the channel's selected-session scope in the toolbar. The
-   *  actual filtering is done by `makeParams` (so this is purely the UI label). */
+  makeParams: (ctx: ViewBoardContext) => Record<string, unknown>;
+  /** When true, the toolbar shows the channel's selected-session scope. */
   sessionScoped?: boolean;
-  /** Render the loaded data. Owns both the populated and the empty presentation
-   *  (data is non-null once the first response arrives; [] is "loaded but empty"). */
-  render: (data: T, ctx: PanelContext) => ReactNode;
+  /** Render the loaded data (owns both the populated and the empty presentation). */
+  render: (data: T, ctx: ViewBoardContext) => ReactNode;
 }
 
-function sessionLabel(ctx: PanelContext): string {
-  // "" / null = Auto/all (the composer's SessionSwitcher default).
+/** A registered, renderable board (the result of defineViewBoard). */
+export interface ViewBoardPanel {
+  id: string;
+  title: string;
+  icon?: LucideIcon;
+  render: (ctx: ViewBoardContext) => ReactNode;
+}
+
+const registry: ViewBoardPanel[] = [];
+
+export function registerViewBoard<T>(def: ViewBoardDef<T>): void {
+  if (!registry.some((b) => b.id === def.id)) registry.push(defineViewBoard(def));
+}
+
+export function getViewBoards(): ViewBoardPanel[] {
+  return registry;
+}
+
+function sessionLabel(ctx: ViewBoardContext): string {
   const sid = ctx.selectedSessionId;
   return sid ? `Session ${sid.slice(0, 8)}` : "All sessions";
 }
 
-export function defineViewBoard<T>(def: ViewBoardDef<T>): PanelDef {
-  function ViewBoard({ ctx }: { ctx: PanelContext }) {
+export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
+  function Board({ ctx }: { ctx: ViewBoardContext }) {
     const { data, loading, error, refetch } = useResourceQuery<T>(
       ctx.sendResourceReq,
       def.verb,
@@ -71,8 +93,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): PanelDef {
           {error ? (
             <div className="px-3 py-3 text-xs text-red-400">{error}</div>
           ) : data == null ? (
-            // First load (no data yet) — show a neutral hint, not the board's
-            // "empty" state (which means "loaded and there's nothing").
+            // First load (no data yet) — neutral hint, not the board's "empty" state.
             <div className="px-3 py-6 text-xs text-zinc-600">Loading…</div>
           ) : (
             def.render(data, ctx)
@@ -85,19 +106,13 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): PanelDef {
   return {
     id: def.id,
     title: def.title,
-    kind: "viewboard",
-    render: (ctx) => <ViewBoard ctx={ctx} />,
+    icon: def.icon,
+    render: (ctx) => <Board ctx={ctx} />,
   };
 }
 
-/** Register a ViewBoard as a workbench panel (sugar over registerPanel). */
-export function registerViewBoard<T>(def: ViewBoardDef<T>): void {
-  registerPanel(defineViewBoard(def));
-}
-
-/** Standard params builder for a session-scoped, channel-level board:
- *  `{ channel_id, session_id? }` — session_id only when a session is selected. */
-export function channelSessionParams(ctx: PanelContext): Record<string, unknown> {
+/** Standard params for a session-scoped board: `{ channel_id, session_id? }`. */
+export function channelSessionParams(ctx: ViewBoardContext): Record<string, unknown> {
   return {
     channel_id: ctx.channelId,
     ...(ctx.selectedSessionId ? { session_id: ctx.selectedSessionId } : {}),

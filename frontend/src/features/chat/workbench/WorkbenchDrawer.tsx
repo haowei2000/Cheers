@@ -10,8 +10,6 @@ import { listPlugins, type PluginMeta } from "./sandbox/api";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
 import "./panels/FilePanel";
-import "./panels/PlanBoardPanel";
-import "./panels/CostPanel";
 import "./environments";
 
 interface Props {
@@ -21,8 +19,6 @@ interface Props {
   sendResourceReq: SendResourceReq;
   /** Deep-link: open the File panel focused on this path (e.g. a clicked Desk ref). */
   openFilePath?: string;
-  /** The composer's selected session ("" = Auto/all); passed to session-scoped ViewBoards. */
-  selectedSessionId?: string | null;
 }
 
 interface WbConfig {
@@ -52,7 +48,7 @@ const WB_DOC =
 // plus the always-on File panel. Installing global templates / plugins lives in
 // Settings → Workbench extensions (admin); the drawer only CONSUMES them, and offers
 // a no-persistence temporary upload to anyone.
-export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath, selectedSessionId }: Props) {
+export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -215,9 +211,8 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       views,
       toggleView,
       openTarget: openFilePath ?? null,
-      selectedSessionId: selectedSessionId ?? null,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath, selectedSessionId]
+    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath]
   );
 
   // Deep-link: when opened with a target Desk path, focus the always-on File panel.
@@ -255,7 +250,8 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
 
   return (
     <>
-      {open && <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden />}
+      {/* Non-modal docked panel below the channel header (top-12), so the header
+          toggles stay clickable and the ViewBoard can be open at the same time. */}
       <aside
         onDragOver={(e) => {
           e.preventDefault();
@@ -263,7 +259,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
         }}
         onDragLeave={() => setBusy(false)}
         onDrop={onDrop}
-        className={`fixed top-0 right-0 h-full w-[560px] max-w-[94vw] bg-zinc-900 border-l z-50 flex flex-col transition-transform duration-200 ${
+        className={`fixed top-12 right-0 h-[calc(100vh-3rem)] w-[560px] max-w-[94vw] bg-zinc-900 border-l z-40 flex flex-col transition-transform duration-200 ${
           busy ? "border-amber-500/60" : "border-zinc-800"
         } ${open ? "translate-x-0" : "translate-x-full"}`}
       >
@@ -358,7 +354,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
         </div>
 
         <div className="flex-1 min-h-0 overflow-hidden">
-          {nothingInstalled && selectedId === null && activePanel?.kind !== "viewboard" ? (
+          {nothingInstalled && selectedId === null ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-500 text-xs p-6 text-center">
               <Package className="w-8 h-8 text-zinc-700" />
               <div>
