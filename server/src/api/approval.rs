@@ -66,15 +66,19 @@ async fn filter_traces_by_see(
     let role = channel_role(state, channel_id, uid).await;
     let uid_s = uid.to_string();
     let chan_s = channel_id.to_string();
-    // Load each referenced bot's rules once.
+    // Load each referenced bot's rules + the requester's group memberships once.
     let mut rules_by_bot: HashMap<String, Vec<bot_event_policy::Rule>> = HashMap::new();
+    let mut groups_by_bot: HashMap<String, Vec<String>> = HashMap::new();
     for ev in &events {
         if let Some(bid) = ev.get("bot_id").and_then(Value::as_str) {
             if !rules_by_bot.contains_key(bid) {
                 let rules = bot_event_policy::load_rules(&state.db, bid)
                     .await
                     .unwrap_or_default();
+                let groups =
+                    bot_event_policy::matched_groups(&state.db, bid, &uid_s, &rules).await;
                 rules_by_bot.insert(bid.to_string(), rules);
+                groups_by_bot.insert(bid.to_string(), groups);
             }
         }
     }
@@ -87,11 +91,14 @@ async fn filter_traces_by_see(
             let Some(rules) = rules_by_bot.get(bid) else {
                 return true;
             };
+            let groups = groups_by_bot.get(bid).map(Vec::as_slice).unwrap_or(&[]);
             let class = match ev.get("kind").and_then(Value::as_str) {
                 Some("approval") => bot_event_policy::EV_PERMISSION_REQUEST,
                 _ => bot_event_policy::EV_TOOL_CALL,
             };
-            bot_event_policy::resolve_access(rules, &chan_s, &uid_s, &role, class, Capability::See)
+            bot_event_policy::resolve_access(
+                rules, &chan_s, &uid_s, &role, groups, class, Capability::See,
+            )
         })
         .collect()
 }

@@ -839,24 +839,31 @@ async fn allowed_seers(
             }
         }
     }
-    online
-        .into_iter()
-        .filter(|uid| {
-            let id = uid.to_string();
-            if platform_admin.contains(&id) {
-                return true;
-            }
-            let role = chan_role.get(&id).map(String::as_str).unwrap_or("member");
-            crate::domain::bot_event_policy::resolve_access(
-                &rules,
-                &channel_id.to_string(),
-                &id,
-                role,
-                event_class,
-                crate::domain::bot_event_policy::Capability::See,
-            )
-        })
-        .collect()
+    let bot_s = bot_id.to_string();
+    let chan_s = channel_id.to_string();
+    let mut out = Vec::new();
+    for uid in online {
+        let id = uid.to_string();
+        if platform_admin.contains(&id) {
+            out.push(uid);
+            continue;
+        }
+        let role = chan_role.get(&id).map(String::as_str).unwrap_or("member");
+        let groups =
+            crate::domain::bot_event_policy::matched_groups(&state.db, &bot_s, &id, &rules).await;
+        if crate::domain::bot_event_policy::resolve_access(
+            &rules,
+            &chan_s,
+            &id,
+            role,
+            &groups,
+            event_class,
+            crate::domain::bot_event_policy::Capability::See,
+        ) {
+            out.push(uid);
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -155,6 +155,37 @@ fn parse_capability(raw: &str) -> Result<Capability, AppError> {
         .ok_or_else(|| AppError::BadRequest(format!("capability must be initiate|see|respond, got {raw:?}")))
 }
 
+/// The dynamic-group subjects selectable for this bot: the owner's friends, plus
+/// every channel the bot is in and those channels' workspaces (ref + display label).
+async fn group_catalog(state: &AppState, bot_id: &str) -> Vec<Value> {
+    let mut out = vec![json!({ "ref": "friends", "label": "Owner's friends" })];
+    let mut seen_ws: Vec<String> = Vec::new();
+    if let Ok(rows) = sqlx::query(
+        "SELECT c.channel_id, c.name AS cname, w.workspace_id AS wid, w.name AS wname
+         FROM channel_memberships cm
+         JOIN channels c ON c.channel_id = cm.channel_id
+         JOIN workspaces w ON w.workspace_id = c.workspace_id
+         WHERE cm.member_id = $1 AND cm.member_type = 'bot'",
+    )
+    .bind(bot_id)
+    .fetch_all(&state.db)
+    .await
+    {
+        for r in rows {
+            let cid: String = r.try_get("channel_id").unwrap_or_default();
+            let cname: String = r.try_get("cname").unwrap_or_default();
+            out.push(json!({ "ref": format!("channel:{cid}"), "label": format!("#{cname} members") }));
+            let wid: String = r.try_get("wid").unwrap_or_default();
+            if !wid.is_empty() && !seen_ws.contains(&wid) {
+                seen_ws.push(wid.clone());
+                let wname: String = r.try_get("wname").unwrap_or_default();
+                out.push(json!({ "ref": format!("workspace:{wid}"), "label": format!("{wname} members") }));
+            }
+        }
+    }
+    out
+}
+
 /// GET /bots/:bot_id/event-access — owner/admin: the rules + the event vocabulary.
 pub async fn list_event_access(
     State(state): State<AppState>,
@@ -163,11 +194,14 @@ pub async fn list_event_access(
 ) -> Result<Json<Value>, AppError> {
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let rules = bot_event_policy::list_rules_json(&state.db, &bot_id).await?;
+    let groups = group_catalog(&state, &bot_id).await;
     Ok(Json(json!({
         "rules": rules,
         "initiate_events": bot_event_policy::initiate_events(),
         "see_events": bot_event_policy::see_events(),
         "respond_events": bot_event_policy::respond_events(),
+        // Selectable dynamic-group subjects (ref + label) for the per-subject overrides.
+        "groups": groups,
     })))
 }
 
@@ -190,8 +224,12 @@ pub async fn upsert_event_rule(
 ) -> Result<Json<Value>, AppError> {
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let subject_kind = match body.subject_kind.trim() {
-        k @ ("role" | "user") => k,
-        other => return Err(AppError::BadRequest(format!("subject_kind must be role|user, got {other:?}"))),
+        k @ ("role" | "user" | "group") => k,
+        other => {
+            return Err(AppError::BadRequest(format!(
+                "subject_kind must be role|user|group, got {other:?}"
+            )))
+        }
     };
     let event_class = body.event_class.trim();
     if event_class.is_empty() {

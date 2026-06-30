@@ -23,6 +23,7 @@ use crate::errors::AppError;
 
 pub const SUBJECT_ROLE: &str = "role";
 pub const SUBJECT_USER: &str = "user";
+pub const SUBJECT_GROUP: &str = "group"; // dynamic group: friends | channel:<id> | workspace:<id>
 pub const ANY_SUBJECT: &str = "*"; // role wildcard
 pub const BOT_WIDE: &str = ""; // channel_id sentinel for "all channels"
 
@@ -118,19 +119,23 @@ pub struct Rule {
     pub allow: bool,
 }
 
-/// Pure resolution. Most-specific-wins, trying in order:
-/// `(chan,user)` ▸ `(chan,role)` ▸ `(chan,*)` ▸ `(bot-wide,user)` ▸ `(bot-wide,role)`
-/// ▸ `(bot-wide,*)` ▸ the membership default. Side-effect-free for unit testing.
+/// Pure resolution. Most-specific-wins; within each scope the precedence is
+/// **user ▸ group ▸ role ▸ ∗**, and a channel-specific scope beats the bot-wide one:
+/// `(chan,user)▸(chan,group)▸(chan,role)▸(chan,*)▸(bot,user)▸(bot,group)▸(bot,role)▸(bot,*)`
+/// ▸ membership default. `matched_groups` are the group refs THIS user belongs to
+/// (resolved by the caller); among matching group rules at a scope **deny wins**.
+/// Side-effect-free for unit testing.
 pub fn resolve_access(
     rules: &[Rule],
     channel_id: &str,
     user_id: &str,
     role: &str,
+    matched_groups: &[String],
     event_class: &str,
     capability: Capability,
 ) -> bool {
     let cap = capability.as_str();
-    let find = |ch: &str, sk: &str, sid: &str| {
+    let one = |ch: &str, sk: &str, sid: &str| {
         rules
             .iter()
             .find(|r| {
@@ -142,13 +147,135 @@ pub fn resolve_access(
             })
             .map(|r| r.allow)
     };
-    find(channel_id, SUBJECT_USER, user_id)
-        .or_else(|| find(channel_id, SUBJECT_ROLE, role))
-        .or_else(|| find(channel_id, SUBJECT_ROLE, ANY_SUBJECT))
-        .or_else(|| find(BOT_WIDE, SUBJECT_USER, user_id))
-        .or_else(|| find(BOT_WIDE, SUBJECT_ROLE, role))
-        .or_else(|| find(BOT_WIDE, SUBJECT_ROLE, ANY_SUBJECT))
+    // Group tier at a scope: deny-wins across all groups the user belongs to.
+    let group_at = |ch: &str| {
+        let mut found = false;
+        let mut all_allow = true;
+        for r in rules.iter().filter(|r| {
+            r.channel_id == ch
+                && r.subject_kind == SUBJECT_GROUP
+                && r.event_class == event_class
+                && r.capability == cap
+                && matched_groups.iter().any(|g| g == &r.subject_id)
+        }) {
+            found = true;
+            all_allow &= r.allow;
+        }
+        found.then_some(all_allow)
+    };
+    one(channel_id, SUBJECT_USER, user_id)
+        .or_else(|| group_at(channel_id))
+        .or_else(|| one(channel_id, SUBJECT_ROLE, role))
+        .or_else(|| one(channel_id, SUBJECT_ROLE, ANY_SUBJECT))
+        .or_else(|| one(BOT_WIDE, SUBJECT_USER, user_id))
+        .or_else(|| group_at(BOT_WIDE))
+        .or_else(|| one(BOT_WIDE, SUBJECT_ROLE, role))
+        .or_else(|| one(BOT_WIDE, SUBJECT_ROLE, ANY_SUBJECT))
         .unwrap_or_else(|| default_access(capability))
+}
+
+// ── Dynamic group membership (friends | channel:<id> | workspace:<id>) ──────
+
+/// The group refs (from `rules`) that `user_id` currently belongs to. Only checks
+/// groups that actually have a rule, so it's cheap. Dynamic: friends = the bot
+/// owner's accepted friends; `channel:<id>`/`workspace:<id>` = current membership.
+pub async fn matched_groups(
+    db: &PgPool,
+    bot_id: &str,
+    user_id: &str,
+    rules: &[Rule],
+) -> Vec<String> {
+    use std::collections::HashSet;
+    let refs: HashSet<&str> = rules
+        .iter()
+        .filter(|r| r.subject_kind == SUBJECT_GROUP)
+        .map(|r| r.subject_id.as_str())
+        .collect();
+    if refs.is_empty() {
+        return Vec::new();
+    }
+    let mut owner: Option<Option<String>> = None;
+    let mut out = Vec::new();
+    for g in refs {
+        let belongs = if g == "friends" {
+            let oid = match &owner {
+                Some(o) => o.clone(),
+                None => {
+                    let v = bot_owner_id(db, bot_id).await;
+                    owner = Some(v.clone());
+                    v
+                }
+            };
+            match oid {
+                Some(o) => is_friend(db, &o, user_id).await,
+                None => false,
+            }
+        } else if let Some(cid) = g.strip_prefix("channel:") {
+            is_channel_member(db, cid, user_id).await
+        } else if let Some(wid) = g.strip_prefix("workspace:") {
+            is_workspace_member(db, wid, user_id).await
+        } else {
+            false
+        };
+        if belongs {
+            out.push(g.to_string());
+        }
+    }
+    out
+}
+
+async fn bot_owner_id(db: &PgPool, bot_id: &str) -> Option<String> {
+    sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
+        .bind(bot_id)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.try_get::<Option<String>, _>("created_by").ok().flatten())
+}
+
+async fn is_friend(db: &PgPool, a: &str, b: &str) -> bool {
+    if a == b {
+        return false;
+    }
+    let pair = if a <= b { format!("{a}:{b}") } else { format!("{b}:{a}") };
+    sqlx::query(
+        "SELECT EXISTS(SELECT 1 FROM friendships WHERE pair_key = $1 AND status = 'accepted') AS ok",
+    )
+    .bind(pair)
+    .fetch_one(db)
+    .await
+    .ok()
+    .and_then(|r| r.try_get::<bool, _>("ok").ok())
+    .unwrap_or(false)
+}
+
+async fn is_channel_member(db: &PgPool, channel_id: &str, user_id: &str) -> bool {
+    sqlx::query(
+        "SELECT EXISTS(SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user') AS ok",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .ok()
+    .and_then(|r| r.try_get::<bool, _>("ok").ok())
+    .unwrap_or(false)
+}
+
+async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> bool {
+    sqlx::query(
+        "SELECT EXISTS(SELECT 1 FROM workspace_memberships
+            WHERE workspace_id = $1 AND user_id = $2 AND status = 'active') AS ok",
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .ok()
+    .and_then(|r| r.try_get::<bool, _>("ok").ok())
+    .unwrap_or(false)
 }
 
 /// Load all access rules for a bot (cheap; a bot has few rules).
@@ -187,11 +314,13 @@ pub async fn resolve(
     capability: Capability,
 ) -> Result<bool, AppError> {
     let rules = load_rules(db, bot_id).await?;
+    let groups = matched_groups(db, bot_id, user_id, &rules).await;
     Ok(resolve_access(
         &rules,
         channel_id,
         user_id,
         role,
+        &groups,
         event_class,
         capability,
     ))
@@ -303,28 +432,24 @@ mod tests {
         }
     }
 
+    /// Test helper: resolve with no group memberships.
+    fn allows(rules: &[Rule], ch: &str, user: &str, role: &str, ec: &str, cap: Capability) -> bool {
+        resolve_access(rules, ch, user, role, &[], ec, cap)
+    }
+
     #[test]
     fn defaults_layer_on_membership() {
         // No rules: members may initiate + see, but not respond.
-        assert!(resolve_access(&[], "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        assert!(resolve_access(&[], "c1", "u1", "member", EV_TOOL_CALL, Capability::See));
-        assert!(!resolve_access(
-            &[],
-            "c1",
-            "u1",
-            "member",
-            EV_PERMISSION_REQUEST,
-            Capability::Respond
-        ));
+        assert!(allows(&[], "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
+        assert!(allows(&[], "c1", "u1", "member", EV_TOOL_CALL, Capability::See));
+        assert!(!allows(&[], "c1", "u1", "member", EV_PERMISSION_REQUEST, Capability::Respond));
     }
 
     #[test]
     fn role_deny_overrides_default() {
         let rules = vec![rule("c1", SUBJECT_ROLE, "member", EV_TOOL_CALL, Capability::See, false)];
-        // members can't see tool_call in c1…
-        assert!(!resolve_access(&rules, "c1", "u1", "member", EV_TOOL_CALL, Capability::See));
-        // …but admins still can (default).
-        assert!(resolve_access(&rules, "c1", "u9", "admin", EV_TOOL_CALL, Capability::See));
+        assert!(!allows(&rules, "c1", "u1", "member", EV_TOOL_CALL, Capability::See));
+        assert!(allows(&rules, "c1", "u9", "admin", EV_TOOL_CALL, Capability::See));
     }
 
     #[test]
@@ -333,10 +458,8 @@ mod tests {
             rule("c1", SUBJECT_ROLE, "member", EV_PROMPT, Capability::Initiate, false),
             rule("c1", SUBJECT_USER, "u1", EV_PROMPT, Capability::Initiate, true),
         ];
-        // role denies, but the per-user override re-allows u1.
-        assert!(resolve_access(&rules, "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        // a different member stays denied by the role rule.
-        assert!(!resolve_access(&rules, "c1", "u2", "member", EV_PROMPT, Capability::Initiate));
+        assert!(allows(&rules, "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
+        assert!(!allows(&rules, "c1", "u2", "member", EV_PROMPT, Capability::Initiate));
     }
 
     #[test]
@@ -345,25 +468,42 @@ mod tests {
             rule(BOT_WIDE, SUBJECT_ROLE, ANY_SUBJECT, EV_PROMPT, Capability::Initiate, false),
             rule("c1", SUBJECT_ROLE, ANY_SUBJECT, EV_PROMPT, Capability::Initiate, true),
         ];
-        // bot-wide denies all, but c1 re-allows.
-        assert!(resolve_access(&rules, "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        // a different channel falls back to the bot-wide deny.
-        assert!(!resolve_access(&rules, "c9", "u1", "member", EV_PROMPT, Capability::Initiate));
+        assert!(allows(&rules, "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
+        assert!(!allows(&rules, "c9", "u1", "member", EV_PROMPT, Capability::Initiate));
     }
 
     #[test]
     fn respond_grant_for_member() {
-        let rules = vec![rule(
-            "c1",
-            SUBJECT_USER,
-            "u1",
-            EV_PERMISSION_REQUEST,
-            Capability::Respond,
-            true,
-        )];
-        // u1 was explicitly granted respond; u2 (no grant) keeps the deny default.
-        assert!(resolve_access(&rules, "c1", "u1", "member", EV_PERMISSION_REQUEST, Capability::Respond));
-        assert!(!resolve_access(&rules, "c1", "u2", "member", EV_PERMISSION_REQUEST, Capability::Respond));
+        let rules = vec![rule("c1", SUBJECT_USER, "u1", EV_PERMISSION_REQUEST, Capability::Respond, true)];
+        assert!(allows(&rules, "c1", "u1", "member", EV_PERMISSION_REQUEST, Capability::Respond));
+        assert!(!allows(&rules, "c1", "u2", "member", EV_PERMISSION_REQUEST, Capability::Respond));
+    }
+
+    #[test]
+    fn group_tier_and_precedence() {
+        // friends group is granted RESPOND; role default denies it.
+        let rules = vec![
+            rule("c1", SUBJECT_GROUP, "friends", EV_PERMISSION_REQUEST, Capability::Respond, true),
+            rule("c1", SUBJECT_USER, "u2", EV_PERMISSION_REQUEST, Capability::Respond, false),
+        ];
+        let friends = vec!["friends".to_string()];
+        // u1 is a friend → group allow beats the deny default.
+        assert!(resolve_access(&rules, "c1", "u1", "member", &friends, EV_PERMISSION_REQUEST, Capability::Respond));
+        // u2 is a friend too, but the per-USER deny beats the group allow (user ▸ group).
+        assert!(!resolve_access(&rules, "c1", "u2", "member", &friends, EV_PERMISSION_REQUEST, Capability::Respond));
+        // u3 is NOT a friend → no group match → falls to the respond deny default.
+        assert!(!resolve_access(&rules, "c1", "u3", "member", &[], EV_PERMISSION_REQUEST, Capability::Respond));
+    }
+
+    #[test]
+    fn group_deny_wins_on_tie() {
+        // two groups the user belongs to disagree → deny wins.
+        let rules = vec![
+            rule("c1", SUBJECT_GROUP, "friends", EV_TOOL_CALL, Capability::See, true),
+            rule("c1", SUBJECT_GROUP, "workspace:w1", EV_TOOL_CALL, Capability::See, false),
+        ];
+        let both = vec!["friends".to_string(), "workspace:w1".to_string()];
+        assert!(!resolve_access(&rules, "c1", "u1", "member", &both, EV_TOOL_CALL, Capability::See));
     }
 
     #[test]
