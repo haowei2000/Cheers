@@ -230,6 +230,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/permissions/posture",
             put(api::bot_permission::set_posture),
         )
+        .route(
+            "/api/v1/bots/:bot_id/permissions/config-option",
+            put(api::bot_permission::set_config_option),
+        )
         // ── Event-access matrix (INITIATE / SEE / RESPOND) ───────────────────
         .route(
             "/api/v1/bots/:bot_id/event-access",

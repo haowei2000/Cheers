@@ -71,6 +71,7 @@ pub async fn list_permissions(
     let (agent_type, current) = load_posture(&state, &bot_id).await?;
     let (default_mode, allowed) = connector_config::posture_preset(&agent_type);
     let permission_mode = current.or_else(|| default_mode.map(str::to_string));
+    let cc = load_connector_control(&state, &bot_id).await?;
     Ok(Json(json!({
         // Posture: the agent's session mode + the L0-allowed choices.
         "posture": {
@@ -78,7 +79,43 @@ pub async fn list_permissions(
             "permission_mode": permission_mode,
             "allowed_modes": allowed,
         },
+        // Session config options: what the agent advertised (live, reported by the
+        // connector) + the owner's desired overrides (applied per-session).
+        "config_options": {
+            "advertised": advertised_options(&cc).map(Value::Array).unwrap_or_else(|| json!([])),
+            "desired": cc.get("configOptions").cloned().unwrap_or_else(|| json!({})),
+        },
     })))
+}
+
+/// Read the bot's `connector_control` object — advertised options (reported by the
+/// connector under `options`) + desired overrides (`configOptions`) live here.
+async fn load_connector_control(state: &AppState, bot_id: &str) -> Result<Value, AppError> {
+    let row = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
+        .bind(bot_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(row
+        .try_get::<Option<Value>, _>("binding_config")
+        .ok()
+        .flatten()
+        .and_then(|b| b.get("connector_control").cloned())
+        .unwrap_or_else(|| json!({})))
+}
+
+/// The agent's advertised ACP config options array, as last reported by the
+/// connector. The connector stores a composite session snapshot at
+/// `connector_control.options.options`; the ACP `configOptions` array lives inside
+/// it (sibling to `modes`/`availableCommands`). `None` if the agent advertises none
+/// (e.g. it uses the older `modes` API → `configOptions` is null) — callers then
+/// skip the friendly pre-validation (the connector re-validates regardless).
+fn advertised_options(cc: &Value) -> Option<Vec<Value>> {
+    cc.get("options")
+        .and_then(|o| o.get("options"))
+        .and_then(|o| o.get("configOptions"))
+        .and_then(Value::as_array)
+        .cloned()
 }
 
 // ── PUT /bots/:bot_id/permissions/posture ───────────────────────────────────
@@ -144,6 +181,112 @@ pub async fn set_posture(
         Err(_) => false,
     };
     Ok(Json(json!({ "ok": true, "permission_mode": mode, "delivered": delivered })))
+}
+
+// ── PUT /bots/:bot_id/permissions/config-option ──────────────────────────────
+// Set an ACP session config option (model / reasoning level / mode-as-config…).
+// Owner/admin-only, like posture: `set_config_option` is owner-sovereign (it's in
+// OWNER_ONLY_INITIATE — not a per-subject grant). Persisted as a bot-level desired
+// override + pushed to the live connector, which applies it per-session via ACP
+// `session/set_config_option` and re-clamps against its L0 allowed_config_options.
+
+#[derive(Deserialize)]
+pub struct ConfigOptionRequest {
+    /// The advertised option's `id` (e.g. "model", "thought_level").
+    pub config_id: String,
+    /// One of that option's advertised `value`s. Opaque to Cheers (ACP-generic).
+    pub value: String,
+}
+
+pub async fn set_config_option(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Json(body): Json<ConfigOptionRequest>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let config_id = body.config_id.trim().to_string();
+    let value = body.value;
+    if config_id.is_empty() {
+        return Err(AppError::BadRequest("config_id required".into()));
+    }
+
+    let cc = load_connector_control(&state, &bot_id).await?;
+    // Friendly early validation against the agent's advertised options (the
+    // connector + agent re-validate on apply — this is a nicer 400, not the gate).
+    if let Some(adv) = advertised_options(&cc) {
+        match adv
+            .iter()
+            .find(|o| o.get("id").and_then(Value::as_str) == Some(config_id.as_str()))
+        {
+            Some(opt) => {
+                let value_ok = opt
+                    .get("options")
+                    .and_then(Value::as_array)
+                    .map(|vals| {
+                        vals.iter()
+                            .any(|v| v.get("value").and_then(Value::as_str) == Some(value.as_str()))
+                    })
+                    .unwrap_or(true);
+                if !value_ok {
+                    return Err(AppError::BadRequest(format!(
+                        "value {value:?} is not an allowed value for config option {config_id:?}"
+                    )));
+                }
+            }
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "config option {config_id:?} is not advertised by this agent"
+                )))
+            }
+        }
+    }
+
+    // Merge into the desired map so the connector receives the COMPLETE set
+    // (apply_settings replaces, not merges, the stored config_options).
+    let mut desired = cc
+        .get("configOptions")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    desired.insert(config_id.clone(), Value::String(value.clone()));
+    let desired = Value::Object(desired);
+
+    // L1 persist under binding_config.connector_control.configOptions (the inner
+    // jsonb_set guarantees connector_control exists before the leaf is written).
+    sqlx::query(
+        "UPDATE bot_accounts SET binding_config = jsonb_set(
+            jsonb_set(
+                COALESCE(binding_config, '{}'::jsonb),
+                '{connector_control}',
+                COALESCE(binding_config -> 'connector_control', '{}'::jsonb),
+                true),
+            '{connector_control,configOptions}',
+            $2::jsonb,
+            true)
+         WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .bind(&desired)
+    .execute(&state.db)
+    .await?;
+
+    // L2 push to a live connector (best-effort): full desired map. It re-clamps
+    // via L0 allowed_config_options and applies per-session.
+    let delivered = match bot_id.parse::<Uuid>() {
+        Ok(uuid) => {
+            let frame = json!({
+                "type": "config_update",
+                "v": 1,
+                "settings": { "configOptions": desired },
+            });
+            state.bot_locator.dispatch_task(uuid, frame).await
+        }
+        Err(_) => false,
+    };
+    Ok(Json(
+        json!({ "ok": true, "config_id": config_id, "value": value, "delivered": delivered }),
+    ))
 }
 
 // ── Event-access matrix (INITIATE / SEE / RESPOND) ──────────────────────────

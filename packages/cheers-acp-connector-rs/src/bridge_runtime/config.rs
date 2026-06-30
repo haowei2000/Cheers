@@ -86,6 +86,35 @@ impl RuntimeContext {
                 });
             }
         }
+        // Backend-desired ACP config options ({configId: value}). L0 clamp: keep
+        // only ids in the allowed_config_options envelope (pure string match — the
+        // connector never interprets a config option's meaning; ACP-generic).
+        if let Some(config_options) = settings.config_options.take() {
+            match config_options.as_object() {
+                Some(map) => {
+                    let mut kept = serde_json::Map::new();
+                    for (id, value) in map {
+                        if self.config_option_allowed(id) {
+                            kept.insert(id.clone(), value.clone());
+                        } else {
+                            rejected.push(ConfigStatusRejectedField {
+                                field: format!("configOptions.{id}"),
+                                reason: format!(
+                                    "config option {id:?} is not in the L0 allowed_config_options envelope"
+                                ),
+                            });
+                        }
+                    }
+                    if !kept.is_empty() {
+                        settings.config_options = Some(Value::Object(kept));
+                    }
+                }
+                None => rejected.push(ConfigStatusRejectedField {
+                    field: "configOptions".to_string(),
+                    reason: "configOptions must be a {configId: value} object".to_string(),
+                }),
+            }
+        }
         (settings, rejected)
     }
 

@@ -118,6 +118,23 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
+    // Connect-sync the owner's desired ACP config options too (same rationale as
+    // posture): a reconnecting connector boots from its TOML default, so re-push
+    // any overrides. The connector re-clamps via L0 allowed_config_options.
+    if let Some(opts) = bot
+        .connector_config
+        .as_ref()
+        .and_then(|c| c.get("configOptions"))
+        .filter(|v| v.as_object().is_some_and(|m| !m.is_empty()))
+    {
+        let cfg = json!({
+            "type": "config_update",
+            "v": BRIDGE_PROTOCOL_VERSION,
+            "settings": { "configOptions": opts },
+        });
+        let _ = ws_send(&mut socket, &cfg).await;
+    }
+
     tracing::info!(bot_id = %bot.bot_id, "control connected");
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────

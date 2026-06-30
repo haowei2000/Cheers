@@ -66,6 +66,12 @@ pub struct StdioAgentConfig {
     pub request_timeout_ms: u64,
     pub prompt_timeout_ms: u64,
     pub agent_native_permission_mode: Option<String>,
+    /// Backend-desired ACP config options (`{configId: value}`), applied per
+    /// session via `session/set_config_option` at session start — mirrors how
+    /// `agent_native_permission_mode` is applied via `set_mode`. Already clamped
+    /// to `allowed_config_options` at the `config_update` boundary, so the adapter
+    /// applies it verbatim (ACP-generic — opaque ids/values).
+    pub config_options: Option<Value>,
     pub mcp_servers: Value,
     pub client_capabilities: Option<Value>,
 }
@@ -725,6 +731,7 @@ async fn normalize_account(
             request_timeout_ms: policy.sessions.request_timeout_ms,
             prompt_timeout_ms: policy.prompt.max_duration_ms,
             agent_native_permission_mode: raw.adapter.permission_mode,
+            config_options: None,
             mcp_servers: policy.mcp.servers.clone(),
             client_capabilities: Some(client_capabilities()),
         },

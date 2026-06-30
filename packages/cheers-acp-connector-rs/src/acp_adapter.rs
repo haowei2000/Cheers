@@ -368,6 +368,47 @@ impl AcpAdapter {
         }
     }
 
+    /// Pushes the backend-desired ACP config options to the agent via
+    /// `session/set_config_option` (best-effort), the `set_config_option`
+    /// analogue of [`apply_permission_mode`]. Values are opaque strings
+    /// (ACP-generic); the map was already clamped to `allowed_config_options`
+    /// at the `config_update` boundary.
+    async fn apply_config_options(&mut self, session_id: &str) {
+        let Some(map) = self
+            .config
+            .config_options
+            .as_ref()
+            .and_then(|v| v.as_object())
+            .cloned()
+        else {
+            return;
+        };
+        for (config_id, value) in map {
+            let Some(value) = value.as_str() else { continue };
+            match self
+                .request(
+                    "session/set_config_option",
+                    json!({ "sessionId": session_id, "configId": config_id, "value": value }),
+                    self.request_timeout_ms(),
+                )
+                .await
+            {
+                Ok(_) => tracing::info!(
+                    account = %self.account_id,
+                    session = %session_id,
+                    config_id = %config_id,
+                    value = %value,
+                    "applied ACP config option"
+                ),
+                Err(err) => tracing::warn!(
+                    account = %self.account_id,
+                    config_id = %config_id,
+                    "session/set_config_option failed (unknown id/value or agent rejected?): {err}"
+                ),
+            }
+        }
+    }
+
     async fn ensure_peer_alive(&mut self) -> anyhow::Result<()> {
         let Some(child) = self.child.as_mut() else {
             return Err(anyhow!("ACP peer is not started"));
@@ -574,6 +615,7 @@ impl RuntimeAdapter for AcpAdapter {
             "ACP session/new full response"
         );
         self.apply_permission_mode(&session_id).await;
+        self.apply_config_options(&session_id).await;
         Ok(SessionStartResult {
             session_id,
             metadata: result,
@@ -597,6 +639,7 @@ impl RuntimeAdapter for AcpAdapter {
             )
             .await?;
         self.apply_permission_mode(session_id).await;
+        self.apply_config_options(session_id).await;
         Ok(SessionLoadResult { metadata: result })
     }
 
@@ -684,6 +727,12 @@ impl RuntimeAdapter for AcpAdapter {
             self.config.model = Some(model.clone());
             applied.push("model".to_string());
             restart_fields.push("model".to_string());
+        }
+        if let Some(config_options) = &settings.config_options {
+            // Stored (already L0-clamped); applied per-session via
+            // session/set_config_option at session start — no restart needed.
+            self.config.config_options = Some(config_options.clone());
+            applied.push("configOptions".to_string());
         }
         if !restart_fields.is_empty() {
             if let Err(err) = self.restart().await {
@@ -1122,6 +1171,7 @@ mod tests {
                 request_timeout_ms: 1000,
                 prompt_timeout_ms: 1000,
                 agent_native_permission_mode: None,
+                config_options: None,
                 mcp_servers: Value::Array(Vec::new()),
                 client_capabilities: None,
             },

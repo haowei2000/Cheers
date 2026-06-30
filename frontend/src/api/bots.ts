@@ -161,11 +161,34 @@ export interface Posture {
   allowed_modes: string[];
 }
 
-export interface BotPermissions {
-  posture: Posture;
+/** One selectable value of an ACP session config option. */
+export interface ConfigOptionValue {
+  value: string;
+  name: string;
+  description?: string;
 }
 
-/** Owner/admin: read the bot's posture. */
+/** An ACP session config option the agent advertised (model / reasoning / mode…). */
+export interface ConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: string;
+  currentValue: string;
+  options: ConfigOptionValue[];
+}
+
+export interface BotPermissions {
+  posture: Posture;
+  /** Session config options: what the agent advertised + the owner's overrides. */
+  config_options: {
+    advertised: ConfigOption[];
+    desired: Record<string, string>;
+  };
+}
+
+/** Owner/admin: read the bot's posture + config options. */
 export async function getBotPermissions(botId: string): Promise<BotPermissions> {
   return apiJson<BotPermissions>(`/bots/${botId}/permissions`);
 }
@@ -178,45 +201,16 @@ export async function setBotPosture(botId: string, permission_mode: string): Pro
   });
 }
 
-export interface BotApprover {
-  user_id: string;
-  /** Which ACP kind this delegate may approve; "*" = any. */
-  operation_kind: string;
-  granted_by?: string;
-  granted_at?: string;
-}
-
-/** List the per-kind approvers for a (bot, channel) + the implicit owner. */
-export async function listBotApprovers(
+/** Owner/admin: set an ACP session config option (bot-level desired override,
+ * applied per-session by the connector, clamped by L0 allowed_config_options). */
+export async function setBotConfigOption(
   botId: string,
-  channelId: string
-): Promise<{ owner_id: string | null; delegates: BotApprover[] }> {
-  return apiJson(`/bots/${botId}/approvers?channel_id=${encodeURIComponent(channelId)}`);
-}
-
-/** Owner/admin: let `user_id` approve `operation_kind` ("*" = any) in a channel. */
-export async function grantBotApprover(
-  botId: string,
-  body: { channel_id: string; user_id: string; operation_kind: string }
+  config_id: string,
+  value: string
 ): Promise<void> {
-  await apiJson(`/bots/${botId}/approvers`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-/** Owner/admin: revoke a per-kind approver. */
-export async function revokeBotApprover(
-  botId: string,
-  userId: string,
-  q: { channel_id: string; operation_kind: string }
-): Promise<void> {
-  const params = new URLSearchParams({
-    channel_id: q.channel_id,
-    operation_kind: q.operation_kind,
-  });
-  await apiJson(`/bots/${botId}/approvers/${userId}?${params.toString()}`, {
-    method: "DELETE",
+  await apiJson(`/bots/${botId}/permissions/config-option`, {
+    method: "PUT",
+    body: JSON.stringify({ config_id, value }),
   });
 }
 
