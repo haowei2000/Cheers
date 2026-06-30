@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { X, ChevronRight, ChevronLeft } from "lucide-react";
+import { X, Plus } from "lucide-react";
 import {
   getEventAccess,
   upsertEventRule,
@@ -14,30 +14,27 @@ import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
-
-const CAP_LABEL: Record<Capability, string> = {
-  initiate: "INITIATE — who can trigger",
-  see: "SEE — who can view",
-  respond: "RESPOND — who can answer",
+const CAP_ORDER: Capability[] = ["initiate", "see", "respond"];
+const CAP_BADGE: Record<Capability, string> = {
+  initiate: "bg-sky-950/60 border-sky-900 text-sky-200",
+  see: "bg-zinc-800 border-zinc-700 text-zinc-300",
+  respond: "bg-amber-950/50 border-amber-900 text-amber-200",
 };
-// Membership default per capability (no grant → this applies).
-const capDefault = (cap: Capability) => (cap === "respond" ? "deny" : "allow");
-
-type Perm = { cap: Capability; ec: string };
 
 /**
- * Permission-FIRST authorization (docs/arch/ACP_EVENT_TAXONOMY.md): pick a
- * permission (capability × ACP event), then see/edit every authorization domain
- * that holds it — a user, a channel role, or a dynamic group — adding or
- * force-removing grants. The inverse of the scope-first matrix; same rules table.
+ * Bot permission grants (docs/arch/ACP_EVENT_TAXONOMY.md) — a LIST + NEW model:
+ * one flat list of every grant (permission · domain · scope · decision) so you can
+ * see who's authorized at a glance and revoke any of them inline, plus a + New
+ * grant form. Backed by the bot_event_access rules.
  */
 export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   const [access, setAccess] = useState<EventAccess | null>(null);
-  const [sel, setSel] = useState<Perm | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [membersByChannel, setMembersByChannel] = useState<Record<string, MemberItem[]>>({});
+  const [creating, setCreating] = useState(false);
 
-  // add-grant draft
+  // new-grant draft
+  const [perm, setPerm] = useState(""); // "cap::event"
   const [scope, setScope] = useState(""); // "" = bot-wide
   const [subject, setSubject] = useState(""); // "role:member" | "group:<ref>" | "user:<id>"
   const [decision, setDecision] = useState<"allow" | "deny">("allow");
@@ -87,137 +84,112 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   const channelLabel = (id: string) =>
     access?.groups.find((g) => g.ref === `channel:${id}`)?.label.replace(/ members$/, "") ||
     `#${id.slice(0, 8)}`;
-  const scopeLabel = (cid: string) => (cid ? channelLabel(cid) : "Bot-wide (all channels)");
+  const scopeLabel = (cid: string) => (cid ? channelLabel(cid) : "Bot-wide");
   const subjectLabel = (r: EventRule): string => {
     if (r.subject_kind === "role") return r.subject_id === "*" ? "∗ any role" : `${r.subject_id} (role)`;
     if (r.subject_kind === "group")
       return access?.groups.find((g) => g.ref === r.subject_id)?.label || r.subject_id;
     return nameMap[r.subject_id] || `${r.subject_id.slice(0, 8)}…`;
   };
+  const subjectBadge = (k: string) =>
+    k === "group"
+      ? "bg-violet-950/50 border-violet-900 text-violet-200"
+      : k === "user"
+      ? "bg-indigo-950/60 border-indigo-900 text-indigo-200"
+      : "bg-zinc-800 border-zinc-700 text-zinc-300";
 
-  const perms: Perm[] = useMemo(() => {
-    if (!access) return [];
-    const list: Perm[] = [];
-    for (const ec of access.initiate_events) list.push({ cap: "initiate", ec });
-    for (const ec of access.see_events) list.push({ cap: "see", ec });
-    for (const ec of access.respond_events) list.push({ cap: "respond", ec });
-    return list;
+  // All grants, sorted by capability → event → subject for a stable, scannable list.
+  const grants = useMemo(() => {
+    const rules = [...(access?.rules ?? [])];
+    rules.sort((a, b) => {
+      const ca = CAP_ORDER.indexOf(a.capability) - CAP_ORDER.indexOf(b.capability);
+      if (ca !== 0) return ca;
+      if (a.event_class !== b.event_class) return a.event_class.localeCompare(b.event_class);
+      return a.subject_id.localeCompare(b.subject_id);
+    });
+    return rules;
   }, [access]);
 
-  const grantsFor = (p: Perm): EventRule[] =>
-    (access?.rules ?? []).filter((r) => r.event_class === p.ec && r.capability === p.cap);
-
-  // ── add-grant subject options for the chosen scope ──
   const scopeOptions = useMemo(() => {
     const opts = [{ val: "", label: "Bot-wide (all channels)" }];
-    if (access) {
-      for (const g of access.groups.filter((x) => x.ref.startsWith("channel:"))) {
-        opts.push({ val: g.ref.slice("channel:".length), label: g.label.replace(/ members$/, "") });
-      }
+    for (const g of access?.groups.filter((x) => x.ref.startsWith("channel:")) ?? []) {
+      opts.push({ val: g.ref.slice("channel:".length), label: g.label.replace(/ members$/, "") });
     }
     return opts;
   }, [access]);
 
   const usersForScope = (cid: string): MemberItem[] => {
     if (cid) return membersByChannel[cid] ?? [];
-    // bot-wide: union of all known members
     const seen = new Set<string>();
     const out: MemberItem[] = [];
-    for (const list of Object.values(membersByChannel)) {
+    for (const list of Object.values(membersByChannel))
       for (const u of list) if (!seen.has(u.member_id)) (seen.add(u.member_id), out.push(u));
-    }
     return out;
   };
 
+  const resetDraft = () => {
+    setCreating(false);
+    setPerm("");
+    setScope("");
+    setSubject("");
+    setDecision("allow");
+  };
+
   if (!access) {
-    return <p className="text-xs text-zinc-600 px-1 py-2">Loading permissions…</p>;
+    return <p className="text-xs text-zinc-600 px-1 py-2">Loading grants…</p>;
   }
 
-  // ── Level 2: a selected permission's grants ──
-  if (sel) {
-    const grants = grantsFor(sel);
-    return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
-        <button
-          type="button"
-          onClick={() => {
-            setSel(null);
-            setSubject("");
-          }}
-          className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" /> all permissions
-        </button>
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+      <div className="flex items-center gap-2">
         <div>
-          <p className="text-sm font-medium text-zinc-200">
-            <code className="text-indigo-300">{sel.cap}</code> ·{" "}
-            <code className="text-zinc-200">{sel.ec}</code>
-          </p>
+          <p className="text-xs font-medium text-zinc-300">Permission grants</p>
           <p className="text-[11px] text-zinc-600 mt-0.5">
-            Domains granted this permission. With no matching grant, the default is{" "}
-            <span className={capDefault(sel.cap) === "allow" ? "text-emerald-300" : "text-red-300"}>
-              {capDefault(sel.cap)}
-            </span>{" "}
-            for channel members. Precedence: user ▸ group ▸ role ▸ ∗; deny wins ties.
+            Who is authorized for what. No grant → the default (members may initiate + see;
+            respond is owner-only). Precedence: user ▸ group ▸ role ▸ ∗; deny wins ties.
           </p>
         </div>
+        {!creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="ml-auto inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-500"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New grant
+          </button>
+        )}
+      </div>
 
-        {/* grants list */}
-        <div className="space-y-1.5">
-          {grants.length === 0 && (
-            <p className="text-[11px] text-zinc-600">No explicit grants — the default applies.</p>
-          )}
-          {grants.map((r) => (
-            <div
-              key={`${r.channel_id}:${r.subject_kind}:${r.subject_id}`}
-              className="flex items-center gap-2 text-[11px] rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1.5"
-            >
-              <span
-                className={`rounded px-1 py-0.5 text-[10px] border ${
-                  r.subject_kind === "group"
-                    ? "bg-violet-950/50 border-violet-900 text-violet-200"
-                    : r.subject_kind === "user"
-                    ? "bg-indigo-950/60 border-indigo-900 text-indigo-200"
-                    : "bg-zinc-800 border-zinc-700 text-zinc-300"
-                }`}
-              >
-                {r.subject_kind}
-              </span>
-              <span className="text-zinc-200">{subjectLabel(r)}</span>
-              <span className="text-zinc-600">in</span>
-              <span className="text-zinc-400">{scopeLabel(r.channel_id)}</span>
-              <span
-                className={`ml-auto ${r.decision === "allow" ? "text-emerald-300" : "text-red-300"}`}
-              >
-                {r.decision}
-              </span>
-              <button
-                type="button"
-                title="Force-remove this grant"
-                disabled={busy !== null}
-                onClick={() =>
-                  run(`rm:${r.channel_id}:${r.subject_kind}:${r.subject_id}`, () =>
-                    deleteEventRule(botId, {
-                      channel_id: r.channel_id || undefined,
-                      subject_kind: r.subject_kind,
-                      subject_id: r.subject_id,
-                      event_class: r.event_class,
-                      capability: r.capability,
-                    })
-                  )
-                }
-                className="text-zinc-600 hover:text-red-300 disabled:opacity-40"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* add grant */}
-        <div className="border-t border-zinc-800 pt-2">
-          <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Add a grant</div>
+      {/* New-grant form */}
+      {creating && (
+        <div className="rounded-lg border border-indigo-900/60 bg-indigo-950/20 p-2.5 space-y-2">
+          <div className="text-[11px] uppercase tracking-wider text-zinc-400">New grant</div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <select
+              value={perm}
+              onChange={(e) => setPerm(e.target.value)}
+              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+            >
+              <option value="">permission…</option>
+              {CAP_ORDER.map((cap) => {
+                const evs =
+                  cap === "initiate"
+                    ? access.initiate_events
+                    : cap === "see"
+                    ? access.see_events
+                    : access.respond_events;
+                return (
+                  <optgroup key={cap} label={cap}>
+                    {evs.map((ec) => (
+                      <option key={`${cap}::${ec}`} value={`${cap}::${ec}`}>
+                        {cap} · {ec}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
             <select
               value={scope}
               onChange={(e) => {
@@ -270,78 +242,87 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             </select>
             <button
               type="button"
-              disabled={!subject || busy !== null}
+              disabled={!perm || !subject || busy !== null}
               onClick={() =>
                 run("add", async () => {
+                  const [cap, ec] = perm.split("::");
                   const [kind, ...rest] = subject.split(":");
                   await upsertEventRule(botId, {
                     channel_id: scope || undefined,
                     subject_kind: kind as SubjectKind,
                     subject_id: rest.join(":"),
-                    event_class: sel.ec,
-                    capability: sel.cap,
+                    event_class: ec,
+                    capability: cap as Capability,
                     decision,
                   });
-                  setSubject("");
+                  resetDraft();
                 })
               }
-              className="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+              className="rounded-md bg-indigo-600 px-2 py-0.5 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-40"
             >
-              + grant
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={resetDraft}
+              className="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-800"
+            >
+              Cancel
             </button>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  // ── Level 1: the permission list ──
-  return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
-      <div>
-        <p className="text-xs font-medium text-zinc-300">Permissions</p>
-        <p className="text-[11px] text-zinc-600 mt-0.5">
-          Pick a permission to see and edit who holds it (users, roles, groups).
+      {/* Flat grants list */}
+      {grants.length === 0 ? (
+        <p className="text-[11px] text-zinc-600">
+          No grants yet — the bot uses the membership defaults. Click “New grant” to authorize a
+          user, role, or group.
         </p>
-      </div>
-      {(["initiate", "see", "respond"] as Capability[]).map((cap) => (
-        <div key={cap}>
-          <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1">
-            {CAP_LABEL[cap]}
-          </div>
-          <div className="divide-y divide-zinc-800/70 rounded-lg border border-zinc-800 overflow-hidden">
-            {perms
-              .filter((p) => p.cap === cap)
-              .map((p) => {
-                const n = grantsFor(p).length;
-                return (
-                  <button
-                    key={`${p.cap}:${p.ec}`}
-                    type="button"
-                    onClick={() => {
-                      setSel(p);
-                      setScope("");
-                      setSubject("");
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-zinc-900/60"
-                  >
-                    <code className="text-xs text-zinc-200">{p.ec}</code>
-                    {n > 0 ? (
-                      <span className="text-[10px] rounded-full bg-indigo-950/60 border border-indigo-900 text-indigo-200 px-1.5">
-                        {n} grant{n === 1 ? "" : "s"}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-zinc-600">
-                        default {capDefault(cap)}
-                      </span>
-                    )}
-                    <ChevronRight className="w-3.5 h-3.5 text-zinc-600 ml-auto" />
-                  </button>
-                );
-              })}
-          </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-zinc-800 divide-y divide-zinc-800/70">
+          {grants.map((r) => (
+            <div
+              key={`${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_kind}:${r.subject_id}`}
+              className="flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
+            >
+              <span className={`rounded px-1 py-0.5 text-[10px] border ${CAP_BADGE[r.capability]}`}>
+                {r.capability}
+              </span>
+              <code className="text-zinc-300">{r.event_class}</code>
+              <span className="text-zinc-600">→</span>
+              <span className={`rounded px-1 py-0.5 text-[10px] border ${subjectBadge(r.subject_kind)}`}>
+                {r.subject_kind}
+              </span>
+              <span className="text-zinc-200">{subjectLabel(r)}</span>
+              <span className="text-zinc-600">·</span>
+              <span className="text-zinc-400">{scopeLabel(r.channel_id)}</span>
+              <span className={`ml-auto ${r.decision === "allow" ? "text-emerald-300" : "text-red-300"}`}>
+                {r.decision}
+              </span>
+              <button
+                type="button"
+                title="Revoke this grant"
+                disabled={busy !== null}
+                onClick={() =>
+                  run(`rm:${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_id}`, () =>
+                    deleteEventRule(botId, {
+                      channel_id: r.channel_id || undefined,
+                      subject_kind: r.subject_kind,
+                      subject_id: r.subject_id,
+                      event_class: r.event_class,
+                      capability: r.capability,
+                    })
+                  )
+                }
+                className="text-zinc-600 hover:text-red-300 disabled:opacity-40"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
