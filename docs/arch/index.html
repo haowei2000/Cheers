@@ -871,20 +871,20 @@ tr:last-child td { border-bottom: 0; }
           <a href="#topology"><span class="dot done" aria-hidden="true"></span>拓扑</a>
           <a href="#ledger"><span class="dot done" aria-hidden="true"></span>M0 账本</a>
           <a href="#scope"><span class="dot partial" aria-hidden="true"></span>范围</a>
-          <a href="#backlog"><span class="dot open" aria-hidden="true"></span>后续</a>
+          <a href="#backlog"><span class="dot done" aria-hidden="true"></span>近期里程碑</a>
         </nav>
       </div>
     </header>
     <div class="hero">
       <div class="hero-inner">
-        <p class="eyebrow">Architecture status · 2026-06-22</p>
-        <h1>去中心化 Agent 网格 · M1 核心闭环真机验证</h1>
-        <p class="lead">Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照——事实经多 agent 逐条 ground-truth 校正，而非照抄历史文档。M0 夯实地基已并入 develop；M1 核心闭环（message→@bot→流式→持久化 + mention + 文件 + presence）已于 2026-06-22 用真实 Rust connector + claude-code-acp ACP agent 端到端真机验证。</p>
+        <p class="eyebrow">Architecture status · 2026-06-30</p>
+        <h1>外接 Agent 网格 · Bot 权限治理 + 会话模型重构（已合 develop）</h1>
+        <p class="lead">Cheers 是一个「外接 agent 优先」的聊天网格：Rust gateway（<code>server/</code>）是唯一后端，React 前端（<code>frontend/</code>），agent 作为外部进程经 Agent Bridge 接入。本页是对当前代码的实测快照。2026-06-22 的 M1 核心闭环之上，2026-06-23 → 06-30 又落地并合入 <code>develop</code>：安全加固、协作域补全、Bot 三模式接入、ACP 审批闭环，以及本轮重点——Bot 配置主权（L0/L1/L2）、事件中心权限模型（INITIATE/SEE/RESPOND × 角色/用户/群组）与会话模型重构 P1–P4（会话脱离 workspace 改频道级 + 一频道 primary/other 多会话 + 委派、值钳制的 <code>set_mode</code>/<code>set_config_option</code>）。下方 M0/M1 账本留底。</p>
         <div class="meta-row" aria-label="Audit metadata">
-          <span class="pill">实测日期 2026-06-22</span>
-          <span class="pill">branch demo/main</span>
-          <span class="pill">HEAD 5a0ffc5</span>
-          <span class="pill done">M1 核心闭环真机验证 2026-06-22</span>
+          <span class="pill">实测日期 2026-06-30</span>
+          <span class="pill">branch develop</span>
+          <span class="pill">HEAD fa006e75</span>
+          <span class="pill done">权限治理 + 会话模型 P1–P4 已合 develop</span>
         </div>
       </div>
     </div>
@@ -893,62 +893,58 @@ tr:last-child td { border-bottom: 0; }
         <div class="section-heading">
           <div>
             <h2 id="status-title">一眼看状态</h2>
-            <p>M1 核心闭环已端到端真机验证：seed admin 登录 → 建工作区/频道 → @bot mention → 真实 ACP agent 流式回复 → 落库 → 刷新/重连按 channel_seq 追平。mention 选择器、文件附件、presence、agent trace 进度全部打通。M0 的 6 项改造仍在下方「M0 账本」留底。</p>
+            <p>2026-06-23 → 06-30 在 M1 之上叠加：安全加固 + 协作域 + Bot 三模式接入 + ACP 审批闭环，并完成 Bot 配置主权、事件中心权限、会话模型重构 P1–P4（含委派 <code>set_mode</code>/<code>set_config_option</code>）。全部已合 <code>develop</code>（origin @ fa006e75）。下方 M0/M1 账本留底。</p>
           </div>
         </div>
         <div class="status-band">
           <div class="band-top">
             <div class="verdict done">
-              <strong>M1 ✓</strong>
-              <span>核心闭环 message→@bot→流式→持久化 + mention + 文件 + presence 真机验证（2026-06-22）</span>
+              <strong>治理 + 会话 ✓</strong>
+              <span>Bot 配置主权 L0/L1/L2 · 事件中心权限（INITIATE/SEE/RESPOND）· 会话模型 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）— 已合 develop @ fa006e75</span>
             </div>
             <div class="counters">
               <div class="counter done">
-                <strong>真机</strong>
-                <span>Rust connector + claude-code-acp 真实 Claude 流式回复，端到端跑通</span>
+                <strong>配置主权</strong>
+                <span>L0 host TOML 闸门/天花板 → L1 平台持久化期望 → L2 运行时 <code>session/set_mode</code>·<code>set_config_option</code>，连接器按 L0 钳制</span>
               </div>
               <div class="counter done">
-                <strong>网关代理</strong>
-                <span>文件上传/下载经 gateway SigV4 代理（aws-sdk-s3）+ 桶引导，往返校验</span>
+                <strong>事件权限</strong>
+                <span>按 <code>(主体 × 事件类 × 能力)</code> 治理：INITIATE/SEE/RESPOND × 角色/用户/动态群组；live 逐订阅者 SEE 过滤；统一 <code>acp_policy</code> 单点</span>
               </div>
               <div class="counter done">
-                <strong>presence</strong>
-                <span>在线用户按 conn→user 去重，subscribe/断线广播 <code>presence</code> 帧</span>
+                <strong>会话模型</strong>
+                <span>会话脱离 workspace 改频道级；一频道 primary + N other（无 topic）；deny-default 但可授权、值钳制的会话级 set_mode/set_config</span>
               </div>
               <div class="counter done">
-                <strong>可观测</strong>
-                <span>dispatch→delta→done 全量日志 + <code>trace</code> 帧转 UI agent 进度</span>
+                <strong>协作+安全</strong>
+                <span>好友/DM 屏蔽/未读/工作区邀请 · 封禁/会话吊销 · Bot 三模式接入（enrollment code）· ACP 审批卡闭环</span>
               </div>
             </div>
           </div>
           <div class="status-chips" aria-label="Workstream status chips">
-            <a class="rchip done" href="#ledger">
-              <b>闭环</b>
-              <span>@bot 流式回复</span>
+            <a class="rchip done" href="BOT_CONFIG_GOVERNANCE.md">
+              <b>配置主权</b>
+              <span>BOT_CONFIG_GOVERNANCE</span>
+            </a>
+            <a class="rchip done" href="ACP_EVENT_TAXONOMY.md">
+              <b>事件权限</b>
+              <span>ACP_EVENT_TAXONOMY</span>
+            </a>
+            <a class="rchip done" href="SESSION_MODEL.md">
+              <b>会话模型</b>
+              <span>SESSION_MODEL（P1–P4）</span>
+            </a>
+            <a class="rchip done" href="BOT_PERMISSION_MODEL.md">
+              <b>权限模型</b>
+              <span>BOT_PERMISSION_MODEL</span>
+            </a>
+            <a class="rchip done" href="ACP_APPROVAL_FLOW.md">
+              <b>审批</b>
+              <span>ACP_APPROVAL_FLOW</span>
             </a>
             <a class="rchip done" href="#ledger">
-              <b>mention</b>
-              <span>@bot/@user 选择器</span>
-            </a>
-            <a class="rchip done" href="#ledger">
-              <b>files</b>
-              <span>附件上传/下载</span>
-            </a>
-            <a class="rchip done" href="#ledger">
-              <b>presence</b>
-              <span>在线人数</span>
-            </a>
-            <a class="rchip done" href="#ledger">
-              <b>trace</b>
-              <span>agent 进度字幕</span>
-            </a>
-            <a class="rchip done" href="#ledger">
-              <b>connector</b>
-              <span>真机 happy-path</span>
-            </a>
-            <a class="rchip done" href="#ledger">
-              <b>M0</b>
-              <span>6/6 留底 →</span>
+              <b>M1</b>
+              <span>核心闭环 6/6 留底 →</span>
             </a>
           </div>
         </div>
@@ -1096,7 +1092,7 @@ tr:last-child td { border-bottom: 0; }
               </div>
               <div class="node">
                 <strong>Resource API</strong>
-                <span>统一鉴权：<code>channel.*</code> 读 / membership-role 写 / <code>fs.*</code>（agent 工作区文件，落 <code>memory_files</code>）。session_id 已移除。</span>
+                <span>统一鉴权：<code>channel.*</code> 读 / membership-role 写 / <code>fs.*</code>（agent 工作区文件，落 <code>context_files</code>）。session_id 已移除。</span>
               </div>
             </div>
           </div>
@@ -1253,7 +1249,7 @@ tr:last-child td { border-bottom: 0; }
               <li>bot_accounts · friendships</li>
               <li>cheers_sessions (+ bindings)</li>
               <li>acp_capability（delegations + reject_logs）</li>
-              <li><code>memory_files</code>（agent 工作区 <code>fs.*</code>，<code>resource/fs.rs</code>，14 条 SQL）</li>
+              <li><code>context_files</code>（agent 工作区 <code>fs.*</code>，<code>resource/fs.rs</code>，14 条 SQL）</li>
             </ul>
           </div>
           <div class="scope-lane open">
@@ -1353,43 +1349,68 @@ tr:last-child td { border-bottom: 0; }
       <section id="backlog" aria-labelledby="backlog-title">
         <div class="section-heading">
           <div>
-            <h2 id="backlog-title">后续工作</h2>
-            <p>M1 核心闭环已真机验证并提交于 <code>demo/main</code>（3 个 commit）。下一步是 <code>demo/main → develop → main</code> 发布与 M2 功能裁剪。</p>
+            <h2 id="backlog-title">近期里程碑（2026-06-23 → 06-30）与后续</h2>
+            <p>M1 之上的增量，按可演示能力逐项提交；全部已合 <code>develop</code>（origin @ fa006e75）。下列为本期里程碑（已完成）与剩余/延后项。</p>
           </div>
         </div>
         <div class="backlog-grid">
           <article class="backlog-card">
-            <span class="badge done">M1 · 前端 ✓</span>
-            <h3>前端核心闭环（已完成）</h3>
-            <p>重连 <code>since_seq</code> 追平 · @mention 选择器 · 文件上传 + 鉴权下载 chip · presence 在线数 · streaming + agent trace 字幕 · Settings→Bots 管理 UI。2026-06-22 真机验证。</p>
+            <span class="badge done">安全 ✓</span>
+            <h3>安全加固（Tranche 0 · W4/W5/W6）</h3>
+            <p>JWT / 文件 XSS / 限流；Bot 归属鉴权（IDOR）+ token 加固；会话吊销 + 账号封禁；仅对委派 bot 强制 ACP capability。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge done">M1 · 后端 ✓</span>
-            <h3>CRUD 补洞 + 文件 + presence（已完成）</h3>
-            <p>admin seed · messages <code>?since_seq=</code> · <code>POST /bots/:id/token</code> 签发 · S3 网关代理上传/下载 + 桶引导 · presence 广播 · dispatch/delta/done 日志 + <code>trace</code> 转 UI。</p>
+            <span class="badge done">协作域 ✓</span>
+            <h3>协作域补全</h3>
+            <p>好友请求/屏蔽 + DM 鉴权 · 未读计数 + 已读 · 工作区邀请/接受 · 频道/工作区管理 UI · 管理员封禁 · 成员自助退出 + 角色变更（含越权加固）。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge done">M1 · 验证 ✓</span>
-            <h3>connector happy-path（已真机验证）</h3>
-            <p>真实 Rust connector + claude-code-acp 接入：@提及 → 流式 → 重连追平，端到端跑通。两处真机集成坑已记录（MCP schema 不匹配 → 关注入；CLAUDECODE 嵌套守卫 → unset）。见 <code>docs/DEMO_M1.md</code>。</p>
+            <span class="badge done">接入 ✓</span>
+            <h3>Bot 三模式接入（onboarding）</h3>
+            <p>enrollment code + 连接器配置生成器 · 安装脚本 <code>/install.sh</code> · 手动模式向导 · 自接入 <code>/enrollment/guidance</code>；NodePort / 公网可达性。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge mostly">发布 · 待办</span>
-            <h3>demo/main → develop → main</h3>
-            <p>M1 在 <code>demo/main</code>（3 commit，未推远端）；待并入 <code>develop</code> 再晋级 <code>main</code>（push main 触发 <code>cd.yml</code> 构建并推 ghcr 镜像，<code>DEPLOY_ENABLED</code> 未开、无 live SSH 部署）。</p>
+            <span class="badge done">审批 ✓</span>
+            <h3>ACP 审批闭环 + trace 持久化</h3>
+            <p><code>session/request_permission</code> → 待审卡 → 解析 allow/deny；trace 落库 + approve-as-trace。见 <code>ACP_APPROVAL_FLOW.md</code> / <code>TRACE_PERSISTENCE.md</code>。</p>
           </article>
           <article class="backlog-card">
-            <span class="badge future">M2 · 裁剪</span>
-            <h3>schema-only 功能定范围</h3>
-            <p>对仅 schema 的 8 张表逐一定 v1 进 / 延后 / 砍：memory（记忆）、document/RAG、lens（history_pages）、todos/templates/keychain/ai_models。权限 UI 随之定。不得把只有 schema 的功能标成「完成」。</p>
+            <span class="badge done">治理 ✓</span>
+            <h3>Bot 配置主权 L0/L1/L2</h3>
+            <p>host TOML 主权闸门/天花板 → 平台持久化期望 → 运行时 <code>set_mode</code>/<code>set_config_option</code>，连接器按 L0（<code>allowed_modes</code>/<code>allowed_config_options</code>）钳制。见 <code>BOT_CONFIG_GOVERNANCE.md</code>。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge done">权限 ✓</span>
+            <h3>事件中心权限模型</h3>
+            <p>把全部 ACP 事件纳入登记表，按 <code>(主体 × 事件类 × 能力)</code> 治理：INITIATE/SEE/RESPOND × 角色/用户/动态群组（好友/频道/工作区）；live 逐订阅者 SEE 过滤；统一 <code>acp_policy</code> 单点。见 <code>ACP_EVENT_TAXONOMY.md</code> / <code>BOT_PERMISSION_MODEL.md</code>。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge done">会话 ✓</span>
+            <h3>会话模型重构 P1–P4</h3>
+            <p>P1 会话改频道级（脱离 workspace）· P2 一频道 primary + N other（无 topic，按 session_id 寻址）· P3 会话级 mode/config override · P4 deny-default 但可授权、值钳制的会话级 <code>set_mode</code>/<code>set_config_option</code>（连接器新增 <code>mode_set</code> 帧）+ 频道内控件。见 <code>SESSION_MODEL.md</code>。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge done">设置 ✓</span>
+            <h3>设置页重构 + 会话配置项</h3>
+            <p>设置页改 nav-rail 分页 + 中英混杂全英文化；Bot 权限弹层 Posture/Grants/Activity 分页；owner 会话配置项（model / effort）选择器。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge mostly">部署 · 待办</span>
+            <h3>重建外部 host 连接器</h3>
+            <p>网关已 dispatch 会话定向 <code>mode_set</code>（<code>delivered:true</code>），但外部 host 连接器需重建（<code>cargo build --release</code> + <code>launchctl kickstart -k</code>）才能真正 apply；config option 路径在已连接连接器即生效。</p>
+          </article>
+          <article class="backlog-card">
+            <span class="badge future">会话 · 后续</span>
+            <h3>override resume 重放</h3>
+            <p>会话级 override 在会话重建（重连/重启）时回落 bot 默认；resume 时重放 override 为后续项。鉴权不受影响。见 <code>SESSION_MODEL.md</code>「Breaking changes / v1 limitation」。</p>
           </article>
           <article class="backlog-card">
             <span class="badge future">M3/M4 · 加固</span>
-            <h3>E2EE / ACP 端点 Noise 通道（分层可选，非默认）</h3>
-            <p>现状：<code>acp_security</code>（X25519-ECDH + AES-256-GCM，即 Noise 式握手）只落字段 + hello 协商，内容加解密未实装。决策：分层 + 按 bot opt-in + 不设平台全局默认——全局 E2EE 会让服务端读不到内容，废掉 search / RAG / 摘要 / 文件提取等「agent 处理内容」核心能力（且内置 LLM worker 仍需解密 → 对运营方仍非 E2EE）。钩子已留（<code>acp_security</code> 配置 + <code>E2EE_REQUIRED</code> / <code>DECRYPT_FAILED</code> 错误码）。优先级取决于威胁模型：自部署单租户 TLS 足矣；要「运营方也读不到」才升级为旗舰项。推 M3/M4，见 <code>docs/arch/E2EE_NOTES.md</code>（威胁模型层级 A/B/C）。</p>
+            <h3>E2EE / Noise 通道（分层可选）</h3>
+            <p><code>acp_security</code>（X25519-ECDH + AES-256-GCM）只落字段 + hello 协商，内容加解密未实装；分层 + 按 bot opt-in，不设全局默认。见 <code>E2EE_NOTES.md</code>。</p>
           </article>
         </div>
-        <p class="note">M1 验收门全绿：新用户能 建工作区/频道 → 发带 mention+文件的消息 → 接入外接 agent → @它 → 看真实 Claude 流式回复 → 刷新看到完整历史 ✓。server <code>cargo build</code> + frontend <code>tsc</code> / <code>vite build</code> 全绿；文件上传下载往返、presence 去重、agent trace 转 UI 均真机验证。遗留：bot resource 层 <code>resource/files.rs</code> 仍 <code>content:null</code>（Phase 2）；<code>Makefile</code>/<code>.env.example</code> 为旧 gateway/Python 期。</p>
+        <p class="note">⚠️ 破坏性变更（与之前不同）：会话从 workspace 级改为频道级（跨频道共享上下文消失、旧 workspace 会话不迁移）；<code>set_mode</code>/<code>set_config_option</code> 从「排除出 INITIATE 矩阵」改为 deny-default 但可授权；migration <code>0033</code> 改 binding 唯一约束（primary-only 部分唯一）；连接器新增 <code>mode_set</code> 帧、旧连接器需重建。详见 <code>SESSION_MODEL.md</code>「Breaking changes」。本期全部已合 <code>develop</code>（origin @ fa006e75）；<code>cargo build</code> / <code>vite build</code> 全绿，kind 上 e2e 验证。</p>
       </section>
       <section id="sources" aria-labelledby="sources-title">
         <div class="section-heading">
@@ -1421,7 +1442,7 @@ tr:last-child td { border-bottom: 0; }
           </a>
           <a class="source-link" href="../../server/src/resource/fs.rs">
             <strong>server/src/resource/fs.rs</strong>
-            <span>memory_files 文件域 handler（已实现）</span>
+            <span>context_files 文件域 handler（已实现）</span>
           </a>
           <a class="source-link" href="../../packages/cheers-acp-connector-rs/src/bridge_runtime.rs">
             <strong>packages/…/bridge_runtime.rs</strong>
@@ -1443,11 +1464,27 @@ tr:last-child td { border-bottom: 0; }
             <strong>Architecture Overview</strong>
             <span>目标拓扑与部署模型</span>
           </a>
+          <a class="source-link" href="SESSION_MODEL.md">
+            <strong>docs/arch/SESSION_MODEL.md</strong>
+            <span>会话模型：频道级 + primary/other + 配置分层 + Breaking changes</span>
+          </a>
+          <a class="source-link" href="BOT_CONFIG_GOVERNANCE.md">
+            <strong>docs/arch/BOT_CONFIG_GOVERNANCE.md</strong>
+            <span>Bot 配置主权 L0/L1/L2</span>
+          </a>
+          <a class="source-link" href="ACP_EVENT_TAXONOMY.md">
+            <strong>docs/arch/ACP_EVENT_TAXONOMY.md</strong>
+            <span>事件中心权限：事件登记表 + INITIATE/SEE/RESPOND</span>
+          </a>
+          <a class="source-link" href="BOT_PERMISSION_MODEL.md">
+            <strong>docs/arch/BOT_PERMISSION_MODEL.md</strong>
+            <span>权限模型（主体 × 事件类 × 能力）</span>
+          </a>
         </div>
       </section>
     </main>
     <footer class="footer">
-      <p>基于 2026-06-22 对当前代码的实测快照（M1 核心闭环真机验证，branch <code>demo/main</code> @ 5a0ffc5；M0 经 PR #25 合入 develop @ 5c58c57）。M1 用真实 Rust connector + claude-code-acp ACP agent 端到端验证：@bot 流式回复 · 文件网关代理上传/下载（aws-sdk-s3 SigV4）· presence 去重 · agent <code>trace</code> 转 UI。全流程见 <code>docs/DEMO_M1.md</code>。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
+      <p>基于 2026-06-30 对当前代码的实测快照（branch <code>develop</code> @ fa006e75）。M1 核心闭环之上，2026-06-23 → 06-30 已合入：安全加固 · 协作域补全 · Bot 三模式接入 · ACP 审批闭环 · Bot 配置主权（L0/L1/L2）· 事件中心权限（INITIATE/SEE/RESPOND × 角色/用户/群组）· 会话模型重构 P1–P4（频道级 + primary/other + 委派 set_mode/set_config）。破坏性变更见 <code>docs/arch/SESSION_MODEL.md</code>。改 <code>architecture-status.page.json</code> 后跑 <code>node scripts/generate-architecture-status-page.mjs</code> 重新生成本页。</p>
     </footer>
   </div>
 </body>
