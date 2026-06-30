@@ -10,6 +10,7 @@ import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { ChannelFilesDialog } from "./ChannelFilesDialog";
 import { ChannelSettingsDialog } from "./ChannelSettingsDialog";
+import { SessionControlButton } from "./SessionControlButton";
 import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
@@ -351,6 +352,7 @@ export function ChannelView({ channel }: Props) {
         >
           <PanelRight className="w-4 h-4" />
         </button>
+        <SessionControlButton channelId={channel.channel_id} />
         {channel.type !== "dm" && (
           <button
             onClick={() => setSettingsOpen(true)}
