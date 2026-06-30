@@ -51,6 +51,35 @@ sessions)` ▸ `session override (per-session)`.
   `mode_set` frame (ACP `session/set_mode`), which validates the value against `allowed_modes`.
   It must NOT travel `config_option_set` (that checks only the config *id*, not the value).
 
+## Session operations × permission (current state)
+
+Which ACP/Cheers session operations are governed, and how. Principle: **action before
+permission** — only operations that are actually exposed get a grant class; we don't add
+decorative rows for unimplemented actions.
+
+| Operation | Governed by | Endpoint | Status |
+|---|---|---|---|
+| **prompt** | `acp_policy` INITIATE `prompt` (matrix) | `POST …/messages` | ✅ |
+| **cancel** | `acp_policy` INITIATE `cancel` (matrix) | `…/messages/:id/cancel` | ✅ |
+| **set_mode** | INITIATE `set_mode` — owner-default, grantable; owner/admin bypass | `…/sessions/:id/mode` | ✅ |
+| **set_config_option** | INITIATE `set_config_option` — owner-default, grantable; owner/admin bypass | `…/sessions/:id/config-option` | ✅ |
+| **create** (extra session) | INITIATE `session_create` — owner-default, grantable; owner/admin bypass | `POST …/sessions` | ✅ |
+| **close / terminate** (≈ soft delete) | INITIATE `session_close` — owner-default, grantable; owner/admin bypass | `DELETE …/sessions/:id` | ✅ |
+| **list** | **channel membership** (not a per-subject grant) | `GET …/sessions` | ⚠️ membership-gated, **not** in matrix |
+| **resume** | — | — | ❌ not exposed (auto-resumes by `provider_session_key` on next message) |
+| **fork** | — | — | ❌ not exposed (ACP advanced; no connector support / UX yet) |
+| **hard delete** (purge row + history) | — | — | ❌ not separate (`close` covers stop-using; no destructive purge) |
+| `request_permission` | RESPOND (matrix) + owner/approvers | approval card | ✅ |
+| agent→user `output/thought/tool_call/plan` | SEE (matrix) | live broadcast / trace read | ✅ |
+| `current_mode/config_option/usage/available_commands _update` | SEE vocabulary (grantable); **enforcement = logged to `acp_event_log`/Activity**, not live per-subscriber filtered | Activity timeline | ⚠️ telemetry; control is `set_*` above |
+| `session/new·load·resume·list·close·fork·delete` (raw ACP) | **Connector** (host firewall / plumbing) | — | host-managed, not per-subject |
+
+**Deferred (decided 2026-06-30, not built):**
+- **`list` → SEE grant** — possible if "who can see this channel's sessions" needs per-subject
+  control; today membership-gated (a benign read), which is usually enough.
+- **`resume` / `fork` / hard `delete`** — need a real UX + endpoint (and connector support for
+  fork) before adding a grant class; not built to avoid decorative permission rows.
+
 ## ⚠️ Breaking changes vs. prior behavior
 
 This refactor changes behavior/data in ways that are **not** backwards-compatible with
