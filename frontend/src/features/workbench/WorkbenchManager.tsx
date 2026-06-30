@@ -50,10 +50,10 @@ export function WorkbenchManager() {
       try {
         const { id, title, manifest } = parsePluginHtml(html);
         await installPlugin({ id, title, manifest, bundle: html });
-        setNotice(`已安装插件：${title}`);
+        setNotice(`Installed plugin: ${title}`);
         await reload();
       } catch (e) {
-        setError(`插件安装失败：${e instanceof Error ? e.message : String(e)}`);
+        setError(`Plugin install failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
     [reload]
@@ -66,19 +66,19 @@ export function WorkbenchManager() {
       try {
         m = JSON.parse(text);
       } catch {
-        setError("不是合法 JSON");
+        setError("Not valid JSON");
         return;
       }
       if (!validateManifest(m)) {
-        setError("无效模板：缺 id/title/views，或引用了未知 lens");
+        setError("Invalid template: missing id/title/views, or references an unknown lens");
         return;
       }
       try {
         await saveGlobalTemplate(m);
-        setNotice(`已安装全局模板：${m.title}`);
+        setNotice(`Installed global template: ${m.title}`);
         await reload();
       } catch (e) {
-        setError(`模板安装失败：${e instanceof Error ? e.message : String(e)}`);
+        setError(`Template install failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
     [reload]
@@ -119,13 +119,13 @@ export function WorkbenchManager() {
         <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Puzzle className="w-4 h-4 text-amber-400" />
-            <h3 className="text-sm font-semibold text-zinc-100">插件（代码 / 沙箱）</h3>
+            <h3 className="text-sm font-semibold text-zinc-100">Plugins (code / sandboxed)</h3>
             <button
               type="button"
               onClick={() => pluginRef.current?.click()}
               className="ml-auto inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300"
             >
-              <Upload className="w-3.5 h-3.5" /> 上传 .html
+              <Upload className="w-3.5 h-3.5" /> Upload .html
             </button>
             <input
               ref={pluginRef}
@@ -140,10 +140,11 @@ export function WorkbenchManager() {
             />
           </div>
           <p className="text-[11px] text-zinc-500">
-            自带渲染器的沙箱插件，全频道可用。安装即在浏览器隔离 iframe 中运行。
+            Sandboxed plugins that ship their own renderer, available in every channel. On
+            install they run inside an isolated browser iframe.
           </p>
           <ul className="space-y-1">
-            {plugins.length === 0 && <li className="text-xs text-zinc-600">还没有插件。</li>}
+            {plugins.length === 0 && <li className="text-xs text-zinc-600">No plugins yet.</li>}
             {plugins.map((p) => (
               <li
                 key={p.plugin_id}
@@ -157,7 +158,7 @@ export function WorkbenchManager() {
                     await deletePlugin(p.plugin_id);
                     await reload();
                   }}
-                  title="卸载"
+                  title="Uninstall"
                   className="text-zinc-600 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -171,13 +172,13 @@ export function WorkbenchManager() {
         <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-indigo-400" />
-            <h3 className="text-sm font-semibold text-zinc-100">全局模板（数据）</h3>
+            <h3 className="text-sm font-semibold text-zinc-100">Global templates (data)</h3>
             <button
               type="button"
               onClick={() => tplRef.current?.click()}
               className="ml-auto inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
             >
-              <Upload className="w-3.5 h-3.5" /> 上传 .json
+              <Upload className="w-3.5 h-3.5" /> Upload .json
             </button>
             <input
               ref={tplRef}
@@ -192,10 +193,13 @@ export function WorkbenchManager() {
             />
           </div>
           <p className="text-[11px] text-zinc-500">
-            声明式场景清单（引用内置 lens），全频道可用。纯数据、不执行代码，无需沙箱。
+            Declarative scenario manifests (referencing built-in lenses), available in every
+            channel. Pure data — no code execution, no sandbox needed.
           </p>
           <ul className="space-y-1">
-            {templates.length === 0 && <li className="text-xs text-zinc-600">还没有全局模板。</li>}
+            {templates.length === 0 && (
+              <li className="text-xs text-zinc-600">No global templates yet.</li>
+            )}
             {templates.map((t) => (
               <li
                 key={t.id}
@@ -209,7 +213,7 @@ export function WorkbenchManager() {
                     await deleteGlobalTemplate(t.id);
                     await reload();
                   }}
-                  title="卸载"
+                  title="Uninstall"
                   className="text-zinc-600 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
