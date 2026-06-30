@@ -66,7 +66,9 @@ pub async fn create_session(
     Extension(claims): Extension<Claims>,
     Path((channel_id, bot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, AppError> {
-    ensure_channel_member(&state, channel_id, &claims).await?;
+    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
+    let role = caller_role(&state, channel_id, user_id).await?;
+    gate_initiate(&state, &claims, channel_id, bot_id, user_id, &role, "cheers/session_create").await?;
     let provider_account_id = crate::domain::messages::resolve_provider_account_id_for_bot(&state.db, bot_id)
         .await
         .unwrap_or_else(|_| bot_id.to_string());
@@ -83,6 +85,20 @@ pub async fn create_session(
         "provider_session_key": handle.provider_session_key,
         "role": "other",
     })))
+}
+
+// ── DELETE /api/v1/channels/:channel_id/bots/:bot_id/sessions/:session_id ─────
+
+pub async fn close_session(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
+    let role = caller_role(&state, channel_id, user_id).await?;
+    gate_initiate(&state, &claims, channel_id, bot_id, user_id, &role, "cheers/session_close").await?;
+    sessions::close_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
+    Ok(Json(json!({ "ok": true, "session_id": session_id.to_string() })))
 }
 
 // ── Delegated session-scoped mode / config changes ───────────────────────────
@@ -344,11 +360,27 @@ pub async fn session_controls(
         )
         .await
         .unwrap_or(false);
+    let can_create_session = privileged
+        || acp_policy::allows(
+            &state.db, &bot_id.to_string(), &channel_id.to_string(), &user_id.to_string(),
+            &role, "cheers/session_create", Capability::Initiate,
+        )
+        .await
+        .unwrap_or(false);
+    let can_close_session = privileged
+        || acp_policy::allows(
+            &state.db, &bot_id.to_string(), &channel_id.to_string(), &user_id.to_string(),
+            &role, "cheers/session_close", Capability::Initiate,
+        )
+        .await
+        .unwrap_or(false);
     let agent_type = bot_agent_type(&state, bot_id).await;
     let (_, allowed_modes) = connector_config::posture_preset(&agent_type);
     Ok(Json(json!({
         "can_set_mode": can_set_mode,
         "can_set_config_option": can_set_config_option,
+        "can_create_session": can_create_session,
+        "can_close_session": can_close_session,
         "allowed_modes": allowed_modes,
         "config_options": advertised_config_options(&state, bot_id).await,
     })))

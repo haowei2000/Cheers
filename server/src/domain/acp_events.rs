@@ -74,6 +74,12 @@ pub const REGISTRY: &[AcpEvent] = &[
     ev("session/cancel", Home::Cheers, Some("cancel"), Some("initiate"), false),
     ev("session/set_mode", Home::Cheers, Some("set_mode"), Some("initiate"), false),
     ev("session/set_config_option", Home::Cheers, Some("set_config_option"), Some("initiate"), false),
+    // Cheers-level session-lifecycle MANAGEMENT permissions (not raw ACP methods):
+    // who may create an extra session in a channel, or close/terminate one. Gated
+    // per-subject like set_mode (owner-default, grantable). The implicit primary
+    // session created on first message is NOT gated by these.
+    ev("cheers/session_create", Home::Cheers, Some("session_create"), Some("initiate"), false),
+    ev("cheers/session_close", Home::Cheers, Some("session_close"), Some("initiate"), false),
     // ── agent→client requests ────────────────────────────────────────────────
     // permission_request: Cheers SEE (view the card) + RESPOND (answer it).
     ev("session/request_permission", Home::Cheers, Some("permission_request"), Some("respond"), false),

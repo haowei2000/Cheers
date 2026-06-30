@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { SlidersHorizontal, Plus } from "lucide-react";
+import { SlidersHorizontal, Plus, X } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
 import {
   getSessionControls,
   listChannelBotSessions,
   createChannelBotSession,
+  closeChannelBotSession,
   setSessionMode,
   setSessionConfigOption,
   type SessionControls,
@@ -39,7 +40,13 @@ export function SessionControlButton({ channelId }: { channelId: string }) {
           botMembers.map(async (m) => {
             try {
               const controls = await getSessionControls(channelId, m.member_id);
-              if (!controls.can_set_mode && !controls.can_set_config_option) return null;
+              if (
+                !controls.can_set_mode &&
+                !controls.can_set_config_option &&
+                !controls.can_create_session &&
+                !controls.can_close_session
+              )
+                return null;
               return {
                 botId: m.member_id,
                 name: m.display_name || m.username || m.member_id.slice(0, 8),
@@ -131,22 +138,24 @@ function BotSessionControls({ channelId, bot }: { channelId: string; bot: Grante
     <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2 space-y-1.5">
       <div className="flex items-center gap-1.5">
         <span className="text-xs font-medium text-zinc-200 truncate flex-1">{bot.name}</span>
-        <button
-          type="button"
-          disabled={busy}
-          title="New session"
-          onClick={() =>
-            run(async () => {
-              const s = await createChannelBotSession(channelId, bot.botId);
-              await loadSessions();
-              setTarget(s.session_id);
-            })
-          }
-          className="inline-flex items-center gap-0.5 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-zinc-800"
-        >
-          <Plus className="w-3 h-3" />
-          new
-        </button>
+        {bot.controls.can_create_session && (
+          <button
+            type="button"
+            disabled={busy}
+            title="New session"
+            onClick={() =>
+              run(async () => {
+                const s = await createChannelBotSession(channelId, bot.botId);
+                await loadSessions();
+                setTarget(s.session_id);
+              })
+            }
+            className="inline-flex items-center gap-0.5 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:bg-zinc-800"
+          >
+            <Plus className="w-3 h-3" />
+            new
+          </button>
+        )}
       </div>
 
       <label className="flex items-center gap-1.5">
@@ -158,6 +167,23 @@ function BotSessionControls({ channelId, bot }: { channelId: string; bot: Grante
             </option>
           ))}
         </select>
+        {bot.controls.can_close_session && !sessions.find((s) => s.session_id === target)?.is_primary && (
+          <button
+            type="button"
+            disabled={busy || !target}
+            title="Close this session"
+            onClick={() =>
+              run(async () => {
+                await closeChannelBotSession(channelId, bot.botId, target);
+                await loadSessions();
+                setTarget("");
+              })
+            }
+            className="text-zinc-600 hover:text-red-300 disabled:opacity-40"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </label>
 
       {bot.controls.can_set_mode && bot.controls.allowed_modes.length > 0 && (
