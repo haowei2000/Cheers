@@ -42,8 +42,11 @@ sessions)` ▸ `session override (per-session)`.
   `/config-option`): a channel member with an explicit INITIATE grant on `set_mode` /
   `set_config_option` may change *that session's* mode/config. Gated FAIL-CLOSED via
   `acp_policy`, with FATAL value pre-validation. `set_mode`/`set_config_option` are
-  **owner-default but grantable** (`OWNER_DEFAULT_INITIATE`): deny-by-default, widened only by
-  an explicit allow rule.
+  **owner-default but grantable** (`OWNER_DEFAULT_INITIATE`): the **bot owner / platform admin
+  are allowed by default** (they own the bot-level default too), and **every other subject is
+  deny-by-default**, widened only by an explicit allow rule. (The owner/admin short-circuit lives
+  in the session-control endpoints — `ensure_bot_owner_or_admin` — so the in-channel control is
+  visible/usable to the owner without self-granting.)
 - **Mode value-clamp**: a session-targeted mode change travels the connector's dedicated
   `mode_set` frame (ACP `session/set_mode`), which validates the value against `allowed_modes`.
   It must NOT travel `config_option_set` (that checks only the config *id*, not the value).

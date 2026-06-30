@@ -109,12 +109,22 @@ async fn caller_role(state: &AppState, channel_id: Uuid, user_id: Uuid) -> Resul
 /// FAIL-CLOSED INITIATE gate for a session-config change.
 async fn gate_initiate(
     state: &AppState,
+    claims: &Claims,
     channel_id: Uuid,
     bot_id: Uuid,
     user_id: Uuid,
     role: &str,
     event_name: &str,
 ) -> Result<(), AppError> {
+    // The bot owner / platform admin may always change session config — they own
+    // the bot-level default too. Deny-default applies only to OTHER subjects, who
+    // need an explicit INITIATE grant.
+    if crate::api::bots::ensure_bot_owner_or_admin(state, claims, &bot_id.to_string())
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
     let allowed = acp_policy::allows(
         &state.db,
         &bot_id.to_string(),
@@ -199,7 +209,7 @@ pub async fn set_session_mode(
 ) -> Result<Json<Value>, AppError> {
     let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
     let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(&state, channel_id, bot_id, user_id, &role, "session/set_mode").await?;
+    gate_initiate(&state, &claims, channel_id, bot_id, user_id, &role, "session/set_mode").await?;
 
     let mode = body.mode.trim().to_string();
     if mode.is_empty() {
@@ -250,7 +260,7 @@ pub async fn set_session_config_option(
 ) -> Result<Json<Value>, AppError> {
     let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
     let role = caller_role(&state, channel_id, user_id).await?;
-    gate_initiate(&state, channel_id, bot_id, user_id, &role, "session/set_config_option").await?;
+    gate_initiate(&state, &claims, channel_id, bot_id, user_id, &role, "session/set_config_option").await?;
 
     let config_id = body.config_id.trim().to_string();
     let value = body.value;
@@ -316,18 +326,24 @@ pub async fn session_controls(
 ) -> Result<Json<Value>, AppError> {
     let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
     let role = caller_role(&state, channel_id, user_id).await?;
-    let can_set_mode = acp_policy::allows(
-        &state.db, &bot_id.to_string(), &channel_id.to_string(), &user_id.to_string(),
-        &role, "session/set_mode", Capability::Initiate,
-    )
-    .await
-    .unwrap_or(false);
-    let can_set_config_option = acp_policy::allows(
-        &state.db, &bot_id.to_string(), &channel_id.to_string(), &user_id.to_string(),
-        &role, "session/set_config_option", Capability::Initiate,
-    )
-    .await
-    .unwrap_or(false);
+    // Bot owner / platform admin always have it (deny-default applies only to others).
+    let privileged = crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id.to_string())
+        .await
+        .is_ok();
+    let can_set_mode = privileged
+        || acp_policy::allows(
+            &state.db, &bot_id.to_string(), &channel_id.to_string(), &user_id.to_string(),
+            &role, "session/set_mode", Capability::Initiate,
+        )
+        .await
+        .unwrap_or(false);
+    let can_set_config_option = privileged
+        || acp_policy::allows(
+            &state.db, &bot_id.to_string(), &channel_id.to_string(), &user_id.to_string(),
+            &role, "session/set_config_option", Capability::Initiate,
+        )
+        .await
+        .unwrap_or(false);
     let agent_type = bot_agent_type(&state, bot_id).await;
     let (_, allowed_modes) = connector_config::posture_preset(&agent_type);
     Ok(Json(json!({
