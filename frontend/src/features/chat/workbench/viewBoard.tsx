@@ -36,8 +36,10 @@ export interface ViewBoardDef<T> {
   makeParams: (ctx: ViewBoardContext) => Record<string, unknown>;
   /** When true, the toolbar shows the channel's selected-session scope. */
   sessionScoped?: boolean;
-  /** Render the loaded data (owns both the populated and the empty presentation). */
-  render: (data: T, ctx: ViewBoardContext) => ReactNode;
+  /** Render the loaded data (owns both the populated and the empty presentation).
+   *  `refetch` lets an actionable board (e.g. Sessions: create/close) refresh itself
+   *  after a lightweight control action. */
+  render: (data: T, ctx: ViewBoardContext, refetch: () => void) => ReactNode;
 }
 
 /** A registered, renderable board (the result of defineViewBoard). */
@@ -108,7 +110,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
             // First load (no data yet) — neutral hint, not the board's "empty" state.
             <div className="px-3 py-6 text-xs text-zinc-600">Loading…</div>
           ) : (
-            def.render(data, ctx)
+            def.render(data, ctx, refetch)
           )}
         </div>
       </div>
