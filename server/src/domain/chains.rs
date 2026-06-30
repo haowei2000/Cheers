@@ -43,10 +43,10 @@ pub async fn trigger_bot_replies(
     }
 
     let next_depth = current_depth.saturating_add(1);
-    let workspace_id = resolve_channel_workspace_id(db, channel_id).await?;
 
     for bot_id in bots {
-        let provider_session_key = provider_session_key_for_bot_workspace(workspace_id, bot_id);
+        // Per-channel session (see messages.rs): scope-derived stable key.
+        let provider_session_key = provider_session_key_for_bot_channel(channel_id, bot_id);
         let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
             .await?
             .unwrap_or_else(|| bot_id.to_string());
@@ -55,8 +55,8 @@ pub async fn trigger_bot_replies(
             bot_id,
             &provider_account_id,
             &provider_session_key,
-            sessions::SESSION_SCOPE_WORKSPACE,
-            &workspace_id.to_string(),
+            sessions::SESSION_SCOPE_CHANNEL,
+            &channel_id.to_string(),
             None,
             "primary",
         )
@@ -103,18 +103,8 @@ fn mentioned_bots(mentions: &[Mention]) -> Vec<Uuid> {
         .collect()
 }
 
-fn provider_session_key_for_bot_workspace(workspace_id: Uuid, bot_id: Uuid) -> String {
-    format!("cheers:workspace:{workspace_id}:bot:{bot_id}")
-}
-
-async fn resolve_channel_workspace_id(db: &PgPool, channel_id: Uuid) -> Result<Uuid, sqlx::Error> {
-    let row = sqlx::query("SELECT workspace_id FROM channels WHERE channel_id = $1")
-        .bind(channel_id.to_string())
-        .fetch_one(db)
-        .await?;
-    let raw = row.try_get::<String, _>("workspace_id")?;
-
-    Uuid::parse_str(&raw).map_err(|_| sqlx::Error::RowNotFound)
+fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
+    format!("cheers:channel:{channel_id}:bot:{bot_id}")
 }
 
 async fn resolve_provider_account_id_for_bot(

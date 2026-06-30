@@ -95,7 +95,6 @@ pub async fn create_message(
     let msg_id = Uuid::new_v4();
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
-    let workspace_id = resolve_channel_workspace_id(db, params.channel_id).await?;
 
     let mut tx = db.begin().await.map_err(AppError::Db)?;
     let seq = channel_seq::allocate(&mut tx, params.channel_id)
@@ -222,7 +221,11 @@ pub async fn create_message(
             continue;
         }
 
-        let provider_session_key = provider_session_key_for_bot_workspace(workspace_id, bot_id);
+        // Session is scoped per CHANNEL (not per workspace): each channel gets its
+        // own live ACP session for the bot, so a per-channel mode/config change can
+        // be isolated. The key is scope-derived (stable across turns) because the
+        // binding is detached on finalize — resume dedups on this key.
+        let provider_session_key = provider_session_key_for_bot_channel(params.channel_id, bot_id);
         let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
             .await
             .unwrap_or_else(|_| bot_id.to_string());
@@ -231,8 +234,8 @@ pub async fn create_message(
             bot_id,
             &provider_account_id,
             &provider_session_key,
-            sessions::SESSION_SCOPE_WORKSPACE,
-            &workspace_id.to_string(),
+            sessions::SESSION_SCOPE_CHANNEL,
+            &params.channel_id.to_string(),
             None,
             "primary",
         )
@@ -273,8 +276,8 @@ pub async fn create_message(
     Ok(dto)
 }
 
-fn provider_session_key_for_bot_workspace(workspace_id: Uuid, bot_id: Uuid) -> String {
-    format!("cheers:workspace:{workspace_id}:bot:{bot_id}")
+fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
+    format!("cheers:channel:{channel_id}:bot:{bot_id}")
 }
 
 async fn resolve_provider_account_id_for_bot(
@@ -339,20 +342,6 @@ fn resolve_provider_account_id_from_binding_config(
     }
 
     None
-}
-
-async fn resolve_channel_workspace_id(db: &PgPool, channel_id: Uuid) -> Result<Uuid, AppError> {
-    use sqlx::Row;
-    let workspace_id = sqlx::query("SELECT workspace_id FROM channels WHERE channel_id = $1")
-        .bind(channel_id.to_string())
-        .fetch_optional(db)
-        .await
-        .map_err(AppError::Db)?
-        .and_then(|row| row.try_get::<String, _>("workspace_id").ok())
-        .and_then(|value| Uuid::parse_str(&value).ok())
-        .ok_or_else(|| AppError::BadRequest("invalid channel".into()))?;
-
-    Ok(workspace_id)
 }
 
 fn normalize_file_ids(file_ids: &[String]) -> Vec<String> {
