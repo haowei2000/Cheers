@@ -283,6 +283,37 @@ pub async fn resolve_channel_session(
     Ok((bot_id, key))
 }
 
+/// Close a channel session: mark it terminated + detach its binding, so it drops
+/// out of the switcher and can no longer be targeted. Verifies it is bound (active)
+/// to the channel first. Cheers-level only — the agent's ACP session is left to go
+/// idle (no `session/delete` round-trip needed).
+pub async fn close_channel_session(
+    db: &PgPool,
+    channel_id: &str,
+    session_id: Uuid,
+) -> Result<(), AppError> {
+    // Reuse the bound-to-this-channel check (errors NotFound if not).
+    resolve_channel_session(db, channel_id, session_id).await?;
+    let now = Utc::now();
+    sqlx::query("UPDATE cheers_sessions SET status = $1, updated_at = $2 WHERE session_id = $3")
+        .bind(SESSION_STATUS_TERMINATED)
+        .bind(now)
+        .bind(session_id.to_string())
+        .execute(db)
+        .await
+        .map_err(AppError::Db)?;
+    sqlx::query(
+        "UPDATE cheers_session_bindings SET detached_at = COALESCE(detached_at, $1)
+         WHERE session_id = $2 AND detached_at IS NULL",
+    )
+    .bind(now)
+    .bind(session_id.to_string())
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+    Ok(())
+}
+
 async fn upsert_session_binding(
     db: &PgPool,
     session_id: &Uuid,

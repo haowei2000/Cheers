@@ -107,7 +107,8 @@ pub fn default_access(capability: Capability) -> bool {
 /// agent's session config (mode / config options), so even though INITIATE is
 /// otherwise member-allowed, these must be deny-by-default. They ARE grantable
 /// per-subject (unlike a hard owner-only), which is what enables delegation.
-pub const OWNER_DEFAULT_INITIATE: &[&str] = &["set_mode", "set_config_option"];
+pub const OWNER_DEFAULT_INITIATE: &[&str] =
+    &["set_mode", "set_config_option", "session_create", "session_close"];
 
 /// The membership default for a specific `(event_class, capability)` when no rule
 /// matches — like [`default_access`] but deny-by-default for the owner-default
@@ -576,6 +577,18 @@ mod tests {
         let by_role = vec![rule("c1", SUBJECT_ROLE, "admin", "set_config_option", Capability::Initiate, true)];
         assert!(allows(&by_role, "c1", "u9", "admin", "set_config_option", Capability::Initiate));
         assert!(!allows(&by_role, "c1", "u1", "member", "set_config_option", Capability::Initiate));
+    }
+
+    #[test]
+    fn session_lifecycle_classes_are_owner_default_and_grantable() {
+        // create/close default to owner-only (denied for a plain member)...
+        assert!(!allows(&[], "c1", "u1", "member", "session_create", Capability::Initiate));
+        assert!(!allows(&[], "c1", "u1", "member", "session_close", Capability::Initiate));
+        // ...but an explicit grant widens, and they're in the INITIATE vocabulary.
+        let g = vec![rule("c1", SUBJECT_USER, "u1", "session_create", Capability::Initiate, true)];
+        assert!(allows(&g, "c1", "u1", "member", "session_create", Capability::Initiate));
+        let ev = initiate_events();
+        assert!(ev.contains(&"session_create") && ev.contains(&"session_close"));
     }
 
     #[test]

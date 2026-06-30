@@ -197,6 +197,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::session_control::list_sessions).post(api::session_control::create_session),
         )
         .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/sessions/:session_id",
+            axum::routing::delete(api::session_control::close_session),
+        )
+        .route(
             "/api/v1/channels/:channel_id/bots/:bot_id/session-controls",
             get(api::session_control::session_controls),
         )

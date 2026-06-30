@@ -27,10 +27,21 @@ export async function createChannelBotSession(
   return apiJson(`/channels/${channelId}/bots/${botId}/sessions`, { method: "POST" });
 }
 
+/** Close (terminate + detach) an "other" session — gated by the session_close grant. */
+export async function closeChannelBotSession(
+  channelId: string,
+  botId: string,
+  sessionId: string
+): Promise<void> {
+  await apiJson(`/channels/${channelId}/bots/${botId}/sessions/${sessionId}`, { method: "DELETE" });
+}
+
 /** The CALLER's resolved grants + the agent's advertised vocabulary (no rules leak). */
 export interface SessionControls {
   can_set_mode: boolean;
   can_set_config_option: boolean;
+  can_create_session: boolean;
+  can_close_session: boolean;
   allowed_modes: string[];
   config_options: ConfigOption[];
 }
