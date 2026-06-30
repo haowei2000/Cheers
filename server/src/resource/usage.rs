@@ -1,6 +1,10 @@
 //! `channel.usage.read` — ② cost dashboard read side. Returns per-bot aggregated
 //! token/cost totals + latest context window (from `bot_usage_events`).
 //!
+//! Params: `{ channel_id, session_id? }`. With `session_id` the rollup is scoped to
+//! that session (the ViewBoard follows the channel's selected session); omit it to
+//! aggregate across all sessions.
+//!
 //! Aggregation: SUM the token + cost columns per `bot_id`; `context_window` is the
 //! value from that bot's most-recent snapshot (latest `created_at`).
 use serde_json::{json, Value};
@@ -18,9 +22,13 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
     authorize_channel_read(db, principal, channel_id).await?;
 
+    // Optional session scope: NULL ($2) → all sessions; else only that session.
+    let session_id = params.get("session_id").and_then(|v| v.as_str());
+
     // Per-bot rollup: SUM tokens + cost across every snapshot; context_window comes
     // from the latest row per bot (DISTINCT ON ordered by created_at DESC), joined
-    // back to the aggregate so each bot is one row.
+    // back to the aggregate so each bot is one row. The session filter ($2) applies
+    // to both the aggregate and the latest-snapshot lookup.
     let rows = sqlx::query(
         r#"
         SELECT
@@ -41,6 +49,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
                 SUM(cost_usd)              AS cost_usd
             FROM bot_usage_events
             WHERE channel_id = $1
+              AND ($2::text IS NULL OR session_id = $2::text)
             GROUP BY bot_id
         ) agg
         LEFT JOIN LATERAL (
@@ -48,6 +57,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
             FROM bot_usage_events e
             WHERE e.channel_id = $1
               AND e.bot_id = agg.bot_id
+              AND ($2::text IS NULL OR e.session_id = $2::text)
             ORDER BY e.created_at DESC
             LIMIT 1
         ) latest ON TRUE
@@ -55,6 +65,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         "#,
     )
     .bind(channel_id.to_string())
+    .bind(session_id)
     .fetch_all(db)
     .await
     .map_err(super::db_err("usage.read: aggregate bot_usage_events"))?;

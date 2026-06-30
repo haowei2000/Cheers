@@ -21,6 +21,8 @@ interface Props {
   sendResourceReq: SendResourceReq;
   /** Deep-link: open the File panel focused on this path (e.g. a clicked Desk ref). */
   openFilePath?: string;
+  /** The composer's selected session ("" = Auto/all); passed to session-scoped ViewBoards. */
+  selectedSessionId?: string | null;
 }
 
 interface WbConfig {
@@ -50,7 +52,7 @@ const WB_DOC =
 // plus the always-on File panel. Installing global templates / plugins lives in
 // Settings → Workbench extensions (admin); the drawer only CONSUMES them, and offers
 // a no-persistence temporary upload to anyone.
-export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath }: Props) {
+export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath, selectedSessionId }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -213,8 +215,9 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       views,
       toggleView,
       openTarget: openFilePath ?? null,
+      selectedSessionId: selectedSessionId ?? null,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath]
+    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath, selectedSessionId]
   );
 
   // Deep-link: when opened with a target Desk path, focus the always-on File panel.
@@ -355,7 +358,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
         </div>
 
         <div className="flex-1 min-h-0 overflow-hidden">
-          {nothingInstalled && selectedId === null ? (
+          {nothingInstalled && selectedId === null && activePanel?.kind !== "viewboard" ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-500 text-xs p-6 text-center">
               <Package className="w-8 h-8 text-zinc-700" />
               <div>

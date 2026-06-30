@@ -34,11 +34,18 @@ export interface PanelContext {
   /** Deep-link target: a file path the File panel should auto-open (e.g. from a
    *  clicked Desk reference in a bot reply). Cleared by the consumer after opening. */
   openTarget?: string | null;
+  /** The channel's currently-selected session (the composer's SessionSwitcher value;
+   *  "" / null = Auto/all). ViewBoards that are session-scoped (plan, cost) filter to
+   *  it; file panels ignore it. */
+  selectedSessionId?: string | null;
 }
 
 export interface PanelDef {
   id: string;
   title: string;
+  /** "viewboard" = a data-view panel (verb-driven, read-only) rather than the
+   *  file-backed File panel. ViewBoards render regardless of an active environment. */
+  kind?: "viewboard";
   render: (ctx: PanelContext) => ReactNode;
 }
 

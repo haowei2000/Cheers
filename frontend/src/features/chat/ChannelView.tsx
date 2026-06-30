@@ -502,6 +502,7 @@ export function ChannelView({ channel }: Props) {
         channelId={channel.channel_id}
         sendResourceReq={sendResourceReq}
         openFilePath={wbTarget}
+        selectedSessionId={selectedSessionId}
       />
       {filesOpen && (
         <ChannelFilesDialog

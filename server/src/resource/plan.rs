@@ -1,6 +1,10 @@
 //! `channel.plan.read` — ① plan board read side. Returns each bot's latest plan
 //! in the channel (from `bot_session_plans`).
 //!
+//! Params: `{ channel_id, session_id? }`. With `session_id` the result is scoped to
+//! that session (the ViewBoard follows the channel's selected session); omit it for
+//! all sessions.
+//!
 //! Response shape:
 //! ```json
 //! { "channel_id": "...",
@@ -24,13 +28,18 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
     authorize_channel_read(db, principal, channel_id).await?;
 
+    // Optional session scope: NULL → all sessions; else only that session.
+    let session_id = params.get("session_id").and_then(|v| v.as_str());
+
     let rows = sqlx::query(
         "SELECT bot_id, session_id, entries, total, completed, updated_at
          FROM bot_session_plans
          WHERE channel_id = $1
+           AND ($2::text IS NULL OR session_id = $2::text)
          ORDER BY updated_at DESC",
     )
     .bind(channel_id.to_string())
+    .bind(session_id)
     .fetch_all(db)
     .await
     .map_err(super::db_err("plan.read: select bot_session_plans"))?;
