@@ -17,6 +17,18 @@ export async function pollFileStatus(fileId: string): Promise<string> {
   return res.status;
 }
 
+export interface FileStatus {
+  status: string;
+  /** True once an office doc's PDF preview rendition is ready (Gotenberg). */
+  preview_ready?: boolean;
+  last_error?: string | null;
+}
+
+/** Full status of a file — used to poll office→PDF preview readiness. */
+export async function getFileStatus(fileId: string): Promise<FileStatus> {
+  return apiJson<FileStatus>(`/files/${fileId}/status`);
+}
+
 /**
  * Gateway-proxied upload: the file bytes are sent as the request body and the
  * gateway streams them to object storage (SigV4) and records them as uploaded.
