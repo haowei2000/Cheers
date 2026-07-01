@@ -24,8 +24,17 @@ use crate::{
 /// bot@bot 触发的最大深度，超出后静默停止。
 pub const MAX_BOT_REPLY_DEPTH: i32 = 5;
 
-/// bot 回复 finalize 后触发回复中 @bot mention，depth+1 后 dispatch。
-/// 超过 MAX_BOT_REPLY_DEPTH 时静默停止，防止无限循环。
+/// 发起方 bot 在事件权限模型里的 subject 角色。owner 可在 `bot_event_access`
+/// 里对 `role=bot`（所有 bot 发起方）或对某个具体 bot（`user=<botId>` 维度）
+/// 写 deny，从而关闭 / 收紧 bot@bot；无规则时默认放行（与历史行为一致）。
+const BOT_INITIATOR_ROLE: &str = "bot";
+
+/// bot 消息（回复 finalize 或主动 send）落库后，触发消息里的 @bot mention，
+/// depth+1 后 dispatch。三重防护：
+/// - **深度上限**（[`MAX_BOT_REPLY_DEPTH`]）：`current_depth` 到顶后静默停止，防无限链。
+/// - **自 @ 过滤**：作者 bot（`author_bot_id`）即使 @ 了自己也不会再触发自身。
+/// - **INITIATE 门禁**：目标 bot 可按“发起方 bot”拒绝被触发（`bot_event_policy`，默认放行）。
+#[allow(clippy::too_many_arguments)]
 pub async fn trigger_bot_replies(
     db: &PgPool,
     fanout: &Arc<dyn Fanout>,
@@ -35,9 +44,16 @@ pub async fn trigger_bot_replies(
     reply_msg_id: Uuid,
     reply_seq: i64,
     current_depth: i32,
+    author_bot_id: Uuid,
     mentions: &[Mention],
 ) -> Result<(), sqlx::Error> {
-    let bots = mentioned_bots(mentions);
+    // 深度上限：到顶后不再触发下一跳（调用方无需自己 guard）。
+    if current_depth >= MAX_BOT_REPLY_DEPTH {
+        return Ok(());
+    }
+
+    // 自 @ 过滤：作者 bot 不会被自己消息里的 @ 再次唤醒。
+    let bots = mentioned_bots(mentions, author_bot_id);
     if bots.is_empty() {
         return Ok(());
     }
@@ -45,6 +61,30 @@ pub async fn trigger_bot_replies(
     let next_depth = current_depth.saturating_add(1);
 
     for bot_id in bots {
+        // INITIATE 门禁：目标 bot(bot_id) 是否允许被“发起方 bot”(author_bot_id) 触发？
+        // 复用事件权限中枢——发起方视为 role="bot" 的 subject，其 bot_id 落在 user 维度，
+        // 便于按“某个具体 bot”或“所有 bot”授权/拒绝。默认放行；规则出错时 fail-open。
+        let may_prompt = crate::domain::acp_policy::allows(
+            db,
+            &bot_id.to_string(),
+            &channel_id.to_string(),
+            &author_bot_id.to_string(),
+            BOT_INITIATOR_ROLE,
+            "session/prompt",
+            crate::domain::bot_event_policy::Capability::Initiate,
+        )
+        .await
+        .unwrap_or(true);
+        if !may_prompt {
+            tracing::info!(
+                target_bot = %bot_id,
+                initiator_bot = %author_bot_id,
+                channel_id = %channel_id,
+                "bot@bot INITIATE denied by bot_event_policy; message posted, target not triggered"
+            );
+            continue;
+        }
+
         // Per-channel session (see messages.rs): scope-derived stable key.
         let provider_session_key = provider_session_key_for_bot_channel(channel_id, bot_id);
         let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
@@ -95,11 +135,13 @@ pub async fn trigger_bot_replies(
     Ok(())
 }
 
-fn mentioned_bots(mentions: &[Mention]) -> Vec<Uuid> {
+/// 消息里被 @ 的 bot 成员，排除作者本身（自 @ 过滤）。
+fn mentioned_bots(mentions: &[Mention], exclude_bot_id: Uuid) -> Vec<Uuid> {
     mentions
         .iter()
         .filter(|mention| mention.member_type == MemberType::Bot)
         .map(|mention| mention.member_id)
+        .filter(|&id| id != exclude_bot_id)
         .collect()
 }
 
@@ -171,4 +213,42 @@ fn resolve_provider_account_id_from_binding_config(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bot(id: Uuid) -> Mention {
+        Mention { member_id: id, member_type: MemberType::Bot }
+    }
+    fn user(id: Uuid) -> Mention {
+        Mention { member_id: id, member_type: MemberType::User }
+    }
+
+    #[test]
+    fn mentioned_bots_excludes_author_self_mention() {
+        let author = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        // author @'d itself and another bot → only the other bot is triggered.
+        let out = mentioned_bots(&[bot(author), bot(other)], author);
+        assert_eq!(out, vec![other]);
+    }
+
+    #[test]
+    fn mentioned_bots_keeps_others_and_drops_users() {
+        let author = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let human = Uuid::new_v4();
+        // users are never triggered; a non-author bot is kept.
+        let out = mentioned_bots(&[user(human), bot(other)], author);
+        assert_eq!(out, vec![other]);
+    }
+
+    #[test]
+    fn mentioned_bots_pure_self_mention_is_empty() {
+        let author = Uuid::new_v4();
+        // author @'d only itself → nothing to trigger (no self-loop).
+        assert!(mentioned_bots(&[bot(author)], author).is_empty());
+    }
 }

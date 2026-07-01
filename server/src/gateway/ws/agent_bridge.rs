@@ -21,7 +21,10 @@ use crate::{
     domain::{acp_capability, channel_seq, sessions},
     gateway::{
         realtime::frame::WireFrame,
-        stream::{handle_delta, handle_done, handle_send, handle_session_update},
+        stream::{
+            broadcast_and_trigger_created_message, handle_delta, handle_done, handle_send,
+            handle_session_update,
+        },
     },
     infra::crypto::hash_bot_token,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
@@ -33,6 +36,11 @@ use sqlx::PgPool;
 const CLOSE_AUTH_FAIL: u16 = 4401;
 const CLOSE_BOT_UNAVAILABLE: u16 = 4403;
 const CLOSE_SUPERSEDED: u16 = 4402;
+/// A connector that keeps sending unparseable frames is buggy/hostile — close it
+/// with a protocol-error code after this many CONSECUTIVE malformed frames so it
+/// can't spin the read loop / hammer logs. A good frame resets the counter.
+const CLOSE_PROTOCOL_ERROR: u16 = 4400;
+const MAX_MALFORMED_FRAMES: u32 = 20;
 const BRIDGE_PROTOCOL_VERSION: u32 = 1;
 
 /// bot 连接的元信息（从 DB 查出来后到处用）。
@@ -138,14 +146,26 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
     tracing::info!(bot_id = %bot.bot_id, "control connected");
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
+    let mut malformed: u32 = 0;
     let superseded = loop {
         tokio::select! {
             // 收 bot 发来的控制帧
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        if let Ok(frame) = serde_json::from_str::<Value>(&text) {
-                            handle_control_frame(&frame, &state, &bot).await;
+                        match serde_json::from_str::<Value>(&text) {
+                            Ok(frame) => {
+                                malformed = 0;
+                                handle_control_frame(&frame, &state, &bot).await;
+                            }
+                            Err(e) => {
+                                malformed += 1;
+                                tracing::warn!(bot_id = %bot.bot_id, malformed, error = %e, "malformed control frame (ignored)");
+                                if malformed >= MAX_MALFORMED_FRAMES {
+                                    close(&mut socket, CLOSE_PROTOCOL_ERROR, "too many malformed frames").await;
+                                    break false;
+                                }
+                            }
                         }
                     }
                     Some(Ok(Message::Ping(d))) => { let _ = socket.send(Message::Pong(d)).await; }
@@ -361,12 +381,14 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     tracing::info!(bot_id = %bot.bot_id, "data connected");
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
+    let mut malformed: u32 = 0;
     loop {
         tokio::select! {
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(frame) = serde_json::from_str::<Value>(&text) {
+                            malformed = 0;
                             if bot.require_capability {
                                 if let Err(err) =
                                     acp_capability::authorize_data_frame(
@@ -444,6 +466,13 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
                                 }
                             }
                             handle_data_frame(&frame, &state, &bot, &mut socket).await;
+                        } else {
+                            malformed += 1;
+                            tracing::warn!(bot_id = %bot.bot_id, malformed, "malformed data frame (ignored)");
+                            if malformed >= MAX_MALFORMED_FRAMES {
+                                close(&mut socket, CLOSE_PROTOCOL_ERROR, "too many malformed frames").await;
+                                break;
+                            }
                         }
                     }
                     Some(Ok(Message::Ping(d))) => { let _ = socket.send(Message::Pong(d)).await; }
@@ -544,7 +573,16 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         // ── bot 主动发新消息 ───────────────────────────────────────────────
         "send" => {
             let client_msg_id = client_msg_id(frame);
-            match handle_send(&state.fanout, &state.db, bot.bot_id, frame).await {
+            match handle_send(
+                &state.stream_registry,
+                &state.fanout,
+                &state.db,
+                &state.bot_locator,
+                bot.bot_id,
+                frame,
+            )
+            .await
+            {
                 Ok(msg_id) => {
                     if let Some(client_msg_id) = client_msg_id {
                         let _ = ws_send(socket, &send_ack_ok(&client_msg_id, msg_id, false)).await;
@@ -566,6 +604,23 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         "resource_req" => {
             let resp =
                 resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await;
+            // bot 主动 post_message（channel.messages.create）落库后，resource::dispatch 只有
+            // db、无 fanout/registry/bot_locator，故在此 WS 边界补 live 广播 + bot@bot 触发。
+            if frame.get("resource").and_then(Value::as_str) == Some("channel.messages.create")
+                && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(created) = resp.get("data") {
+                    broadcast_and_trigger_created_message(
+                        &state.stream_registry,
+                        &state.fanout,
+                        &state.db,
+                        &state.bot_locator,
+                        bot.bot_id,
+                        created,
+                    )
+                    .await;
+                }
+            }
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }

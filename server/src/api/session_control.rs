@@ -161,9 +161,11 @@ async fn gate_initiate(
     }
 }
 
-/// The agent's advertised ACP config options (connector_control.options.options.configOptions).
+/// The agent's advertised ACP config options (connector_control.options.options.configOptions),
+/// minus the `mode` option for preset-backed agents (mode is a first-class posture control,
+/// changed via set_mode — see `connector_config::dedup_mode_config_options`).
 async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value> {
-    sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
+    let options = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
         .bind(bot_id.to_string())
         .fetch_optional(&state.db)
         .await
@@ -178,7 +180,9 @@ async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value>
                 .as_array()
                 .cloned()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let agent_type = bot_agent_type(state, bot_id).await;
+    connector_config::dedup_mode_config_options(&agent_type, options)
 }
 
 /// Merge a `session_config` override onto a session's metadata (read-merge-write).

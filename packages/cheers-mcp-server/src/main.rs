@@ -544,10 +544,11 @@ fn tool_definitions() -> Vec<Value> {
             string_prop("file_id", "File id from inbox_list."),
             bool_prop("as_base64", "Return the raw file bytes as base64 instead of decoded text. Required for binaries (pdf/zip/images). Capped at 8MB."),
         ], vec!["channel_id", "file_id"]), true, false),
-        tool("post_message", "Post a message", "Send a message to a channel. Use this for proactive / cross-channel posts; the reply to the triggering message goes through the normal agent reply flow, not this tool.", object_schema(vec![
+        tool("post_message", "Post a message", "Send a message to a channel. Use this for proactive / cross-channel posts; the reply to the triggering message goes through the normal agent reply flow, not this tool. To hand work to ANOTHER bot, @mention it: use mention_ids with that bot's member_id from list_members (preferred — exact, no name ambiguity), or mention_names. @mentioning a bot triggers it to act on your message.", object_schema(vec![
             channel_id_prop(),
             string_prop("text", "Message body (markdown)."),
-            array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs."),
+            array_string_prop("mention_ids", "Members to @mention by member_id (uuid, from list_members). Preferred over mention_names for delegating to a specific bot — exact, no name collisions."),
+            array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs (ambiguous names may fail); prefer mention_ids when you have the id."),
             string_prop("reply_to_msg_id", "msg_id to reply to (threaded reply)."),
         ], vec!["channel_id", "text"]), false, false),
         tool("inbox_deliver", "Deliver a file to the channel", "Post a NEW file (base64 bytes, <=8MB) into this channel's chat as an attachment people can see and download. For deliverables you hand to people — not your own working notes (use desk_write for those). One-shot, no overwrite; returns the new file_id.", object_schema(vec![

@@ -100,6 +100,27 @@ pub fn posture_preset(agent_type: &str) -> (Option<&'static str>, &'static [&'st
     (p.permission_mode, p.allowed_modes)
 }
 
+/// Drop the `mode` config option for agents whose permission mode is a first-class
+/// posture control (non-empty `allowed_modes`): mode is changed via `set_mode`, so
+/// exposing it ALSO as a generic `set_config_option` (agents like Claude advertise a
+/// `configOptions` entry with id/category `"mode"`) is a duplicate control. Agents
+/// WITHOUT a preset keep it — an empty `allowed_modes` hides the posture control, so
+/// the config option is then their only way to change mode.
+pub fn dedup_mode_config_options(
+    agent_type: &str,
+    mut options: Vec<serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    let (_, allowed) = posture_preset(agent_type);
+    if allowed.is_empty() {
+        return options;
+    }
+    options.retain(|o| {
+        let field = |k: &str| o.get(k).and_then(serde_json::Value::as_str);
+        field("id") != Some("mode") && field("category") != Some("mode")
+    });
+    options
+}
+
 /// Inputs for [`render_toml`]. `account_id` is the TOML table key under
 /// `[accounts.<id>...]` and the daemon `--name`; it is sanitized for you.
 pub struct RenderParams<'a> {
@@ -307,6 +328,25 @@ mod tests {
         assert_eq!(sanitize_account_id("中文"), "bot");
         assert_eq!(sanitize_account_id(""), "bot");
         assert_eq!(sanitize_account_id("my-agent_1"), "my-agent_1");
+    }
+
+    #[test]
+    fn dedup_mode_strips_mode_option_only_for_preset_agents() {
+        let opts = || {
+            vec![
+                serde_json::json!({ "id": "mode", "category": "mode", "name": "Mode" }),
+                serde_json::json!({ "id": "model", "category": "model", "name": "Model" }),
+                serde_json::json!({ "id": "effort", "category": "thought_level", "name": "Effort" }),
+            ]
+        };
+        // Claude has a posture preset (non-empty allowed_modes) → drop the duplicate mode option.
+        let claude = dedup_mode_config_options("claude", opts());
+        assert_eq!(claude.len(), 2);
+        assert!(claude.iter().all(|o| o["id"] != "mode"));
+        // A preset-less agent (empty allowed_modes) keeps it — the config option is its only mode knob.
+        let generic = dedup_mode_config_options("generic", opts());
+        assert_eq!(generic.len(), 3);
+        assert!(generic.iter().any(|o| o["id"] == "mode"));
     }
 
     #[test]
