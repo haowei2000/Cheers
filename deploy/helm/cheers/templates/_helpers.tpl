@@ -39,6 +39,7 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "cheers.postgres.fullname" -}}{{ include "cheers.fullname" . }}-postgres{{- end -}}
 {{- define "cheers.rustfs.fullname" -}}{{ include "cheers.fullname" . }}-rustfs{{- end -}}
 {{- define "cheers.redis.fullname" -}}{{ include "cheers.fullname" . }}-redis{{- end -}}
+{{- define "cheers.gotenberg.fullname" -}}{{ include "cheers.fullname" . }}-gotenberg{{- end -}}
 
 {{/* The Secret name in use (existing override or chart-managed). */}}
 {{- define "cheers.secretName" -}}

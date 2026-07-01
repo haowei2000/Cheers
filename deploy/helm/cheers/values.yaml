@@ -73,6 +73,21 @@ rustfs:
     storageClass: ""
   resources: {}
 
+# ── Gotenberg (office→PDF conversion for in-app document preview). Stateless;
+#    the gateway feeds it bytes over the cluster network (GOTENBERG_URL is wired
+#    into the gateway automatically when enabled). LibreOffice needs some memory. ─
+gotenberg:
+  enabled: true
+  image: gotenberg/gotenberg:8
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
 # ── Redis (ONLY needed for multi-instance HA fan-out; single instance uses
 #    the in-process DashMap, so default off) ─────────────────────────────────
 redis:
