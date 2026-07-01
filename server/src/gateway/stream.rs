@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{chains, chains::MAX_BOT_REPLY_DEPTH, channel_seq, mentions, sessions},
+    domain::{chains, channel_seq, mentions, sessions},
     gateway::{
         realtime::{fanout::Fanout, frame::WireFrame},
         registry::BotLocator,
@@ -284,22 +284,22 @@ pub async fn handle_done(
     // 清理注册表
     registry.remove(msg_id);
 
-    if depth < MAX_BOT_REPLY_DEPTH {
-        if let Err(e) = chains::trigger_bot_replies(
-            db,
-            fanout,
-            registry,
-            bot_locator,
-            channel_id,
-            msg_id,
-            channel_seq,
-            depth,
-            &mentions,
-        )
-        .await
-        {
-            tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
-        }
+    // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
+    if let Err(e) = chains::trigger_bot_replies(
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        depth,
+        bot_id,
+        &mentions,
+    )
+    .await
+    {
+        tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
     }
 
     if let Some(sid) =
@@ -453,8 +453,10 @@ async fn resolve_session_id(
 /// 不同于 delta/done（续写占位），send 是建全新 Message。
 /// 权限检查：bot token 只映射身份；频道写权限由 membership role 决定。
 pub async fn handle_send(
+    registry: &StreamRegistry,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
+    bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
     frame: &Value,
 ) -> Result<Uuid, &'static str> {
@@ -546,7 +548,110 @@ pub async fn handle_send(
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
+    // 主动 send 里的 @bot 也要能派活。视作 depth=0（与用户发消息触发对等），
+    // 后续 done 链再逐跳 +1 受 MAX_BOT_REPLY_DEPTH 约束。自 @ 过滤与 INITIATE
+    // 门禁在 trigger_bot_replies 内部统一处理。
+    if let Err(e) = chains::trigger_bot_replies(
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        0,
+        bot_id,
+        &mentions,
+    )
+    .await
+    {
+        tracing::warn!(msg_id = %msg_id, err = %e, "bot send @bot trigger failed");
+    }
+
     Ok(msg_id)
+}
+
+/// `channel.messages.create`（bot 主动 post_message 走的 resource 路径）落库后的副作用：
+/// **live 广播** + **bot@bot 触发**。
+///
+/// `resource::dispatch` 只带 `db`，广播/触发所需的 fanout/registry/bot_locator 只在
+/// bot-bridge WS 边界才有，所以在 agent_bridge 收到 `resource_res` 后由这里补做——
+/// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
+/// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
+/// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
+pub async fn broadcast_and_trigger_created_message(
+    registry: &StreamRegistry,
+    fanout: &Arc<dyn Fanout>,
+    db: &PgPool,
+    bot_locator: &Arc<dyn BotLocator>,
+    author_bot_id: Uuid,
+    created: &Value,
+) {
+    let (Some(msg_id), Some(channel_id)) = (
+        created
+            .get("msg_id")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<Uuid>().ok()),
+        created
+            .get("channel_id")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<Uuid>().ok()),
+    ) else {
+        return;
+    };
+
+    // 1) live 广播：DTO 原样投递，前端与 handle_send 的 "message" 帧同形（多余字段无害）。
+    let wire = WireFrame::channel(channel_id, "message", created.clone());
+    fanout.broadcast_channel(channel_id, wire).await;
+
+    // 2) bot@bot 触发：从 DTO 的 mentions 还原 Vec<Mention>，depth=0（与用户发消息对等）。
+    let mentions = dto_mentions(created);
+    if mentions.is_empty() {
+        return;
+    }
+    let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
+        return;
+    };
+    if let Err(e) = chains::trigger_bot_replies(
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        0,
+        author_bot_id,
+        &mentions,
+    )
+    .await
+    {
+        tracing::warn!(msg_id = %msg_id, err = %e, "resource-create @bot trigger failed");
+    }
+}
+
+/// 从 `MessageDto` JSON 的 `mentions` 数组还原 [`mentions::Mention`]（丢弃无法解析的项）。
+fn dto_mentions(created: &Value) -> Vec<mentions::Mention> {
+    created
+        .get("mentions")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| {
+                    let member_id = m
+                        .get("member_id")
+                        .and_then(Value::as_str)
+                        .and_then(|s| s.parse::<Uuid>().ok())?;
+                    let member_type = match m.get("member_type").and_then(Value::as_str) {
+                        Some("bot") => mentions::MemberType::Bot,
+                        Some("user") => mentions::MemberType::User,
+                        _ => return None,
+                    };
+                    Some(mentions::Mention { member_id, member_type })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {

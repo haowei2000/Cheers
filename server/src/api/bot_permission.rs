@@ -72,6 +72,12 @@ pub async fn list_permissions(
     let (default_mode, allowed) = connector_config::posture_preset(&agent_type);
     let permission_mode = current.or_else(|| default_mode.map(str::to_string));
     let cc = load_connector_control(&state, &bot_id).await?;
+    // Mode is a first-class posture control for preset-backed agents, so drop the
+    // duplicate `mode` config option the agent also advertises (see connector_config).
+    let advertised = advertised_options(&cc)
+        .map(|opts| connector_config::dedup_mode_config_options(&agent_type, opts))
+        .map(Value::Array)
+        .unwrap_or_else(|| json!([]));
     Ok(Json(json!({
         // Posture: the agent's session mode + the L0-allowed choices.
         "posture": {
@@ -82,7 +88,7 @@ pub async fn list_permissions(
         // Session config options: what the agent advertised (live, reported by the
         // connector) + the owner's desired overrides (applied per-session).
         "config_options": {
-            "advertised": advertised_options(&cc).map(Value::Array).unwrap_or_else(|| json!([])),
+            "advertised": advertised,
             "desired": cc.get("configOptions").cloned().unwrap_or_else(|| json!({})),
         },
     })))
