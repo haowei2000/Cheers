@@ -1,4 +1,5 @@
 pub mod approval_sweeper;
+pub mod conversion_worker;
 pub mod dispatcher;
 pub mod enrollment_reaper;
 pub mod realtime;

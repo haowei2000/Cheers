@@ -41,6 +41,14 @@ pub struct Config {
     /// so onboarding-generated configs point somewhere actually reachable.
     pub connector_public_base: Option<String>,
 
+    /// Base URL of the Gotenberg document-conversion service (e.g.
+    /// `http://cheers-gotenberg:3000`). When unset, office→PDF preview conversion
+    /// is disabled and the conversion worker is not started.
+    pub gotenberg_url: Option<String>,
+    /// How often the office→PDF conversion worker polls for pending files
+    /// (default 20; 0 runs only the startup pass).
+    pub conversion_poll_interval_secs: u64,
+
     // SMTP（可选，不配置则不发邮件）
     pub smtp_host: Option<String>,
     pub smtp_port: u16,
@@ -94,6 +102,14 @@ impl Config {
             connector_public_base: env::var("CHEERS_CONNECTOR_PUBLIC_BASE")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
+
+            gotenberg_url: env::var("GOTENBERG_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            conversion_poll_interval_secs: env::var("CONVERSION_POLL_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
 
             smtp_host: env::var("SMTP_HOST").ok(),
             smtp_port: env::var("SMTP_PORT")

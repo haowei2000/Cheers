@@ -39,6 +39,8 @@ struct FileRecord {
     summary_3lines: Option<String>,
     last_error: Option<String>,
     expires_at: Option<DateTime<Utc>>,
+    /// S3 key of the generated PDF preview rendition (office docs), if any.
+    preview_object_key: Option<String>,
 }
 
 fn safe_filename(raw: &str) -> Result<String, AppError> {
@@ -69,7 +71,8 @@ fn resolve_file_url(config: &crate::config::Config, object_key: &str) -> String 
 async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord, AppError> {
     let row = sqlx::query(
         "SELECT file_id, channel_id, workspace_id, uploader_id, object_key, original_filename,
-                content_type, status, size_bytes, summary_3lines, last_error, expires_at
+                content_type, status, size_bytes, summary_3lines, last_error, expires_at,
+                preview_object_key
          FROM file_records
          WHERE file_id = $1",
     )
@@ -118,6 +121,10 @@ async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord,
             .flatten(),
         expires_at: row
             .try_get::<Option<DateTime<Utc>>, _>("expires_at")
+            .ok()
+            .flatten(),
+        preview_object_key: row
+            .try_get::<Option<String>, _>("preview_object_key")
             .ok()
             .flatten(),
     })
@@ -582,6 +589,8 @@ pub async fn get_file_status(
         "summary_3lines": row.summary_3lines,
         "last_error": row.last_error,
         "expires_at": row.expires_at.map(|dt| dt.to_rfc3339()),
+        // True once an office doc's PDF preview rendition is ready (Gotenberg).
+        "preview_ready": row.preview_object_key.is_some(),
     })))
 }
 
@@ -591,7 +600,16 @@ pub async fn preview_file(
     Path(file_id): Path<String>,
 ) -> Result<Response, AppError> {
     let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
-    let object_key = file.object_key.ok_or_else(|| AppError::NotFound)?;
+
+    // Office docs are previewed via their generated PDF rendition when available;
+    // everything else (images, native PDFs, text) is served as-is.
+    let (object_key, content_type) = match file.preview_object_key.clone() {
+        Some(key) => (key, Some("application/pdf".to_string())),
+        None => (
+            file.object_key.clone().ok_or(AppError::NotFound)?,
+            file.content_type.clone(),
+        ),
+    };
     let bytes = crate::infra::s3::get_object(&state.s3, &state.config.s3_bucket, &object_key)
         .await
         .map_err(|_| AppError::NotFound)?;
@@ -602,7 +620,7 @@ pub async fn preview_file(
     Ok(attachment_response(
         bytes,
         &filename,
-        file.content_type.as_deref(),
+        content_type.as_deref(),
         true,
         ttl_seconds,
     ))

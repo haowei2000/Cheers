@@ -112,6 +112,21 @@ async fn main() -> anyhow::Result<()> {
     // otherwise accumulate without bound. Hourly, keeping rows 1 day for audit.
     gateway::enrollment_reaper::spawn(state.db.clone(), 3600, 86_400);
 
+    // Office→PDF preview conversion (Gotenberg). Only runs when GOTENBERG_URL is
+    // configured; otherwise office files simply have no preview rendition.
+    if let Some(gotenberg_url) = config.gotenberg_url.clone() {
+        gateway::conversion_worker::spawn(
+            state.db.clone(),
+            state.s3.clone(),
+            state.config.clone(),
+            gotenberg_url,
+            config.conversion_poll_interval_secs,
+        );
+        info!("gotenberg conversion worker started");
+    } else {
+        info!("GOTENBERG_URL unset; office→PDF preview conversion disabled");
+    }
+
     let app = router::build(state);
 
     let addr = format!("0.0.0.0:{}", config.port);
