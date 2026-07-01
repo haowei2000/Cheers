@@ -32,7 +32,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // Honor a harness/CI-assigned port (preview autoPort sets PORT); default to 5173.
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
     proxy: {
       "/api": { target: API_PROXY_TARGET, changeOrigin: true },
       "/ws": { target: WS_PROXY_TARGET, ws: true },
