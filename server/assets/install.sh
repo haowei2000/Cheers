@@ -13,7 +13,10 @@
 # Env knobs:
 #   CHEERS_ENROLL_CODE   the one-time code (required; prompted if a TTY)
 #   CHEERS_API_BASE      gateway API base; default injected at serve time
-#   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH)
+#   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH, else a
+#                        prebuilt release binary is downloaded for this platform)
+#   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default Grant-Huang/Cheers)
+#   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.22 (default: latest)
 #   CHEERS_INSTALL_DAEMON=0  skip the launchd/systemd unit (just write + start)
 set -euo pipefail
 
@@ -74,17 +77,44 @@ chmod 600 "$TOKEN_PATH"
 info "wrote config → $CONFIG_FILE"
 info "wrote token  → $TOKEN_PATH (chmod 600)"
 
-# ── 4. locate the connector binary ────────────────────────────────────────────
+# ── 4. locate (or download) the connector binary ──────────────────────────────
 BIN="${CHEERS_CONNECTOR_BIN:-}"
 if [ -z "$BIN" ]; then
   BIN="$(command -v cce-acp-connector 2>/dev/null || true)"
 fi
+# Not on PATH → fetch a prebuilt release binary for this OS/arch.
+if [ -z "$BIN" ]; then
+  REPO="${CHEERS_CONNECTOR_REPO:-Grant-Huang/Cheers}"
+  VER="${CHEERS_CONNECTOR_VERSION:-latest}"
+  os="$(uname -s)"; arch="$(uname -m)"
+  case "$os" in Darwin) os=darwin ;; Linux) os=linux ;; *) os="" ;; esac
+  case "$arch" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=amd64 ;; *) arch="" ;; esac
+  if [ -n "$os" ] && [ -n "$arch" ]; then
+    ASSET="cce-acp-connector-$os-$arch"
+    if [ "$VER" = "latest" ]; then
+      URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+    else
+      URL="https://github.com/$REPO/releases/download/connector-v$VER/$ASSET"
+    fi
+    DEST="$CONFIG_DIR/bin/cce-acp-connector"
+    mkdir -p "$CONFIG_DIR/bin"
+    info "downloading connector binary ($os/$arch) from $REPO …"
+    if curl -fsSL "$URL" -o "$DEST" && [ -s "$DEST" ]; then
+      chmod +x "$DEST"
+      BIN="$DEST"
+      info "installed connector → $BIN"
+    else
+      rm -f "$DEST"
+      info "no prebuilt binary for $os/$arch (will fall back to build instructions)"
+    fi
+  fi
+fi
 if [ -z "$BIN" ]; then
   cat >&2 <<EOF
 
-  Config and token are in place, but the connector binary 'cce-acp-connector'
-  was not found. Build it once:
-      git clone <cheers repo> && cd cheers/packages/cheers-acp-connector-rs
+  Config and token are in place, but no connector binary was found and none could
+  be downloaded for this platform. Build it once:
+      git clone https://github.com/Grant-Huang/Cheers && cd Cheers/packages/cheers-acp-connector-rs
       cargo build --release    # → target/release/cce-acp-connector
   then re-run with CHEERS_CONNECTOR_BIN=/path/to/cce-acp-connector, or start by hand:
       cce-acp-connector start --config "$CONFIG_FILE" --name "$ACCOUNT_ID"

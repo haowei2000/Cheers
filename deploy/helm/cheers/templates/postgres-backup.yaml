@@ -1,0 +1,69 @@
+{{- if and .Values.postgres.enabled .Values.postgres.backup.enabled }}
+# Nightly logical backup of the bundled Postgres → S3 (the same object store the
+# gateway uses). `pg_dump | gzip` runs in an init container (postgres image), then an
+# mc container uploads the dump and prunes old ones. For real durability prefer a
+# MANAGED database with its own PITR backups + an external S3 bucket; this is the
+# batteries-included baseline for the bundled single-replica Postgres.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "cheers.postgres.fullname" . }}-backup
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres-backup
+spec:
+  schedule: {{ .Values.postgres.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "cheers.selectorLabels" (dict "ctx" . "component" "postgres-backup") | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+            - name: pg-dump
+              image: {{ .Values.postgres.image }}
+              command:
+                - sh
+                - -c
+                - >
+                  set -eo pipefail;
+                  pg_dump -h {{ include "cheers.postgres.fullname" . }} -U {{ .Values.postgres.username }} -d {{ .Values.postgres.database }}
+                  | gzip > /backup/{{ .Values.postgres.database }}-$(date +%Y%m%d-%H%M%S).sql.gz
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: POSTGRES_PASSWORD }
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          containers:
+            - name: upload
+              image: {{ .Values.postgres.backup.mcImage }}
+              command:
+                - sh
+                - -c
+                - >
+                  set -e;
+                  mc alias set s3 {{ .Values.postgres.backup.s3Endpoint | default (printf "http://%s:%v" (include "cheers.rustfs.fullname" .) .Values.rustfs.apiPort) }} "$S3_ACCESS_KEY" "$S3_SECRET_KEY";
+                  mc cp /backup/*.sql.gz "s3/{{ .Values.postgres.backup.bucket | default .Values.rustfs.bucket }}/{{ .Values.postgres.backup.prefix }}/";
+                  mc rm --recursive --force --older-than "{{ .Values.postgres.backup.retentionDays }}d" "s3/{{ .Values.postgres.backup.bucket | default .Values.rustfs.bucket }}/{{ .Values.postgres.backup.prefix }}/" || true
+              env:
+                - name: S3_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: S3_ACCESS_KEY }
+                - name: S3_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: S3_SECRET_KEY }
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              emptyDir: {}
+{{- end }}

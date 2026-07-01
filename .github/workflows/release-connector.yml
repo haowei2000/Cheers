@@ -1,0 +1,64 @@
+name: release-connector
+
+# Publish prebuilt `cce-acp-connector` binaries so non-developers can onboard an
+# agent without a Rust toolchain (install.sh downloads these). Trigger by pushing a
+# tag like `connector-v0.1.22`, or run manually.
+on:
+  push:
+    tags: ["connector-v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # create the release + upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # one target failing must not block the others
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: cce-acp-connector-darwin-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: cce-acp-connector-darwin-amd64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: cce-acp-connector-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            asset: cce-acp-connector-linux-arm64
+            linker: aarch64-linux-gnu-gcc
+            apt: gcc-aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust + target
+        run: |
+          rustup update stable --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cross linker (Linux arm64)
+        if: matrix.apt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+          echo "CARGO_TARGET_$(echo '${{ matrix.target }}' | tr 'a-z-' 'A-Z_')_LINKER=${{ matrix.linker }}" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: packages/cheers-acp-connector-rs
+        run: cargo build --release --locked --bin cce-acp-connector --target ${{ matrix.target }}
+
+      - name: Stage asset
+        run: cp "packages/cheers-acp-connector-rs/target/${{ matrix.target }}/release/cce-acp-connector" "${{ matrix.asset }}"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
+          # On tag pushes this creates/updates the release for the tag; each matrix
+          # job appends its binary to the same release.
+          fail_on_unmatched_files: true

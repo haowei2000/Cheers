@@ -37,6 +37,13 @@ postgres:
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: "2", memory: 2Gi }
+  # Nightly dump → S3 while using the bundled DB. If you move to a managed DB with
+  # native backups, turn this off. For true off-site durability point s3Endpoint/bucket
+  # at an EXTERNAL S3 rather than the in-cluster rustfs.
+  backup:
+    enabled: true
+    schedule: "0 3 * * *"
+    retentionDays: 30
 
 rustfs:
   enabled: true
