@@ -18,6 +18,7 @@ import {
   closeChannelBotSession,
   setSessionMode,
   setSessionConfigOption,
+  setSessionAdditionalDirs,
   type SessionControls,
 } from "@/api/sessionControl";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
@@ -31,6 +32,8 @@ interface SessionRow {
   last_used_at: string;
   // Per-session overrides: `permission_mode` (from set_mode) + `config_options` (from set_config_option).
   session_config?: { permission_mode?: string; config_options?: Record<string, string> } & Record<string, unknown>;
+  // Per-session ACP root set: immutable `cwd` + mutable `additional_dirs`.
+  workspace?: { cwd?: string | null; additional_dirs?: string[] };
 }
 interface SessionsRead {
   channel_id: string;
@@ -104,6 +107,23 @@ function SessionRowView({
   const canCfg = !!controls?.can_set_config_option && (controls?.config_options.length ?? 0) > 0;
   const canClose = !!controls?.can_close_session && !s.is_primary;
   const hasControls = canMode || canCfg;
+
+  // ACP root set: immutable `cwd` + mutable `additional_dirs`. Editing the extra
+  // roots rides the set_config_option grant (same as the backend gate).
+  const cwd = s.workspace?.cwd || null;
+  const dirs = s.workspace?.additional_dirs ?? [];
+  const canEditRoots = !!controls?.can_set_config_option;
+  const [dirsDraft, setDirsDraft] = useState<string | null>(null); // null = not editing
+  async function saveDirs() {
+    const parsed = (dirsDraft ?? "")
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    await run(async () => {
+      await setSessionAdditionalDirs(channelId, s.bot_id, s.session_id, parsed);
+      setDirsDraft(null);
+    });
+  }
 
   return (
     <div className={`px-3 py-1.5 ${isSelected ? "bg-emerald-500/10" : "hover:bg-zinc-800/40"}`}>
@@ -194,6 +214,68 @@ function SessionRowView({
             })}
         </div>
       )}
+
+      {(cwd || dirs.length > 0 || canEditRoots) && (
+        <div className="mt-1 pl-1 text-[10px] text-zinc-500">
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-600 w-8">wd</span>
+            <span
+              className="font-mono text-zinc-400 truncate"
+              title={cwd || "connector default"}
+            >
+              {cwd || "default"}
+            </span>
+            {cwd && <span className="text-zinc-700">· immutable</span>}
+          </div>
+          {dirsDraft === null ? (
+            <div className="flex items-start gap-1 mt-0.5">
+              <span className="text-zinc-600 w-8 shrink-0">roots</span>
+              <span className="font-mono text-zinc-400 flex-1 break-all">
+                {dirs.length ? dirs.join(", ") : "—"}
+              </span>
+              {canEditRoots && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setDirsDraft(dirs.join("\n"))}
+                  className="text-indigo-300/70 hover:text-indigo-200 disabled:opacity-40 shrink-0"
+                >
+                  edit
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="mt-0.5 flex flex-col gap-1">
+              <textarea
+                value={dirsDraft}
+                disabled={busy}
+                onChange={(e) => setDirsDraft(e.target.value)}
+                placeholder="one absolute path per line"
+                rows={Math.max(2, dirsDraft.split("\n").length)}
+                className="w-full rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 font-mono text-[10px] text-zinc-200 outline-none focus:border-indigo-500/60"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={saveDirs}
+                  className="rounded border border-indigo-500/40 bg-indigo-600/15 px-1.5 py-0.5 text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
+                >
+                  Save roots
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setDirsDraft(null)}
+                  className="text-zinc-500 hover:text-zinc-300"
+                >
+                  cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -250,10 +332,21 @@ function SessionsBody({
   }, [ctx.channelId, botKey]);
 
   const [busyBot, setBusyBot] = useState<string | null>(null);
-  async function createFor(botId: string) {
+  // Optional working directory for a new "other" session, per bot. `cwdOpen` is the
+  // bot whose inline cwd input is revealed.
+  const [newCwd, setNewCwd] = useState<Record<string, string>>({});
+  const [cwdOpen, setCwdOpen] = useState<string | null>(null);
+  async function createFor(botId: string, cwd?: string) {
     setBusyBot(botId);
     try {
-      await createChannelBotSession(ctx.channelId, botId);
+      const trimmed = cwd?.trim();
+      await createChannelBotSession(
+        ctx.channelId,
+        botId,
+        trimmed ? { cwd: trimmed } : undefined
+      );
+      setCwdOpen(null);
+      setNewCwd((m) => ({ ...m, [botId]: "" }));
       refetch();
       toast.success("New session created");
     } catch (e) {
@@ -281,15 +374,47 @@ function SessionsBody({
             <span className="text-zinc-600">· {byBot.get(botId)!.length} session{byBot.get(botId)!.length === 1 ? "" : "s"}</span>
             <div className="flex-1" />
             {controls[botId]?.can_create_session && (
-              <button
-                type="button"
-                disabled={busyBot === botId}
-                onClick={() => createFor(botId)}
-                className="inline-flex items-center gap-1 rounded border border-indigo-500/40 bg-indigo-600/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
-              >
-                <Plus className="w-3 h-3" />
-                {busyBot === botId ? "…" : "New session"}
-              </button>
+              <div className="flex items-center gap-1">
+                {cwdOpen === botId && (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={newCwd[botId] ?? ""}
+                    disabled={busyBot === botId}
+                    placeholder="/abs/workdir (optional)"
+                    onChange={(e) =>
+                      setNewCwd((m) => ({ ...m, [botId]: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") createFor(botId, newCwd[botId]);
+                      if (e.key === "Escape") setCwdOpen(null);
+                    }}
+                    className="w-40 rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 font-mono text-[10px] text-zinc-200 outline-none focus:border-indigo-500/60"
+                  />
+                )}
+                <button
+                  type="button"
+                  disabled={busyBot === botId}
+                  title={cwdOpen === botId ? "Hide working directory" : "Set a working directory"}
+                  onClick={() => setCwdOpen((v) => (v === botId ? null : botId))}
+                  className={`text-[10px] hover:text-zinc-200 disabled:opacity-40 ${
+                    cwdOpen === botId ? "text-indigo-300" : "text-zinc-500"
+                  }`}
+                >
+                  dir
+                </button>
+                <button
+                  type="button"
+                  disabled={busyBot === botId}
+                  onClick={() =>
+                    createFor(botId, cwdOpen === botId ? newCwd[botId] : undefined)
+                  }
+                  className="inline-flex items-center gap-1 rounded border border-indigo-500/40 bg-indigo-600/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
+                >
+                  <Plus className="w-3 h-3" />
+                  {busyBot === botId ? "…" : "New session"}
+                </button>
+              </div>
             )}
           </div>
           {byBot.get(botId)!.map((s) => (

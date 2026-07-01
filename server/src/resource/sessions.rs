@@ -47,12 +47,16 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .into_iter()
         .map(|r| {
             let role: String = r.try_get("role").unwrap_or_default();
+            let metadata = r.try_get::<Option<Value>, _>("metadata").ok().flatten();
             // Per-session mode/config override (set via set_mode / set_config_option).
-            let session_config = r
-                .try_get::<Option<Value>, _>("metadata")
-                .ok()
-                .flatten()
+            let session_config = metadata
+                .as_ref()
                 .and_then(|m| m.get("session_config").cloned())
+                .unwrap_or_else(|| json!({}));
+            // Per-session ACP root set (cwd + additional_dirs); absent → default cwd.
+            let workspace = metadata
+                .as_ref()
+                .and_then(|m| m.get("workspace").cloned())
                 .unwrap_or_else(|| json!({}));
             json!({
                 "session_id": r.try_get::<String, _>("session_id").unwrap_or_default(),
@@ -65,6 +69,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
                     .map(|t| t.to_rfc3339())
                     .unwrap_or_default(),
                 "session_config": session_config,
+                "workspace": workspace,
             })
         })
         .collect();

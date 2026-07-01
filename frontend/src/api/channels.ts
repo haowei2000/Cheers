@@ -47,7 +47,15 @@ export async function createChannel(data: {
 
 export async function addChannelMember(
   channelId: string,
-  member: { member_id: string; member_type: "user" | "bot"; role?: string }
+  member: {
+    member_id: string;
+    member_type: "user" | "bot";
+    role?: string;
+    /** Bot only: pin the primary session's ACP working dir here (absolute path). */
+    cwd?: string;
+    /** Bot only: extra roots for the primary session (ACP additionalDirectories). */
+    additional_dirs?: string[];
+  }
 ): Promise<void> {
   await apiJson(`/channels/${channelId}/members`, {
     method: "POST",

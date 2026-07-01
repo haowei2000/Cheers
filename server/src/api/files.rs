@@ -542,11 +542,21 @@ pub async fn realize_file(
         .clone()
         .ok_or_else(|| AppError::BadRequest("staged file has no channel".into()))?;
 
+    // Confine the realize to the (bot, channel) PRIMARY session's root set. The
+    // connector re-clamps against allowed_roots and falls back to default_cwd when
+    // this is empty (docs/arch/SESSION_WORKDIR_ROOTSET.md, Phase 6).
+    let roots = crate::domain::sessions::session_root_set(
+        &state.db,
+        &crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id),
+    )
+    .await;
+
     let frame = serde_json::json!({
         "type": "realize_file",
         "file_id": file_id,
         "remote_ref": remote_ref,
         "channel_id": channel_id,
+        "roots": roots,
     });
 
     let sent = state.bot_locator.send_data(bot_id, frame).await;

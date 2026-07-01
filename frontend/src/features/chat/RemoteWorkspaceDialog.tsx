@@ -42,11 +42,14 @@ export function RemoteWorkspaceDialog({
   onClose,
   initialBotId,
   initialPath,
+  sessionId,
 }: {
   channelId: string;
   onClose: () => void;
   initialBotId?: string;
   initialPath?: string;
+  /** Scope the browse to a session's root set (`cwd` + additionalDirectories). */
+  sessionId?: string;
 }) {
   const [bots, setBots] = useState<WorkspaceBot[] | null>(null);
   const [botId, setBotId] = useState<string | null>(initialBotId ?? null);
@@ -83,7 +86,7 @@ export function RemoteWorkspaceDialog({
       setErr(null);
       setFile(null);
       try {
-        const t = await getWorkspaceTree(channelId, botId, path);
+        const t = await getWorkspaceTree(channelId, botId, path, undefined, sessionId);
         setEntries(t.entries);
         setCwd(t.path);
       } catch (e) {
@@ -92,7 +95,7 @@ export function RemoteWorkspaceDialog({
         setBusy(false);
       }
     },
-    [channelId, botId]
+    [channelId, botId, sessionId]
   );
 
   const openFile = useCallback(
@@ -101,7 +104,7 @@ export function RemoteWorkspaceDialog({
       setBusy(true);
       setErr(null);
       try {
-        const f = await getWorkspaceFile(channelId, botId, path);
+        const f = await getWorkspaceFile(channelId, botId, path, undefined, sessionId);
         setFile(f);
         setEdit(f.content ?? "");
         setDirty(false);
@@ -116,7 +119,7 @@ export function RemoteWorkspaceDialog({
         setBusy(false);
       }
     },
-    [channelId, botId, loadDir]
+    [channelId, botId, loadDir, sessionId]
   );
 
   // When a bot is selected: deep-link to initialPath once, else list the root.
@@ -135,7 +138,7 @@ export function RemoteWorkspaceDialog({
     setBusy(true);
     setErr(null);
     try {
-      await putWorkspaceFile(channelId, botId, file.path, edit);
+      await putWorkspaceFile(channelId, botId, file.path, edit, undefined, sessionId);
       setDirty(false);
     } catch (e) {
       setErr(cleanErr(e));

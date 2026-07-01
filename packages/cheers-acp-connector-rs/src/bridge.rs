@@ -154,6 +154,60 @@ mod tests {
     }
 
     #[test]
+    fn control_task_carries_session_cwd_and_additional_dirs() {
+        let frame: ControlInbound = serde_json::from_value(json!({
+            "type": "task",
+            "task_id": "task-1",
+            "channel_id": "channel-1",
+            "trigger_msg_id": "message-1",
+            "placeholder_msg_id": "placeholder-1",
+            "provider_session_key": "cheers:channel:c1:bot:b1",
+            "cwd": "/repo/service",
+            "additional_dirs": ["/repo/shared-lib", "/repo/docs"]
+        }))
+        .expect("task frame with cwd should deserialize");
+
+        match frame {
+            ControlInbound::Task {
+                cwd,
+                additional_dirs,
+                ..
+            } => {
+                assert_eq!(cwd.as_deref(), Some("/repo/service"));
+                assert_eq!(additional_dirs, vec!["/repo/shared-lib", "/repo/docs"]);
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn control_task_defaults_session_cwd_when_absent() {
+        // Backward compatible: an older Backend that never sends cwd/additional_dirs
+        // still deserializes, with the connector falling back to its default_cwd.
+        let frame: ControlInbound = serde_json::from_value(json!({
+            "type": "task",
+            "task_id": "task-1",
+            "channel_id": "channel-1",
+            "trigger_msg_id": "message-1",
+            "placeholder_msg_id": "placeholder-1",
+            "provider_session_key": "cheers:channel:c1:bot:b1"
+        }))
+        .expect("task frame without cwd should deserialize");
+
+        match frame {
+            ControlInbound::Task {
+                cwd,
+                additional_dirs,
+                ..
+            } => {
+                assert!(cwd.is_none());
+                assert!(additional_dirs.is_empty());
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    #[test]
     fn runtime_session_control_deserializes() {
         let frame: ControlInbound = serde_json::from_value(json!({
             "type": "runtime_session_control",
@@ -284,12 +338,43 @@ mod tests {
                 file_id,
                 remote_ref,
                 channel_id,
+                roots,
             } => {
                 assert_eq!(file_id, "f-001");
                 assert_eq!(remote_ref, "/home/user/report.pdf");
                 assert_eq!(channel_id, "c-001");
+                assert!(roots.is_empty(), "roots defaults to empty when absent");
             }
             other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn realize_file_and_workspace_req_carry_session_roots() {
+        let realize: DataInbound = serde_json::from_value(json!({
+            "type": "realize_file",
+            "file_id": "f", "remote_ref": "/repo/out.pdf", "channel_id": "c",
+            "roots": ["/repo/service", "/repo/shared"]
+        }))
+        .expect("realize frame with roots");
+        match realize {
+            DataInbound::RealizeFile { roots, .. } => {
+                assert_eq!(roots, vec!["/repo/service", "/repo/shared"]);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+
+        let browse: DataInbound = serde_json::from_value(json!({
+            "type": "workspace_req",
+            "req_id": "r", "op": "ls", "path": "",
+            "roots": ["/repo/service"]
+        }))
+        .expect("workspace_req with roots");
+        match browse {
+            DataInbound::WorkspaceReq { roots, .. } => {
+                assert_eq!(roots, vec!["/repo/service"]);
+            }
+            other => panic!("unexpected: {other:?}"),
         }
     }
 
@@ -556,6 +641,13 @@ pub struct RuntimeSessionControlSession {
     pub primary_scope_id: Option<String>,
     #[serde(default)]
     pub task_scope_id: Option<String>,
+    /// The session's ACP `cwd` (absolute), if the Backend pinned one for an
+    /// eager create/resume. Re-validated against `allowed_roots` by the connector.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// The session's ACP `additionalDirectories`, re-validated against `allowed_roots`.
+    #[serde(default)]
+    pub additional_dirs: Vec<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }
@@ -707,6 +799,17 @@ pub enum ControlInbound {
         /// every request — the channel's "convention prompt" (e.g. a prompt template).
         #[serde(default)]
         pinned: Vec<String>,
+        /// The session's primary working directory (ACP `cwd`), if the Backend
+        /// pinned one for this session. Absolute; the connector re-validates it
+        /// against `allowed_roots` and falls back to `default_cwd` when unset or
+        /// rejected. Immutable for the session's lifetime.
+        #[serde(default)]
+        cwd: Option<String>,
+        /// Extra roots for this session's effective root set (ACP
+        /// `additionalDirectories`). Each is re-validated against `allowed_roots`;
+        /// out-of-policy entries are dropped.
+        #[serde(default)]
+        additional_dirs: Vec<String>,
         #[serde(default)]
         binding_config: Option<Value>,
         #[serde(default)]
@@ -976,6 +1079,11 @@ pub enum DataInbound {
         file_id: String,
         remote_ref: String,
         channel_id: String,
+        /// The owning session's ACP root set (`cwd` + `additionalDirectories`). The
+        /// connector confines `remote_ref` to these (∩ `allowed_roots`); empty ⇒
+        /// the session's implicit root is the connector `default_cwd`.
+        #[serde(default)]
+        roots: Vec<String>,
     },
     /// Gateway → connector: browse/read/write the agent's real workspace, confined
     /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
@@ -993,6 +1101,11 @@ pub enum DataInbound {
         /// base64 file bytes for `op == "write"`.
         #[serde(default)]
         content_b64: Option<String>,
+        /// Optional session root set to scope this browse to (`cwd` +
+        /// `additionalDirectories`). Empty ⇒ the full `allowed_roots` (bot-wide
+        /// browse). When set, the effective roots are these ∩ `allowed_roots`.
+        #[serde(default)]
+        roots: Vec<String>,
     },
     #[serde(other)]
     Unknown,

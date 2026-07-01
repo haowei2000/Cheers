@@ -118,7 +118,7 @@ impl RuntimeContext {
         (settings, rejected)
     }
 
-    fn validate_backend_cwd(&self, cwd: &str) -> Result<PathBuf, String> {
+    pub(super) fn validate_backend_cwd(&self, cwd: &str) -> Result<PathBuf, String> {
         if !self.config.policy.workspace.backend_may_set_cwd {
             return Err("local daemon policy does not allow Backend to set cwd".to_string());
         }

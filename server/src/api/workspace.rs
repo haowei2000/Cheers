@@ -58,6 +58,9 @@ pub struct TreeQuery {
     #[serde(default)]
     pub path: String,
     pub root: Option<String>,
+    /// Optional: scope the browse to this session's root set (`cwd` +
+    /// `additionalDirectories`). Omitted ⇒ the bot-wide `allowed_roots` view.
+    pub session_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +68,8 @@ pub struct FileQuery {
     pub bot_id: Uuid,
     pub path: String,
     pub root: Option<String>,
+    /// Optional: scope to this session's root set (see [`TreeQuery::session_id`]).
+    pub session_id: Option<Uuid>,
 }
 
 /// Caller must be a channel user-member (or admin); the target bot must itself be a
@@ -225,6 +230,49 @@ pub async fn resolve_ref(
     Ok(Json(json!({ "store": "none", "display_name": base, "also_in": also })))
 }
 
+/// On-the-spot validation of a candidate session `cwd` against the bot connector's
+/// local policy (`validate_cwd` op): connector online, cwd absolute + inside
+/// `allowed_roots` + a real directory, and `backend_may_set_cwd` allowed. Returns
+/// the connector's data (`{canonical_path, matched_root, is_dir, backend_may_set_cwd}`)
+/// on success, or an `AppError::BadRequest` carrying the connector's `code: message`
+/// so the caller can reject the invite/creation before persisting anything.
+pub async fn validate_bot_cwd(
+    state: &AppState,
+    bot_id: Uuid,
+    cwd: &str,
+) -> Result<Value, AppError> {
+    workspace_call(state, bot_id, "validate_cwd", cwd, None, None, &[]).await
+}
+
+/// Validate a chosen `cwd` + `additional_dirs` against the bot connector's policy,
+/// returning the connector-canonicalized absolute paths — exactly what session
+/// start will use. Any invalid entry (connector offline / outside allowed_roots /
+/// not a directory / cwd-locked) rejects with the connector's reason. `None` cwd
+/// and an empty list pass through with no connector round-trip.
+pub async fn validate_workspace_paths(
+    state: &AppState,
+    bot_id: Uuid,
+    cwd: Option<String>,
+    additional_dirs: Vec<String>,
+) -> Result<(Option<String>, Vec<String>), AppError> {
+    fn canonical_of(data: &Value, fallback: String) -> String {
+        data.get("canonical_path")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or(fallback)
+    }
+    let cwd = match cwd {
+        Some(c) => Some(canonical_of(&validate_bot_cwd(state, bot_id, &c).await?, c)),
+        None => None,
+    };
+    let mut dirs = Vec::with_capacity(additional_dirs.len());
+    for d in additional_dirs {
+        let data = validate_bot_cwd(state, bot_id, &d).await?;
+        dirs.push(canonical_of(&data, d));
+    }
+    Ok((cwd, dirs))
+}
+
 /// Send a `workspace_req` to the bot's connector and await the correlated reply.
 async fn workspace_call(
     state: &AppState,
@@ -233,6 +281,7 @@ async fn workspace_call(
     path: &str,
     root: Option<&str>,
     content_b64: Option<String>,
+    roots: &[String],
 ) -> Result<Value, AppError> {
     if !state.bot_locator.is_online(bot_id) {
         return Err(AppError::BadRequest("bot connector is offline".into()));
@@ -246,6 +295,8 @@ async fn workspace_call(
         "path": path,
         "root": root,
         "content_b64": content_b64,
+        // Optional session root set to scope this browse (empty ⇒ full allowed_roots).
+        "roots": roots,
     });
     if !state.bot_locator.send_data(bot_id, frame).await {
         state.workspace_rpc.cancel(&req_id);
@@ -320,7 +371,29 @@ pub async fn list_workspace_bots(
     Ok(Json(json!({ "bots": bots })))
 }
 
-/// GET /api/v1/channels/:channel_id/workspace/tree?bot_id=&path=&root=
+/// Resolve the root set to scope a browse to: the given session's
+/// `[cwd?, ...additional_dirs]`, or empty (bot-wide `allowed_roots`) when no session
+/// is specified or it doesn't belong to the bot.
+async fn browse_roots(state: &AppState, bot_id: Uuid, session_id: Option<Uuid>) -> Vec<String> {
+    let Some(sid) = session_id else {
+        return Vec::new();
+    };
+    let key: Option<String> = sqlx::query_scalar(
+        "SELECT provider_session_key FROM cheers_sessions WHERE session_id = $1 AND bot_id = $2",
+    )
+    .bind(sid.to_string())
+    .bind(bot_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    match key {
+        Some(k) => crate::domain::sessions::session_root_set(&state.db, &k).await,
+        None => Vec::new(),
+    }
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/tree?bot_id=&path=&root=&session_id=
 pub async fn get_tree(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -328,11 +401,12 @@ pub async fn get_tree(
     Query(q): Query<TreeQuery>,
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
-    let data = workspace_call(&state, q.bot_id, "ls", &q.path, q.root.as_deref(), None).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(&state, q.bot_id, "ls", &q.path, q.root.as_deref(), None, &roots).await?;
     Ok(Json(data))
 }
 
-/// GET /api/v1/channels/:channel_id/workspace/file?bot_id=&path=&root=
+/// GET /api/v1/channels/:channel_id/workspace/file?bot_id=&path=&root=&session_id=
 pub async fn get_file(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -340,11 +414,12 @@ pub async fn get_file(
     Query(q): Query<FileQuery>,
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
-    let data = workspace_call(&state, q.bot_id, "read", &q.path, q.root.as_deref(), None).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(&state, q.bot_id, "read", &q.path, q.root.as_deref(), None, &roots).await?;
     Ok(Json(data))
 }
 
-/// PUT /api/v1/channels/:channel_id/workspace/file?bot_id=&path=&root=  (raw bytes body)
+/// PUT /api/v1/channels/:channel_id/workspace/file?bot_id=&path=&root=&session_id= (raw bytes body)
 pub async fn put_file(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -354,6 +429,7 @@ pub async fn put_file(
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
     let content_b64 = B64.encode(&body);
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
     let data = workspace_call(
         &state,
         q.bot_id,
@@ -361,6 +437,7 @@ pub async fn put_file(
         &q.path,
         q.root.as_deref(),
         Some(content_b64),
+        &roots,
     )
     .await?;
     Ok(Json(data))

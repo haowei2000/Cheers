@@ -317,7 +317,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         let result = self
             .request(
                 "session/new",
-                json!({ "cwd": options.cwd, "mcpServers": options.mcp_servers }),
+                json!({ "cwd": options.cwd, "additionalDirectories": options.additional_dirs, "mcpServers": options.mcp_servers }),
                 self.request_timeout_ms(),
             )
             .await?;
@@ -342,7 +342,7 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
         let result = self
             .request(
                 "session/load",
-                json!({ "sessionId": session_id, "cwd": options.cwd, "mcpServers": options.mcp_servers }),
+                json!({ "sessionId": session_id, "cwd": options.cwd, "additionalDirectories": options.additional_dirs, "mcpServers": options.mcp_servers }),
                 self.request_timeout_ms(),
             )
             .await?;

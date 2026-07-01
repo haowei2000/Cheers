@@ -4,6 +4,7 @@
 //! sessions and start a new "other" one.
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     Extension, Json,
 };
@@ -61,14 +62,85 @@ pub async fn list_sessions(
 
 // ── POST /api/v1/channels/:channel_id/bots/:bot_id/sessions ──────────────────
 
+/// Optional body for creating an "other" session. All fields default so a
+/// body-less POST keeps working.
+#[derive(Debug, Default, Deserialize)]
+pub struct CreateSessionRequest {
+    /// The session's primary working directory (ACP `cwd`). MUST be absolute.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Extra roots for the session's effective root set (ACP `additionalDirectories`).
+    /// Each MUST be absolute.
+    #[serde(default)]
+    pub additional_dirs: Option<Vec<String>>,
+}
+
+/// Trim + validate an optional workspace `cwd`: empty ⇒ `None`; a non-empty value
+/// MUST be absolute (ACP requirement). The connector re-validates against its
+/// `allowed_roots`, so this is only a shape check, not an authorization check.
+pub(crate) fn normalize_workspace_path(cwd: Option<String>) -> Result<Option<String>, AppError> {
+    match cwd.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
+        None => Ok(None),
+        Some(path) if path.starts_with('/') => Ok(Some(path)),
+        Some(path) => Err(AppError::BadRequest(format!(
+            "cwd must be an absolute path, got {path:?}"
+        ))),
+    }
+}
+
+/// Normalize the `additional_dirs` list: trim, drop empties, require each to be
+/// absolute, and de-duplicate (order-preserving).
+pub(crate) fn normalize_additional_dirs(dirs: Option<Vec<String>>) -> Result<Vec<String>, AppError> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in dirs.unwrap_or_default() {
+        let path = raw.trim().to_string();
+        if path.is_empty() {
+            continue;
+        }
+        if !path.starts_with('/') {
+            return Err(AppError::BadRequest(format!(
+                "additional_dirs entries must be absolute paths, got {path:?}"
+            )));
+        }
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    Ok(out)
+}
+
 pub async fn create_session(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Path((channel_id, bot_id)): Path<(Uuid, Uuid)>,
+    body: Bytes,
 ) -> Result<Json<Value>, AppError> {
     let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
     let role = caller_role(&state, channel_id, user_id).await?;
     gate_initiate(&state, &claims, channel_id, bot_id, user_id, &role, "cheers/session_create").await?;
+
+    // Optional per-session ACP root set. A body-less POST (the common "new session,
+    // default cwd" case) is accepted as an empty request. `cwd` MUST be absolute
+    // (ACP); paths are normalized here and re-validated against the connector's
+    // allowed_roots at session start (Phase 2 adds an on-the-spot connector check).
+    let req: CreateSessionRequest = if body.is_empty() {
+        CreateSessionRequest::default()
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|e| AppError::BadRequest(format!("invalid session body: {e}")))?
+    };
+    let cwd = normalize_workspace_path(req.cwd)?;
+    let additional_dirs = normalize_additional_dirs(req.additional_dirs)?;
+    // Phase 2: when a workdir is actually chosen, validate it on the spot against
+    // the bot connector's policy (allowed_roots + backend_may_set_cwd + is-dir) and
+    // store the connector-canonicalized paths. A default-cwd session needs no
+    // round-trip.
+    let (cwd, additional_dirs) = if cwd.is_some() || !additional_dirs.is_empty() {
+        crate::api::workspace::validate_workspace_paths(&state, bot_id, cwd, additional_dirs).await?
+    } else {
+        (cwd, additional_dirs)
+    };
+
     let provider_account_id = crate::domain::messages::resolve_provider_account_id_for_bot(&state.db, bot_id)
         .await
         .unwrap_or_else(|_| bot_id.to_string());
@@ -78,12 +150,16 @@ pub async fn create_session(
         &provider_account_id,
         &channel_id.to_string(),
         "other",
+        cwd.as_deref(),
+        &additional_dirs,
     )
     .await?;
     Ok(Json(json!({
         "session_id": handle.session_id.to_string(),
         "provider_session_key": handle.provider_session_key,
         "role": "other",
+        "cwd": cwd,
+        "additional_dirs": additional_dirs,
     })))
 }
 
@@ -337,6 +413,44 @@ pub async fn set_session_config_option(
     Ok(Json(json!({ "ok": true, "config_id": config_id, "value": value, "delivered": delivered })))
 }
 
+#[derive(Deserialize)]
+pub struct SetWorkspaceRequest {
+    /// The new accessible-root set (ACP `additionalDirectories`). Replaces the whole
+    /// list. Each MUST be absolute; `cwd` is immutable and NOT editable here.
+    pub additional_dirs: Vec<String>,
+}
+
+/// PUT .../sessions/:session_id/workspace — edit a session's ACP
+/// `additionalDirectories` (the mutable root-set lever;
+/// docs/arch/SESSION_WORKDIR_ROOTSET.md). `cwd` is immutable, so only the extra
+/// roots change; the new set takes effect on the session's next interaction (the
+/// connector resends the full list at the next `session/new`/`load`). Gated like
+/// set_config_option (owner-default + grantable); each dir is validated on the
+/// spot against the bot connector's `allowed_roots`.
+pub async fn set_session_workspace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(body): Json<SetWorkspaceRequest>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
+    let role = caller_role(&state, channel_id, user_id).await?;
+    gate_initiate(&state, &claims, channel_id, bot_id, user_id, &role, "session/set_config_option").await?;
+
+    let (sbot, _key) =
+        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
+    if sbot != bot_id {
+        return Err(AppError::BadRequest("session does not belong to this bot".into()));
+    }
+
+    let additional_dirs = normalize_additional_dirs(Some(body.additional_dirs))?;
+    // Validate each dir against the bot connector's policy; store canonical paths.
+    let (_no_cwd, additional_dirs) =
+        crate::api::workspace::validate_workspace_paths(&state, bot_id, None, additional_dirs).await?;
+    sessions::set_session_additional_dirs(&state.db, bot_id, session_id, &additional_dirs).await?;
+    Ok(Json(json!({ "ok": true, "additional_dirs": additional_dirs })))
+}
+
 /// GET .../session-controls — the CALLER's resolved grants + the agent's
 /// advertised vocabulary. Never leaks other subjects' rules.
 pub async fn session_controls(
@@ -404,4 +518,46 @@ async fn bot_agent_type(state: &AppState, bot_id: Uuid) -> String {
         .and_then(|r| r.try_get::<Option<String>, _>("bridge_provider").ok().flatten())
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "generic".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_workspace_path_maps_empty_to_none() {
+        assert_eq!(normalize_workspace_path(None).unwrap(), None);
+        assert_eq!(normalize_workspace_path(Some("   ".into())).unwrap(), None);
+    }
+
+    #[test]
+    fn normalize_workspace_path_trims_absolute() {
+        assert_eq!(
+            normalize_workspace_path(Some("  /repo/service  ".into())).unwrap(),
+            Some("/repo/service".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_workspace_path_rejects_relative() {
+        assert!(normalize_workspace_path(Some("repo/service".into())).is_err());
+        assert!(normalize_workspace_path(Some("./x".into())).is_err());
+    }
+
+    #[test]
+    fn normalize_additional_dirs_dedups_and_drops_empty() {
+        let got = normalize_additional_dirs(Some(vec![
+            "/a".into(),
+            "  ".into(),
+            "/b".into(),
+            "/a".into(),
+        ]))
+        .unwrap();
+        assert_eq!(got, vec!["/a".to_string(), "/b".to_string()]);
+    }
+
+    #[test]
+    fn normalize_additional_dirs_rejects_relative_entry() {
+        assert!(normalize_additional_dirs(Some(vec!["/a".into(), "rel".into()])).is_err());
+    }
 }

@@ -57,6 +57,15 @@ pub struct AddMemberRequest {
     pub member_id: String,
     pub member_type: String,
     pub role: Option<String>,
+    /// Optional (bot only): pin the PRIMARY session's ACP working directory in this
+    /// channel. MUST be absolute; validated against the bot connector's allowed_roots
+    /// on the spot (docs/arch/SESSION_WORKDIR_ROOTSET.md). Immutable once set.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Optional (bot only): extra roots for the primary session's effective root set
+    /// (ACP `additionalDirectories`). Each MUST be absolute.
+    #[serde(default)]
+    pub additional_dirs: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -460,7 +469,7 @@ pub async fn add_channel_member(
             "member_type must be user or bot".into(),
         ));
     }
-    let role = body.role.unwrap_or_else(|| "member".into());
+    let role = body.role.clone().unwrap_or_else(|| "member".into());
     if !matches!(role.as_str(), "owner" | "admin" | "member" | "readonly") {
         return Err(AppError::BadRequest(
             "role must be owner, admin, member, or readonly".into(),
@@ -473,6 +482,59 @@ pub async fn add_channel_member(
             "only an owner or a system admin can add a member as owner".into(),
         ));
     }
+
+    // Bot-side authorization (docs/arch/SESSION_WORKDIR_ROOTSET.md): inviting a bot
+    // into a channel = a `session_create` for that bot, so it is an AND-gate — the
+    // caller must already be a channel admin (checked above) AND be the bot
+    // owner / platform admin, or hold a `session_create` INITIATE grant for THIS
+    // bot. Closes the gap where any channel admin could bind ANY bot with no
+    // bot-side authorization. An optional pinned working directory rides the same
+    // authorization (it can only be chosen through an invite the caller may make).
+    let mut primary_workspace: Option<(Option<String>, Vec<String>)> = None;
+    if body.member_type == "bot" {
+        let is_owner = crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &body.member_id)
+            .await
+            .is_ok();
+        if !is_owner {
+            let caller_role = caller_channel_role(&state, &channel_id, &claims.sub).await;
+            let allowed = crate::domain::acp_policy::allows(
+                &state.db,
+                &body.member_id,
+                &channel_id,
+                &claims.sub,
+                &caller_role,
+                "cheers/session_create",
+                crate::domain::bot_event_policy::Capability::Initiate,
+            )
+            .await
+            .unwrap_or(false); // fail-closed
+            if !allowed {
+                return Err(AppError::Forbidden(
+                    "you are not authorized to add this bot here (needs session_create for the bot)".into(),
+                ));
+            }
+        }
+        // Optional pinned working directory for the bot's PRIMARY session here.
+        // Shape-check → on-the-spot validation against the bot connector's policy;
+        // stored (immutable) after the membership is committed.
+        let cwd = crate::api::session_control::normalize_workspace_path(body.cwd.clone())?;
+        let additional_dirs =
+            crate::api::session_control::normalize_additional_dirs(body.additional_dirs.clone())?;
+        if cwd.is_some() || !additional_dirs.is_empty() {
+            let bot_uuid = Uuid::parse_str(&body.member_id)
+                .map_err(|_| AppError::BadRequest("member_id must be a bot uuid".into()))?;
+            primary_workspace = Some(
+                crate::api::workspace::validate_workspace_paths(
+                    &state,
+                    bot_uuid,
+                    cwd,
+                    additional_dirs,
+                )
+                .await?,
+            );
+        }
+    }
+
     sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, $3, $4, $5)
@@ -487,6 +549,28 @@ pub async fn add_channel_member(
     .bind(&claims.sub)
     .execute(&state.db)
     .await?;
+
+    // Eagerly materialize the bot's PRIMARY session with its pinned (validated)
+    // workspace. Idempotent with the lazy first-message path; cwd is immutable, so
+    // a re-invite never rewrites an existing primary's cwd.
+    if let Some((cwd, additional_dirs)) = primary_workspace {
+        let bot_uuid = Uuid::parse_str(&body.member_id)
+            .map_err(|_| AppError::BadRequest("member_id must be a bot uuid".into()))?;
+        let provider_account_id =
+            crate::domain::messages::resolve_provider_account_id_for_bot(&state.db, bot_uuid)
+                .await
+                .unwrap_or_else(|_| body.member_id.clone());
+        crate::domain::sessions::ensure_primary_session_workspace(
+            &state.db,
+            bot_uuid,
+            &provider_account_id,
+            &channel_id,
+            cwd.as_deref(),
+            &additional_dirs,
+        )
+        .await?;
+    }
+
     Ok(Json(
         json!({"channel_id": channel_id, "member_id": body.member_id, "member_type": body.member_type, "role": role}),
     ))
@@ -526,6 +610,23 @@ async fn caller_channel_is_owner(
     .fetch_optional(&state.db)
     .await?;
     Ok(role.as_deref() == Some("owner"))
+}
+
+/// The caller's role in this channel (for the bot_event_policy role tier), or
+/// `"member"` when not found / on a DB error — the acp_policy resolution is itself
+/// fail-closed for owner-default events, so a downgraded role never over-grants.
+async fn caller_channel_role(state: &AppState, channel_id: &str, user_id: &str) -> String {
+    sqlx::query_scalar::<_, String>(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "member".to_string())
 }
 
 /// POST /api/v1/channels/{channel_id}/leave — the caller removes their OWN

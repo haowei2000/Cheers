@@ -592,6 +592,7 @@ impl RuntimeAdapter for AcpAdapter {
                 "session/new",
                 json!({
                     "cwd": options.cwd,
+                    "additionalDirectories": options.additional_dirs,
                     "mcpServers": options.mcp_servers,
                 }),
                 self.request_timeout_ms(),
@@ -633,6 +634,7 @@ impl RuntimeAdapter for AcpAdapter {
                 json!({
                     "sessionId": session_id,
                     "cwd": options.cwd,
+                    "additionalDirectories": options.additional_dirs,
                     "mcpServers": options.mcp_servers,
                 }),
                 self.request_timeout_ms(),

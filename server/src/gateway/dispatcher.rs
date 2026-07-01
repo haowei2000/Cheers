@@ -114,6 +114,9 @@ pub async fn dispatch(
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
     task_context.pinned = load_pinned_context(db, params.channel_id).await;
+    // Per-session ACP root set (cwd + additionalDirectories) stored on the session
+    // row; absent → the connector falls back to its default_cwd.
+    let workspace = load_session_workspace(db, &params.provider_session_key).await;
     let task_frame = build_task_frame(
         task_id,
         params.channel_id,
@@ -124,6 +127,7 @@ pub async fn dispatch(
         &params.provider_session_key,
         params.session_id,
         task_context,
+        workspace,
     );
 
     let delivered = bot_locator.dispatch_task(params.bot_id, task_frame).await;
@@ -396,6 +400,46 @@ pub(crate) async fn mark_placeholder_failed(
     }))
 }
 
+/// A session's ACP root set: `(cwd, additional_dirs)` — the effective root set is
+/// `[cwd, ...additional_dirs]`. `None` cwd ⇒ the connector uses its `default_cwd`.
+type SessionWorkspace = (Option<String>, Vec<String>);
+
+/// Read a session's stored `metadata.workspace` (the per-session ACP `cwd` +
+/// `additionalDirectories`). Missing row / key ⇒ `(None, [])`, so the connector
+/// falls back to its default_cwd. Best-effort: any DB error degrades to the default.
+async fn load_session_workspace(db: &PgPool, provider_session_key: &str) -> SessionWorkspace {
+    let ws = sqlx::query(
+        "SELECT metadata->'workspace' AS ws FROM cheers_sessions
+         WHERE provider_session_key = $1 LIMIT 1",
+    )
+    .bind(provider_session_key)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<Value>, _>("ws").ok().flatten());
+    match ws {
+        Some(ws) => {
+            let cwd = ws
+                .get("cwd")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let additional_dirs = ws
+                .get("additional_dirs")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (cwd, additional_dirs)
+        }
+        None => (None, Vec::new()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_task_frame(
     task_id: Uuid,
     channel_id: Uuid,
@@ -406,6 +450,7 @@ fn build_task_frame(
     provider_session_key: &str,
     session_id: Option<Uuid>,
     task_context: TaskContext,
+    workspace: SessionWorkspace,
 ) -> Value {
     let trigger = if depth > 0 {
         "bot_message"
@@ -413,6 +458,7 @@ fn build_task_frame(
         "user_message"
     };
 
+    let (cwd, additional_dirs) = workspace;
     json!({
         "type": "task",
         "v": 1,
@@ -434,6 +480,11 @@ fn build_task_frame(
         "trigger_message": task_context.trigger_message,
         "attachments": task_context.attachments,
         "pinned": task_context.pinned,
+        // Per-session ACP root set. The connector re-validates against its
+        // allowed_roots and uses default_cwd when cwd is null (ACP: cwd is a pure
+        // session/new argument, immutable for the session's lifetime).
+        "cwd": cwd,
+        "additional_dirs": additional_dirs,
         "session": {
             "id": session_id,
             "provider_session_key": provider_session_key,

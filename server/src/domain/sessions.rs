@@ -149,16 +149,35 @@ pub async fn acquire_scope_session(
     })
 }
 
+/// Build the `metadata` jsonb for a new session: `{}` when no workspace is pinned,
+/// else `{"workspace": {"cwd", "additional_dirs"}}` — the per-session ACP root set
+/// (`[cwd, ...additional_dirs]`). Paths are stored verbatim; the connector
+/// re-validates them against its local `allowed_roots`.
+pub fn workspace_metadata(cwd: Option<&str>, additional_dirs: &[String]) -> Value {
+    if cwd.is_none() && additional_dirs.is_empty() {
+        return json!({});
+    }
+    json!({
+        "workspace": {
+            "cwd": cwd,
+            "additional_dirs": additional_dirs,
+        }
+    })
+}
+
 /// Create an additional ("other") session bound to a channel, keyed by its own
 /// `session_id` (`cheers:session:{id}`) so it's addressed independently of the
 /// channel's primary. Topic-free: extras are distinguished by session_id + the
-/// non-primary binding role, never by a label.
+/// non-primary binding role, never by a label. An optional `cwd` +
+/// `additional_dirs` pin the session's ACP root set (stored in `metadata.workspace`).
 pub async fn create_channel_session(
     db: &PgPool,
     bot_id: Uuid,
     provider_account_id: &str,
     channel_id: &str,
     role: &str,
+    cwd: Option<&str>,
+    additional_dirs: &[String],
 ) -> Result<SessionHandle, AppError> {
     let provider_account_id = provider_account_id.trim();
     if provider_account_id.is_empty() {
@@ -171,12 +190,13 @@ pub async fn create_channel_session(
     let session_uuid = Uuid::new_v4();
     let provider_session_key = format!("cheers:session:{session_uuid}");
     let now = Utc::now();
+    let metadata = workspace_metadata(cwd, additional_dirs);
     sqlx::query(
         "INSERT INTO cheers_sessions (
             session_id, bot_id, provider, provider_account_id, provider_agent_id,
             provider_session_key, provider_session_id, current_scope_type, current_scope_id,
             status, metadata, last_used_at, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, '{}'::jsonb, $10, $10, $10)",
+        ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $11::jsonb, $10, $10, $10)",
     )
     .bind(session_uuid.to_string())
     .bind(bot_id.to_string())
@@ -188,6 +208,7 @@ pub async fn create_channel_session(
     .bind(channel_id)
     .bind(SESSION_STATUS_IDLE)
     .bind(now)
+    .bind(metadata)
     .execute(db)
     .await
     .map_err(AppError::Db)?;
@@ -208,6 +229,147 @@ pub async fn create_channel_session(
         session_id: session_uuid,
         provider_session_key,
     })
+}
+
+/// The scope-derived provider session key for a channel's PRIMARY session — stable
+/// across turns so the lazy (first-message) and eager (invite-time) paths converge
+/// on the same row via `ON CONFLICT`. Mirrors the key used in `messages`/`chains`.
+pub fn primary_provider_session_key(channel_id: &str, bot_id: Uuid) -> String {
+    format!("cheers:channel:{channel_id}:bot:{bot_id}")
+}
+
+/// Eagerly ensure a channel's PRIMARY session exists for a bot, pinning its ACP
+/// workspace (`metadata.workspace`) when the row is created here. Inviting a bot
+/// into a channel = creating its primary session
+/// (docs/arch/SESSION_WORKDIR_ROOTSET.md). **Idempotent**: if the primary already
+/// exists (lazily created on first message, or a prior invite), the workspace is
+/// LEFT UNCHANGED — `cwd` is immutable for a session's lifetime (ACP). Returns the
+/// primary's handle either way.
+pub async fn ensure_primary_session_workspace(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    channel_id: &str,
+    cwd: Option<&str>,
+    additional_dirs: &[String],
+) -> Result<SessionHandle, AppError> {
+    let provider_account_id = provider_account_id.trim();
+    if provider_account_id.is_empty() {
+        return Err(AppError::BadRequest("provider_account_id can not be empty".into()));
+    }
+    let channel_id = channel_id.trim();
+    if channel_id.is_empty() {
+        return Err(AppError::BadRequest("channel_id can not be empty".into()));
+    }
+    let provider_session_key = primary_provider_session_key(channel_id, bot_id);
+    let now = Utc::now();
+    let metadata = workspace_metadata(cwd, additional_dirs);
+    // Insert-if-absent, pinning the workspace on creation. On conflict, a no-op
+    // touch of `updated_at` so we still get the existing session_id back WITHOUT
+    // overwriting the immutable `metadata.workspace`.
+    let session_id: String = sqlx::query_scalar(
+        "INSERT INTO cheers_sessions (
+            session_id, bot_id, provider, provider_account_id, provider_agent_id,
+            provider_session_key, provider_session_id, current_scope_type, current_scope_id,
+            status, metadata, last_used_at, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $11::jsonb, $10, $10, $10)
+        ON CONFLICT (provider, provider_account_id, provider_session_key)
+        DO UPDATE SET updated_at = EXCLUDED.updated_at
+        RETURNING session_id",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(PROVIDER_AGENT_ID)
+    .bind(&provider_session_key)
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .bind(SESSION_STATUS_IDLE)
+    .bind(now)
+    .bind(metadata)
+    .fetch_one(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    let session_uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| AppError::Internal("invalid session_id".into()))?;
+    upsert_session_binding(
+        db,
+        &session_uuid,
+        bot_id,
+        provider_account_id,
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        None,
+        "primary",
+    )
+    .await?;
+
+    Ok(SessionHandle {
+        session_id: session_uuid,
+        provider_session_key,
+    })
+}
+
+/// A session's ACP root set as a flat list `[cwd?, ...additional_dirs]` — for
+/// passing to the connector to scope a browse or a realize to the session's roots.
+/// Empty when the session has no pinned workspace (the connector then falls back to
+/// its `default_cwd`). Best-effort: a DB error yields an empty list.
+pub async fn session_root_set(db: &PgPool, provider_session_key: &str) -> Vec<String> {
+    let ws: Option<Value> = sqlx::query_scalar::<_, Option<Value>>(
+        "SELECT metadata->'workspace' FROM cheers_sessions WHERE provider_session_key = $1 LIMIT 1",
+    )
+    .bind(provider_session_key)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    let mut out = Vec::new();
+    if let Some(ws) = ws {
+        if let Some(cwd) = ws.get("cwd").and_then(|v| v.as_str()) {
+            out.push(cwd.to_string());
+        }
+        if let Some(dirs) = ws.get("additional_dirs").and_then(|v| v.as_array()) {
+            out.extend(dirs.iter().filter_map(|d| d.as_str().map(str::to_string)));
+        }
+    }
+    out
+}
+
+/// Update **only** `metadata.workspace.additional_dirs` for a session, preserving
+/// the immutable `cwd`. This is the mutable lever of the ACP root set: extra
+/// accessible roots may change across loads while `cwd` stays fixed. Takes effect
+/// on the session's next task/load (which resends the full `additionalDirectories`
+/// list). Returns `NotFound` if the session doesn't belong to `bot_id`.
+pub async fn set_session_additional_dirs(
+    db: &PgPool,
+    bot_id: Uuid,
+    session_id: Uuid,
+    additional_dirs: &[String],
+) -> Result<(), AppError> {
+    let dirs = serde_json::to_value(additional_dirs)
+        .map_err(|e| AppError::Internal(format!("serialize additional_dirs: {e}")))?;
+    // Shallow-merge a rebuilt `workspace` object so `cwd` (and any other keys)
+    // survive: keep the existing workspace, overwrite only `additional_dirs`.
+    let updated: Option<String> = sqlx::query_scalar(
+        "UPDATE cheers_sessions
+         SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                 'workspace',
+                 COALESCE(metadata->'workspace', '{}'::jsonb)
+                     || jsonb_build_object('additional_dirs', $1::jsonb)),
+             updated_at = now()
+         WHERE session_id = $2 AND bot_id = $3
+         RETURNING session_id",
+    )
+    .bind(dirs)
+    .bind(session_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?;
+    updated.map(|_| ()).ok_or(AppError::NotFound)
 }
 
 /// A channel's sessions for a bot (primary first), for the session switcher.
@@ -614,4 +776,38 @@ pub async fn apply_runtime_session_ack(
     .ok_or_else(|| AppError::NotFound)?;
 
     Uuid::parse_str(&updated).map_err(|_| AppError::Internal("invalid session_id".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_metadata_empty_when_no_root_set() {
+        assert_eq!(workspace_metadata(None, &[]), json!({}));
+    }
+
+    #[test]
+    fn workspace_metadata_carries_cwd_and_additional_dirs() {
+        let dirs = vec!["/repo/shared".to_string(), "/repo/docs".to_string()];
+        assert_eq!(
+            workspace_metadata(Some("/repo/service"), &dirs),
+            json!({
+                "workspace": {
+                    "cwd": "/repo/service",
+                    "additional_dirs": ["/repo/shared", "/repo/docs"],
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn workspace_metadata_carries_additional_dirs_without_cwd() {
+        // additionalDirectories may be set even when cwd falls back to the default.
+        let dirs = vec!["/repo/shared".to_string()];
+        assert_eq!(
+            workspace_metadata(None, &dirs),
+            json!({ "workspace": { "cwd": Value::Null, "additional_dirs": ["/repo/shared"] } })
+        );
+    }
 }

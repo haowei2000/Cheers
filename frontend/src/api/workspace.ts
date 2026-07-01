@@ -43,10 +43,12 @@ export async function getWorkspaceTree(
   channelId: string,
   botId: string,
   path = "",
-  root?: string
+  root?: string,
+  sessionId?: string
 ): Promise<WorkspaceTree> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
   return apiJson<WorkspaceTree>(`/channels/${channelId}/workspace/tree?${qs}`);
 }
 
@@ -54,10 +56,12 @@ export async function getWorkspaceFile(
   channelId: string,
   botId: string,
   path: string,
-  root?: string
+  root?: string,
+  sessionId?: string
 ): Promise<WorkspaceFile> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
   return apiJson<WorkspaceFile>(`/channels/${channelId}/workspace/file?${qs}`);
 }
 
@@ -66,10 +70,12 @@ export async function putWorkspaceFile(
   botId: string,
   path: string,
   content: string,
-  root?: string
+  root?: string,
+  sessionId?: string
 ): Promise<void> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
   const res = await apiFetch(`/channels/${channelId}/workspace/file?${qs}`, {
     method: "PUT",
     body: content,

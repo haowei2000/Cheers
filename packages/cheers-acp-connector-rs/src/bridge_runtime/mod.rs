@@ -255,6 +255,8 @@ impl RuntimeContext {
                 trigger_message,
                 attachments,
                 pinned,
+                cwd,
+                additional_dirs,
                 ..
             } => {
                 let task = TaskCommand {
@@ -266,6 +268,8 @@ impl RuntimeContext {
                     trigger_message,
                     attachments,
                     pinned,
+                    cwd,
+                    additional_dirs,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -396,11 +400,12 @@ impl RuntimeContext {
                 file_id,
                 remote_ref,
                 channel_id,
+                roots,
             } => {
                 let runtime = self.clone();
                 tokio::spawn(async move {
                     if let Err(err) = runtime
-                        .handle_realize_file(file_id, remote_ref, channel_id)
+                        .handle_realize_file(file_id, remote_ref, channel_id, &roots)
                         .await
                     {
                         tracing::warn!("realize_file failed: {err}");
@@ -413,11 +418,12 @@ impl RuntimeContext {
                 path,
                 root,
                 content_b64,
+                roots,
             } => {
                 let runtime = self.clone();
                 tokio::spawn(async move {
                     let frame = match runtime
-                        .handle_workspace_req(&op, &path, root.as_deref(), content_b64.as_deref())
+                        .handle_workspace_req(&op, &path, root.as_deref(), content_b64.as_deref(), &roots)
                         .await
                     {
                         Ok(data) => DataOutbound::WorkspaceRes {
@@ -458,8 +464,27 @@ impl RuntimeContext {
         file_id: String,
         remote_ref: String,
         channel_id: String,
+        session_roots: &[String],
     ) -> anyhow::Result<()> {
-        let bytes = tokio::fs::read(&remote_ref)
+        // Confine the local read to the owning session's effective root set
+        // (`session_roots ∩ allowed_roots`, or `[default_cwd]` when unpinned).
+        // Defense-in-depth: the agent already has native fs access, but the
+        // gateway-driven realize must not read outside the session's roots.
+        let effective = self.effective_roots(session_roots, false);
+        let canonical = tokio::fs::canonicalize(&remote_ref)
+            .await
+            .with_context(|| format!("realize_file: cannot resolve local file '{remote_ref}'"))?;
+        if effective.is_empty()
+            || !effective
+                .iter()
+                .any(|root| canonical.starts_with(canonical_path(root)))
+        {
+            anyhow::bail!(
+                "realize_file: '{remote_ref}' is outside the session's workspace root set"
+            );
+        }
+
+        let bytes = tokio::fs::read(&canonical)
             .await
             .with_context(|| format!("realize_file: cannot read local file '{remote_ref}'"))?;
 
@@ -528,8 +553,36 @@ impl RuntimeContext {
         Ok(())
     }
 
+    /// The effective filesystem roots for a request. `session_roots` is a session's
+    /// ACP root set (`cwd` + `additionalDirectories`). When it is non-empty, the
+    /// effective set is those entries that lie within `allowed_roots` (the hard
+    /// clamp) — i.e. `session_roots ∩ allowed_roots`, a strict narrowing. When it is
+    /// empty, `fallback_all` decides the implicit root: browse falls back to ALL
+    /// `allowed_roots` (bot-wide browse), realize falls back to `[default_cwd]`
+    /// (always confined to the session's implicit cwd).
+    fn effective_roots(&self, session_roots: &[String], fallback_all: bool) -> Vec<PathBuf> {
+        let ws = &self.config.policy.workspace;
+        if session_roots.is_empty() {
+            return if fallback_all {
+                ws.allowed_roots.clone()
+            } else {
+                ws.default_cwd.clone().into_iter().collect()
+            };
+        }
+        session_roots
+            .iter()
+            .map(|p| canonical_path(std::path::Path::new(p)))
+            .filter(|cp| {
+                ws.allowed_roots
+                    .iter()
+                    .any(|ar| cp.starts_with(canonical_path(ar)))
+            })
+            .collect()
+    }
+
     /// Browse/read/write the agent's real workspace for the remote-workspace UI.
-    /// STRICTLY confined to `policy.workspace.allowed_roots`; `..` escapes are
+    /// STRICTLY confined to the effective root set (`session_roots ∩ allowed_roots`,
+    /// or all `allowed_roots` when no session scope is given); `..` escapes are
     /// rejected after canonicalization. Returns Err((code, message)) on violation.
     async fn handle_workspace_req(
         &self,
@@ -537,11 +590,23 @@ impl RuntimeContext {
         rel: &str,
         root: Option<&str>,
         content_b64: Option<&str>,
+        session_roots: &[String],
     ) -> Result<Value, (String, String)> {
         const MAX_READ: u64 = 10 * 1024 * 1024;
         let err = |c: &str, m: String| (c.to_string(), m);
 
-        let roots = &self.config.policy.workspace.allowed_roots;
+        // `validate_cwd` is an on-the-spot check of a candidate session cwd against
+        // this connector's local policy — the SAME gate applied at session start
+        // (validate_backend_cwd) plus an is-directory probe. It doesn't resolve
+        // `root`/`rel` like the browse ops, so it short-circuits before them.
+        if op == "validate_cwd" {
+            return self.validate_cwd_op(rel).await;
+        }
+
+        // Effective roots: narrow to the session's root set when provided, else the
+        // full allowed_roots (bot-wide browse). allowed_roots remains the hard clamp.
+        let effective = self.effective_roots(session_roots, true);
+        let roots = &effective;
         if roots.is_empty() {
             return Err(err("E_NO_ROOT", "no workspace roots configured".into()));
         }
@@ -771,6 +836,49 @@ impl RuntimeContext {
         }
     }
 
+    /// Validate a candidate session `cwd` against local policy for an on-the-spot
+    /// check (e.g. before the Backend persists a chosen workdir). Reuses the exact
+    /// `validate_backend_cwd` gate the connector applies at session start — so a
+    /// "valid" answer here means session start will accept it too — and adds an
+    /// is-directory probe. Distinct codes let the Backend message precisely:
+    /// `E_CWD_LOCKED` (policy forbids Backend-set cwd), `E_NOT_ABSOLUTE`,
+    /// `E_NOT_FOUND` (unresolvable), `E_FORBIDDEN_PATH` (outside allowed_roots),
+    /// `E_NOT_DIR`.
+    async fn validate_cwd_op(&self, cwd: &str) -> Result<Value, (String, String)> {
+        let canonical = self.validate_backend_cwd(cwd).map_err(|reason| {
+            let code = if reason.contains("does not allow") {
+                "E_CWD_LOCKED"
+            } else if reason.contains("absolute") {
+                "E_NOT_ABSOLUTE"
+            } else if reason.contains("canonicalize") {
+                "E_NOT_FOUND"
+            } else {
+                "E_FORBIDDEN_PATH"
+            };
+            (code.to_string(), reason)
+        })?;
+        let md = tokio::fs::metadata(&canonical)
+            .await
+            .map_err(|e| ("E_IO".to_string(), e.to_string()))?;
+        if !md.is_dir() {
+            return Err(("E_NOT_DIR".to_string(), "cwd is not a directory".into()));
+        }
+        let matched_root = self
+            .config
+            .policy
+            .workspace
+            .allowed_roots
+            .iter()
+            .find(|ar| canonical.starts_with(ar))
+            .map(|ar| ar.to_string_lossy().to_string());
+        Ok(serde_json::json!({
+            "canonical_path": canonical.to_string_lossy(),
+            "matched_root": matched_root,
+            "is_dir": true,
+            "backend_may_set_cwd": self.config.policy.workspace.backend_may_set_cwd,
+        }))
+    }
+
     async fn handle_adapter_event(self: Arc<Self>, event: RuntimeEvent) -> anyhow::Result<()> {
         match event {
             RuntimeEvent::SessionUpdate {
@@ -906,15 +1014,7 @@ impl RuntimeContext {
         }
         let session_lock = self.session_lock(&task.provider_session_key).await;
         let _guard = session_lock.lock().await;
-        let start_options = SessionStartOptions {
-            cwd: self
-                .config
-                .agent
-                .cwd
-                .as_ref()
-                .map(|path| path.display().to_string()),
-            mcp_servers: self.mcp_servers_for_task(&task).await,
-        };
+        let start_options = self.session_start_options(&task).await;
         let acp_session_id = self.ensure_acp_session(&task, start_options).await?;
         let run = Arc::new(Mutex::new(ActiveRun {
             task_id: task.task_id.clone(),
@@ -1212,16 +1312,10 @@ impl RuntimeContext {
                     trigger_message: None,
                     attachments: Vec::new(),
                     pinned: Vec::new(),
+                    cwd: session.cwd.clone(),
+                    additional_dirs: session.additional_dirs.clone(),
                 };
-                let options = SessionStartOptions {
-                    cwd: self
-                        .config
-                        .agent
-                        .cwd
-                        .as_ref()
-                        .map(|path| path.display().to_string()),
-                    mcp_servers: self.mcp_servers_for_task(&task).await,
-                };
+                let options = self.session_start_options(&task).await;
                 self.ensure_acp_session(&task, options).await.map(|id| {
                     (
                         true,
@@ -1428,6 +1522,58 @@ impl RuntimeContext {
             .clone()
     }
 
+    /// Resolve the ACP session-start options for a task. The per-session `cwd`
+    /// (ACP `session/new`) is the Backend-pinned one when it passes the local
+    /// `allowed_roots` + `backend_may_set_cwd` policy, else the connector default;
+    /// `additional_dirs` (ACP `additionalDirectories`) is the pinned list with any
+    /// out-of-policy entry dropped. cwd is a pure `session/new` argument — changing
+    /// it needs no process restart (ACP: the agent MUST honor it regardless of
+    /// spawn dir).
+    async fn session_start_options(&self, task: &TaskCommand) -> SessionStartOptions {
+        let default_cwd = self
+            .config
+            .agent
+            .cwd
+            .as_ref()
+            .map(|path| path.display().to_string());
+        let cwd = match task.cwd.as_deref() {
+            Some(requested) => match self.validate_backend_cwd(requested) {
+                Ok(canonical) => Some(canonical.display().to_string()),
+                Err(reason) => {
+                    tracing::warn!(
+                        account = %self.account_id,
+                        requested,
+                        reason,
+                        "task cwd rejected by local policy; falling back to default_cwd"
+                    );
+                    default_cwd
+                }
+            },
+            None => default_cwd,
+        };
+        let additional_dirs = task
+            .additional_dirs
+            .iter()
+            .filter_map(|dir| match self.validate_backend_cwd(dir) {
+                Ok(canonical) => Some(canonical.display().to_string()),
+                Err(reason) => {
+                    tracing::warn!(
+                        account = %self.account_id,
+                        dir = %dir,
+                        reason,
+                        "task additionalDirectory rejected by local policy; dropping"
+                    );
+                    None
+                }
+            })
+            .collect();
+        SessionStartOptions {
+            cwd,
+            additional_dirs,
+            mcp_servers: self.mcp_servers_for_task(task).await,
+        }
+    }
+
     async fn mcp_servers_for_task(&self, _task: &TaskCommand) -> Value {
         // stdio MCP is the ACP baseline transport (always supported); only the
         // optional http/sse transports are gated by mcpCapabilities. We drop a
@@ -1592,6 +1738,13 @@ struct TaskCommand {
     attachments: Vec<AttachmentInfo>,
     /// Pinned convention/prompt blocks, prepended to the prompt every request.
     pinned: Vec<String>,
+    /// This session's ACP `cwd` (absolute), if the Backend pinned one. Re-validated
+    /// against `allowed_roots`; falls back to the connector default when unset or
+    /// rejected. Immutable for the session's lifetime.
+    cwd: Option<String>,
+    /// This session's ACP `additionalDirectories`. Re-validated against
+    /// `allowed_roots`; out-of-policy entries are dropped.
+    additional_dirs: Vec<String>,
 }
 
 enum RuntimeInput {
@@ -1644,6 +1797,8 @@ mod tests {
                 extra: serde_json::Map::new(),
             }],
             pinned: vec!["[Pinned: prompts/review.md]\nYou are a strict reviewer.".to_string()],
+            cwd: None,
+            additional_dirs: Vec::new(),
         };
         let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false);
         let text = prompt[0]["text"].as_str().expect("text block");
@@ -1680,6 +1835,8 @@ mod tests {
             trigger_message: Some(json!({"text": "@bot look"})),
             attachments: vec![image_attachment()],
             pinned: Vec::new(),
+            cwd: None,
+            additional_dirs: Vec::new(),
         }
     }
 
@@ -1812,6 +1969,8 @@ mod tests {
             trigger_message: Some(json!({"text": "@testbot hello"})),
             attachments: Vec::new(),
             pinned: Vec::new(),
+            cwd: None,
+            additional_dirs: Vec::new(),
         };
         let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false);
         let text = prompt[0]["text"].as_str().expect("text block");
@@ -1840,6 +1999,8 @@ mod tests {
             trigger_message: None,
             attachments: Vec::new(),
             pinned: Vec::new(),
+            cwd: None,
+            additional_dirs: Vec::new(),
         };
         let prompt = build_prompt(&task, &test_prompt_policy(false), None, false);
         let text = prompt[0]["text"].as_str().expect("text block");

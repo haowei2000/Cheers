@@ -8,7 +8,15 @@ use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, Permiss
 
 #[derive(Debug, Clone)]
 pub struct SessionStartOptions {
+    /// The session's primary working directory. Absolute, immutable for the
+    /// session's lifetime, and resupplied identically on `session/load`
+    /// (ACP: session-setup#working-directory).
     pub cwd: Option<String>,
+    /// Extra roots the session may access beyond `cwd`. Together with `cwd` they
+    /// form the effective root set `[cwd, ...additional_dirs]`. Resent in full on
+    /// every load (no implicit restoration); may vary across loads while `cwd`
+    /// stays fixed.
+    pub additional_dirs: Vec<String>,
     pub mcp_servers: Value,
 }
 
