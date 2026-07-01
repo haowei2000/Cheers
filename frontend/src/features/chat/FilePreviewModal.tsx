@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import hljs from "highlight.js";
 import { apiFetch } from "@/api/client";
+import { getFileStatus } from "@/api/files";
 import { Dialog } from "@/components/ui/dialog";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import type { FileInfo } from "@/types";
@@ -110,14 +111,63 @@ function TextBody({ file }: { file: FileInfo }) {
   );
 }
 
-// Office types have no client-side renderer; a server-side PDF rendition is Phase 2.
-function FallbackBody({ file }: { file: FileInfo }) {
-  const kind = previewKind(file);
+// Office types have no client-side renderer. The gateway generates a PDF rendition
+// (Gotenberg) asynchronously; poll `preview_ready`, then render that PDF.
+function OfficeBody({ file }: { file: FileInfo }) {
+  const [phase, setPhase] = useState<"pending" | "ready" | "failed">("pending");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let attempts = 0;
+    const stop = () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+    const check = async () => {
+      attempts++;
+      try {
+        const s = await getFileStatus(file.file_id);
+        if (!alive) return;
+        if (s.preview_ready) {
+          setPhase("ready");
+          stop();
+        } else if (s.last_error || attempts > 60) {
+          setPhase("failed");
+          stop();
+        }
+      } catch {
+        if (alive) {
+          setPhase("failed");
+          stop();
+        }
+      }
+    };
+    check();
+    pollRef.current = setInterval(check, 2000);
+    return () => {
+      alive = false;
+      stop();
+    };
+  }, [file.file_id]);
+
+  if (phase === "ready") return <PdfViewer path={`/files/${file.file_id}/preview`} />;
+  if (phase === "failed") return <UnsupportedBody file={file} office />;
+  return (
+    <Centered>
+      <Loader2 className="h-4 w-4 animate-spin" /> 文档预览生成中…
+    </Centered>
+  );
+}
+
+function UnsupportedBody({ file, office = false }: { file: FileInfo; office?: boolean }) {
   return (
     <Centered>
       <div className="flex flex-col items-center gap-3 text-center">
         <FileTypeIcon file={file} size={48} />
-        <span>{kind === "office" ? "文档预览生成中或暂不可用，请下载查看。" : "此文件类型暂不支持预览，请下载。"}</span>
+        <span>{office ? "文档预览暂不可用，请下载查看。" : "此文件类型暂不支持预览，请下载。"}</span>
       </div>
     </Centered>
   );
@@ -137,7 +187,8 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
       {kind === "pdf" && <PdfViewer path={`/files/${file.file_id}/preview`} />}
       {kind === "markdown" && <MarkdownBody file={file} />}
       {kind === "text" && <TextBody file={file} />}
-      {(kind === "office" || kind === "none") && <FallbackBody file={file} />}
+      {kind === "office" && <OfficeBody file={file} />}
+      {kind === "none" && <UnsupportedBody file={file} />}
       <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs text-zinc-500">
         <span>{typeof file.size_bytes === "number" ? formatBytes(file.size_bytes) : ""}</span>
         <button
