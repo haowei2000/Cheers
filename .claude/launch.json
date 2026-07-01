@@ -4,16 +4,16 @@
     {
       "name": "frontend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd frontend && npm run dev"],
-      "port": 5173,
-      "autoPort": true
+      "runtimeArgs": ["-c", "cd frontend && npm run dev -- --port 5174 --strictPort"],
+      "port": 5174,
+      "autoPort": false
     },
     {
       "name": "frontend-cluster",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd frontend && VITE_API_PROXY_TARGET=http://localhost:30080 VITE_WS_PROXY_TARGET=ws://localhost:30080 npm run dev"],
-      "port": 5174,
-      "autoPort": true
+      "runtimeArgs": ["-c", "cd frontend && VITE_API_PROXY_TARGET=http://localhost:30080 VITE_WS_PROXY_TARGET=ws://localhost:30080 npm run dev -- --port 5175 --strictPort"],
+      "port": 5175,
+      "autoPort": false
     },
     {
       "name": "gateway",
