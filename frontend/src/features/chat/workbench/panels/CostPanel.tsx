@@ -1,6 +1,7 @@
-// ② Cost dashboard — a session-scoped ViewBoard: per-bot token/cost totals + latest
-// context window (channel.usage.read). The ViewBoard wrapper owns the toolbar (title +
-// session-scope badge + refresh) and fetch; this file declares the verb + renders rows.
+// ② Cost dashboard — a session-scoped ViewBoard: per-(bot, session) token/cost totals +
+// latest context window (channel.usage.read). With the host's scope set to "All sessions"
+// each session is its own row, so you can compare usage across a bot's sessions; scoped to
+// one session it shows just that row. The host owns the toolbar (title + scope + refresh).
 //
 // All numbers come from the agent's own usage_update telemetry and are rendered as
 // INERT TEXT (formatted numbers / JSX children) — never as HTML.
@@ -13,6 +14,7 @@ import { registerViewBoard, channelSessionParams } from "../viewBoard";
 
 interface BotUsage {
   bot_id: string;
+  session_id?: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
   total_tokens: number | null;
@@ -56,6 +58,7 @@ function UsageBody({ data }: { data: UsageRead }) {
       <thead>
         <tr className="text-zinc-500 border-b border-zinc-800">
           <th className="text-left font-normal px-3 py-1.5">Bot</th>
+          <th className="text-left font-normal px-2 py-1.5">Session</th>
           <th className="text-right font-normal px-2 py-1.5">Input</th>
           <th className="text-right font-normal px-2 py-1.5">Output</th>
           <th className="text-right font-normal px-2 py-1.5">Total</th>
@@ -66,12 +69,15 @@ function UsageBody({ data }: { data: UsageRead }) {
       <tbody>
         {bots.map((b) => (
           <tr
-            key={b.bot_id}
+            key={`${b.bot_id}:${b.session_id ?? "—"}`}
             className="border-b border-zinc-900 hover:bg-zinc-800/40 text-zinc-300"
           >
-            {/* bot_id is an opaque id, rendered as inert text */}
-            <td className="px-3 py-1.5 font-mono text-zinc-200 truncate max-w-[140px]">
-              {b.bot_id}
+            {/* bot_id / session_id are opaque ids, rendered as inert text */}
+            <td className="px-3 py-1.5 font-mono text-zinc-200 truncate max-w-[110px]">
+              {b.bot_id.slice(0, 8)}
+            </td>
+            <td className="px-2 py-1.5 font-mono text-zinc-500 truncate max-w-[90px]">
+              {b.session_id ? b.session_id.slice(0, 8) : "—"}
             </td>
             <td className="px-2 py-1.5 text-right tabular-nums text-zinc-400">
               {fmtInt(b.input_tokens)}

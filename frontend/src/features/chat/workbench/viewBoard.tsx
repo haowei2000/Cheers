@@ -47,6 +47,8 @@ export interface ViewBoardPanel {
   id: string;
   title: string;
   icon?: LucideIcon;
+  /** True when the board's data is per-session — the host shows a session-scope selector. */
+  sessionScoped?: boolean;
   render: (ctx: ViewBoardContext) => ReactNode;
 }
 
@@ -56,13 +58,60 @@ export function registerViewBoard<T>(def: ViewBoardDef<T>): void {
   if (!registry.some((b) => b.id === def.id)) registry.push(defineViewBoard(def));
 }
 
-export function getViewBoards(): ViewBoardPanel[] {
-  return registry;
+/** Register a board that fetches its own data (e.g. a REST endpoint with no resource verb).
+ *  The component owns its body; use ViewBoardShell for the standard header/refresh chrome. */
+export function registerComponentViewBoard(def: {
+  id: string;
+  title: string;
+  icon?: LucideIcon;
+  component: (ctx: ViewBoardContext) => ReactNode;
+}): void {
+  if (registry.some((b) => b.id === def.id)) return;
+  registry.push({
+    id: def.id,
+    title: def.title,
+    icon: def.icon,
+    render: (ctx) => def.component(ctx),
+  });
 }
 
-function sessionLabel(ctx: ViewBoardContext): string {
-  const sid = ctx.selectedSessionId;
-  return sid ? `Session ${sid.slice(0, 8)}` : "All sessions";
+/** Standard board chrome (header with icon/title/loading/refresh + scrollable body), so
+ *  self-fetching component boards match the verb-bound ones. */
+export function ViewBoardShell({
+  title,
+  icon: Icon,
+  loading,
+  onRefresh,
+  children,
+}: {
+  title: string;
+  icon?: LucideIcon;
+  loading?: boolean;
+  onRefresh?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col h-full text-sm">
+      <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
+        {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
+        <span className="text-xs text-zinc-300">{title}</span>
+        <div className="flex-1" />
+        {loading && <span className="text-[10px] text-zinc-600">Loading…</span>}
+        {onRefresh && (
+          <button onClick={onRefresh} title="Refresh" disabled={loading}>
+            <RefreshCw
+              className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
+            />
+          </button>
+        )}
+      </div>
+      <div className="flex-1 overflow-auto">{children}</div>
+    </div>
+  );
+}
+
+export function getViewBoards(): ViewBoardPanel[] {
+  return registry;
 }
 
 export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
@@ -89,11 +138,6 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
         <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
           {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
           <span className="text-xs text-zinc-300">{def.title}</span>
-          {def.sessionScoped && (
-            <span className="text-[10px] text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-800/60 whitespace-nowrap">
-              {sessionLabel(ctx)}
-            </span>
-          )}
           <div className="flex-1" />
           {loading && <span className="text-[10px] text-zinc-600">Loading…</span>}
           <button onClick={onRefresh} title="Refresh" disabled={loading}>
@@ -121,6 +165,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
     id: def.id,
     title: def.title,
     icon: def.icon,
+    sessionScoped: def.sessionScoped,
     render: (ctx) => <Board ctx={ctx} />,
   };
 }

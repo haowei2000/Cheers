@@ -17,12 +17,11 @@ import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { ChannelFilesDialog } from "./ChannelFilesDialog";
 import { ChannelSettingsDialog } from "./ChannelSettingsDialog";
-import { SessionControlButton } from "./SessionControlButton";
 import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { useAuthStore } from "@/stores/authStore";
-import type { Message, Channel } from "@/types";
+import type { Message, Channel, PermissionContentData } from "@/types";
 
 // In-flight bot placeholders arrive with `channel_seq: null`; they are the
 // newest thing in the channel until finalized, so order them last. Stable sort
@@ -191,6 +190,13 @@ export function ChannelView({ channel }: Props) {
 
   const handleMessage = useCallback((msg: Message) => {
     setMessages((prev) => upsertMessage(prev, msg));
+    // A resolved approval landing → nudge the Audit board to re-fetch live.
+    if (
+      msg.msg_type === "permission" &&
+      (msg.content_data as PermissionContentData | null | undefined)?.resolved === true
+    ) {
+      setBoardTick((t) => ({ ...t, audit: (t.audit ?? 0) + 1 }));
+    }
   }, []);
 
   const handleStreamDelta = useCallback((msgId: string, delta: string) => {
@@ -300,6 +306,9 @@ export function ChannelView({ channel }: Props) {
   }, [loadCommands]);
   const [wbOpen, setWbOpen] = useState(false);
   const [vbOpen, setVbOpen] = useState(false);
+  // Minimal ViewBoard: a compact content-height card in a narrower column (vs the full
+  // full-height column). Still reserves its own column so it never covers the chat.
+  const [vbMinimal, setVbMinimal] = useState(false);
   // Live-push: per-board tick bumped by board_signal frames (and new messages for
   // "activity"); the ViewBoards re-fetch when their tick changes — no manual refresh.
   const [boardTick, setBoardTick] = useState<Record<string, number>>({});
@@ -377,6 +386,15 @@ export function ChannelView({ channel }: Props) {
     });
   }
 
+  // Reserve room on the right for open instrument panels so they get their OWN column
+  // instead of floating over the chat + composer. Widths mirror the drawers (ViewBoard
+  // 420 @ right-3, Workbench 560 @ right-0); GAP keeps a seam between chat and panel.
+  const VB_W = vbMinimal ? 280 : 420;
+  const WB_W = 560;
+  const GAP = 12;
+  const boardExtent = vbOpen ? (wbOpen ? WB_W + GAP : GAP) + VB_W : wbOpen ? WB_W : 0;
+  const reservedRight = boardExtent > 0 ? boardExtent + GAP : 0;
+
   if (!channel) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm flex-col gap-3">
@@ -387,7 +405,10 @@ export function ChannelView({ channel }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full transition-[padding] duration-200"
+      style={{ paddingRight: reservedRight }}
+    >
       {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
@@ -440,7 +461,7 @@ export function ChannelView({ channel }: Props) {
         </button>
         <button
           onClick={() => setVbOpen((v) => !v)}
-          title="ViewBoard — live plan / cost / activity (instrument plane)"
+          title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
           className={`flex items-center justify-center w-7 h-7 rounded hover:bg-zinc-800 ${
             vbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
           }`}
@@ -457,7 +478,6 @@ export function ChannelView({ channel }: Props) {
         >
           <PanelRight className="w-4 h-4" />
         </button>
-        <SessionControlButton channelId={channel.channel_id} />
         {channel.type !== "dm" && (
           <button
             onClick={() => setSettingsOpen(true)}
@@ -528,6 +548,8 @@ export function ChannelView({ channel }: Props) {
         selectedSessionId={selectedSessionId}
         boardTick={boardTick}
         shiftedForWorkbench={wbOpen}
+        minimal={vbMinimal}
+        onToggleMinimal={() => setVbMinimal((m) => !m)}
       />
       {filesOpen && (
         <ChannelFilesDialog

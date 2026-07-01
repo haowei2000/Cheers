@@ -8,11 +8,21 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { SendHorizontal, Bot, User, Paperclip, X, FileText } from "lucide-react";
+import {
+  SendHorizontal,
+  Bot,
+  User,
+  Paperclip,
+  X,
+  FileText,
+  Upload,
+  FolderOpen,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 import { uploadFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
+import { ExistingFilePicker } from "./ExistingFilePicker";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -69,8 +79,12 @@ export function MessageComposer({
   // Mentions the user has picked, keyed by id. Routing source of truth.
   const [picked, setPicked] = useState<MentionCandidate[]>([]);
   const [picker, setPicker] = useState<PickerState | null>(null);
+  // Paperclip → small menu (upload vs. pick existing) + the channel-file picker dialog.
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLDivElement>(null);
 
   // Bots whose "@label" token still survives in the draft — the live mention set
   // (mirrors submit()'s routing filter). Emitted up so the parent can show the
@@ -104,6 +118,32 @@ export function MessageComposer({
   function removeAttachment(fileId: string) {
     setAttachments((prev) => prev.filter((a) => a.file_id !== fileId));
   }
+
+  // Attach files already uploaded to the channel — append, deduped by file_id (submit()
+  // maps attachments → file_ids, so existing files flow through unchanged, no re-upload).
+  function addExisting(files: FileInfo[]) {
+    setAttachments((prev) => {
+      const have = new Set(prev.map((a) => a.file_id));
+      return [...prev, ...files.filter((f) => !have.has(f.file_id))];
+    });
+  }
+
+  // Close the attach menu on outside click / Escape.
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (attachRef.current && !attachRef.current.contains(e.target as Node))
+        setAttachMenuOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) =>
+      e.key === "Escape" && setAttachMenuOpen(false);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [attachMenuOpen]);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -356,6 +396,15 @@ export function MessageComposer({
         onChange={(e) => void handleFiles(e.target.files)}
       />
 
+      {libraryOpen && channelId && (
+        <ExistingFilePicker
+          channelId={channelId}
+          attachedIds={attachments.map((a) => a.file_id)}
+          onPick={addExisting}
+          onClose={() => setLibraryOpen(false)}
+        />
+      )}
+
       {toolbar && <div className="mb-2 flex flex-wrap items-center gap-2">{toolbar}</div>}
 
       <div
@@ -366,15 +415,48 @@ export function MessageComposer({
             : "border-zinc-700 hover:border-zinc-600 focus-within:border-indigo-500/60 focus-within:bg-zinc-800"
         )}
       >
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled || !channelId}
-          className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 disabled:opacity-40 transition-colors mb-0.5"
-          aria-label="Attach file"
-        >
-          <Paperclip className="w-4 h-4" />
-        </button>
+        <div ref={attachRef} className="relative flex-shrink-0 mb-0.5">
+          <button
+            type="button"
+            onClick={() => setAttachMenuOpen((o) => !o)}
+            disabled={disabled || !channelId}
+            className={cn(
+              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
+              attachMenuOpen
+                ? "text-zinc-200 bg-zinc-700/50"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+            )}
+            aria-label="Attach file"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          {attachMenuOpen && (
+            <div className="absolute bottom-full left-0 mb-1.5 w-48 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl z-20">
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachMenuOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                <Upload className="w-3.5 h-3.5 text-zinc-500" />
+                从电脑上传
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachMenuOpen(false);
+                  setLibraryOpen(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
+                选择频道文件
+              </button>
+            </div>
+          )}
+        </div>
 
         <textarea
           ref={textareaRef}

@@ -98,6 +98,12 @@ export function BotTracePanel({ channelId, msgId }: Props) {
   // Once we've loaded and found nothing, drop the toggle entirely (no noise).
   if (events !== null && events.length === 0 && !expanded) return null;
 
+  // Approvals resolved during this turn — surfaced as a shield badge so the reveal
+  // doubles as "review this turn's approvals" (their inline cards are hidden once resolved).
+  const approvalCount = events
+    ? events.filter((e) => e.kind === "approval").length
+    : 0;
+
   return (
     <div className="mt-1 max-w-md">
       <button
@@ -111,6 +117,12 @@ export function BotTracePanel({ channelId, msgId }: Props) {
           <ChevronRight className="w-3 h-3" />
         )}
         <span>Agent steps{events ? ` · ${events.length}` : ""}</span>
+        {approvalCount > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-zinc-400">
+            <ShieldCheck className="w-3 h-3" />
+            {approvalCount}
+          </span>
+        )}
         {loading && <Loader2 className="w-3 h-3 animate-spin" />}
       </button>
 
