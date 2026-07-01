@@ -88,6 +88,20 @@ pub fn enrollment_redeem_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(20, Duration::from_secs(300)))
 }
 
+/// Throttle password-reset requests + code guesses per client (forgot/reset). Caps
+/// both email-spam and reset-code brute-force: 10 per 5-minute window per source.
+pub fn password_reset_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(10, Duration::from_secs(300)))
+}
+
+/// Throttle public self-service sign-ups per client so open registration can't be
+/// script-flooded with junk accounts: 5 per 5-minute window per source.
+pub fn register_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(5, Duration::from_secs(300)))
+}
+
 /// Best-effort client identity for throttling: prefer the proxy-set `X-Real-IP`
 /// (nginx sets it to the real socket address), then the last `X-Forwarded-For`
 /// hop, else a fixed bucket. The gateway is only reachable via the in-cluster

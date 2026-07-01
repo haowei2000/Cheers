@@ -43,6 +43,11 @@ export async function enableBot(botId: string): Promise<void> {
   await apiJson(`/bots/${botId}/enable`, { method: "POST" });
 }
 
+/** Admin/owner: permanently delete a bot (kicks its connector, cascades its data). */
+export async function deleteBot(botId: string): Promise<void> {
+  await apiJson(`/bots/${botId}`, { method: "DELETE" });
+}
+
 export async function issueBotToken(botId: string): Promise<IssuedToken> {
   return apiJson<IssuedToken>(`/bots/${botId}/token`, { method: "POST" });
 }

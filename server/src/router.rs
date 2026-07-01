@@ -277,6 +277,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
         .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))
         .route("/api/v1/bots/:bot_id/enable", post(api::bots::enable_bot))
+        .route("/api/v1/bots/:bot_id", delete(api::bots::delete_bot))
         .route("/api/v1/bots/:bot_id/token", post(api::bots::issue_bot_token))
         // ── Bot onboarding: one-time enrollment codes + connector config ─────
         .route(
@@ -374,6 +375,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route("/api/v1/friends/blocks", get(api::friends::list_blocks))
         .route("/api/v1/friends/block", post(api::friends::block_user))
         .route("/api/v1/friends/unblock", post(api::friends::unblock_user))
+        // Account: self-service password change + server-side logout (token revocation).
+        .route("/api/v1/auth/change-password", post(api::auth::change_password))
+        .route("/api/v1/auth/logout", post(api::auth::logout))
+        // Admin user provisioning: list / create / soft-delete.
+        .route(
+            "/api/v1/users",
+            get(api::users::list_users).post(api::users::create_user),
+        )
+        .route("/api/v1/users/:user_id", delete(api::users::delete_user))
         .route(
             "/api/v1/users/:user_id/suspend",
             post(api::users::suspend_user),
@@ -395,6 +405,11 @@ fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login))
+        // Public self-service sign-up (gated by config.open_registration).
+        .route("/api/v1/auth/register", post(api::auth::register))
+        // Public password-reset flow: request a one-time code, then set a new password.
+        .route("/api/v1/auth/forgot-password", post(api::auth::forgot_password))
+        .route("/api/v1/auth/reset-password", post(api::auth::reset_password))
         // Public, code-authenticated: a host redeems a one-time enrollment code
         // for a freshly rotated bot token + connector config. No JWT — the code
         // IS the credential (rate-limited + single-use + short TTL).

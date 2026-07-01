@@ -6,7 +6,7 @@ import {
   UserMinus,
   Check,
   X,
-  Search,
+  Fingerprint,
   Clock,
   Ban,
 } from "lucide-react";
@@ -280,28 +280,28 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
   );
 }
 
+// Adding a friend is BY EXACT USER ID only (no name/username search) — the directory
+// can't be browsed/enumerated. Paste an id → look it up → confirm → send the request.
 function AddTab() {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<UserSearchResult[]>([]);
+  const [id, setId] = useState("");
+  // null = idle, "none" = looked up but no match, else the single matched user.
+  const [result, setResult] = useState<UserSearchResult | null | "none">(null);
+  const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    const term = q.trim();
-    if (term.length < 2) {
-      setResults([]);
-      return;
+  async function lookup() {
+    const term = id.trim();
+    if (!term) return;
+    setBusy(true);
+    try {
+      const r = await searchUsers(term);
+      setResult(r[0] ?? "none");
+    } catch {
+      setResult("none");
+    } finally {
+      setBusy(false);
     }
-    let alive = true;
-    const t = setTimeout(() => {
-      searchUsers(term)
-        .then((r) => alive && setResults(r))
-        .catch(() => {});
-    }, 250);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [q]);
+  }
 
   async function add(u: UserSearchResult) {
     try {
@@ -315,46 +315,56 @@ function AddTab() {
     }
   }
 
-  const term = q.trim();
   return (
     <div>
-      <div className="relative mb-3">
-        <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by name or username (min 2 chars)…"
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
-        />
+      <p className="text-xs text-zinc-500 mb-2 leading-relaxed">
+        Add a friend by their exact <span className="text-zinc-300">user ID</span>. Ask them
+        to copy it from <span className="text-zinc-300">Settings → Profile → User ID</span>.
+      </p>
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
+          <input
+            value={id}
+            onChange={(e) => {
+              setId(e.target.value);
+              setResult(null);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && lookup()}
+            placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
+            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+          />
+        </div>
+        <button
+          onClick={lookup}
+          disabled={busy || !id.trim()}
+          className="px-3 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+        >
+          {busy ? "…" : "Look up"}
+        </button>
       </div>
-      {term.length < 2 ? (
-        <Empty>Type at least 2 characters to search.</Empty>
-      ) : !results.length ? (
-        <Empty>No users found.</Empty>
+      {result === null ? (
+        <Empty>Enter a user ID and press Look up.</Empty>
+      ) : result === "none" ? (
+        <Empty>No user with that ID.</Empty>
       ) : (
         <div className="space-y-1">
-          {results.map((u) => {
-            const st = sent[u.user_id];
-            return (
-              <Row
-                key={u.user_id}
-                name={u.display_name || u.username}
-                sub={`@${u.username}`}
-                id={u.user_id}
-                avatar={u.avatar_url}
-              >
-                {st === "accepted" ? (
-                  <span className="text-xs text-emerald-400">Friends</span>
-                ) : st === "pending" ? (
-                  <span className="text-xs text-zinc-500">Requested</span>
-                ) : (
-                  <IconBtn title="Add friend" onClick={() => add(u)} primary>
-                    <UserPlus className="w-4 h-4" />
-                  </IconBtn>
-                )}
-              </Row>
-            );
-          })}
+          <Row
+            name={result.display_name || result.username}
+            sub={`@${result.username}`}
+            id={result.user_id}
+            avatar={result.avatar_url}
+          >
+            {sent[result.user_id] === "accepted" ? (
+              <span className="text-xs text-emerald-400">Friends</span>
+            ) : sent[result.user_id] === "pending" ? (
+              <span className="text-xs text-zinc-500">Requested</span>
+            ) : (
+              <IconBtn title="Add friend" onClick={() => add(result)} primary>
+                <UserPlus className="w-4 h-4" />
+              </IconBtn>
+            )}
+          </Row>
         </div>
       )}
     </div>
