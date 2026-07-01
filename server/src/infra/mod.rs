@@ -1,5 +1,6 @@
 pub mod crypto;
 pub mod db;
+pub mod email;
 pub mod gotenberg;
 pub mod http;
 pub mod ratelimit;

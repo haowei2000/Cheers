@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { login } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
@@ -96,6 +96,15 @@ export default function LoginPage() {
           >
             Sign in
           </Button>
+
+          <div className="flex items-center justify-between text-xs text-zinc-500">
+            <Link to="/register" className="text-indigo-400 hover:text-indigo-300">
+              Create account
+            </Link>
+            <Link to="/forgot" className="text-indigo-400 hover:text-indigo-300">
+              Forgot password?
+            </Link>
+          </div>
         </form>
       </div>
     </div>

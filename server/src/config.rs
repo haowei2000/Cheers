@@ -55,6 +55,10 @@ pub struct Config {
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
 
+    /// Whether public self-service sign-up (`POST /auth/register`) is enabled.
+    /// Default true; set `OPEN_REGISTRATION=0/false` for invite/admin-only instances.
+    pub open_registration: bool,
+
     // 孤儿占位回收器（流程 8 缺口）
     /// 占位早于该秒数且无存活流时才回收（默认 900 = 15 分钟，给 bot 重启重连留时间）。
     pub orphan_reclaim_threshold_secs: u64,
@@ -118,6 +122,16 @@ impl Config {
                 .unwrap_or(587),
             smtp_username: env::var("SMTP_USERNAME").ok(),
             smtp_password: env::var("SMTP_PASSWORD").ok(),
+
+            open_registration: env::var("OPEN_REGISTRATION")
+                .ok()
+                .map(|v| {
+                    !matches!(
+                        v.trim().to_ascii_lowercase().as_str(),
+                        "0" | "false" | "no" | "off"
+                    )
+                })
+                .unwrap_or(true),
 
             orphan_reclaim_threshold_secs: env::var("ORPHAN_RECLAIM_THRESHOLD_SECS")
                 .ok()

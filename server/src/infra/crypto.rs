@@ -37,3 +37,16 @@ fn generate_prefixed_secret(prefix: &str) -> String {
     getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
     format!("{prefix}{}", hex::encode(bytes))
 }
+
+/// A short, unambiguous one-time code for email flows (e.g. password reset). 8 chars
+/// from a 31-symbol alphabet (no 0/O/1/I/L) → ~31^8 ≈ 8.5e11 combos, fits the
+/// `email_codes.code` column (VARCHAR(10)). Pair with a short TTL + rate limiting.
+pub fn generate_email_code() -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0 O 1 I L
+    let mut bytes = [0u8; 8];
+    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
+    bytes
+        .iter()
+        .map(|b| ALPHABET[(*b as usize) % ALPHABET.len()] as char)
+        .collect()
+}

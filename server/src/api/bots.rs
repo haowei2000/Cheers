@@ -398,6 +398,37 @@ async fn set_bot_disabled(
     Ok(Json(json!({ "bot_id": bot_id, "is_disabled": disabled })))
 }
 
+/// DELETE /api/v1/bots/{bot_id} — hard-delete a bot (admin/owner). Kicks the live
+/// connector, removes its channel memberships, and deletes the account row; FK
+/// `ON DELETE CASCADE` clears its sessions/bindings, enrollment codes, permission
+/// rules, approvals, capability delegations and event-access rules. Irreversible.
+pub async fn delete_bot(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    // Disconnect the live connector first so nothing dispatches mid-delete.
+    if let Ok(id) = Uuid::parse_str(&bot_id) {
+        state.bot_registry.kick(id);
+    }
+    let mut tx = state.db.begin().await?;
+    // channel_memberships.member_id has no FK (generic user|bot id) → delete by hand.
+    sqlx::query("DELETE FROM channel_memberships WHERE member_id = $1 AND member_type = 'bot'")
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
+    let res = sqlx::query("DELETE FROM bot_accounts WHERE bot_id = $1")
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    tx.commit().await?;
+    Ok(Json(json!({ "bot_id": bot_id, "deleted": true })))
+}
+
 pub async fn test_bot(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,

@@ -33,24 +33,25 @@ pub async fn search_users(
     Extension(claims): Extension<Claims>,
     Query(q): Query<FriendQuery>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    // Enumeration hardening (audit Low/W7): require a real query (≥2 chars) so an
-    // empty term can't dump the whole user table, and don't match on email.
+    // Friends can be added ONLY by exact user ID — no username / display-name search,
+    // so the user directory can't be enumerated or browsed. A non-UUID term (or your
+    // own id) resolves to nobody; a valid id returns exactly that one user (for a
+    // confirm-before-adding card). Email is never matched.
     let raw = q.q.unwrap_or_default();
     let term = raw.trim();
-    if term.chars().count() < 2 {
+    let Ok(target) = Uuid::parse_str(term) else {
+        return Ok(Json(vec![]));
+    };
+    if target.to_string() == claims.sub {
         return Ok(Json(vec![]));
     }
-    let like = format!("%{term}%");
     let rows = sqlx::query(
         "SELECT user_id, username, display_name, avatar_url
          FROM users
-         WHERE user_id != $1 AND is_deleted = FALSE
-           AND (username ILIKE $2 OR display_name ILIKE $2)
-         ORDER BY username
-         LIMIT 20",
+         WHERE user_id = $1 AND is_deleted = FALSE
+         LIMIT 1",
     )
-    .bind(&claims.sub)
-    .bind(like)
+    .bind(target.to_string())
     .fetch_all(&state.db)
     .await?;
     Ok(Json(

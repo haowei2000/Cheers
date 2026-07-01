@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, User, Bot, Blocks, Users, LogOut } from "lucide-react";
+import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound } from "lucide-react";
+import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
+import { changePassword, logout as logoutApi } from "@/api/auth";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { BotsManager } from "@/features/bots/BotsManager";
@@ -18,10 +20,91 @@ const NAV: { id: SectionId; label: string; icon: typeof User; adminOnly?: boolea
   { id: "account", label: "Account", icon: LogOut },
 ];
 
+function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (next.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    if (next !== confirm) {
+      toast.error("Passwords don't match");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await changePassword({ current_password: current, new_password: next });
+      onRotated(res.access_token); // keep this session alive on the fresh token
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      toast.success("Password changed — other sessions were signed out");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to change password");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputCls =
+    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+  return (
+    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
+        <KeyRound className="w-4 h-4 text-indigo-400" /> Change password
+      </p>
+      <p className="text-xs text-zinc-500 mb-4">
+        Updating your password signs out every other device.
+      </p>
+      <div className="grid gap-3 max-w-sm">
+        <input
+          type="password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          placeholder="Current password"
+          autoComplete="current-password"
+          className={inputCls}
+        />
+        <input
+          type="password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          placeholder="New password (min 8 characters)"
+          autoComplete="new-password"
+          className={inputCls}
+        />
+        <input
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void submit()}
+          placeholder="Confirm new password"
+          autoComplete="new-password"
+          className={inputCls}
+        />
+        <div>
+          <button
+            onClick={() => void submit()}
+            disabled={busy || !current || !next}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+          >
+            {busy ? "Saving…" : "Update password"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const setToken = useAuthStore((s) => s.setToken);
   const isAdmin = useIsAdmin();
   const [section, setSection] = useState<SectionId>("profile");
 
@@ -122,18 +205,23 @@ export default function SettingsPage() {
               <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">
                 Account
               </h2>
-              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+
+              <ChangePasswordCard onRotated={(token) => setToken(token)} />
+
+              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 mt-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-zinc-200">Sign out</p>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      You will be redirected to the login page.
+                      Revokes this session on the server and returns you to the login page.
                     </p>
                   </div>
                   <Button
                     variant="danger"
                     size="sm"
-                    onClick={() => {
+                    onClick={async () => {
+                      // Best-effort server revocation, then clear local state regardless.
+                      await logoutApi().catch(() => {});
                       logout();
                       navigate("/login", { replace: true });
                     }}
