@@ -179,11 +179,19 @@ fn parse_usage(payload: &Value) -> Usage {
         input_tokens: read_i64(src, &["inputTokens", "input_tokens", "promptTokens"]),
         output_tokens: read_i64(src, &["outputTokens", "output_tokens", "completionTokens"]),
         total_tokens: read_i64(src, &["totalTokens", "total_tokens"]),
+        // The ACP "Session Usage" preview reports `used` (tokens currently in the context)
+        // + `size` (the window's max). Prefer `used` for the pressure gauge; fall back to
+        // the explicit aliases, then the window size.
         context_window: read_i64(
             src,
-            &["contextWindow", "context_window", "contextSize", "context_size"],
+            &["used", "contextWindow", "context_window", "contextSize", "context_size", "size"],
         ),
-        cost_usd: read_f64(src, &["costUsd", "cost_usd", "cost", "totalCost"]),
+        // `cost` may be a flat number OR a nested `{amount, currency}` object (the Claude
+        // ACP shape). It is CUMULATIVE, so the read side takes MAX, not SUM.
+        cost_usd: read_f64(src, &["costUsd", "cost_usd", "totalCost"]).or_else(|| {
+            src.get("cost")
+                .and_then(|c| c.as_f64().or_else(|| c.get("amount").and_then(Value::as_f64)))
+        }),
     }
 }
 
@@ -289,6 +297,32 @@ mod tests {
         assert_eq!(u.total_tokens, Some(2000));
         assert_eq!(u.cost_usd, Some(1.5));
         assert_eq!(u.input_tokens, None);
+    }
+
+    #[test]
+    fn parses_claude_usage_shape() {
+        // The real Claude ACP usage_update: cumulative `cost` object + context `used`/`size`.
+        let payload = json!({
+            "cost": { "amount": 0.19418445, "currency": "USD" },
+            "size": 200000,
+            "used": 30213,
+            "sessionUpdate": "usage_update"
+        });
+        let Some(ParsedUpdate::Usage(u)) = parse(USAGE, &payload) else {
+            panic!("expected Usage");
+        };
+        assert_eq!(u.context_window, Some(30213)); // `used` — the pressure gauge
+        assert!((u.cost_usd.unwrap() - 0.194_184_45).abs() < 1e-9); // nested cost.amount
+        assert_eq!(u.input_tokens, None); // no per-turn token deltas in this shape
+        assert_eq!(u.total_tokens, None);
+
+        // A snapshot without cost still yields context (not all-empty → gets stored).
+        let no_cost = json!({ "size": 200000, "used": 29974 });
+        let Some(ParsedUpdate::Usage(u2)) = parse(USAGE, &no_cost) else {
+            panic!("expected Usage");
+        };
+        assert_eq!(u2.context_window, Some(29974));
+        assert_eq!(u2.cost_usd, None);
     }
 
     #[test]
