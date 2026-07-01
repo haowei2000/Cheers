@@ -546,7 +546,17 @@ impl RuntimeContext {
             return Err(err("E_NO_ROOT", "no workspace roots configured".into()));
         }
 
-        // Pick the root: an explicit (allow-listed) one, else default_cwd, else first.
+        // A reference may be ABSOLUTE (e.g. a path the agent printed like
+        // `/home/me/proj/out.txt`) or RELATIVE to the root. An absolute ref that
+        // already lives under a root must NOT be treated as relative — joining it
+        // onto the root would double the prefix and 404 ("not in workspace").
+        let abs_ref = {
+            let p = std::path::Path::new(rel);
+            p.is_absolute().then(|| canonical_path(p))
+        };
+
+        // Pick the root: an explicit (allow-listed) one; else, for an absolute ref,
+        // the allowed root that CONTAINS it; else default_cwd; else first.
         let chosen_root = match root {
             Some(r) => {
                 let want = canonical_path(std::path::Path::new(r));
@@ -556,16 +566,25 @@ impl RuntimeContext {
                     .cloned()
                     .ok_or_else(|| err("E_FORBIDDEN_ROOT", format!("root not allowed: {r}")))?
             }
-            None => self
-                .config
-                .policy
-                .workspace
-                .default_cwd
-                .clone()
-                .filter(|c| {
+            None => abs_ref
+                .as_ref()
+                .and_then(|abs| {
                     roots
                         .iter()
-                        .any(|ar| canonical_path(ar) == canonical_path(c))
+                        .find(|ar| abs.starts_with(canonical_path(ar)))
+                        .cloned()
+                })
+                .or_else(|| {
+                    self.config
+                        .policy
+                        .workspace
+                        .default_cwd
+                        .clone()
+                        .filter(|c| {
+                            roots
+                                .iter()
+                                .any(|ar| canonical_path(ar) == canonical_path(c))
+                        })
                 })
                 .or_else(|| roots.first().cloned())
                 .ok_or_else(|| err("E_NO_ROOT", "no default workspace root".into()))?,
@@ -573,7 +592,12 @@ impl RuntimeContext {
         let root_canon = tokio::fs::canonicalize(&chosen_root)
             .await
             .map_err(|e| err("E_ROOT_MISSING", format!("root unavailable: {e}")))?;
-        let target = root_canon.join(rel.trim_start_matches('/'));
+        // Absolute ref: use as-is (containment is still enforced per-op via
+        // canonicalize + starts_with(root_canon)). Relative ref: join onto the root.
+        let target = match &abs_ref {
+            Some(abs) => abs.clone(),
+            None => root_canon.join(rel.trim_start_matches('/')),
+        };
 
         match op {
             "ls" => {
