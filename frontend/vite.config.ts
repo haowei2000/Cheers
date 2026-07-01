@@ -26,6 +26,7 @@ export default defineConfig({
         manualChunks: {
           hljs: ["highlight.js"],
           markdown: ["react-markdown", "remark-gfm"],
+          pdf: ["pdfjs-dist"],
         },
       },
     },

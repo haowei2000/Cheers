@@ -3,37 +3,18 @@ import { FileText, Loader2 } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { realizeFile, pollFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
+import { downloadFile, formatBytes } from "./fileUtils";
+import { FileTypeIcon } from "./fileIcon";
+import { FilePreviewModal } from "./FilePreviewModal";
 
 // Shared rendering for CHAT files (file_records / S3 attachments) — distinct from workbench
 // context_files. Used both inline in messages and in the channel Files dialog.
 
-export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+// Re-exported for callers that historically imported these from fileView.
+export { downloadFile, formatBytes } from "./fileUtils";
 
-export async function downloadFile(file: FileInfo) {
-  // The download endpoint is JWT-protected, so fetch with auth then save a blob.
-  try {
-    const res = await apiFetch(`/files/${file.file_id}/download`);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.original_filename || file.file_id;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch {
-    /* ignore download failures */
-  }
-}
-
-// Inline image preview. An <img src> can't carry the Bearer, so fetch the blob with auth
-// then render an object URL (revoked on unmount).
+// Inline image thumbnail. An <img src> can't carry the Bearer, so fetch the blob with auth
+// then render an object URL (revoked on unmount). Clicking the tile opens the full preview.
 function ImagePreview({ file }: { file: FileInfo }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
@@ -62,13 +43,11 @@ function ImagePreview({ file }: { file: FileInfo }) {
     );
   }
   return (
-    <a href={src} target="_blank" rel="noreferrer" title={file.original_filename || "image"}>
-      <img
-        src={src}
-        alt={file.original_filename || "image"}
-        className="max-h-48 max-w-[240px] rounded-lg border border-zinc-700 object-cover hover:opacity-90 transition-opacity"
-      />
-    </a>
+    <img
+      src={src}
+      alt={file.original_filename || "image"}
+      className="max-h-48 max-w-[240px] rounded-lg border border-zinc-700 object-cover hover:opacity-90 transition-opacity"
+    />
   );
 }
 
@@ -142,23 +121,40 @@ function StagedFileTile({ file }: { file: FileInfo }) {
   );
 }
 
-// One file: an inline image preview, or a download chip for everything else.
+// One file: an image thumbnail or a typed chip. Clicking either opens the preview modal
+// (staged files keep their realize-then-download behavior instead).
 export function FileTile({ file }: { file: FileInfo }) {
+  const [open, setOpen] = useState(false);
   if (file.status === "staged") return <StagedFileTile file={file} />;
-  if ((file.content_type ?? "").startsWith("image/")) return <ImagePreview file={file} />;
+
+  const isImage = (file.content_type ?? "").startsWith("image/");
   return (
-    <button
-      type="button"
-      onClick={() => downloadFile(file)}
-      title={file.original_filename || file.file_id}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 transition-colors max-w-[240px]"
-    >
-      <FileText className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-      <span className="truncate">{file.original_filename || "file"}</span>
-      {typeof file.size_bytes === "number" && (
-        <span className="text-zinc-500">{formatBytes(file.size_bytes)}</span>
+    <>
+      {isImage ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={file.original_filename || file.file_id}
+          className="block"
+        >
+          <ImagePreview file={file} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={file.original_filename || file.file_id}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 transition-colors max-w-[240px]"
+        >
+          <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
+          <span className="truncate">{file.original_filename || "file"}</span>
+          {typeof file.size_bytes === "number" && (
+            <span className="text-zinc-500">{formatBytes(file.size_bytes)}</span>
+          )}
+        </button>
       )}
-    </button>
+      {open && <FilePreviewModal file={file} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
