@@ -60,6 +60,10 @@ spec:
               value: {{ .Values.rustfs.bucket | quote }}
             - name: S3_REGION
               value: {{ .Values.gateway.s3Region | quote }}
+            {{- if .Values.gotenberg.enabled }}
+            - name: GOTENBERG_URL
+              value: "http://{{ include "cheers.gotenberg.fullname" . }}:{{ .Values.gotenberg.port }}"
+            {{- end }}
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.gateway.corsAllowedOrigins | quote }}
             - name: ADMIN_USERNAME
