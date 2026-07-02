@@ -39,13 +39,24 @@ export async function downloadFile(file: FileInfo) {
 
 // How a file renders in the in-app preview modal.
 //  - image / pdf / markdown / text : rendered directly by the frontend
+//  - audio                         : inline <audio> player (+ transcript when available)
 //  - office                        : needs a server-side PDF rendition (Phase 2, Gotenberg)
 //  - none                          : no preview, download only
-export type PreviewKind = "image" | "pdf" | "markdown" | "text" | "office" | "none";
+export type PreviewKind = "image" | "pdf" | "markdown" | "text" | "audio" | "office" | "none";
 
 const OFFICE_EXTS = new Set([
   "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf",
 ]);
+
+const AUDIO_EXTS = new Set([
+  "mp3", "wav", "m4a", "ogg", "oga", "opus", "flac", "weba", "aac",
+]);
+
+/** Whether a chat file is audio (voice note or uploaded recording). */
+export function isAudioFile(file: FileInfo): boolean {
+  const ct = (file.content_type ?? "").toLowerCase();
+  return ct.startsWith("audio/") || AUDIO_EXTS.has(extOf(file));
+}
 
 // Extensions we render as plain text with syntax highlighting.
 const TEXT_EXTS = new Set([
@@ -59,6 +70,7 @@ export function previewKind(file: FileInfo): PreviewKind {
   const ct = (file.content_type ?? "").toLowerCase();
   const ext = extOf(file);
   if (ct.startsWith("image/")) return "image";
+  if (isAudioFile(file)) return "audio";
   if (ct === "application/pdf" || ext === "pdf") return "pdf";
   if (ct === "text/markdown" || ext === "md" || ext === "markdown") return "markdown";
   if (

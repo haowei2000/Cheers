@@ -973,6 +973,7 @@ fn normalize_message_file_refs(
                 expires_at: None,
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+                summary: None,
             });
         }
     }
@@ -1003,11 +1004,12 @@ async fn load_message_files_map(
         size_bytes: Option<i32>,
         status: Option<String>,
         expires_at: Option<chrono::DateTime<Utc>>,
+        summary_3lines: Option<String>,
     }
 
     let rows = sqlx::query_as::<_, FileRow>(
         "SELECT file_id, original_filename, content_type, size_bytes, status,
-                expires_at
+                expires_at, summary_3lines
          FROM file_records
          WHERE file_id = ANY($1)",
     )
@@ -1030,6 +1032,7 @@ async fn load_message_files_map(
                 expires_at: row.expires_at.map(|at| at.to_rfc3339()),
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+                summary: row.summary_3lines,
             },
         );
     }

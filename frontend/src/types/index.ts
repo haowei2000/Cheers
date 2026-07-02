@@ -53,6 +53,9 @@ export interface FileInfo {
   download_url?: string | null;
   /** "staged" = lazy (remote, not yet on S3); "uploaded" = available; "expired" = gone. */
   status?: string;
+  /** Short derived text when a server pipeline produced one — today the audio
+   *  transcript snippet; shown under the inline audio player. */
+  summary?: string | null;
 }
 
 export interface MessageMention {

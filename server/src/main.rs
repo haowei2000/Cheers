@@ -127,6 +127,16 @@ async fn main() -> anyhow::Result<()> {
         info!("GOTENBERG_URL unset; office→PDF preview conversion disabled");
     }
 
+    // Audio→text transcription via the admin-configured STT endpoint. Always
+    // spawned: whether it does anything is a runtime DB setting (admin UI),
+    // re-read each poll cycle — enabling STT needs no restart.
+    gateway::transcription_worker::spawn(
+        state.db.clone(),
+        state.s3.clone(),
+        state.config.clone(),
+        config.conversion_poll_interval_secs,
+    );
+
     let app = router::build(state);
 
     let addr = format!("0.0.0.0:{}", config.port);
