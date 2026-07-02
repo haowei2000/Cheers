@@ -55,6 +55,9 @@ Cheers 有三种运行方式 —— 三种方式详见[部署指南](docs/help/d
 2. **Docker Compose** —— 单机、全容器（自托管、演示）。见下方快速开始。
 3. **Helm / Kubernetes** —— 集群工作负载（生产、横向扩展）；chart 位于 `deploy/helm/cheers`。
 
+**最低硬件：** 核心栈约 2 核 / 4 GB 内存 / 10 GB 磁盘；含智能体 bot 约 4 核 / 8 GB 内存。
+与 `docker-compose.yml.template` 和 `values-dev.yaml` 中设置的资源上限一致。
+
 ## 快速开始
 
 ```bash

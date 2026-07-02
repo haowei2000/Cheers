@@ -55,6 +55,10 @@ Cheers runs three ways — see the [Deployment Guide](docs/help/deployment.md) f
 2. **Docker Compose** — one host, all containers (self-hosting, demos). Quick Start below.
 3. **Helm / Kubernetes** — cluster workloads (production, scale-out); chart in `deploy/helm/cheers`.
 
+**Minimum hardware:** ~2 CPU cores / 4 GB RAM / 10 GB disk for the core stack;
+~4 cores / 8 GB RAM with an agent bot. These match the resource limits shipped in
+`docker-compose.yml.template` and `values-dev.yaml`.
+
 ## Quick Start
 
 ```bash
