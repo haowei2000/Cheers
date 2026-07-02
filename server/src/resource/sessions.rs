@@ -8,8 +8,8 @@
 //! Params: `{ channel_id }`. Response:
 //! ```json
 //! { "channel_id": "...",
-//!   "sessions": [ { "session_id", "bot_id", "role", "is_primary",
-//!                   "status", "last_used_at", "session_config" } ] }
+//!   "sessions": [ { "session_id", "bot_id", "bot_name", "role", "is_primary",
+//!                   "status", "created_at", "last_used_at", "session_config" } ] }
 //! ```
 //! Ordered by bot, then primary-first, then most-recently-used.
 use serde_json::{json, Value};
@@ -31,9 +31,11 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // switcher (domain::sessions::list_channel_sessions): no detached_at filter —
     // an idle session stays addressable; exclude only truly-closed sessions.
     let rows = sqlx::query(
-        "SELECT s.session_id, b.bot_id, b.role, s.status, s.last_used_at, s.metadata
+        "SELECT s.session_id, b.bot_id, b.role, s.status, s.last_used_at, s.created_at,
+                s.metadata, COALESCE(ba.display_name, ba.username) AS bot_name
          FROM cheers_session_bindings b
          JOIN cheers_sessions s ON s.session_id = b.session_id
+         LEFT JOIN bot_accounts ba ON ba.bot_id = b.bot_id
          WHERE b.scope_type = 'channel' AND b.scope_id = $1
            AND s.status NOT IN ('terminated', 'revoked', 'expired')
          ORDER BY b.bot_id, (b.role = 'primary') DESC, s.last_used_at DESC",
@@ -61,9 +63,14 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
             json!({
                 "session_id": r.try_get::<String, _>("session_id").unwrap_or_default(),
                 "bot_id": r.try_get::<String, _>("bot_id").unwrap_or_default(),
+                "bot_name": r.try_get::<Option<String>, _>("bot_name").ok().flatten(),
                 "role": role.clone(),
                 "is_primary": role == "primary",
                 "status": r.try_get::<String, _>("status").unwrap_or_default(),
+                "created_at": r
+                    .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                    .map(|t| t.to_rfc3339())
+                    .unwrap_or_default(),
                 "last_used_at": r
                     .try_get::<chrono::DateTime<chrono::Utc>, _>("last_used_at")
                     .map(|t| t.to_rfc3339())
