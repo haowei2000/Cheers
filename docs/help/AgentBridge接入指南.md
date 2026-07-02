@@ -75,7 +75,34 @@ ACP-capable agent; new deployments must not use the old OpenClaw package path.
 
 ## ACP / OpenCode ACP Provider
 
-Install:
+Install — download the prebuilt binary from the project's
+[GitHub Releases](https://github.com/haowei2000/Cheers/releases/latest)
+(no Rust toolchain needed; assets are published per platform as
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}` by the `release-connector` workflow):
+
+```bash
+os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+mkdir -p ~/.cheers/bin
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+~/.cheers/bin/cce-acp-connector --help   # add ~/.cheers/bin to PATH for convenience
+```
+
+> To pin a version, replace `latest/download` with
+> `download/connector-v<version>` (e.g. `download/connector-v0.1.22`).
+>
+> While the repository is **private**, the plain curl URL returns 404 for anyone
+> without access — use the authenticated GitHub CLI instead
+> (`gh auth login` once, and repo access required):
+>
+> ```bash
+> gh release download connector-v0.1.22 -R haowei2000/Cheers \
+>   -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector
+> chmod +x ~/.cheers/bin/cce-acp-connector
+> ```
+
+Alternative (from source, needs Rust):
 
 ```bash
 cargo install --path packages/cheers-acp-connector-rs --locked

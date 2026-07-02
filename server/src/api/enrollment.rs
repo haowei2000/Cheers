@@ -425,7 +425,7 @@ const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat work
 
    CHEERS_ENROLL_CODE='{ENROLL_CODE}' bash <(curl -fsSL {INSTALL_URL})
 
-2. If it reports that `cce-acp-connector` is missing, build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
+2. The script finds `cce-acp-connector` on PATH, or downloads the prebuilt binary for this platform from the GitHub release (https://github.com/haowei2000/Cheers/releases). If neither works (unsupported platform or no access to the release), build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
 
 3. Make sure the connector keeps running in the BACKGROUND after this task ends (the install script sets up a launchd/systemd unit for this). If it only runs while you are active, the bot will go offline the moment your turn finishes.
 

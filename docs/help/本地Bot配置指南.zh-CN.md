@@ -34,7 +34,31 @@
 | 网关在跑 | `curl -fsS http://127.0.0.1:8000/health` → `ok` | 从源码启动：`server/.dev/run-dev.sh`（注入 RS256 JWT 密钥 + `cargo run`） |
 | ACP Agent 已装 | `command -v codex-acp` / `command -v claude-agent-acp` | 一般是 `npm i -g @agentclientprotocol/codex-acp` 等，落在 `/opt/homebrew/bin/` |
 | Agent 鉴权就绪 | `~/.codex` / `~/.claude` 存在 | Codex/Claude 用**订阅鉴权**（经 `HOME` 传给子进程），无需 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`；如用 API Key 则在 shell 里 export，并加进该 bot 的 `policy.env.allow` |
-| 连接器已编译 | `cargo build`（在 `packages/cheers-acp-connector-rs/`）| 产物：`target/debug/cce-acp-connector` |
+| 连接器二进制 | `cce-acp-connector --help` | 预编译 Release 下载（§1.1，推荐）；或源码构建：在 `packages/cheers-acp-connector-rs/` 里 `cargo build` → `target/debug/cce-acp-connector` |
+
+### 1.1 获取连接器二进制（预编译 Release）
+
+直接从项目的 [GitHub Releases](https://github.com/haowei2000/Cheers/releases/latest)
+下载对应平台的二进制，无需 Rust 工具链（`release-connector` workflow 按 tag 发布
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}` 四个产物）：
+
+```bash
+os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+mkdir -p ~/.cheers/bin
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+export PATH="$HOME/.cheers/bin:$PATH"   # 写进 shell profile 长期生效
+cce-acp-connector --help
+```
+
+需要固定版本时，把 `latest/download` 换成 `download/connector-v<版本号>`
+（例如 `download/connector-v0.1.22`）。仓库还是**私有**时匿名 curl 会 404，
+有权限的用户改用 GitHub CLI 认证下载：
+`gh release download connector-v0.1.22 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`。
+开发连接器本身的同学仍可用源码构建
+（`cargo build` → `target/debug/cce-acp-connector`）；下文命令默认
+`cce-acp-connector` 已在 `PATH` 上，两种方式均可。
 
 ---
 
@@ -132,16 +156,15 @@ inject_cheers = true                 # 注入 cheers stdio MCP（虚拟文件系
 
 ### 3.4 启动守护进程
 ```bash
-cd packages/cheers-acp-connector-rs
-./target/debug/cce-acp-connector start \
+cce-acp-connector start \
   --config ~/.cheers/cheers-daemon.codex.toml --name codex
 ```
 （因为 token 在文件里，**重启无需 export 任何环境变量**。）
 
 ### 3.5 验证
 ```bash
-./target/debug/cce-acp-connector status --name codex          # → status=running
-./target/debug/cce-acp-connector logs   --name codex --lines 40
+cce-acp-connector status --name codex          # → status=running
+cce-acp-connector logs   --name codex --lines 40
 # 期望日志：initialized ACP agent  +  Rust BridgeRuntime started，且无 ERROR
 ```
 再从网关侧确认在线：
@@ -168,7 +191,7 @@ cce-acp-connector start --config ~/.cheers/cheers-daemon.claude.toml --name clau
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-BIN="${CCE_BIN:-$HOME/Projects/Cheers/packages/cheers-acp-connector-rs/target/debug/cce-acp-connector}"
+BIN="${CCE_BIN:-$HOME/.cheers/bin/cce-acp-connector}"   # §1.1 下载的 release 二进制（或用 CCE_BIN 指向源码构建产物）
 CONF_DIR="${CHEERS_CONF_DIR:-$HOME/.cheers}"
 action="${1:-status}"
 shopt -s nullglob
@@ -303,7 +326,7 @@ request_timeout_ms = 30000
 ## 7. 运维
 
 ```bash
-BIN=packages/cheers-acp-connector-rs/target/debug/cce-acp-connector
+BIN=~/.cheers/bin/cce-acp-connector   # §1.1 下载的 release 二进制（或源码构建产物）
 $BIN status  --name codex
 $BIN logs    --name codex --lines 120
 $BIN restart --name codex        # 仅重启 codex；用文件存 token 时无需 export

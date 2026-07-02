@@ -34,6 +34,16 @@ import type { BotItem } from "@/types";
 
 type Mode = "manual" | "script" | "agent";
 
+/** Where prebuilt connector binaries are published (release-connector workflow).
+ * Keep in sync with the default in server/assets/install.sh. */
+const CONNECTOR_RELEASES_REPO = "haowei2000/Cheers";
+const CONNECTOR_DOWNLOAD_CMD = `os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+mkdir -p ~/.cheers/bin
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
+  "https://github.com/${CONNECTOR_RELEASES_REPO}/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+export PATH="$HOME/.cheers/bin:$PATH"`;
+
 const AGENTS: { value: AgentType; label: string }[] = [
   { value: "claude", label: "Claude (claude-agent-acp)" },
   { value: "codex", label: "Codex (codex-acp)" },
@@ -586,11 +596,32 @@ cce-acp-connector start --config ${configFile} --name ${accountId}
 cce-acp-connector status --name ${accountId}`}
           </pre>
         </div>
-        <p className="text-xs text-zinc-600">
-          Need the connector binary? Build it from{" "}
-          <code className="text-zinc-500">packages/cheers-acp-connector-rs</code>{" "}
-          (<code className="text-zinc-500">cargo build --release</code>).
-        </p>
+        <div className="space-y-1.5 pt-1">
+          <p className="text-xs text-zinc-600">
+            Need the connector binary? Download the prebuilt release (no Rust toolchain needed):
+          </p>
+          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+            <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
+              {CONNECTOR_DOWNLOAD_CMD}
+            </pre>
+          </div>
+          <div className="flex items-center justify-between">
+            <a
+              href={`https://github.com/${CONNECTOR_RELEASES_REPO}/releases/latest`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-indigo-300 hover:text-indigo-200 underline underline-offset-2"
+            >
+              All platforms &amp; versions on GitHub Releases
+            </a>
+            <CopyBtn value={CONNECTOR_DOWNLOAD_CMD} label="Copy command" />
+          </div>
+          <p className="text-xs text-zinc-600">
+            Or build from source:{" "}
+            <code className="text-zinc-500">cargo build --release</code> in{" "}
+            <code className="text-zinc-500">packages/cheers-acp-connector-rs</code>.
+          </p>
+        </div>
       </div>
     </div>
   );

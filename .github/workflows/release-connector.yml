@@ -22,7 +22,9 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             asset: cce-acp-connector-darwin-arm64
-          - os: macos-13
+          # Intel macOS is cross-compiled from the arm64 runner: GitHub retired
+          # the macos-13 (Intel) runner pool, so an x86_64 job queues forever.
+          - os: macos-14
             target: x86_64-apple-darwin
             asset: cce-acp-connector-darwin-amd64
           - os: ubuntu-latest

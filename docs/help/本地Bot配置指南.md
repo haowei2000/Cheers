@@ -35,7 +35,32 @@ Three rules:
 | Gateway running | `curl -fsS http://127.0.0.1:8000/health` → `ok` | From source: `server/.dev/run-dev.sh` (injects RS256 JWT keys + `cargo run`) |
 | ACP agent installed | `command -v codex-acp` / `command -v claude-agent-acp` | Usually `npm i -g @agentclientprotocol/codex-acp` etc., landing in `/opt/homebrew/bin/` |
 | Agent auth ready | `~/.codex` / `~/.claude` exists | Codex/Claude use **subscription auth** (passed to the child via `HOME`), so no `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` needed; if you use an API key, export it and add it to that bot's `policy.env.allow` |
-| Connector built | `cargo build` (in `packages/cheers-acp-connector-rs/`) | Produces `target/debug/cce-acp-connector` |
+| Connector binary | `cce-acp-connector --help` | Prebuilt release download (§1.1, recommended), or from source: `cargo build` in `packages/cheers-acp-connector-rs/` → `target/debug/cce-acp-connector` |
+
+### 1.1 Get the connector binary (prebuilt release)
+
+Download the platform binary from the project's
+[GitHub Releases](https://github.com/haowei2000/Cheers/releases/latest) — no Rust
+toolchain needed (`release-connector` publishes
+`cce-acp-connector-{darwin,linux}-{arm64,amd64}` per tag):
+
+```bash
+os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+mkdir -p ~/.cheers/bin
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+export PATH="$HOME/.cheers/bin:$PATH"   # add to your shell profile to keep it
+cce-acp-connector --help
+```
+
+To pin a version, replace `latest/download` with `download/connector-v<version>`
+(e.g. `download/connector-v0.1.22`). While the repository is **private**, plain curl
+returns 404 — download with the authenticated GitHub CLI instead:
+`gh release download connector-v0.1.22 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`.
+Developers hacking on the connector itself can
+keep using the source build (`cargo build` → `target/debug/cce-acp-connector`);
+the commands below assume `cce-acp-connector` is on `PATH` either way.
 
 ---
 
@@ -133,16 +158,15 @@ inject_cheers = true                 # inject the cheers stdio MCP (virtual file
 
 ### 3.4 Start the daemon
 ```bash
-cd packages/cheers-acp-connector-rs
-./target/debug/cce-acp-connector start \
+cce-acp-connector start \
   --config ~/.cheers/cheers-daemon.codex.toml --name codex
 ```
 (Because the token is in a file, **restarts need no env export**.)
 
 ### 3.5 Verify
 ```bash
-./target/debug/cce-acp-connector status --name codex          # → status=running
-./target/debug/cce-acp-connector logs   --name codex --lines 40
+cce-acp-connector status --name codex          # → status=running
+cce-acp-connector logs   --name codex --lines 40
 # expect: "initialized ACP agent" + "Rust BridgeRuntime started", no ERROR
 ```
 Confirm online from the gateway side:
@@ -169,7 +193,7 @@ To avoid typing per bot, drop in a small launcher `~/.cheers/cheers-bots.sh` tha
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-BIN="${CCE_BIN:-$HOME/Projects/Cheers/packages/cheers-acp-connector-rs/target/debug/cce-acp-connector}"
+BIN="${CCE_BIN:-$HOME/.cheers/bin/cce-acp-connector}"   # release binary from §1.1 (or point CCE_BIN at a source build)
 CONF_DIR="${CHEERS_CONF_DIR:-$HOME/.cheers}"
 action="${1:-status}"
 shopt -s nullglob
@@ -305,7 +329,7 @@ request_timeout_ms = 30000
 ## 7. Operations
 
 ```bash
-BIN=packages/cheers-acp-connector-rs/target/debug/cce-acp-connector
+BIN=~/.cheers/bin/cce-acp-connector   # release binary from §1.1 (or a source build)
 $BIN status  --name codex
 $BIN logs    --name codex --lines 120
 $BIN restart --name codex        # restarts only codex; no export needed with file-based token
