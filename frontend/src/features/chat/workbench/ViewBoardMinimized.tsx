@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Activity,
   ClipboardList,
   Coins,
   Layers,
@@ -26,11 +27,16 @@ function fmtUsd(n: number): string {
   });
 }
 
+// channel.activity.read is windowed (we ask for the newest ACTIVITY_WINDOW events),
+// so the glance shows "50+" when the window is full rather than a fake total.
+const ACTIVITY_WINDOW = 50;
+
 interface Summary {
   plan: { completed: number; total: number } | null;
   cost: { tokens: number; cost: number } | null;
   sessions: number | null;
   approvals: number | null;
+  activity: { events: number; members: number } | null;
 }
 
 function GlanceRow({
@@ -90,6 +96,7 @@ export function ViewBoardMinimized({
     cost: null,
     sessions: null,
     approvals: null,
+    activity: null,
   });
 
   // Guard against a stale channel's response landing after a switch: each loader
@@ -154,6 +161,24 @@ export function ViewBoardMinimized({
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, approvals: null })));
   }, [ctx.channelId]);
 
+  const loadActivity = useCallback(() => {
+    const cid = ctx.channelId;
+    ctx
+      .sendResourceReq("channel.activity.read", {
+        channel_id: cid,
+        limit: ACTIVITY_WINDOW,
+        desc: true,
+      })
+      .then((r) => {
+        if (cidRef.current !== cid) return;
+        const evs =
+          (r as { events?: { data?: { sender_id?: string } }[] }).events ?? [];
+        const members = new Set(evs.map((e) => e.data?.sender_id).filter(Boolean));
+        setS((p) => ({ ...p, activity: { events: evs.length, members: members.size } }));
+      })
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, activity: null })));
+  }, [ctx.channelId, ctx.sendResourceReq]);
+
   // Targeted live-push: each summary re-reads only on ITS signal (plus mount /
   // channel change, when the loader identity changes) — not on every board tick.
   const planTick = ctx.boardTick?.plan ?? 0;
@@ -164,18 +189,23 @@ export function ViewBoardMinimized({
   useEffect(() => loadSessions(), [sessionsTick, loadSessions]);
   const auditTick = ctx.boardTick?.audit ?? 0;
   useEffect(() => loadApprovals(), [auditTick, loadApprovals]);
+  const activityTick = ctx.boardTick?.activity ?? 0;
 
   // Sessions have no dedicated signal — they change with agent activity, so refresh
-  // the count on the per-message "activity" tick, debounced so a burst of messages
-  // collapses into one read. Skips the mount (the effects above already loaded).
-  const activityTick = ctx.boardTick?.activity ?? 0;
+  // them (and the activity glance itself) on the per-message "activity" tick,
+  // debounced so a burst of messages collapses into one read. Skips the mount
+  // (the loader-identity effects already load everything once).
   const lastActivity = useRef(activityTick);
   useEffect(() => {
     if (activityTick === lastActivity.current) return;
     lastActivity.current = activityTick;
-    const t = setTimeout(loadSessions, 800);
+    const t = setTimeout(() => {
+      loadSessions();
+      loadActivity();
+    }, 800);
     return () => clearTimeout(t);
-  }, [activityTick, loadSessions]);
+  }, [activityTick, loadSessions, loadActivity]);
+  useEffect(() => loadActivity(), [loadActivity]);
 
   const pct = s.plan && s.plan.total > 0 ? Math.round((s.plan.completed / s.plan.total) * 100) : 0;
 
@@ -213,6 +243,24 @@ export function ViewBoardMinimized({
         label="Approvals"
         value={s.approvals != null ? String(s.approvals) : "—"}
         onClick={() => onExpand("audit")}
+      />
+      <GlanceRow
+        Icon={Activity}
+        label="Activity"
+        // Windowed read — a full window means "at least this many" recent events.
+        value={
+          s.activity
+            ? s.activity.events >= ACTIVITY_WINDOW
+              ? `${ACTIVITY_WINDOW}+`
+              : String(s.activity.events)
+            : "—"
+        }
+        sub={
+          s.activity && s.activity.members > 0
+            ? `${s.activity.members} member${s.activity.members > 1 ? "s" : ""}`
+            : null
+        }
+        onClick={() => onExpand("activity")}
       />
     </div>
   );
