@@ -406,6 +406,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/users/:user_id/unsuspend",
             post(api::users::unsuspend_user),
         )
+        // Admin instance settings: speech-to-text endpoint (runtime, hot-reloaded).
+        .route(
+            "/api/v1/admin/settings/stt",
+            get(api::stt_settings::get_settings).put(api::stt_settings::put_settings),
+        )
+        .route(
+            "/api/v1/admin/settings/stt/test",
+            post(api::stt_settings::test_settings),
+        )
         .route("/api/v1/mcp/preview", post(api::mcp::preview_mcp_config))
         .route(
             "/api/v1/mcp/parse-claude-config",

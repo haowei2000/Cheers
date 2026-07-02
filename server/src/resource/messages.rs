@@ -373,7 +373,8 @@ async fn load_message_file_refs(
     }
 
     let rows = sqlx::query(
-        "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at
+        "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at,
+                summary_3lines
          FROM file_records
          WHERE file_id = ANY($1)",
     )
@@ -407,6 +408,10 @@ async fn load_message_file_refs(
                 .map(|at| at.to_rfc3339()),
             preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
             download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+            summary: row
+                .try_get::<Option<String>, _>("summary_3lines")
+                .ok()
+                .flatten(),
         });
     }
 
@@ -424,6 +429,7 @@ async fn load_message_file_refs(
                 expires_at: None,
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+                summary: None,
             });
         }
     }

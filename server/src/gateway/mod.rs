@@ -11,6 +11,7 @@ pub mod reclaimer;
 pub mod redis_registry;
 pub mod registry;
 pub mod stream;
+pub mod transcription_worker;
 pub mod workspace_rpc;
 pub mod ws;
 

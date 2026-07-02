@@ -3,7 +3,7 @@ import { FileText, Loader2 } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { realizeFile, pollFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
-import { downloadFile, formatBytes } from "./fileUtils";
+import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
 import { FilePreviewModal } from "./FilePreviewModal";
 
@@ -48,6 +48,65 @@ function ImagePreview({ file }: { file: FileInfo }) {
       alt={file.original_filename || "image"}
       className="max-h-48 max-w-[240px] rounded-lg border border-zinc-700 object-cover hover:opacity-90 transition-opacity"
     />
+  );
+}
+
+// Inline audio player. Like images, <audio src> can't carry the Bearer, so fetch
+// the blob with auth and play an object URL. When the transcription worker has
+// produced a transcript snippet (file.summary), show it under the player.
+function AudioTile({ file }: { file: FileInfo }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let url: string | null = null;
+    let alive = true;
+    apiFetch(`/files/${file.file_id}/download`)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
+      .then((b) => {
+        if (alive) {
+          url = URL.createObjectURL(b);
+          setSrc(url);
+        }
+      })
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [file.file_id]);
+
+  return (
+    <div className="flex max-w-[320px] flex-col gap-1 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-zinc-200">
+        <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
+        <span className="truncate" title={file.original_filename || file.file_id}>
+          {file.original_filename || "audio"}
+        </span>
+        {typeof file.size_bytes === "number" && (
+          <span className="flex-shrink-0 text-zinc-500">{formatBytes(file.size_bytes)}</span>
+        )}
+      </div>
+      {failed ? (
+        <button
+          type="button"
+          onClick={() => downloadFile(file)}
+          className="text-left text-[11px] text-zinc-400 hover:text-zinc-200"
+        >
+          播放不可用，点击下载
+        </button>
+      ) : src ? (
+        <audio controls src={src} preload="metadata" className="h-9 w-full" />
+      ) : (
+        <div className="flex h-9 items-center gap-1.5 text-[11px] text-zinc-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载音频…
+        </div>
+      )}
+      {file.summary && (
+        <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-400">
+          {file.summary}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -128,6 +187,7 @@ export function FileTile({ file }: { file: FileInfo }) {
   if (file.status === "staged") return <StagedFileTile file={file} />;
 
   const isImage = (file.content_type ?? "").startsWith("image/");
+  if (isAudioFile(file)) return <AudioTile file={file} />;
   return (
     <>
       {isImage ? (

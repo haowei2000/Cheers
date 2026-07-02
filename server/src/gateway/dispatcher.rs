@@ -324,6 +324,11 @@ const MAX_INLINE_IMAGE_BYTES: i64 = 8 * 1024 * 1024;
 /// 8 MB raw ≈ 10.7 MB base64 keeps the whole frame safely under that even with prompt text.
 const MAX_INLINE_TOTAL_BYTES: i64 = 8 * 1024 * 1024;
 
+/// Longest transcript text inlined into an attachment's `summary`. Transcripts
+/// are prompt text, not bulk bytes — cap them so one long recording can't
+/// crowd out the rest of the prompt.
+const MAX_INLINE_TRANSCRIPT_CHARS: usize = 8_000;
+
 #[derive(Debug, sqlx::FromRow)]
 struct AttachmentRow {
     file_id: String,
@@ -334,6 +339,9 @@ struct AttachmentRow {
     storage_bucket: Option<String>,
     status: String,
     expired: bool,
+    /// Transcript object key (`transcripts/{file_id}.txt`) for audio files the
+    /// transcription worker has processed; NULL otherwise.
+    md_path: Option<String>,
 }
 
 /// Hydrate a message's `file_ids` into task-frame attachments the ACP connector can consume:
@@ -348,7 +356,7 @@ async fn load_attachments(db: &PgPool, file_ids: &[String]) -> Vec<Value> {
     }
     let rows = sqlx::query_as::<_, AttachmentRow>(
         "SELECT file_id, original_filename, content_type, size_bytes, object_key,
-                storage_bucket, status,
+                storage_bucket, status, md_path,
                 COALESCE(expires_at < NOW(), FALSE) AS expired
          FROM file_records
          WHERE file_id = ANY($1)",
@@ -373,17 +381,30 @@ async fn load_attachments(db: &PgPool, file_ids: &[String]) -> Vec<Value> {
             .content_type
             .as_deref()
             .is_some_and(|ct| ct.starts_with("image/"));
+        let is_audio = row
+            .content_type
+            .as_deref()
+            .is_some_and(|ct| ct.starts_with("audio/"));
         let mut attachment = json!({
             "file_id": row.file_id,
             "filename": row.original_filename,
             "content_type": row.content_type,
             "size_bytes": row.size_bytes,
             "is_image": is_image,
+            "is_audio": is_audio,
         });
         if is_image && should_inline_image(row, inline_budget) {
             if let Some(data_b64) = fetch_image_b64(row).await {
                 inline_budget -= i64::from(row.size_bytes.unwrap_or(0));
                 attachment["image_b64"] = json!(data_b64);
+            }
+        }
+        // Transcript-first audio delivery: when the transcription worker has
+        // produced text, send THAT (cheap prompt tokens every agent can read)
+        // instead of audio bytes most ACP agents can't accept anyway.
+        if is_audio && row.md_path.is_some() {
+            if let Some(transcript) = fetch_transcript(row).await {
+                attachment["summary"] = json!(format!("transcript: {transcript}"));
             }
         }
         out.push(attachment);
@@ -404,6 +425,34 @@ fn should_inline_image(row: &AttachmentRow, inline_budget: i64) -> bool {
         && row.object_key.is_some()
         && i64::from(size) <= MAX_INLINE_IMAGE_BYTES
         && i64::from(size) <= inline_budget
+}
+
+/// Fetch a stored audio transcript (`md_path` object), capped for prompt use.
+/// Best-effort like everything here: a miss just means the attachment goes out
+/// without a summary and the agent can still pull bytes via the MCP inbox.
+async fn fetch_transcript(row: &AttachmentRow) -> Option<String> {
+    let (client, default_bucket) = crate::resource::files::s3_handle()?;
+    let bucket = row.storage_bucket.as_deref().unwrap_or(default_bucket);
+    let transcript_key = row.md_path.as_deref()?;
+    match crate::infra::s3::get_object(client, bucket, transcript_key).await {
+        Ok(bytes) => {
+            let text = String::from_utf8_lossy(&bytes);
+            let text = text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            if text.chars().count() > MAX_INLINE_TRANSCRIPT_CHARS {
+                let cut: String = text.chars().take(MAX_INLINE_TRANSCRIPT_CHARS).collect();
+                Some(format!("{cut}… [transcript truncated]"))
+            } else {
+                Some(text.to_string())
+            }
+        }
+        Err(e) => {
+            tracing::warn!(file_id = %row.file_id, err = %e, "attachment transcript fetch failed");
+            None
+        }
+    }
 }
 
 async fn fetch_image_b64(row: &AttachmentRow) -> Option<String> {
@@ -646,6 +695,7 @@ mod tests {
             storage_bucket: None,
             status: "uploaded".to_string(),
             expired: false,
+            md_path: None,
         }
     }
 

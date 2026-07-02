@@ -71,6 +71,10 @@ pub struct MessageFileRef {
     pub expires_at: Option<String>,
     pub preview_url: Option<String>,
     pub download_url: Option<String>,
+    /// Short derived text for the file when a pipeline produced one — today the
+    /// audio transcript snippet (`summary_3lines`); shown under the audio player.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub summary: Option<String>,
 }
 
 // ── DTO（API 响应用）─────────────────────────────────────────────────────────

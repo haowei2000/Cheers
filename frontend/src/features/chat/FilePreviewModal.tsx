@@ -162,6 +162,40 @@ function OfficeBody({ file }: { file: FileInfo }) {
   );
 }
 
+function AudioBody({ file }: { file: FileInfo }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let url: string | null = null;
+    let alive = true;
+    apiFetch(`/files/${file.file_id}/download`)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("dl"))))
+      .then((b) => {
+        if (alive) {
+          url = URL.createObjectURL(b);
+          setSrc(url);
+        }
+      })
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [file.file_id]);
+  if (failed) return <Centered tone="error">音频加载失败</Centered>;
+  if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> 加载音频…</Centered>;
+  return (
+    <div className="flex flex-col gap-3 rounded-lg bg-zinc-950/40 p-4">
+      <audio controls src={src} className="w-full" />
+      {file.summary && (
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
+          {file.summary}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function UnsupportedBody({ file, office = false }: { file: FileInfo; office?: boolean }) {
   return (
     <Centered>
@@ -187,6 +221,7 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
       {kind === "pdf" && <PdfViewer path={`/files/${file.file_id}/preview`} />}
       {kind === "markdown" && <MarkdownBody file={file} />}
       {kind === "text" && <TextBody file={file} />}
+      {kind === "audio" && <AudioBody file={file} />}
       {kind === "office" && <OfficeBody file={file} />}
       {kind === "none" && <UnsupportedBody file={file} />}
       <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs text-zinc-500">

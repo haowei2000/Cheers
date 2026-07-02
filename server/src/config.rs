@@ -49,6 +49,11 @@ pub struct Config {
     /// (default 20; 0 runs only the startup pass).
     pub conversion_poll_interval_secs: u64,
 
+    /// Optional dedicated master-key material for encrypting admin-entered secrets
+    /// at rest (system_settings). When unset, the key is derived from the JWT
+    /// private key — set this to survive JWT key rotation without re-entering secrets.
+    pub secret_store_key: Option<String>,
+
     // SMTP（可选，不配置则不发邮件）
     pub smtp_host: Option<String>,
     pub smtp_port: u16,
@@ -114,6 +119,10 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20),
+
+            secret_store_key: env::var("SECRET_STORE_KEY")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
 
             smtp_host: env::var("SMTP_HOST").ok(),
             smtp_port: env::var("SMTP_PORT")

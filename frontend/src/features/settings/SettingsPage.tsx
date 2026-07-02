@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound } from "lucide-react";
+import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { changePassword, logout as logoutApi } from "@/api/auth";
@@ -9,14 +9,16 @@ import { Button } from "@/components/ui/button";
 import { BotsManager } from "@/features/bots/BotsManager";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
+import { AdminSttSettings } from "./AdminSttSettings";
 
-type SectionId = "profile" | "bots" | "workbench" | "members" | "account";
+type SectionId = "profile" | "bots" | "workbench" | "members" | "speech" | "account";
 
 const NAV: { id: SectionId; label: string; icon: typeof User; adminOnly?: boolean }[] = [
   { id: "profile", label: "Profile", icon: User },
   { id: "bots", label: "Bots", icon: Bot },
   { id: "workbench", label: "Workbench", icon: Blocks, adminOnly: true },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
+  { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
 
@@ -199,6 +201,7 @@ export default function SettingsPage() {
           {/* Admin-only; each self-gates (renders null for non-admins). */}
           {section === "workbench" && <WorkbenchManager />}
           {section === "members" && <AdminUsers />}
+          {section === "speech" && <AdminSttSettings />}
 
           {section === "account" && (
             <section>

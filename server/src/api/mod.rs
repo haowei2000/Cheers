@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod messages;
 pub mod middleware;
 pub mod session_control;
+pub mod stt_settings;
 pub mod users;
 pub mod workbench;
 pub mod workspace;

@@ -44,6 +44,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 - Agents: external ACP agents (OpenCode, Claude, Codex) via `cheers-mcp-server` and ACP connectors
 - Storage: PostgreSQL for business data and channel history, S3-compatible object storage for files
 - Preview: built into the gateway (`GET /files/:id/preview`); office→PDF conversion via optional Gotenberg
+- Voice: optional speech-to-text transcription of audio via an OpenAI-compatible (Whisper) endpoint, configured at runtime in admin settings
 - Deployment: Docker Compose (single host) or Kubernetes via the Helm chart in `deploy/helm/cheers`
 
 ## Deployment
