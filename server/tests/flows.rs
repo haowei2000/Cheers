@@ -207,7 +207,7 @@ impl BotLocator for CountingBotLocator {
     async fn send_data(&self, _bot_id: Uuid, _frame: Value) -> bool {
         true
     }
-    fn is_online(&self, _bot_id: Uuid) -> bool {
+    async fn is_online(&self, _bot_id: Uuid) -> bool {
         true
     }
 }
