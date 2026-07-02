@@ -118,8 +118,8 @@ impl BotRegistry for Arc<RedisBotRegistry> {
     ) -> oneshot::Receiver<()> {
         (**self).bind_control(bot_id, conn_id, task_tx)
     }
-    fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
-        (**self).bind_data(bot_id, data_tx)
+    fn bind_data(&self, bot_id: Uuid, conn_id: Uuid, data_tx: mpsc::Sender<Value>) {
+        (**self).bind_data(bot_id, conn_id, data_tx)
     }
     fn unbind(&self, bot_id: Uuid) {
         (**self).unbind(bot_id)
@@ -127,8 +127,8 @@ impl BotRegistry for Arc<RedisBotRegistry> {
     fn unbind_if_connection(&self, bot_id: Uuid, conn_id: Uuid) {
         (**self).unbind_if_connection(bot_id, conn_id)
     }
-    fn unbind_data(&self, bot_id: Uuid) {
-        (**self).unbind_data(bot_id)
+    fn unbind_data(&self, bot_id: Uuid, conn_id: Uuid) {
+        (**self).unbind_data(bot_id, conn_id)
     }
     fn kick(&self, bot_id: Uuid) {
         (**self).kick(bot_id)
@@ -178,7 +178,7 @@ impl BotRegistry for RedisBotRegistry {
         supersede_rx
     }
 
-    fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
+    fn bind_data(&self, bot_id: Uuid, _conn_id: Uuid, data_tx: mpsc::Sender<Value>) {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let client = self.client.clone();
 
@@ -222,7 +222,7 @@ impl BotRegistry for RedisBotRegistry {
         self.unbind(bot_id);
     }
 
-    fn unbind_data(&self, _bot_id: Uuid) {
+    fn unbind_data(&self, _bot_id: Uuid, _conn_id: Uuid) {
         // Redis 模式下 data TX 不在 cancel_map 里，无需额外操作
     }
 

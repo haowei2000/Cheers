@@ -601,8 +601,9 @@ pub async fn add_channel_member(
     }
 
     // ON CONFLICT 不改 member_type：PK 只有 (channel_id, member_id)，重复添加
-    // 不应把已有成员在 user/bot 之间悄悄翻转。
-    sqlx::query(
+    // 不应把已有成员在 user/bot 之间悄悄翻转。类型冲突时 WHERE 不命中 → 0 行，
+    // 必须报错而不是假装成功（否则会给非成员 bot 建 primary session）。
+    let written = sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (channel_id, member_id) DO UPDATE SET
@@ -615,7 +616,13 @@ pub async fn add_channel_member(
     .bind(&role)
     .bind(&claims.sub)
     .execute(&state.db)
-    .await?;
+    .await?
+    .rows_affected();
+    if written == 0 {
+        return Err(AppError::BadRequest(
+            "member already exists with a different member_type".into(),
+        ));
+    }
 
     // Eagerly materialize the bot's PRIMARY session with its pinned (validated)
     // workspace. Idempotent with the lazy first-message path; cwd is immutable, so

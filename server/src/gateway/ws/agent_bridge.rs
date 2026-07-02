@@ -360,7 +360,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     let connection_id = Uuid::new_v4();
     let (res_tx, mut res_rx) = mpsc::channel::<Value>(128);
 
-    state.bot_registry.bind_data(bot.bot_id, res_tx);
+    state.bot_registry.bind_data(bot.bot_id, connection_id, res_tx);
 
     // ── 3. 发 hello 帧 ──────────────────────────────────────────────────
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
@@ -501,7 +501,9 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     }
 
     tracing::info!(bot_id = %bot.bot_id, "data disconnected");
-    state.bot_registry.unbind_data(bot.bot_id);
+    // conn 守护：重连后旧 data socket 的迟到 cleanup 不会打掉新绑定（也就不会
+    // 把实际在线的 bot 广播成离线）。
+    state.bot_registry.unbind_data(bot.bot_id, connection_id);
     crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 }
 

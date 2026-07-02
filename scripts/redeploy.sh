@@ -49,7 +49,7 @@ if $do_gateway; then
   images+=("$GATEWAY_IMAGE")
 fi
 if $do_frontend; then
-  echo "▸ [1/3] building $FRONTEND_IMAGE…"
+  echo "▸ [1/3] building ${FRONTEND_IMAGE}…"
   docker build -t "$FRONTEND_IMAGE" --build-arg VITE_API_BASE_URL=/api/v1 frontend
   images+=("$FRONTEND_IMAGE")
 fi
