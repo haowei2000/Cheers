@@ -1,4 +1,10 @@
 services:
+  postgres:
+    # The base file publishes this on 0.0.0.0 unconditionally; restrict it to
+    # loopback in production so Postgres isn't reachable from the internet.
+    ports: !override
+      - "${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
+
   gateway:
     ports: !override
       - "${BACKEND_HOST_BIND:-127.0.0.1}:${GATEWAY_HOST_PORT:-8000}:8000"
