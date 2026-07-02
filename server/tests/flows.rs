@@ -1429,6 +1429,15 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
     assert_eq!(s["role"].as_str(), Some("other"));
     assert_eq!(s["is_primary"].as_bool(), Some(false));
     assert_eq!(s["status"].as_str(), Some("idle"));
+    // 会话卡片字段：bot_name（display_name→username 回落）+ created_at。
+    assert!(
+        s["bot_name"].as_str().is_some_and(|n| n.starts_with("b-")),
+        "bot_name 应回落到 username: {s}"
+    );
+    assert!(
+        s["created_at"].as_str().is_some_and(|t| !t.is_empty()),
+        "created_at 应为 RFC3339 时间: {s}"
+    );
 
     // Non-members can't read it.
     let outsider = seed_bot(&db).await;
