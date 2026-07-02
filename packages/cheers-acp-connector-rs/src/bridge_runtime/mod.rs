@@ -423,7 +423,13 @@ impl RuntimeContext {
                 let runtime = self.clone();
                 tokio::spawn(async move {
                     let frame = match runtime
-                        .handle_workspace_req(&op, &path, root.as_deref(), content_b64.as_deref(), &roots)
+                        .handle_workspace_req(
+                            &op,
+                            &path,
+                            root.as_deref(),
+                            content_b64.as_deref(),
+                            &roots,
+                        )
                         .await
                     {
                         Ok(data) => DataOutbound::WorkspaceRes {
@@ -1808,7 +1814,13 @@ mod tests {
             cwd: None,
             additional_dirs: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false, false);
+        let prompt = build_prompt(
+            &task,
+            &test_prompt_policy(true),
+            Some("#general"),
+            false,
+            false,
+        );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(text.contains("@bot summarize"));
         assert!(text.contains("report.pdf"));
@@ -1854,7 +1866,13 @@ mod tests {
     fn build_prompt_emits_image_block_only_when_capability_allows() {
         // Agent advertised promptCapabilities.image → real ACP image block, and
         // no redundant text summary line for that image.
-        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), true, false);
+        let prompt = build_prompt(
+            &image_task(),
+            &test_prompt_policy(true),
+            Some("#c"),
+            true,
+            false,
+        );
         let image = prompt
             .iter()
             .find(|block| block["type"] == "image")
@@ -1874,7 +1892,13 @@ mod tests {
     fn build_prompt_degrades_image_to_text_when_capability_absent() {
         // Agent did NOT advertise image support → no image block; the image
         // degrades to a text summary line so the agent still knows it exists.
-        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), false, false);
+        let prompt = build_prompt(
+            &image_task(),
+            &test_prompt_policy(true),
+            Some("#c"),
+            false,
+            false,
+        );
         assert!(
             prompt.iter().all(|block| block["type"] != "image"),
             "no image block may be sent when the agent can't read images"
@@ -1983,7 +2007,13 @@ mod tests {
             cwd: None,
             additional_dirs: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false, false);
+        let prompt = build_prompt(
+            &task,
+            &test_prompt_policy(true),
+            Some("#general"),
+            false,
+            false,
+        );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
             text.contains("channel_id=550e8400"),

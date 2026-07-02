@@ -283,7 +283,12 @@ impl RuntimeContext {
                 .await?;
             return Ok(());
         };
-        let result = self.adapter.lock().await.set_mode(&acp_session_id, &mode).await;
+        let result = self
+            .adapter
+            .lock()
+            .await
+            .set_mode(&acp_session_id, &mode)
+            .await;
         match result {
             Ok(()) => {
                 self.io

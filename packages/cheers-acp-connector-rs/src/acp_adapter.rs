@@ -395,7 +395,9 @@ impl AcpAdapter {
             return;
         };
         for (config_id, value) in map {
-            let Some(value) = value.as_str() else { continue };
+            let Some(value) = value.as_str() else {
+                continue;
+            };
             match self
                 .request(
                     "session/set_config_option",

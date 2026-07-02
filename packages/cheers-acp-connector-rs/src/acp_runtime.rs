@@ -151,11 +151,18 @@ impl RuntimeAcpAdapter {
     /// opaque strings (ACP-generic); the map was already clamped to
     /// `allowed_config_options` at the `config_update` boundary.
     async fn apply_config_options(&self, session_id: &str) {
-        let Some(map) = self.config.config_options.as_ref().and_then(|v| v.as_object()) else {
+        let Some(map) = self
+            .config
+            .config_options
+            .as_ref()
+            .and_then(|v| v.as_object())
+        else {
             return;
         };
         for (config_id, value) in map {
-            let Some(value) = value.as_str() else { continue };
+            let Some(value) = value.as_str() else {
+                continue;
+            };
             match self
                 .request(
                     "session/set_config_option",
