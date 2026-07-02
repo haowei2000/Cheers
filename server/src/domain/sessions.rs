@@ -35,7 +35,11 @@ pub fn normalize_scope_type(raw: &str) -> &str {
     }
 }
 
-fn scope_columns(scope_type: &str, scope_id: &str, _task_id: Option<&str>) -> (Option<String>, Option<String>) {
+fn scope_columns(
+    scope_type: &str,
+    scope_id: &str,
+    _task_id: Option<&str>,
+) -> (Option<String>, Option<String>) {
     let scope_id = scope_id.to_string();
     match scope_type {
         SESSION_SCOPE_CHANNEL => (Some(scope_id), None),
@@ -181,7 +185,9 @@ pub async fn create_channel_session(
 ) -> Result<SessionHandle, AppError> {
     let provider_account_id = provider_account_id.trim();
     if provider_account_id.is_empty() {
-        return Err(AppError::BadRequest("provider_account_id can not be empty".into()));
+        return Err(AppError::BadRequest(
+            "provider_account_id can not be empty".into(),
+        ));
     }
     let channel_id = channel_id.trim();
     if channel_id.is_empty() {
@@ -255,7 +261,9 @@ pub async fn ensure_primary_session_workspace(
 ) -> Result<SessionHandle, AppError> {
     let provider_account_id = provider_account_id.trim();
     if provider_account_id.is_empty() {
-        return Err(AppError::BadRequest("provider_account_id can not be empty".into()));
+        return Err(AppError::BadRequest(
+            "provider_account_id can not be empty".into(),
+        ));
     }
     let channel_id = channel_id.trim();
     if channel_id.is_empty() {

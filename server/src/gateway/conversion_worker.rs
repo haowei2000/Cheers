@@ -75,19 +75,36 @@ async fn convert_batch(
             .ok()
             .flatten()
             .unwrap_or_else(|| format!("{file_id}.bin"));
-        let object_key: Option<String> = row.try_get::<Option<String>, _>("object_key").ok().flatten();
+        let object_key: Option<String> = row
+            .try_get::<Option<String>, _>("object_key")
+            .ok()
+            .flatten();
         let Some(object_key) = object_key else {
             record_failure(db, &file_id, "missing object_key").await;
             continue;
         };
 
-        match convert_one(db, s3client, http, bucket, gotenberg_url, &file_id, &object_key, &filename).await {
+        match convert_one(
+            db,
+            s3client,
+            http,
+            bucket,
+            gotenberg_url,
+            &file_id,
+            &object_key,
+            &filename,
+        )
+        .await
+        {
             Ok(()) => converted += 1,
             Err(e) => record_failure(db, &file_id, &e.to_string()).await,
         }
     }
     if converted > 0 {
-        tracing::info!(count = converted, "conversion worker: generated PDF previews");
+        tracing::info!(
+            count = converted,
+            "conversion worker: generated PDF previews"
+        );
     }
     converted
 }

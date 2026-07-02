@@ -162,7 +162,10 @@ fn parse_available_commands(payload: &Value) -> AvailableCommands {
                     let name = c.get("name").and_then(Value::as_str)?.to_string();
                     Some(AvailableCommand {
                         name,
-                        description: c.get("description").and_then(Value::as_str).map(String::from),
+                        description: c
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .map(String::from),
                         input: c.get("input").cloned(),
                     })
                 })
@@ -184,13 +187,22 @@ fn parse_usage(payload: &Value) -> Usage {
         // the explicit aliases, then the window size.
         context_window: read_i64(
             src,
-            &["used", "contextWindow", "context_window", "contextSize", "context_size", "size"],
+            &[
+                "used",
+                "contextWindow",
+                "context_window",
+                "contextSize",
+                "context_size",
+                "size",
+            ],
         ),
         // `cost` may be a flat number OR a nested `{amount, currency}` object (the Claude
         // ACP shape). It is CUMULATIVE, so the read side takes MAX, not SUM.
         cost_usd: read_f64(src, &["costUsd", "cost_usd", "totalCost"]).or_else(|| {
-            src.get("cost")
-                .and_then(|c| c.as_f64().or_else(|| c.get("amount").and_then(Value::as_f64)))
+            src.get("cost").and_then(|c| {
+                c.as_f64()
+                    .or_else(|| c.get("amount").and_then(Value::as_f64))
+            })
         }),
     }
 }
@@ -272,7 +284,10 @@ mod tests {
         };
         assert_eq!(ac.commands.len(), 2);
         assert_eq!(ac.commands[0].name, "review");
-        assert_eq!(ac.commands[0].description.as_deref(), Some("Review the diff"));
+        assert_eq!(
+            ac.commands[0].description.as_deref(),
+            Some("Review the diff")
+        );
         assert_eq!(ac.commands[1].name, "test");
         assert!(ac.commands[1].input.is_some());
     }

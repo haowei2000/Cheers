@@ -185,9 +185,9 @@ async fn do_subscribe(client: redis::Client, local: Arc<InProcessFanout>) -> any
         if let Some(id_str) = channel.strip_prefix("cheers:rt:channelsee:") {
             if let Ok(channel_id) = id_str.parse::<Uuid>() {
                 if let Ok(env) = serde_json::from_str::<Value>(&payload) {
-                    if let Ok(frame) =
-                        serde_json::from_value::<WireFrame>(env.get("frame").cloned().unwrap_or(Value::Null))
-                    {
+                    if let Ok(frame) = serde_json::from_value::<WireFrame>(
+                        env.get("frame").cloned().unwrap_or(Value::Null),
+                    ) {
                         let allowed: Vec<Uuid> = env
                             .get("allowed")
                             .and_then(Value::as_array)
@@ -197,7 +197,9 @@ async fn do_subscribe(client: redis::Client, local: Arc<InProcessFanout>) -> any
                                     .collect()
                             })
                             .unwrap_or_default();
-                        local.broadcast_channel_to_users(channel_id, frame, allowed).await;
+                        local
+                            .broadcast_channel_to_users(channel_id, frame, allowed)
+                            .await;
                     }
                 }
             }

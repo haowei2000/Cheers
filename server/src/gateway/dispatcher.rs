@@ -66,7 +66,7 @@ pub async fn dispatch(
     )
     .await
     {
-        Ok(true) => {}                                          // 胜者：本次插入占位，继续派发
+        Ok(true) => {}                                         // 胜者：本次插入占位，继续派发
         Ok(false) => return DispatchResult::AlreadyInProgress, // 占位已存在（败者 / 重投）
         Err(e) => return DispatchResult::DbError(e),
     }
@@ -135,8 +135,12 @@ pub async fn dispatch(
     if !delivered {
         // bot 不在线：清理占位（或标记为失败，让前端看到错误提示）
         if let Ok(Some(failed)) = mark_placeholder_failed(db, placeholder_id).await {
-            let done =
-                offline_done_frame(failed.channel_id, failed.channel_seq, placeholder_id, params.bot_id);
+            let done = offline_done_frame(
+                failed.channel_id,
+                failed.channel_seq,
+                placeholder_id,
+                params.bot_id,
+            );
             fanout.broadcast_channel(failed.channel_id, done).await;
         }
         registry.remove(placeholder_id);
@@ -294,10 +298,7 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
             })
         })
         .unwrap_or_default();
-    let attachments = file_ids
-        .iter()
-        .map(|file_id| json!({ "file_id": file_id }))
-        .collect::<Vec<_>>();
+    let attachments = load_attachments(db, &file_ids).await;
     let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
 
     Some(TaskContext {
@@ -313,6 +314,110 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
         attachments,
         pinned: Vec::new(),
     })
+}
+
+/// Largest single image inlined (raw bytes) into a task frame as `image_b64` — same ceiling
+/// as the agent bridge's `MAX_DELIVER_BYTES` so both delivery paths agree on "too big".
+const MAX_INLINE_IMAGE_BYTES: i64 = 8 * 1024 * 1024;
+/// Shared raw-byte budget across ALL attachments of one task frame. The frame travels as a
+/// single WS message and the connector reads it with tungstenite defaults (16 MiB frame cap);
+/// 8 MB raw ≈ 10.7 MB base64 keeps the whole frame safely under that even with prompt text.
+const MAX_INLINE_TOTAL_BYTES: i64 = 8 * 1024 * 1024;
+
+#[derive(Debug, sqlx::FromRow)]
+struct AttachmentRow {
+    file_id: String,
+    original_filename: Option<String>,
+    content_type: Option<String>,
+    size_bytes: Option<i32>,
+    object_key: Option<String>,
+    storage_bucket: Option<String>,
+    status: String,
+    expired: bool,
+}
+
+/// Hydrate a message's `file_ids` into task-frame attachments the ACP connector can consume:
+/// `{ file_id, filename, content_type, size_bytes, is_image }`, plus inline base64 bytes
+/// (`image_b64`) for images small enough to ride the control WS — that is what lets the
+/// connector emit native ACP image content blocks instead of a filename summary line.
+/// Everything here is best-effort: any DB/S3 failure degrades to metadata-only (or the bare
+/// `file_id`), never blocks the dispatch. Non-inlined files stay reachable via the MCP inbox.
+async fn load_attachments(db: &PgPool, file_ids: &[String]) -> Vec<Value> {
+    if file_ids.is_empty() {
+        return Vec::new();
+    }
+    let rows = sqlx::query_as::<_, AttachmentRow>(
+        "SELECT file_id, original_filename, content_type, size_bytes, object_key,
+                storage_bucket, status,
+                COALESCE(expires_at < NOW(), FALSE) AS expired
+         FROM file_records
+         WHERE file_id = ANY($1)",
+    )
+    .bind(file_ids)
+    .fetch_all(db)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(err = %e, "attachment metadata load failed; sending bare file_ids");
+        Vec::new()
+    });
+
+    let mut inline_budget = MAX_INLINE_TOTAL_BYTES;
+    let mut out = Vec::with_capacity(file_ids.len());
+    // Preserve message order (rows come back in arbitrary ANY($1) order).
+    for file_id in file_ids {
+        let Some(row) = rows.iter().find(|r| &r.file_id == file_id) else {
+            out.push(json!({ "file_id": file_id }));
+            continue;
+        };
+        let is_image = row
+            .content_type
+            .as_deref()
+            .is_some_and(|ct| ct.starts_with("image/"));
+        let mut attachment = json!({
+            "file_id": row.file_id,
+            "filename": row.original_filename,
+            "content_type": row.content_type,
+            "size_bytes": row.size_bytes,
+            "is_image": is_image,
+        });
+        if is_image && should_inline_image(row, inline_budget) {
+            if let Some(data_b64) = fetch_image_b64(row).await {
+                inline_budget -= i64::from(row.size_bytes.unwrap_or(0));
+                attachment["image_b64"] = json!(data_b64);
+            }
+        }
+        out.push(attachment);
+    }
+    out
+}
+
+/// Whether an image attachment's bytes qualify for inlining: readable object (`uploaded`,
+/// not expired, has an object_key), a known size within the per-image cap, and room left in
+/// the frame's shared budget. `staged` files have no bytes in S3 yet; unknown sizes are
+/// skipped rather than risking an oversized frame.
+fn should_inline_image(row: &AttachmentRow, inline_budget: i64) -> bool {
+    let Some(size) = row.size_bytes else {
+        return false;
+    };
+    row.status == "uploaded"
+        && !row.expired
+        && row.object_key.is_some()
+        && i64::from(size) <= MAX_INLINE_IMAGE_BYTES
+        && i64::from(size) <= inline_budget
+}
+
+async fn fetch_image_b64(row: &AttachmentRow) -> Option<String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let (client, default_bucket) = crate::resource::files::s3_handle()?;
+    let bucket = row.storage_bucket.as_deref().unwrap_or(default_bucket);
+    let object_key = row.object_key.as_deref()?;
+    match crate::infra::s3::get_object(client, bucket, object_key).await {
+        Ok(bytes) => Some(STANDARD.encode(&bytes)),
+        Err(e) => {
+            tracing::warn!(file_id = %row.file_id, err = %e, "attachment image fetch failed; sending metadata only");
+            None
+        }
+    }
 }
 
 /// Read the channel's pinned convention files (paths listed in `.workbench.json`)
@@ -333,9 +438,11 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     let paths: Vec<String> = serde_json::from_str::<Value>(&cfg)
         .ok()
         .and_then(|v| {
-            v.get("pinned")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            v.get("pinned").and_then(Value::as_array).map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
         })
         .unwrap_or_default();
     let mut out = Vec::new();
@@ -420,10 +527,7 @@ async fn load_session_workspace(db: &PgPool, provider_session_key: &str) -> Sess
     .and_then(|r| r.try_get::<Option<Value>, _>("ws").ok().flatten());
     match ws {
         Some(ws) => {
-            let cwd = ws
-                .get("cwd")
-                .and_then(Value::as_str)
-                .map(str::to_string);
+            let cwd = ws.get("cwd").and_then(Value::as_str).map(str::to_string);
             let additional_dirs = ws
                 .get("additional_dirs")
                 .and_then(Value::as_array)
@@ -530,5 +634,60 @@ mod tests {
     fn placeholder_id_is_v5() {
         let id = derive_placeholder_id(Uuid::new_v4(), Uuid::new_v4());
         assert_eq!(id.get_version_num(), 5);
+    }
+
+    fn attachment_row(size_bytes: Option<i32>) -> AttachmentRow {
+        AttachmentRow {
+            file_id: "f1".to_string(),
+            original_filename: Some("photo.png".to_string()),
+            content_type: Some("image/png".to_string()),
+            size_bytes,
+            object_key: Some("uploads/f1/photo.png".to_string()),
+            storage_bucket: None,
+            status: "uploaded".to_string(),
+            expired: false,
+        }
+    }
+
+    /// 正常小图：uploaded、未过期、尺寸在单图/总预算内 → 允许内联。
+    #[test]
+    fn inline_allows_small_uploaded_image() {
+        assert!(should_inline_image(
+            &attachment_row(Some(1024)),
+            MAX_INLINE_TOTAL_BYTES
+        ));
+    }
+
+    /// 内联门禁的每个否决条件：无尺寸 / 超单图上限 / 超剩余预算 /
+    /// staged（字节不在 S3）/ 已过期 / 缺 object_key。
+    #[test]
+    fn inline_rejects_ineligible_rows() {
+        assert!(!should_inline_image(
+            &attachment_row(None),
+            MAX_INLINE_TOTAL_BYTES
+        ));
+        assert!(!should_inline_image(
+            &attachment_row(Some(i32::MAX)),
+            MAX_INLINE_TOTAL_BYTES
+        ));
+        assert!(!should_inline_image(&attachment_row(Some(1024)), 1023));
+
+        let staged = AttachmentRow {
+            status: "staged".to_string(),
+            ..attachment_row(Some(1024))
+        };
+        assert!(!should_inline_image(&staged, MAX_INLINE_TOTAL_BYTES));
+
+        let expired = AttachmentRow {
+            expired: true,
+            ..attachment_row(Some(1024))
+        };
+        assert!(!should_inline_image(&expired, MAX_INLINE_TOTAL_BYTES));
+
+        let no_key = AttachmentRow {
+            object_key: None,
+            ..attachment_row(Some(1024))
+        };
+        assert!(!should_inline_image(&no_key, MAX_INLINE_TOTAL_BYTES));
     }
 }

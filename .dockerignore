@@ -2,9 +2,12 @@
 .github/
 .idea/
 .vscode/
+.claude/
+.codex/
 .DS_Store
 
-gateway/target/
+server/target/
+packages/*/target/
 
 frontend/node_modules/
 frontend/dist/
@@ -15,6 +18,7 @@ packages/*/dist/
 packages/*/*.tgz
 
 data/
+dist/
 outputs/
 artifacts/
 tmp/

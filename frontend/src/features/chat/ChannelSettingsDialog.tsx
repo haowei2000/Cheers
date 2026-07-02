@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Trash2, UserPlus, X, LogOut } from "lucide-react";
+import { Bot, Trash2, UserPlus, X, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -12,17 +12,21 @@ import {
   deleteChannel,
   leaveChannel,
   setChannelMemberRole,
+  searchInvitable,
+  type InvitableItem,
 } from "@/api/channels";
 
 const CHANNEL_ROLES = ["owner", "admin", "member", "readonly"] as const;
-import { searchUsers, type UserSearchResult } from "@/api/users";
+// Bots can never own/administer a channel — the backend rejects those roles.
+const BOT_ROLES = ["member", "readonly"] as const;
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import type { Channel, MemberItem } from "@/types";
 
-// Channel admin panel: rename/purpose, member list (add/remove human members),
-// and delete. Management controls are gated on the caller being an owner/admin of
-// the channel (or a global admin); the backend enforces the same.
+// Channel admin panel: rename/purpose, member list (add/remove members — users
+// AND bots, invited alike), and delete. Management controls are gated on the
+// caller being an owner/admin of the channel (or a global admin); the backend
+// enforces the same.
 export function ChannelSettingsDialog({
   channel,
   onClose,
@@ -43,7 +47,7 @@ export function ChannelSettingsDialog({
   const [savingMeta, setSavingMeta] = useState(false);
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<UserSearchResult[]>([]);
+  const [results, setResults] = useState<InvitableItem[]>([]);
   const [searching, setSearching] = useState(false);
 
   const myRole = members.find(
@@ -71,13 +75,13 @@ export function ChannelSettingsDialog({
     }
     setSearching(true);
     const t = setTimeout(() => {
-      searchUsers(q)
+      searchInvitable(channel.channel_id, q)
         .then(setResults)
         .catch(() => setResults([]))
         .finally(() => setSearching(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, channel.channel_id]);
 
   async function saveMeta() {
     const trimmed = name.trim();
@@ -97,13 +101,13 @@ export function ChannelSettingsDialog({
     }
   }
 
-  async function addMember(u: UserSearchResult) {
+  async function addMember(it: InvitableItem) {
     try {
       await addChannelMember(channel.channel_id, {
-        member_id: u.user_id,
-        member_type: "user",
+        member_id: it.member_id,
+        member_type: it.member_type,
       });
-      toast.success(`已添加 ${u.display_name || u.username}`);
+      toast.success(`已添加 ${it.display_name || it.username || it.member_id.slice(0, 8)}`);
       setQuery("");
       setResults([]);
       await refreshMembers();
@@ -197,7 +201,23 @@ export function ChannelSettingsDialog({
           <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800 divide-y divide-zinc-800/60">
             {members.map((m) => (
               <div key={m.member_id} className="flex items-center gap-2 px-3 py-2">
-                <Avatar name={m.display_name || m.username} id={m.member_id} size="sm" />
+                <span className="relative flex-shrink-0">
+                  <Avatar
+                    name={m.display_name || m.username}
+                    src={m.avatar_url}
+                    id={m.member_id}
+                    size="sm"
+                  />
+                  {/* Presence dot: online=green; offline BOT=gray; null → nothing. */}
+                  {(m.is_online === true ||
+                    (m.is_online === false && m.member_type === "bot")) && (
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 ${
+                        m.is_online ? "bg-emerald-500" : "bg-zinc-600"
+                      }`}
+                    />
+                  )}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-zinc-200 truncate">
                     {m.display_name || m.username || m.member_id.slice(0, 8)}
@@ -205,13 +225,15 @@ export function ChannelSettingsDialog({
                       <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
                     )}
                   </p>
-                  {canManage && m.member_type === "user" && m.member_id !== me?.user_id ? (
+                  {canManage &&
+                  (m.member_type === "user" || m.member_type === "bot") &&
+                  m.member_id !== me?.user_id ? (
                     <select
                       value={m.role ?? "member"}
                       onChange={(e) => void changeRole(m, e.target.value)}
                       className="mt-0.5 bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 outline-none"
                     >
-                      {CHANNEL_ROLES.map((r) => (
+                      {(m.member_type === "bot" ? BOT_ROLES : CHANNEL_ROLES).map((r) => (
                         <option key={r} value={r}>
                           {r}
                         </option>
@@ -244,7 +266,7 @@ export function ChannelSettingsDialog({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索用户名添加成员…"
+                  placeholder="搜索用户或 bot 添加成员…"
                   className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
                 />
               </div>
@@ -253,17 +275,35 @@ export function ChannelSettingsDialog({
                   {searching && (
                     <div className="px-3 py-2 text-xs text-zinc-500">搜索中…</div>
                   )}
-                  {results.map((u) => (
+                  {results.map((it) => (
                     <button
-                      key={u.user_id}
-                      onClick={() => void addMember(u)}
-                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-left"
+                      key={`${it.member_type}:${it.member_id}`}
+                      disabled={it.already_member}
+                      onClick={() => void addMember(it)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left enabled:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-default"
                     >
-                      <Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />
+                      <Avatar
+                        name={it.display_name || it.username}
+                        src={it.avatar_url}
+                        id={it.member_id}
+                        size="sm"
+                      />
+                      {it.member_type === "bot" && (
+                        <Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                      )}
                       <span className="text-sm text-zinc-200 truncate">
-                        {u.display_name || u.username}
+                        {it.display_name || it.username || it.member_id.slice(0, 8)}
+                        {it.member_type === "bot" && (
+                          <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
+                        )}
                       </span>
-                      <span className="ml-auto text-xs text-zinc-500">@{u.username}</span>
+                      {it.already_member ? (
+                        <span className="ml-auto text-xs text-zinc-600">已加入</span>
+                      ) : (
+                        it.username && (
+                          <span className="ml-auto text-xs text-zinc-500">@{it.username}</span>
+                        )
+                      )}
                     </button>
                   ))}
                 </div>

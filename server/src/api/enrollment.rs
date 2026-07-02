@@ -252,7 +252,12 @@ pub async fn redeem_enrollment_code(
         return Err(opaque());
     };
     let bot_id: String = row.try_get("bot_id").map_err(|_| opaque())?;
-    let agent_type = normalize_agent_type(row.try_get::<Option<String>, _>("agent_type").ok().flatten().as_deref());
+    let agent_type = normalize_agent_type(
+        row.try_get::<Option<String>, _>("agent_type")
+            .ok()
+            .flatten()
+            .as_deref(),
+    );
 
     // Fetch the bot's name for the TOML account id. If the bot vanished between
     // claim and here (CASCADE would have deleted the code, so this is rare), the
@@ -262,7 +267,9 @@ pub async fn redeem_enrollment_code(
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(opaque)?;
-    let username: String = bot_row.try_get("username").unwrap_or_else(|_| bot_id.clone());
+    let username: String = bot_row
+        .try_get("username")
+        .unwrap_or_else(|_| bot_id.clone());
     let account_id = connector_config::sanitize_account_id(&username);
 
     // Single mint path — identical to a manual token rotate.
@@ -353,7 +360,8 @@ pub async fn get_connector_config(
 /// gateway binary (the container has no repo checkout). `__CHEERS_API_BASE__`
 /// is substituted per request from the caller's Host so the one-liner is
 /// self-configuring.
-const INSTALL_SCRIPT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/install.sh"));
+const INSTALL_SCRIPT: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/install.sh"));
 
 /// Derive the gateway API base the installer should call, from the inbound
 /// request's Host (set by nginx) + forwarded proto. Falls back to the
@@ -402,10 +410,7 @@ pub async fn install_script(
     let api_base = resolve_api_base(&state, &headers);
     let body = INSTALL_SCRIPT.replace("__CHEERS_API_BASE__", &api_base);
     (
-        [(
-            header::CONTENT_TYPE,
-            "text/x-shellscript; charset=utf-8",
-        )],
+        [(header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8")],
         body,
     )
 }

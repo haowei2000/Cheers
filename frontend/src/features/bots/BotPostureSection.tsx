@@ -15,6 +15,8 @@ import {
 export function BotPostureSection({ botId }: { botId: string }) {
   const [perms, setPerms] = useState<BotPermissions | null>(null);
   const [busy, setBusy] = useState(false);
+  const [manualConfigId, setManualConfigId] = useState("");
+  const [manualConfigValue, setManualConfigValue] = useState("");
 
   const load = useCallback(async () => {
     setPerms(await getBotPermissions(botId));
@@ -36,6 +38,21 @@ export function BotPostureSection({ botId }: { botId: string }) {
     setBusy(true);
     setBotConfigOption(botId, configId, value)
       .then(load)
+      .catch((e) => toast.error(String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const submitManualConfig = () => {
+    const configId = manualConfigId.trim();
+    const value = manualConfigValue.trim();
+    if (!configId || !value) return;
+    setBusy(true);
+    setBotConfigOption(botId, configId, value)
+      .then(() => {
+        setManualConfigId("");
+        setManualConfigValue("");
+        return load();
+      })
       .catch((e) => toast.error(String(e)))
       .finally(() => setBusy(false));
   };
@@ -122,9 +139,47 @@ export function BotPostureSection({ botId }: { botId: string }) {
             </p>
           </div>
         ) : (
-          <p className="text-[11px] text-zinc-600 mt-1">
-            This agent hasn’t advertised any session config options (or hasn’t connected yet).
-          </p>
+          <div className="mt-2 space-y-2">
+            {configOptions && Object.keys(configOptions.desired).length > 0 && (
+              <div className="space-y-1">
+                {Object.entries(configOptions.desired).map(([id, value]) => (
+                  <div key={id} className="flex items-center gap-2 text-[11px]">
+                    <code className="text-zinc-400 min-w-[120px]">{id}</code>
+                    <span className="text-zinc-500 truncate">{value}</span>
+                    <span className="ml-auto text-[10px] text-indigo-400">override</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+              <input
+                value={manualConfigId}
+                disabled={busy}
+                onChange={(e) => setManualConfigId(e.target.value)}
+                placeholder="config id"
+                className="min-w-0 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+              />
+              <input
+                value={manualConfigValue}
+                disabled={busy}
+                onChange={(e) => setManualConfigValue(e.target.value)}
+                placeholder="value"
+                className="min-w-0 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+              />
+              <button
+                type="button"
+                disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()}
+                onClick={submitManualConfig}
+                className="rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Set
+              </button>
+            </div>
+            <p className="text-[11px] text-zinc-600 leading-relaxed">
+              This agent has not advertised selectable options. Manual overrides are still
+              checked by the connector’s L0 allow-list.
+            </p>
+          </div>
         )}
       </div>
     </div>

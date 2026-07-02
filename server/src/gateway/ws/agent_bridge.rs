@@ -145,6 +145,9 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
     tracing::info!(bot_id = %bot.bot_id, "control connected");
 
+    // bot 在线状态可能刚翻转（is_online = control + data 均在线）→ 向其频道广播 presence。
+    crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
+
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
     let mut malformed: u32 = 0;
     let superseded = loop {
@@ -202,6 +205,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         state
             .bot_registry
             .unbind_if_connection(bot.bot_id, connection_id);
+        crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
     }
 }
 
@@ -380,6 +384,9 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
 
     tracing::info!(bot_id = %bot.bot_id, "data connected");
 
+    // data WS 接上后 is_online 可能翻转为在线 → 向其频道广播 presence。
+    crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
+
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
     let mut malformed: u32 = 0;
     loop {
@@ -495,6 +502,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
 
     tracing::info!(bot_id = %bot.bot_id, "data disconnected");
     state.bot_registry.unbind_data(bot.bot_id);
+    crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 }
 
 async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socket: &mut WebSocket) {
@@ -619,6 +627,20 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                         created,
                     )
                     .await;
+                }
+            }
+            // bot 退出频道成功 → 成员集变了，在 WS 边界补发全量 presence
+            //（resource::dispatch 只有 db，拿不到 fanout/bot_locator）。
+            if frame.get("resource").and_then(Value::as_str) == Some("channel.leave")
+                && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = frame
+                    .get("params")
+                    .and_then(|p| p.get("channel_id"))
+                    .and_then(Value::as_str)
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                {
+                    crate::gateway::presence::broadcast_presence(state, cid).await;
                 }
             }
             // resource_res 发回给 bot（通过同一条 data WS）
@@ -764,14 +786,18 @@ async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) 
         };
         match parsed {
             ParsedUpdate::AvailableCommands(ac) => {
-                crate::domain::commands_store::record(&state.db, channel_id, &bot_id, session_id, &ac)
-                    .await
+                crate::domain::commands_store::record(
+                    &state.db, channel_id, &bot_id, session_id, &ac,
+                )
+                .await
             }
             ParsedUpdate::Plan(p) => {
-                crate::domain::plan_store::record(&state.db, channel_id, &bot_id, session_id, &p).await
+                crate::domain::plan_store::record(&state.db, channel_id, &bot_id, session_id, &p)
+                    .await
             }
             ParsedUpdate::Usage(u) => {
-                crate::domain::usage_store::record(&state.db, channel_id, &bot_id, session_id, &u).await
+                crate::domain::usage_store::record(&state.db, channel_id, &bot_id, session_id, &u)
+                    .await
             }
         }
         // Live-push: nudge the channel's ViewBoards to re-pull. These board events
@@ -945,7 +971,10 @@ async fn allowed_seers(
                 chan_role.insert(mid.clone(), c);
             }
             if matches!(
-                r.try_get::<Option<String>, _>("prole").ok().flatten().as_deref(),
+                r.try_get::<Option<String>, _>("prole")
+                    .ok()
+                    .flatten()
+                    .as_deref(),
                 Some("system_admin") | Some("admin")
             ) {
                 platform_admin.insert(mid);

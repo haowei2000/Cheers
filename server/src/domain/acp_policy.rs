@@ -27,7 +27,8 @@ pub async fn allows(
     let Some(class) = acp_events::classify(acp_event_name).and_then(|e| e.event_class) else {
         return Ok(true);
     };
-    crate::domain::bot_event_policy::resolve(db, bot_id, channel_id, user_id, role, class, cap).await
+    crate::domain::bot_event_policy::resolve(db, bot_id, channel_id, user_id, role, class, cap)
+        .await
 }
 
 #[cfg(test)]

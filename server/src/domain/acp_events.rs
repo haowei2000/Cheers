@@ -53,7 +53,13 @@ const fn ev(
     capability: Option<&'static str>,
     streaming: bool,
 ) -> AcpEvent {
-    AcpEvent { name, home, event_class, capability, streaming }
+    AcpEvent {
+        name,
+        home,
+        event_class,
+        capability,
+        streaming,
+    }
 }
 
 /// The full ACP surface (agent-client-protocol 1.x), classified.
@@ -70,19 +76,61 @@ pub const REGISTRY: &[AcpEvent] = &[
     ev("session/fork", Home::Connector, None, None, false),
     ev("session/delete", Home::Connector, None, None, false),
     // ── client→agent: per-user actions (Cheers INITIATE) ──────────────────────
-    ev("session/prompt", Home::Cheers, Some("prompt"), Some("initiate"), false),
-    ev("session/cancel", Home::Cheers, Some("cancel"), Some("initiate"), false),
-    ev("session/set_mode", Home::Cheers, Some("set_mode"), Some("initiate"), false),
-    ev("session/set_config_option", Home::Cheers, Some("set_config_option"), Some("initiate"), false),
+    ev(
+        "session/prompt",
+        Home::Cheers,
+        Some("prompt"),
+        Some("initiate"),
+        false,
+    ),
+    ev(
+        "session/cancel",
+        Home::Cheers,
+        Some("cancel"),
+        Some("initiate"),
+        false,
+    ),
+    ev(
+        "session/set_mode",
+        Home::Cheers,
+        Some("set_mode"),
+        Some("initiate"),
+        false,
+    ),
+    ev(
+        "session/set_config_option",
+        Home::Cheers,
+        Some("set_config_option"),
+        Some("initiate"),
+        false,
+    ),
     // Cheers-level session-lifecycle MANAGEMENT permissions (not raw ACP methods):
     // who may create an extra session in a channel, or close/terminate one. Gated
     // per-subject like set_mode (owner-default, grantable). The implicit primary
     // session created on first message is NOT gated by these.
-    ev("cheers/session_create", Home::Cheers, Some("session_create"), Some("initiate"), false),
-    ev("cheers/session_close", Home::Cheers, Some("session_close"), Some("initiate"), false),
+    ev(
+        "cheers/session_create",
+        Home::Cheers,
+        Some("session_create"),
+        Some("initiate"),
+        false,
+    ),
+    ev(
+        "cheers/session_close",
+        Home::Cheers,
+        Some("session_close"),
+        Some("initiate"),
+        false,
+    ),
     // ── agent→client requests ────────────────────────────────────────────────
     // permission_request: Cheers SEE (view the card) + RESPOND (answer it).
-    ev("session/request_permission", Home::Cheers, Some("permission_request"), Some("respond"), false),
+    ev(
+        "session/request_permission",
+        Home::Cheers,
+        Some("permission_request"),
+        Some("respond"),
+        false,
+    ),
     ev("fs/read_text_file", Home::Connector, None, None, false),
     ev("fs/write_text_file", Home::Connector, None, None, false),
     ev("terminal/create", Home::Connector, None, None, false),
@@ -91,16 +139,76 @@ pub const REGISTRY: &[AcpEvent] = &[
     ev("terminal/kill", Home::Connector, None, None, false),
     ev("terminal/release", Home::Connector, None, None, false),
     // ── agent→client session/update notifications ─────────────────────────────
-    ev("session/update:agent_message_chunk", Home::Cheers, Some("output"), Some("see"), true),
-    ev("session/update:agent_thought_chunk", Home::Cheers, Some("thought"), Some("see"), true),
-    ev("session/update:user_message_chunk", Home::Cheers, Some("output"), Some("see"), true),
-    ev("session/update:tool_call", Home::Cheers, Some("tool_call"), Some("see"), false),
-    ev("session/update:tool_call_update", Home::Cheers, Some("tool_call"), Some("see"), false),
-    ev("session/update:plan", Home::Cheers, Some("plan"), Some("see"), false),
-    ev("session/update:available_commands_update", Home::Observe, Some("available_commands"), Some("see"), false),
-    ev("session/update:current_mode_update", Home::Observe, Some("current_mode"), Some("see"), false),
-    ev("session/update:config_option_update", Home::Observe, Some("config_option"), Some("see"), false),
-    ev("session/update:usage_update", Home::Observe, Some("usage"), Some("see"), false),
+    ev(
+        "session/update:agent_message_chunk",
+        Home::Cheers,
+        Some("output"),
+        Some("see"),
+        true,
+    ),
+    ev(
+        "session/update:agent_thought_chunk",
+        Home::Cheers,
+        Some("thought"),
+        Some("see"),
+        true,
+    ),
+    ev(
+        "session/update:user_message_chunk",
+        Home::Cheers,
+        Some("output"),
+        Some("see"),
+        true,
+    ),
+    ev(
+        "session/update:tool_call",
+        Home::Cheers,
+        Some("tool_call"),
+        Some("see"),
+        false,
+    ),
+    ev(
+        "session/update:tool_call_update",
+        Home::Cheers,
+        Some("tool_call"),
+        Some("see"),
+        false,
+    ),
+    ev(
+        "session/update:plan",
+        Home::Cheers,
+        Some("plan"),
+        Some("see"),
+        false,
+    ),
+    ev(
+        "session/update:available_commands_update",
+        Home::Observe,
+        Some("available_commands"),
+        Some("see"),
+        false,
+    ),
+    ev(
+        "session/update:current_mode_update",
+        Home::Observe,
+        Some("current_mode"),
+        Some("see"),
+        false,
+    ),
+    ev(
+        "session/update:config_option_update",
+        Home::Observe,
+        Some("config_option"),
+        Some("see"),
+        false,
+    ),
+    ev(
+        "session/update:usage_update",
+        Home::Observe,
+        Some("usage"),
+        Some("see"),
+        false,
+    ),
 ];
 
 /// Classify an ACP event by name (method or `session/update:<subtype>`).
@@ -129,10 +237,18 @@ mod tests {
     #[test]
     fn classifies_known_events() {
         assert_eq!(classify("session/prompt").unwrap().home, Home::Cheers);
-        assert_eq!(classify("session/prompt").unwrap().capability, Some("initiate"));
-        assert_eq!(classify("fs/write_text_file").unwrap().home, Home::Connector);
         assert_eq!(
-            classify("session/update:available_commands_update").unwrap().home,
+            classify("session/prompt").unwrap().capability,
+            Some("initiate")
+        );
+        assert_eq!(
+            classify("fs/write_text_file").unwrap().home,
+            Home::Connector
+        );
+        assert_eq!(
+            classify("session/update:available_commands_update")
+                .unwrap()
+                .home,
             Home::Observe
         );
         assert_eq!(

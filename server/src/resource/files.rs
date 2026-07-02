@@ -28,6 +28,13 @@ pub fn init_s3(client: Client, bucket: String) {
     let _ = S3.set((client, bucket));
 }
 
+/// The startup-injected S3 handle, shared with other frame-dispatch layers that only carry
+/// `db` (e.g. the task dispatcher inlining image attachments). `None` until `init_s3` ran
+/// (unit tests) — callers must degrade gracefully, never fail the dispatch.
+pub(crate) fn s3_handle() -> Option<(&'static Client, &'static str)> {
+    S3.get().map(|(client, bucket)| (client, bucket.as_str()))
+}
+
 /// channel.files (Inbox `inbox_list`): the channel's uploaded chat files. Scoped by
 /// `file_records.channel_id` (matching how uploads link + the REST list endpoint).
 ///
@@ -108,8 +115,25 @@ fn is_text(content_type: Option<&str>, filename: Option<&str>) -> bool {
     if let Some(f) = filename {
         let f = f.to_ascii_lowercase();
         return [
-            ".md", ".markdown", ".txt", ".csv", ".tsv", ".json", ".jsonl", ".log", ".yaml", ".yml",
-            ".toml", ".xml", ".html", ".css", ".js", ".ts", ".py", ".rs", ".sql",
+            ".md",
+            ".markdown",
+            ".txt",
+            ".csv",
+            ".tsv",
+            ".json",
+            ".jsonl",
+            ".log",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".xml",
+            ".html",
+            ".css",
+            ".js",
+            ".ts",
+            ".py",
+            ".rs",
+            ".sql",
         ]
         .iter()
         .any(|e| f.ends_with(e));
@@ -179,15 +203,19 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     };
 
     let Some(object_key) = object_key.filter(|k| !k.is_empty()) else {
-        return with(json!({ "content": null, "kind": "pending", "truncated": false,
-            "note": "file is not in storage yet (upload incomplete)" }));
+        return with(
+            json!({ "content": null, "kind": "pending", "truncated": false,
+            "note": "file is not in storage yet (upload incomplete)" }),
+        );
     };
 
     // Distinct from "binary": this is an infrastructure failure, not a property of the file.
     // Returning kind:"binary" here would tell the agent to give up and download a text file.
     let Some((client, default_bucket)) = S3.get() else {
-        return with(json!({ "content": null, "kind": "unavailable", "truncated": false,
-            "note": "object storage temporarily unavailable; retry shortly" }));
+        return with(
+            json!({ "content": null, "kind": "unavailable", "truncated": false,
+            "note": "object storage temporarily unavailable; retry shortly" }),
+        );
     };
 
     // Whether the caller wants the raw bytes (base64) instead of decoded text. This is the only
@@ -204,8 +232,10 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // actually fetch the content through THIS tool. Never tell it to "use download_url" — that is
     // an authenticated human/UI endpoint, and pointing an agent at it just sends it chasing a 401.
     if binary && !as_base64 {
-        return with(json!({ "content": null, "kind": "binary", "truncated": false, "summary": summary,
-            "note": "binary file (image/pdf/zip/docx/...). Re-open with as_base64:true to get the raw bytes as base64 (<=8MB) through this tool, then decode locally. download_url is for the human UI only — you cannot authenticate it." }));
+        return with(
+            json!({ "content": null, "kind": "binary", "truncated": false, "summary": summary,
+            "note": "binary file (image/pdf/zip/docx/...). Re-open with as_base64:true to get the raw bytes as base64 (<=8MB) through this tool, then decode locally. download_url is for the human UI only — you cannot authenticate it." }),
+        );
     }
 
     let bucket = storage_bucket.unwrap_or_else(|| default_bucket.clone());
@@ -215,18 +245,22 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
                 // Return the exact bytes as base64 (no utf-8 lossy / truncation). Capped at the
                 // same 8MB ceiling as inbox_deliver so a huge file can't blow the bridge frame.
                 if bytes.len() > MAX_DELIVER_BYTES {
-                    return with(json!({ "content": null, "kind": "binary", "truncated": true,
+                    return with(
+                        json!({ "content": null, "kind": "binary", "truncated": true,
                         "size_bytes": bytes.len(), "summary": summary,
                         "note": format!(
                             "file is {} bytes, over the {}MB inline cap — too large to return as base64 through the agent bridge",
                             bytes.len(),
                             MAX_DELIVER_BYTES / (1024 * 1024)
-                        ) }));
+                        ) }),
+                    );
                 }
                 let returned_bytes = bytes.len();
                 let data_b64 = STANDARD.encode(&bytes);
-                return with(json!({ "content": null, "kind": "binary", "encoding": "base64",
-                    "data_b64": data_b64, "returned_bytes": returned_bytes, "truncated": false }));
+                return with(
+                    json!({ "content": null, "kind": "binary", "encoding": "base64",
+                    "data_b64": data_b64, "returned_bytes": returned_bytes, "truncated": false }),
+                );
             }
             // Cut at TEXT_CAP, then back off to a UTF-8 char boundary so the last multibyte
             // character isn't split into a U+FFFD replacement char.
@@ -252,7 +286,10 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
 fn safe_attachment_name(raw: &str) -> Result<String, (String, String)> {
     let name = raw.trim().rsplit(['/', '\\']).next().unwrap_or("").trim();
     if name.is_empty() || matches!(name, "." | "..") {
-        return Err(super::resource_error("INVALID_PARAMS", "filename is required"));
+        return Err(super::resource_error(
+            "INVALID_PARAMS",
+            "filename is required",
+        ));
     }
     Ok(name.to_string())
 }
@@ -323,13 +360,12 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         ))?;
 
     // channels.workspace_id is NOT NULL; carry it onto the record like upload_file does.
-    let workspace_id: Option<String> = sqlx::query_scalar(
-        "SELECT workspace_id FROM channels WHERE channel_id = $1",
-    )
-    .bind(channel_id.to_string())
-    .fetch_optional(db)
-    .await
-    .map_err(super::db_err("files.create: select channel workspace_id"))?;
+    let workspace_id: Option<String> =
+        sqlx::query_scalar("SELECT workspace_id FROM channels WHERE channel_id = $1")
+            .bind(channel_id.to_string())
+            .fetch_optional(db)
+            .await
+            .map_err(super::db_err("files.create: select channel workspace_id"))?;
 
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(7 * 24 * 60 * 60);
     sqlx::query(
@@ -485,7 +521,10 @@ pub async fn handle_realize(db: &PgPool, principal: &Principal, params: &Value) 
         return Err(super::resource_error("INVALID_PARAMS", "empty file"));
     }
     if bytes.len() > MAX_DELIVER_BYTES {
-        return Err(super::resource_error("E_TOO_LARGE", "file exceeds 8MB limit"));
+        return Err(super::resource_error(
+            "E_TOO_LARGE",
+            "file exceeds 8MB limit",
+        ));
     }
     let size_bytes = i32::try_from(bytes.len())
         .map_err(|_| super::resource_error("E_TOO_LARGE", "file too large"))?;
@@ -518,7 +557,9 @@ pub async fn handle_realize(db: &PgPool, principal: &Principal, params: &Value) 
     .bind(file_id)
     .execute(db)
     .await
-    .map_err(super::db_err("files.realize: update file record to uploaded"))?;
+    .map_err(super::db_err(
+        "files.realize: update file record to uploaded",
+    ))?;
 
     Ok(json!({
         "file_id": file_id,
@@ -551,7 +592,10 @@ mod tests {
     fn is_text_by_filename_fallback() {
         assert!(is_text(None, Some("notes.md")));
         assert!(is_text(None, Some("DATA.CSV"))); // case-insensitive
-        assert!(is_text(Some("application/octet-stream"), Some("config.yaml"))); // ext wins fallback
+        assert!(is_text(
+            Some("application/octet-stream"),
+            Some("config.yaml")
+        )); // ext wins fallback
         assert!(!is_text(None, Some("photo.png")));
     }
 

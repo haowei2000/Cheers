@@ -41,13 +41,22 @@ fn looks_like_path(s: &str) -> bool {
     if t.is_empty() || t.len() > 200 || t.chars().any(char::is_whitespace) {
         return false;
     }
-    if t.split_once("://").map(|(scheme, _)| scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')).unwrap_or(false) {
+    if t.split_once("://")
+        .map(|(scheme, _)| {
+            scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '.' || c == '-')
+        })
+        .unwrap_or(false)
+    {
         return false; // URL scheme
     }
     let has_slash = t.contains('/');
     let has_ext = t
         .rsplit_once('.')
-        .map(|(_, ext)| !ext.is_empty() && ext.len() <= 8 && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map(|(_, ext)| {
+            !ext.is_empty() && ext.len() <= 8 && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        })
         .unwrap_or(false);
     has_slash || has_ext
 }
@@ -227,7 +236,9 @@ pub async fn resolve_ref(
             "also_in": also,
         })));
     }
-    Ok(Json(json!({ "store": "none", "display_name": base, "also_in": also })))
+    Ok(Json(
+        json!({ "store": "none", "display_name": base, "also_in": also }),
+    ))
 }
 
 /// On-the-spot validation of a candidate session `cwd` against the bot connector's
@@ -312,7 +323,10 @@ async fn workspace_call(
     if res.get("ok").and_then(Value::as_bool) == Some(true) {
         Ok(res.get("data").cloned().unwrap_or(Value::Null))
     } else {
-        let code = res.get("code").and_then(Value::as_str).unwrap_or("E_WORKSPACE");
+        let code = res
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("E_WORKSPACE");
         let msg = res
             .get("error")
             .and_then(Value::as_str)
@@ -402,7 +416,16 @@ pub async fn get_tree(
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
     let roots = browse_roots(&state, q.bot_id, q.session_id).await;
-    let data = workspace_call(&state, q.bot_id, "ls", &q.path, q.root.as_deref(), None, &roots).await?;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "ls",
+        &q.path,
+        q.root.as_deref(),
+        None,
+        &roots,
+    )
+    .await?;
     Ok(Json(data))
 }
 
@@ -415,7 +438,16 @@ pub async fn get_file(
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
     let roots = browse_roots(&state, q.bot_id, q.session_id).await;
-    let data = workspace_call(&state, q.bot_id, "read", &q.path, q.root.as_deref(), None, &roots).await?;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "read",
+        &q.path,
+        q.root.as_deref(),
+        None,
+        &roots,
+    )
+    .await?;
     Ok(Json(data))
 }
 

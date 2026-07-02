@@ -88,7 +88,10 @@ pub async fn sweep_once(
     }
 
     if reclaimed > 0 {
-        tracing::info!(count = reclaimed, "orphan reclaimer: swept orphaned placeholders");
+        tracing::info!(
+            count = reclaimed,
+            "orphan reclaimer: swept orphaned placeholders"
+        );
     }
     reclaimed
 }

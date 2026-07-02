@@ -57,6 +57,8 @@ pub async fn trigger_bot_replies(
     if bots.is_empty() {
         return Ok(());
     }
+    // readonly 角色的 bot 不派发（同 create_message 的过滤，见 messages.rs）。
+    let bots = crate::domain::messages::filter_writable_bots(db, channel_id, bots).await;
 
     let next_depth = current_depth.saturating_add(1);
 
@@ -220,10 +222,16 @@ mod tests {
     use super::*;
 
     fn bot(id: Uuid) -> Mention {
-        Mention { member_id: id, member_type: MemberType::Bot }
+        Mention {
+            member_id: id,
+            member_type: MemberType::Bot,
+        }
     }
     fn user(id: Uuid) -> Mention {
-        Mention { member_id: id, member_type: MemberType::User }
+        Mention {
+            member_id: id,
+            member_type: MemberType::User,
+        }
     }
 
     #[test]

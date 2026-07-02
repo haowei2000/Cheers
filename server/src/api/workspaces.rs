@@ -129,7 +129,8 @@ pub async fn get_personal_workspace(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<WorkspaceDto>, AppError> {
-    let me = Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
+    let me =
+        Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
     let ws_id = crate::domain::workspaces::get_or_create_personal_workspace(&state.db, me).await?;
     let row = sqlx::query(
         "SELECT workspace_id, name, avatar_url, default_bot_id, kind
@@ -143,7 +144,9 @@ pub async fn get_personal_workspace(
         name: row.try_get("name").unwrap_or_default(),
         avatar_url: row.try_get("avatar_url").ok(),
         default_bot_id: row.try_get("default_bot_id").ok(),
-        kind: row.try_get("kind").unwrap_or_else(|_| "personal".to_string()),
+        kind: row
+            .try_get("kind")
+            .unwrap_or_else(|_| "personal".to_string()),
     }))
 }
 
@@ -429,7 +432,9 @@ pub async fn accept_invite(
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
-    Ok(Json(serde_json::json!({"workspace_id": workspace_id, "status": "active"})))
+    Ok(Json(
+        serde_json::json!({"workspace_id": workspace_id, "status": "active"}),
+    ))
 }
 
 /// POST /api/v1/workspaces/{workspace_id}/decline — decline a pending invite.
@@ -515,7 +520,9 @@ pub async fn leave_workspace(
             .fetch_optional(&state.db)
             .await?;
     if kind.as_deref() == Some("personal") {
-        return Err(AppError::BadRequest("cannot leave your personal workspace".into()));
+        return Err(AppError::BadRequest(
+            "cannot leave your personal workspace".into(),
+        ));
     }
 
     if role == "owner" {
@@ -611,20 +618,26 @@ pub async fn set_workspace_member_role(
                 "can't demote the last owner — promote another owner first".into(),
             ));
         }
-        sqlx::query("UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2")
-            .bind(&workspace_id)
-            .bind(&user_id)
-            .bind(&role)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2",
+        )
+        .bind(&workspace_id)
+        .bind(&user_id)
+        .bind(&role)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
     } else {
-        sqlx::query("UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2")
-            .bind(&workspace_id)
-            .bind(&user_id)
-            .bind(&role)
-            .execute(&state.db)
-            .await?;
+        sqlx::query(
+            "UPDATE workspace_memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2",
+        )
+        .bind(&workspace_id)
+        .bind(&user_id)
+        .bind(&role)
+        .execute(&state.db)
+        .await?;
     }
-    Ok(Json(serde_json::json!({ "user_id": user_id, "role": role })))
+    Ok(Json(
+        serde_json::json!({ "user_id": user_id, "role": role }),
+    ))
 }

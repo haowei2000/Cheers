@@ -89,6 +89,7 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
         "channel.activity.read" => activity::handle_read(db, &principal, &params).await,
         "channel.messages.index" => activity::handle_index(db, &principal, &params).await,
         "channel.messages.by-seq" => messages::handle_by_seq(db, &principal, &params).await,
+        "channel.messages.search" => messages::handle_search(db, &principal, &params).await,
         "fs.ls" => fs::handle_ls(db, &principal, &params).await,
         "fs.read" => fs::handle_read(db, &principal, &params).await,
 
@@ -100,6 +101,7 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 
         // ── 写操作（频道成员 role 可写）────────────────────────────────
         "channel.messages.create" => messages::handle_create(db, &principal, &params).await,
+        "channel.leave" => members::handle_leave(db, &principal, &params).await,
         "channel.files.create" => files::handle_create(db, &principal, &params).await,
         "channel.files.stage" => files::handle_stage(db, &principal, &params).await,
         "channel.files.realize" => files::handle_realize(db, &principal, &params).await,
@@ -274,7 +276,9 @@ mod tests {
     /// 其余角色只读；匹配区分大小写（不接受 "Owner"/"ADMIN"）。
     #[test]
     fn other_roles_are_read_only() {
-        for role in ["viewer", "guest", "observer", "", "Owner", "ADMIN", "members"] {
+        for role in [
+            "viewer", "guest", "observer", "", "Owner", "ADMIN", "members",
+        ] {
             assert!(!role_can_write(role), "{role} 必须只读");
         }
     }

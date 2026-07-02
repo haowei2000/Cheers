@@ -58,7 +58,10 @@ async fn bot_owner(state: &AppState, bot_id: &str) -> Result<Option<String>, App
         .fetch_optional(&state.db)
         .await?
         .ok_or(AppError::NotFound)?;
-    Ok(row.try_get::<Option<String>, _>("created_by").ok().flatten())
+    Ok(row
+        .try_get::<Option<String>, _>("created_by")
+        .ok()
+        .flatten())
 }
 
 /// Authorize a privileged bot op (issue token, edit/delete): admin or the bot's
@@ -323,7 +326,10 @@ pub async fn get_bot_status(
 
     // Live enrollment-code count is owner/admin-only: it reveals pending onboarding
     // secrets' existence, which a channel-mate (visible-but-not-owner) shouldn't see.
-    let owner = row.try_get::<Option<String>, _>("created_by").ok().flatten();
+    let owner = row
+        .try_get::<Option<String>, _>("created_by")
+        .ok()
+        .flatten();
     let is_owner_or_admin = is_admin(&claims) || owner.as_deref() == Some(claims.sub.as_str());
     let live_codes: Option<i64> = if is_owner_or_admin {
         Some(

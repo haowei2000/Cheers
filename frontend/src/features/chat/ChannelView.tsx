@@ -291,6 +291,7 @@ export function ChannelView({ channel }: Props) {
     onStreamDone: handleStreamDone,
     onMessageDeleted: handleDeleted,
     onReady: handleReady,
+    // Backend `count` already includes online bots — display as-is, never re-add botIds.
     onPresence: (_ids, count) => setOnlineCount(count),
     onBotTrace: handleBotTrace,
     onBoardSignal: (board) =>

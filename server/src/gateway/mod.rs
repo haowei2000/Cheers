@@ -2,6 +2,7 @@ pub mod approval_sweeper;
 pub mod conversion_worker;
 pub mod dispatcher;
 pub mod enrollment_reaper;
+pub mod presence;
 pub mod realtime;
 pub mod reclaimer;
 // Parked for a future multi-instance / HA deployment (roadmap R1-B / M4).

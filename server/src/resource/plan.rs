@@ -49,7 +49,9 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .map(|row| {
             // entries is a jsonb array of {content, priority?, status?}; pass it
             // through verbatim (agent-authored text is inert on the client).
-            let entries: Value = row.try_get::<Value, _>("entries").unwrap_or_else(|_| json!([]));
+            let entries: Value = row
+                .try_get::<Value, _>("entries")
+                .unwrap_or_else(|_| json!([]));
             json!({
                 "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
                 "session_id": row.try_get::<String, _>("session_id").unwrap_or_default(),

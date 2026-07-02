@@ -44,6 +44,10 @@ struct AgentPreset {
     /// the shared template or the connector. Empty = any mode the agent advertises.
     /// (Omitting an agent's bypass mode is how we keep bypass off by default.)
     allowed_modes: &'static [&'static str],
+    /// policy.config.allowed_config_options — opaque ACP config option ids the
+    /// platform may select at runtime. Empty means no generic config option can
+    /// be changed from Cheers; this is separate from `allowed_modes`.
+    allowed_config_options: &'static [&'static str],
     /// True when `command` is a placeholder the user must replace before it runs.
     needs_edit: bool,
 }
@@ -52,7 +56,12 @@ fn preset_for(agent_type: &str) -> AgentPreset {
     match agent_type.trim().to_ascii_lowercase().as_str() {
         "claude" => AgentPreset {
             command: "claude-agent-acp",
-            env_allow: &["HOME", "PATH", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+            env_allow: &[
+                "HOME",
+                "PATH",
+                "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+            ],
             // "default" = Claude's "prompts for dangerous operations" mode, which
             // routes un-pre-approved tools through ACP request_permission → an
             // in-channel approval card. ("plan" was wrong: it means "no tool
@@ -63,6 +72,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             // Claude's advertised modes minus "bypassPermissions" → the platform
             // can switch posture but can't opt into bypass by default.
             allowed_modes: &["default", "plan", "acceptEdits", "dontAsk", "auto"],
+            allowed_config_options: &["model", "reasoning_effort", "thinking_mode"],
             needs_edit: false,
         },
         "codex" => AgentPreset {
@@ -71,6 +81,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             permission_mode: None,
             // We don't presume codex's modeIds; empty = any mode it advertises.
             allowed_modes: &[],
+            allowed_config_options: &["model", "reasoning_effort", "approval_policy", "sandbox"],
             needs_edit: false,
         },
         "opencode" => AgentPreset {
@@ -79,6 +90,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             env_allow: &["HOME", "PATH"],
             permission_mode: None,
             allowed_modes: &[],
+            allowed_config_options: &["model"],
             needs_edit: true,
         },
         _ => AgentPreset {
@@ -86,6 +98,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             env_allow: &["HOME", "PATH"],
             permission_mode: None,
             allowed_modes: &[],
+            allowed_config_options: &[],
             needs_edit: true,
         },
     }
@@ -150,9 +163,7 @@ pub fn sanitize_account_id(raw: &str) -> String {
             }
         })
         .collect();
-    let trimmed = cleaned
-        .trim_matches(|c| c == '_' || c == '-')
-        .to_string();
+    let trimmed = cleaned.trim_matches(|c| c == '_' || c == '-').to_string();
     if trimmed.is_empty() {
         "bot".to_string()
     } else {
@@ -205,6 +216,12 @@ pub fn render_toml(params: &RenderParams) -> String {
 
     let allowed_modes = preset
         .allowed_modes
+        .iter()
+        .map(|v| toml_str(v))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let allowed_config_options = preset
+        .allowed_config_options
         .iter()
         .map(|v| toml_str(v))
         .collect::<Vec<_>>()
@@ -273,6 +290,11 @@ backend_may_set_cwd = true
 inherit = false
 allow   = [{env_allow}]
 
+[accounts.{id}.policy.config]
+backend_may_set_model = false
+backend_may_set_native_options = false
+allowed_config_options = [{allowed_config_options}]
+
 [accounts.{id}.policy.permission]
 forward_to_backend = true
 wait_timeout_ms    = 900000
@@ -314,6 +336,7 @@ request_timeout_ms = 30000
         permission_mode_line = permission_mode_line,
         env_allow = env_allow,
         allowed_modes = allowed_modes,
+        allowed_config_options = allowed_config_options,
     )
 }
 
@@ -355,10 +378,7 @@ mod tests {
             control_url("ws://localhost:30080/"),
             "ws://localhost:30080/ws/agent-bridge/control"
         );
-        assert_eq!(
-            data_url("wss://host"),
-            "wss://host/ws/agent-bridge/data"
-        );
+        assert_eq!(data_url("wss://host"), "wss://host/ws/agent-bridge/data");
     }
 
     #[test]
@@ -373,6 +393,8 @@ mod tests {
         assert!(toml.contains("bot_token_file        = \"secrets/codex.token\""));
         assert!(toml.contains("command = \"codex-acp\""));
         assert!(toml.contains("\"OPENAI_API_KEY\""));
+        assert!(toml.contains("[accounts.codex.policy.config]"));
+        assert!(toml.contains(r#"allowed_config_options = ["model", "reasoning_effort", "approval_policy", "sandbox"]"#));
         // codex has no permission_mode override.
         assert!(!toml.contains("permission_mode"));
         assert!(toml.contains("ws://localhost:30080/ws/agent-bridge/control"));
@@ -392,7 +414,12 @@ mod tests {
         // "default" = prompts per tool (not "plan", which means no execution).
         assert!(toml.contains("permission_mode = \"default\""));
         // L0 set-mode envelope: claude's safe modes, no "bypassPermissions".
-        assert!(toml.contains(r#"allowed_modes        = ["default", "plan", "acceptEdits", "dontAsk", "auto"]"#));
+        assert!(toml.contains(
+            r#"allowed_modes        = ["default", "plan", "acceptEdits", "dontAsk", "auto"]"#
+        ));
+        assert!(toml.contains(
+            r#"allowed_config_options = ["model", "reasoning_effort", "thinking_mode"]"#
+        ));
         assert!(!toml.contains("bypassPermissions"));
         assert!(toml.contains("\"ANTHROPIC_API_KEY\""));
         assert!(toml.contains("command = \"claude-agent-acp\""));

@@ -206,10 +206,16 @@ pub async fn handle_done(
     }
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
-    let mut tx = db.begin().await.map_err(crate::gateway::log_db_err("stream.done: begin tx"))?;
-    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+    let mut tx = db
+        .begin()
         .await
-        .map_err(crate::gateway::log_db_err("stream.done: allocate channel_seq"))?;
+        .map_err(crate::gateway::log_db_err("stream.done: begin tx"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "stream.done: allocate channel_seq",
+            ))?;
     let details = sqlx::query(
         "UPDATE messages
          SET channel_seq = $1,
@@ -230,16 +236,21 @@ pub async fn handle_done(
     mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(crate::gateway::log_db_err("stream.done: replace mentions"))?;
-    tx.commit().await.map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
 
     let channel_id = details
         .try_get::<String, _>("channel_id")
         .map_err(|_| "invalid channel_id")?
         .parse()
         .map_err(|_| "invalid channel_id")?;
-    let channel_seq = details
-        .try_get::<i64, _>("channel_seq")
-        .map_err(crate::gateway::log_db_err("stream.done: read channel_seq column"))?;
+    let channel_seq =
+        details
+            .try_get::<i64, _>("channel_seq")
+            .map_err(crate::gateway::log_db_err(
+                "stream.done: read channel_seq column",
+            ))?;
     let depth = details.try_get::<i32, _>("depth").unwrap_or(0);
     let file_ids = details
         .try_get::<Vec<String>, _>("file_ids")
@@ -500,10 +511,16 @@ pub async fn handle_send(
         .map_err(mention_parse_error_to_static)?;
 
     // 先落库
-    let mut tx = db.begin().await.map_err(crate::gateway::log_db_err("stream.send: begin tx"))?;
-    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+    let mut tx = db
+        .begin()
         .await
-        .map_err(crate::gateway::log_db_err("stream.send: allocate channel_seq"))?;
+        .map_err(crate::gateway::log_db_err("stream.send: begin tx"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "stream.send: allocate channel_seq",
+            ))?;
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -524,7 +541,9 @@ pub async fn handle_send(
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
         .map_err(crate::gateway::log_db_err("stream.send: insert mentions"))?;
-    tx.commit().await.map_err(crate::gateway::log_db_err("stream.send: commit tx"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("stream.send: commit tx"))?;
 
     // 再 fan-out
     let wire = WireFrame::channel(
@@ -647,7 +666,10 @@ fn dto_mentions(created: &Value) -> Vec<mentions::Mention> {
                         Some("user") => mentions::MemberType::User,
                         _ => return None,
                     };
-                    Some(mentions::Mention { member_id, member_type })
+                    Some(mentions::Mention {
+                        member_id,
+                        member_type,
+                    })
                 })
                 .collect()
         })
@@ -714,8 +736,14 @@ async fn mark_session_alive(
     frame: &Value,
     stream_entry_session_id: Option<Uuid>,
 ) {
-    if let Some(sid) =
-        resolve_session_id(db, bot_id, provider_account_id, frame, stream_entry_session_id).await
+    if let Some(sid) = resolve_session_id(
+        db,
+        bot_id,
+        provider_account_id,
+        frame,
+        stream_entry_session_id,
+    )
+    .await
     {
         if let Err(e) = sessions::touch_session(db, sid).await {
             tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
@@ -737,11 +765,17 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
     .bind(msg_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(crate::gateway::log_db_err("verify_ownership: select message"))?
+    .map_err(crate::gateway::log_db_err(
+        "verify_ownership: select message",
+    ))?
     .ok_or("message not found")?;
 
     // owner 必须是当前 bot
-    let sender_id: String = row.try_get("sender_id").map_err(crate::gateway::log_db_err("verify_ownership: read sender_id column"))?;
+    let sender_id: String = row
+        .try_get("sender_id")
+        .map_err(crate::gateway::log_db_err(
+            "verify_ownership: read sender_id column",
+        ))?;
     if sender_id != bot_id.to_string() {
         return Err("ownership check failed: msg_id not owned by this bot");
     }
@@ -753,7 +787,11 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
         return Err("message already finalized");
     }
 
-    let channel_id_str: String = row.try_get("channel_id").map_err(crate::gateway::log_db_err("verify_ownership: read channel_id column"))?;
+    let channel_id_str: String = row
+        .try_get("channel_id")
+        .map_err(crate::gateway::log_db_err(
+            "verify_ownership: read channel_id column",
+        ))?;
     channel_id_str.parse().map_err(|_| "invalid channel_id")
 }
 
@@ -815,7 +853,10 @@ mod tests {
     fn resolve_entry_only_uses_entry() {
         let bot = Uuid::new_v4();
         let entry = Uuid::new_v4();
-        assert_eq!(decide_explicit_or_entry(bot, None, Some(entry)), Some(entry));
+        assert_eq!(
+            decide_explicit_or_entry(bot, None, Some(entry)),
+            Some(entry)
+        );
     }
 
     /// Sources 1-2 均无 → None（交给 provider_* 的 DB 分支处理）。
