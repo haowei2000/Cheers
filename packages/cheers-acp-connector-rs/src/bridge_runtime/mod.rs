@@ -1054,16 +1054,22 @@ impl RuntimeContext {
             .channel_names
             .get(&task.channel_id)
             .cloned();
-        // Only push image content blocks when local policy allows it AND the
-        // agent advertised `promptCapabilities.image`; otherwise images degrade
-        // to a text summary inside build_prompt.
-        let send_images = self.config.policy.prompt.allow_images
-            && self.adapter.lock().await.supports_prompt_image();
+        // Only push image/audio content blocks when local policy allows it AND
+        // the agent advertised the matching promptCapabilities entry; otherwise
+        // that modality degrades to a text summary inside build_prompt.
+        let (send_images, send_audio) = {
+            let adapter = self.adapter.lock().await;
+            (
+                self.config.policy.prompt.allow_images && adapter.supports_prompt_image(),
+                self.config.policy.prompt.allow_audio && adapter.supports_prompt_audio(),
+            )
+        };
         let prompt = build_prompt(
             &task,
             &self.config.policy.prompt,
             channel_name.as_deref(),
             send_images,
+            send_audio,
         );
         let prompt_size = serde_json::to_vec(&prompt)?.len();
         if prompt_size > self.config.policy.prompt.max_prompt_bytes {
@@ -1794,13 +1800,15 @@ mod tests {
                 summary: Some("short".to_string()),
                 is_image: None,
                 image_b64: None,
+                is_audio: None,
+                audio_b64: None,
                 extra: serde_json::Map::new(),
             }],
             pinned: vec!["[Pinned: prompts/review.md]\nYou are a strict reviewer.".to_string()],
             cwd: None,
             additional_dirs: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false);
+        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false, false);
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(text.contains("@bot summarize"));
         assert!(text.contains("report.pdf"));
@@ -1821,6 +1829,8 @@ mod tests {
             summary: None,
             is_image: Some(json!(true)),
             image_b64: Some("aGVsbG8=".to_string()),
+            is_audio: None,
+            audio_b64: None,
             extra: serde_json::Map::new(),
         }
     }
@@ -1844,7 +1854,7 @@ mod tests {
     fn build_prompt_emits_image_block_only_when_capability_allows() {
         // Agent advertised promptCapabilities.image → real ACP image block, and
         // no redundant text summary line for that image.
-        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), true);
+        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), true, false);
         let image = prompt
             .iter()
             .find(|block| block["type"] == "image")
@@ -1864,7 +1874,7 @@ mod tests {
     fn build_prompt_degrades_image_to_text_when_capability_absent() {
         // Agent did NOT advertise image support → no image block; the image
         // degrades to a text summary line so the agent still knows it exists.
-        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), false);
+        let prompt = build_prompt(&image_task(), &test_prompt_policy(true), Some("#c"), false, false);
         assert!(
             prompt.iter().all(|block| block["type"] != "image"),
             "no image block may be sent when the agent can't read images"
@@ -1880,6 +1890,7 @@ mod tests {
             max_duration_ms: 900_000,
             allow_attachments,
             allow_images: true,
+            allow_audio: true,
             allow_local_file_refs: false,
         }
     }
@@ -1972,7 +1983,7 @@ mod tests {
             cwd: None,
             additional_dirs: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false);
+        let prompt = build_prompt(&task, &test_prompt_policy(true), Some("#general"), false, false);
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
             text.contains("channel_id=550e8400"),
@@ -2002,7 +2013,7 @@ mod tests {
             cwd: None,
             additional_dirs: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(false), None, false);
+        let prompt = build_prompt(&task, &test_prompt_policy(false), None, false, false);
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
             text.contains("channel_id=chan-1"),

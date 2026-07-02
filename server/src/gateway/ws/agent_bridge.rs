@@ -216,6 +216,35 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
         "ping" => {} // pong 由 WS 层处理
         "ready" => {
             tracing::info!(bot_id = %bot_id, version = ?frame.get("plugin_version"), "bot ready");
+            // Persist the connector's advertised capabilities (e.g. whether the
+            // downstream agent accepts audio/image prompts) so the platform can
+            // consult them offline — the composer warns before sending voice to
+            // a bot that can't hear it, and the dispatcher skips inlining bytes
+            // the agent would only discard. Refreshed on every (re)connect, so
+            // a connector upgrade updates them automatically.
+            if let Some(caps) = frame.get("connector_capabilities") {
+                let caps_str = serde_json::to_string(caps).unwrap_or_else(|_| "{}".into());
+                let result = sqlx::query(
+                    "UPDATE bot_accounts
+                     SET binding_config = COALESCE(binding_config, '{}'::jsonb)
+                         || jsonb_build_object(
+                             'connector_control',
+                             COALESCE(binding_config->'connector_control', '{}'::jsonb)
+                             || jsonb_build_object(
+                                 'capabilities', $2::jsonb,
+                                 'capabilities_updated_at', to_jsonb(NOW())
+                             )
+                     )
+                     WHERE bot_id = $1",
+                )
+                .bind(bot_id.to_string())
+                .bind(&caps_str)
+                .execute(&state.db)
+                .await;
+                if let Err(e) = result {
+                    tracing::warn!(bot_id = %bot_id, err = %e, "capabilities persist failed");
+                }
+            }
         }
         "runtime_session_control_ack" => {
             match handle_runtime_session_control_ack(frame, state, bot).await {

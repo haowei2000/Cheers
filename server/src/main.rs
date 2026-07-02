@@ -134,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
         state.db.clone(),
         state.s3.clone(),
         state.config.clone(),
+        state.fanout.clone(),
         config.conversion_poll_interval_secs,
     );
 

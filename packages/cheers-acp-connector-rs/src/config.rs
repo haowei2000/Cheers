@@ -118,6 +118,7 @@ pub struct PromptPolicy {
     pub max_duration_ms: u64,
     pub allow_attachments: bool,
     pub allow_images: bool,
+    pub allow_audio: bool,
     pub allow_local_file_refs: bool,
 }
 
@@ -408,6 +409,8 @@ struct RawPromptPolicy {
     allow_attachments: bool,
     #[serde(default = "default_true")]
     allow_images: bool,
+    #[serde(default = "default_true")]
+    allow_audio: bool,
     #[serde(default)]
     allow_local_file_refs: bool,
 }
@@ -421,6 +424,7 @@ impl Default for RawPromptPolicy {
             max_duration_ms: default_prompt_timeout_ms(),
             allow_attachments: true,
             allow_images: true,
+            allow_audio: true,
             allow_local_file_refs: false,
         }
     }
@@ -779,6 +783,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             max_duration_ms: raw.prompt.max_duration_ms.max(1),
             allow_attachments: raw.prompt.allow_attachments,
             allow_images: raw.prompt.allow_images,
+            allow_audio: raw.prompt.allow_audio,
             allow_local_file_refs: raw.prompt.allow_local_file_refs,
         },
         workspace: WorkspacePolicy {

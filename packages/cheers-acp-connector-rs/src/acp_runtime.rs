@@ -217,6 +217,10 @@ impl RuntimeAcpAdapter {
         self.agent_capability_bool(&["promptCapabilities", "image"])
     }
 
+    pub fn supports_prompt_audio(&self) -> bool {
+        self.agent_capability_bool(&["promptCapabilities", "audio"])
+    }
+
     pub fn supports_mcp_http(&self) -> bool {
         self.agent_capability_bool(&["mcpCapabilities", "http"])
     }
@@ -905,6 +909,13 @@ impl AcpAdapterKind {
         match self {
             Self::HandRolled(a) => a.supports_prompt_image(),
             Self::Runtime(a) => a.supports_prompt_image(),
+        }
+    }
+
+    pub fn supports_prompt_audio(&self) -> bool {
+        match self {
+            Self::HandRolled(a) => a.supports_prompt_audio(),
+            Self::Runtime(a) => a.supports_prompt_audio(),
         }
     }
 

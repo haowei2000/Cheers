@@ -110,7 +110,7 @@ pub async fn dispatch(
     );
 
     // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
-    let mut task_context = load_task_context(db, params.trigger_msg_id)
+    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id)
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
     task_context.pinned = load_pinned_context(db, params.channel_id).await;
@@ -254,7 +254,7 @@ impl TaskContext {
     }
 }
 
-async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
+async fn load_task_context(db: &PgPool, msg_id: Uuid, bot_id: Uuid) -> Option<TaskContext> {
     #[derive(Debug, sqlx::FromRow)]
     struct TaskRow {
         sender_id: Option<String>,
@@ -298,7 +298,7 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid) -> Option<TaskContext> {
             })
         })
         .unwrap_or_default();
-    let attachments = load_attachments(db, &file_ids).await;
+    let attachments = load_attachments(db, &file_ids, bot_id).await;
     let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
 
     Some(TaskContext {
@@ -350,10 +350,24 @@ struct AttachmentRow {
 /// connector emit native ACP image content blocks instead of a filename summary line.
 /// Everything here is best-effort: any DB/S3 failure degrades to metadata-only (or the bare
 /// `file_id`), never blocks the dispatch. Non-inlined files stay reachable via the MCP inbox.
-async fn load_attachments(db: &PgPool, file_ids: &[String]) -> Vec<Value> {
+async fn load_attachments(db: &PgPool, file_ids: &[String], bot_id: Uuid) -> Vec<Value> {
     if file_ids.is_empty() {
         return Vec::new();
     }
+    // Whether this bot's agent accepts native ACP audio blocks (persisted from
+    // the connector's ready frame). NULL/missing = false: don't spend frame
+    // budget on bytes the connector would degrade to a summary line anyway.
+    let bot_accepts_audio = sqlx::query_scalar::<_, Option<bool>>(
+        "SELECT (binding_config->'connector_control'->'capabilities'->>'audio')::boolean
+         FROM bot_accounts WHERE bot_id = $1",
+    )
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .unwrap_or(false);
     let rows = sqlx::query_as::<_, AttachmentRow>(
         "SELECT file_id, original_filename, content_type, size_bytes, object_key,
                 storage_bucket, status, md_path,
@@ -393,18 +407,35 @@ async fn load_attachments(db: &PgPool, file_ids: &[String]) -> Vec<Value> {
             "is_image": is_image,
             "is_audio": is_audio,
         });
-        if is_image && should_inline_image(row, inline_budget) {
-            if let Some(data_b64) = fetch_image_b64(row).await {
+        if is_image && should_inline_media(row, inline_budget) {
+            if let Some(data_b64) = fetch_media_b64(row).await {
                 inline_budget -= i64::from(row.size_bytes.unwrap_or(0));
                 attachment["image_b64"] = json!(data_b64);
             }
         }
-        // Transcript-first audio delivery: when the transcription worker has
-        // produced text, send THAT (cheap prompt tokens every agent can read)
-        // instead of audio bytes most ACP agents can't accept anyway.
-        if is_audio && row.md_path.is_some() {
-            if let Some(transcript) = fetch_transcript(row).await {
-                attachment["summary"] = json!(format!("transcript: {transcript}"));
+        // Audio delivery ladder: transcript-first (cheap prompt tokens every
+        // agent can read); else, for agents that advertised audio support,
+        // inline the bytes as base64 so the connector can emit a native ACP
+        // audio block; else the metadata line above is all the agent gets.
+        if is_audio {
+            let transcript = if row.md_path.is_some() {
+                fetch_transcript(row).await
+            } else {
+                None
+            };
+            match transcript {
+                Some(text) => {
+                    attachment["summary"] = json!(format!("transcript: {text}"));
+                }
+                None if bot_accepts_audio && should_inline_media(row, inline_budget) => {
+                    // Same eligibility gate as images (uploaded, unexpired,
+                    // size within the shared frame budget).
+                    if let Some(data_b64) = fetch_media_b64(row).await {
+                        inline_budget -= i64::from(row.size_bytes.unwrap_or(0));
+                        attachment["audio_b64"] = json!(data_b64);
+                    }
+                }
+                None => {}
             }
         }
         out.push(attachment);
@@ -416,7 +447,7 @@ async fn load_attachments(db: &PgPool, file_ids: &[String]) -> Vec<Value> {
 /// not expired, has an object_key), a known size within the per-image cap, and room left in
 /// the frame's shared budget. `staged` files have no bytes in S3 yet; unknown sizes are
 /// skipped rather than risking an oversized frame.
-fn should_inline_image(row: &AttachmentRow, inline_budget: i64) -> bool {
+fn should_inline_media(row: &AttachmentRow, inline_budget: i64) -> bool {
     let Some(size) = row.size_bytes else {
         return false;
     };
@@ -455,7 +486,7 @@ async fn fetch_transcript(row: &AttachmentRow) -> Option<String> {
     }
 }
 
-async fn fetch_image_b64(row: &AttachmentRow) -> Option<String> {
+async fn fetch_media_b64(row: &AttachmentRow) -> Option<String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let (client, default_bucket) = crate::resource::files::s3_handle()?;
     let bucket = row.storage_bucket.as_deref().unwrap_or(default_bucket);
@@ -702,7 +733,7 @@ mod tests {
     /// 正常小图：uploaded、未过期、尺寸在单图/总预算内 → 允许内联。
     #[test]
     fn inline_allows_small_uploaded_image() {
-        assert!(should_inline_image(
+        assert!(should_inline_media(
             &attachment_row(Some(1024)),
             MAX_INLINE_TOTAL_BYTES
         ));
@@ -712,32 +743,32 @@ mod tests {
     /// staged（字节不在 S3）/ 已过期 / 缺 object_key。
     #[test]
     fn inline_rejects_ineligible_rows() {
-        assert!(!should_inline_image(
+        assert!(!should_inline_media(
             &attachment_row(None),
             MAX_INLINE_TOTAL_BYTES
         ));
-        assert!(!should_inline_image(
+        assert!(!should_inline_media(
             &attachment_row(Some(i32::MAX)),
             MAX_INLINE_TOTAL_BYTES
         ));
-        assert!(!should_inline_image(&attachment_row(Some(1024)), 1023));
+        assert!(!should_inline_media(&attachment_row(Some(1024)), 1023));
 
         let staged = AttachmentRow {
             status: "staged".to_string(),
             ..attachment_row(Some(1024))
         };
-        assert!(!should_inline_image(&staged, MAX_INLINE_TOTAL_BYTES));
+        assert!(!should_inline_media(&staged, MAX_INLINE_TOTAL_BYTES));
 
         let expired = AttachmentRow {
             expired: true,
             ..attachment_row(Some(1024))
         };
-        assert!(!should_inline_image(&expired, MAX_INLINE_TOTAL_BYTES));
+        assert!(!should_inline_media(&expired, MAX_INLINE_TOTAL_BYTES));
 
         let no_key = AttachmentRow {
             object_key: None,
             ..attachment_row(Some(1024))
         };
-        assert!(!should_inline_image(&no_key, MAX_INLINE_TOTAL_BYTES));
+        assert!(!should_inline_media(&no_key, MAX_INLINE_TOTAL_BYTES));
     }
 }

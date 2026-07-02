@@ -583,6 +583,10 @@ pub struct AttachmentInfo {
     pub is_image: Option<Value>,
     #[serde(default)]
     pub image_b64: Option<String>,
+    #[serde(default)]
+    pub is_audio: Option<Value>,
+    #[serde(default)]
+    pub audio_b64: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }

@@ -435,7 +435,9 @@ pub async fn list_channel_members(
         "SELECT cm.member_id, cm.member_type, cm.role,
                 COALESCE(u.username, b.username) AS username,
                 COALESCE(u.display_name, b.display_name) AS display_name,
-                COALESCE(u.avatar_url, b.avatar_url) AS avatar_url
+                COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,
+                (b.binding_config->'connector_control'->'capabilities'->>'audio')::boolean
+                    AS can_receive_audio
          FROM channel_memberships cm
          LEFT JOIN users u ON cm.member_type = 'user' AND u.user_id = cm.member_id
          LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.bot_id = cm.member_id
@@ -476,6 +478,13 @@ pub async fn list_channel_members(
                     "display_name": r.try_get::<String, _>("display_name").ok(),
                     "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
                     "is_online": is_online,
+                    // Bots only: whether the connector says the agent accepts audio
+                    // prompts (policy AND promptCapabilities.audio). NULL = unknown
+                    // (never connected / pre-capability connector) — treat as false.
+                    "can_receive_audio": r
+                        .try_get::<Option<bool>, _>("can_receive_audio")
+                        .ok()
+                        .flatten(),
                 })
             })
             .collect(),

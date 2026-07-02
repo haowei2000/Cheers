@@ -56,6 +56,9 @@ export interface FileInfo {
   /** Short derived text when a server pipeline produced one — today the audio
    *  transcript snippet; shown under the inline audio player. */
   summary?: string | null;
+  /** Audio transcription state: "done" | "pending" | "failed" | null (never requested).
+   *  Kept live by the `file_transcribed` realtime frame. */
+  transcript_status?: string | null;
 }
 
 export interface MessageMention {
@@ -142,6 +145,9 @@ export interface MemberItem {
   avatar_url?: string | null;
   /** Users: live browser connection subscribed to this channel; bots: connector liveness. */
   is_online?: boolean | null;
+  /** Bots only: connector-reported "agent accepts audio prompts" (policy AND
+   *  promptCapabilities.audio). null = unknown (never connected) — treat as false. */
+  can_receive_audio?: boolean | null;
 }
 
 export interface BotItem {

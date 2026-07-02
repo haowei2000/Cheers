@@ -151,6 +151,9 @@ export function ChannelView({ channel }: Props) {
               type: m.member_type === "bot" ? "bot" : "user",
               label: m.display_name || m.username || m.member_id.slice(0, 8),
               sublabel: m.username,
+              // Bots: whether the agent can hear audio prompts (null/undefined =
+              // unknown → the composer treats it as "can't", fail-safe).
+              canReceiveAudio: m.can_receive_audio ?? false,
             }))
         )
       )
@@ -245,6 +248,27 @@ export function ChannelView({ channel }: Props) {
     );
   }, []);
 
+  // Transcription finished (or terminally failed) → patch every rendered message
+  // carrying that file so the audio tile updates in place, no reload needed.
+  const handleFileTranscribed = useCallback(
+    (fileId: string, status: string, summary: string | null) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (!m.files?.some((f) => f.file_id === fileId)) return m;
+          return {
+            ...m,
+            files: m.files.map((f) =>
+              f.file_id === fileId
+                ? { ...f, summary: summary ?? f.summary, transcript_status: status }
+                : f
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
   // Refresh the slash-command palette from `channel.commands.read`. Bot-produced
   // command names/descriptions are untrusted — they only ever render as inert
   // text in the picker. Best-effort: a failure just leaves the palette empty.
@@ -296,6 +320,7 @@ export function ChannelView({ channel }: Props) {
     onBotTrace: handleBotTrace,
     onBoardSignal: (board) =>
       setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 })),
+    onFileTranscribed: handleFileTranscribed,
   });
   // Keep a stable ref so loadCommands can reach the latest resource client
   // without re-subscribing the realtime hook.

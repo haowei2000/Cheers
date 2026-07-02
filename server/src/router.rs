@@ -350,6 +350,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/files/:file_id/realize",
             post(api::files::realize_file),
         )
+        .route(
+            "/api/v1/files/:file_id/transcribe",
+            post(api::files::transcribe_file),
+        )
         // ── 远程工作区浏览（按 bot_id 路由到对应连接器机器）──────────────────
         .route(
             "/api/v1/channels/:channel_id/workspace/bots",

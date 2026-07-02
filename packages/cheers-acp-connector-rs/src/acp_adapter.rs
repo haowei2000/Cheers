@@ -162,6 +162,17 @@ impl AcpAdapter {
             .unwrap_or(false)
     }
 
+    /// Whether the agent accepts audio content blocks in a prompt
+    /// (`agentCapabilities.promptCapabilities.audio`). Same default-deny rule
+    /// as images: never push a modality the agent didn't advertise.
+    pub fn supports_prompt_audio(&self) -> bool {
+        self.agent_capabilities()
+            .and_then(|value| value.get("promptCapabilities"))
+            .and_then(|value| value.get("audio"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// Whether the agent supports the optional HTTP MCP transport
     /// (`agentCapabilities.mcpCapabilities.http`). stdio MCP is the ACP baseline
     /// and needs no capability; only the `http`/`sse` transports are gated.

@@ -17,10 +17,13 @@ import {
   FileText,
   Upload,
   FolderOpen,
+  AudioLines,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { uploadFile } from "@/api/files";
+import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
+import { isAudioFile } from "./fileUtils";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
 import { ExistingFilePicker } from "./ExistingFilePicker";
 
@@ -31,6 +34,8 @@ export interface MentionCandidate {
   type: "user" | "bot";
   label: string;
   sublabel?: string;
+  /** Bots: whether the agent accepts audio prompts (unknown → false, fail-safe). */
+  canReceiveAudio?: boolean;
 }
 
 interface Props {
@@ -238,7 +243,61 @@ export function MessageComposer({
     });
   }
 
-  async function submit() {
+  // Voice-to-deaf-bot guard: audio attachments not yet transcribed, headed at a
+  // bot that can't hear audio, pause the send behind an explicit choice
+  // (transcribe-then-send vs send-as-is). `transcribedIds` marks attachments the
+  // transcribe-then-send flow completed; `voiceWarning` holds the paused state.
+  const [transcribedIds, setTranscribedIds] = useState<Set<string>>(new Set());
+  const [voiceWarning, setVoiceWarning] = useState<{
+    deafBots: string[];
+    error?: string;
+  } | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
+
+  function untranscribedAudio(): FileInfo[] {
+    return attachments.filter(
+      (a) => isAudioFile(a) && !a.summary && !transcribedIds.has(a.file_id)
+    );
+  }
+
+  // Request transcription for every pending audio attachment, poll until all
+  // transcripts land (2s interval, 120s ceiling), then send. Any failure keeps
+  // the warning open with the error so "直接发送" stays available.
+  async function transcribeThenSend() {
+    setTranscribing(true);
+    try {
+      const pending = untranscribedAudio();
+      await Promise.all(pending.map((a) => transcribeFile(a.file_id)));
+      const deadline = Date.now() + 120_000;
+      const remaining = new Set(pending.map((a) => a.file_id));
+      while (remaining.size && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        for (const id of Array.from(remaining)) {
+          const s = await getFileStatus(id);
+          if (s.transcript_status === "done") remaining.delete(id);
+          else if (s.last_error) throw new Error(`转写失败:${s.last_error}`);
+        }
+      }
+      if (remaining.size) throw new Error("转写超时,可稍后重试或直接发送");
+      setTranscribedIds((prev) => {
+        const next = new Set(prev);
+        pending.forEach((a) => next.add(a.file_id));
+        return next;
+      });
+      setVoiceWarning(null);
+      setTranscribing(false);
+      await submit(true);
+    } catch (e) {
+      setTranscribing(false);
+      setVoiceWarning((prev) =>
+        prev
+          ? { ...prev, error: e instanceof Error ? e.message : "转写失败" }
+          : prev
+      );
+    }
+  }
+
+  async function submit(skipVoiceCheck = false) {
     const typed = text.trim();
     const fileIds = attachments.map((a) => a.file_id);
     // Backend requires non-empty content; fall back to attachment names.
@@ -248,6 +307,19 @@ export function MessageComposer({
         ? attachments.map((a) => a.original_filename || "file").join(", ")
         : "");
     if (!content || sending || uploading || disabled) return;
+    // Pause the send when untranscribed voice is headed at a bot that can't
+    // hear it (capability persisted from the connector handshake). Audio-capable
+    // bots get native audio blocks, so no warning there.
+    if (!skipVoiceCheck && untranscribedAudio().length > 0) {
+      const deafBots = mentionedBots
+        .filter((b) => b.canReceiveAudio !== true)
+        .map((b) => b.label);
+      if (deafBots.length > 0) {
+        setVoiceWarning({ deafBots });
+        return;
+      }
+    }
+    setVoiceWarning(null);
     // Only keep mentions whose "@label" token still survives in the text.
     const ids = Array.from(
       new Set(
@@ -259,6 +331,7 @@ export function MessageComposer({
     setPicked([]);
     setPicker(null);
     setAttachments([]);
+    setTranscribedIds(new Set());
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     try {
       await onSend(content, ids, fileIds);
@@ -403,6 +476,45 @@ export function MessageComposer({
           onPick={addExisting}
           onClose={() => setLibraryOpen(false)}
         />
+      )}
+
+      {voiceWarning && (
+        <div className="mb-2 rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+          <p className="flex items-center gap-1.5">
+            <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
+            {voiceWarning.deafBots.join("、")} 无法接收语音——不转写的话,它只能看到文件名。
+          </p>
+          {voiceWarning.error && (
+            <p className="mt-1 text-rose-300">{voiceWarning.error}</p>
+          )}
+          <div className="mt-1.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void transcribeThenSend()}
+              disabled={transcribing}
+              className="inline-flex items-center gap-1 rounded bg-amber-600/80 px-2 py-1 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
+            >
+              {transcribing && <Loader2 className="h-3 w-3 animate-spin" />}
+              {transcribing ? "转写中…" : "转写后发送"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void submit(true)}
+              disabled={transcribing}
+              className="rounded border border-amber-700/60 px-2 py-1 text-amber-200 hover:bg-amber-900/40 disabled:opacity-50"
+            >
+              直接发送
+            </button>
+            <button
+              type="button"
+              onClick={() => setVoiceWarning(null)}
+              disabled={transcribing}
+              className="ml-auto text-amber-400/70 hover:text-amber-200"
+            >
+              取消
+            </button>
+          </div>
+        </div>
       )}
 
       {toolbar && <div className="mb-2 flex flex-wrap items-center gap-2">{toolbar}</div>}

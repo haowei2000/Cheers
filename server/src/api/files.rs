@@ -41,6 +41,10 @@ struct FileRecord {
     expires_at: Option<DateTime<Utc>>,
     /// S3 key of the generated PDF preview rendition (office docs), if any.
     preview_object_key: Option<String>,
+    /// S3 key of the audio transcript (`transcripts/{id}.txt`), if produced.
+    md_path: Option<String>,
+    /// When a user requested transcription for this (audio) file; NULL = never.
+    transcribe_requested_at: Option<DateTime<Utc>>,
 }
 
 fn safe_filename(raw: &str) -> Result<String, AppError> {
@@ -72,7 +76,7 @@ async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord,
     let row = sqlx::query(
         "SELECT file_id, channel_id, workspace_id, uploader_id, object_key, original_filename,
                 content_type, status, size_bytes, summary_3lines, last_error, expires_at,
-                preview_object_key
+                preview_object_key, md_path, transcribe_requested_at
          FROM file_records
          WHERE file_id = $1",
     )
@@ -125,6 +129,11 @@ async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord,
             .flatten(),
         preview_object_key: row
             .try_get::<Option<String>, _>("preview_object_key")
+            .ok()
+            .flatten(),
+        md_path: row.try_get::<Option<String>, _>("md_path").ok().flatten(),
+        transcribe_requested_at: row
+            .try_get::<Option<DateTime<Utc>>, _>("transcribe_requested_at")
             .ok()
             .flatten(),
     })
@@ -600,7 +609,69 @@ pub async fn get_file_status(
         "expires_at": row.expires_at.map(|dt| dt.to_rfc3339()),
         // True once an office doc's PDF preview rendition is ready (Gotenberg).
         "preview_ready": row.preview_object_key.is_some(),
+        // Audio transcription state: "done" | "pending" | null (never requested).
+        "transcript_status": if row.md_path.is_some() {
+            Some("done")
+        } else if row.transcribe_requested_at.is_some() {
+            Some("pending")
+        } else {
+            None
+        },
     })))
+}
+
+/// POST /api/v1/files/:file_id/transcribe — request speech-to-text for an audio
+/// chat file. Opt-in per file (the worker only processes requested files), any
+/// channel member may ask, idempotent. 409 when the admin hasn't enabled STT.
+pub async fn transcribe_file(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(file_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
+
+    let is_audio = file
+        .content_type
+        .as_deref()
+        .is_some_and(|ct| ct.starts_with("audio/"));
+    if !is_audio {
+        return Err(AppError::BadRequest("not an audio file".into()));
+    }
+    if file.md_path.is_some() {
+        return Ok(Json(
+            json!({ "status": "done", "summary": file.summary_3lines }),
+        ));
+    }
+
+    // Gate on the admin-configured STT setting so the button can explain itself
+    // instead of silently queueing work no worker will ever pick up.
+    let master_key = crate::infra::crypto::derive_master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    let stt_enabled = crate::domain::stt_settings::load(&state.db, &master_key)
+        .await?
+        .is_some_and(|s| s.enabled && !s.endpoint.is_empty());
+    if !stt_enabled {
+        return Err(AppError::Conflict(
+            "speech-to-text is not enabled on this instance (ask an admin)".into(),
+        ));
+    }
+
+    // First request stamps transcribe_requested_at; a re-request after terminal
+    // failure resets the attempt counter so the worker picks the file up again
+    // (otherwise the retry button would be a no-op at MAX_ATTEMPTS).
+    sqlx::query(
+        "UPDATE file_records
+         SET transcribe_requested_at = COALESCE(transcribe_requested_at, NOW()),
+             conversion_attempts = 0,
+             last_error = NULL
+         WHERE file_id = $1 AND md_path IS NULL",
+    )
+    .bind(&file_id)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(json!({ "status": "pending" })))
 }
 
 pub async fn preview_file(

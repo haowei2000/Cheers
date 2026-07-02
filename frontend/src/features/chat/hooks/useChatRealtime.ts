@@ -20,6 +20,13 @@ interface Callbacks {
    *  `board` is e.g. "plan" | "cost" | "commands" (gateway board_signal) or
    *  "activity" (synthesized here on each new message). */
   onBoardSignal?: (board: string) => void;
+  /** An audio file's transcription finished (status "done" with the transcript
+   *  snippet) or terminally failed (status "failed") — update its tiles in place. */
+  onFileTranscribed?: (
+    fileId: string,
+    status: string,
+    summary: string | null
+  ) => void;
 }
 
 const BASE_DELAY = 1000;
@@ -174,6 +181,19 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         cbsRef.current.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
       } else if (type === "board_signal") {
         cbsRef.current.onBoardSignal?.((data as { board?: string }).board ?? "");
+      } else if (type === "file_transcribed") {
+        const d = data as {
+          file_id?: string;
+          status?: string;
+          summary?: string | null;
+        };
+        if (d.file_id) {
+          cbsRef.current.onFileTranscribed?.(
+            d.file_id,
+            d.status ?? "done",
+            d.summary ?? null
+          );
+        }
       }
     };
 

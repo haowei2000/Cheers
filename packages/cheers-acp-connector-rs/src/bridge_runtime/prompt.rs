@@ -21,6 +21,7 @@ pub(super) fn bridge_ready_from_initialize(
     // so it can warn the user / hide image upload instead of failing quietly.
     let agent_caps = agent_capability_summary(initialize);
     let agent_supports_image = agent_caps["prompt_image"].as_bool().unwrap_or(false);
+    let agent_supports_audio = agent_caps["prompt_audio"].as_bool().unwrap_or(false);
     ready.connector_capabilities = Some(json!({
         "runtime_protocols": ["acp"],
         "runtime_session_control": policy.sessions.create
@@ -28,10 +29,12 @@ pub(super) fn bridge_ready_from_initialize(
             || policy.sessions.cancel
             || policy.sessions.terminate,
         "streaming": policy.prompt.allow,
-        // `files` and `images` reflect BOTH local policy and what the agent can
-        // actually accept — the effective capability the platform should rely on.
+        // `files` / `images` / `audio` reflect BOTH local policy and what the
+        // agent can actually accept — the effective capability the platform
+        // should rely on (e.g. to warn a user sending voice to a text-only bot).
         "files": policy.file_upload.allow,
         "images": policy.prompt.allow_images && agent_supports_image,
+        "audio": policy.prompt.allow_audio && agent_supports_audio,
         "send": policy.send.allow,
         "resource_req": true,
         "permission_request": policy.permission.forward_to_backend,
@@ -59,6 +62,7 @@ pub(super) fn agent_capability_summary(initialize: &Value) -> Value {
     json!({
         "load_session": cap_bool(&["loadSession"]),
         "prompt_image": cap_bool(&["promptCapabilities", "image"]),
+        "prompt_audio": cap_bool(&["promptCapabilities", "audio"]),
         "mcp_http": cap_bool(&["mcpCapabilities", "http"]),
         "mcp_sse": cap_bool(&["mcpCapabilities", "sse"]),
     })
@@ -66,15 +70,17 @@ pub(super) fn agent_capability_summary(initialize: &Value) -> Value {
 
 /// Build the ACP prompt content blocks for a task.
 ///
-/// `send_images` MUST already fold in both the local policy (`allow_images`) and
-/// the agent's advertised `promptCapabilities.image`; when it is false, image
-/// attachments degrade to a text summary line rather than being pushed as image
-/// blocks the agent never said it could read.
+/// `send_images` / `send_audio` MUST already fold in both the local policy
+/// (`allow_images` / `allow_audio`) and the agent's advertised
+/// `promptCapabilities.{image,audio}`; when false, that modality degrades to a
+/// text summary line rather than being pushed as blocks the agent never said it
+/// could read.
 pub(super) fn build_prompt(
     task: &TaskCommand,
     policy: &PromptPolicy,
     channel_name: Option<&str>,
     send_images: bool,
+    send_audio: bool,
 ) -> Vec<Value> {
     let mut parts = vec![
         CHEERS_ACP_OUTPUT_CONTRACT.to_string(),
@@ -100,16 +106,25 @@ pub(super) fn build_prompt(
     {
         parts.push(text);
     }
-    // Image attachments become real ACP image blocks only when the agent
-    // advertised the capability; everything else (and images we can't send) is
-    // summarized as text so the agent still knows the file exists.
-    let mut image_blocks: Vec<Value> = Vec::new();
+    // Image/audio attachments become real ACP content blocks only when the agent
+    // advertised the capability; everything else (and media we can't send) is
+    // summarized as text so the agent still knows the file exists. An audio
+    // attachment whose transcript already rode in via `summary` never carries
+    // `audio_b64` (the platform sends transcript-first), so it naturally falls
+    // through to the summary line here.
+    let mut media_blocks: Vec<Value> = Vec::new();
     if policy.allow_attachments && !task.attachments.is_empty() {
         let mut lines = vec!["Cheers attachments:".to_string()];
         for attachment in &task.attachments {
             if send_images {
                 if let Some(block) = image_content_block(attachment) {
-                    image_blocks.push(block);
+                    media_blocks.push(block);
+                    continue;
+                }
+            }
+            if send_audio {
+                if let Some(block) = audio_content_block(attachment) {
+                    media_blocks.push(block);
                     continue;
                 }
             }
@@ -125,7 +140,7 @@ pub(super) fn build_prompt(
         "type": "text",
         "text": parts.join("\n\n")
     })];
-    blocks.append(&mut image_blocks);
+    blocks.append(&mut media_blocks);
     blocks
 }
 
@@ -201,6 +216,35 @@ pub(super) fn image_content_block(attachment: &AttachmentInfo) -> Option<Value> 
         .unwrap_or("image/png");
     Some(json!({
         "type": "image",
+        "mimeType": mime,
+        "data": data,
+    }))
+}
+
+/// Build an ACP audio content block from an attachment, or `None` when it can't
+/// be sent as one. ACP audio blocks are `{ type: "audio", mimeType, data }` with
+/// base64 `data`, gated on `promptCapabilities.audio`.
+/// <https://agentclientprotocol.com/protocol/v1/content>
+///
+/// Mirrors [`image_content_block`]: inline base64 must be present, and the
+/// platform must not have flagged the attachment as non-audio. The mimeType is
+/// passed through when it is an `audio/*` type (the spec names wav/mp3 as
+/// examples but does not restrict the set); otherwise default to `audio/wav`.
+pub(super) fn audio_content_block(attachment: &AttachmentInfo) -> Option<Value> {
+    if attachment.is_audio.as_ref().and_then(Value::as_bool) == Some(false) {
+        return None;
+    }
+    let data = attachment.audio_b64.as_ref()?;
+    if data.trim().is_empty() {
+        return None;
+    }
+    let mime = attachment
+        .content_type
+        .as_deref()
+        .filter(|ct| ct.starts_with("audio/"))
+        .unwrap_or("audio/wav");
+    Some(json!({
+        "type": "audio",
         "mimeType": mime,
         "data": data,
     }))
@@ -734,6 +778,8 @@ mod tests {
             summary: None,
             is_image: Some(json!(true)),
             image_b64: Some("aGVsbG8=".to_string()),
+            is_audio: None,
+            audio_b64: None,
             extra: serde_json::Map::new(),
         };
         let block = image_content_block(&with_data).expect("image block");
@@ -765,6 +811,51 @@ mod tests {
         assert_eq!(
             image_content_block(&odd_mime).expect("block")["mimeType"],
             "image/png"
+        );
+    }
+
+    #[test]
+    fn audio_block_built_only_when_inline_data_present() {
+        let with_data = AttachmentInfo {
+            file_id: Some("a1".to_string()),
+            filename: Some("note.webm".to_string()),
+            content_type: Some("audio/webm".to_string()),
+            size_bytes: Some(10),
+            summary: None,
+            is_image: None,
+            image_b64: None,
+            is_audio: Some(json!(true)),
+            audio_b64: Some("aGVsbG8=".to_string()),
+            extra: serde_json::Map::new(),
+        };
+        let block = audio_content_block(&with_data).expect("audio block");
+        assert_eq!(block["type"], "audio");
+        assert_eq!(block["mimeType"], "audio/webm");
+        assert_eq!(block["data"], "aGVsbG8=");
+
+        // No inline base64 → no audio block (e.g. transcript-first delivery
+        // already turned this attachment into a summary line upstream).
+        let no_data = AttachmentInfo {
+            audio_b64: None,
+            ..with_data.clone()
+        };
+        assert!(audio_content_block(&no_data).is_none());
+
+        // Platform flagged non-audio → degrade even with a stray blob.
+        let not_audio = AttachmentInfo {
+            is_audio: Some(json!(false)),
+            ..with_data.clone()
+        };
+        assert!(audio_content_block(&not_audio).is_none());
+
+        // Non-audio content type falls back to the audio/wav default.
+        let odd_mime = AttachmentInfo {
+            content_type: Some("application/octet-stream".to_string()),
+            ..with_data
+        };
+        assert_eq!(
+            audio_content_block(&odd_mime).expect("block")["mimeType"],
+            "audio/wav"
         );
     }
 }

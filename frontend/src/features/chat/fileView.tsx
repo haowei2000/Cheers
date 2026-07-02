@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Loader2 } from "lucide-react";
+import { Captions, FileText, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 import { apiFetch } from "@/api/client";
-import { realizeFile, pollFileStatus } from "@/api/files";
+import { realizeFile, pollFileStatus, transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
@@ -101,12 +102,57 @@ function AudioTile({ file }: { file: FileInfo }) {
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载音频…
         </div>
       )}
-      {file.summary && (
-        <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-400">
-          {file.summary}
-        </p>
-      )}
+      <TranscriptSection file={file} />
     </div>
+  );
+}
+
+// Transcript area under the audio player: the snippet when transcription is
+// done; a "转写" button when never requested (opt-in per file); pending/failed
+// states in between. `file.transcript_status` is kept live by the
+// `file_transcribed` realtime frame; the local state only bridges the gap
+// between clicking and the server acknowledging.
+function TranscriptSection({ file }: { file: FileInfo }) {
+  const [requested, setRequested] = useState(false);
+  // A terminal-failure frame flips the tile back from "转写中" to the retry button.
+  useEffect(() => {
+    if (file.transcript_status === "failed") setRequested(false);
+  }, [file.transcript_status]);
+
+  if (file.summary) {
+    return (
+      <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-400">
+        {file.summary}
+      </p>
+    );
+  }
+
+  const status = file.transcript_status;
+  if (requested || status === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500">
+        <Loader2 className="h-3 w-3 animate-spin" /> 转写中…
+      </span>
+    );
+  }
+
+  const request = () => {
+    transcribeFile(file.file_id)
+      .then(() => setRequested(true))
+      .catch((e) => {
+        toast.error(e instanceof Error ? e.message : "转写请求失败");
+      });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={request}
+      className="inline-flex w-fit items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors"
+    >
+      <Captions className="h-3 w-3" />
+      {status === "failed" ? "转写失败,重试" : "转写为文字"}
+    </button>
   );
 }
 

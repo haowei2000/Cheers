@@ -21,12 +21,30 @@ export interface FileStatus {
   status: string;
   /** True once an office doc's PDF preview rendition is ready (Gotenberg). */
   preview_ready?: boolean;
+  /** Audio transcription: "done" | "pending" | null (never requested). */
+  transcript_status?: string | null;
+  /** Transcript snippet, once transcription is done. */
+  summary_3lines?: string | null;
   last_error?: string | null;
 }
 
 /** Full status of a file — used to poll office→PDF preview readiness. */
 export async function getFileStatus(fileId: string): Promise<FileStatus> {
   return apiJson<FileStatus>(`/files/${fileId}/status`);
+}
+
+/**
+ * Request speech-to-text for an audio chat file (opt-in per file; any channel
+ * member; idempotent). Resolves to "pending" | "done". Throws on 409 when the
+ * admin hasn't enabled STT — surface that message to the user.
+ */
+export async function transcribeFile(
+  fileId: string
+): Promise<{ status: string; summary?: string | null }> {
+  return apiJson<{ status: string; summary?: string | null }>(
+    `/files/${fileId}/transcribe`,
+    { method: "POST" }
+  );
 }
 
 /**
