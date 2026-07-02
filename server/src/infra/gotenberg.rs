@@ -16,7 +16,10 @@ pub async fn convert_to_pdf(
     filename: &str,
     bytes: Vec<u8>,
 ) -> anyhow::Result<Vec<u8>> {
-    let url = format!("{}/forms/libreoffice/convert", base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/forms/libreoffice/convert",
+        base_url.trim_end_matches('/')
+    );
     let part = reqwest::multipart::Part::bytes(bytes).file_name(filename.to_string());
     let form = reqwest::multipart::Form::new().part("files", part);
 

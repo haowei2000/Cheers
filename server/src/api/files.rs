@@ -528,14 +528,13 @@ pub async fn realize_file(
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| AppError::BadRequest("staged file has no associated bot".into()))?;
 
-    let remote_ref: String = sqlx::query_scalar(
-        "SELECT remote_ref FROM file_records WHERE file_id = $1",
-    )
-    .bind(&file_id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten()
-    .ok_or_else(|| AppError::BadRequest("staged file has no remote_ref".into()))?;
+    let remote_ref: String =
+        sqlx::query_scalar("SELECT remote_ref FROM file_records WHERE file_id = $1")
+            .bind(&file_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten()
+            .ok_or_else(|| AppError::BadRequest("staged file has no remote_ref".into()))?;
 
     let channel_id = file
         .channel_id

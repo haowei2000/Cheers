@@ -35,9 +35,15 @@ const SEND_QUEUE_SIZE: usize = 256;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientFrame {
-    Auth { token: String },
-    Subscribe { channel_id: Uuid },
-    Unsubscribe { channel_id: Uuid },
+    Auth {
+        token: String,
+    },
+    Subscribe {
+        channel_id: Uuid,
+    },
+    Unsubscribe {
+        channel_id: Uuid,
+    },
     Ping,
     /// 工作台：浏览器对平台 fs/channel 资源的 req/res 请求（经 `resource::dispatch_user`）。
     /// 回执是 `resource_res` 原始帧（按 `req_id` 关联），直接写回本连接 socket。
@@ -174,20 +180,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// 计算频道当前在线用户并广播 presence 帧（订阅/退订/断线时触发）。
-/// presence 非终态帧，队列满时可丢弃——下次变更会再发一次全量。
+/// presence 帧广播（订阅/退订/断线时触发）——统一实现见 gateway::presence，
+/// 名单同时包含在线用户与在线 bot。
 async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
-    let user_ids = state.fanout.online_users(channel_id);
-    let frame = WireFrame::channel(
-        channel_id,
-        "presence",
-        serde_json::json!({
-            "channel_id": channel_id,
-            "online_user_ids": user_ids,
-            "count": user_ids.len(),
-        }),
-    );
-    state.fanout.broadcast_channel(channel_id, frame).await;
+    crate::gateway::presence::broadcast_presence(state, channel_id).await;
 }
 
 // ── 鉴权阶段 ─────────────────────────────────────────────────────────────────

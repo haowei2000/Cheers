@@ -110,7 +110,9 @@ pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) ->
     .bind(&path)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(super::db_err("fs.write: select existing version (FOR UPDATE)"))?;
+    .map_err(super::db_err(
+        "fs.write: select existing version (FOR UPDATE)",
+    ))?;
 
     let version = if let Some(row) = existing {
         let current = row.try_get::<i64, _>("version").unwrap_or(0);
@@ -349,10 +351,7 @@ pub async fn handle_rm(db: &PgPool, principal: &Principal, params: &Value) -> Re
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(super::db_err("fs.rm: begin tx"))?;
+    let mut tx = db.begin().await.map_err(super::db_err("fs.rm: begin tx"))?;
     let rows = sqlx::query(
         "SELECT path
          FROM context_files
@@ -435,10 +434,7 @@ pub async fn handle_mv(db: &PgPool, principal: &Principal, params: &Value) -> Re
         ));
     }
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(super::db_err("fs.mv: begin tx"))?;
+    let mut tx = db.begin().await.map_err(super::db_err("fs.mv: begin tx"))?;
     let source_count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count
          FROM context_files
@@ -557,12 +553,11 @@ async fn enforce_channel_file_count(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     channel_id: Uuid,
 ) -> Result<(), (String, String)> {
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM context_files WHERE channel_id = $1")
-            .bind(channel_id.to_string())
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(super::db_err("enforce_channel_file_count: count files"))?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM context_files WHERE channel_id = $1")
+        .bind(channel_id.to_string())
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(super::db_err("enforce_channel_file_count: count files"))?;
     if count >= MAX_CHANNEL_FILES {
         return Err(super::resource_error(
             "CHANNEL_QUOTA_EXCEEDED",

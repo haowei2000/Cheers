@@ -107,8 +107,12 @@ pub fn default_access(capability: Capability) -> bool {
 /// agent's session config (mode / config options), so even though INITIATE is
 /// otherwise member-allowed, these must be deny-by-default. They ARE grantable
 /// per-subject (unlike a hard owner-only), which is what enables delegation.
-pub const OWNER_DEFAULT_INITIATE: &[&str] =
-    &["set_mode", "set_config_option", "session_create", "session_close"];
+pub const OWNER_DEFAULT_INITIATE: &[&str] = &[
+    "set_mode",
+    "set_config_option",
+    "session_create",
+    "session_close",
+];
 
 /// The membership default for a specific `(event_class, capability)` when no rule
 /// matches — like [`default_access`] but deny-by-default for the owner-default
@@ -250,7 +254,11 @@ async fn is_friend(db: &PgPool, a: &str, b: &str) -> bool {
     if a == b {
         return false;
     }
-    let pair = if a <= b { format!("{a}:{b}") } else { format!("{b}:{a}") };
+    let pair = if a <= b {
+        format!("{a}:{b}")
+    } else {
+        format!("{b}:{a}")
+    };
     sqlx::query(
         "SELECT EXISTS(SELECT 1 FROM friendships WHERE pair_key = $1 AND status = 'accepted') AS ok",
     )
@@ -303,8 +311,12 @@ pub async fn load_rules(db: &PgPool, bot_id: &str) -> Result<Vec<Rule>, AppError
         .into_iter()
         .map(|r| Rule {
             channel_id: r.try_get("channel_id").unwrap_or_default(),
-            subject_kind: r.try_get("subject_kind").unwrap_or_else(|_| SUBJECT_ROLE.into()),
-            subject_id: r.try_get("subject_id").unwrap_or_else(|_| ANY_SUBJECT.into()),
+            subject_kind: r
+                .try_get("subject_kind")
+                .unwrap_or_else(|_| SUBJECT_ROLE.into()),
+            subject_id: r
+                .try_get("subject_id")
+                .unwrap_or_else(|_| ANY_SUBJECT.into()),
             event_class: r.try_get("event_class").unwrap_or_default(),
             capability: r.try_get("capability").unwrap_or_default(),
             allow: r
@@ -497,96 +509,359 @@ mod tests {
     #[test]
     fn defaults_layer_on_membership() {
         // No rules: members may initiate + see, but not respond.
-        assert!(allows(&[], "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        assert!(allows(&[], "c1", "u1", "member", EV_TOOL_CALL, Capability::See));
-        assert!(!allows(&[], "c1", "u1", "member", EV_PERMISSION_REQUEST, Capability::Respond));
+        assert!(allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            EV_PROMPT,
+            Capability::Initiate
+        ));
+        assert!(allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            EV_TOOL_CALL,
+            Capability::See
+        ));
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            EV_PERMISSION_REQUEST,
+            Capability::Respond
+        ));
     }
 
     #[test]
     fn role_deny_overrides_default() {
-        let rules = vec![rule("c1", SUBJECT_ROLE, "member", EV_TOOL_CALL, Capability::See, false)];
-        assert!(!allows(&rules, "c1", "u1", "member", EV_TOOL_CALL, Capability::See));
-        assert!(allows(&rules, "c1", "u9", "admin", EV_TOOL_CALL, Capability::See));
+        let rules = vec![rule(
+            "c1",
+            SUBJECT_ROLE,
+            "member",
+            EV_TOOL_CALL,
+            Capability::See,
+            false,
+        )];
+        assert!(!allows(
+            &rules,
+            "c1",
+            "u1",
+            "member",
+            EV_TOOL_CALL,
+            Capability::See
+        ));
+        assert!(allows(
+            &rules,
+            "c1",
+            "u9",
+            "admin",
+            EV_TOOL_CALL,
+            Capability::See
+        ));
     }
 
     #[test]
     fn user_override_beats_role() {
         let rules = vec![
-            rule("c1", SUBJECT_ROLE, "member", EV_PROMPT, Capability::Initiate, false),
-            rule("c1", SUBJECT_USER, "u1", EV_PROMPT, Capability::Initiate, true),
+            rule(
+                "c1",
+                SUBJECT_ROLE,
+                "member",
+                EV_PROMPT,
+                Capability::Initiate,
+                false,
+            ),
+            rule(
+                "c1",
+                SUBJECT_USER,
+                "u1",
+                EV_PROMPT,
+                Capability::Initiate,
+                true,
+            ),
         ];
-        assert!(allows(&rules, "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        assert!(!allows(&rules, "c1", "u2", "member", EV_PROMPT, Capability::Initiate));
+        assert!(allows(
+            &rules,
+            "c1",
+            "u1",
+            "member",
+            EV_PROMPT,
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &rules,
+            "c1",
+            "u2",
+            "member",
+            EV_PROMPT,
+            Capability::Initiate
+        ));
     }
 
     #[test]
     fn channel_specific_beats_bot_wide() {
         let rules = vec![
-            rule(BOT_WIDE, SUBJECT_ROLE, ANY_SUBJECT, EV_PROMPT, Capability::Initiate, false),
-            rule("c1", SUBJECT_ROLE, ANY_SUBJECT, EV_PROMPT, Capability::Initiate, true),
+            rule(
+                BOT_WIDE,
+                SUBJECT_ROLE,
+                ANY_SUBJECT,
+                EV_PROMPT,
+                Capability::Initiate,
+                false,
+            ),
+            rule(
+                "c1",
+                SUBJECT_ROLE,
+                ANY_SUBJECT,
+                EV_PROMPT,
+                Capability::Initiate,
+                true,
+            ),
         ];
-        assert!(allows(&rules, "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        assert!(!allows(&rules, "c9", "u1", "member", EV_PROMPT, Capability::Initiate));
+        assert!(allows(
+            &rules,
+            "c1",
+            "u1",
+            "member",
+            EV_PROMPT,
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &rules,
+            "c9",
+            "u1",
+            "member",
+            EV_PROMPT,
+            Capability::Initiate
+        ));
     }
 
     #[test]
     fn respond_grant_for_member() {
-        let rules = vec![rule("c1", SUBJECT_USER, "u1", EV_PERMISSION_REQUEST, Capability::Respond, true)];
-        assert!(allows(&rules, "c1", "u1", "member", EV_PERMISSION_REQUEST, Capability::Respond));
-        assert!(!allows(&rules, "c1", "u2", "member", EV_PERMISSION_REQUEST, Capability::Respond));
+        let rules = vec![rule(
+            "c1",
+            SUBJECT_USER,
+            "u1",
+            EV_PERMISSION_REQUEST,
+            Capability::Respond,
+            true,
+        )];
+        assert!(allows(
+            &rules,
+            "c1",
+            "u1",
+            "member",
+            EV_PERMISSION_REQUEST,
+            Capability::Respond
+        ));
+        assert!(!allows(
+            &rules,
+            "c1",
+            "u2",
+            "member",
+            EV_PERMISSION_REQUEST,
+            Capability::Respond
+        ));
     }
 
     #[test]
     fn group_tier_and_precedence() {
         // friends group is granted RESPOND; role default denies it.
         let rules = vec![
-            rule("c1", SUBJECT_GROUP, "friends", EV_PERMISSION_REQUEST, Capability::Respond, true),
-            rule("c1", SUBJECT_USER, "u2", EV_PERMISSION_REQUEST, Capability::Respond, false),
+            rule(
+                "c1",
+                SUBJECT_GROUP,
+                "friends",
+                EV_PERMISSION_REQUEST,
+                Capability::Respond,
+                true,
+            ),
+            rule(
+                "c1",
+                SUBJECT_USER,
+                "u2",
+                EV_PERMISSION_REQUEST,
+                Capability::Respond,
+                false,
+            ),
         ];
         let friends = vec!["friends".to_string()];
         // u1 is a friend → group allow beats the deny default.
-        assert!(resolve_access(&rules, "c1", "u1", "member", &friends, EV_PERMISSION_REQUEST, Capability::Respond));
+        assert!(resolve_access(
+            &rules,
+            "c1",
+            "u1",
+            "member",
+            &friends,
+            EV_PERMISSION_REQUEST,
+            Capability::Respond
+        ));
         // u2 is a friend too, but the per-USER deny beats the group allow (user ▸ group).
-        assert!(!resolve_access(&rules, "c1", "u2", "member", &friends, EV_PERMISSION_REQUEST, Capability::Respond));
+        assert!(!resolve_access(
+            &rules,
+            "c1",
+            "u2",
+            "member",
+            &friends,
+            EV_PERMISSION_REQUEST,
+            Capability::Respond
+        ));
         // u3 is NOT a friend → no group match → falls to the respond deny default.
-        assert!(!resolve_access(&rules, "c1", "u3", "member", &[], EV_PERMISSION_REQUEST, Capability::Respond));
+        assert!(!resolve_access(
+            &rules,
+            "c1",
+            "u3",
+            "member",
+            &[],
+            EV_PERMISSION_REQUEST,
+            Capability::Respond
+        ));
     }
 
     #[test]
     fn group_deny_wins_on_tie() {
         // two groups the user belongs to disagree → deny wins.
         let rules = vec![
-            rule("c1", SUBJECT_GROUP, "friends", EV_TOOL_CALL, Capability::See, true),
-            rule("c1", SUBJECT_GROUP, "workspace:w1", EV_TOOL_CALL, Capability::See, false),
+            rule(
+                "c1",
+                SUBJECT_GROUP,
+                "friends",
+                EV_TOOL_CALL,
+                Capability::See,
+                true,
+            ),
+            rule(
+                "c1",
+                SUBJECT_GROUP,
+                "workspace:w1",
+                EV_TOOL_CALL,
+                Capability::See,
+                false,
+            ),
         ];
         let both = vec!["friends".to_string(), "workspace:w1".to_string()];
-        assert!(!resolve_access(&rules, "c1", "u1", "member", &both, EV_TOOL_CALL, Capability::See));
+        assert!(!resolve_access(
+            &rules,
+            "c1",
+            "u1",
+            "member",
+            &both,
+            EV_TOOL_CALL,
+            Capability::See
+        ));
     }
 
     #[test]
     fn owner_default_initiate_denies_members_but_is_grantable() {
         // set_mode / set_config_option default to OWNER-only even for INITIATE:
         // a plain member with no rule is denied.
-        assert!(!allows(&[], "c1", "u1", "member", "set_mode", Capability::Initiate));
-        assert!(!allows(&[], "c1", "u1", "member", "set_config_option", Capability::Initiate));
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "set_mode",
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "set_config_option",
+            Capability::Initiate
+        ));
         // ...but an explicit allow rule widens it (delegation).
-        let granted = vec![rule("c1", SUBJECT_USER, "u1", "set_mode", Capability::Initiate, true)];
-        assert!(allows(&granted, "c1", "u1", "member", "set_mode", Capability::Initiate));
-        assert!(!allows(&granted, "c1", "u2", "member", "set_mode", Capability::Initiate));
+        let granted = vec![rule(
+            "c1",
+            SUBJECT_USER,
+            "u1",
+            "set_mode",
+            Capability::Initiate,
+            true,
+        )];
+        assert!(allows(
+            &granted,
+            "c1",
+            "u1",
+            "member",
+            "set_mode",
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &granted,
+            "c1",
+            "u2",
+            "member",
+            "set_mode",
+            Capability::Initiate
+        ));
         // a role grant works too (e.g. admins may change mode).
-        let by_role = vec![rule("c1", SUBJECT_ROLE, "admin", "set_config_option", Capability::Initiate, true)];
-        assert!(allows(&by_role, "c1", "u9", "admin", "set_config_option", Capability::Initiate));
-        assert!(!allows(&by_role, "c1", "u1", "member", "set_config_option", Capability::Initiate));
+        let by_role = vec![rule(
+            "c1",
+            SUBJECT_ROLE,
+            "admin",
+            "set_config_option",
+            Capability::Initiate,
+            true,
+        )];
+        assert!(allows(
+            &by_role,
+            "c1",
+            "u9",
+            "admin",
+            "set_config_option",
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &by_role,
+            "c1",
+            "u1",
+            "member",
+            "set_config_option",
+            Capability::Initiate
+        ));
     }
 
     #[test]
     fn session_lifecycle_classes_are_owner_default_and_grantable() {
         // create/close default to owner-only (denied for a plain member)...
-        assert!(!allows(&[], "c1", "u1", "member", "session_create", Capability::Initiate));
-        assert!(!allows(&[], "c1", "u1", "member", "session_close", Capability::Initiate));
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "session_create",
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "session_close",
+            Capability::Initiate
+        ));
         // ...but an explicit grant widens, and they're in the INITIATE vocabulary.
-        let g = vec![rule("c1", SUBJECT_USER, "u1", "session_create", Capability::Initiate, true)];
-        assert!(allows(&g, "c1", "u1", "member", "session_create", Capability::Initiate));
+        let g = vec![rule(
+            "c1",
+            SUBJECT_USER,
+            "u1",
+            "session_create",
+            Capability::Initiate,
+            true,
+        )];
+        assert!(allows(
+            &g,
+            "c1",
+            "u1",
+            "member",
+            "session_create",
+            Capability::Initiate
+        ));
         let ev = initiate_events();
         assert!(ev.contains(&"session_create") && ev.contains(&"session_close"));
     }
@@ -594,8 +869,22 @@ mod tests {
     #[test]
     fn ordinary_initiate_classes_stay_member_default() {
         // prompt/cancel remain member-allowed by default (unchanged).
-        assert!(allows(&[], "c1", "u1", "member", EV_PROMPT, Capability::Initiate));
-        assert!(allows(&[], "c1", "u1", "member", "cancel", Capability::Initiate));
+        assert!(allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            EV_PROMPT,
+            Capability::Initiate
+        ));
+        assert!(allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "cancel",
+            Capability::Initiate
+        ));
     }
 
     #[test]
@@ -621,7 +910,10 @@ mod tests {
         let cancel = find(&m, "initiate", "cancel");
         assert_eq!(cancel["roles"]["member"]["allow"], json!(true));
         assert_eq!(cancel["roles"]["member"]["source"], json!("default"));
-        assert_eq!(find(&m, "initiate", "set_mode")["roles"]["member"]["allow"], json!(false));
+        assert_eq!(
+            find(&m, "initiate", "set_mode")["roles"]["member"]["allow"],
+            json!(false)
+        );
         assert_eq!(
             find(&m, "respond", EV_PERMISSION_REQUEST)["roles"]["owner"]["allow"],
             json!(false)
@@ -629,7 +921,14 @@ mod tests {
 
         // A bot-wide deny for members flips the member cancel cell and tags it as a
         // rule — owner/admin stay on the default-allow baseline.
-        let rules = vec![rule(BOT_WIDE, SUBJECT_ROLE, "member", "cancel", Capability::Initiate, false)];
+        let rules = vec![rule(
+            BOT_WIDE,
+            SUBJECT_ROLE,
+            "member",
+            "cancel",
+            Capability::Initiate,
+            false,
+        )];
         let m2 = effective_matrix(&rules);
         let cancel2 = find(&m2, "initiate", "cancel");
         assert_eq!(cancel2["roles"]["member"]["allow"], json!(false));

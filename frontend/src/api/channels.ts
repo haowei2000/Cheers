@@ -32,6 +32,29 @@ export async function listChannelMembers(
   return apiJson<MemberItem[]>(`/channels/${channelId}/members`);
 }
 
+/** One row of the channel invite picker (a user OR a bot the caller may invite). */
+export interface InvitableItem {
+  member_id: string;
+  member_type: "user" | "bot";
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  /** Bots: connector liveness (non-null). Users: may be null. */
+  is_online: boolean | null;
+  already_member: boolean;
+}
+
+/** Channel admin: search users + bots invitable into a channel (substring on name). */
+export async function searchInvitable(
+  channelId: string,
+  q: string
+): Promise<InvitableItem[]> {
+  const data = await apiJson<{ results: InvitableItem[] }>(
+    `/channels/${channelId}/invitable?q=${encodeURIComponent(q)}`
+  );
+  return data.results;
+}
+
 export async function createChannel(data: {
   workspace_id: string;
   name: string;

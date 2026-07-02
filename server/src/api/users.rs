@@ -97,10 +97,14 @@ pub async fn create_user(
     }
     let username = body.username.trim().to_string();
     if username.is_empty() || username.chars().count() > 64 {
-        return Err(AppError::BadRequest("username is required (≤64 chars)".into()));
+        return Err(AppError::BadRequest(
+            "username is required (≤64 chars)".into(),
+        ));
     }
     if body.password.chars().count() < 8 {
-        return Err(AppError::BadRequest("password must be at least 8 characters".into()));
+        return Err(AppError::BadRequest(
+            "password must be at least 8 characters".into(),
+        ));
     }
     let role = match body.role.as_deref().unwrap_or("member") {
         r @ ("member" | "admin") => r.to_string(),
@@ -143,7 +147,9 @@ pub async fn create_user(
         }
         return Err(AppError::Db(e));
     }
-    Ok(Json(json!({ "user_id": user_id, "username": username, "role": role })))
+    Ok(Json(
+        json!({ "user_id": user_id, "username": username, "role": role }),
+    ))
 }
 
 /// DELETE /api/v1/users/:user_id — admin soft-deletes a user (frees the username/email,

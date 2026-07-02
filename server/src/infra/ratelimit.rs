@@ -114,7 +114,12 @@ pub fn client_key(headers: &axum::http::HeaderMap) -> String {
         }
     }
     if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(last) = xff.split(',').map(str::trim).filter(|s| !s.is_empty()).last() {
+        if let Some(last) = xff
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .last()
+        {
             return last.to_string();
         }
     }

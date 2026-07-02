@@ -66,8 +66,12 @@ pub async fn login(
         .parse()
         .map_err(|_| AppError::Internal("invalid user id".into()))?;
 
-    let token =
-        auth::create_access_token(&state.config, user_uuid, &user.role, user.token_version as i64)?;
+    let token = auth::create_access_token(
+        &state.config,
+        user_uuid,
+        &user.role,
+        user.token_version as i64,
+    )?;
 
     Ok(Json(LoginResponse {
         access_token: token,
@@ -111,7 +115,9 @@ pub async fn register(
 
     let username = body.username.trim().to_string();
     if username.is_empty() || username.chars().count() > 64 {
-        return Err(AppError::BadRequest("username is required (≤64 chars)".into()));
+        return Err(AppError::BadRequest(
+            "username is required (≤64 chars)".into(),
+        ));
     }
     if body.password.chars().count() < 8 {
         return Err(AppError::BadRequest(
@@ -119,7 +125,12 @@ pub async fn register(
         ));
     }
     // Email is REQUIRED for self-service sign-up (so password reset always works).
-    let email = body.email.as_deref().map(str::trim).unwrap_or("").to_lowercase();
+    let email = body
+        .email
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_lowercase();
     if email.is_empty() {
         return Err(AppError::BadRequest("email is required".into()));
     }
@@ -198,7 +209,9 @@ pub async fn change_password(
 
     let hashed: String = row.try_get("password_hash").map_err(AppError::Db)?;
     if !bcrypt::verify(&body.current_password, &hashed).unwrap_or(false) {
-        return Err(AppError::Unauthorized("current password is incorrect".into()));
+        return Err(AppError::Unauthorized(
+            "current password is incorrect".into(),
+        ));
     }
     let new_hash = bcrypt::hash(&body.new_password, bcrypt::DEFAULT_COST)
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;

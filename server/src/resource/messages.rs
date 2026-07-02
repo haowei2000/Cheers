@@ -101,6 +101,36 @@ pub async fn handle_by_seq(db: &PgPool, principal: &Principal, params: &Value) -
     message_page_response(channel_id, page, limit)
 }
 
+pub async fn handle_search(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let channel_id: Uuid = params
+        .get("channel_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    authorize_channel_read(db, principal, channel_id).await?;
+
+    let query = params
+        .get("query")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "query required"))?;
+    let before = params
+        .get("before")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(20)
+        .clamp(1, 200);
+
+    let page = domain_messages::search_channel_messages(db, &channel_id, query, before, limit)
+        .await
+        .map_err(super::db_err("messages.search: search channel messages"))?;
+    message_page_response(channel_id, page, limit)
+}
+
 fn message_page_response(
     channel_id: Uuid,
     page: domain_messages::MessageListPage,

@@ -33,14 +33,17 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     // Board mode: `desc` returns the LATEST events first (an activity feed); the
     // default (asc) is the bot's forward-cursor read. The direction is a validated
     // literal (never user text), so the runtime replace below can't inject.
-    let order = if params.get("desc").and_then(|v| v.as_bool()).unwrap_or(false) {
+    let order = if params
+        .get("desc")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         "DESC"
     } else {
         "ASC"
     };
 
-    let base_query =
-        r#"
+    let base_query = r#"
         SELECT event_type, channel_seq, created_at, payload
         FROM (
             SELECT
@@ -105,12 +108,12 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         "#;
     let query = base_query.replace("channel_seq ASC", &format!("channel_seq {order}"));
     let rows = sqlx::query(&query)
-    .bind(channel_id.to_string())
-    .bind(since_seq)
-    .bind(limit)
-    .fetch_all(db)
-    .await
-    .map_err(super::db_err("activity.read: select channel operations"))?;
+        .bind(channel_id.to_string())
+        .bind(since_seq)
+        .bind(limit)
+        .fetch_all(db)
+        .await
+        .map_err(super::db_err("activity.read: select channel operations"))?;
 
     let events: Vec<Value> = rows
         .into_iter()

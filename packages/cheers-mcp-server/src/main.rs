@@ -284,6 +284,20 @@ fn build_resource_call(
                 params,
             })
         }
+        "search_messages" => {
+            let mut params = Map::new();
+            params.insert(
+                "channel_id".to_string(),
+                Value::String(client.resolve_channel(args)?),
+            );
+            copy_required(args, &mut params, "query", "query")?;
+            copy_optional(args, &mut params, "limit", "limit");
+            copy_optional(args, &mut params, "before", "before");
+            Ok(ResourceCall {
+                resource: "channel.messages.search",
+                params,
+            })
+        }
         "read_activity" => {
             let mut params = Map::new();
             params.insert(
@@ -294,6 +308,17 @@ fn build_resource_call(
             copy_optional(args, &mut params, "limit", "limit");
             Ok(ResourceCall {
                 resource: "channel.activity.read",
+                params,
+            })
+        }
+        "leave_channel" => {
+            let mut params = Map::new();
+            params.insert(
+                "channel_id".to_string(),
+                Value::String(client.resolve_channel(args)?),
+            );
+            Ok(ResourceCall {
+                resource: "channel.leave",
                 params,
             })
         }
@@ -532,12 +557,19 @@ fn tool_definitions() -> Vec<Value> {
             number_prop("max_seq", "Inclusive upper channel_seq.", Some(1), None),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
         ], vec!["channel_id", "min_seq"]), true, false),
+        tool("search_messages", "Search channel messages", "Case-insensitive substring search over finalized message content in a channel. Returns the newest matching page (ascending within the page, like read_messages). meta.has_more_before=true means older matches exist — pass before=<oldest matched msg_id from the previous page> to page further back.", object_schema(vec![
+            channel_id_prop(),
+            string_prop("query", "Text to find. Matched as a literal substring, case-insensitive; %/_ have no special meaning."),
+            number_prop("limit", "Default 20, max 200.", Some(1), Some(200)),
+            string_prop("before", "Return matches older than this msg_id (use the oldest matched msg_id from the previous page)."),
+        ], vec!["channel_id", "query"]), true, false),
         tool("read_activity", "Read channel activity", "Read the unified channel_seq event stream: messages plus channel operations.", object_schema(vec![
             channel_id_prop(),
             number_prop("since_seq", "Return events with channel_seq greater than this value.", Some(0), None),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
         ], vec!["channel_id"]), true, false),
         tool("get_context", "Get channel context", "Condensed channel context bundle (topic, pinned info, summary).", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("leave_channel", "Leave a channel", "Remove yourself from a channel you are a member of (like a human member leaving). Not allowed for DMs. You stop receiving that channel's tasks immediately; a human has to re-invite you to get you back, so only leave when you are sure your work there is done.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), false, true),
         tool("inbox_list", "List chat attachments (inbox)", "List files people UPLOADED to this channel's chat (pdf/csv/images/docx). Each has a FILE_ID (uuid); open one with inbox_open. Read-only; these are NOT your workspace files — save your own work with desk_* instead.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("inbox_open", "Open a chat attachment by file_id", "Open a channel attachment by its FILE_ID (from inbox_list). Text files (csv/txt/md/json) return content directly. Binaries (image/pdf/zip/docx) first return kind:\"binary\"; re-open with as_base64:true to get the raw bytes as base64 (<=8MB) through THIS tool, then decode them locally (e.g. write to a file and unzip). Do NOT try to fetch download_url yourself — it is an authenticated human-UI endpoint and you have no gateway session for it (you would just get 401). Attachments are read-only — to edit, copy the content into your workspace with desk_write.", object_schema(vec![
             channel_id_prop(),

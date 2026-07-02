@@ -187,9 +187,12 @@ pub async fn create_message(
     // overrides mention-based routing and determines which bot is prompted.
     let targeted_session = match params.session_id {
         Some(sid) => {
-            let (bot, key) = sessions::resolve_channel_session(db, &params.channel_id.to_string(), sid)
-                .await
-                .map_err(|_| AppError::BadRequest("session not found in this channel".into()))?;
+            let (bot, key) =
+                sessions::resolve_channel_session(db, &params.channel_id.to_string(), sid)
+                    .await
+                    .map_err(|_| {
+                        AppError::BadRequest("session not found in this channel".into())
+                    })?;
             Some((bot, sid, key))
         }
         None => None,
@@ -198,6 +201,9 @@ pub async fn create_message(
         Some((bot, _, _)) => vec![*bot],
         None => resolve_bot_triggers(db, params.channel_id, &mentions).await,
     };
+    // readonly 角色的 bot 不派发：它在 resource 层本就发不出消息，唤醒只会
+    // 产生一个必然失败的回合。消息本身照常入库。
+    let bots = filter_writable_bots(db, params.channel_id, bots).await;
     info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
     // Sender's channel role (for the INITIATE matrix); default 'member'.
     let sender_role: String = sqlx::query(
@@ -475,6 +481,40 @@ async fn resolve_bot_triggers(
             _ => vec![],
         },
         _ => vec![],
+    }
+}
+
+/// 过滤出频道内角色可写（owner/admin/member）的 bot 成员。
+/// readonly bot 不应被派发（见 resource 层 role_can_write）；查询失败时保守放行，
+/// 与 INITIATE(prompt) gate 的 fail-open 语义一致（成员资格早已校验过）。
+pub(crate) async fn filter_writable_bots(
+    db: &PgPool,
+    channel_id: Uuid,
+    bots: Vec<Uuid>,
+) -> Vec<Uuid> {
+    if bots.is_empty() {
+        return bots;
+    }
+    let ids: Vec<String> = bots.iter().map(Uuid::to_string).collect();
+    let writable: Result<Vec<String>, _> = sqlx::query_scalar(
+        "SELECT member_id FROM channel_memberships
+         WHERE channel_id = $1 AND member_type = 'bot'
+           AND member_id = ANY($2)
+           AND role IN ('owner', 'admin', 'member')",
+    )
+    .bind(channel_id.to_string())
+    .bind(&ids)
+    .fetch_all(db)
+    .await;
+    match writable {
+        Ok(writable) => bots
+            .into_iter()
+            .filter(|id| writable.contains(&id.to_string()))
+            .collect(),
+        Err(e) => {
+            warn!(channel_id = %channel_id, err = %e, "filter_writable_bots query failed; fail-open");
+            bots
+        }
     }
 }
 
@@ -758,6 +798,92 @@ pub async fn list_channel_messages_by_seq(
     })
 }
 
+/// 无权限透传的消息内容搜索（供 resource 层复用统一消息模型）。
+///
+/// ILIKE 子串匹配（大小写不敏感；查询按字面处理，`%`/`_`/`\` 已转义），
+/// 中英文皆可、无需额外索引或迁移。返回最新命中的一页（页内按时间升序，
+/// 与其余 list_* 一致）；`before` 传上一页最旧命中的 msg_id 向更早翻页。
+pub async fn search_channel_messages(
+    db: &PgPool,
+    channel_id: &Uuid,
+    query: &str,
+    before: Option<String>,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    let limit = limit.clamp(1, 200);
+    let pattern = format!("%{}%", escape_like_pattern(query));
+
+    let (rows, anchor_found) = if let Some(before_id) = before {
+        let anchor = fetch_anchor(db, &before_id, channel_id).await?;
+        if let Some((created_at, anchor_msg_id)) = anchor {
+            let rows = sqlx::query(&format!(
+                "{MESSAGE_LIST_SELECT}
+                 WHERE m.channel_id = $1
+                   AND m.is_partial = FALSE
+                   AND m.content ILIKE $2
+                   AND (
+                       m.created_at < $3
+                       OR (m.created_at = $3 AND m.msg_id < $4)
+                   )
+                 ORDER BY m.created_at DESC, m.msg_id DESC
+                 LIMIT $5"
+            ))
+            .bind(channel_id.to_string())
+            .bind(&pattern)
+            .bind(created_at)
+            .bind(anchor_msg_id)
+            .bind(limit + 1)
+            .fetch_all(db)
+            .await
+            .map_err(AppError::Db)?;
+            (rows, true)
+        } else {
+            (Vec::new(), false)
+        }
+    } else {
+        let rows = sqlx::query(&format!(
+            "{MESSAGE_LIST_SELECT}
+             WHERE m.channel_id = $1
+               AND m.is_partial = FALSE
+               AND m.content ILIKE $2
+             ORDER BY m.created_at DESC, m.msg_id DESC
+             LIMIT $3"
+        ))
+        .bind(channel_id.to_string())
+        .bind(&pattern)
+        .bind(limit + 1)
+        .fetch_all(db)
+        .await
+        .map_err(AppError::Db)?;
+        (rows, true)
+    };
+
+    let has_more = rows.len() > limit as usize;
+    let rows = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows[..]
+    };
+    let mut messages = hydrate_message_rows(db, rows).await?;
+    messages.reverse(); // 按时间升序返回
+
+    Ok(MessageListPage {
+        messages,
+        has_more_before: has_more,
+        has_more_after: false,
+        has_more,
+        anchor_found,
+    })
+}
+
+/// LIKE/ILIKE 通配符转义：让用户查询按字面子串匹配（Postgres 默认转义符 `\`）。
+pub fn escape_like_pattern(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 /// (created_at, msg_id) cursor anchor for keyset pagination.
 #[derive(Debug, sqlx::FromRow)]
 struct AnchorRow {
@@ -963,4 +1089,19 @@ async fn load_message_mentions(
     }
 
     Ok(by_msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_like_pattern;
+
+    /// 搜索 query 中的 LIKE 通配符必须按字面转义（默认转义符 `\`）。
+    #[test]
+    fn escape_like_pattern_escapes_wildcards() {
+        assert_eq!(escape_like_pattern("plain"), "plain");
+        assert_eq!(escape_like_pattern("100%"), "100\\%");
+        assert_eq!(escape_like_pattern("a_b"), "a\\_b");
+        assert_eq!(escape_like_pattern(r"c:\dir"), r"c:\\dir");
+        assert_eq!(escape_like_pattern(r"\%_"), r"\\\%\_");
+    }
 }

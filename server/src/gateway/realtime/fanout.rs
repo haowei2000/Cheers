@@ -213,7 +213,10 @@ mod tests {
     }
 
     /// 注册一个永不被消费、容量 1 的连接队列，并返回其关闭信号接收端。
-    fn full_conn(fanout: &InProcessFanout, user: Uuid) -> (mpsc::Receiver<WireFrame>, mpsc::Receiver<()>) {
+    fn full_conn(
+        fanout: &InProcessFanout,
+        user: Uuid,
+    ) -> (mpsc::Receiver<WireFrame>, mpsc::Receiver<()>) {
         let conn = Uuid::new_v4();
         let (tx, rx) = mpsc::channel::<WireFrame>(1);
         let (close_tx, close_rx) = mpsc::channel::<()>(1);
@@ -248,10 +251,7 @@ mod tests {
         fanout.broadcast_user(user, frame("message_stream")).await; // 占满
         fanout.broadcast_user(user, frame("message_stream")).await; // 满 → 静默丢弃
 
-        assert!(
-            close_rx.try_recv().is_err(),
-            "流式帧丢弃不应触发关闭"
-        );
+        assert!(close_rx.try_recv().is_err(), "流式帧丢弃不应触发关闭");
     }
 
     /// 断线注销后清掉关闭信号端，不泄漏。

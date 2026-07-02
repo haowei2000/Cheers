@@ -215,11 +215,17 @@ mod tests {
 
         // data WS arrives first: stashed, bot not online yet (no control session).
         reg.bind_data(bot, dummy_tx());
-        assert!(!reg.is_online(bot), "bot must not be online with control session missing");
+        assert!(
+            !reg.is_online(bot),
+            "bot must not be online with control session missing"
+        );
 
         // control WS arrives: it must adopt the stashed data_tx.
         let _supersede_rx = reg.bind_control(bot, Uuid::new_v4(), dummy_tx());
-        assert!(reg.is_online(bot), "data_tx from the early data WS must survive the race");
+        assert!(
+            reg.is_online(bot),
+            "data_tx from the early data WS must survive the race"
+        );
     }
 
     /// Normal ordering: control first, then data. Bot is only online once both exist.
@@ -229,7 +235,10 @@ mod tests {
         let bot = Uuid::new_v4();
 
         let _supersede_rx = reg.bind_control(bot, Uuid::new_v4(), dummy_tx());
-        assert!(!reg.is_online(bot), "control-only session is not yet online");
+        assert!(
+            !reg.is_online(bot),
+            "control-only session is not yet online"
+        );
 
         reg.bind_data(bot, dummy_tx());
         assert!(reg.is_online(bot));

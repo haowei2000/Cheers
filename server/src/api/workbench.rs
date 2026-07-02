@@ -70,8 +70,15 @@ pub async fn install_plugin(
     if bundle.trim().is_empty() {
         return Err(AppError::BadRequest("plugin bundle is required".into()));
     }
-    domain::workbench_plugins::install(&state.db, &plugin_id, &title, &manifest, &bundle, &claims.sub)
-        .await?;
+    domain::workbench_plugins::install(
+        &state.db,
+        &plugin_id,
+        &title,
+        &manifest,
+        &bundle,
+        &claims.sub,
+    )
+    .await?;
     Ok(Json(json!({ "plugin_id": plugin_id, "ok": true })))
 }
 
@@ -114,14 +121,22 @@ pub async fn put_template(
         .and_then(Value::as_str)
         .unwrap_or(&tpl_id)
         .to_string();
-    let manifest = body.get("manifest").ok_or_else(|| {
-        AppError::BadRequest("template manifest is required".into())
-    })?;
+    let manifest = body
+        .get("manifest")
+        .ok_or_else(|| AppError::BadRequest("template manifest is required".into()))?;
     if !manifest.is_object() {
-        return Err(AppError::BadRequest("manifest must be a JSON object".into()));
+        return Err(AppError::BadRequest(
+            "manifest must be a JSON object".into(),
+        ));
     }
-    domain::workbench_templates::put(&state.db, &tpl_id, &title, &manifest.to_string(), &claims.sub)
-        .await?;
+    domain::workbench_templates::put(
+        &state.db,
+        &tpl_id,
+        &title,
+        &manifest.to_string(),
+        &claims.sub,
+    )
+    .await?;
     Ok(Json(json!({ "tpl_id": tpl_id, "ok": true })))
 }
 

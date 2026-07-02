@@ -136,8 +136,9 @@ export interface MemberItem {
   role?: string;
   username?: string;
   display_name?: string;
-  avatar_url?: string;
-  is_online?: boolean;
+  avatar_url?: string | null;
+  /** Users: live browser connection subscribed to this channel; bots: connector liveness. */
+  is_online?: boolean | null;
 }
 
 export interface BotItem {

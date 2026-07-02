@@ -75,8 +75,7 @@ async fn filter_traces_by_see(
                 let rules = bot_event_policy::load_rules(&state.db, bid)
                     .await
                     .unwrap_or_default();
-                let groups =
-                    bot_event_policy::matched_groups(&state.db, bid, &uid_s, &rules).await;
+                let groups = bot_event_policy::matched_groups(&state.db, bid, &uid_s, &rules).await;
                 rules_by_bot.insert(bid.to_string(), rules);
                 groups_by_bot.insert(bid.to_string(), groups);
             }
@@ -97,7 +96,13 @@ async fn filter_traces_by_see(
                 _ => bot_event_policy::EV_TOOL_CALL,
             };
             bot_event_policy::resolve_access(
-                rules, &chan_s, &uid_s, &role, groups, class, Capability::See,
+                rules,
+                &chan_s,
+                &uid_s,
+                &role,
+                groups,
+                class,
+                Capability::See,
             )
         })
         .collect()
@@ -133,13 +138,20 @@ async fn ensure_member(
 }
 
 /// Bot-owner gate (system_admin bypass) for delegation management.
-async fn require_bot_owner(state: &AppState, bot_id: Uuid, uid: Uuid, role: &str) -> Result<(), AppError> {
+async fn require_bot_owner(
+    state: &AppState,
+    bot_id: Uuid,
+    uid: Uuid,
+    role: &str,
+) -> Result<(), AppError> {
     if role == "system_admin" {
         return Ok(());
     }
     match approval::bot_owner(&state.db, bot_id).await? {
         Some(owner) if owner == uid => Ok(()),
-        Some(_) => Err(AppError::Forbidden("only the bot owner can manage approvers".into())),
+        Some(_) => Err(AppError::Forbidden(
+            "only the bot owner can manage approvers".into(),
+        )),
         None => Err(AppError::NotFound),
     }
 }
@@ -162,7 +174,12 @@ pub async fn resolve_permission(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if pending.content_data.get("resolved").and_then(Value::as_bool) == Some(true) {
+    if pending
+        .content_data
+        .get("resolved")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
         return Err(AppError::Conflict("approval already resolved".into()));
     }
     // The operation_kind being approved (opaque ACP toolCall.kind) scopes which
@@ -176,9 +193,8 @@ pub async fn resolve_permission(
     // Who may answer a permission_request = bot owner OR a per-kind approver
     // (approval_delegations) OR a RESPOND grant in the event-policy matrix. All three
     // compose; default is owner/approver-only (no loosening). See ACP_EVENT_TAXONOMY.md.
-    let may_respond = approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind)
-        .await?
-        || {
+    let may_respond =
+        approval::is_approver(&state.db, pending.bot_id, channel_id, uid, op_kind).await? || {
             let role = channel_role(&state, channel_id, uid).await;
             crate::domain::acp_policy::allows(
                 &state.db,
@@ -193,7 +209,9 @@ pub async fn resolve_permission(
             .unwrap_or(false)
         };
     if !may_respond {
-        return Err(AppError::Forbidden("not authorized to resolve this bot's permission".into()));
+        return Err(AppError::Forbidden(
+            "not authorized to resolve this bot's permission".into(),
+        ));
     }
 
     let kind = approval::option_kind(&pending.content_data, &body.option_id)
@@ -214,7 +232,8 @@ pub async fn resolve_permission(
         "chosen_option_id": option_id,
         "chosen_kind": kind,
     });
-    if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await? {
+    if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
+    {
         return Err(AppError::Conflict("approval already resolved".into()));
     }
 
@@ -273,7 +292,11 @@ pub async fn resolve_permission(
     }
 
     // Push the decision to the bot's connector (control frame → ACP outcome).
-    let resolution = if kind.starts_with("allow") { "allow" } else { "reject" };
+    let resolution = if kind.starts_with("allow") {
+        "allow"
+    } else {
+        "reject"
+    };
     let frame = json!({
         "type": "permission_resolution",
         "v": 1,
@@ -315,7 +338,9 @@ pub async fn resolve_permission(
     );
     state.fanout.broadcast_channel(channel_id, wire).await;
 
-    Ok(Json(json!({ "ok": true, "delivered": delivered, "decision": kind })))
+    Ok(Json(
+        json!({ "ok": true, "delivered": delivered, "decision": kind }),
+    ))
 }
 
 // ── POST /channels/:cid/permissions/:request_id/request-access ──────────────

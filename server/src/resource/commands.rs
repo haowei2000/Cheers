@@ -29,7 +29,9 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     .bind(channel_id.to_string())
     .fetch_all(db)
     .await
-    .map_err(super::db_err("commands.read: select bot_available_commands"))?;
+    .map_err(super::db_err(
+        "commands.read: select bot_available_commands",
+    ))?;
 
     let bots: Vec<Value> = rows
         .into_iter()

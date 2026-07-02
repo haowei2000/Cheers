@@ -130,7 +130,9 @@ pub async fn add_friend(
         let requester: String = row.try_get("user_id").unwrap_or_default();
         match status.as_str() {
             "accepted" => {
-                return Ok(Json(json!({"friend_id": body.friend_id, "status": "accepted"})))
+                return Ok(Json(
+                    json!({"friend_id": body.friend_id, "status": "accepted"}),
+                ))
             }
             "pending" if requester == body.friend_id => {
                 sqlx::query(
@@ -140,9 +142,15 @@ pub async fn add_friend(
                 .bind(&pair)
                 .execute(&state.db)
                 .await?;
-                return Ok(Json(json!({"friend_id": body.friend_id, "status": "accepted"})));
+                return Ok(Json(
+                    json!({"friend_id": body.friend_id, "status": "accepted"}),
+                ));
             }
-            _ => return Ok(Json(json!({"friend_id": body.friend_id, "status": "pending"}))),
+            _ => {
+                return Ok(Json(
+                    json!({"friend_id": body.friend_id, "status": "pending"}),
+                ))
+            }
         }
     }
     let friendship_id = Uuid::new_v4().to_string();
@@ -157,7 +165,9 @@ pub async fn add_friend(
     .bind(&pair)
     .execute(&state.db)
     .await?;
-    Ok(Json(json!({"friend_id": body.friend_id, "status": "pending"})))
+    Ok(Json(
+        json!({"friend_id": body.friend_id, "status": "pending"}),
+    ))
 }
 
 pub async fn remove_friend(
@@ -202,7 +212,10 @@ pub async fn list_friend_requests(
          WHERE f.friend_id = $1 AND f.status = 'pending'
          ORDER BY f.created_at DESC"
     };
-    let rows = sqlx::query(sql).bind(&claims.sub).fetch_all(&state.db).await?;
+    let rows = sqlx::query(sql)
+        .bind(&claims.sub)
+        .fetch_all(&state.db)
+        .await?;
     let dir = if outgoing { "outgoing" } else { "incoming" };
     Ok(Json(
         rows.into_iter()
@@ -251,11 +264,7 @@ pub struct BlockRequest {
 
 /// Whether a block exists in either direction between two users. Used to gate
 /// friend requests and DMs (a block is mutual in effect).
-pub(crate) async fn is_blocked(
-    db: &sqlx::PgPool,
-    a: &str,
-    b: &str,
-) -> Result<bool, AppError> {
+pub(crate) async fn is_blocked(db: &sqlx::PgPool, a: &str, b: &str) -> Result<bool, AppError> {
     let ok: bool = sqlx::query(
         "SELECT EXISTS(
             SELECT 1 FROM user_blocks

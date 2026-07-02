@@ -110,7 +110,12 @@ impl RedisBotRegistry {
 
 // BotRegistry 在 Arc<RedisBotRegistry> 上实现
 impl BotRegistry for Arc<RedisBotRegistry> {
-    fn bind_control(&self, bot_id: Uuid, conn_id: Uuid, task_tx: mpsc::Sender<Value>) -> oneshot::Receiver<()> {
+    fn bind_control(
+        &self,
+        bot_id: Uuid,
+        conn_id: Uuid,
+        task_tx: mpsc::Sender<Value>,
+    ) -> oneshot::Receiver<()> {
         (**self).bind_control(bot_id, conn_id, task_tx)
     }
     fn bind_data(&self, bot_id: Uuid, data_tx: mpsc::Sender<Value>) {
@@ -131,7 +136,12 @@ impl BotRegistry for Arc<RedisBotRegistry> {
 }
 
 impl BotRegistry for RedisBotRegistry {
-    fn bind_control(&self, bot_id: Uuid, _conn_id: Uuid, task_tx: mpsc::Sender<Value>) -> oneshot::Receiver<()> {
+    fn bind_control(
+        &self,
+        bot_id: Uuid,
+        _conn_id: Uuid,
+        task_tx: mpsc::Sender<Value>,
+    ) -> oneshot::Receiver<()> {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let client = self.client.clone();
         let publisher = self.publisher.clone();

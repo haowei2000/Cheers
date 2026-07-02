@@ -218,7 +218,8 @@ pub async fn create_dm(
     Extension(claims): Extension<Claims>,
     Json(body): Json<DmCreateRequest>,
 ) -> Result<Json<ChannelDto>, AppError> {
-    let me = Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
+    let me =
+        Uuid::parse_str(&claims.sub).map_err(|_| AppError::BadRequest("bad user id".into()))?;
     let (target_id, is_bot) = match (body.target_user_id, body.target_bot_id) {
         (Some(u), None) => (u, false),
         (None, Some(b)) => (b, true),
@@ -233,7 +234,8 @@ pub async fn create_dm(
             "you can only DM friends or people you share a channel with".into(),
         ));
     }
-    let channel_id = crate::domain::dms::find_or_create_dm(&state.db, me, &target_id, is_bot).await?;
+    let channel_id =
+        crate::domain::dms::find_or_create_dm(&state.db, me, &target_id, is_bot).await?;
     let row = sqlx::query(
         "SELECT channel_id, workspace_id, name, type, purpose, auto_assist,
                 allow_member_invites, allow_bot_adds
@@ -432,7 +434,8 @@ pub async fn list_channel_members(
     let rows = sqlx::query(
         "SELECT cm.member_id, cm.member_type, cm.role,
                 COALESCE(u.username, b.username) AS username,
-                COALESCE(u.display_name, b.display_name) AS display_name
+                COALESCE(u.display_name, b.display_name) AS display_name,
+                COALESCE(u.avatar_url, b.avatar_url) AS avatar_url
          FROM channel_memberships cm
          LEFT JOIN users u ON cm.member_type = 'user' AND u.user_id = cm.member_id
          LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.bot_id = cm.member_id
@@ -442,19 +445,74 @@ pub async fn list_channel_members(
     .bind(&channel_id)
     .fetch_all(&state.db)
     .await?;
+    // is_online：用户 = 有订阅本频道的活跃浏览器连接；bot = connector 双 WS 在线。
+    let online_users: std::collections::HashSet<String> = Uuid::parse_str(&channel_id)
+        .map(|cid| {
+            state
+                .fanout
+                .online_users(cid)
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(Json(
         rows.into_iter()
             .map(|r| {
+                let member_id = r.try_get::<String, _>("member_id").unwrap_or_default();
+                let member_type = r.try_get::<String, _>("member_type").unwrap_or_default();
+                let is_online = match member_type.as_str() {
+                    "user" => online_users.contains(&member_id),
+                    "bot" => Uuid::parse_str(&member_id)
+                        .map(|id| state.bot_locator.is_online(id))
+                        .unwrap_or(false),
+                    _ => false,
+                };
                 json!({
-                    "member_id": r.try_get::<String, _>("member_id").unwrap_or_default(),
-                    "member_type": r.try_get::<String, _>("member_type").unwrap_or_default(),
+                    "member_id": member_id,
+                    "member_type": member_type,
                     "role": r.try_get::<String, _>("role").unwrap_or_else(|_| "member".into()),
                     "username": r.try_get::<String, _>("username").ok(),
                     "display_name": r.try_get::<String, _>("display_name").ok(),
+                    "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+                    "is_online": is_online,
                 })
             })
             .collect(),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct InvitableQuery {
+    pub q: Option<String>,
+}
+
+/// GET /api/v1/channels/{channel_id}/invitable?q= — 统一邀请候选搜索（人 + bot）。
+/// 与 add_channel_member 相同的频道管理员门槛；用户候选限 workspace 成员 ∪ 好友，
+/// bot 候选按邀请 AND-gate 的 bot 侧条件过滤（owner / 平台管理员 / session_create 授权）。
+pub async fn search_invitable(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+    Query(params): Query<InvitableQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
+    let q = params.q.unwrap_or_default();
+    let caller_role = caller_channel_role(&state, &channel_id, &claims.sub).await;
+    let caller = crate::domain::invitable::InvitableCaller {
+        user_id: &claims.sub,
+        global_role: &claims.role,
+        channel_role: &caller_role,
+    };
+    let items = crate::domain::invitable::search_invitable(
+        &state.db,
+        &state.bot_locator,
+        &caller,
+        &channel_id,
+        &q,
+    )
+    .await?;
+    Ok(Json(json!({ "results": items })))
 }
 
 pub async fn add_channel_member(
@@ -482,6 +540,12 @@ pub async fn add_channel_member(
             "only an owner or a system admin can add a member as owner".into(),
         ));
     }
+    // bot 的频道角色只有 member/readonly（owner/admin 对 bot 在权限层无意义）。
+    if body.member_type == "bot" && !matches!(role.as_str(), "member" | "readonly") {
+        return Err(AppError::BadRequest(
+            "a bot's channel role must be member or readonly".into(),
+        ));
+    }
 
     // Bot-side authorization (docs/arch/SESSION_WORKDIR_ROOTSET.md): inviting a bot
     // into a channel = a `session_create` for that bot, so it is an AND-gate — the
@@ -492,9 +556,10 @@ pub async fn add_channel_member(
     // authorization (it can only be chosen through an invite the caller may make).
     let mut primary_workspace: Option<(Option<String>, Vec<String>)> = None;
     if body.member_type == "bot" {
-        let is_owner = crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &body.member_id)
-            .await
-            .is_ok();
+        let is_owner =
+            crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &body.member_id)
+                .await
+                .is_ok();
         if !is_owner {
             let caller_role = caller_channel_role(&state, &channel_id, &claims.sub).await;
             let allowed = crate::domain::acp_policy::allows(
@@ -535,12 +600,14 @@ pub async fn add_channel_member(
         }
     }
 
+    // ON CONFLICT 不改 member_type：PK 只有 (channel_id, member_id)，重复添加
+    // 不应把已有成员在 user/bot 之间悄悄翻转。
     sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (channel_id, member_id) DO UPDATE SET
-            member_type = EXCLUDED.member_type,
-            role = EXCLUDED.role",
+            role = EXCLUDED.role
+         WHERE channel_memberships.member_type = EXCLUDED.member_type",
     )
     .bind(&channel_id)
     .bind(&body.member_id)
@@ -571,6 +638,11 @@ pub async fn add_channel_member(
         .await?;
     }
 
+    // 成员集变了（尤其是拉入一个在线 bot）→ 重发全量 presence。
+    if let Ok(cid) = Uuid::parse_str(&channel_id) {
+        crate::gateway::presence::broadcast_presence(&state, cid).await;
+    }
+
     Ok(Json(
         json!({"channel_id": channel_id, "member_id": body.member_id, "member_type": body.member_type, "role": role}),
     ))
@@ -587,6 +659,9 @@ pub async fn remove_channel_member(
         .bind(&member_id)
         .execute(&state.db)
         .await?;
+    if let Ok(cid) = Uuid::parse_str(&channel_id) {
+        crate::gateway::presence::broadcast_presence(&state, cid).await;
+    }
     Ok(Json(json!({"removed": true})))
 }
 
@@ -695,9 +770,10 @@ pub async fn leave_channel(
     Ok(Json(json!({ "left": true })))
 }
 
-/// PATCH /api/v1/channels/{channel_id}/members/{member_id} — change a HUMAN member's
-/// role (admin-only). Only an owner/global-admin may grant 'owner' or touch an
-/// existing owner; refuses to demote the last owner; can't change your own role.
+/// PATCH /api/v1/channels/{channel_id}/members/{member_id} — change a member's
+/// role (admin-only)，用户与 bot 走同一入口。
+/// 用户：owner 相关变更需 owner/全局管理员；拒绝把最后一个 owner 降级；不能改自己。
+/// bot：只允许 member/readonly（bot 的 owner/admin 在 REST 权限层无意义，禁授）。
 pub async fn set_channel_member_role(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -716,15 +792,35 @@ pub async fn set_channel_member_role(
             "role must be owner, admin, member, or readonly".into(),
         ));
     }
-    let current: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM channel_memberships
-         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    let row = sqlx::query(
+        "SELECT role, member_type FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2",
     )
     .bind(&channel_id)
     .bind(&member_id)
     .fetch_optional(&state.db)
-    .await?;
-    let current = current.ok_or(AppError::NotFound)?;
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let current: String = row.try_get("role").unwrap_or_else(|_| "member".into());
+    let member_type: String = row.try_get("member_type").unwrap_or_else(|_| "user".into());
+
+    if member_type == "bot" {
+        if !matches!(role.as_str(), "member" | "readonly") {
+            return Err(AppError::BadRequest(
+                "a bot's channel role must be member or readonly".into(),
+            ));
+        }
+        sqlx::query(
+            "UPDATE channel_memberships SET role = $3
+             WHERE channel_id = $1 AND member_id = $2 AND member_type = 'bot'",
+        )
+        .bind(&channel_id)
+        .bind(&member_id)
+        .bind(&role)
+        .execute(&state.db)
+        .await?;
+        return Ok(Json(json!({ "member_id": member_id, "role": role })));
+    }
 
     // Privilege guard: granting 'owner' or modifying an existing owner requires the
     // caller to be an owner (or global admin) — a plain 'admin' can't mint/seize owner.

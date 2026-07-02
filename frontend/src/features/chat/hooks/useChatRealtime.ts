@@ -11,8 +11,9 @@ interface Callbacks {
   onBotProcessing?: (botId: string) => void;
   /** Fired after every (re)subscribe ack — used to run REST seq catch-up. */
   onReady?: () => void;
-  /** Channel presence update (online user ids + count). */
-  onPresence?: (userIds: string[], count: number) => void;
+  /** Channel presence update (online user ids + count + online bot ids).
+   *  `count` already includes online bots — don't add `botIds.length` to it. */
+  onPresence?: (userIds: string[], count: number, botIds?: string[]) => void;
   /** Agent progress (trace) for a streaming bot message. */
   onBotTrace?: (msgId: string | null, title: string | null) => void;
   /** ViewBoard live-push: a board's underlying data changed → re-pull that board.
@@ -154,8 +155,16 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
           (data as { bot_id: string }).bot_id
         );
       } else if (type === "presence") {
-        const d = data as { online_user_ids?: string[]; count?: number };
-        cbsRef.current.onPresence?.(d.online_user_ids ?? [], d.count ?? 0);
+        const d = data as {
+          online_user_ids?: string[];
+          online_bot_ids?: string[];
+          count?: number;
+        };
+        cbsRef.current.onPresence?.(
+          d.online_user_ids ?? [],
+          d.count ?? 0,
+          d.online_bot_ids ?? []
+        );
       } else if (type === "bot_trace") {
         const d = data as {
           msg_id?: string | null;

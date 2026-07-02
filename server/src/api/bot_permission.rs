@@ -29,11 +29,12 @@ async fn load_posture(
     state: &AppState,
     bot_id: &str,
 ) -> Result<(String, Option<String>), AppError> {
-    let row = sqlx::query("SELECT bridge_provider, binding_config FROM bot_accounts WHERE bot_id = $1")
-        .bind(bot_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let row =
+        sqlx::query("SELECT bridge_provider, binding_config FROM bot_accounts WHERE bot_id = $1")
+            .bind(bot_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(AppError::NotFound)?;
     let agent_type = row
         .try_get::<Option<String>, _>("bridge_provider")
         .ok()
@@ -186,7 +187,9 @@ pub async fn set_posture(
         }
         Err(_) => false,
     };
-    Ok(Json(json!({ "ok": true, "permission_mode": mode, "delivered": delivered })))
+    Ok(Json(
+        json!({ "ok": true, "permission_mode": mode, "delivered": delivered }),
+    ))
 }
 
 // ── PUT /bots/:bot_id/permissions/config-option ──────────────────────────────
@@ -300,8 +303,11 @@ pub async fn set_config_option(
 // authorization keyed on channel role with per-user overrides.
 
 fn parse_capability(raw: &str) -> Result<Capability, AppError> {
-    Capability::parse(raw)
-        .ok_or_else(|| AppError::BadRequest(format!("capability must be initiate|see|respond, got {raw:?}")))
+    Capability::parse(raw).ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "capability must be initiate|see|respond, got {raw:?}"
+        ))
+    })
 }
 
 /// The dynamic-group subjects selectable for this bot: the owner's friends, plus
@@ -323,7 +329,9 @@ async fn group_catalog(state: &AppState, bot_id: &str) -> Vec<Value> {
         for r in rows {
             let cid: String = r.try_get("channel_id").unwrap_or_default();
             let cname: String = r.try_get("cname").unwrap_or_default();
-            out.push(json!({ "ref": format!("channel:{cid}"), "label": format!("#{cname} members") }));
+            out.push(
+                json!({ "ref": format!("channel:{cid}"), "label": format!("#{cname} members") }),
+            );
             let wid: String = r.try_get("wid").unwrap_or_default();
             if !wid.is_empty() && !seen_ws.contains(&wid) {
                 seen_ws.push(wid.clone());
@@ -365,8 +373,8 @@ pub struct UpsertEventRuleRequest {
     pub subject_kind: String, // "role" | "user"
     pub subject_id: String,   // role name | user_id | "*"
     pub event_class: String,
-    pub capability: String,   // initiate | see | respond
-    pub decision: String,     // allow | deny
+    pub capability: String, // initiate | see | respond
+    pub decision: String,   // allow | deny
 }
 
 /// PUT /bots/:bot_id/event-access — owner/admin upsert one rule.
@@ -393,7 +401,11 @@ pub async fn upsert_event_rule(
     let allow = match body.decision.trim() {
         "allow" => true,
         "deny" => false,
-        other => return Err(AppError::BadRequest(format!("decision must be allow|deny, got {other:?}"))),
+        other => {
+            return Err(AppError::BadRequest(format!(
+                "decision must be allow|deny, got {other:?}"
+            )))
+        }
     };
     let subject_id = body.subject_id.trim();
     if subject_id.is_empty() {
@@ -401,7 +413,14 @@ pub async fn upsert_event_rule(
     }
     let channel = normalize_channel(body.channel_id);
     bot_event_policy::upsert_rule(
-        &state.db, &bot_id, &channel, subject_kind, subject_id, event_class, capability, allow,
+        &state.db,
+        &bot_id,
+        &channel,
+        subject_kind,
+        subject_id,
+        event_class,
+        capability,
+        allow,
         &claims.sub,
     )
     .await?;
@@ -428,8 +447,13 @@ pub async fn delete_event_rule(
     let capability = parse_capability(q.capability.trim())?;
     let channel = normalize_channel(q.channel_id);
     let removed = bot_event_policy::delete_rule(
-        &state.db, &bot_id, &channel, q.subject_kind.trim(), q.subject_id.trim(),
-        q.event_class.trim(), capability,
+        &state.db,
+        &bot_id,
+        &channel,
+        q.subject_kind.trim(),
+        q.subject_id.trim(),
+        q.event_class.trim(),
+        capability,
     )
     .await?;
     if !removed {
