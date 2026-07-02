@@ -10,6 +10,18 @@ Cheers 有三种运行方式，按目标选择：
 | **2. Docker Compose** | 单机自托管、演示 | 所有服务作为容器运行在一台主机上 |
 | **3. Helm / Kubernetes** | 集群、生产、横向扩展 | 所有服务作为 Kubernetes 工作负载 |
 
+## 最低硬件要求
+
+| 配置 | CPU | 内存 | 磁盘 |
+|---|---|---|---|
+| 核心栈（不含智能体 bot） | 2 核 | 4 GB | ~10 GB |
+| 含智能体 bot + 余量 | 4 核 | 8 GB | ~20 GB |
+
+这些数值与 `docker-compose.yml.template` 和 Helm 开发 values（`values-dev.yaml`）
+中设置的资源上限一致：网关、PostgreSQL、RustFS、Gotenberg 各约上限 1 GB，前端与
+Redis 很小，智能体 bot 最多约 2 GB。上限只是天花板 —— 实际空闲用量远低于此。
+Docker Desktop 用户请把虚拟机内存至少设为 4 GB（含 bot 时 6–8 GB）。
+
 ## 三种方式的共同点
 
 - **后端是单一的 Rust 网关。** 启动时自动执行 `sqlx` 数据库迁移 —— 没有单独的迁移步骤。

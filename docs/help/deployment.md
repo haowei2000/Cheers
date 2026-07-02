@@ -10,6 +10,19 @@ Cheers can be run three ways. Pick by goal:
 | **2. Docker Compose** | Single-host self-hosting, demos | All services as containers on one host |
 | **3. Helm / Kubernetes** | Clusters, production, scale-out | All services as Kubernetes workloads |
 
+## Minimum hardware
+
+| Setup | CPU | RAM | Disk |
+|---|---|---|---|
+| Core stack (no agent bot) | 2 cores | 4 GB | ~10 GB |
+| With an agent bot + headroom | 4 cores | 8 GB | ~20 GB |
+
+These track the resource limits shipped in `docker-compose.yml.template` and the
+Helm dev values (`values-dev.yaml`): gateway, PostgreSQL, RustFS, and Gotenberg
+are capped around 1 GB each, the frontend and Redis are small, and the agent bot
+may use up to 2 GB. Limits are ceilings — real idle usage is much lower. Docker
+Desktop users should give the VM at least 4 GB of memory (6–8 GB with the bot).
+
 ## Common to every method
 
 - **Backend is a single Rust gateway.** It runs its `sqlx` database migrations
