@@ -419,7 +419,7 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 <pre class="code"><span class="c"># start dependencies only</span>
 cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
-docker compose up -d postgres redis rustfs kkfileview
+docker compose up -d postgres redis rustfs gotenberg
 
 <span class="c"># Rust gateway (runs sqlx migrations on startup)</span>
 cd server && cargo run

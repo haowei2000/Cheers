@@ -34,6 +34,6 @@ Before production deployment, confirm at least:
 - Generate a dedicated RS256 keypair for `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`; never reuse dev keys or commit the private key.
 - Replace `POSTGRES_PASSWORD`, `RUSTFS_ACCESS_KEY`, `RUSTFS_SECRET_KEY`, `ADMIN_PASSWORD`.
 - If Agent Bridge is enabled, set strong random `AGENT_BRIDGE_TOKEN` and restrict external access.
-- Configure trusted `PUBLIC_BASE_URL`, `KKFILEVIEW_BASE_URL` and `KKFILEVIEW_TRUST_HOST`.
+- Restrict `CORS_ALLOWED_ORIGINS` to your public origin(s) and scope the object-storage bucket/credentials to the deployment.
 - Tighten CORS, reverse proxy, object bucket permissions and file upload types.
 - Submission of `.env`, logs, databases, uploaded files, private keys and production tokens is prohibited.

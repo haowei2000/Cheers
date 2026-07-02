@@ -8,6 +8,7 @@ This directory contains user-facing, administrator-facing, and operations-facing
 
 | Reader | Start Here | Covers |
 |---|---|---|
+| Anyone deploying | [Deployment Guide](deployment.md) | The three methods — from source, Docker Compose, Helm/Kubernetes — and when to use each |
 | First-time deployer (Compose) | [Docker Compose Deployment Guide](docker-compose-deploy.md) | Single-host Compose stack: JWT keys, `.env`, core stack, OpenCode bot, TLS, ops |
 | First-time deployer (legacy) | [Installation Guide](安装部署说明.md) | Older combined install notes (predates the Rust gateway; being revised) |
 | Daily user | [User Guide](普通用户使用说明.md) | Entering channels, sending messages, mentioning Bots, uploading files |
@@ -17,7 +18,6 @@ This directory contains user-facing, administrator-facing, and operations-facing
 | Prompt operator | [Prompt Template Operations Guide](prompt-template-operations.md) | Prompt template variables, runtime priority, Bot binding, overrides, and troubleshooting |
 | Agent provider author | [Agent Bridge Integration Guide](AgentBridge接入指南.md) | Registering Agent Bridge Bots and connecting local ACP-capable agents; OpenClaw links are legacy/deprecated |
 | Local ACP agent (developer) | [Local Bot Setup Guide](本地Bot配置指南.md) | Host daemon: one TOML per bot, sidecar-file tokens, multi-bot management, full field reference, troubleshooting |
-| File preview operator | [kkFileView Preview Guide](kkFileView配置说明.md) | Complex Office/PDF preview setup and troubleshooting |
 | Object storage operator | [RustFS Object Storage Guide](RustFS对象存储部署说明.md) | S3-compatible storage, bucket, and key setup |
 | Troubleshooter | [Troubleshooting Q&A](技术排查Q&A.md) | Health checks, logs, database, Bot no-response, preview failures |
 
@@ -26,7 +26,7 @@ This directory contains user-facing, administrator-facing, and operations-facing
 - Frontend: `http://localhost`
 - Backend API: `http://localhost:8000`
 - Main database and Context Store: PostgreSQL
-- Redis, RustFS, and kkFileView are started by Docker Compose
+- Redis, RustFS, and Gotenberg (office→PDF preview) are started by Docker Compose
 - For public deployment, use `docker-compose.production.tls.yml` (Caddy + HTTPS + strict `CORS_ALLOWED_ORIGINS`) with `APP_DOMAIN` and `TLS_*` configured in `.env`.
 - No built-in assistant: Cheers is external-agent-first — connect an ACP agent (OpenCode, Claude, Codex) and `@`-mention it in a channel.
 - Chinese versions are available next to each document as `*.zh-CN.md`

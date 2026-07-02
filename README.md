@@ -16,6 +16,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 **User and operations docs**
 
 - [Documentation Home](docs/help/README.md) / [中文](docs/help/README.zh-CN.md)
+- [**Deployment Guide** (source · Docker Compose · Helm/K8s)](docs/help/deployment.md) / [中文](docs/help/deployment.zh-CN.md)
 - [User Manual](docs/help/使用说明书.md) / [中文](docs/help/使用说明书.zh-CN.md)
 - [User Guide](docs/help/普通用户使用说明.md) / [中文](docs/help/普通用户使用说明.zh-CN.md)
 - [Admin Guide](docs/help/系统管理说明书.md) / [中文](docs/help/系统管理说明书.zh-CN.md)
@@ -24,7 +25,6 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 - [Troubleshooting Q&A](docs/help/技术排查Q&A.md) / [中文](docs/help/技术排查Q&A.zh-CN.md)
 - [Agent Bridge Integration Guide](docs/help/AgentBridge接入指南.md) / [中文](docs/help/AgentBridge接入指南.zh-CN.md) — ACP local agents are the recommended path; OpenClaw links are legacy/deprecated.
 - [RustFS Object Storage Guide](docs/help/RustFS对象存储部署说明.md) / [中文](docs/help/RustFS对象存储部署说明.zh-CN.md)
-- [kkFileView Preview Guide](docs/help/kkFileView配置说明.md) / [中文](docs/help/kkFileView配置说明.zh-CN.md)
 
 **Development and architecture docs**
 
@@ -42,8 +42,17 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 - Backend: Rust gateway (Axum + SQLx) — the only backend service
 - Frontend: React, TypeScript, Tailwind CSS, Vite
 - Agents: external ACP agents (OpenCode, Claude, Codex) via `cheers-mcp-server` and ACP connectors
-- Storage: PostgreSQL for business data and channel history, S3-compatible object storage for files, optional kkFileView for complex document preview
+- Storage: PostgreSQL for business data and channel history, S3-compatible object storage for files
+- Preview: built into the gateway (`GET /files/:id/preview`); office→PDF conversion via optional Gotenberg
 - Deployment: Docker Compose (single host) or Kubernetes via the Helm chart in `deploy/helm/cheers`
+
+## Deployment
+
+Cheers runs three ways — see the [Deployment Guide](docs/help/deployment.md) for all three:
+
+1. **From source** — `cargo run` + `npm run dev` with backing services in Docker (development).
+2. **Docker Compose** — one host, all containers (self-hosting, demos). Quick Start below.
+3. **Helm / Kubernetes** — cluster workloads (production, scale-out); chart in `deploy/helm/cheers`.
 
 ## Quick Start
 
@@ -63,14 +72,14 @@ Default local endpoints:
 - API: http://localhost:8000
 - Health check: http://localhost:8000/health
 
-If document preview is enabled, make sure the gateway is reachable from the kkFileView container at `KKFILEVIEW_BASE_URL` / `KKFILEVIEW_TRUST_HOST`. Never use `.env.example` secrets in production.
+Document preview (office→PDF) uses the bundled Gotenberg service and needs no extra configuration. Never use `.env.example` secrets in production.
 
 ## Local Development
 
 ```bash
 cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
-docker compose up -d postgres redis rustfs kkfileview
+docker compose up -d postgres redis rustfs gotenberg
 
 # Rust gateway (runs sqlx migrations on startup)
 cd server

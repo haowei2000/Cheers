@@ -4,7 +4,7 @@
 
 This guide deploys the full Cheers stack with Docker Compose: the Rust
 **gateway**, the **frontend**, **PostgreSQL**, **RustFS** (S3-compatible object
-store), **Redis**, **kkFileView** (document preview), and an optional
+store), **Redis**, **Gotenberg** (office→PDF document preview), and an optional
 **OpenCode** agent bot (OpenAI-compatible; works with a DeepSeek key).
 
 The gateway runs its SQL migrations automatically on startup — there is no
@@ -167,7 +167,7 @@ bot), then mention it: `@opencode hello`.
 ## Production hardening (HTTPS via Caddy)
 
 The TLS overlay adds a Caddy `tls-edge` service that terminates HTTPS and
-reverse-proxies to the gateway/frontend/rustfs/kkfileview. It also binds the
+reverse-proxies to the gateway/frontend/rustfs. It also binds the
 service host ports to loopback so only Caddy is publicly exposed.
 
 ```bash
@@ -205,8 +205,7 @@ docker compose down
 docker compose down -v && rm -rf data/     # DELETES all data
 ```
 
-Persistent data lives under `./data/` (PostgreSQL, RustFS objects, bot state,
-kkFileView cache).
+Persistent data lives under `./data/` (PostgreSQL, RustFS objects, bot state).
 
 ## Troubleshooting
 

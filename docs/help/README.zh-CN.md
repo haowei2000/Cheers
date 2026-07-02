@@ -8,6 +8,7 @@
 
 | 读者 | 推荐文档 | 解决的问题 |
 |------|----------|------------|
+| 任何要部署的人 | [部署指南](deployment.zh-CN.md) | 三种方式 —— 源码、Docker Compose、Helm/Kubernetes —— 及各自适用场景 |
 | 想快速跑起来（Compose） | [Docker Compose 部署指南](docker-compose-deploy.zh-CN.md) | 单机 Compose 栈：JWT 密钥、`.env`、核心栈、OpenCode Bot、TLS、运维 |
 | 想快速跑起来（旧版） | [安装部署说明](安装部署说明.md) | 早期综合安装说明（早于 Rust gateway，修订中） |
 | 普通用户 | [普通用户使用说明](普通用户使用说明.md) | 进入项目、发消息、@ Bot、上传文件、常见问题 |
@@ -15,7 +16,6 @@
 | 提示词配置人员 | [提示词模板操作文档](prompt-template-operations.zh-CN.md) | 提示词模板变量、生效优先级、Bot 绑定、覆盖与排障 |
 | ACP Agent 接入方 | [AgentBridge接入指南](AgentBridge接入指南.md) | 注册 Agent Bridge Bot、配置 WebSocket、连接支持 ACP 的本地 Agent；OpenClaw 链接已标记为废弃/遗留 |
 | 本地接 ACP Agent（开发者） | [本地 Bot 配置指南](本地Bot配置指南.md) | host 守护进程：一个 TOML 一个 bot、token 用 sidecar 文件、多 bot 管理、完整字段参考、排障 |
-| 文件预览部署者 | [kkFileView 文件预览配置说明](kkFileView配置说明.md) | Office/PDF 等复杂文档在线预览 |
 | 对象存储部署者 | [RustFS 对象存储部署说明](RustFS对象存储部署说明.md) | S3 兼容存储、桶和访问密钥配置 |
 | 排查问题 | [技术排查Q&A](技术排查Q&A.md) | 健康检查、日志、数据库、Bot 无回复、文件预览失败 |
 
@@ -24,7 +24,7 @@
 - Docker 默认前端入口：`http://localhost`
 - Docker 默认后端 API：`http://localhost:8000`
 - 主业务库与 Context Store 默认使用 PostgreSQL。
-- Redis、RustFS、kkFileView 由 Docker Compose 一并启动。
+- Redis、RustFS、Gotenberg（office→PDF 预览）由 Docker Compose 一并启动。
 - 生产环境必须替换 `.env` 中所有 `change-me` 和本地开发密钥。
 - 生产部署建议使用 `docker-compose.production.tls.yml`（Caddy + HTTPS + 限定 CORS）并在 `.env` 中配置 `APP_DOMAIN`、`CORS_ALLOWED_ORIGINS` 和 `TLS_*`。
 

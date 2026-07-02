@@ -54,7 +54,7 @@ docker compose up -d
 - API：http://localhost:8000
 - API 文档：http://localhost:8000/docs
 
-若需要文档预览服务，确保 `PUBLIC_BASE_URL` 是 kkFileView 容器可访问的 Cheers 地址。生产部署不要使用 `.env.example` 中的本地开发密钥。
+文档预览为 gateway 内置能力（office 文档经 Gotenberg 转成 PDF），确保 `gotenberg` 服务已启动且 gateway 能通过 `GOTENBERG_URL` 访问它。生产部署不要使用 `.env.example` 中的本地开发密钥。
 
 ## 本地开发
 

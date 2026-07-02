@@ -18,10 +18,6 @@ services:
       - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
       - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
 
-  kkfileview:
-    ports:
-      - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
-
   tls-edge:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -41,7 +37,6 @@ services:
     depends_on:
       - gateway
       - frontend
-      - kkfileview
       - rustfs
     command: ["caddy","run","--config","/etc/caddy/Caddyfile"]
 

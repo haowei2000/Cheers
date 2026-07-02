@@ -3,7 +3,7 @@
 > **语言**：中文 | [English](docker-compose-deploy.md)
 
 本指南用 Docker Compose 部署完整的 Cheers 栈：Rust **gateway**、**前端**、
-**PostgreSQL**、**RustFS**（S3 兼容对象存储）、**Redis**、**kkFileView**（文档预览），
+**PostgreSQL**、**RustFS**（S3 兼容对象存储）、**Redis**、**Gotenberg**（office→PDF 文档预览），
 以及可选的 **OpenCode** 智能体 Bot（OpenAI 兼容，可直接用 DeepSeek key）。
 
 gateway 启动时自动执行 SQL 迁移，无需单独的迁移步骤。
@@ -157,7 +157,7 @@ docker compose logs -f opencode-bot     # 关注 api_key_set=true
 ## 生产加固（Caddy HTTPS）
 
 TLS overlay 增加一个 Caddy `tls-edge` 服务，终止 HTTPS 并反向代理到
-gateway/frontend/rustfs/kkfileview，同时把各服务的宿主端口绑定到回环地址，
+gateway/frontend/rustfs，同时把各服务的宿主端口绑定到回环地址，
 只有 Caddy 对外暴露。
 
 ```bash
@@ -195,7 +195,7 @@ docker compose down
 docker compose down -v && rm -rf data/     # 会删除所有数据
 ```
 
-持久化数据位于 `./data/`（PostgreSQL、RustFS 对象、Bot 状态、kkFileView 缓存）。
+持久化数据位于 `./data/`（PostgreSQL、RustFS 对象、Bot 状态）。
 
 ## 排查
 

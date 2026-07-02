@@ -38,10 +38,6 @@ http://{$APP_DOMAIN} {
     reverse_proxy gateway:8000
   }
 
-  handle /preview* {
-    reverse_proxy kkfileview:8012
-  }
-
   handle /{$STORAGE_S3_BUCKET}/* {
     reverse_proxy rustfs:9000
   }
