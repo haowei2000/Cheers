@@ -305,10 +305,22 @@ export function ChannelView({ channel }: Props) {
     void loadCommands();
   }, [loadCommands]);
   const [wbOpen, setWbOpen] = useState(false);
-  const [vbOpen, setVbOpen] = useState(false);
+  // ViewBoard open/minimal survive reloads and channel switches (it's a channel-agnostic
+  // viewing preference, like a theme — the boards themselves re-scope per channel).
+  const [vbOpen, setVbOpen] = useState(
+    () => localStorage.getItem("cheers.viewboard.open") === "1"
+  );
   // Minimal ViewBoard: a compact content-height card in a narrower column (vs the full
   // full-height column). Still reserves its own column so it never covers the chat.
-  const [vbMinimal, setVbMinimal] = useState(false);
+  const [vbMinimal, setVbMinimal] = useState(
+    () => localStorage.getItem("cheers.viewboard.minimal") === "1"
+  );
+  useEffect(() => {
+    localStorage.setItem("cheers.viewboard.open", vbOpen ? "1" : "0");
+  }, [vbOpen]);
+  useEffect(() => {
+    localStorage.setItem("cheers.viewboard.minimal", vbMinimal ? "1" : "0");
+  }, [vbMinimal]);
   // Live-push: per-board tick bumped by board_signal frames (and new messages for
   // "activity"); the ViewBoards re-fetch when their tick changes — no manual refresh.
   const [boardTick, setBoardTick] = useState<Record<string, number>>({});

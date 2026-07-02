@@ -8,6 +8,7 @@ import { ShieldCheck, Check, X, Clock, ShieldQuestion } from "lucide-react";
 import { listApprovalAudit, type AuditEvent } from "@/api/approval";
 import {
   registerComponentViewBoard,
+  useBoardTickRefetch,
   ViewBoardShell,
   type ViewBoardContext,
 } from "../viewBoard";
@@ -93,11 +94,8 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   }, [load]);
 
   // Live-push: ChannelView bumps the "audit" tick when a permission resolves.
-  const tick = ctx.boardTick?.audit ?? 0;
-  useEffect(() => {
-    if (tick > 0) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  // Deferred while the board is kept-alive but hidden; catches up on reveal.
+  useBoardTickRefetch(ctx, "audit", load);
 
   return (
     <ViewBoardShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>

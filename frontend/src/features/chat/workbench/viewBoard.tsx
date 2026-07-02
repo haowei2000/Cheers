@@ -8,7 +8,7 @@
 //
 // ViewBoards have their OWN registry and their OWN host (ViewBoardDrawer) — they are
 // not workbench panels.
-import { type ReactNode, useCallback, useEffect } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { RefreshCw, type LucideIcon } from "lucide-react";
 import type { SendResourceReq } from "./fsClient";
 import { useResourceQuery } from "./useResourceQuery";
@@ -24,6 +24,30 @@ export interface ViewBoardContext {
    *  tick bumps (a board_signal arrived over the WS), the board re-fetches — no
    *  manual refresh. */
   boardTick?: Record<string, number>;
+  /** False when the board is kept mounted but hidden (its tab isn't active). Boards
+   *  defer tick-driven refetches while hidden and catch up on reveal. */
+  visible?: boolean;
+}
+
+/** Tick-driven refetch that (a) skips the mount (useResourceQuery / the board's own
+ *  initial load already fetched), and (b) defers while hidden, catching up once the
+ *  board becomes visible again. Shared by defineViewBoard and self-fetching boards. */
+export function useBoardTickRefetch(
+  ctx: ViewBoardContext,
+  boardId: string,
+  refetch: () => void
+): void {
+  const tick = ctx.boardTick?.[boardId] ?? 0;
+  const visible = ctx.visible !== false;
+  // Initialize to the mount tick so a signal that arrived before mount doesn't
+  // duplicate the initial fetch.
+  const lastTick = useRef(tick);
+  useEffect(() => {
+    if (visible && tick > lastTick.current) {
+      lastTick.current = tick;
+      refetch();
+    }
+  }, [tick, visible, refetch]);
 }
 
 export interface ViewBoardDef<T> {
@@ -126,12 +150,8 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
     const Icon = def.icon;
 
     // Live-push: re-fetch when this board's tick bumps (a board_signal arrived).
-    const tick = ctx.boardTick?.[def.id] ?? 0;
-    useEffect(() => {
-      if (tick > 0) refetch();
-      // refetch is stable per (verb, params); tick is the live-push trigger.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tick]);
+    // Deferred while the board is kept-alive but hidden; catches up on reveal.
+    useBoardTickRefetch(ctx, def.id, refetch);
 
     return (
       <div className="flex flex-col h-full text-sm">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ClipboardList,
   Coins,
@@ -91,17 +91,18 @@ export function ViewBoardMinimized({
     sessions: null,
     approvals: null,
   });
-  // Re-summarize when any board's live-push tick bumps.
-  const tick = JSON.stringify(ctx.boardTick ?? {});
 
-  useEffect(() => {
-    let alive = true;
+  // Guard against a stale channel's response landing after a switch: each loader
+  // captures the channel it fetched for and only commits if it's still current.
+  const cidRef = useRef(ctx.channelId);
+  cidRef.current = ctx.channelId;
+
+  const loadPlan = useCallback(() => {
     const cid = ctx.channelId;
-    const send = ctx.sendResourceReq;
-
-    send("channel.plan.read", { channel_id: cid })
+    ctx
+      .sendResourceReq("channel.plan.read", { channel_id: cid })
       .then((r) => {
-        if (!alive) return;
+        if (cidRef.current !== cid) return;
         const ps = (r as { plans?: { completed?: number; total?: number }[] }).plans ?? [];
         setS((p) => ({
           ...p,
@@ -111,11 +112,15 @@ export function ViewBoardMinimized({
           },
         }));
       })
-      .catch(() => alive && setS((p) => ({ ...p, plan: null })));
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, plan: null })));
+  }, [ctx.channelId, ctx.sendResourceReq]);
 
-    send("channel.usage.read", { channel_id: cid })
+  const loadCost = useCallback(() => {
+    const cid = ctx.channelId;
+    ctx
+      .sendResourceReq("channel.usage.read", { channel_id: cid })
       .then((r) => {
-        if (!alive) return;
+        if (cidRef.current !== cid) return;
         const bs = (r as { bots?: { total_tokens?: number; cost_usd?: number }[] }).bots ?? [];
         setS((p) => ({
           ...p,
@@ -125,23 +130,52 @@ export function ViewBoardMinimized({
           },
         }));
       })
-      .catch(() => alive && setS((p) => ({ ...p, cost: null })));
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, cost: null })));
+  }, [ctx.channelId, ctx.sendResourceReq]);
 
-    send("channel.sessions.read", { channel_id: cid })
+  const loadSessions = useCallback(() => {
+    const cid = ctx.channelId;
+    ctx
+      .sendResourceReq("channel.sessions.read", { channel_id: cid })
       .then((r) => {
-        if (!alive) return;
+        if (cidRef.current !== cid) return;
         setS((p) => ({ ...p, sessions: ((r as { sessions?: unknown[] }).sessions ?? []).length }));
       })
-      .catch(() => alive && setS((p) => ({ ...p, sessions: null })));
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, sessions: null })));
+  }, [ctx.channelId, ctx.sendResourceReq]);
 
+  const loadApprovals = useCallback(() => {
+    const cid = ctx.channelId;
     listApprovalAudit(cid)
-      .then((r) => alive && setS((p) => ({ ...p, approvals: (r.events ?? []).length })))
-      .catch(() => alive && setS((p) => ({ ...p, approvals: null })));
+      .then(
+        (r) =>
+          cidRef.current === cid && setS((p) => ({ ...p, approvals: (r.events ?? []).length }))
+      )
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, approvals: null })));
+  }, [ctx.channelId]);
 
-    return () => {
-      alive = false;
-    };
-  }, [ctx.channelId, ctx.sendResourceReq, tick]);
+  // Targeted live-push: each summary re-reads only on ITS signal (plus mount /
+  // channel change, when the loader identity changes) — not on every board tick.
+  const planTick = ctx.boardTick?.plan ?? 0;
+  useEffect(() => loadPlan(), [planTick, loadPlan]);
+  const costTick = ctx.boardTick?.cost ?? 0;
+  useEffect(() => loadCost(), [costTick, loadCost]);
+  const sessionsTick = ctx.boardTick?.sessions ?? 0;
+  useEffect(() => loadSessions(), [sessionsTick, loadSessions]);
+  const auditTick = ctx.boardTick?.audit ?? 0;
+  useEffect(() => loadApprovals(), [auditTick, loadApprovals]);
+
+  // Sessions have no dedicated signal — they change with agent activity, so refresh
+  // the count on the per-message "activity" tick, debounced so a burst of messages
+  // collapses into one read. Skips the mount (the effects above already loaded).
+  const activityTick = ctx.boardTick?.activity ?? 0;
+  const lastActivity = useRef(activityTick);
+  useEffect(() => {
+    if (activityTick === lastActivity.current) return;
+    lastActivity.current = activityTick;
+    const t = setTimeout(loadSessions, 800);
+    return () => clearTimeout(t);
+  }, [activityTick, loadSessions]);
 
   const pct = s.plan && s.plan.total > 0 ? Math.round((s.plan.completed / s.plan.total) * 100) : 0;
 

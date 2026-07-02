@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Bot, Cog, User, type LucideIcon } from "lucide-react";
 import {
   registerComponentViewBoard,
+  useBoardTickRefetch,
   ViewBoardShell,
   type ViewBoardContext,
 } from "../viewBoard";
@@ -339,11 +340,8 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
   }, [load]);
 
   // Live-push: ChannelView bumps the "activity" tick on every new message.
-  const tick = ctx.boardTick?.activity ?? 0;
-  useEffect(() => {
-    if (tick > 0) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  // Deferred while the board is kept-alive but hidden; catches up on reveal.
+  useBoardTickRefetch(ctx, "activity", load);
 
   const memberMap = useMemo(() => {
     const m = new Map<string, MemberInfo>();

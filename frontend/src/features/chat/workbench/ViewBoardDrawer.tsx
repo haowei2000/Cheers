@@ -36,6 +36,7 @@ interface Props {
 
 const WORKBENCH_WIDTH = 560; // keep in sync with WorkbenchDrawer's w-[560px]
 const EDGE_GAP = 12; // inset from the right edge (and from the Workbench when shifted)
+const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
 
 interface SessionOpt {
   session_id: string;
@@ -54,8 +55,24 @@ export function ViewBoardDrawer({
   onToggleMinimal,
 }: Props) {
   const boards = getViewBoards();
-  const [active, setActive] = useState<string>("");
+  const [active, setActive] = useState<string>(
+    () => localStorage.getItem(ACTIVE_BOARD_KEY) ?? ""
+  );
   const activeBoard = boards.find((b) => b.id === active) ?? boards[0];
+  useEffect(() => {
+    if (active) localStorage.setItem(ACTIVE_BOARD_KEY, active);
+  }, [active]);
+
+  // Keep-alive: boards visited this channel stay mounted (hidden) so tab switches
+  // don't remount → refetch → lose scroll/filter state. Reset on channel change so
+  // a switch doesn't fan out one fetch per previously-visited board.
+  const [visited, setVisited] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => setVisited(new Set()), [channelId]);
+  const activeId = activeBoard?.id;
+  useEffect(() => {
+    if (!activeId) return;
+    setVisited((v) => (v.has(activeId) ? v : new Set(v).add(activeId)));
+  }, [activeId]);
 
   // The ViewBoard's OWN session scope ("" = All sessions), independent of the composer's
   // send target, so Plan / Cost can show many sessions at once or focus on one.
@@ -67,9 +84,10 @@ export function ViewBoardDrawer({
 
   // Populate the scope selector from the channel's live sessions (best-effort; on failure
   // the selector just offers "All sessions"). Refetched when the sessions tick bumps.
+  // Skipped in minimal mode — the selector isn't rendered there.
   const sessionsTick = boardTick?.sessions ?? 0;
   useEffect(() => {
-    if (!open || !channelId) return;
+    if (!open || minimal || !channelId) return;
     let alive = true;
     (async () => {
       try {
@@ -92,7 +110,7 @@ export function ViewBoardDrawer({
     return () => {
       alive = false;
     };
-  }, [open, channelId, sendResourceReq, sessionsTick]);
+  }, [open, minimal, channelId, sendResourceReq, sessionsTick]);
 
   const ctx: ViewBoardContext = useMemo(
     () => ({
@@ -200,7 +218,21 @@ export function ViewBoardDrawer({
             </div>
           )}
 
-          <div className="flex-1 min-h-0 overflow-hidden">{open && activeBoard?.render(ctx)}</div>
+          {/* Keep visited boards mounted (hidden) so tab switches restore instantly;
+              hidden boards defer tick refetches until re-shown (ctx.visible). */}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {open &&
+              boards
+                .filter((b) => visited.has(b.id) || b.id === activeBoard?.id)
+                .map((b) => {
+                  const isActive = b.id === activeBoard?.id;
+                  return (
+                    <div key={b.id} className={isActive ? "h-full" : "hidden"}>
+                      {b.render({ ...ctx, visible: isActive })}
+                    </div>
+                  );
+                })}
+          </div>
         </>
       )}
     </aside>
