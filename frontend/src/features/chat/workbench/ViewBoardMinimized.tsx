@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   ClipboardList,
@@ -8,7 +8,7 @@ import {
   ChevronRight,
   type LucideIcon,
 } from "lucide-react";
-import { listApprovalAudit } from "@/api/approval";
+import { listApprovalAudit, type AuditEvent } from "@/api/approval";
 import type { ViewBoardContext } from "./viewBoard";
 
 // Compact number formatting for the glance (never the full precision the boards show).
@@ -26,18 +26,53 @@ function fmtUsd(n: number): string {
     maximumFractionDigits: 4,
   });
 }
+function fmtAgo(iso?: string | null): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86_400)}d ago`;
+}
 
-// channel.activity.read is windowed (we ask for the newest ACTIVITY_WINDOW events),
-// so the glance shows "50+" when the window is full rather than a fake total.
-const ACTIVITY_WINDOW = 50;
+// Lite shapes of the boards' reads — only what the glance needs.
+interface PlanLite {
+  session_id?: string | null;
+  total?: number;
+  completed?: number;
+}
+interface UsageLite {
+  bot_id: string;
+  total_tokens?: number | null;
+  cost_usd?: number | null;
+}
+interface SessionLite {
+  session_id: string;
+  bot_id: string;
+  bot_name?: string | null;
+  is_primary?: boolean;
+  status?: string;
+}
+interface LatestActivity {
+  sender_id?: string;
+  created_at?: string | null;
+  preview?: string;
+}
 
 interface Summary {
-  plan: { completed: number; total: number } | null;
-  cost: { tokens: number; cost: number } | null;
-  sessions: number | null;
-  approvals: number | null;
-  activity: { events: number; members: number } | null;
+  plans: PlanLite[] | null;
+  usage: UsageLite[] | null;
+  sessions: SessionLite[] | null;
+  audit: AuditEvent[] | null;
+  latest: LatestActivity | null;
+  /** member_id → display label, for naming bots/users in the glance. */
+  names: Record<string, string> | null;
 }
+
+// channel.activity.read is windowed; only the newest event feeds the glance.
+const ACTIVITY_WINDOW = 1;
 
 function GlanceRow({
   Icon,
@@ -46,6 +81,7 @@ function GlanceRow({
   sub,
   bar,
   onClick,
+  children,
 }: {
   Icon: LucideIcon;
   label: string;
@@ -54,6 +90,8 @@ function GlanceRow({
   /** 0–100 progress bar (Plan), or null to omit. */
   bar?: number | null;
   onClick: () => void;
+  /** Extra glance lines under the main row (per-bot cost, summaries…). */
+  children?: ReactNode;
 }) {
   return (
     <button
@@ -65,7 +103,7 @@ function GlanceRow({
       <div className="flex items-center gap-2">
         <Icon className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
         <span className="flex-1 text-xs text-zinc-400">{label}</span>
-        {sub && <span className="text-[10px] tabular-nums text-emerald-400/80">{sub}</span>}
+        {sub && <span className="text-[10px] tabular-nums text-zinc-500">{sub}</span>}
         <span className="text-xs font-medium tabular-nums text-zinc-100">{value}</span>
         <ChevronRight className="w-3 h-3 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
@@ -74,15 +112,38 @@ function GlanceRow({
           <div className="h-full rounded-full bg-emerald-500" style={{ width: `${bar}%` }} />
         </div>
       )}
+      {children && <div className="ml-[22px] w-[calc(100%-22px)] space-y-0.5">{children}</div>}
     </button>
   );
 }
 
+/** One indented detail line under a glance row (name left, figure right). */
+function DetailLine({ name, figure }: { name: string; figure?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 text-[10px]">
+      <span className="min-w-0 flex-1 truncate text-zinc-500">{name}</span>
+      {figure && <span className="tabular-nums text-zinc-400">{figure}</span>}
+    </div>
+  );
+}
+
+// Same decision classification the Audit board uses (AuditPanel.meta), reduced to counts.
+function classifyAudit(e: AuditEvent): "allowed" | "denied" | "expired" | "pending" {
+  const d = (e.decision ?? "").toLowerCase();
+  const et = (e.event_type ?? "").toLowerCase();
+  if (d.startsWith("allow") || et.includes("allow")) return "allowed";
+  if (d.startsWith("reject") || d.startsWith("deny") || et.includes("reject") || et.includes("deny"))
+    return "denied";
+  if (et.includes("expire")) return "expired";
+  return "pending";
+}
+
 /**
  * Minimized ViewBoard — a purpose-built at-a-glance summary, NOT the full board shrunk.
- * One row per board with its key signal (plan progress, token/cost total, live session
- * count, recent approvals); clicking a row expands the full panel straight to that board.
- * Reads the same resource verbs the boards do (channel-wide, all sessions).
+ * One row per board with its key signal: the PRIMARY sessions' plan progress, total cost
+ * with a per-bot breakdown, a session count + status summary, a permission decision
+ * summary, and the latest activity event. Clicking a row expands the full panel straight
+ * to that board. Reads the same resource verbs the boards do (channel-wide).
  */
 export function ViewBoardMinimized({
   ctx,
@@ -92,11 +153,12 @@ export function ViewBoardMinimized({
   onExpand: (boardId: string) => void;
 }) {
   const [s, setS] = useState<Summary>({
-    plan: null,
-    cost: null,
+    plans: null,
+    usage: null,
     sessions: null,
-    approvals: null,
-    activity: null,
+    audit: null,
+    latest: null,
+    names: null,
   });
 
   // Guard against a stale channel's response landing after a switch: each loader
@@ -110,16 +172,9 @@ export function ViewBoardMinimized({
       .sendResourceReq("channel.plan.read", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
-        const ps = (r as { plans?: { completed?: number; total?: number }[] }).plans ?? [];
-        setS((p) => ({
-          ...p,
-          plan: {
-            completed: ps.reduce((a, x) => a + (x.completed || 0), 0),
-            total: ps.reduce((a, x) => a + (x.total || 0), 0),
-          },
-        }));
+        setS((p) => ({ ...p, plans: (r as { plans?: PlanLite[] }).plans ?? [] }));
       })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, plan: null })));
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, plans: null })));
   }, [ctx.channelId, ctx.sendResourceReq]);
 
   const loadCost = useCallback(() => {
@@ -128,16 +183,9 @@ export function ViewBoardMinimized({
       .sendResourceReq("channel.usage.read", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
-        const bs = (r as { bots?: { total_tokens?: number; cost_usd?: number }[] }).bots ?? [];
-        setS((p) => ({
-          ...p,
-          cost: {
-            tokens: bs.reduce((a, x) => a + (x.total_tokens || 0), 0),
-            cost: bs.reduce((a, x) => a + (x.cost_usd || 0), 0),
-          },
-        }));
+        setS((p) => ({ ...p, usage: (r as { bots?: UsageLite[] }).bots ?? [] }));
       })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, cost: null })));
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, usage: null })));
   }, [ctx.channelId, ctx.sendResourceReq]);
 
   const loadSessions = useCallback(() => {
@@ -146,19 +194,16 @@ export function ViewBoardMinimized({
       .sendResourceReq("channel.sessions.read", { channel_id: cid })
       .then((r) => {
         if (cidRef.current !== cid) return;
-        setS((p) => ({ ...p, sessions: ((r as { sessions?: unknown[] }).sessions ?? []).length }));
+        setS((p) => ({ ...p, sessions: (r as { sessions?: SessionLite[] }).sessions ?? [] }));
       })
       .catch(() => cidRef.current === cid && setS((p) => ({ ...p, sessions: null })));
   }, [ctx.channelId, ctx.sendResourceReq]);
 
-  const loadApprovals = useCallback(() => {
+  const loadAudit = useCallback(() => {
     const cid = ctx.channelId;
     listApprovalAudit(cid)
-      .then(
-        (r) =>
-          cidRef.current === cid && setS((p) => ({ ...p, approvals: (r.events ?? []).length }))
-      )
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, approvals: null })));
+      .then((r) => cidRef.current === cid && setS((p) => ({ ...p, audit: r.events ?? [] })))
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, audit: null })));
   }, [ctx.channelId]);
 
   const loadActivity = useCallback(() => {
@@ -171,12 +216,44 @@ export function ViewBoardMinimized({
       })
       .then((r) => {
         if (cidRef.current !== cid) return;
-        const evs =
-          (r as { events?: { data?: { sender_id?: string } }[] }).events ?? [];
-        const members = new Set(evs.map((e) => e.data?.sender_id).filter(Boolean));
-        setS((p) => ({ ...p, activity: { events: evs.length, members: members.size } }));
+        const ev = (
+          (r as {
+            events?: {
+              created_at?: string | null;
+              data?: { sender_id?: string; content?: string; created_at?: string };
+            }[];
+          }).events ?? []
+        )[0];
+        setS((p) => ({
+          ...p,
+          latest: ev
+            ? {
+                sender_id: ev.data?.sender_id,
+                created_at: ev.created_at ?? ev.data?.created_at ?? null,
+                // Agent-authored content: rendered as inert, truncated text only.
+                preview: (ev.data?.content ?? "").slice(0, 80),
+              }
+            : null,
+        }));
       })
-      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, activity: null })));
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, latest: null })));
+  }, [ctx.channelId, ctx.sendResourceReq]);
+
+  const loadNames = useCallback(() => {
+    const cid = ctx.channelId;
+    ctx
+      .sendResourceReq("channel.members", { channel_id: cid })
+      .then((r) => {
+        if (cidRef.current !== cid) return;
+        const names: Record<string, string> = {};
+        for (const m of (
+          r as { members?: { member_id: string; display_name?: string | null; username?: string | null }[] }
+        ).members ?? []) {
+          names[m.member_id] = m.display_name || m.username || m.member_id.slice(0, 8);
+        }
+        setS((p) => ({ ...p, names }));
+      })
+      .catch(() => cidRef.current === cid && setS((p) => ({ ...p, names: null })));
   }, [ctx.channelId, ctx.sendResourceReq]);
 
   // Targeted live-push: each summary re-reads only on ITS signal (plus mount /
@@ -188,13 +265,15 @@ export function ViewBoardMinimized({
   const sessionsTick = ctx.boardTick?.sessions ?? 0;
   useEffect(() => loadSessions(), [sessionsTick, loadSessions]);
   const auditTick = ctx.boardTick?.audit ?? 0;
-  useEffect(() => loadApprovals(), [auditTick, loadApprovals]);
+  useEffect(() => loadAudit(), [auditTick, loadAudit]);
+  useEffect(() => loadActivity(), [loadActivity]);
+  useEffect(() => loadNames(), [loadNames]);
   const activityTick = ctx.boardTick?.activity ?? 0;
 
   // Sessions have no dedicated signal — they change with agent activity, so refresh
-  // them (and the activity glance itself) on the per-message "activity" tick,
-  // debounced so a burst of messages collapses into one read. Skips the mount
-  // (the loader-identity effects already load everything once).
+  // them (and the latest-activity line) on the per-message "activity" tick, debounced
+  // so a burst of messages collapses into one read. Skips the mount (the
+  // loader-identity effects already load everything once).
   const lastActivity = useRef(activityTick);
   useEffect(() => {
     if (activityTick === lastActivity.current) return;
@@ -205,17 +284,61 @@ export function ViewBoardMinimized({
     }, 800);
     return () => clearTimeout(t);
   }, [activityTick, loadSessions, loadActivity]);
-  useEffect(() => loadActivity(), [loadActivity]);
 
-  const pct = s.plan && s.plan.total > 0 ? Math.round((s.plan.completed / s.plan.total) * 100) : 0;
+  const label = (id?: string | null) => (id ? (s.names?.[id] ?? id.slice(0, 8)) : "—");
+
+  // ── Plan: the PRIMARY sessions' plans (fall back to all plans when none match). ──
+  const primaryIds = new Set((s.sessions ?? []).filter((x) => x.is_primary).map((x) => x.session_id));
+  const primaryPlans = (s.plans ?? []).filter((p) => p.session_id && primaryIds.has(p.session_id));
+  const planScope = primaryPlans.length ? primaryPlans : (s.plans ?? []);
+  const planDone = planScope.reduce((a, p) => a + (p.completed || 0), 0);
+  const planTotal = planScope.reduce((a, p) => a + (p.total || 0), 0);
+  const planPct = planTotal > 0 ? Math.round((planDone / planTotal) * 100) : 0;
+
+  // ── Cost: channel total + per-bot breakdown (usage rows are per (bot, session)). ──
+  const byBot = new Map<string, { tokens: number; cost: number }>();
+  for (const u of s.usage ?? []) {
+    const cur = byBot.get(u.bot_id) ?? { tokens: 0, cost: 0 };
+    cur.tokens += u.total_tokens || 0;
+    cur.cost += u.cost_usd || 0;
+    byBot.set(u.bot_id, cur);
+  }
+  const botCosts = [...byBot.entries()].sort((a, b) => b[1].cost - a[1].cost);
+  const totalCost = botCosts.reduce((a, [, v]) => a + v.cost, 0);
+  const totalTokens = botCosts.reduce((a, [, v]) => a + v.tokens, 0);
+  const COST_LINES = 4;
+
+  // ── Sessions: count + status breakdown ("1 busy · 2 idle"). ──
+  const byStatus = new Map<string, number>();
+  for (const x of s.sessions ?? []) {
+    const st = x.status || "unknown";
+    byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
+  }
+  const sessionSummary = [...byStatus.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([st, n]) => `${n} ${st}`)
+    .join(" · ");
+
+  // ── Approvals: decision summary with the Audit board's classification. ──
+  const audit = { allowed: 0, denied: 0, expired: 0, pending: 0 };
+  for (const e of s.audit ?? []) audit[classifyAudit(e)]++;
+  const permissionSummary = [
+    audit.allowed ? `${audit.allowed} allowed` : null,
+    audit.denied ? `${audit.denied} denied` : null,
+    audit.pending ? `${audit.pending} pending` : null,
+    audit.expired ? `${audit.expired} expired` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="p-1.5">
       <GlanceRow
         Icon={ClipboardList}
         label="Plan"
-        value={s.plan ? `${s.plan.completed}/${s.plan.total}` : "—"}
-        bar={s.plan && s.plan.total > 0 ? pct : null}
+        sub={primaryPlans.length ? "primary" : planScope.length ? "all" : null}
+        value={s.plans ? `${planDone}/${planTotal}` : "—"}
+        bar={planTotal > 0 ? planPct : null}
         onClick={() => onExpand("plan")}
       />
       <GlanceRow
@@ -223,45 +346,59 @@ export function ViewBoardMinimized({
         label="Cost"
         // Prefer $ cost (the headline metric); fall back to token total, then "—".
         value={
-          s.cost && s.cost.cost
-            ? fmtUsd(s.cost.cost)
-            : s.cost && s.cost.tokens
-              ? `${fmtTokens(s.cost.tokens)} tok`
-              : "—"
+          s.usage
+            ? totalCost
+              ? fmtUsd(totalCost)
+              : totalTokens
+                ? `${fmtTokens(totalTokens)} tok`
+                : "—"
+            : "—"
         }
-        sub={s.cost && s.cost.cost && s.cost.tokens ? `${fmtTokens(s.cost.tokens)} tok` : null}
         onClick={() => onExpand("cost")}
-      />
+      >
+        {botCosts.slice(0, COST_LINES).map(([botId, v]) => (
+          <DetailLine
+            key={botId}
+            name={label(botId)}
+            figure={v.cost ? fmtUsd(v.cost) : `${fmtTokens(v.tokens)} tok`}
+          />
+        ))}
+        {botCosts.length > COST_LINES && (
+          <DetailLine name={`+${botCosts.length - COST_LINES} more`} />
+        )}
+      </GlanceRow>
       <GlanceRow
         Icon={Layers}
         label="Sessions"
-        value={s.sessions != null ? String(s.sessions) : "—"}
+        value={s.sessions ? String(s.sessions.length) : "—"}
         onClick={() => onExpand("sessions")}
-      />
+      >
+        {sessionSummary && <DetailLine name={sessionSummary} />}
+      </GlanceRow>
       <GlanceRow
         Icon={ShieldCheck}
         label="Approvals"
-        value={s.approvals != null ? String(s.approvals) : "—"}
+        value={s.audit ? String(s.audit.length) : "—"}
         onClick={() => onExpand("audit")}
-      />
+      >
+        {permissionSummary && <DetailLine name={permissionSummary} />}
+      </GlanceRow>
       <GlanceRow
         Icon={Activity}
         label="Activity"
-        // Windowed read — a full window means "at least this many" recent events.
-        value={
-          s.activity
-            ? s.activity.events >= ACTIVITY_WINDOW
-              ? `${ACTIVITY_WINDOW}+`
-              : String(s.activity.events)
-            : "—"
-        }
-        sub={
-          s.activity && s.activity.members > 0
-            ? `${s.activity.members} member${s.activity.members > 1 ? "s" : ""}`
-            : null
-        }
+        value={s.latest ? fmtAgo(s.latest.created_at) : "—"}
         onClick={() => onExpand("activity")}
-      />
+      >
+        {s.latest && (
+          <DetailLine
+            name={
+              s.latest.preview
+                ? `${label(s.latest.sender_id)}: ${s.latest.preview}`
+                : label(s.latest.sender_id)
+            }
+          />
+        )}
+      </GlanceRow>
     </div>
   );
 }
