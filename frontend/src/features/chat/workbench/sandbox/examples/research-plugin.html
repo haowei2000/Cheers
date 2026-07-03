@@ -6,12 +6,12 @@
     <script type="application/json" id="cheers-plugin">
       {
         "id": "research-sandbox",
-        "title": "科研(沙箱插件)",
+        "title": "Research (sandbox plugin)",
         "panels": [
-          { "id": "journals", "title": "目标期刊" },
-          { "id": "progress", "title": "进度看板" },
-          { "id": "reviews", "title": "论文审阅" },
-          { "id": "prompt", "title": "评审提示词" }
+          { "id": "journals", "title": "Target journals" },
+          { "id": "progress", "title": "Progress board" },
+          { "id": "reviews", "title": "Paper reviews" },
+          { "id": "prompt", "title": "Review prompt" }
         ]
       }
     </script>
@@ -38,7 +38,7 @@
     </style>
   </head>
   <body>
-    <header><b id="ttl">科研</b><span style="flex: 1"></span><button id="save">保存</button></header>
+    <header><b id="ttl">Research</b><span style="flex: 1"></span><button id="save">Save</button></header>
     <div id="root"></div>
     <div id="st"></div>
     <script>
@@ -53,12 +53,12 @@
       });
 
       var COLS = {
-        journals: [["name", "期刊"], ["impact", "IF"], ["deadline", "截稿"], ["status", "状态", ["候选","撰写中","投稿中","已投","录用","拒稿"]]],
-        reviews: [["paper", "论文"], ["reviewer", "审稿人"], ["status", "状态", ["待审","审阅中","已审","退回"]], ["notes", "备注"]],
+        journals: [["name", "Journal"], ["impact", "IF"], ["deadline", "Deadline"], ["status", "Status", ["Candidate","Drafting","Submitting","Submitted","Accepted","Rejected"]]],
+        reviews: [["paper", "Paper"], ["reviewer", "Reviewer"], ["status", "Status", ["To review","Reviewing","Reviewed","Returned"]], ["notes", "Notes"]],
       };
       var SEED = {
-        "journals.json": [{ name: "Nature", impact: "50.5", deadline: "", status: "候选" }],
-        "progress.json": { columns: [{ name: "待办", items: ["确定研究问题"] }, { name: "进行中", items: [] }, { name: "已完成", items: [] }] },
+        "journals.json": [{ name: "Nature", impact: "50.5", deadline: "", status: "Candidate" }],
+        "progress.json": { columns: [{ name: "To do", items: ["Define the research question"] }, { name: "In progress", items: [] }, { name: "Done", items: [] }] },
         "reviews.json": [],
         "review-prompt.md": "You are a rigorous peer reviewer. Assess novelty, soundness, clarity; end with a recommendation.",
       };
@@ -67,7 +67,7 @@
         var map = { journals: ["journals.json","table"], reviews: ["reviews.json","table"], progress: ["progress.json","kanban"], prompt: ["review-prompt.md","md"] };
         var cfg = map[PANEL]; if (!cfg) { document.getElementById("root").textContent = "unknown panel: " + PANEL; return; }
         FILE = cfg[0]; KIND = cfg[1];
-        document.getElementById("ttl").textContent = { journals: "目标期刊", reviews: "论文审阅", progress: "进度看板", prompt: "评审提示词" }[PANEL];
+        document.getElementById("ttl").textContent = { journals: "Target journals", reviews: "Paper reviews", progress: "Progress board", prompt: "Review prompt" }[PANEL];
         var r = await fs("read", { path: FILE });
         if (r.ok && r.data && r.data.content != null && r.data.content !== "") {
           state = KIND === "md" ? r.data.content : JSON.parse(r.data.content);
@@ -81,7 +81,7 @@
       document.getElementById("save").onclick = async function () {
         var content = KIND === "md" ? state : JSON.stringify(state, null, 2);
         var r = await fs("write", { path: FILE, content: content });
-        setStatus(r.ok ? "已保存 v" + (r.data && r.data.version) : "错误: " + (r.error || ""));
+        setStatus(r.ok ? "Saved v" + (r.data && r.data.version) : "Error: " + (r.error || ""));
       };
 
       function render() {
@@ -110,7 +110,7 @@
           tr.appendChild(del); tb.appendChild(tr);
         });
         tbl.innerHTML = "<thead>" + thead + "</thead>"; tbl.appendChild(tb); root.appendChild(tbl);
-        var add = document.createElement("button"); add.textContent = "+ 加一行"; add.style.marginTop = "6px";
+        var add = document.createElement("button"); add.textContent = "+ Add row"; add.style.marginTop = "6px";
         add.onclick = function () { var o = {}; cols.forEach(function (c) { o[c[0]] = c[2] ? c[2][0] : ""; }); state.push(o); render(); };
         root.appendChild(add);
       }
@@ -126,7 +126,7 @@
             x.onclick = function () { col.items.splice(ii, 1); render(); };
             item.appendChild(x); d.appendChild(item);
           });
-          var inp = document.createElement("input"); inp.placeholder = "+ 任务"; inp.style.margin = "4px"; inp.style.width = "calc(100% - 8px)";
+          var inp = document.createElement("input"); inp.placeholder = "+ Task"; inp.style.margin = "4px"; inp.style.width = "calc(100% - 8px)";
           inp.onkeydown = function (e) { if (e.key === "Enter" && inp.value.trim()) { col.items.push(inp.value.trim()); render(); } };
           d.appendChild(inp); wrap.appendChild(d);
         });

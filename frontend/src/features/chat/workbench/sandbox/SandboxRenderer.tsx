@@ -114,8 +114,8 @@ export function SandboxRenderer({
     return () => window.removeEventListener("message", handler);
   }, [fs, plugin.plugin_id, rendererId, path, readChannel]);
 
-  if (err) return <div className="p-3 text-amber-500 text-xs">渲染器加载失败：{err}</div>;
-  if (bundle === null) return <div className="p-3 text-zinc-500 text-xs">加载渲染器…</div>;
+  if (err) return <div className="p-3 text-amber-500 text-xs">Failed to load renderer: {err}</div>;
+  if (bundle === null) return <div className="p-3 text-zinc-500 text-xs">Loading renderer…</div>;
   return (
     <div className="relative w-full h-full">
       <iframe
@@ -130,7 +130,8 @@ export function SandboxRenderer({
       />
       {unsupported !== null && (
         <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-amber-500 bg-zinc-950">
-          该渲染器无法渲染此文件{unsupported ? `：${unsupported}` : ""}。请在右上「渲染器」换一个，或选「原文」。
+          This renderer can't render this file{unsupported ? `: ${unsupported}` : ""}. Pick another
+          renderer from the top-right dropdown, or choose "Raw".
         </div>
       )}
     </div>

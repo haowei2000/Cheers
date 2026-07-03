@@ -72,11 +72,14 @@ function UsageBody({ data }: { data: UsageRead }) {
             key={`${b.bot_id}:${b.session_id ?? "—"}`}
             className="border-b border-zinc-900 hover:bg-zinc-800/40 text-zinc-300"
           >
-            {/* bot_id / session_id are opaque ids, rendered as inert text */}
-            <td className="px-3 py-1.5 font-mono text-zinc-200 truncate max-w-[110px]">
+            {/* bot_id / session_id are opaque ids: short form shown, full id in the tooltip */}
+            <td className="px-3 py-1.5 font-mono text-zinc-200 truncate max-w-[110px]" title={b.bot_id}>
               {b.bot_id.slice(0, 8)}
             </td>
-            <td className="px-2 py-1.5 font-mono text-zinc-500 truncate max-w-[90px]">
+            <td
+              className="px-2 py-1.5 font-mono text-zinc-500 truncate max-w-[90px]"
+              title={b.session_id ?? undefined}
+            >
               {b.session_id ? b.session_id.slice(0, 8) : "—"}
             </td>
             <td className="px-2 py-1.5 text-right tabular-nums text-zinc-400">

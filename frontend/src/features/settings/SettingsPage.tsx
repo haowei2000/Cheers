@@ -117,7 +117,9 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
         <button
+          type="button"
           onClick={() => navigate(-1)}
+          title="Back"
           className="text-zinc-500 hover:text-zinc-200 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -168,7 +170,10 @@ export default function SettingsPage() {
                     <p className="font-semibold text-zinc-100">
                       {user?.display_name ?? user?.username ?? "Unknown"}
                     </p>
-                    <p className="text-sm text-zinc-500">
+                    <p
+                      className="text-sm text-zinc-500"
+                      title={!user?.username && user?.user_id ? user.user_id : undefined}
+                    >
                       @{user?.username ?? user?.user_id?.slice(0, 8)}
                     </p>
                   </div>

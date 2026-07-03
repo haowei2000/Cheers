@@ -62,10 +62,10 @@ export function useFile<T>(fs: FsClient, path: string, fallback: T) {
         const r = await fs.write(path, fmt.serialize(next), version ?? 0);
         setData(next);
         setVersion(r.version);
-        setStatus("已保存");
+        setStatus("Saved");
       } catch (e) {
         if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
-          setStatus("有冲突，已重载最新——请重新应用你的改动");
+          setStatus("Conflict — reloaded the latest version; please reapply your changes");
           await load();
         } else {
           setStatus(errMsg(e));
@@ -126,10 +126,10 @@ export function useFileEditor(fs: FsClient, path: string) {
       const r = await fs.write(path, content, version ?? 0);
       setVersion(r.version);
       setDirty(false);
-      setStatus("已保存");
+      setStatus("Saved");
     } catch (e) {
       if (e instanceof ResourceError && e.code === "VERSION_CONFLICT") {
-        setStatus("有冲突，已重载——请重做改动");
+        setStatus("Conflict — reloaded; please redo your changes");
         await load();
       } else {
         setStatus(errMsg(e));

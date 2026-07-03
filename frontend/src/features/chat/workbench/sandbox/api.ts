@@ -45,10 +45,10 @@ export function parsePluginHtml(html: string): { id: string; title: string; mani
   const doc = new DOMParser().parseFromString(html, "text/html");
   const el = doc.querySelector("#cheers-plugin");
   if (!el || !el.textContent) {
-    throw new Error('缺少内嵌 manifest：<script type="application/json" id="cheers-plugin">');
+    throw new Error('Missing embedded manifest: <script type="application/json" id="cheers-plugin">');
   }
   const manifest = JSON.parse(el.textContent) as { id?: string; title?: string };
-  if (!manifest.id || !manifest.title) throw new Error("manifest 缺 id 或 title");
+  if (!manifest.id || !manifest.title) throw new Error("Manifest is missing id or title");
   return { id: manifest.id, title: manifest.title, manifest };
 }
 

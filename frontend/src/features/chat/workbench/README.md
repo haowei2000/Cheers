@@ -1,18 +1,24 @@
 # Building a Workbench Template
 
-> **现状提示(2026-06-23)**:模板现在是**声明式 manifest JSON**(`{id,title,views:[{file,lens,config}],seed}`),
-> 由内置 lens(`table`/`kanban`/`markdown`)渲染——不必再手写 `PanelDef`/`registerEnvironment`
-> 组件(下文那套是编译进仓库的旧路径,仍可用但非首选)。装一个模板有三条路:
-> ① **全局**:admin 在 *设置 → Workbench extensions* 上传 `.json`(进 `workbench_templates` 表,全频道可见);
-> ② **临时**:任何人在工作台抽屉点「临时模板」上传 `.json`(仅本浏览器会话,不入库、不共享);
-> ③ **内置**:把 manifest 编译进前端。代码渲染器(沙箱插件)是另一类,走 `.html` + `/workbench/plugins`,
-> 见 [docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md)「两类插件」。
+> **Status note (2026-06-23)**: templates are now **declarative manifest JSON**
+> (`{id,title,views:[{file,lens,config}],seed}`), rendered by the built-in lenses
+> (`table`/`kanban`/`markdown`) — no need to hand-write `PanelDef`/`registerEnvironment`
+> components anymore (the approach below is the older compiled-in path; it still works
+> but is no longer preferred). There are three ways to install a template:
+> ① **Global**: an admin uploads the `.json` in *Settings → Workbench extensions* (stored
+> in the `workbench_templates` table, visible to every channel);
+> ② **Temporary**: anyone clicks "Temp template" in the workbench drawer and uploads a
+> `.json` (this browser session only — not stored, not shared);
+> ③ **Built-in**: compile the manifest into the frontend. Code renderers (sandbox plugins)
+> are a separate kind, shipped as `.html` via `/workbench/plugins` — see the "two plugin
+> kinds" section in [docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md).
 >
-> 下面这份指南描述的是更早的「每个面板一个 PanelDef 组件」写法,保留作参考。
+> The guide below describes the earlier "one PanelDef component per panel" approach,
+> kept for reference.
 
 A **workbench template** (an *Environment*) turns a channel into a scenario — e.g. a
-research channel with **目标期刊 / 进度看板 / 论文审阅** boards. This guide is for
-third-party developers who want to ship their own template.
+research channel with **Target journals / Progress board / Paper reviews** boards. This
+guide is for third-party developers who want to ship their own template.
 
 The whole point: **a template is just frontend code over files.** Your boards are
 plain files in the channel workspace (`context_files`). There is **no backend, no new
@@ -28,7 +34,7 @@ its `fs_*` tools, your boards are automatically **shared human↔bot state**.
 3. Write `index.ts` that calls `registerEnvironment({ id, title, panels, seed })`.
 4. Add one line to `environments/index.ts`: `import "./<your-template>";`
 
-Done. Your template shows up in the Workbench "场景 (scenario)" picker; selecting it
+Done. Your template shows up in the Workbench scenario picker; selecting it
 seeds your starter files and mounts your panels.
 
 ---
@@ -104,7 +110,7 @@ const { data, setData, save, status } = useJsonFile<MyShape>(fs, "my-template/da
 //   data    – current value (loads on mount; FALLBACK until loaded / if missing)
 //   setData – edit in memory
 //   save(next) – write back; re-reads automatically on a version conflict
-//   status  – last "已保存 / 冲突…" message to surface in the UI
+//   status  – last "Saved / conflict…" message to surface in the UI
 ```
 
 ---

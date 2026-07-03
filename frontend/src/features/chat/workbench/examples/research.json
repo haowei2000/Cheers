@@ -1,48 +1,48 @@
 {
   "id": "research",
-  "title": "科研",
+  "title": "Research",
   "views": [
     {
       "id": "journals",
-      "title": "目标期刊",
+      "title": "Target journals",
       "file": "research/journals.json",
       "lens": "table",
       "config": {
         "columns": [
-          { "key": "name", "label": "期刊" },
+          { "key": "name", "label": "Journal" },
           { "key": "impact", "label": "IF" },
-          { "key": "deadline", "label": "截稿" },
-          { "key": "status", "label": "状态", "options": ["候选", "撰写中", "投稿中", "已投", "录用", "拒稿"] }
+          { "key": "deadline", "label": "Deadline" },
+          { "key": "status", "label": "Status", "options": ["Candidate", "Drafting", "Submitting", "Submitted", "Accepted", "Rejected"] }
         ]
       }
     },
-    { "id": "progress", "title": "进度看板", "file": "research/progress.json", "lens": "kanban" },
+    { "id": "progress", "title": "Progress board", "file": "research/progress.json", "lens": "kanban" },
     {
       "id": "reviews",
-      "title": "论文审阅",
+      "title": "Paper reviews",
       "file": "research/reviews.json",
       "lens": "table",
       "config": {
         "columns": [
-          { "key": "paper", "label": "论文" },
-          { "key": "reviewer", "label": "审稿人" },
-          { "key": "status", "label": "状态", "options": ["待审", "审阅中", "已审", "退回"] },
-          { "key": "notes", "label": "备注" }
+          { "key": "paper", "label": "Paper" },
+          { "key": "reviewer", "label": "Reviewer" },
+          { "key": "status", "label": "Status", "options": ["To review", "Reviewing", "Reviewed", "Returned"] },
+          { "key": "notes", "label": "Notes" }
         ]
       }
     },
-    { "id": "prompt", "title": "评审提示词", "file": "prompts/review.md", "lens": "markdown" }
+    { "id": "prompt", "title": "Review prompt", "file": "prompts/review.md", "lens": "markdown" }
   ],
   "seed": {
     "research/journals.json": [
-      { "name": "Nature", "impact": "50.5", "deadline": "", "status": "候选" },
-      { "name": "Science", "impact": "44.7", "deadline": "", "status": "候选" }
+      { "name": "Nature", "impact": "50.5", "deadline": "", "status": "Candidate" },
+      { "name": "Science", "impact": "44.7", "deadline": "", "status": "Candidate" }
     ],
     "research/progress.json": {
       "columns": [
-        { "name": "待办", "items": ["确定研究问题", "文献综述"] },
-        { "name": "进行中", "items": [] },
-        { "name": "已完成", "items": [] }
+        { "name": "To do", "items": ["Define the research question", "Literature review"] },
+        { "name": "In progress", "items": [] },
+        { "name": "Done", "items": [] }
       ]
     },
     "research/reviews.json": [],

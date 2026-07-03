@@ -193,7 +193,9 @@ function SessionCard({
         <div className="mt-2 border-t border-zinc-800/60 pt-2 space-y-1.5">
           <div className="flex items-center gap-2 text-[10px] text-zinc-500">
             <span className="text-zinc-600 w-12 shrink-0">session</span>
-            <span className="font-mono text-zinc-400 break-all">{s.session_id}</span>
+            <span className="font-mono text-zinc-400" title={s.session_id}>
+              {s.session_id.slice(0, 8)}
+            </span>
           </div>
           <div className="flex items-center gap-2 text-[10px] text-zinc-500">
             <span className="text-zinc-600 w-12 shrink-0">last used</span>
@@ -384,7 +386,7 @@ function NewSessionDialog({
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-xs text-zinc-500">Working directory（可选，绝对路径）</span>
+          <span className="text-xs text-zinc-500">Working directory (optional, absolute path)</span>
           <input
             type="text"
             value={cwd}
@@ -396,7 +398,7 @@ function NewSessionDialog({
           />
         </label>
         <label className="block space-y-1">
-          <span className="text-xs text-zinc-500">Extra roots（可选，每行一个绝对路径）</span>
+          <span className="text-xs text-zinc-500">Extra roots (optional, one absolute path per line)</span>
           <textarea
             value={dirs}
             disabled={busy}
@@ -413,7 +415,7 @@ function NewSessionDialog({
             onClick={onClose}
             className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
           >
-            取消
+            Cancel
           </button>
           <button
             type="button"
@@ -422,7 +424,7 @@ function NewSessionDialog({
             className="inline-flex items-center gap-1 rounded-lg border border-indigo-500/40 bg-indigo-600/15 px-3 py-1.5 text-xs text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
           >
             <Plus className="w-3 h-3" />
-            {busy ? "创建中…" : "创建"}
+            {busy ? "Creating…" : "Create"}
           </button>
         </div>
       </div>

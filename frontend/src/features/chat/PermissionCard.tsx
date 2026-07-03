@@ -180,7 +180,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
           </code>
         )}
         {data.resolved_by && (
-          <span className="text-zinc-600 whitespace-nowrap">
+          <span className="text-zinc-600 whitespace-nowrap" title={data.resolved_by}>
             · {data.resolved_by.slice(0, 8)}
           </span>
         )}
@@ -227,6 +227,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
     return (
       <button
         onClick={() => setCollapsed(false)}
+        title="Show approval details"
         className={cn(
           shell,
           "w-full grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-900/70"
@@ -258,6 +259,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         <button
           onClick={() => setCollapsed(true)}
           aria-label="Collapse"
+          title="Collapse"
           className="shrink-0 text-zinc-600 hover:text-zinc-300 leading-none"
         >
           <span className="inline-block rotate-180 text-sm">⌄</span>

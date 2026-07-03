@@ -17,6 +17,8 @@ interface Props {
   isConsecutive?: boolean;
   currentUserId?: string;
   channelId?: string;
+  /** Channel-membership display label, used when the message has no sender_name. */
+  senderName?: string;
 }
 
 const SYSTEM_TYPES = new Set([
@@ -42,6 +44,7 @@ export const MessageItem = memo(function MessageItem({
   isConsecutive,
   currentUserId,
   channelId,
+  senderName,
 }: Props) {
   if (message.is_deleted) {
     return (
@@ -78,7 +81,9 @@ export const MessageItem = memo(function MessageItem({
   }
 
   const isOwn = message.sender_id === currentUserId;
-  const name = message.sender_name || message.sender_id.slice(0, 8);
+  const name =
+    message.sender_name || senderName || message.sender_id.slice(0, 8);
+  const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
 
   if (isConsecutive) {
@@ -122,7 +127,10 @@ export const MessageItem = memo(function MessageItem({
       <div className={cn("flex-1 min-w-0", isOwn && "flex flex-col items-end")}>
         {/* Header */}
         <div className="flex items-baseline gap-2 mb-0.5">
-          <span className={cn("text-sm font-semibold text-zinc-100", isOwn && "order-2")}>
+          <span
+            className={cn("text-sm font-semibold text-zinc-100", isOwn && "order-2")}
+            title={hasName ? undefined : message.sender_id}
+          >
             {name}
           </span>
           {isBot && (

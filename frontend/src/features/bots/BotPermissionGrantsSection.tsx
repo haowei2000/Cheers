@@ -369,9 +369,13 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               <span className={`rounded px-1 py-0.5 text-[10px] border ${subjectBadge(r.subject_kind)}`}>
                 {r.subject_kind}
               </span>
-              <span className="text-zinc-200">{subjectLabel(r)}</span>
+              <span className="text-zinc-200" title={r.subject_id}>
+                {subjectLabel(r)}
+              </span>
               <span className="text-zinc-600">·</span>
-              <span className="text-zinc-400">{scopeLabel(r.channel_id)}</span>
+              <span className="text-zinc-400" title={r.channel_id || undefined}>
+                {scopeLabel(r.channel_id)}
+              </span>
               <span className={`ml-auto ${r.decision === "allow" ? "text-emerald-300" : "text-red-300"}`}>
                 {r.decision}
               </span>

@@ -65,9 +65,9 @@ export function AdminSttSettings() {
     setTestResult(null);
     try {
       const r = await testSttSettings();
-      setTestResult(r.ok ? "✓ 连接成功（端点可用）" : `✗ ${r.error ?? "测试失败"}`);
+      setTestResult(r.ok ? "✓ Connected (endpoint reachable)" : `✗ ${r.error ?? "Test failed"}`);
     } catch (e) {
-      setTestResult(`✗ ${e instanceof Error ? e.message : "测试失败"}`);
+      setTestResult(`✗ ${e instanceof Error ? e.message : "Test failed"}`);
     } finally {
       setBusy(null);
     }
@@ -85,9 +85,11 @@ export function AdminSttSettings() {
 
       <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
         <p className="text-xs text-zinc-500 mb-4">
-          语音消息/音频文件会由网关后台发送到这里配置的 OpenAI 兼容转写服务
-          （<code className="text-zinc-400">/audio/transcriptions</code>），转写文本随消息展示并投递给
-          bot。音频将离开本实例发往该端点 —— 请只配置你信任的服务。
+          Voice messages and audio files are sent by the gateway to the OpenAI-compatible
+          transcription service configured here
+          (<code className="text-zinc-400">/audio/transcriptions</code>). Transcripts are shown
+          with the message and delivered to bots. Audio leaves this instance for that endpoint —
+          only configure a service you trust.
         </p>
 
         <div className="grid gap-3 max-w-lg">
@@ -98,17 +100,17 @@ export function AdminSttSettings() {
               onChange={(e) => setEnabled(e.target.checked)}
               className="h-4 w-4 accent-indigo-500"
             />
-            启用语音转文字
+            Enable speech-to-text
           </label>
 
           <div>
             <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
-              Endpoint（含 /v1 的 base URL）
+              Endpoint (base URL including /v1)
             </label>
             <input
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
-              placeholder="https://api.openai.com/v1 或 http://cheers-stt:8000/v1"
+              placeholder="https://api.openai.com/v1 or http://cheers-stt:8000/v1"
               className={inputCls}
             />
           </div>
@@ -130,7 +132,7 @@ export function AdminSttSettings() {
               API key{" "}
               {loaded?.api_key_set && !clearKey && (
                 <span className="normal-case text-zinc-400">
-                  （已保存 {loaded.api_key_hint}，留空保持不变）
+                  (saved {loaded.api_key_hint} — leave blank to keep it)
                 </span>
               )}
             </label>
@@ -139,7 +141,11 @@ export function AdminSttSettings() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               disabled={clearKey}
-              placeholder={loaded?.api_key_set ? "输入新 key 以替换" : "sk-…（无鉴权服务可留空）"}
+              placeholder={
+                loaded?.api_key_set
+                  ? "Enter a new key to replace it"
+                  : "sk-… (leave blank if the service needs no auth)"
+              }
               autoComplete="off"
               className={`${inputCls} disabled:opacity-40`}
             />
@@ -151,7 +157,7 @@ export function AdminSttSettings() {
                   onChange={(e) => setClearKey(e.target.checked)}
                   className="h-3.5 w-3.5 accent-rose-500"
                 />
-                清除已保存的 key
+                Clear the saved key
               </label>
             )}
           </div>
@@ -162,12 +168,16 @@ export function AdminSttSettings() {
               disabled={busy !== null}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
             >
-              {busy === "save" ? "保存中…" : "保存"}
+              {busy === "save" ? "Saving…" : "Save"}
             </button>
             <button
               onClick={() => void test()}
               disabled={busy !== null || !loaded?.configured}
-              title={loaded?.configured ? "用已保存的配置发送一段测试音频" : "先保存再测试"}
+              title={
+                loaded?.configured
+                  ? "Send a short test clip using the saved settings"
+                  : "Save the settings before testing"
+              }
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 transition-colors"
             >
               {busy === "test" ? (
@@ -175,7 +185,7 @@ export function AdminSttSettings() {
               ) : (
                 <FlaskConical className="h-3.5 w-3.5" />
               )}
-              测试连接
+              Test connection
             </button>
           </div>
 

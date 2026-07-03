@@ -81,7 +81,7 @@ function buildTree(entries: FsEntry[]): TreeNode[] {
 }
 
 // The File plugin: browse the channel workspace (context_files) as a folder tree, and
-// open a file with a chosen RENDERER (default "原文" = raw textarea; or a built-in lens /
+// open a file with a chosen RENDERER (default "Raw" = plain textarea; or a built-in lens /
 // installed renderer plugin). The renderer choice is a per-file binding (path -> renderer
 // id) persisted in .workbench.json. Raw content is rendered ONLY inside a <textarea>
 // (inert text — no HTML execution), so stored content cannot XSS co-channel users.
@@ -216,7 +216,7 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
         onBlur={() => {
           if (!newName.trim()) setCreatingIn(null);
         }}
-        placeholder={creatingIn ? "文件名" : "路径，如 notes/todo.md"}
+        placeholder={creatingIn ? "File name" : "Path, e.g. notes/todo.md"}
         className="flex-1 bg-zinc-800 text-zinc-200 text-xs rounded px-1 py-0.5 outline-none"
       />
     </div>
@@ -226,18 +226,18 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
     confirmDel === path ? (
       <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <button
-          title={recursive ? "确认删除整个文件夹" : "确认删除"}
+          title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
         >
-          <Check className="w-3 h-3 text-red-400" />
+          <Check className="w-3 h-3 text-red-400 hover:text-red-300" />
         </button>
-        <button title="取消" onClick={() => setConfirmDel(null)}>
+        <button title="Cancel" onClick={() => setConfirmDel(null)}>
           <X className="w-3 h-3 text-zinc-500 hover:text-zinc-300" />
         </button>
       </span>
     ) : (
       <button
-        title={recursive ? "删除文件夹" : "删除"}
+        title={recursive ? "Delete folder" : "Delete"}
         onClick={(ev) => {
           ev.stopPropagation();
           setConfirmDel(path);
@@ -268,7 +268,7 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
               <Folder className="w-3.5 h-3.5 flex-shrink-0 text-sky-500/70" />
               <span className="truncate flex-1">{node.name}</span>
               <button
-                title="在此文件夹新建文件"
+                title="New file in this folder"
                 onClick={(ev) => {
                   ev.stopPropagation();
                   if (isCollapsed) toggleCollapse(node.path);
@@ -348,14 +348,14 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
                   <span className="text-xs text-zinc-300 truncate">{selected}</span>
                   {!renderer && editor.dirty && <span className="text-[10px] text-amber-500">●</span>}
                   <div className="flex-1" />
-                  {/* renderer picker: default 原文 (raw textarea), or a lens / plugin renderer */}
+                  {/* renderer picker: default Raw (plain textarea), or a lens / plugin renderer */}
                   <select
                     value={boundId ?? ""}
                     onChange={(e) => setBinding(selected, e.target.value || null)}
-                    title="用哪个渲染器打开此文件（默认：原文）"
+                    title="Renderer used to open this file (default: raw text)"
                     className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[120px]"
                   >
-                    <option value="">原文</option>
+                    <option value="">Raw</option>
                     {/* most-specific first; plugin source shown so same-named ones differ */}
                     {candidates.map((r) => (
                       <option key={r.id} value={r.id}>
@@ -367,7 +367,7 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
                   {/* export bridge: download this context file as a real file */}
                   <button
                     onClick={() => downloadText(selected, editor.content)}
-                    title="下载此文件（导出为文件）"
+                    title="Download this file (export)"
                     className="text-zinc-500 hover:text-zinc-300"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -377,14 +377,14 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
                   {/* surface this file as a workbench tab (toggle), persisted in views */}
                   <button
                     onClick={() => toggleView(selected)}
-                    title={views.some((v) => v.path === selected) ? "从顶部 tab 移除" : "把此文件设为顶部 tab"}
+                    title={views.some((v) => v.path === selected) ? "Remove from top tabs" : "Show this file as a top tab"}
                     className={`text-xs ${
                       views.some((v) => v.path === selected)
                         ? "text-amber-400"
                         : "text-zinc-500 hover:text-zinc-300"
                     }`}
                   >
-                    {views.some((v) => v.path === selected) ? "✓ Tab" : "设为 Tab"}
+                    {views.some((v) => v.path === selected) ? "✓ Tab" : "Set as tab"}
                   </button>
                   {!renderer && (
                     <button

@@ -210,7 +210,11 @@ export function ViewBoardDrawer({
               >
                 <option value="">All sessions</option>
                 {sessions.map((s) => (
-                  <option key={s.session_id} value={s.session_id}>
+                  <option
+                    key={s.session_id}
+                    value={s.session_id}
+                    title={`bot ${s.bot_id} · session ${s.session_id}`}
+                  >
                     {s.bot_id.slice(0, 6)} · {s.is_primary ? "primary" : "other"} {s.session_id.slice(0, 8)}
                   </option>
                 ))}

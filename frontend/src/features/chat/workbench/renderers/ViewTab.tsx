@@ -6,7 +6,7 @@ import { RendererHost } from "./RendererHost";
 import { getRenderer } from "./registry";
 
 // Raw text view for a single file — the safe default when a tab's file has no renderer
-// binding (mirrors the File panel's "原文" mode). Content is rendered inert in a <textarea>.
+// binding (mirrors the File panel's "Raw" mode). Content is rendered inert in a <textarea>.
 function RawFileView({ fs, path }: { fs: FsClient; path: string }) {
   const { content, edit, dirty, status, save } = useFileEditor(fs, path);
 
@@ -20,7 +20,7 @@ function RawFileView({ fs, path }: { fs: FsClient; path: string }) {
           disabled={!dirty}
           className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-40"
         >
-          <Save className="w-3.5 h-3.5" /> 保存
+          <Save className="w-3.5 h-3.5" /> Save
         </button>
       </div>
       <textarea

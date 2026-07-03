@@ -93,9 +93,9 @@ export function ChannelSettingsDialog({
         purpose: purpose.trim() || null,
       });
       patchChannel(channel.channel_id, updated);
-      toast.success("已保存");
+      toast.success("Saved");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "保存失败");
+      toast.error(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSavingMeta(false);
     }
@@ -107,12 +107,12 @@ export function ChannelSettingsDialog({
         member_id: it.member_id,
         member_type: it.member_type,
       });
-      toast.success(`已添加 ${it.display_name || it.username || it.member_id.slice(0, 8)}`);
+      toast.success(`Added ${it.display_name || it.username || it.member_id.slice(0, 8)}`);
       setQuery("");
       setResults([]);
       await refreshMembers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "添加失败");
+      toast.error(e instanceof Error ? e.message : "Failed to add");
     }
   }
 
@@ -121,20 +121,20 @@ export function ChannelSettingsDialog({
       await removeChannelMember(channel.channel_id, m.member_id);
       await refreshMembers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "移除失败");
+      toast.error(e instanceof Error ? e.message : "Failed to remove");
     }
   }
 
   async function doDelete() {
-    if (!confirm(`删除频道「${channel.name}」？此操作不可撤销。`)) return;
+    if (!confirm(`Delete channel "${channel.name}"? This cannot be undone.`)) return;
     try {
       await deleteChannel(channel.channel_id);
       setChannels(channels.filter((c) => c.channel_id !== channel.channel_id));
       selectChannel(null);
-      toast.success("频道已删除");
+      toast.success("Channel deleted");
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "删除失败");
+      toast.error(e instanceof Error ? e.message : "Failed to delete");
     }
   }
 
@@ -143,30 +143,30 @@ export function ChannelSettingsDialog({
       await setChannelMemberRole(channel.channel_id, m.member_id, role);
       await refreshMembers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "改角色失败");
+      toast.error(e instanceof Error ? e.message : "Failed to change role");
     }
   }
 
   async function leave() {
-    if (!confirm(`退出频道「${channel.name}」？`)) return;
+    if (!confirm(`Leave channel "${channel.name}"?`)) return;
     try {
       await leaveChannel(channel.channel_id);
       setChannels(channels.filter((c) => c.channel_id !== channel.channel_id));
       selectChannel(null);
-      toast.success("已退出频道");
+      toast.success("Left channel");
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "退出失败");
+      toast.error(e instanceof Error ? e.message : "Failed to leave");
     }
   }
 
   return (
-    <Dialog title={`频道设置 · ${channel.name}`} onClose={onClose} maxWidth="max-w-lg">
+    <Dialog title={`Channel settings · ${channel.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
         {/* Meta */}
         <div className="space-y-2">
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
-            名称
+            Name
           </label>
           <input
             value={name}
@@ -175,19 +175,19 @@ export function ChannelSettingsDialog({
             className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500 disabled:opacity-60"
           />
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
-            主题
+            Purpose
           </label>
           <input
             value={purpose}
             disabled={!canManage}
-            placeholder="（可选）频道用途…"
+            placeholder="(Optional) what this channel is for…"
             onChange={(e) => setPurpose(e.target.value)}
             className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500 disabled:opacity-60"
           />
           {canManage && (
             <div className="flex justify-end">
               <Button size="sm" loading={savingMeta} onClick={() => void saveMeta()}>
-                保存
+                Save
               </Button>
             </div>
           )}
@@ -196,7 +196,7 @@ export function ChannelSettingsDialog({
         {/* Members */}
         <div className="space-y-2">
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
-            成员 ({members.length})
+            Members ({members.length})
           </label>
           <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800 divide-y divide-zinc-800/60">
             {members.map((m) => (
@@ -219,7 +219,10 @@ export function ChannelSettingsDialog({
                   )}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-zinc-200 truncate">
+                  <p
+                    className="text-sm text-zinc-200 truncate"
+                    title={!m.display_name && !m.username ? m.member_id : undefined}
+                  >
                     {m.display_name || m.username || m.member_id.slice(0, 8)}
                     {m.member_type === "bot" && (
                       <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
@@ -246,8 +249,8 @@ export function ChannelSettingsDialog({
                 {canManage && m.member_id !== me?.user_id && m.role !== "owner" && (
                   <button
                     onClick={() => void removeMember(m)}
-                    title="移除"
-                    className="text-zinc-500 hover:text-red-400 p-1"
+                    title="Remove member"
+                    className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded p-1"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -255,7 +258,7 @@ export function ChannelSettingsDialog({
               </div>
             ))}
             {members.length === 0 && (
-              <div className="px-3 py-4 text-xs text-zinc-600 text-center">暂无成员</div>
+              <div className="px-3 py-4 text-xs text-zinc-600 text-center">No members yet</div>
             )}
           </div>
 
@@ -266,14 +269,14 @@ export function ChannelSettingsDialog({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索用户或 bot 添加成员…"
+                  placeholder="Search users or bots to add…"
                   className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
                 />
               </div>
               {(results.length > 0 || searching) && (
                 <div className="absolute z-10 mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 shadow-lg max-h-44 overflow-y-auto">
                   {searching && (
-                    <div className="px-3 py-2 text-xs text-zinc-500">搜索中…</div>
+                    <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
                   )}
                   {results.map((it) => (
                     <button
@@ -291,14 +294,17 @@ export function ChannelSettingsDialog({
                       {it.member_type === "bot" && (
                         <Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
                       )}
-                      <span className="text-sm text-zinc-200 truncate">
+                      <span
+                        className="text-sm text-zinc-200 truncate"
+                        title={!it.display_name && !it.username ? it.member_id : undefined}
+                      >
                         {it.display_name || it.username || it.member_id.slice(0, 8)}
                         {it.member_type === "bot" && (
                           <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
                         )}
                       </span>
                       {it.already_member ? (
-                        <span className="ml-auto text-xs text-zinc-600">已加入</span>
+                        <span className="ml-auto text-xs text-zinc-600">Already in</span>
                       ) : (
                         it.username && (
                           <span className="ml-auto text-xs text-zinc-500">@{it.username}</span>
@@ -316,12 +322,12 @@ export function ChannelSettingsDialog({
         {canManage && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-zinc-200">删除频道</p>
-              <p className="text-xs text-zinc-500 mt-0.5">连同消息、成员一并删除，不可撤销。</p>
+              <p className="text-sm font-medium text-zinc-200">Delete channel</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Deletes its messages and members too. This cannot be undone.</p>
             </div>
             <Button variant="danger" size="sm" onClick={() => void doDelete()}>
               <Trash2 className="w-3.5 h-3.5" />
-              删除
+              Delete
             </Button>
           </div>
         )}
@@ -331,12 +337,12 @@ export function ChannelSettingsDialog({
         {myRole && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-zinc-200">退出频道</p>
-              <p className="text-xs text-zinc-500 mt-0.5">把自己移出该频道。</p>
+              <p className="text-sm font-medium text-zinc-200">Leave channel</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Remove yourself from this channel.</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => void leave()}>
               <LogOut className="w-3.5 h-3.5" />
-              退出
+              Leave
             </Button>
           </div>
         )}

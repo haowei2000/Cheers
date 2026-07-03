@@ -18,6 +18,8 @@ interface Props {
   messages: Message[];
   currentUserId?: string;
   channelId?: string;
+  /** Member id → display label, for messages that arrive without a sender_name. */
+  senderNames?: Map<string, string>;
   hasMore?: boolean;
   onLoadMore?: () => void;
   loading?: boolean;
@@ -27,6 +29,7 @@ export function MessageList({
   messages,
   currentUserId,
   channelId,
+  senderNames,
   hasMore,
   onLoadMore,
   loading,
@@ -117,6 +120,7 @@ export function MessageList({
               isConsecutive={!!isConsecutive}
               currentUserId={currentUserId}
               channelId={channelId}
+              senderName={senderNames?.get(msg.sender_id)}
             />
           </div>
         );
