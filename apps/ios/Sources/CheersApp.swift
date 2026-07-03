@@ -15,6 +15,7 @@ struct CheersApp: App {
 
 struct RootView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -25,5 +26,12 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: app.session == nil)
+        .onChange(of: scenePhase) { _, phase in
+            // iOS suspends the socket in the background; on return, reconnect
+            // immediately (with a fresh backoff budget) if realtime is down.
+            if phase == .active {
+                app.reconnectSocketIfNeeded()
+            }
+        }
     }
 }

@@ -24,6 +24,9 @@ final class ChatModel {
     @ObservationIgnored private var listenerId: UUID?
     @ObservationIgnored private var highestSeq: Int64 = 0
     @ObservationIgnored private var loadedOnce = false
+    /// memberId → display name, used to resolve senders on live WS frames
+    /// (the gateway's `message`/`message_done` frames omit `sender_name`).
+    @ObservationIgnored private var memberNames: [String: String] = [:]
 
     init(channel: ChannelDto) {
         self.channel = channel
@@ -55,8 +58,18 @@ final class ChatModel {
         isLoading = true
         defer { isLoading = false }
         do {
+            // Members are fetched alongside history so live bot frames (which
+            // carry no sender_name) can show the real name, not "Bot". A
+            // members failure is non-fatal.
+            async let membersTask = api.listMembers(channelId: channel.channelId)
             let response = try await api.listMessages(channelId: channel.channelId, limit: 50)
-            messages = sorted(response.messages)
+            if let members = try? await membersTask {
+                memberNames = Dictionary(
+                    members.map { ($0.memberId, $0.name) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }
+            messages = sorted(response.messages.map(withResolvedSender))
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
             highestSeq = messages.compactMap(\.channelSeq).max() ?? 0
             loadedOnce = true
@@ -140,8 +153,10 @@ final class ChatModel {
     private func handle(_ event: SocketEvent) {
         switch event {
         case .connected:
-            // Socket (re)established; subscription is replayed by ChatSocket.
-            break
+            // Re-assert our subscription: the socket's replay set may have
+            // been cleared after a 4403 (stale channel) close. The server
+            // treats repeat subscribes as idempotent.
+            app?.socket.subscribe(channelId: channel.channelId)
         case .subscribed(let channelId) where channelId == channel.channelId:
             Task { await catchUp() }
         case .message(let channelId, let message) where channelId == channel.channelId:
@@ -178,15 +193,29 @@ final class ChatModel {
             if merged.createdAt == nil {
                 merged.createdAt = messages[index].createdAt
             }
-            messages[index] = merged
+            // Live frames omit sender_name — keep the known one, else resolve
+            // from the member map.
+            if merged.senderName == nil {
+                merged.senderName = messages[index].senderName
+            }
+            messages[index] = withResolvedSender(merged)
             messages = sorted(messages)
         } else {
             var incoming = message
             if incoming.createdAt == nil {
                 incoming.createdAt = TimeFormat.iso.string(from: Date())
             }
-            messages = sorted(messages + [incoming])
+            messages = sorted(messages + [withResolvedSender(incoming)])
         }
+    }
+
+    /// Fills a missing `sender_name` from the channel-member map.
+    private func withResolvedSender(_ message: MessageDto) -> MessageDto {
+        guard message.senderName == nil, let senderId = message.senderId,
+              let name = memberNames[senderId] else { return message }
+        var resolved = message
+        resolved.senderName = name
+        return resolved
     }
 
     private func sorted(_ items: [MessageDto]) -> [MessageDto] {

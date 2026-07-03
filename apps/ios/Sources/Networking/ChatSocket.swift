@@ -54,8 +54,11 @@ enum SocketEvent {
 //   2. on {"type":"auth_ok"} send {"type":"subscribe","channel_id":...} per channel
 //   3. on {"type":"subscribed"} the app RESTs ?since_seq= to heal any gap
 // Close codes: 4401 auth, 4403 not member, 4408 backpressure (catch up + resubscribe).
-// Reconnect: exponential backoff 1 s → 30 s, max 10 retries (mirrors
-// frontend/src/features/chat/hooks/useChatRealtime.ts).
+// Reconnect: exponential backoff 1 s → 30 s. Unlike the web client's 10-retry
+// budget (masked there by natural page reloads), attempts are NOT capped —
+// a phone offline for a few minutes must pick realtime back up on its own.
+// Foregrounding and pull-to-refresh additionally force an immediate attempt
+// via AppModel.reconnectSocketIfNeeded().
 
 @MainActor
 final class ChatSocket: NSObject {
@@ -73,8 +76,6 @@ final class ChatSocket: NSObject {
     private var retryCount = 0
     private var intentionallyClosed = false
 
-    private static let maxRetries = 10
-
     private lazy var session = URLSession(configuration: .default)
 
     // MARK: Lifecycle
@@ -84,6 +85,8 @@ final class ChatSocket: NSObject {
         self.token = token
         intentionallyClosed = false
         retryCount = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
         openSocket()
     }
 
@@ -106,6 +109,24 @@ final class ChatSocket: NSObject {
         subscriptions.remove(channelId)
         if isAuthed {
             sendJSON(["type": "unsubscribe", "channel_id": channelId])
+        }
+    }
+
+    /// Replaces the desired subscription set (conversation list calls this on
+    /// every reload). Replacing — instead of only ever adding — prunes channels
+    /// the user left; replaying one of those after a reconnect makes the server
+    /// close the whole connection with 4403.
+    func resetSubscriptions(to channelIds: Set<String>) {
+        let removed = subscriptions.subtracting(channelIds)
+        let added = channelIds.subtracting(subscriptions)
+        subscriptions = channelIds
+        if isAuthed {
+            for channelId in removed {
+                sendJSON(["type": "unsubscribe", "channel_id": channelId])
+            }
+            for channelId in added {
+                sendJSON(["type": "subscribe", "channel_id": channelId])
+            }
         }
     }
 
@@ -147,13 +168,9 @@ final class ChatSocket: NSObject {
     private func scheduleReconnect() {
         guard !intentionallyClosed else { return }
         guard reconnectTask == nil else { return }
-        guard retryCount < Self.maxRetries else {
-            onEvent?(.disconnected)
-            return
-        }
         retryCount += 1
-        // 1s, 2s, 4s, ... capped at 30s.
-        let delay = min(30.0, pow(2.0, Double(retryCount - 1)))
+        // 1s, 2s, 4s, ... capped at 30s; attempts are never capped (see header).
+        let delay = min(30.0, pow(2.0, Double(min(retryCount, 6) - 1)))
         onEvent?(.disconnected)
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -205,6 +222,13 @@ final class ChatSocket: NSObject {
                 }
             } catch {
                 if self.task === task && !Task.isCancelled {
+                    if task.closeCode.rawValue == 4403 {
+                        // "not a channel member": one stale subscription would
+                        // otherwise be replayed after every reconnect, closing
+                        // the socket in a loop. Drop the set — attached models
+                        // re-subscribe what they still need on .connected.
+                        subscriptions.removeAll()
+                    }
                     scheduleReconnect()
                 }
                 return

@@ -109,7 +109,11 @@ struct APIClient: Sendable {
             throw APIError.http(status: 0, detail: "no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 {
+            // 401 means "session revoked/expired" only on authenticated calls.
+            // Unauthenticated ones (login) must surface the server's detail
+            // ("invalid credentials", 429-style lockout text) instead of the
+            // misleading "Session expired" copy.
+            if http.statusCode == 401, token != nil {
                 throw APIError.unauthorized
             }
             // AppError bodies are { "detail": "..." }; auth middleware 401s are empty.

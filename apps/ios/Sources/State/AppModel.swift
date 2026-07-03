@@ -131,6 +131,14 @@ final class AppModel {
         socket.connect(url: wsURL, token: token)
     }
 
+    /// Re-arms realtime when the socket is down: called on app foregrounding
+    /// and pull-to-refresh so a long offline stretch (backoff waiting up to
+    /// 30 s) recovers immediately instead of leaving stale data on screen.
+    func reconnectSocketIfNeeded() {
+        guard session != nil, !socketConnected else { return }
+        connectSocket()
+    }
+
     /// Fan-out: multiple models (conversation list + open chat) listen to the
     /// single shared socket.
     func addSocketListener(_ handler: @escaping (SocketEvent) -> Void) -> UUID {

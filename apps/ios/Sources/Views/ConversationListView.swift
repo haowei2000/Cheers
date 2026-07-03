@@ -78,6 +78,7 @@ struct ConversationListView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.bgApp)
         .refreshable {
+            app.reconnectSocketIfNeeded()
             await model.load()
         }
     }
@@ -91,6 +92,7 @@ struct ConversationListView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.textMuted)
             Button("Refresh") {
+                app.reconnectSocketIfNeeded()
                 Task { await model.load() }
             }
             .font(.system(size: 14, weight: .medium))

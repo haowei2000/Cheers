@@ -97,28 +97,21 @@ struct MessageBubbleView: View {
                 }
             }
 
-            if isTyping {
-                TypingDotsView()
-                    .padding(.vertical, 4)
-            } else {
-                Text(message.content)
-                    .font(.system(size: 15))
-                    .foregroundStyle(isOwn ? Theme.bubbleOwnText : Theme.bubbleOtherText)
-                    .textSelection(.enabled)
-            }
-
-            HStack(spacing: 4) {
-                if !isTyping, message.isPartial == true {
-                    // Streaming: pulsing caret substitute.
-                    Circle()
-                        .fill(isOwn ? Color.white.opacity(0.7) : Theme.textSecondary)
-                        .frame(width: 5, height: 5)
+            // Telegram pattern: the time sits bottom-trailing beside the last
+            // line, so the bubble hugs its content. (A greedy full-width frame
+            // here would stretch every bubble edge-to-edge.)
+            HStack(alignment: .bottom, spacing: 6) {
+                if isTyping {
+                    TypingDotsView()
+                        .padding(.vertical, 4)
+                } else {
+                    Text(message.content)
+                        .font(.system(size: 15))
+                        .foregroundStyle(isOwn ? Theme.bubbleOwnText : Theme.bubbleOtherText)
+                        .textSelection(.enabled)
                 }
-                Text(TimeFormat.time(message.createdDate))
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(isOwn ? Color.white.opacity(0.7) : Theme.textMuted)
+                timeLabel
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
 
             if let files = message.files, !files.isEmpty {
                 ForEach(files) { file in
@@ -131,6 +124,21 @@ struct MessageBubbleView: View {
         .background(isOwn ? Theme.bubbleOwn : Theme.bubbleOther)
         .clipShape(bubbleShape)
         .frame(maxWidth: .infinity, alignment: isOwn ? .trailing : .leading)
+    }
+
+    private var timeLabel: some View {
+        HStack(spacing: 4) {
+            if !isTyping, message.isPartial == true {
+                // Streaming: pulsing caret substitute.
+                Circle()
+                    .fill(isOwn ? Color.white.opacity(0.7) : Theme.textSecondary)
+                    .frame(width: 5, height: 5)
+            }
+            Text(TimeFormat.time(message.createdDate))
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(isOwn ? Color.white.opacity(0.7) : Theme.textMuted)
+        }
+        .padding(.bottom, 1)
     }
 
     private var isTyping: Bool {

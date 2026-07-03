@@ -46,6 +46,7 @@ final class ConversationListModel {
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var listenerId: UUID?
     @ObservationIgnored private var loadedOnce = false
+    @ObservationIgnored private var loadInFlight = false
 
     func attach(_ app: AppModel) {
         self.app = app
@@ -70,18 +71,33 @@ final class ConversationListModel {
 
     func load() async {
         guard let app, let api = app.api else { return }
+        // A reconnect-triggered reload can race pull-to-refresh; run one at a time.
+        guard !loadInFlight else { return }
+        loadInFlight = true
+        defer { loadInFlight = false }
         if rows.isEmpty { isLoading = true }
         defer { isLoading = false }
         errorMessage = nil
         do {
             async let teamsTask = api.listWorkspaces()
             async let dmsTask = api.listDMs()
+            // GET /workspaces lists team workspaces only (kind <> 'personal');
+            // the personal space — the web client's default workspace — has its
+            // own endpoint. Non-fatal: teams/DMs still load if it fails.
+            async let personalTask = api.personalWorkspace()
             let teams = try await teamsTask
             let dms = try await dmsTask
+            let personal = try? await personalTask
 
             var channels: [(ChannelDto, String?)] = dms.map { ($0, nil) }
-            // Channel lists per workspace, fetched concurrently.
-            try await withThrowingTaskGroup(of: (String, [ChannelDto]).self) { group in
+            // Channel lists per workspace, fetched concurrently. Personal
+            // channels get no workspace chip (nil name), like DMs.
+            try await withThrowingTaskGroup(of: (String?, [ChannelDto]).self) { group in
+                if let personal {
+                    group.addTask {
+                        (nil, try await api.listChannels(workspaceId: personal.workspaceId))
+                    }
+                }
                 for ws in teams {
                     group.addTask {
                         (ws.name, try await api.listChannels(workspaceId: ws.workspaceId))
@@ -129,10 +145,10 @@ final class ConversationListModel {
             rows = newRows
             loadedOnce = true
 
-            // Live previews/unreads for every conversation.
-            for row in rows {
-                app.socket.subscribe(channelId: row.channel.channelId)
-            }
+            // Live previews/unreads for every conversation. Replace (don't
+            // union) the socket's subscription set: a stale channel we left
+            // makes the server close the whole connection with 4403 on replay.
+            app.socket.resetSubscriptions(to: Set(newRows.map { $0.channel.channelId }))
         } catch let error as APIError {
             if case .unauthorized = error {
                 app.clearSession()
@@ -153,6 +169,11 @@ final class ConversationListModel {
 
     private func handle(_ event: SocketEvent) {
         switch event {
+        case .connected:
+            // Reconnected: previews/unreads only advance from live frames, so
+            // anything delivered while the socket was down must be re-fetched.
+            guard loadedOnce else { return }
+            Task { await self.load() }
         case .message(let channelId, let message):
             // Skip in-flight bot placeholders (empty partial shells).
             if message.isPartial == true { return }
@@ -167,6 +188,15 @@ final class ConversationListModel {
     private func apply(_ message: MessageDto, to channelId: String) {
         guard let index = rows.firstIndex(where: { $0.channel.channelId == channelId }) else { return }
         var row = rows[index]
+        var message = message
+        // Live bot frames omit sender_name; keep the previous known name when
+        // the sender hasn't changed instead of degrading the preview to "Bot".
+        if message.senderName == nil,
+           let previous = row.lastMessage,
+           previous.senderId == message.senderId,
+           previous.senderType == message.senderType {
+            message.senderName = previous.senderName
+        }
         row.lastMessage = message
         row.lastActivityAt = message.createdDate ?? Date()
         let isOwn = message.senderId == app?.session?.userId && message.senderType == "user"
