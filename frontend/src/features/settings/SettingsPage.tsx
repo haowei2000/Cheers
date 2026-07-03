@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { changePassword, logout as logoutApi } from "@/api/auth";
+import { getMe, updateMe } from "@/api/users";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { BotsManager } from "@/features/bots/BotsManager";
@@ -102,6 +103,133 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
   );
 }
 
+/** Self-service editor for display name, status line (emoji + text), and bio. */
+function ProfileEditCard() {
+  const user = useAuthStore((s) => s.user);
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const token = useAuthStore((s) => s.token);
+  const [displayName, setDisplayName] = useState("");
+  const [statusEmoji, setStatusEmoji] = useState("");
+  const [statusText, setStatusText] = useState("");
+  const [bio, setBio] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void getMe()
+      .then((me) => {
+        if (!alive) return;
+        setDisplayName(me.display_name ?? "");
+        setStatusEmoji(me.status_emoji ?? "");
+        setStatusText(me.status_text ?? "");
+        setBio(me.bio ?? "");
+        // Hydrate the store so the rest of the app sees the full profile.
+        if (token) setAuth({ ...(user ?? { user_id: me.user_id, display_name: null }), ...me }, token);
+      })
+      .catch(() => {})
+      .finally(() => alive && setLoaded(true));
+    // Load once on mount; store writes here must not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    try {
+      const me = await updateMe({
+        display_name: displayName.trim(),
+        status_emoji: statusEmoji.trim(),
+        status_text: statusText.trim(),
+        bio: bio.trim(),
+      });
+      if (token) setAuth({ ...(user ?? { user_id: me.user_id, display_name: null }), ...me }, token);
+      toast.success("Profile saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save profile");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputCls =
+    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+
+  return (
+    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 space-y-4">
+      <div className="flex items-center gap-4">
+        <Avatar name={displayName || user?.username} id={user?.user_id} size="lg" />
+        <div className="min-w-0">
+          <p className="font-semibold text-zinc-100 truncate">
+            {statusEmoji && <span className="mr-1">{statusEmoji}</span>}
+            {displayName || user?.username || "Unknown"}
+          </p>
+          <p className="text-sm text-zinc-500 truncate">
+            {statusText || `@${user?.username ?? user?.user_id?.slice(0, 8)}`}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+          Display name
+          <input
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Your name"
+            className={`${inputCls} mt-1 normal-case font-normal tracking-normal`}
+          />
+        </label>
+
+        <div>
+          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Status</label>
+          <div className="flex gap-2 mt-1">
+            <input
+              value={statusEmoji}
+              onChange={(e) => setStatusEmoji(e.target.value)}
+              placeholder="🟢"
+              maxLength={8}
+              className={`${inputCls} w-16 text-center`}
+              aria-label="Status emoji"
+            />
+            <input
+              value={statusText}
+              onChange={(e) => setStatusText(e.target.value)}
+              placeholder="What you're up to (e.g. focusing, on vacation)"
+              maxLength={140}
+              className={inputCls}
+              aria-label="Status text"
+            />
+          </div>
+        </div>
+
+        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+          Bio
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            placeholder="A little about you"
+            rows={3}
+            className={`${inputCls} mt-1 normal-case font-normal tracking-normal resize-y`}
+          />
+        </label>
+      </div>
+
+      <div>
+        <button
+          onClick={() => void save()}
+          disabled={busy || !loaded}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+        >
+          {busy ? "Saving…" : "Save profile"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -159,27 +287,10 @@ export default function SettingsPage() {
                 Profile
               </h2>
 
-              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 space-y-4">
-                <div className="flex items-center gap-4">
-                  <Avatar
-                    name={user?.display_name ?? user?.username}
-                    id={user?.user_id}
-                    size="lg"
-                  />
-                  <div>
-                    <p className="font-semibold text-zinc-100">
-                      {user?.display_name ?? user?.username ?? "Unknown"}
-                    </p>
-                    <p
-                      className="text-sm text-zinc-500"
-                      title={!user?.username && user?.user_id ? user.user_id : undefined}
-                    >
-                      @{user?.username ?? user?.user_id?.slice(0, 8)}
-                    </p>
-                  </div>
-                </div>
+              <ProfileEditCard />
 
-                <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 mt-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                       User ID

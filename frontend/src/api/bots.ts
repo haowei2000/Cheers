@@ -48,6 +48,30 @@ export async function deleteBot(botId: string): Promise<void> {
   await apiJson(`/bots/${botId}`, { method: "DELETE" });
 }
 
+/** Manager-editable bot identity + status + scheduled-self-update config. Omit a key
+ *  to leave it unchanged; send "" to clear a text field. */
+export interface UpdateBotProfileInput {
+  display_name?: string | null;
+  description?: string | null;
+  intro?: string | null;
+  status_text?: string | null;
+  status_emoji?: string | null;
+  status_auto_update?: boolean;
+  status_update_prompt?: string | null;
+  status_update_interval_minutes?: number | null;
+}
+
+/** PATCH /bots/:id/profile — owner/admin edits identity, status, and the schedule. */
+export async function updateBotProfile(
+  botId: string,
+  input: UpdateBotProfileInput
+): Promise<void> {
+  await apiJson(`/bots/${botId}/profile`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function issueBotToken(botId: string): Promise<IssuedToken> {
   return apiJson<IssuedToken>(`/bots/${botId}/token`, { method: "POST" });
 }
