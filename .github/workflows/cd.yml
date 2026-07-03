@@ -141,8 +141,11 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ─────────────────────────────────────────────
-  # Deploy via SSH (optional)
-  # Requires secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH
+  # Deploy to the production server (Hetzner) via SSH.
+  # The deploy key is a forced-command key on the server: any connection with it
+  # runs /opt/cheers/deploy.sh (pull :main images → recreate gateway+frontend →
+  # wait for gateway health) and nothing else. Gate: vars.DEPLOY_ENABLED = 'true'.
+  # Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS.
   # ─────────────────────────────────────────────
   deploy:
     name: Deploy to Server
@@ -152,30 +155,36 @@ jobs:
       always() &&
       github.ref == 'refs/heads/main' &&
       vars.DEPLOY_ENABLED == 'true' &&
-      (needs.changes.outputs.gateway == 'true' || needs.changes.outputs.frontend == 'true') &&
-      (needs.build-gateway.result == 'success' || needs.build-gateway.result == 'skipped') &&
-      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped')
+      (needs.build-gateway.result == 'success' || needs.build-frontend.result == 'success') &&
+      needs.build-gateway.result != 'failure' &&
+      needs.build-frontend.result != 'failure'
     environment: production
 
     steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH }}
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The server side ignores the requested command (forced command),
+          # but pass "deploy" for readable auth logs.
+          ssh -i ~/.ssh/deploy_key \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              "$USER@$HOST" deploy
 
-            # Pull latest images
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose pull gateway frontend
-
-            # Recreate services so the pulled image is definitely used.
-            # The gateway runs sqlx migrations on startup — no separate migrate step.
-            docker compose up -d --force-recreate --no-deps gateway frontend
-
-            # Prune dangling images
-            docker image prune -f
+      - name: Verify public health endpoint
+        run: |
+          for i in $(seq 1 10); do
+            if curl -sf "https://${{ vars.APP_DOMAIN }}/health" >/dev/null; then
+              echo "health ok"; exit 0
+            fi
+            sleep 3
+          done
+          echo "health endpoint not reachable" >&2; exit 1
