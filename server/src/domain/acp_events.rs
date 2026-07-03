@@ -122,6 +122,19 @@ pub const REGISTRY: &[AcpEvent] = &[
         Some("initiate"),
         false,
     ),
+    // Cheers-level remote-workspace WRITE permission (not a raw ACP method): who may
+    // write a file into the bot's real working machine via the workspace browser.
+    // Owner-default + grantable per-subject like the session-config classes above.
+    // Registering it here is what makes acp_policy::allows() gate it — an unregistered
+    // name classifies to None and allows() returns Ok(true) (ungated). Reads (ls/read/
+    // git) are intentionally NOT registered here; they stay membership-only.
+    ev(
+        "workspace/write",
+        Home::Cheers,
+        Some("workspace_write"),
+        Some("initiate"),
+        false,
+    ),
     // ── agent→client requests ────────────────────────────────────────────────
     // permission_request: Cheers SEE (view the card) + RESPOND (answer it).
     ev(

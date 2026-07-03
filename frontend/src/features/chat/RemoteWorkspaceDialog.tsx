@@ -20,6 +20,7 @@ import {
   getWorkspaceTree,
   listWorkspaceBots,
   putWorkspaceFile,
+  WorkspaceConflictError,
   type GitStatus,
   type GitStatusEntry,
   type WorkspaceBot,
@@ -104,6 +105,12 @@ export function RemoteWorkspaceDialog({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Optimistic-concurrency version of the open file; sent back as `If-Match` on save.
+  const [etag, setEtag] = useState<string | null>(null);
+  // Set when a conditional save lost a race (the file changed on the bot's machine).
+  const [conflict, setConflict] = useState<{ currentEtag: string | null; sizeBytes: number } | null>(
+    null
+  );
   const deepLinked = useRef(false);
   // Session-scoped by default: browse only the active session's root set. Un-checking
   // "整个允许目录" drops the session id so the user sees the bot's ENTIRE allowed roots.
@@ -144,6 +151,8 @@ export function RemoteWorkspaceDialog({
       setBusy(true);
       setErr(null);
       setFile(null);
+      setEtag(null);
+      setConflict(null);
       try {
         const t = await getWorkspaceTree(channelId, botId, path, undefined, effectiveSessionId);
         setEntries(t.entries);
@@ -166,7 +175,9 @@ export function RemoteWorkspaceDialog({
         const f = await getWorkspaceFile(channelId, botId, path, undefined, effectiveSessionId);
         setFile(f);
         setEdit(f.content ?? "");
+        setEtag(f.etag);
         setDirty(false);
+        setConflict(null);
         setDiff(null); // opening a file returns the right pane to the editor
       } catch (e) {
         // A directory clicked via deep-link: fall back to listing it.
@@ -270,6 +281,8 @@ export function RemoteWorkspaceDialog({
     setScoped((s) => !s);
     setEntries(null);
     setFile(null);
+    setEtag(null);
+    setConflict(null);
     setCwd("");
     setGit(null);
     setDiff(null);
@@ -291,15 +304,36 @@ export function RemoteWorkspaceDialog({
     if (diff) void openDiff(diff.path);
   }, [workspaceTick, botId, cwd, file, dirty, loadDir, openFile, loadGitStatus, diff, openDiff]);
 
-  const save = async () => {
+  // Write the buffer back to the bot's machine. `ifEtag` guards the write:
+  //   normal Save → the file's stored etag (conditional, 409 on a lost race);
+  //   force-overwrite → the conflict's current etag (or undefined = unconditional).
+  // A WorkspaceConflictError surfaces the amber conflict panel instead of `err`; on
+  // success we adopt the returned etag so a follow-up save doesn't need a re-read.
+  // Uses effectiveSessionId (like every other workspace call) so the path resolves
+  // against the SAME root set the user is browsing.
+  const doSave = async (ifEtag: string | undefined) => {
     if (!file || !botId) return;
     setBusy(true);
     setErr(null);
     try {
-      await putWorkspaceFile(channelId, botId, file.path, edit, undefined, effectiveSessionId);
+      const newEtag = await putWorkspaceFile(
+        channelId,
+        botId,
+        file.path,
+        edit,
+        undefined,
+        effectiveSessionId,
+        ifEtag
+      );
+      setEtag(newEtag);
       setDirty(false);
+      setConflict(null);
     } catch (e) {
-      setErr(cleanErr(e));
+      if (e instanceof WorkspaceConflictError) {
+        setConflict({ currentEtag: e.currentEtag, sizeBytes: e.sizeBytes });
+      } else {
+        setErr(cleanErr(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -307,6 +341,9 @@ export function RemoteWorkspaceDialog({
 
   const parent = cwd ? cwd.split("/").slice(0, -1).join("/") : null;
   const isImage = file?.content_type.startsWith("image/");
+  const selectedBot = bots?.find((b) => b.bot_id === botId) ?? null;
+  // Fail-closed: advertise Save only when the server explicitly says we can write.
+  const canWrite = selectedBot?.can_write === true;
 
   return (
     <Dialog title="Remote workspace" onClose={onClose} maxWidth="max-w-5xl">
@@ -319,6 +356,8 @@ export function RemoteWorkspaceDialog({
             setBotId(e.target.value || null);
             setEntries(null);
             setFile(null);
+            setEtag(null);
+            setConflict(null);
             setGit(null);
             setDiff(null);
             deepLinked.current = true; // manual switch: don't re-deep-link
@@ -541,15 +580,26 @@ export function RemoteWorkspaceDialog({
                     {file.filename}
                   </span>
                   <span className="text-zinc-600">{file.size_bytes}B</span>
-                  {file.is_text && dirty && (
-                    <button
-                      onClick={save}
-                      title="Save changes back to the bot's machine"
-                      className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-zinc-100"
-                    >
-                      <Save className="w-3 h-3" /> Save
-                    </button>
-                  )}
+                  {file.is_text &&
+                    (canWrite ? (
+                      dirty && (
+                        <button
+                          onClick={() => doSave(etag ?? undefined)}
+                          disabled={busy}
+                          title="Save changes back to the bot's machine"
+                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-zinc-100 disabled:opacity-40"
+                        >
+                          <Save className="w-3 h-3" /> Save
+                        </button>
+                      )
+                    ) : (
+                      <span
+                        className="text-amber-400 text-[11px] shrink-0"
+                        title="This bot's owner hasn't granted you write access to its workspace."
+                      >
+                        write requires a grant from the bot owner
+                      </span>
+                    ))}
                   <button
                     onClick={() => downloadWorkspaceFile(file)}
                     title="Download this file"
@@ -558,6 +608,37 @@ export function RemoteWorkspaceDialog({
                     <Download className="w-3 h-3" /> Download
                   </button>
                 </div>
+                {conflict && (
+                  <div className="flex items-center gap-2 px-2 py-1.5 border-b border-amber-800/50 bg-amber-950/30 text-[11px] text-amber-300">
+                    <span className="flex-1">
+                      文件已被其他进程修改(远端 {conflict.sizeBytes}B)。「重新载入」会用远端内容替换当前编辑;「强制覆盖」会覆盖远端改动。
+                    </span>
+                    <button
+                      onClick={() => void openFile(file.path)}
+                      disabled={busy}
+                      title="放弃当前编辑,重新载入远端最新内容"
+                      className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-100 disabled:opacity-40"
+                    >
+                      <RefreshCw className="w-3 h-3" /> 重新载入
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "强制覆盖会覆盖远端已改动的版本,该版本将丢失。确定继续?"
+                          )
+                        ) {
+                          void doSave(conflict.currentEtag ?? undefined);
+                        }
+                      }}
+                      disabled={busy}
+                      title="用当前编辑覆盖远端版本"
+                      className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded bg-amber-700 hover:bg-amber-600 text-zinc-100 disabled:opacity-40"
+                    >
+                      <Save className="w-3 h-3" /> 强制覆盖
+                    </button>
+                  </div>
+                )}
                 <div className="flex-1 overflow-auto">
                   {file.is_text ? (
                     <textarea

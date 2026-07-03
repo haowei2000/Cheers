@@ -1106,6 +1106,12 @@ pub enum DataInbound {
         /// base64 file bytes for `op == "write"`.
         #[serde(default)]
         content_b64: Option<String>,
+        /// `op == "write"` precondition (safe remote writes). Absent/null ⇒
+        /// unconditional overwrite (back-compat). `""` ⇒ create-only (fail if the
+        /// file already exists). A 64-char lowercase-hex SHA-256 ⇒ overwrite only
+        /// if the current file's bytes hash to it, else `E_CONFLICT`.
+        #[serde(default)]
+        if_etag: Option<String>,
         /// Optional session root set to scope this browse to (`cwd` +
         /// `additionalDirectories`). Empty ⇒ the full `allowed_roots` (bot-wide
         /// browse). When set, the effective roots are these ∩ `allowed_roots`.

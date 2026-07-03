@@ -6,6 +6,8 @@ export interface WorkspaceBot {
   username: string;
   display_name: string | null;
   online: boolean;
+  /** True only when the caller holds a write grant for this bot's workspace. */
+  can_write: boolean;
 }
 
 export interface WorkspaceEntry {
@@ -30,6 +32,72 @@ export interface WorkspaceFile {
   is_text: boolean;
   content: string | null;
   content_b64: string;
+  /** Content version (lowercase-hex SHA-256) used for optimistic-concurrency writes. */
+  etag: string;
+}
+
+/**
+ * A conditional write (`If-Match`) lost a race: the file on the bot's machine changed
+ * since it was read. `currentEtag` is the server's current version (null if unknown);
+ * `sizeBytes` is the current on-disk size. The caller decides: reload, or force-overwrite.
+ */
+export class WorkspaceConflictError extends Error {
+  currentEtag: string | null;
+  sizeBytes: number;
+  constructor(currentEtag: string | null, sizeBytes: number) {
+    super("workspace write conflict");
+    this.name = "WorkspaceConflictError";
+    this.currentEtag = currentEtag;
+    this.sizeBytes = sizeBytes;
+  }
+}
+
+/** Strip HTTP ETag decoration (weak `W/` prefix + surrounding quotes) to bare hex. */
+function normalizeEtag(raw: string): string {
+  return raw.trim().replace(/^W\//, "").replace(/^"(.*)"$/, "$1");
+}
+
+/** Lowercase-hex SHA-256 of a UTF-8 string — the etag the server derives from bytes. */
+async function sha256Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Pull {current_etag, size_bytes} out of a 409 body, tolerating several envelopes:
+ * top-level, `.data`, or `.detail` (which may itself be a JSON-encoded string).
+ */
+function extractConflict(body: unknown): { currentEtag: string | null; sizeBytes: number } {
+  const candidates: unknown[] = [];
+  if (body && typeof body === "object") {
+    const o = body as Record<string, unknown>;
+    candidates.push(o);
+    if (o.data) candidates.push(o.data);
+    if (typeof o.detail === "string") {
+      try {
+        candidates.push(JSON.parse(o.detail));
+      } catch {
+        /* detail is a plain message, not JSON */
+      }
+    } else if (o.detail) {
+      candidates.push(o.detail);
+    }
+  }
+  for (const c of candidates) {
+    if (c && typeof c === "object") {
+      const o = c as Record<string, unknown>;
+      if ("current_etag" in o || "size_bytes" in o) {
+        return {
+          currentEtag: typeof o.current_etag === "string" ? o.current_etag : null,
+          sizeBytes: typeof o.size_bytes === "number" ? o.size_bytes : 0,
+        };
+      }
+    }
+  }
+  return { currentEtag: null, sizeBytes: 0 };
 }
 
 export async function listWorkspaceBots(channelId: string): Promise<WorkspaceBot[]> {
@@ -65,22 +133,48 @@ export async function getWorkspaceFile(
   return apiJson<WorkspaceFile>(`/channels/${channelId}/workspace/file?${qs}`);
 }
 
+/**
+ * Write a text file back to the bot's machine, optionally guarded by `If-Match`:
+ *   ifEtag === undefined → no header, unconditional overwrite;
+ *   ifEtag === ""        → create-only (fail if the file already exists);
+ *   ifEtag non-empty     → conditional (fail with 409 if the file has since changed).
+ * Returns the file's NEW etag (from the response `ETag` header, else a self-derived
+ * SHA-256 of the written bytes) so the caller can keep writing without re-reading.
+ * Throws {@link WorkspaceConflictError} on a 409 (lost `If-Match` race).
+ */
 export async function putWorkspaceFile(
   channelId: string,
   botId: string,
   path: string,
   content: string,
   root?: string,
-  sessionId?: string
-): Promise<void> {
+  sessionId?: string,
+  ifEtag?: string
+): Promise<string> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (root) qs.set("root", root);
   if (sessionId) qs.set("session_id", sessionId);
+  const headers: Record<string, string> = {};
+  if (ifEtag !== undefined) headers["If-Match"] = ifEtag;
   const res = await apiFetch(`/channels/${channelId}/workspace/file?${qs}`, {
     method: "PUT",
     body: content,
+    headers,
   });
+  if (res.status === 409) {
+    const text = await res.text().catch(() => "");
+    let parsed: unknown = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      /* non-JSON 409 body */
+    }
+    const { currentEtag, sizeBytes } = extractConflict(parsed);
+    throw new WorkspaceConflictError(currentEtag, sizeBytes);
+  }
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || `HTTP ${res.status}`);
+  const headerEtag = res.headers.get("ETag");
+  return headerEtag ? normalizeEtag(headerEtag) : await sha256Hex(content);
 }
 
 /* ── Read-only git visibility for the bot's remote working directory ──────────

@@ -251,6 +251,39 @@ fn git_stderr(out: &std::process::Output) -> String {
     }
 }
 
+/// Content etag for the safe-remote-writes protocol: the lowercase-hex SHA-256 of
+/// the raw file bytes (always 64 chars). Read/write replies carry it; a write's
+/// `if_etag` precondition is checked against it.
+fn etag_of(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Best-effort `(current_etag, size_bytes)` snapshot of an on-disk file for an
+/// `E_CONFLICT` reply. STATs first and refuses to hash a file larger than `max`
+/// bytes (reports `None` etag with the real size) so a huge racing file can't OOM
+/// the connector — such a file could never match an etag a client obtained from
+/// the size-capped read anyway. A vanished/unreadable file reports `(None, 0)`.
+async fn conflict_snapshot(path: &std::path::Path, max: u64) -> (Option<String>, u64) {
+    match tokio::fs::metadata(path).await {
+        Ok(md) => {
+            let size = md.len();
+            if size > max {
+                (None, size)
+            } else {
+                match tokio::fs::read(path).await {
+                    Ok(bytes) => (Some(etag_of(&bytes)), bytes.len() as u64),
+                    Err(_) => (None, size),
+                }
+            }
+        }
+        Err(_) => (None, 0),
+    }
+}
+
 /// Best-effort parse of `git status --porcelain=v2 --branch`. Returns
 /// `(branch, ahead, behind, entries)`; the caller also returns the raw stdout, so
 /// this parse is advisory (unrecognized lines are skipped). Entry `xy` is the
@@ -544,6 +577,7 @@ impl RuntimeContext {
                 path,
                 root,
                 content_b64,
+                if_etag,
                 roots,
                 staged,
                 limit,
@@ -556,6 +590,7 @@ impl RuntimeContext {
                             &path,
                             root.as_deref(),
                             content_b64.as_deref(),
+                            if_etag.as_deref(),
                             &roots,
                             staged.unwrap_or(false),
                             limit,
@@ -570,11 +605,13 @@ impl RuntimeContext {
                             error: None,
                             code: None,
                         },
-                        Err((code, msg)) => DataOutbound::WorkspaceRes {
+                        // The error carries an optional structured `data` payload
+                        // (E_CONFLICT ships `{current_etag, size_bytes}`); forward it.
+                        Err((code, msg, data)) => DataOutbound::WorkspaceRes {
                             v: BRIDGE_PROTOCOL_VERSION,
                             req_id,
                             ok: false,
-                            data: None,
+                            data,
                             error: Some(msg),
                             code: Some(code),
                         },
@@ -726,19 +763,27 @@ impl RuntimeContext {
         rel: &str,
         root: Option<&str>,
         content_b64: Option<&str>,
+        if_etag: Option<&str>,
         session_roots: &[String],
         staged: bool,
         log_limit: Option<u32>,
-    ) -> Result<Value, (String, String)> {
+    ) -> Result<Value, (String, String, Option<Value>)> {
         const MAX_READ: u64 = 10 * 1024 * 1024;
-        let err = |c: &str, m: String| (c.to_string(), m);
+        const MAX_WRITE: u64 = 10 * 1024 * 1024;
+        // The error is a `(code, message, data)` triple; only E_CONFLICT ships a
+        // structured `data` payload, so this helper defaults it to `None`.
+        let err = |c: &str, m: String| (c.to_string(), m, None::<Value>);
 
         // `validate_cwd` is an on-the-spot check of a candidate session cwd against
         // this connector's local policy — the SAME gate applied at session start
         // (validate_backend_cwd) plus an is-directory probe. It doesn't resolve
         // `root`/`rel` like the browse ops, so it short-circuits before them.
         if op == "validate_cwd" {
-            return self.validate_cwd_op(rel).await;
+            // validate_cwd_op returns a 2-tuple error; widen it to the triple.
+            return self
+                .validate_cwd_op(rel)
+                .await
+                .map_err(|(c, m)| (c, m, None));
         }
 
         // Effective roots: narrow to the session's root set when provided, else the
@@ -902,6 +947,9 @@ impl RuntimeContext {
                     "is_text": is_text,
                     "content": if is_text { Some(String::from_utf8_lossy(&bytes).to_string()) } else { None },
                     "content_b64": BASE64.encode(&bytes),
+                    // Content etag: lowercase-hex SHA-256 of the raw bytes. A client
+                    // echoes this as `if_etag` on a subsequent write to detect edits.
+                    "etag": etag_of(&bytes),
                 }))
             }
             "write" => {
@@ -910,6 +958,14 @@ impl RuntimeContext {
                 let bytes = BASE64
                     .decode(b64)
                     .map_err(|e| err("E_INVALID", format!("bad base64: {e}")))?;
+                // Cap the DECODED payload (symmetric with the read cap) before we
+                // touch the filesystem.
+                if bytes.len() as u64 > MAX_WRITE {
+                    return Err(err(
+                        "E_TOO_LARGE",
+                        format!("payload exceeds {}MB write cap", MAX_WRITE / 1024 / 1024),
+                    ));
+                }
                 let parent = target
                     .parent()
                     .ok_or_else(|| err("E_INVALID", "invalid path".into()))?;
@@ -960,11 +1016,86 @@ impl RuntimeContext {
                     }
                     Err(_) => {}
                 }
-                tokio::fs::write(&dest, &bytes)
-                    .await
-                    .map_err(|e| err("E_IO", e.to_string()))?;
+                // ── if_etag precondition (safe remote writes) ────────────────────
+                // Enforced INSIDE the symlink-guarded critical section, immediately
+                // before the write. E_CONFLICT carries `{current_etag, size_bytes}`
+                // (current_etag null if the file vanished / is unreadable).
+                let new_etag = etag_of(&bytes);
+                let conflict = |current_etag: Option<String>, size_bytes: u64| {
+                    (
+                        "E_CONFLICT".to_string(),
+                        "write precondition failed".to_string(),
+                        Some(serde_json::json!({
+                            "current_etag": current_etag,
+                            "size_bytes": size_bytes,
+                        })),
+                    )
+                };
+                match if_etag {
+                    // Absent/null ⇒ unconditional overwrite (back-compat default).
+                    None => {
+                        tokio::fs::write(&dest, &bytes)
+                            .await
+                            .map_err(|e| err("E_IO", e.to_string()))?;
+                    }
+                    // "" ⇒ create-only. Atomic O_CREAT|O_EXCL closes the create race
+                    // (and inherently refuses to follow a symlink at `dest`); an
+                    // existing file ⇒ E_CONFLICT with its current snapshot.
+                    Some("") => {
+                        use tokio::io::AsyncWriteExt;
+                        match tokio::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&dest)
+                            .await
+                        {
+                            Ok(mut f) => {
+                                f.write_all(&bytes)
+                                    .await
+                                    .map_err(|e| err("E_IO", e.to_string()))?;
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                                let (current_etag, size) =
+                                    conflict_snapshot(&dest, MAX_WRITE).await;
+                                return Err(conflict(current_etag, size));
+                            }
+                            Err(e) => return Err(err("E_IO", e.to_string())),
+                        }
+                    }
+                    // 64-char etag ⇒ overwrite only if the current file hashes to it.
+                    Some(expected) => match tokio::fs::metadata(&dest).await {
+                        Ok(md) => {
+                            // STAT-first OOM guard: never slurp a file bigger than the
+                            // write cap just to hash it (it could never match anyway).
+                            if md.len() > MAX_WRITE {
+                                return Err(err(
+                                    "E_TOO_LARGE",
+                                    format!(
+                                        "on-disk file exceeds {}MB write cap",
+                                        MAX_WRITE / 1024 / 1024
+                                    ),
+                                ));
+                            }
+                            let current = tokio::fs::read(&dest)
+                                .await
+                                .map_err(|e| err("E_IO", e.to_string()))?;
+                            let current_etag = etag_of(&current);
+                            if current_etag != expected {
+                                return Err(conflict(Some(current_etag), current.len() as u64));
+                            }
+                            tokio::fs::write(&dest, &bytes)
+                                .await
+                                .map_err(|e| err("E_IO", e.to_string()))?;
+                        }
+                        // Client expected a specific version but the file is gone.
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            return Err(conflict(None, 0));
+                        }
+                        Err(e) => return Err(err("E_IO", e.to_string())),
+                    },
+                }
                 Ok(
-                    serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }),
+                    serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "etag": new_etag, "ok": true }),
                 )
             }
             // ── READ-ONLY git inspection (never mutates the repo) ────────────────
@@ -981,17 +1112,23 @@ impl RuntimeContext {
                 }
                 // Resolve `rel` to a git working directory (+ optional pathspec when
                 // it points at a file), enforcing containment exactly like `ls`.
-                let (git_dir, pathspec) = resolve_git_target(&target, &root_canon).await?;
+                // These helpers return the legacy 2-tuple error; widen to the triple.
+                let (git_dir, pathspec) = resolve_git_target(&target, &root_canon)
+                    .await
+                    .map_err(|(c, m)| (c, m, None))?;
                 // Definitive non-repo detection → E_NOT_A_REPO (spawn-not-found →
                 // E_GIT_UNAVAILABLE, propagated from run_git).
-                let rp = run_git(&git_dir, &["rev-parse", "--git-dir"]).await?;
+                let rp = run_git(&git_dir, &["rev-parse", "--git-dir"])
+                    .await
+                    .map_err(|(c, m)| (c, m, None))?;
                 if !rp.status.success() {
                     return Err(err("E_NOT_A_REPO", "not a git repository".into()));
                 }
                 match op {
                     "git_status" => {
-                        let out =
-                            run_git(&git_dir, &["status", "--porcelain=v2", "--branch"]).await?;
+                        let out = run_git(&git_dir, &["status", "--porcelain=v2", "--branch"])
+                            .await
+                            .map_err(|(c, m)| (c, m, None))?;
                         if out.stdout.len() as u64 > MAX_READ {
                             return Err(err("E_TOO_LARGE", "git status exceeds read cap".into()));
                         }
@@ -1021,7 +1158,9 @@ impl RuntimeContext {
                             args.push("--");
                             args.push(ps);
                         }
-                        let out = run_git(&git_dir, &args).await?;
+                        let out = run_git(&git_dir, &args)
+                            .await
+                            .map_err(|(c, m)| (c, m, None))?;
                         if out.stdout.len() as u64 > MAX_READ {
                             return Err(err("E_TOO_LARGE", "git diff exceeds read cap".into()));
                         }
@@ -1046,7 +1185,8 @@ impl RuntimeContext {
                                 &n_str,
                             ],
                         )
-                        .await?;
+                        .await
+                        .map_err(|(c, m)| (c, m, None))?;
                         if out.stdout.len() as u64 > MAX_READ {
                             return Err(err("E_TOO_LARGE", "git log exceeds read cap".into()));
                         }

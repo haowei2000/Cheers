@@ -112,6 +112,7 @@ pub const OWNER_DEFAULT_INITIATE: &[&str] = &[
     "set_config_option",
     "session_create",
     "session_close",
+    "workspace_write",
 ];
 
 /// The membership default for a specific `(event_class, capability)` when no rule
@@ -864,6 +865,47 @@ mod tests {
         ));
         let ev = initiate_events();
         assert!(ev.contains(&"session_create") && ev.contains(&"session_close"));
+    }
+
+    #[test]
+    fn workspace_write_is_owner_default_and_grantable() {
+        // A remote-workspace write defaults to owner-only: a plain member with no
+        // rule is denied (reads stay membership-only; only writes are gated).
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "workspace_write",
+            Capability::Initiate
+        ));
+        // ...but an explicit per-user grant widens it (delegation), scoped to the user.
+        let granted = vec![rule(
+            "c1",
+            SUBJECT_USER,
+            "u1",
+            "workspace_write",
+            Capability::Initiate,
+            true,
+        )];
+        assert!(allows(
+            &granted,
+            "c1",
+            "u1",
+            "member",
+            "workspace_write",
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &granted,
+            "c1",
+            "u2",
+            "member",
+            "workspace_write",
+            Capability::Initiate
+        ));
+        // ...and it is in the INITIATE grant vocabulary so the owner UI can grant it.
+        assert!(initiate_events().contains(&"workspace_write"));
     }
 
     #[test]
