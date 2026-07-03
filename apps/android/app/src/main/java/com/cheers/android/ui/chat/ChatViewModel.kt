@@ -225,7 +225,17 @@ class ChatViewModel(
                 _state.update { st ->
                     val idx = st.messages.indexOfFirst { it.msgId == event.msgId }
                     if (idx == -1) {
-                        st
+                        // Defensive (mirrors web handleStreamDelta): a delta beat its
+                        // placeholder bubble — synthesize one so deltas accumulate;
+                        // message_done still finalizes it.
+                        val placeholder = MessageDto(
+                            msgId = event.msgId,
+                            channelId = channelId,
+                            senderType = "bot",
+                            content = event.delta,
+                            isPartial = true,
+                        )
+                        st.copy(messages = upsert(st.messages, placeholder))
                     } else {
                         val msgs = st.messages.toMutableList()
                         msgs[idx] = msgs[idx].copy(content = msgs[idx].content + event.delta)
