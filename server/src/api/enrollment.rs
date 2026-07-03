@@ -322,11 +322,15 @@ pub async fn get_connector_config(
     Query(q): Query<ConnectorConfigQuery>,
 ) -> Result<Json<Value>, AppError> {
     ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
-    let row = sqlx::query("SELECT username FROM bot_accounts WHERE bot_id = $1")
-        .bind(&bot_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let row = sqlx::query(
+        "SELECT username, status_auto_update, status_update_prompt,
+                status_update_interval_minutes
+         FROM bot_accounts WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     let username: String = row.try_get("username").unwrap_or_else(|_| bot_id.clone());
     let account_id = connector_config::sanitize_account_id(&username);
     let agent_type = normalize_agent_type(q.agent_type.as_deref());
@@ -351,6 +355,19 @@ pub async fn get_connector_config(
         "reachability": {
             "public_base": public_base,
             "configured": configured,
+        },
+        // Scheduled self-status: when enabled, the connector should, every
+        // `interval_minutes`, run `prompt` through its agent and POST the answer to
+        // /api/v1/bots/{bot_id}/self-status (Bearer = bot token). The gateway owns
+        // the config; the connector owns the timer + the write-back.
+        "status_schedule": {
+            "enabled": row.try_get::<bool, _>("status_auto_update").unwrap_or(false),
+            "prompt": row.try_get::<Option<String>, _>("status_update_prompt").ok().flatten(),
+            "interval_minutes": row
+                .try_get::<Option<i32>, _>("status_update_interval_minutes")
+                .ok()
+                .flatten(),
+            "self_status_path": format!("/api/v1/bots/{bot_id}/self-status"),
         },
         "note": "Issue the bot token separately (POST /api/v1/bots/{bot_id}/token) and write it to <config_dir>/<token_file> (chmod 600).",
     })))

@@ -13,7 +13,7 @@ import {
   Info,
   Trash2,
 } from "lucide-react";
-import { disableBot, enableBot, deleteBot } from "@/api/bots";
+import { disableBot, enableBot, deleteBot, updateBotProfile } from "@/api/bots";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
@@ -79,8 +79,13 @@ export function BotDetailPanel({
           <Bot className="w-5 h-5 text-indigo-300" />
         </div>
         <div className="min-w-0">
-          <p className="font-medium text-zinc-100 truncate">{bot.display_name || bot.username}</p>
-          <p className="text-xs text-zinc-500">@{bot.username}</p>
+          <p className="font-medium text-zinc-100 truncate">
+            {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
+            {bot.display_name || bot.username}
+          </p>
+          <p className="text-xs text-zinc-500 truncate">
+            {bot.status_text ? bot.status_text : `@${bot.username}`}
+          </p>
         </div>
         <div className="ml-auto flex items-center gap-3">
           {bot.is_disabled && (
@@ -222,6 +227,8 @@ function BotOverview({
         <CopyButton value={bot.bot_id} label="" />
       </div>
 
+      {bot.can_manage && <BotStatusEditor bot={bot} onError={onError} onChanged={onChanged} />}
+
       <div className="flex items-center gap-2">
         <select
           value={channelId}
@@ -255,6 +262,7 @@ function BotOverview({
             <KeyRound className="w-3.5 h-3.5" />
             Issue token
           </button>
+          {/* status editor is rendered above; token/enable/delete stay grouped here */}
           <button
             type="button"
             onClick={toggleDisabled}
@@ -280,6 +288,142 @@ function BotOverview({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Manager editor for a bot's status line, "information" (description), and the
+ * scheduled self-update. Three ways the status gets set — manual (this form), the
+ * bot writing its own via POST /bots/:id/self-status (bot token), and the schedule
+ * (connector re-runs the prompt every N minutes and writes back) — all land in the
+ * same fields; this form owns the manual path + the schedule config.
+ */
+function BotStatusEditor({
+  bot,
+  onError,
+  onChanged,
+}: {
+  bot: BotItem;
+  onError: (msg: string) => void;
+  onChanged: () => void;
+}) {
+  const [statusEmoji, setStatusEmoji] = useState(bot.status_emoji ?? "");
+  const [statusText, setStatusText] = useState(bot.status_text ?? "");
+  const [description, setDescription] = useState(bot.description ?? "");
+  const [auto, setAuto] = useState(bot.status_auto_update ?? false);
+  const [prompt, setPrompt] = useState(bot.status_update_prompt ?? "");
+  const [interval, setIntervalMin] = useState(
+    bot.status_update_interval_minutes != null ? String(bot.status_update_interval_minutes) : "60"
+  );
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    if (auto && !prompt.trim()) {
+      onError("A prompt is required to enable scheduled self-update");
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateBotProfile(bot.bot_id, {
+        status_emoji: statusEmoji.trim(),
+        status_text: statusText.trim(),
+        description: description.trim(),
+        status_auto_update: auto,
+        status_update_prompt: prompt.trim(),
+        status_update_interval_minutes: Number(interval) || 60,
+      });
+      toast.success("Bot profile saved");
+      onChanged();
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputCls =
+    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500/60";
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+      <p className="text-xs font-semibold text-zinc-400">Status & information</p>
+
+      <div className="flex gap-2">
+        <input
+          value={statusEmoji}
+          onChange={(e) => setStatusEmoji(e.target.value)}
+          placeholder="🤖"
+          maxLength={8}
+          className={`${inputCls} w-14 text-center`}
+          aria-label="Status emoji"
+        />
+        <input
+          value={statusText}
+          onChange={(e) => setStatusText(e.target.value)}
+          placeholder="Short status (e.g. reviewing PRs)"
+          maxLength={140}
+          className={inputCls}
+          aria-label="Status text"
+        />
+      </div>
+
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Information — what this bot does"
+        rows={2}
+        className={`${inputCls} resize-y`}
+        aria-label="Bot description"
+      />
+
+      <label className="flex items-center gap-2 text-xs text-zinc-300">
+        <input
+          type="checkbox"
+          checked={auto}
+          onChange={(e) => setAuto(e.target.checked)}
+          className="accent-indigo-500"
+        />
+        Auto-refresh status on a schedule (asks the bot with the prompt below)
+      </label>
+
+      {auto && (
+        <div className="space-y-2 pl-1">
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Prompt the bot runs to compose its own status, e.g. 'Summarize what you're working on in under 10 words.'"
+            rows={2}
+            className={`${inputCls} resize-y`}
+            aria-label="Status update prompt"
+          />
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <span>Every</span>
+            <input
+              type="number"
+              min={5}
+              value={interval}
+              onChange={(e) => setIntervalMin(e.target.value)}
+              className={`${inputCls} w-20`}
+              aria-label="Interval minutes"
+            />
+            <span>minutes (min 5)</span>
+          </div>
+          <p className="text-[11px] text-zinc-600 leading-snug">
+            The connector runs this prompt on the schedule and posts the answer back via the
+            bot's token. Requires the bot to be online.
+          </p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={busy}
+        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+      >
+        {busy ? "Saving…" : "Save"}
+      </button>
     </div>
   );
 }

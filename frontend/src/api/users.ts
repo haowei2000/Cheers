@@ -1,4 +1,27 @@
 import { apiJson } from "./client";
+import type { User } from "@/types";
+
+/** GET /users/me — the caller's own profile (status + bio beyond the login payload). */
+export async function getMe(): Promise<User> {
+  return apiJson<User>("/users/me");
+}
+
+/** Fields a user may self-edit. Omit a key to leave it unchanged; send "" to clear it. */
+export interface UpdateMeInput {
+  display_name?: string | null;
+  bio?: string | null;
+  avatar_url?: string | null;
+  status_text?: string | null;
+  status_emoji?: string | null;
+}
+
+/** PATCH /users/me — self-service profile + status edit. Returns the fresh profile. */
+export async function updateMe(input: UpdateMeInput): Promise<User> {
+  return apiJson<User>("/users/me", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
 
 export interface UserSearchResult {
   user_id: string;

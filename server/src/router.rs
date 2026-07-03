@@ -286,6 +286,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/bots/:bot_id/connection-events",
             get(api::bots::list_connection_events),
         )
+        .route(
+            "/api/v1/bots/:bot_id/profile",
+            patch(api::bots::update_bot_profile),
+        )
         .route("/api/v1/bots/:bot_id/test", post(api::bots::test_bot))
         .route("/api/v1/bots/:bot_id/disable", post(api::bots::disable_bot))
         .route("/api/v1/bots/:bot_id/enable", post(api::bots::enable_bot))
@@ -426,6 +430,12 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::auth::change_password),
         )
         .route("/api/v1/auth/logout", post(api::auth::logout))
+        // Self-service profile: the caller's own identity + status line ("information"
+        // is the bio). Static `/me` segment must precede `/:user_id`.
+        .route(
+            "/api/v1/users/me",
+            get(api::users::get_me).patch(api::users::update_me),
+        )
         // Admin user provisioning: list / create / soft-delete.
         .route(
             "/api/v1/users",
@@ -483,6 +493,13 @@ fn build_public_routes() -> Router<AppState> {
         // Public, no secrets: the mode-2 connector installer, served with the
         // API base baked in (reachable via the existing nginx /api proxy).
         .route("/api/v1/install.sh", get(api::enrollment::install_script))
+        // Bot self-status: authenticated by the bot's Agent Bridge token (Bearer),
+        // not a user JWT — the connector calls this to write the bot's own status
+        // (ad-hoc or after a scheduled `status_update_prompt` run). No JWT layer.
+        .route(
+            "/api/v1/bots/:bot_id/self-status",
+            post(api::bots::bot_self_status),
+        )
 }
 
 fn build_ws_routes() -> Router<AppState> {
