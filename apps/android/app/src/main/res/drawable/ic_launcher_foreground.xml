@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon foreground: the clinking glasses from cheers-icon.svg,
+     scaled into the 66/108 safe zone (background plate supplies the color). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <group
+        android:pivotX="250"
+        android:pivotY="304"
+        android:scaleX="0.52"
+        android:scaleY="0.52"
+        android:translateX="6"
+        android:translateY="-48">
+
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M172 158l84 49-78 136c-7 12-22 16-34 9l-30-17c-12-7-16-22-9-34l67-143Z" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M340 158l-84 49 78 136c7 12 22 16 34 9l30-17c12-7 16-22 9-34l-67-143Z" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M170 158l86 49" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M342 158l-86 49" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M172 357l-39 68" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M116 450h88" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M340 357l39 68" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#F8FAFC"
+            android:strokeWidth="34"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M308 450h88" />
+    </group>
+</vector>

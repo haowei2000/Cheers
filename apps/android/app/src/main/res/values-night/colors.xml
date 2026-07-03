@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- zinc-950 app background, matching the web app's dark canonical look. -->
+    <color name="window_background">#09090B</color>
+</resources>
