@@ -97,17 +97,19 @@ pub async fn list_workspaces(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<WorkspaceDto>>, AppError> {
+    // Membership-only: workspaces are private — you see one only after being
+    // granted access (active membership). No global-admin bypass here: admins
+    // keep management powers on specific workspaces, but their rail isn't a
+    // directory of everyone's spaces.
     let rows = sqlx::query(
         "SELECT w.workspace_id, w.name, w.avatar_url, w.default_bot_id, w.kind
          FROM workspaces w
-         LEFT JOIN workspace_memberships wm
+         JOIN workspace_memberships wm
                 ON wm.workspace_id = w.workspace_id AND wm.user_id = $1 AND wm.status = 'active'
          WHERE w.kind <> 'personal'
-           AND (wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin'))
          ORDER BY w.created_at DESC",
     )
     .bind(current_user_id(&claims))
-    .bind(&claims.role)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(

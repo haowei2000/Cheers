@@ -72,11 +72,15 @@ pub async fn list_friends(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
+    // A friendship is stored as ONE row (user_id = requester, friend_id = target),
+    // so list from BOTH sides: the "friend" is whichever column isn't me.
     let rows = sqlx::query(
-        "SELECT f.friendship_id, f.friend_id, f.status, u.username, u.display_name, u.avatar_url
+        "SELECT f.friendship_id,
+                CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END AS friend_id,
+                f.status, u.username, u.display_name, u.avatar_url
          FROM friendships f
-         JOIN users u ON u.user_id = f.friend_id
-         WHERE f.user_id = $1 AND f.status = 'accepted'
+         JOIN users u ON u.user_id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END
+         WHERE (f.user_id = $1 OR f.friend_id = $1) AND f.status = 'accepted'
          ORDER BY u.username",
     )
     .bind(&claims.sub)

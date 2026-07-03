@@ -171,13 +171,13 @@ pub async fn list_channels(
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1
+                AND wm.status = 'active'
          WHERE c.type != 'dm'
-           AND (cm.member_id IS NOT NULL OR wm.user_id IS NOT NULL OR $2 IN ('system_admin', 'admin'))
-           AND ($3::text IS NULL OR c.workspace_id = $3)
+           AND (cm.member_id IS NOT NULL OR wm.user_id IS NOT NULL)
+           AND ($2::text IS NULL OR c.workspace_id = $2)
          ORDER BY c.created_at DESC",
     )
     .bind(&claims.sub)
-    .bind(&claims.role)
     .bind(&q.workspace_id)
     .fetch_all(&state.db)
     .await?;
