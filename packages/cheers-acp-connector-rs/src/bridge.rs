@@ -1091,7 +1091,8 @@ pub enum DataInbound {
     },
     /// Gateway → connector: browse/read/write the agent's real workspace, confined
     /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
-    /// correlated by `req_id`. `op` ∈ { "ls", "read", "write" }.
+    /// correlated by `req_id`. `op` ∈ { "ls", "read", "write", "validate_cwd",
+    /// "git_status", "git_diff", "git_log" }. The git ops are READ-ONLY.
     #[serde(rename = "workspace_req")]
     WorkspaceReq {
         req_id: String,
@@ -1110,6 +1111,14 @@ pub enum DataInbound {
         /// browse). When set, the effective roots are these ∩ `allowed_roots`.
         #[serde(default)]
         roots: Vec<String>,
+        /// `op == "git_diff"`: diff the staged index (`--staged`) instead of the
+        /// working tree.
+        #[serde(default)]
+        staged: Option<bool>,
+        /// `op == "git_log"`: max commits to return (clamped to ≤100 by the
+        /// connector).
+        #[serde(default)]
+        limit: Option<u32>,
     },
     #[serde(other)]
     Unknown,

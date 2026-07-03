@@ -83,6 +83,88 @@ export async function putWorkspaceFile(
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || `HTTP ${res.status}`);
 }
 
+/* ── Read-only git visibility for the bot's remote working directory ──────────
+ * These proxy to the connector's read-only git ops (`git status/diff/log`); they
+ * never mutate the repo. A 409 means the path exists but isn't a git repo, or the
+ * connector host has no `git`; a 403 means the connector disabled git ops.        */
+
+/** One changed path from `git status --porcelain=v2` (best-effort parsed). */
+export interface GitStatusEntry {
+  /** Two-char porcelain code (e.g. `1 .M`'s `.M`, `??` untracked, `!!` ignored). */
+  xy: string;
+  path: string;
+}
+
+export interface GitStatus {
+  /** Raw `git status --porcelain=v2 --branch` stdout (authoritative). */
+  raw: string;
+  branch: string | null;
+  ahead: number | null;
+  behind: number | null;
+  entries: GitStatusEntry[];
+}
+
+export interface GitDiff {
+  /** Unified diff text (`git diff --no-color`). */
+  diff: string;
+  staged: boolean;
+}
+
+export interface GitCommit {
+  hash: string;
+  author: string;
+  /** ISO-8601 author date (`%aI`). */
+  date: string;
+  subject: string;
+}
+
+export interface GitLog {
+  commits: GitCommit[];
+}
+
+export async function getGitStatus(
+  channelId: string,
+  botId: string,
+  path = "",
+  root?: string,
+  sessionId?: string
+): Promise<GitStatus> {
+  const qs = new URLSearchParams({ bot_id: botId, path });
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<GitStatus>(`/channels/${channelId}/workspace/git/status?${qs}`);
+}
+
+export async function getGitDiff(
+  channelId: string,
+  botId: string,
+  path = "",
+  staged = false,
+  root?: string,
+  sessionId?: string
+): Promise<GitDiff> {
+  const qs = new URLSearchParams({ bot_id: botId, path });
+  if (staged) qs.set("staged", "true");
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<GitDiff>(`/channels/${channelId}/workspace/git/diff?${qs}`);
+}
+
+export async function getGitLog(
+  channelId: string,
+  botId: string,
+  path = "",
+  limit?: number,
+  root?: string,
+  sessionId?: string
+): Promise<GitLog> {
+  const qs = new URLSearchParams({ bot_id: botId, path });
+  if (limit != null) qs.set("limit", String(limit));
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<GitLog>(`/channels/${channelId}/workspace/git/log?${qs}`);
+}
+
 /** Where a clicked file reference actually lives (resolved by provenance, not syntax). */
 export interface ResolvedRef {
   store: "inbox" | "desk" | "workspace" | "none";

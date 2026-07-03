@@ -28,8 +28,8 @@ use crate::bridge_session::{
     BridgeSessionParts,
 };
 use crate::config::{
-    AccountConfig, AcpCapabilityConfig, ConnectorConfig, LocalPolicy, PermissionTimeoutAction,
-    PromptPolicy,
+    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
+    PermissionTimeoutAction, PromptPolicy,
 };
 use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
 use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
@@ -173,6 +173,132 @@ impl AccountRuntime {
         let _ = adapter_for_stop.lock().await.stop().await;
         result
     }
+}
+
+/// Resolve a workspace reference to a git working directory (+ optional pathspec).
+/// `target` is the already-joined candidate path (absolute ref, or root-joined
+/// relative); `root_canon` is the canonical chosen root. Canonicalizes `target`
+/// and enforces containment in `root_canon` exactly like the `ls` op. A directory
+/// resolves to `(dir, None)`; a file resolves to `(parent_dir, Some(file))` so the
+/// caller can `git -C <parent_dir>` and pass the file as a pathspec.
+async fn resolve_git_target(
+    target: &std::path::Path,
+    root_canon: &std::path::Path,
+) -> Result<(PathBuf, Option<PathBuf>), (String, String)> {
+    let err = |c: &str, m: String| (c.to_string(), m);
+    let canon = tokio::fs::canonicalize(target)
+        .await
+        .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
+    if !canon.starts_with(root_canon) {
+        return Err(err(
+            "E_FORBIDDEN_PATH",
+            "path escapes workspace root".into(),
+        ));
+    }
+    let md = tokio::fs::metadata(&canon)
+        .await
+        .map_err(|e| err("E_IO", e.to_string()))?;
+    if md.is_dir() {
+        Ok((canon, None))
+    } else {
+        let parent = canon
+            .parent()
+            .ok_or_else(|| err("E_INVALID", "invalid path".into()))?
+            .to_path_buf();
+        if !parent.starts_with(root_canon) {
+            return Err(err(
+                "E_FORBIDDEN_PATH",
+                "path escapes workspace root".into(),
+            ));
+        }
+        Ok((parent, Some(canon)))
+    }
+}
+
+/// Spawn `git -C <git_dir> <args...>` (fixed argv, NO shell) and capture output.
+/// Maps a missing `git` binary → `E_GIT_UNAVAILABLE`; other spawn failures → `E_IO`.
+/// The caller inspects the exit status / stdout (e.g. `rev-parse` for repo checks).
+async fn run_git(
+    git_dir: &std::path::Path,
+    args: &[&str],
+) -> Result<std::process::Output, (String, String)> {
+    tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(git_dir)
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                (
+                    "E_GIT_UNAVAILABLE".to_string(),
+                    "git binary not found on connector host".to_string(),
+                )
+            } else {
+                ("E_IO".to_string(), format!("git spawn failed: {e}"))
+            }
+        })
+}
+
+/// Trimmed git stderr for surfacing a failed (non-zero) git invocation.
+fn git_stderr(out: &std::process::Output) -> String {
+    let s = String::from_utf8_lossy(&out.stderr);
+    let s = s.trim();
+    if s.is_empty() {
+        "git command failed".to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// Best-effort parse of `git status --porcelain=v2 --branch`. Returns
+/// `(branch, ahead, behind, entries)`; the caller also returns the raw stdout, so
+/// this parse is advisory (unrecognized lines are skipped). Entry `xy` is the
+/// two-char status code (`??` untracked, `!!` ignored), `path` the repo-relative
+/// path (rename → the destination path).
+fn parse_status_porcelain_v2(raw: &str) -> (Option<String>, Option<i64>, Option<i64>, Vec<Value>) {
+    let mut branch = None;
+    let mut ahead = None;
+    let mut behind = None;
+    let mut entries: Vec<Value> = Vec::new();
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("# branch.head ") {
+            branch = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
+            for tok in rest.split_whitespace() {
+                if let Some(a) = tok.strip_prefix('+') {
+                    ahead = a.parse().ok();
+                } else if let Some(b) = tok.strip_prefix('-') {
+                    behind = b.parse().ok();
+                }
+            }
+        } else if line.starts_with('#') {
+            continue;
+        } else if let Some(rest) = line.strip_prefix("? ") {
+            entries.push(serde_json::json!({ "xy": "??", "path": rest }));
+        } else if let Some(rest) = line.strip_prefix("! ") {
+            entries.push(serde_json::json!({ "xy": "!!", "path": rest }));
+        } else if line.starts_with("1 ") || line.starts_with("2 ") {
+            let is_rename = line.starts_with("2 ");
+            let parts: Vec<&str> = line.splitn(9, ' ').collect();
+            if parts.len() == 9 {
+                let path = if is_rename {
+                    // Rename/copy: "<path>\t<origPath>"
+                    parts[8].split('\t').next().unwrap_or(parts[8])
+                } else {
+                    parts[8]
+                };
+                entries.push(serde_json::json!({ "xy": parts[1], "path": path }));
+            }
+        } else if line.starts_with("u ") {
+            // Unmerged: "u <xy> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>"
+            let parts: Vec<&str> = line.splitn(11, ' ').collect();
+            if parts.len() == 11 {
+                entries.push(serde_json::json!({ "xy": parts[1], "path": parts[10] }));
+            }
+        }
+    }
+    (branch, ahead, behind, entries)
 }
 
 struct RuntimeContext {
@@ -419,6 +545,8 @@ impl RuntimeContext {
                 root,
                 content_b64,
                 roots,
+                staged,
+                limit,
             } => {
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -429,6 +557,8 @@ impl RuntimeContext {
                             root.as_deref(),
                             content_b64.as_deref(),
                             &roots,
+                            staged.unwrap_or(false),
+                            limit,
                         )
                         .await
                     {
@@ -597,6 +727,8 @@ impl RuntimeContext {
         root: Option<&str>,
         content_b64: Option<&str>,
         session_roots: &[String],
+        staged: bool,
+        log_limit: Option<u32>,
     ) -> Result<Value, (String, String)> {
         const MAX_READ: u64 = 10 * 1024 * 1024;
         let err = |c: &str, m: String| (c.to_string(), m);
@@ -834,6 +966,113 @@ impl RuntimeContext {
                 Ok(
                     serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }),
                 )
+            }
+            // ── READ-ONLY git inspection (never mutates the repo) ────────────────
+            // Spawn the `git` binary directly with a fixed argv; the only
+            // caller-controlled inputs are the validated in-root directory and, for
+            // diff, an optional validated in-root pathspec (a distinct argv element,
+            // never interpolated into a shell — no shell is used).
+            "git_status" | "git_diff" | "git_log" => {
+                if self.config.policy.workspace.git_ops == GitOpsMode::Off {
+                    return Err(err(
+                        "E_GIT_DISABLED",
+                        "git ops disabled by connector policy".into(),
+                    ));
+                }
+                // Resolve `rel` to a git working directory (+ optional pathspec when
+                // it points at a file), enforcing containment exactly like `ls`.
+                let (git_dir, pathspec) = resolve_git_target(&target, &root_canon).await?;
+                // Definitive non-repo detection → E_NOT_A_REPO (spawn-not-found →
+                // E_GIT_UNAVAILABLE, propagated from run_git).
+                let rp = run_git(&git_dir, &["rev-parse", "--git-dir"]).await?;
+                if !rp.status.success() {
+                    return Err(err("E_NOT_A_REPO", "not a git repository".into()));
+                }
+                match op {
+                    "git_status" => {
+                        let out =
+                            run_git(&git_dir, &["status", "--porcelain=v2", "--branch"]).await?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git status exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                        let (branch, ahead, behind, entries) = parse_status_porcelain_v2(&raw);
+                        Ok(serde_json::json!({
+                            "raw": raw,
+                            "branch": branch,
+                            "ahead": ahead,
+                            "behind": behind,
+                            "entries": entries,
+                        }))
+                    }
+                    "git_diff" => {
+                        let mut args: Vec<&str> = vec!["diff", "--no-color"];
+                        if staged {
+                            args.push("--staged");
+                        }
+                        // Optional pathspec: a validated, in-root absolute path placed
+                        // as its own argv element after `--`.
+                        let pathspec_str =
+                            pathspec.as_ref().map(|p| p.to_string_lossy().to_string());
+                        if let Some(ps) = pathspec_str.as_deref() {
+                            args.push("--");
+                            args.push(ps);
+                        }
+                        let out = run_git(&git_dir, &args).await?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git diff exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        Ok(serde_json::json!({
+                            "diff": String::from_utf8_lossy(&out.stdout),
+                            "staged": staged,
+                        }))
+                    }
+                    // "git_log"
+                    _ => {
+                        let n = log_limit.unwrap_or(50).clamp(1, 100);
+                        let n_str = n.to_string();
+                        let out = run_git(
+                            &git_dir,
+                            &[
+                                "log",
+                                "--pretty=format:%H%x1f%an%x1f%aI%x1f%s",
+                                "-n",
+                                &n_str,
+                            ],
+                        )
+                        .await?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git log exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let commits: Vec<Value> = stdout
+                            .lines()
+                            .filter_map(|line| {
+                                let mut it = line.split('\u{1f}');
+                                let hash = it.next()?;
+                                if hash.is_empty() {
+                                    return None;
+                                }
+                                Some(serde_json::json!({
+                                    "hash": hash,
+                                    "author": it.next().unwrap_or(""),
+                                    "date": it.next().unwrap_or(""),
+                                    "subject": it.next().unwrap_or(""),
+                                }))
+                            })
+                            .collect();
+                        Ok(serde_json::json!({ "commits": commits }))
+                    }
+                }
             }
             other => Err(err(
                 "E_UNKNOWN_OP",

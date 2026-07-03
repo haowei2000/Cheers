@@ -371,6 +371,19 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/workspace/file",
             get(api::workspace::get_file).put(api::workspace::put_file),
         )
+        // 只读 git 可见性(远程工作区的 status/diff/log,绝不改动仓库)
+        .route(
+            "/api/v1/channels/:channel_id/workspace/git/status",
+            get(api::workspace::get_git_status),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/git/diff",
+            get(api::workspace::get_git_diff),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/git/log",
+            get(api::workspace::get_git_log),
+        )
         // 出处解析:把回复里点击的文件引用解析到正确的 store(inbox/desk/workspace)
         .route(
             "/api/v1/channels/:channel_id/resolve-ref",

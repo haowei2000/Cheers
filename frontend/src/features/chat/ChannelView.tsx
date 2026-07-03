@@ -586,6 +586,7 @@ export function ChannelView({ channel }: Props) {
         channelId={channel.channel_id}
         sendResourceReq={sendResourceReq}
         openFilePath={wbTarget}
+        filesTick={boardTick.files}
       />
 
       <ViewBoardDrawer
@@ -616,6 +617,12 @@ export function ChannelView({ channel }: Props) {
           onClose={() => setWsOpen(false)}
           initialBotId={wsInit.botId}
           initialPath={wsInit.path}
+          // Default the browse to the composer's active session ("" = Auto → no
+          // session scope → the dialog shows the bot's full allowed roots).
+          sessionId={selectedSessionId || undefined}
+          // "workspace" board tick (agent finished a turn) → the dialog refetches
+          // its current dir + a clean open file. See onBoardSignal → boardTick above.
+          workspaceTick={boardTick.workspace}
         />
       )}
     </div>

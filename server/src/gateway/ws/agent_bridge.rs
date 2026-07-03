@@ -745,6 +745,31 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     crate::gateway::presence::broadcast_presence(state, cid).await;
                 }
             }
+            // Live Desk: a successful mutating `fs.*` verb changed the channel's
+            // workspace files — nudge any open Desk view to re-pull. Mirrors the
+            // channel.messages.create / channel.leave live-broadcast pattern above:
+            // resource::dispatch only holds `db`, so the fanout tick is emitted here
+            // at the WS boundary. Data-free — clients re-fetch via their own authz'd
+            // fs.ls/fs.read. board name "files" (cross-slice contract).
+            if matches!(
+                frame.get("resource").and_then(Value::as_str),
+                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+            ) && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = resp
+                    .get("data")
+                    .and_then(|d| d.get("channel_id"))
+                    .and_then(Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    let wire = WireFrame::channel(
+                        cid,
+                        "board_signal",
+                        json!({ "channel_id": cid, "board": "files" }),
+                    );
+                    state.fanout.broadcast_channel(cid, wire).await;
+                }
+            }
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }
@@ -1141,6 +1166,31 @@ async fn handle_terminal_frame(
     .await
     {
         Ok(()) => {
+            // Turn-complete workspace freshness: the turn just finalized. If this
+            // bot is workspace-capable (its connector is online), it may have
+            // mutated its Desk during the turn — emit one data-free tick so any open
+            // workspace view re-pulls. board name "workspace" (cross-slice contract);
+            // clients re-fetch via their own authz'd reads. channel_id is re-derived
+            // from the (now finalized, bot-owned) msg_id — handle_done already
+            // verified ownership but consumes the channel_id internally.
+            if let Some(mid) = msg_id {
+                if state.bot_locator.is_online(bot.bot_id).await {
+                    if let Some(cid) =
+                        channel_of_bot_message(&state.db, bot.bot_id, mid).await
+                    {
+                        let wire = WireFrame::channel(
+                            cid,
+                            "board_signal",
+                            json!({
+                                "channel_id": cid,
+                                "board": "workspace",
+                                "bot_id": bot.bot_id,
+                            }),
+                        );
+                        state.fanout.broadcast_channel(cid, wire).await;
+                    }
+                }
+            }
             let Some(client_msg_id) = client_msg_id else {
                 return;
             };
@@ -1427,6 +1477,25 @@ async fn ensure_bot_channel_member(
     } else {
         Err("bot is not a member of the target channel")
     }
+}
+
+/// Resolve the channel a bot's message belongs to (bot-scoped). Used post-`handle_done`
+/// to target the turn-complete `board_signal`: `handle_done` already verified the bot
+/// owns `msg_id` but consumes its channel_id internally, and the message is now
+/// finalized (so `verify_ownership` can no longer be reused), so we re-derive it here.
+async fn channel_of_bot_message(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Option<Uuid> {
+    sqlx::query(
+        "SELECT channel_id FROM messages
+         WHERE msg_id = $1 AND sender_id = $2 AND sender_type = 'bot'",
+    )
+    .bind(msg_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|row| row.try_get::<String, _>("channel_id").ok())
+    .and_then(|s| s.parse::<Uuid>().ok())
 }
 
 fn client_msg_id(frame: &Value) -> Option<String> {

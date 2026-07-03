@@ -332,6 +332,30 @@ async fn handle_client_frame(
                 "params": params,
             });
             let res = crate::resource::dispatch_user(&state.db, user_id, &frame).await;
+            // Live Desk (browser path): mirror the bot-side board_signal tick in
+            // agent_bridge.rs so a human's own Desk edit refreshes other open views.
+            // resource::dispatch_user only holds `db`, so the fanout tick is emitted
+            // here at the WS boundary. Data-free — clients re-pull via their own
+            // authz'd fs.ls/fs.read. board name "files" (cross-slice contract).
+            if matches!(
+                frame.get("resource").and_then(serde_json::Value::as_str),
+                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+            ) && res.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = res
+                    .get("data")
+                    .and_then(|d| d.get("channel_id"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    let wire = WireFrame::channel(
+                        cid,
+                        "board_signal",
+                        serde_json::json!({ "channel_id": cid, "board": "files" }),
+                    );
+                    state.fanout.broadcast_channel(cid, wire).await;
+                }
+            }
             if let Ok(json) = serde_json::to_string(&res) {
                 let _ = socket.send(Message::Text(json)).await;
             }

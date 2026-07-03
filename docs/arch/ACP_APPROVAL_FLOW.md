@@ -274,6 +274,40 @@ let outcome = if resolution.resolution == "allow" {
 
 ---
 
+## 7.5 Posture 指南：强制提交 / 推送审查（mandatory commit review）
+
+> **这是 posture 建议，不是平台强制拦截。** 平台**不会**静默改写 agent 行为，也**不会**在
+> agent 没主动询问时凭空插入一张审批卡。
+
+审批卡只在 **agent 侧决定要问**（`client.requestPermission`）时才出现（§0.5）。因此：
+
+- 若 agent 侧的 allow 规则放行了 `Bash(git *)`（或整体 `bypassPermissions`），
+  `git commit` / `git push` 会**直接静默执行、永不弹卡**——平台看不到，也无从拦截。
+- 想让「**提交 / 推送必须人工复核**」的团队，应把 `git commit` / `git push`
+  **从 agent 的自动放行（allow）列表里排除**（或用 `default` 模式且不把它们放进 allow），
+  让这两类操作每次都回频道走审批卡。这在 [BOT_PERMISSION](./BOT_PERMISSION.md) 的
+  agent 侧配置里做，不是平台开关。
+
+### 读侧增强：从审批卡预览「这次提交会包含什么」
+
+当一张审批卡对应真实的 `git commit` 时，`PermissionCard`
+（`frontend/src/features/chat/PermissionCard.tsx`）会在命令行下方渲染一个
+**「View staged diff」** 小按钮：
+
+- 命中判定用 `looksLikeGitCommit(command)`（`workspaceLink.tsx`），能容忍
+  `/bin/zsh -lc "git commit …"` / `bash -c 'git commit …'` 这类 shell 包装，
+  但**不会**误判 `git commit --help`、`git log`、`echo "git commit"` 或仅在提交信息里
+  提到「git commit」的命令。
+- 点开后调 `getGitDiff(channelId, botId, tool.cwd, staged=true)`，用共享的 `DiffView`
+  内联展示 `git diff --staged`。这**纯读侧**：不改仓库、不新增协议，**且绝不阻塞裁决**——
+  approve/deny 只看审批自身的 `busy` 状态，diff 拉取失败（连接器离线 / `E_NOT_A_REPO`）
+  只显示一行「couldn't load staged diff」，卡片照常可批可拒。
+
+> 组合关系：mode / allow 规则决定「**是否产生**这张卡」（agent 侧）；本节的按钮只是在卡片
+> **已经出现**时，帮裁决人**看清**将被提交的内容。二者正交。
+
+---
+
 ## 8.5 会话模式 / 模型：ACP 原生 session-state（mode & model）
 
 agent 是否「会问权限」由 **ACP session mode** 决定，与模型选择是**对称的一等机制**：

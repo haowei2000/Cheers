@@ -81,6 +81,32 @@ pub struct FileQuery {
     pub session_id: Option<Uuid>,
 }
 
+/// `GET workspace/git/diff` — same shape as [`TreeQuery`] plus `staged`. `path` is
+/// optional: empty ⇒ diff the whole repo (working dir = chosen root); a file ⇒ diff
+/// that pathspec; a subdir ⇒ diff within it.
+#[derive(Deserialize)]
+pub struct GitDiffQuery {
+    pub bot_id: Uuid,
+    #[serde(default)]
+    pub path: String,
+    pub root: Option<String>,
+    pub session_id: Option<Uuid>,
+    /// Diff the staged index (`--staged`) rather than the working tree.
+    pub staged: Option<bool>,
+}
+
+/// `GET workspace/git/log` — same shape as [`TreeQuery`] plus `limit`.
+#[derive(Deserialize)]
+pub struct GitLogQuery {
+    pub bot_id: Uuid,
+    #[serde(default)]
+    pub path: String,
+    pub root: Option<String>,
+    pub session_id: Option<Uuid>,
+    /// Max commits to return (connector clamps to ≤100).
+    pub limit: Option<u32>,
+}
+
 /// Caller must be a channel user-member (or admin); the target bot must itself be a
 /// member of the channel — so you can only browse a bot you actually share a channel
 /// with.
@@ -252,7 +278,7 @@ pub async fn validate_bot_cwd(
     bot_id: Uuid,
     cwd: &str,
 ) -> Result<Value, AppError> {
-    workspace_call(state, bot_id, "validate_cwd", cwd, None, None, &[]).await
+    workspace_call(state, bot_id, "validate_cwd", cwd, None, Value::Null, &[]).await
 }
 
 /// Validate a chosen `cwd` + `additional_dirs` against the bot connector's policy,
@@ -285,13 +311,19 @@ pub async fn validate_workspace_paths(
 }
 
 /// Send a `workspace_req` to the bot's connector and await the correlated reply.
+///
+/// `extra` is a JSON object whose keys are merged into the request frame as
+/// top-level fields — this is how op-specific inputs reach the connector's
+/// `WorkspaceReq` (e.g. `content_b64` for `write`, `staged` for `git_diff`,
+/// `limit` for `git_log`). Pass `Value::Null` (or an empty object) when the op
+/// carries no extra fields. `op` strings are forwarded verbatim.
 async fn workspace_call(
     state: &AppState,
     bot_id: Uuid,
     op: &str,
     path: &str,
     root: Option<&str>,
-    content_b64: Option<String>,
+    extra: Value,
     roots: &[String],
 ) -> Result<Value, AppError> {
     if !state.bot_locator.is_online(bot_id).await {
@@ -299,16 +331,21 @@ async fn workspace_call(
     }
     let req_id = Uuid::new_v4().to_string();
     let rx = state.workspace_rpc.register(req_id.clone());
-    let frame = json!({
+    let mut frame = json!({
         "type": "workspace_req",
         "req_id": req_id,
         "op": op,
         "path": path,
         "root": root,
-        "content_b64": content_b64,
         // Optional session root set to scope this browse (empty ⇒ full allowed_roots).
         "roots": roots,
     });
+    // Merge op-specific fields into the frame as top-level keys.
+    if let (Value::Object(dst), Value::Object(src)) = (&mut frame, extra) {
+        for (k, v) in src {
+            dst.insert(k, v);
+        }
+    }
     if !state.bot_locator.send_data(bot_id, frame).await {
         state.workspace_rpc.cancel(&req_id);
         return Err(AppError::BadRequest("bot connector is offline".into()));
@@ -331,7 +368,17 @@ async fn workspace_call(
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("workspace operation failed");
-        Err(AppError::BadRequest(format!("{code}: {msg}")))
+        let full = format!("{code}: {msg}");
+        // Map git-specific connector codes to HTTP the client can react to distinctly
+        // instead of a generic 400. Everything else stays a BadRequest.
+        Err(match code {
+            // The directory exists but is not a git repo, or the connector host has
+            // no `git` binary: a state conflict, not a malformed request.
+            "E_NOT_A_REPO" | "E_GIT_UNAVAILABLE" => AppError::Conflict(full),
+            // Connector policy disables git ops.
+            "E_GIT_DISABLED" => AppError::Forbidden(full),
+            _ => AppError::BadRequest(full),
+        })
     }
 }
 
@@ -421,7 +468,7 @@ pub async fn get_tree(
         "ls",
         &q.path,
         q.root.as_deref(),
-        None,
+        Value::Null,
         &roots,
     )
     .await?;
@@ -443,7 +490,7 @@ pub async fn get_file(
         "read",
         &q.path,
         q.root.as_deref(),
-        None,
+        Value::Null,
         &roots,
     )
     .await?;
@@ -467,7 +514,80 @@ pub async fn put_file(
         "write",
         &q.path,
         q.root.as_deref(),
-        Some(content_b64),
+        json!({ "content_b64": content_b64 }),
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/git/status?bot_id=&path=&root=&session_id=
+/// Read-only `git status --porcelain=v2 --branch` for the resolved workdir.
+pub async fn get_git_status(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<TreeQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "git_status",
+        &q.path,
+        q.root.as_deref(),
+        Value::Null,
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/git/diff?bot_id=&path=&root=&session_id=&staged=
+/// Read-only `git diff --no-color [--staged] [-- <path>]`.
+pub async fn get_git_diff(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<GitDiffQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "git_diff",
+        &q.path,
+        q.root.as_deref(),
+        json!({ "staged": q.staged.unwrap_or(false) }),
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/git/log?bot_id=&path=&root=&session_id=&limit=
+/// Read-only `git log` (hash/author/date/subject), newest first, `limit` clamped ≤100.
+pub async fn get_git_log(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<GitLogQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let extra = match q.limit {
+        Some(n) => json!({ "limit": n }),
+        None => Value::Null,
+    };
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "git_log",
+        &q.path,
+        q.root.as_deref(),
+        extra,
         &roots,
     )
     .await?;
