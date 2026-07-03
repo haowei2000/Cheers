@@ -21,9 +21,17 @@ use crate::{
 /// 计算并广播一个频道的全量在线名单（用户 + bot）。
 pub async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
     let online_user_ids = state.fanout.online_users(channel_id);
-    let online_bot_ids =
-        channel_online_bots(&state.db, &state.bot_locator, channel_id).await;
+    let online_bot_ids = channel_online_bots(&state.db, &state.bot_locator, channel_id).await;
     let count = online_user_ids.len() + online_bot_ids.len();
+    // 工作台在看焦点：谁正在看哪个 bot 的工作区（可含路径）。随全量 presence 下发。
+    let focus: Vec<_> = state
+        .fanout
+        .channel_focus(channel_id)
+        .into_iter()
+        .map(
+            |(user_id, bot_id, path)| json!({ "user_id": user_id, "bot_id": bot_id, "path": path }),
+        )
+        .collect();
     let frame = WireFrame::channel(
         channel_id,
         "presence",
@@ -32,6 +40,7 @@ pub async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
             "online_user_ids": online_user_ids,
             "online_bot_ids": online_bot_ids,
             "count": count,
+            "focus": focus,
         }),
     );
     state.fanout.broadcast_channel(channel_id, frame).await;

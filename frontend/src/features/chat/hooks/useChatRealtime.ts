@@ -3,6 +3,14 @@ import { buildWsUrl } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, WsEvent } from "@/types";
 
+/** Workspace-presence entry inside a `presence` frame: WHO is currently viewing
+ *  WHICH bot's workspace, and at what `path` (a file, else a directory/cwd). */
+export interface PresenceFocus {
+  user_id: string;
+  bot_id: string;
+  path?: string | null;
+}
+
 interface Callbacks {
   onMessage: (msg: Message) => void;
   onStreamDelta: (msgId: string, delta: string) => void;
@@ -12,14 +20,29 @@ interface Callbacks {
   /** Fired after every (re)subscribe ack — used to run REST seq catch-up. */
   onReady?: () => void;
   /** Channel presence update (online user ids + count + online bot ids).
-   *  `count` already includes online bots — don't add `botIds.length` to it. */
-  onPresence?: (userIds: string[], count: number, botIds?: string[]) => void;
+   *  `count` already includes online bots — don't add `botIds.length` to it.
+   *  `focus` (workspace presence) may be absent on older gateways → empty array. */
+  onPresence?: (
+    userIds: string[],
+    count: number,
+    botIds?: string[],
+    focus?: PresenceFocus[]
+  ) => void;
   /** Agent progress (trace) for a streaming bot message. */
   onBotTrace?: (msgId: string | null, title: string | null) => void;
   /** ViewBoard live-push: a board's underlying data changed → re-pull that board.
    *  `board` is e.g. "plan" | "cost" | "commands" (gateway board_signal) or
    *  "activity" (synthesized here on each new message). */
   onBoardSignal?: (board: string) => void;
+  /** Live-watch: the agent changed file(s) under a watched dir on ITS machine.
+   *  Carries `bot_id` (route by it — a channel can have several bots on different
+   *  machines), the workspace `root`, and the changed `paths`. Recipients re-fetch
+   *  through their own authorized workspace REST reads (the frame has no content). */
+  onWorkspaceSignal?: (sig: {
+    bot_id: string;
+    root: string;
+    paths: string[];
+  }) => void;
   /** An audio file's transcription finished (status "done" with the transcript
    *  snippet) or terminally failed (status "failed") — update its tiles in place. */
   onFileTranscribed?: (
@@ -166,11 +189,20 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
           online_user_ids?: string[];
           online_bot_ids?: string[];
           count?: number;
+          focus?: PresenceFocus[];
         };
+        // `focus` is new (workspace presence); tolerate its absence on older gateways.
+        const focus = Array.isArray(d.focus)
+          ? d.focus.filter(
+              (f): f is PresenceFocus =>
+                !!f && typeof f.user_id === "string" && typeof f.bot_id === "string"
+            )
+          : [];
         cbsRef.current.onPresence?.(
           d.online_user_ids ?? [],
           d.count ?? 0,
-          d.online_bot_ids ?? []
+          d.online_bot_ids ?? [],
+          focus
         );
       } else if (type === "bot_trace") {
         const d = data as {
@@ -181,6 +213,19 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         cbsRef.current.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
       } else if (type === "board_signal") {
         cbsRef.current.onBoardSignal?.((data as { board?: string }).board ?? "");
+      } else if (type === "workspace_signal") {
+        const d = data as {
+          bot_id?: string;
+          root?: string;
+          paths?: string[];
+        };
+        if (d.bot_id) {
+          cbsRef.current.onWorkspaceSignal?.({
+            bot_id: d.bot_id,
+            root: d.root ?? "",
+            paths: Array.isArray(d.paths) ? d.paths : [],
+          });
+        }
       } else if (type === "file_transcribed") {
         const d = data as {
           file_id?: string;
@@ -251,5 +296,20 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     []
   );
 
-  return { sendResourceReq };
+  // Broadcast the caller's workspace focus (which bot's workspace / which path they're
+  // viewing) so peers see it in the next `presence` snapshot. `focus === null` clears it
+  // (dialog closed / bot switched). Best-effort: a no-op if the socket isn't open —
+  // the gateway re-derives presence on the next (re)subscribe anyway.
+  const sendPresenceFocus = useCallback(
+    (chanId: string, focus: { bot_id: string; path?: string | null } | null) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(
+        JSON.stringify({ type: "presence_focus", channel_id: chanId, focus })
+      );
+    },
+    []
+  );
+
+  return { sendResourceReq, sendPresenceFocus };
 }

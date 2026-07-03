@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -116,6 +116,24 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Live-push: the Desk ("files" board) changed on the server (a bot finished writing).
+  // Re-pull the tree and reload a clean open file in place, but NEVER clobber unsaved
+  // edits — a dirty buffer only gets a non-destructive "changed on server" hint. The tick
+  // rides on ctx (typed loosely: PanelContext is the shared registry contract).
+  const filesTick = (ctx as { filesTick?: number }).filesTick ?? 0;
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+  const seenFilesTick = useRef(filesTick);
+  useEffect(() => {
+    if (filesTick === seenFilesTick.current) return;
+    seenFilesTick.current = filesTick;
+    void refresh();
+    if (!selected) return;
+    const ed = editorRef.current;
+    if (ed.dirty) ed.setStatus("⟳ 此文件已在服务器上更新(你有未保存改动,未自动覆盖)");
+    else void ed.reload();
+  }, [filesTick, refresh, selected]);
 
   const expandAncestors = useCallback((path: string) => {
     setCollapsed((prev) => {

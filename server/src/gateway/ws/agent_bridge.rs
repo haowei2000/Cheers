@@ -430,7 +430,9 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     let connection_id = Uuid::new_v4();
     let (res_tx, mut res_rx) = mpsc::channel::<Value>(128);
 
-    state.bot_registry.bind_data(bot.bot_id, connection_id, res_tx);
+    state
+        .bot_registry
+        .bind_data(bot.bot_id, connection_id, res_tx);
 
     // ── 3. 发 hello 帧 ──────────────────────────────────────────────────
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
@@ -745,6 +747,31 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     crate::gateway::presence::broadcast_presence(state, cid).await;
                 }
             }
+            // Live Desk: a successful mutating `fs.*` verb changed the channel's
+            // workspace files — nudge any open Desk view to re-pull. Mirrors the
+            // channel.messages.create / channel.leave live-broadcast pattern above:
+            // resource::dispatch only holds `db`, so the fanout tick is emitted here
+            // at the WS boundary. Data-free — clients re-fetch via their own authz'd
+            // fs.ls/fs.read. board name "files" (cross-slice contract).
+            if matches!(
+                frame.get("resource").and_then(Value::as_str),
+                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+            ) && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = resp
+                    .get("data")
+                    .and_then(|d| d.get("channel_id"))
+                    .and_then(Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    let wire = WireFrame::channel(
+                        cid,
+                        "board_signal",
+                        json!({ "channel_id": cid, "board": "files" }),
+                    );
+                    state.fanout.broadcast_channel(cid, wire).await;
+                }
+            }
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }
@@ -754,6 +781,17 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             if let Some(req_id) = frame.get("req_id").and_then(Value::as_str) {
                 state.workspace_rpc.resolve(req_id, frame.clone());
             }
+        }
+
+        // ── 远程工作区文件变更推送（connector → gateway，主动 push）──────────
+        // The connector's live watcher fires `{root, paths, kind}` when watched
+        // files change. The frame is bot-scoped (this WS is authenticated as the
+        // bot), so fan a signal-only `workspace_signal{bot_id, root, paths}` to every
+        // channel the bot is a member of — recipients re-pull via their own authz'd
+        // workspace REST reads (no file content crosses here). Mirrors the
+        // board_signal / trace validated-then-fanned pattern.
+        "workspace_event" => {
+            handle_workspace_event_frame(frame, state, bot).await;
         }
 
         // ── 审批请求（转发给频道内用户）─────────────────────────────────────
@@ -1141,6 +1179,29 @@ async fn handle_terminal_frame(
     .await
     {
         Ok(()) => {
+            // Turn-complete workspace freshness: the turn just finalized. If this
+            // bot is workspace-capable (its connector is online), it may have
+            // mutated its Desk during the turn — emit one data-free tick so any open
+            // workspace view re-pulls. board name "workspace" (cross-slice contract);
+            // clients re-fetch via their own authz'd reads. channel_id is re-derived
+            // from the (now finalized, bot-owned) msg_id — handle_done already
+            // verified ownership but consumes the channel_id internally.
+            if let Some(mid) = msg_id {
+                if state.bot_locator.is_online(bot.bot_id).await {
+                    if let Some(cid) = channel_of_bot_message(&state.db, bot.bot_id, mid).await {
+                        let wire = WireFrame::channel(
+                            cid,
+                            "board_signal",
+                            json!({
+                                "channel_id": cid,
+                                "board": "workspace",
+                                "bot_id": bot.bot_id,
+                            }),
+                        );
+                        state.fanout.broadcast_channel(cid, wire).await;
+                    }
+                }
+            }
             let Some(client_msg_id) = client_msg_id else {
                 return;
             };
@@ -1427,6 +1488,25 @@ async fn ensure_bot_channel_member(
     } else {
         Err("bot is not a member of the target channel")
     }
+}
+
+/// Resolve the channel a bot's message belongs to (bot-scoped). Used post-`handle_done`
+/// to target the turn-complete `board_signal`: `handle_done` already verified the bot
+/// owns `msg_id` but consumes its channel_id internally, and the message is now
+/// finalized (so `verify_ownership` can no longer be reused), so we re-derive it here.
+async fn channel_of_bot_message(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Option<Uuid> {
+    sqlx::query(
+        "SELECT channel_id FROM messages
+         WHERE msg_id = $1 AND sender_id = $2 AND sender_type = 'bot'",
+    )
+    .bind(msg_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|row| row.try_get::<String, _>("channel_id").ok())
+    .and_then(|s| s.parse::<Uuid>().ok())
 }
 
 fn client_msg_id(frame: &Value) -> Option<String> {
@@ -1766,6 +1846,41 @@ fn resolve_bot_acp_security(binding_config: Option<&Value>) -> Option<Value> {
         "require_capability": require_capability,
         "phase": "negotiated",
     }))
+}
+
+/// Fan the connector's `workspace_event` file-change push out to browsers as a
+/// signal-only `workspace_signal` frame. The frame is bot-scoped (the WS is already
+/// authenticated as `bot`), so we look up every channel the bot belongs to and
+/// broadcast `{bot_id, root, paths}` — no file content, recipients re-fetch through
+/// their own authorized workspace REST reads. `kind` is advisory only.
+async fn handle_workspace_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let root = frame.get("root").cloned().unwrap_or(Value::Null);
+    let paths = frame.get("paths").cloned().unwrap_or_else(|| json!([]));
+
+    let channels: Vec<Uuid> = sqlx::query_scalar::<_, String>(
+        "SELECT channel_id FROM channel_memberships
+         WHERE member_id = $1 AND member_type = 'bot'",
+    )
+    .bind(bot.bot_id.to_string())
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .filter_map(|s| Uuid::parse_str(&s).ok())
+    .collect();
+
+    for cid in channels {
+        let wire = WireFrame::channel(
+            cid,
+            "workspace_signal",
+            json!({
+                "bot_id": bot.bot_id.to_string(),
+                "root": root,
+                "paths": paths,
+            }),
+        );
+        state.fanout.broadcast_channel(cid, wire).await;
+    }
 }
 
 async fn load_memberships(db: &PgPool, bot_id: Uuid) -> Vec<Value> {

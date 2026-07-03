@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,10 +11,25 @@ use anyhow::{anyhow, Context};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chrono::Utc;
 use ed25519_dalek::{pkcs8::DecodePrivateKey, Signature, Signer, SigningKey};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::task::AbortHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
+
+/// Remote-workspace live-watch limits. A `watch` op starts a debounced recursive
+/// fs watcher; these bound resource use per connector account (bot).
+const MAX_WATCHES: usize = 16;
+const WATCH_TTL_SECS: u64 = 90;
+const WATCH_TTL: Duration = Duration::from_secs(WATCH_TTL_SECS);
+/// Quiescence window: emit a coalesced `workspace_event` after this much idle.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(300);
+/// Hard upper bound on how long one burst may keep coalescing before we flush,
+/// so constant churn can't starve the notification indefinitely.
+const WATCH_MAX_COALESCE: Duration = Duration::from_secs(3);
+/// Max changed paths carried in a single `workspace_event`.
+const WATCH_PATHS_CAP: usize = 50;
 
 use crate::acp_runtime::AcpAdapterKind;
 use crate::bridge::{
@@ -28,8 +43,8 @@ use crate::bridge_session::{
     BridgeSessionParts,
 };
 use crate::config::{
-    AccountConfig, AcpCapabilityConfig, ConnectorConfig, LocalPolicy, PermissionTimeoutAction,
-    PromptPolicy,
+    AccountConfig, AcpCapabilityConfig, ConnectorConfig, GitOpsMode, LocalPolicy,
+    PermissionTimeoutAction, PromptPolicy,
 };
 use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
 use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
@@ -175,6 +190,168 @@ impl AccountRuntime {
     }
 }
 
+/// Resolve a workspace reference to a git working directory (+ optional pathspec).
+/// `target` is the already-joined candidate path (absolute ref, or root-joined
+/// relative); `root_canon` is the canonical chosen root. Canonicalizes `target`
+/// and enforces containment in `root_canon` exactly like the `ls` op. A directory
+/// resolves to `(dir, None)`; a file resolves to `(parent_dir, Some(file))` so the
+/// caller can `git -C <parent_dir>` and pass the file as a pathspec.
+async fn resolve_git_target(
+    target: &std::path::Path,
+    root_canon: &std::path::Path,
+) -> Result<(PathBuf, Option<PathBuf>), (String, String)> {
+    let err = |c: &str, m: String| (c.to_string(), m);
+    let canon = tokio::fs::canonicalize(target)
+        .await
+        .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
+    if !canon.starts_with(root_canon) {
+        return Err(err(
+            "E_FORBIDDEN_PATH",
+            "path escapes workspace root".into(),
+        ));
+    }
+    let md = tokio::fs::metadata(&canon)
+        .await
+        .map_err(|e| err("E_IO", e.to_string()))?;
+    if md.is_dir() {
+        // A directory target scopes `git_diff` to that subtree via an in-root
+        // pathspec (git_status/git_log ignore the pathspec). A repo-root pathspec
+        // still matches everything, so browsing at the root diffs the whole repo.
+        Ok((canon.clone(), Some(canon)))
+    } else {
+        let parent = canon
+            .parent()
+            .ok_or_else(|| err("E_INVALID", "invalid path".into()))?
+            .to_path_buf();
+        if !parent.starts_with(root_canon) {
+            return Err(err(
+                "E_FORBIDDEN_PATH",
+                "path escapes workspace root".into(),
+            ));
+        }
+        Ok((parent, Some(canon)))
+    }
+}
+
+/// Spawn `git -C <git_dir> <args...>` (fixed argv, NO shell) and capture output.
+/// Maps a missing `git` binary → `E_GIT_UNAVAILABLE`; other spawn failures → `E_IO`.
+/// The caller inspects the exit status / stdout (e.g. `rev-parse` for repo checks).
+async fn run_git(
+    git_dir: &std::path::Path,
+    args: &[&str],
+) -> Result<std::process::Output, (String, String)> {
+    tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(git_dir)
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                (
+                    "E_GIT_UNAVAILABLE".to_string(),
+                    "git binary not found on connector host".to_string(),
+                )
+            } else {
+                ("E_IO".to_string(), format!("git spawn failed: {e}"))
+            }
+        })
+}
+
+/// Trimmed git stderr for surfacing a failed (non-zero) git invocation.
+fn git_stderr(out: &std::process::Output) -> String {
+    let s = String::from_utf8_lossy(&out.stderr);
+    let s = s.trim();
+    if s.is_empty() {
+        "git command failed".to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// Content etag for the safe-remote-writes protocol: the lowercase-hex SHA-256 of
+/// the raw file bytes (always 64 chars). Read/write replies carry it; a write's
+/// `if_etag` precondition is checked against it.
+fn etag_of(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Best-effort `(current_etag, size_bytes)` snapshot of an on-disk file for an
+/// `E_CONFLICT` reply. STATs first and refuses to hash a file larger than `max`
+/// bytes (reports `None` etag with the real size) so a huge racing file can't OOM
+/// the connector — such a file could never match an etag a client obtained from
+/// the size-capped read anyway. A vanished/unreadable file reports `(None, 0)`.
+async fn conflict_snapshot(path: &std::path::Path, max: u64) -> (Option<String>, u64) {
+    match tokio::fs::metadata(path).await {
+        Ok(md) => {
+            let size = md.len();
+            if size > max {
+                (None, size)
+            } else {
+                match tokio::fs::read(path).await {
+                    Ok(bytes) => (Some(etag_of(&bytes)), bytes.len() as u64),
+                    Err(_) => (None, size),
+                }
+            }
+        }
+        Err(_) => (None, 0),
+    }
+}
+
+/// Best-effort parse of `git status --porcelain=v2 --branch`. Returns
+/// `(branch, ahead, behind, entries)`; the caller also returns the raw stdout, so
+/// this parse is advisory (unrecognized lines are skipped). Entry `xy` is the
+/// two-char status code (`??` untracked, `!!` ignored), `path` the repo-relative
+/// path (rename → the destination path).
+fn parse_status_porcelain_v2(raw: &str) -> (Option<String>, Option<i64>, Option<i64>, Vec<Value>) {
+    let mut branch = None;
+    let mut ahead = None;
+    let mut behind = None;
+    let mut entries: Vec<Value> = Vec::new();
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("# branch.head ") {
+            branch = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
+            for tok in rest.split_whitespace() {
+                if let Some(a) = tok.strip_prefix('+') {
+                    ahead = a.parse().ok();
+                } else if let Some(b) = tok.strip_prefix('-') {
+                    behind = b.parse().ok();
+                }
+            }
+        } else if line.starts_with('#') {
+            continue;
+        } else if let Some(rest) = line.strip_prefix("? ") {
+            entries.push(serde_json::json!({ "xy": "??", "path": rest }));
+        } else if let Some(rest) = line.strip_prefix("! ") {
+            entries.push(serde_json::json!({ "xy": "!!", "path": rest }));
+        } else if line.starts_with("1 ") || line.starts_with("2 ") {
+            let is_rename = line.starts_with("2 ");
+            let parts: Vec<&str> = line.splitn(9, ' ').collect();
+            if parts.len() == 9 {
+                let path = if is_rename {
+                    // Rename/copy: "<path>\t<origPath>"
+                    parts[8].split('\t').next().unwrap_or(parts[8])
+                } else {
+                    parts[8]
+                };
+                entries.push(serde_json::json!({ "xy": parts[1], "path": path }));
+            }
+        } else if line.starts_with("u ") {
+            // Unmerged: "u <xy> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>"
+            let parts: Vec<&str> = line.splitn(11, ' ').collect();
+            if parts.len() == 11 {
+                entries.push(serde_json::json!({ "xy": parts[1], "path": parts[10] }));
+            }
+        }
+    }
+    (branch, ahead, behind, entries)
+}
+
 struct RuntimeContext {
     account_id: String,
     config: AccountConfig,
@@ -219,6 +396,9 @@ impl RuntimeContext {
                         .runtime_tx
                         .send(RuntimeInput::AbortPendingResources)
                         .await;
+                    // Drop every fs watcher: the data WS they'd emit workspace_event
+                    // over is gone. Clearing aborts each watch_loop task (AbortOnDrop).
+                    self.shared.lock().await.watches.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream closed"));
                 }
                 RuntimeInput::SocketError { stream, error } => {
@@ -226,6 +406,7 @@ impl RuntimeContext {
                         .runtime_tx
                         .send(RuntimeInput::AbortPendingResources)
                         .await;
+                    self.shared.lock().await.watches.clear();
                     return Err(anyhow!("Agent Bridge {stream} stream error: {error}"));
                 }
                 RuntimeInput::AbortPendingResources => {
@@ -418,7 +599,12 @@ impl RuntimeContext {
                 path,
                 root,
                 content_b64,
+                if_etag,
                 roots,
+                staged,
+                limit,
+                commit,
+                watch_id,
             } => {
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -428,7 +614,12 @@ impl RuntimeContext {
                             &path,
                             root.as_deref(),
                             content_b64.as_deref(),
+                            if_etag.as_deref(),
                             &roots,
+                            staged.unwrap_or(false),
+                            limit,
+                            commit.as_deref(),
+                            watch_id.as_deref(),
                         )
                         .await
                     {
@@ -440,11 +631,13 @@ impl RuntimeContext {
                             error: None,
                             code: None,
                         },
-                        Err((code, msg)) => DataOutbound::WorkspaceRes {
+                        // The error carries an optional structured `data` payload
+                        // (E_CONFLICT ships `{current_etag, size_bytes}`); forward it.
+                        Err((code, msg, data)) => DataOutbound::WorkspaceRes {
                             v: BRIDGE_PROTOCOL_VERSION,
                             req_id,
                             ok: false,
-                            data: None,
+                            data,
                             error: Some(msg),
                             code: Some(code),
                         },
@@ -596,17 +789,39 @@ impl RuntimeContext {
         rel: &str,
         root: Option<&str>,
         content_b64: Option<&str>,
+        if_etag: Option<&str>,
         session_roots: &[String],
-    ) -> Result<Value, (String, String)> {
+        staged: bool,
+        log_limit: Option<u32>,
+        commit: Option<&str>,
+        watch_id: Option<&str>,
+    ) -> Result<Value, (String, String, Option<Value>)> {
         const MAX_READ: u64 = 10 * 1024 * 1024;
-        let err = |c: &str, m: String| (c.to_string(), m);
+        const MAX_WRITE: u64 = 10 * 1024 * 1024;
+        // The error is a `(code, message, data)` triple; only E_CONFLICT ships a
+        // structured `data` payload, so this helper defaults it to `None`.
+        let err = |c: &str, m: String| (c.to_string(), m, None::<Value>);
 
         // `validate_cwd` is an on-the-spot check of a candidate session cwd against
         // this connector's local policy — the SAME gate applied at session start
         // (validate_backend_cwd) plus an is-directory probe. It doesn't resolve
         // `root`/`rel` like the browse ops, so it short-circuits before them.
         if op == "validate_cwd" {
-            return self.validate_cwd_op(rel).await;
+            // validate_cwd_op returns a 2-tuple error; widen it to the triple.
+            return self
+                .validate_cwd_op(rel)
+                .await
+                .map_err(|(c, m)| (c, m, None));
+        }
+
+        // `unwatch` stops an active fs watcher by `watch_id`. It needs no path
+        // resolution, so (like validate_cwd) it short-circuits before the clamp.
+        // Idempotent: dropping the registry entry aborts the watcher task; removing
+        // an already-gone id is a no-op that still replies `{ok:true}`.
+        if op == "unwatch" {
+            let id = watch_id.ok_or_else(|| err("E_INVALID", "watch_id required".into()))?;
+            self.shared.lock().await.watches.remove(id);
+            return Ok(json!({ "ok": true }));
         }
 
         // Effective roots: narrow to the session's root set when provided, else the
@@ -726,6 +941,28 @@ impl RuntimeContext {
                     "entries": entries,
                 }))
             }
+            // Start a debounced recursive fs watcher on the clamped dir. Reuses the
+            // exact `ls` containment gate (canonicalize + starts_with(root_canon)) so
+            // a watcher can NEVER observe outside effective_roots. Returns the watch
+            // handle; fs changes stream back later as unsolicited `workspace_event`s.
+            "watch" => {
+                let dir = tokio::fs::canonicalize(&target)
+                    .await
+                    .map_err(|e| err("E_NOT_FOUND", e.to_string()))?;
+                if !dir.starts_with(&root_canon) {
+                    return Err(err(
+                        "E_FORBIDDEN_PATH",
+                        "path escapes workspace root".into(),
+                    ));
+                }
+                let md = tokio::fs::metadata(&dir)
+                    .await
+                    .map_err(|e| err("E_IO", e.to_string()))?;
+                if !md.is_dir() {
+                    return Err(err("E_NOT_DIR", "watch target is not a directory".into()));
+                }
+                self.start_watch(dir, &root_canon).await
+            }
             "read" => {
                 let file = tokio::fs::canonicalize(&target)
                     .await
@@ -770,6 +1007,9 @@ impl RuntimeContext {
                     "is_text": is_text,
                     "content": if is_text { Some(String::from_utf8_lossy(&bytes).to_string()) } else { None },
                     "content_b64": BASE64.encode(&bytes),
+                    // Content etag: lowercase-hex SHA-256 of the raw bytes. A client
+                    // echoes this as `if_etag` on a subsequent write to detect edits.
+                    "etag": etag_of(&bytes),
                 }))
             }
             "write" => {
@@ -778,6 +1018,14 @@ impl RuntimeContext {
                 let bytes = BASE64
                     .decode(b64)
                     .map_err(|e| err("E_INVALID", format!("bad base64: {e}")))?;
+                // Cap the DECODED payload (symmetric with the read cap) before we
+                // touch the filesystem.
+                if bytes.len() as u64 > MAX_WRITE {
+                    return Err(err(
+                        "E_TOO_LARGE",
+                        format!("payload exceeds {}MB write cap", MAX_WRITE / 1024 / 1024),
+                    ));
+                }
                 let parent = target
                     .parent()
                     .ok_or_else(|| err("E_INVALID", "invalid path".into()))?;
@@ -828,18 +1076,312 @@ impl RuntimeContext {
                     }
                     Err(_) => {}
                 }
-                tokio::fs::write(&dest, &bytes)
-                    .await
-                    .map_err(|e| err("E_IO", e.to_string()))?;
+                // ── if_etag precondition (safe remote writes) ────────────────────
+                // Enforced INSIDE the symlink-guarded critical section, immediately
+                // before the write. E_CONFLICT carries `{current_etag, size_bytes}`
+                // (current_etag null if the file vanished / is unreadable).
+                let new_etag = etag_of(&bytes);
+                let conflict = |current_etag: Option<String>, size_bytes: u64| {
+                    (
+                        "E_CONFLICT".to_string(),
+                        "write precondition failed".to_string(),
+                        Some(serde_json::json!({
+                            "current_etag": current_etag,
+                            "size_bytes": size_bytes,
+                        })),
+                    )
+                };
+                match if_etag {
+                    // Absent/null ⇒ unconditional overwrite (back-compat default).
+                    None => {
+                        tokio::fs::write(&dest, &bytes)
+                            .await
+                            .map_err(|e| err("E_IO", e.to_string()))?;
+                    }
+                    // "" ⇒ create-only. Atomic O_CREAT|O_EXCL closes the create race
+                    // (and inherently refuses to follow a symlink at `dest`); an
+                    // existing file ⇒ E_CONFLICT with its current snapshot.
+                    Some("") => {
+                        use tokio::io::AsyncWriteExt;
+                        match tokio::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&dest)
+                            .await
+                        {
+                            Ok(mut f) => {
+                                f.write_all(&bytes)
+                                    .await
+                                    .map_err(|e| err("E_IO", e.to_string()))?;
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                                let (current_etag, size) =
+                                    conflict_snapshot(&dest, MAX_WRITE).await;
+                                return Err(conflict(current_etag, size));
+                            }
+                            Err(e) => return Err(err("E_IO", e.to_string())),
+                        }
+                    }
+                    // 64-char etag ⇒ overwrite only if the current file hashes to it.
+                    Some(expected) => match tokio::fs::metadata(&dest).await {
+                        Ok(md) => {
+                            // STAT-first OOM guard: never slurp a file bigger than the
+                            // write cap just to hash it (it could never match anyway).
+                            if md.len() > MAX_WRITE {
+                                return Err(err(
+                                    "E_TOO_LARGE",
+                                    format!(
+                                        "on-disk file exceeds {}MB write cap",
+                                        MAX_WRITE / 1024 / 1024
+                                    ),
+                                ));
+                            }
+                            let current = tokio::fs::read(&dest)
+                                .await
+                                .map_err(|e| err("E_IO", e.to_string()))?;
+                            let current_etag = etag_of(&current);
+                            if current_etag != expected {
+                                return Err(conflict(Some(current_etag), current.len() as u64));
+                            }
+                            tokio::fs::write(&dest, &bytes)
+                                .await
+                                .map_err(|e| err("E_IO", e.to_string()))?;
+                        }
+                        // Client expected a specific version but the file is gone.
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            return Err(conflict(None, 0));
+                        }
+                        Err(e) => return Err(err("E_IO", e.to_string())),
+                    },
+                }
                 Ok(
-                    serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "ok": true }),
+                    serde_json::json!({ "path": rel.trim_start_matches('/'), "size_bytes": bytes.len(), "etag": new_etag, "ok": true }),
                 )
+            }
+            // ── READ-ONLY git inspection (never mutates the repo) ────────────────
+            // Spawn the `git` binary directly with a fixed argv; the only
+            // caller-controlled inputs are the validated in-root directory and, for
+            // diff, an optional validated in-root pathspec (a distinct argv element,
+            // never interpolated into a shell — no shell is used).
+            "git_status" | "git_diff" | "git_log" | "git_show" => {
+                if self.config.policy.workspace.git_ops == GitOpsMode::Off {
+                    return Err(err(
+                        "E_GIT_DISABLED",
+                        "git ops disabled by connector policy".into(),
+                    ));
+                }
+                // Resolve `rel` to a git working directory (+ optional pathspec when
+                // it points at a file), enforcing containment exactly like `ls`.
+                // These helpers return the legacy 2-tuple error; widen to the triple.
+                let (git_dir, pathspec) = resolve_git_target(&target, &root_canon)
+                    .await
+                    .map_err(|(c, m)| (c, m, None))?;
+                // Definitive non-repo detection → E_NOT_A_REPO (spawn-not-found →
+                // E_GIT_UNAVAILABLE, propagated from run_git).
+                let rp = run_git(&git_dir, &["rev-parse", "--git-dir"])
+                    .await
+                    .map_err(|(c, m)| (c, m, None))?;
+                if !rp.status.success() {
+                    return Err(err("E_NOT_A_REPO", "not a git repository".into()));
+                }
+                match op {
+                    "git_status" => {
+                        let out = run_git(&git_dir, &["status", "--porcelain=v2", "--branch"])
+                            .await
+                            .map_err(|(c, m)| (c, m, None))?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git status exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                        let (branch, ahead, behind, entries) = parse_status_porcelain_v2(&raw);
+                        Ok(serde_json::json!({
+                            "raw": raw,
+                            "branch": branch,
+                            "ahead": ahead,
+                            "behind": behind,
+                            "entries": entries,
+                        }))
+                    }
+                    "git_diff" => {
+                        let mut args: Vec<&str> = vec!["diff", "--no-color"];
+                        if staged {
+                            args.push("--staged");
+                        }
+                        // Optional pathspec: a validated, in-root absolute path placed
+                        // as its own argv element after `--`.
+                        let pathspec_str =
+                            pathspec.as_ref().map(|p| p.to_string_lossy().to_string());
+                        if let Some(ps) = pathspec_str.as_deref() {
+                            args.push("--");
+                            args.push(ps);
+                        }
+                        let out = run_git(&git_dir, &args)
+                            .await
+                            .map_err(|(c, m)| (c, m, None))?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git diff exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        Ok(serde_json::json!({
+                            "diff": String::from_utf8_lossy(&out.stdout),
+                            "staged": staged,
+                        }))
+                    }
+                    "git_show" => {
+                        // Required commit ref. The pathspec is ignored — `git_dir`
+                        // (resolved above) locates the repo, exactly like git_status.
+                        let commit = commit.unwrap_or("").trim();
+                        if commit.is_empty() {
+                            return Err(err("E_BAD_REF", "missing commit ref".into()));
+                        }
+                        // VALIDATE before use as argv: must be a bare hex hash (what
+                        // git_log emits). Reject anything else — this blocks a
+                        // `-`-prefixed value being read as a `git show` flag (there is
+                        // no shell, but argv-flag injection must still be blocked).
+                        let is_hex_hash = commit.len() >= 7
+                            && commit.len() <= 64
+                            && commit.bytes().all(|b| b.is_ascii_hexdigit());
+                        if !is_hex_hash {
+                            return Err(err("E_BAD_REF", "commit ref must be a hex hash".into()));
+                        }
+                        let out = run_git(&git_dir, &["show", "--no-color", commit])
+                            .await
+                            .map_err(|(c, m)| (c, m, None))?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git show exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        Ok(serde_json::json!({
+                            "commit": commit,
+                            "diff": String::from_utf8_lossy(&out.stdout),
+                        }))
+                    }
+                    // "git_log"
+                    _ => {
+                        let n = log_limit.unwrap_or(50).clamp(1, 100);
+                        let n_str = n.to_string();
+                        let out = run_git(
+                            &git_dir,
+                            &[
+                                "log",
+                                "--pretty=format:%H%x1f%an%x1f%aI%x1f%s",
+                                "-n",
+                                &n_str,
+                            ],
+                        )
+                        .await
+                        .map_err(|(c, m)| (c, m, None))?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git log exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let commits: Vec<Value> = stdout
+                            .lines()
+                            .filter_map(|line| {
+                                let mut it = line.split('\u{1f}');
+                                let hash = it.next()?;
+                                if hash.is_empty() {
+                                    return None;
+                                }
+                                Some(serde_json::json!({
+                                    "hash": hash,
+                                    "author": it.next().unwrap_or(""),
+                                    "date": it.next().unwrap_or(""),
+                                    "subject": it.next().unwrap_or(""),
+                                }))
+                            })
+                            .collect();
+                        Ok(serde_json::json!({ "commits": commits }))
+                    }
+                }
             }
             other => Err(err(
                 "E_UNKNOWN_OP",
                 format!("unknown workspace op: {other}"),
             )),
         }
+    }
+
+    /// Register (or renew) a debounced recursive fs watcher for `dir` (already
+    /// canonicalized + clamped inside `root_canon`). The whole critical section runs
+    /// under the `shared` lock so the cap check and insert are atomic against
+    /// concurrent `watch` ops:
+    ///  - a watch on an already-watched dir RENEWS its TTL and returns the same
+    ///    `watch_id` (never stacks a second watcher);
+    ///  - beyond `MAX_WATCHES` distinct dirs → `E_TOO_MANY_WATCHES`;
+    ///  - otherwise the notify watcher is created, a `watch_loop` task is spawned to
+    ///    coalesce + emit events and enforce the TTL, and its handle is stored.
+    /// The returned handle owns an `AbortOnDrop`, so removing the registry entry
+    /// (unwatch / TTL / disconnect-teardown) aborts the task and drops the watcher.
+    async fn start_watch(
+        &self,
+        dir: PathBuf,
+        root_canon: &Path,
+    ) -> Result<Value, (String, String, Option<Value>)> {
+        let err = |c: &str, m: String| (c.to_string(), m, None::<Value>);
+        let mut guard = self.shared.lock().await;
+
+        // Renew an existing watch on the same dir instead of stacking a new one.
+        if let Some((id, handle)) = guard.watches.iter().find(|(_, h)| h.dir == dir) {
+            let id = id.clone();
+            let _ = handle.renew_tx.send(());
+            return Ok(json!({ "watch_id": id, "ttl_secs": WATCH_TTL_SECS }));
+        }
+        if guard.watches.len() >= MAX_WATCHES {
+            return Err(err(
+                "E_TOO_MANY_WATCHES",
+                format!("watch cap reached ({MAX_WATCHES} concurrent watches)"),
+            ));
+        }
+
+        // Sync notify callback → tokio channel. UnboundedSender::send is sync, so it
+        // is safe to call from notify's `FnMut` worker thread. We forward changed
+        // absolute paths; the loop makes them root-relative and coalesces.
+        let (ev_tx, ev_rx) = mpsc::unbounded_channel::<PathBuf>();
+        let mut watcher: RecommendedWatcher =
+            notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if let Ok(event) = res {
+                    for p in event.paths {
+                        let _ = ev_tx.send(p);
+                    }
+                }
+            })
+            .map_err(|e| err("E_WATCH_FAILED", format!("watcher init failed: {e}")))?;
+        watcher
+            .watch(&dir, RecursiveMode::Recursive)
+            .map_err(|e| err("E_WATCH_FAILED", format!("watch failed: {e}")))?;
+
+        let watch_id = Uuid::new_v4().to_string();
+        let (renew_tx, renew_rx) = mpsc::unbounded_channel::<()>();
+        let task = tokio::spawn(watch_loop(
+            watch_id.clone(),
+            root_canon.to_string_lossy().to_string(),
+            root_canon.to_path_buf(),
+            watcher,
+            ev_rx,
+            renew_rx,
+            self.io.clone(),
+            self.shared.clone(),
+        ));
+        guard.watches.insert(
+            watch_id.clone(),
+            WatchHandle {
+                dir,
+                renew_tx,
+                _abort: AbortOnDrop(task.abort_handle()),
+            },
+        );
+        Ok(json!({ "watch_id": watch_id, "ttl_secs": WATCH_TTL_SECS }))
     }
 
     /// Validate a candidate session `cwd` against local policy for an on-the-spot
@@ -1713,6 +2255,100 @@ struct SharedRuntimeState {
     pending_resources: HashMap<String, oneshot::Sender<LoopbackResponse>>,
     session_locks: HashMap<String, Arc<Mutex<()>>>,
     channel_names: std::collections::HashMap<String, String>,
+    /// Active remote-workspace fs watchers, keyed by `watch_id`. Dropping an entry
+    /// aborts its `watch_loop` task (via `AbortOnDrop`), which drops the notify
+    /// watcher — so `unwatch`, TTL expiry, and data-WS teardown all stop cleanly.
+    watches: HashMap<String, WatchHandle>,
+}
+
+/// Registry entry for one active fs watch. Owns the abort handle for the watcher
+/// task; dropping it stops the task (and thus the notify watcher).
+struct WatchHandle {
+    /// Canonical watched dir — used to dedupe/renew a repeat `watch` on the same dir.
+    dir: PathBuf,
+    /// Signal the watch_loop to reset its TTL deadline (renew).
+    renew_tx: mpsc::UnboundedSender<()>,
+    _abort: AbortOnDrop,
+}
+
+/// Aborts the wrapped task when dropped, so removing a `WatchHandle` from the
+/// registry tears down its watcher task deterministically.
+struct AbortOnDrop(AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Make a changed path root-relative and record it, skipping `.git` internals
+/// (git operations churn `.git` heavily and would otherwise flood the event).
+fn push_rel(set: &mut HashSet<String>, root: &Path, p: PathBuf) {
+    let rel = p.strip_prefix(root).unwrap_or(&p);
+    let s = rel.to_string_lossy();
+    if s == ".git" || s.starts_with(".git/") || s.starts_with(".git\\") {
+        return;
+    }
+    set.insert(s.into_owned());
+}
+
+/// Per-watch driver: coalesces notify fs events into debounced, capped
+/// `workspace_event` frames and enforces the watch TTL. Exits (and removes itself
+/// from the registry) on TTL expiry, on renew-channel close, or when aborted by
+/// `AbortOnDrop`. Keeps `_watcher` alive for its whole lifetime.
+#[allow(clippy::too_many_arguments)]
+async fn watch_loop(
+    watch_id: String,
+    root_str: String,
+    root_canon: PathBuf,
+    _watcher: RecommendedWatcher,
+    mut ev_rx: mpsc::UnboundedReceiver<PathBuf>,
+    mut renew_rx: mpsc::UnboundedReceiver<()>,
+    io: BridgeIoHandle,
+    shared: Arc<Mutex<SharedRuntimeState>>,
+) {
+    let mut deadline = tokio::time::Instant::now() + WATCH_TTL;
+    loop {
+        tokio::select! {
+            // TTL expiry — drop the watch.
+            _ = tokio::time::sleep_until(deadline) => break,
+            // Renew — reset the TTL. Channel closed ⇒ handle dropped ⇒ stop.
+            renew = renew_rx.recv() => match renew {
+                Some(()) => { deadline = tokio::time::Instant::now() + WATCH_TTL; }
+                None => break,
+            },
+            // First fs event of a burst — coalesce, then emit one workspace_event.
+            ev = ev_rx.recv() => {
+                let Some(first) = ev else { break };
+                let mut paths: HashSet<String> = HashSet::new();
+                push_rel(&mut paths, &root_canon, first);
+                let burst_start = tokio::time::Instant::now();
+                loop {
+                    if paths.len() >= WATCH_PATHS_CAP
+                        || burst_start.elapsed() >= WATCH_MAX_COALESCE
+                    {
+                        break;
+                    }
+                    match timeout(WATCH_DEBOUNCE, ev_rx.recv()).await {
+                        Ok(Some(p)) => push_rel(&mut paths, &root_canon, p),
+                        // Quiescence window elapsed, or the event channel closed.
+                        Ok(None) | Err(_) => break,
+                    }
+                }
+                if !paths.is_empty() {
+                    let _ = io
+                        .send_data(DataOutbound::WorkspaceEvent {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            root: root_str.clone(),
+                            paths: paths.into_iter().collect(),
+                            kind: "change".to_string(),
+                        })
+                        .await;
+                }
+            }
+        }
+    }
+    shared.lock().await.watches.remove(&watch_id);
 }
 
 struct PendingPermission {
