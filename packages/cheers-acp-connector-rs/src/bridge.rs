@@ -379,6 +379,57 @@ mod tests {
     }
 
     #[test]
+    fn workspace_req_watch_and_unwatch_deserialize() {
+        let watch: DataInbound = serde_json::from_value(json!({
+            "type": "workspace_req",
+            "req_id": "r", "op": "watch", "path": "src",
+            "roots": ["/repo/service"]
+        }))
+        .expect("watch workspace_req");
+        match watch {
+            DataInbound::WorkspaceReq {
+                op, path, watch_id, ..
+            } => {
+                assert_eq!(op, "watch");
+                assert_eq!(path, "src");
+                assert!(watch_id.is_none(), "watch carries no watch_id");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+
+        let unwatch: DataInbound = serde_json::from_value(json!({
+            "type": "workspace_req",
+            "req_id": "r2", "op": "unwatch", "watch_id": "w-123"
+        }))
+        .expect("unwatch workspace_req");
+        match unwatch {
+            DataInbound::WorkspaceReq { op, watch_id, .. } => {
+                assert_eq!(op, "unwatch");
+                assert_eq!(watch_id.as_deref(), Some("w-123"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn workspace_event_serializes_with_bot_scoped_shape() {
+        let frame = DataOutbound::WorkspaceEvent {
+            v: BRIDGE_PROTOCOL_VERSION,
+            root: "/repo/service".to_string(),
+            paths: vec!["src/main.rs".to_string(), "Cargo.toml".to_string()],
+            kind: "change".to_string(),
+        };
+        let value = serde_json::to_value(frame).expect("workspace_event should serialize");
+        assert_eq!(value["type"], "workspace_event");
+        assert_eq!(value["root"], "/repo/service");
+        assert_eq!(value["kind"], "change");
+        assert_eq!(value["paths"][0], "src/main.rs");
+        assert_eq!(value["paths"].as_array().expect("paths array").len(), 2);
+        // Bot-scoped: the gateway maps bot → channels, so no channel_id is carried.
+        assert!(value.get("channel_id").is_none());
+    }
+
+    #[test]
     fn unknown_data_frame_deserializes_as_unknown() {
         let frame: DataInbound = serde_json::from_value(json!({
             "type": "future_unknown_type",
@@ -1092,7 +1143,10 @@ pub enum DataInbound {
     /// Gateway → connector: browse/read/write the agent's real workspace, confined
     /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
     /// correlated by `req_id`. `op` ∈ { "ls", "read", "write", "validate_cwd",
-    /// "git_status", "git_diff", "git_log" }. The git ops are READ-ONLY.
+    /// "git_status", "git_diff", "git_log", "git_show", "watch", "unwatch" }. The
+    /// git ops are READ-ONLY. `watch` starts a debounced recursive fs watcher on the
+    /// resolved (clamped) dir and streams unsolicited `workspace_event` frames;
+    /// `unwatch` (by `watch_id`) stops it.
     #[serde(rename = "workspace_req")]
     WorkspaceReq {
         req_id: String,
@@ -1125,6 +1179,14 @@ pub enum DataInbound {
         /// connector).
         #[serde(default)]
         limit: Option<u32>,
+        /// `op == "git_show"`: the commit ref to show (a hex hash, as emitted by
+        /// `git_log`; validated `^[0-9a-fA-F]{7,64}$` before use as argv).
+        #[serde(default)]
+        commit: Option<String>,
+        /// `op == "unwatch"`: the `watch_id` returned by a prior `watch` reply,
+        /// identifying the fs watcher to stop.
+        #[serde(default)]
+        watch_id: Option<String>,
     },
     #[serde(other)]
     Unknown,
@@ -1265,6 +1327,19 @@ pub enum DataOutbound {
         error: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<String>,
+    },
+    /// Connector → gateway: UNSOLICITED filesystem-change notification for an active
+    /// `watch`. Bot-scoped (no channel_id — the gateway maps bot → channels and
+    /// fans out to the workspace panels). `root` is the browse root the paths are
+    /// relative to; `paths` is the coalesced, de-duplicated, capped (≤50) set of
+    /// changed entries; `kind` is the change class (currently always "change").
+    #[serde(rename = "workspace_event")]
+    WorkspaceEvent {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        root: String,
+        paths: Vec<String>,
+        kind: String,
     },
     #[serde(rename = "permission_request")]
     PermissionRequest {

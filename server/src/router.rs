@@ -384,6 +384,19 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/workspace/git/log",
             get(api::workspace::get_git_log),
         )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/git/show",
+            get(api::workspace::get_git_show),
+        )
+        // 远程工作区实时监听:start/stop 连接器的文件变更 watcher
+        .route(
+            "/api/v1/channels/:channel_id/workspace/watch",
+            post(api::workspace::watch_workspace),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/unwatch",
+            post(api::workspace::unwatch_workspace),
+        )
         // 出处解析:把回复里点击的文件引用解析到正确的 store(inbox/desk/workspace)
         .route(
             "/api/v1/channels/:channel_id/resolve-ref",

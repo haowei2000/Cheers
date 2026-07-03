@@ -112,6 +112,27 @@ pub struct GitLogQuery {
     pub limit: Option<u32>,
 }
 
+/// `POST workspace/unwatch` — stop a live file watch. Only the connector-issued
+/// `watch_id` (plus the target `bot_id`) is needed; no path/root/session.
+#[derive(Deserialize)]
+pub struct UnwatchQuery {
+    pub bot_id: Uuid,
+    /// The watch handle returned by `watch` (`{watch_id, ttl_secs}`).
+    pub watch_id: String,
+}
+
+/// `GET workspace/git/show` — commit-detail diff. `commit` is a hex hash (as
+/// emitted by `git log`); the repo is located from the session roots / default
+/// cwd (no `path` — commit-only).
+#[derive(Deserialize)]
+pub struct GitShowQuery {
+    pub bot_id: Uuid,
+    /// The commit ref to show (connector validates `^[0-9a-fA-F]{7,64}$`).
+    pub commit: String,
+    pub root: Option<String>,
+    pub session_id: Option<Uuid>,
+}
+
 /// Caller must be a channel user-member (or admin); the target bot must itself be a
 /// member of the channel — so you can only browse a bot you actually share a channel
 /// with.
@@ -772,4 +793,80 @@ pub async fn get_git_log(
     )
     .await?;
     Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/git/show?bot_id=&commit=&root=&session_id=
+/// Read-only `git show --no-color <commit>` → `{ "commit": string, "diff": string }`.
+/// `path` is "" — the repo is located from the session roots / default cwd.
+pub async fn get_git_show(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<GitShowQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "git_show",
+        "",
+        q.root.as_deref(),
+        json!({ "commit": q.commit }),
+        None,
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// POST /api/v1/channels/:channel_id/workspace/watch?bot_id=&path=&root=&session_id=
+/// Start a live file watch on the resolved workdir. The connector pushes
+/// `workspace_event` frames as files change (relayed to browsers as
+/// `workspace_signal`); this returns the connector's `{watch_id, ttl_secs}` so the
+/// client can renew/stop it. Membership-only (same gate as the read ops).
+pub async fn watch_workspace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<TreeQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "watch",
+        &q.path,
+        q.root.as_deref(),
+        Value::Null,
+        None,
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// POST /api/v1/channels/:channel_id/workspace/unwatch?bot_id=&watch_id=
+/// Stop a live file watch. The `watch_id` is threaded to the connector via `extra`
+/// (it reads a top-level `watch_id` frame field). Returns `{ok}`.
+pub async fn unwatch_workspace(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<UnwatchQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    workspace_call(
+        &state,
+        q.bot_id,
+        "unwatch",
+        "",
+        None,
+        json!({ "watch_id": q.watch_id }),
+        None,
+        &[],
+    )
+    .await?;
+    Ok(Json(json!({ "ok": true })))
 }

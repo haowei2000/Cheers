@@ -11,7 +11,7 @@ import {
 } from "./MessageComposer";
 import { SessionSwitcher } from "./SessionSwitcher";
 import { ComposerBotSettings } from "./ComposerBotSettings";
-import { useChatRealtime } from "./hooks/useChatRealtime";
+import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
@@ -69,6 +69,9 @@ export function ChannelView({ channel }: Props) {
   // list across all bots; refreshed on channel open and on reconnect catch-up.
   const [commands, setCommands] = useState<CommandCandidate[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  // Workspace presence: who else is viewing which bot's workspace (from the `presence`
+  // frame's `focus` array). Surfaced as viewer chips in the RemoteWorkspaceDialog.
+  const [workspaceFocus, setWorkspaceFocus] = useState<PresenceFocus[]>([]);
   // Composer session target: "" = Auto (mention routing → primary); else a session_id.
   const [selectedSessionId, setSelectedSessionId] = useState("");
   // Bots @mentioned in the current draft (from the composer), so we can show their
@@ -317,19 +320,36 @@ export function ChannelView({ channel }: Props) {
     void loadCommands();
   }, [catchUp, loadCommands]);
 
-  const { sendResourceReq } = useChatRealtime(channel?.channel_id ?? null, {
+  const { sendResourceReq, sendPresenceFocus } = useChatRealtime(
+    channel?.channel_id ?? null,
+    {
     onMessage: handleMessage,
     onStreamDelta: handleStreamDelta,
     onStreamDone: handleStreamDone,
     onMessageDeleted: handleDeleted,
     onReady: handleReady,
     // Backend `count` already includes online bots — display as-is, never re-add botIds.
-    onPresence: (_ids, count) => setOnlineCount(count),
+    // `focus` carries workspace presence (who's viewing which bot's workspace).
+    onPresence: (_ids, count, _botIds, focus) => {
+      setOnlineCount(count);
+      setWorkspaceFocus(focus ?? []);
+    },
     onBotTrace: handleBotTrace,
     onBoardSignal: (board) =>
       setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 })),
+    // Live-watch: an agent touched files on its machine. Stash the bot-scoped signal
+    // (bumping `seq` so repeat signals for the same paths still re-trigger); the open
+    // workspace dialog filters by its own `botId` and refetches. See RemoteWorkspaceDialog.
+    onWorkspaceSignal: (sig) =>
+      setWorkspaceSignal((prev) => ({
+        botId: sig.bot_id,
+        root: sig.root,
+        paths: sig.paths,
+        seq: (prev?.seq ?? 0) + 1,
+      })),
     onFileTranscribed: handleFileTranscribed,
-  });
+    }
+  );
   // Keep a stable ref so loadCommands can reach the latest resource client
   // without re-subscribing the realtime hook.
   sendResourceReqRef.current = sendResourceReq;
@@ -358,6 +378,15 @@ export function ChannelView({ channel }: Props) {
   // Live-push: per-board tick bumped by board_signal frames (and new messages for
   // "activity"); the ViewBoards re-fetch when their tick changes — no manual refresh.
   const [boardTick, setBoardTick] = useState<Record<string, number>>({});
+  // Live-watch: latest bot-scoped workspace change signal (from `workspace_signal`).
+  // `seq` monotonically bumps so the dialog re-reacts even to repeat signals for the
+  // same paths; the dialog routes on `botId` (a channel may span several machines).
+  const [workspaceSignal, setWorkspaceSignal] = useState<{
+    botId: string;
+    root: string;
+    paths: string[];
+    seq: number;
+  } | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
@@ -623,6 +652,17 @@ export function ChannelView({ channel }: Props) {
           // "workspace" board tick (agent finished a turn) → the dialog refetches
           // its current dir + a clean open file. See onBoardSignal → boardTick above.
           workspaceTick={boardTick.workspace}
+          // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
+          // dialog registers a watch while open and refetches when a signal for ITS bot
+          // arrives. See onWorkspaceSignal → workspaceSignal above.
+          workspaceSignal={workspaceSignal}
+          // Workspace presence: broadcast our own focus + render who ELSE is viewing this
+          // bot's workspace. `focus` is the parsed presence list; names resolve via the
+          // channel member map; currentUserId filters ourselves out of the chips.
+          sendPresenceFocus={sendPresenceFocus}
+          workspaceFocus={workspaceFocus}
+          currentUserId={user?.user_id}
+          memberNames={memberNames}
         />
       )}
     </div>

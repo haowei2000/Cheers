@@ -177,6 +177,42 @@ export async function putWorkspaceFile(
   return headerEtag ? normalizeEtag(headerEtag) : await sha256Hex(content);
 }
 
+/* ── Live-watch: ask the connector to signal us when files under a dir change ──
+ * `watch` registers interest in the bot's `path` (under `root`, optionally scoped
+ * to a session's root set); the connector then fans a `workspace_signal` browser
+ * frame whenever the agent touches a file there. Registrations self-expire after
+ * `ttl_secs` — the caller RENEWS by re-issuing `watch` on an interval under the
+ * TTL, and best-effort `unwatch`es on close (the TTL reaps it either way).        */
+
+export interface WorkspaceWatch {
+  watch_id: string;
+  ttl_secs: number;
+}
+
+export async function watchWorkspace(
+  channelId: string,
+  botId: string,
+  path = "",
+  root?: string,
+  sessionId?: string
+): Promise<WorkspaceWatch> {
+  const qs = new URLSearchParams({ bot_id: botId, path });
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<WorkspaceWatch>(`/channels/${channelId}/workspace/watch?${qs}`, {
+    method: "POST",
+  });
+}
+
+export async function unwatchWorkspace(
+  channelId: string,
+  botId: string,
+  watchId: string
+): Promise<void> {
+  const qs = new URLSearchParams({ bot_id: botId, watch_id: watchId });
+  await apiFetch(`/channels/${channelId}/workspace/unwatch?${qs}`, { method: "POST" });
+}
+
 /* ── Read-only git visibility for the bot's remote working directory ──────────
  * These proxy to the connector's read-only git ops (`git status/diff/log`); they
  * never mutate the repo. A 409 means the path exists but isn't a git repo, or the
@@ -257,6 +293,26 @@ export async function getGitLog(
   if (root) qs.set("root", root);
   if (sessionId) qs.set("session_id", sessionId);
   return apiJson<GitLog>(`/channels/${channelId}/workspace/git/log?${qs}`);
+}
+
+export interface GitShow {
+  commit: string;
+  /** Unified diff text of the commit (`git show --no-color <commit>`). */
+  diff: string;
+}
+
+/** A single commit's full diff (read-only). `commit` is a hash from getGitLog. */
+export async function getGitShow(
+  channelId: string,
+  botId: string,
+  commit: string,
+  root?: string,
+  sessionId?: string
+): Promise<GitShow> {
+  const qs = new URLSearchParams({ bot_id: botId, commit });
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<GitShow>(`/channels/${channelId}/workspace/git/show?${qs}`);
 }
 
 /** Where a clicked file reference actually lives (resolved by provenance, not syntax). */

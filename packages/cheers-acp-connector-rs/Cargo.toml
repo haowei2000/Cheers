@@ -30,6 +30,10 @@ ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
 futures-util = "0.3"
 libc = "0.2"
 mime_guess = "2"
+# Filesystem watch for remote-workspace live-refresh (workspace_req watch/unwatch →
+# unsolicited workspace_event frames). We drive it with a manual ~300ms debounce
+# (no notify-debouncer crate) so event coalescing + the watch TTL live in one task.
+notify = "8"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
