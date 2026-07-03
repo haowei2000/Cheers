@@ -53,6 +53,22 @@ enum ClientFrame {
         #[serde(default)]
         params: serde_json::Value,
     },
+    /// 工作台在看焦点：本连接正在查看某 bot 的工作区（可含路径）。
+    /// `focus: null` 表示清除。焦点随 `presence` 全量快照下发给频道其他成员。
+    /// 仅对本连接已订阅的频道生效；断线自动清除。
+    PresenceFocus {
+        channel_id: Uuid,
+        focus: Option<FocusPayload>,
+    },
+}
+
+/// `presence_focus` 帧里的焦点载荷。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct FocusPayload {
+    bot_id: Uuid,
+    #[serde(default)]
+    path: Option<String>,
 }
 
 // ── 服务端控制回执（Backend → 客户端）────────────────────────────────────────
@@ -320,6 +336,20 @@ async fn handle_client_frame(
             send_control(socket, &ServerControl::Pong).await;
         }
 
+        ClientFrame::PresenceFocus { channel_id, focus } => {
+            // 只对已订阅的频道生效——否则忽略（不能对未加入的频道声明在看态）。
+            if !subscribed.contains(&channel_id) {
+                return;
+            }
+            match focus {
+                Some(f) => state
+                    .fanout
+                    .set_focus(conn_id, channel_id, f.bot_id, f.path),
+                None => state.fanout.clear_focus(conn_id),
+            }
+            broadcast_presence(state, channel_id).await;
+        }
+
         ClientFrame::ResourceReq {
             req_id,
             resource,
@@ -332,6 +362,30 @@ async fn handle_client_frame(
                 "params": params,
             });
             let res = crate::resource::dispatch_user(&state.db, user_id, &frame).await;
+            // Live Desk (browser path): mirror the bot-side board_signal tick in
+            // agent_bridge.rs so a human's own Desk edit refreshes other open views.
+            // resource::dispatch_user only holds `db`, so the fanout tick is emitted
+            // here at the WS boundary. Data-free — clients re-pull via their own
+            // authz'd fs.ls/fs.read. board name "files" (cross-slice contract).
+            if matches!(
+                frame.get("resource").and_then(serde_json::Value::as_str),
+                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+            ) && res.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = res
+                    .get("data")
+                    .and_then(|d| d.get("channel_id"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    let wire = WireFrame::channel(
+                        cid,
+                        "board_signal",
+                        serde_json::json!({ "channel_id": cid, "board": "files" }),
+                    );
+                    state.fanout.broadcast_channel(cid, wire).await;
+                }
+            }
             if let Ok(json) = serde_json::to_string(&res) {
                 let _ = socket.send(Message::Text(json)).await;
             }
@@ -414,5 +468,57 @@ mod tests {
         let raw = r#"{"type":"resource_req","req_id":"r2","resource":"fs.ls"}"#;
         let frame: ClientFrame = serde_json::from_str(raw).unwrap();
         assert!(matches!(frame, ClientFrame::ResourceReq { .. }));
+    }
+
+    /// presence_focus 帧（带焦点）反序列化：bot_id + path 正确落入 FocusPayload。
+    #[test]
+    fn presence_focus_with_focus_deserializes() {
+        let cid = Uuid::new_v4();
+        let bid = Uuid::new_v4();
+        let raw = format!(
+            r#"{{"type":"presence_focus","channel_id":"{cid}","focus":{{"bot_id":"{bid}","path":"src/main.rs"}}}}"#
+        );
+        let frame: ClientFrame = serde_json::from_str(&raw).unwrap();
+        match frame {
+            ClientFrame::PresenceFocus { channel_id, focus } => {
+                assert_eq!(channel_id, cid);
+                let f = focus.expect("focus present");
+                assert_eq!(f.bot_id, bid);
+                assert_eq!(f.path.as_deref(), Some("src/main.rs"));
+            }
+            _ => panic!("expected PresenceFocus"),
+        }
+    }
+
+    /// presence_focus 帧（focus:null）反序列化为清除意图。
+    #[test]
+    fn presence_focus_null_clears() {
+        let cid = Uuid::new_v4();
+        let raw = format!(r#"{{"type":"presence_focus","channel_id":"{cid}","focus":null}}"#);
+        let frame: ClientFrame = serde_json::from_str(&raw).unwrap();
+        match frame {
+            ClientFrame::PresenceFocus { channel_id, focus } => {
+                assert_eq!(channel_id, cid);
+                assert!(focus.is_none());
+            }
+            _ => panic!("expected PresenceFocus"),
+        }
+    }
+
+    /// presence_focus 帧省略 path 时 path 为 None（`#[serde(default)]`）。
+    #[test]
+    fn presence_focus_without_path_defaults_none() {
+        let cid = Uuid::new_v4();
+        let bid = Uuid::new_v4();
+        let raw = format!(
+            r#"{{"type":"presence_focus","channel_id":"{cid}","focus":{{"bot_id":"{bid}"}}}}"#
+        );
+        let frame: ClientFrame = serde_json::from_str(&raw).unwrap();
+        match frame {
+            ClientFrame::PresenceFocus { focus, .. } => {
+                assert!(focus.unwrap().path.is_none());
+            }
+            _ => panic!("expected PresenceFocus"),
+        }
     }
 }

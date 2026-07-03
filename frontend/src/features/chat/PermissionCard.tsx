@@ -5,6 +5,9 @@ import {
   requestApprovalAccess,
   listApprovers,
 } from "@/api/approval";
+import { getGitDiff } from "@/api/workspace";
+import { DiffView } from "./DiffView";
+import { looksLikeGitCommit } from "./workspaceLink";
 import type { Message, PermissionContentData, PermissionOption } from "@/types";
 
 interface Props {
@@ -83,6 +86,15 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
     if (resolved) setCollapsed(true);
   }, [resolved]);
 
+  // Read-side enrichment for `git commit` approvals: fetch + inline-preview the
+  // staged diff so a human can see what the commit will actually include. This is
+  // deliberately kept on its own state so it NEVER gates approve/deny resolution
+  // (which watches only `busy`) — a failed or slow diff fetch must not block the card.
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [stagedDiff, setStagedDiff] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
+
   const tool = data.tool ?? null;
   // Prefer the connector's normalized command (e.g. "/bin/zsh -lc \"…\"") over
   // the raw, often-escaped toolCall.rawInput.command before falling back.
@@ -96,6 +108,13 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   const title = data.title || "Approval needed";
   const subtitle = `${message.sender_name || "The agent"} is requesting permission.`;
   const impact = data.body && data.body !== command ? data.body : null;
+
+  // "View staged diff" is offered only for a real `git commit` whose tool call
+  // carries a working directory to diff against.
+  const cwd =
+    typeof tool?.cwd === "string" && tool.cwd.trim() ? tool.cwd : null;
+  const canViewStagedDiff =
+    !!channelId && !!cwd && command != null && looksLikeGitCommit(command);
 
   // Radio choices are the allow-variants; "Deny" is the footer escape. If the
   // connector sent no allow option, fall back to showing every option.
@@ -158,6 +177,29 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       setError(e instanceof Error ? e.message : "failed to request access");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Toggle the inline staged-diff preview. Fetches lazily on first open; a second
+  // click hides it. Uses only the diff-local state above, so it can never block or
+  // gate the approve/deny path. A connector-offline / E_NOT_A_REPO error just shows
+  // a small inline note and leaves the card fully resolvable.
+  async function onToggleStagedDiff() {
+    if (diffOpen) {
+      setDiffOpen(false);
+      return;
+    }
+    setDiffOpen(true);
+    if (stagedDiff != null || diffLoading || !channelId || !cwd) return;
+    setDiffLoading(true);
+    setDiffError(null);
+    try {
+      const res = await getGitDiff(channelId, botId, cwd, true);
+      setStagedDiff(res.diff);
+    } catch (e) {
+      setDiffError(e instanceof Error ? e.message : "couldn't load staged diff");
+    } finally {
+      setDiffLoading(false);
     }
   }
 
@@ -275,6 +317,38 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
             {command}
           </pre>
           {impact && <p className="text-xs text-zinc-500 mt-2">{impact}</p>}
+          {canViewStagedDiff && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={onToggleStagedDiff}
+                title="Preview what this commit will include (git diff --staged)"
+                className="inline-flex items-center gap-1.5 h-6 px-2 text-[11px] rounded border border-zinc-800 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+              >
+                <span className="text-zinc-600">±</span>
+                {diffOpen ? "Hide staged diff" : "View staged diff"}
+                {diffLoading && <span className="text-zinc-600">…</span>}
+              </button>
+              {diffOpen && (
+                <div className="mt-2 rounded border border-zinc-800 bg-black/30 overflow-hidden">
+                  {diffLoading ? (
+                    <div className="px-3 py-3 text-[11px] text-zinc-600">
+                      Loading staged diff…
+                    </div>
+                  ) : diffError ? (
+                    <div
+                      className="px-3 py-3 text-[11px] text-amber-400/80"
+                      title={diffError}
+                    >
+                      couldn’t load staged diff
+                    </div>
+                  ) : (
+                    <DiffView diff={stagedDiff ?? ""} className="max-h-72" />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -127,6 +127,22 @@ pub struct WorkspacePolicy {
     pub default_cwd: Option<PathBuf>,
     pub backend_may_set_cwd: bool,
     pub allowed_roots: Vec<PathBuf>,
+    /// Whether the connector serves the READ-ONLY git inspection ops
+    /// (`git_status` / `git_diff` / `git_log`) on the workspace browser RPC.
+    /// Default `Read`; `Off` refuses all git ops with `E_GIT_DISABLED`. These ops
+    /// never mutate the repo regardless of this toggle.
+    pub git_ops: GitOpsMode,
+}
+
+/// Read-only git inspection policy for the workspace browser RPC. Backwards
+/// compatible: absent config ⇒ `Read`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GitOpsMode {
+    /// Serve `git_status` / `git_diff` / `git_log` (read-only).
+    #[default]
+    Read,
+    /// Refuse all git ops with `E_GIT_DISABLED`.
+    Off,
 }
 
 #[derive(Debug, Clone)]
@@ -439,6 +455,13 @@ struct RawWorkspacePolicy {
     backend_may_set_cwd: bool,
     #[serde(default)]
     allowed_roots: Vec<String>,
+    /// `"read"` (default) | `"off"`. Serde default keeps existing configs working.
+    #[serde(default = "default_git_ops")]
+    git_ops: String,
+}
+
+fn default_git_ops() -> String {
+    "read".to_string()
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -766,6 +789,15 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
         }
         None => None,
     };
+    let git_ops = match raw.workspace.git_ops.as_str() {
+        "" | "read" => GitOpsMode::Read,
+        "off" => GitOpsMode::Off,
+        other => {
+            return Err(anyhow!(
+                "accounts.{id}.policy.workspace.git_ops must be \"read\" or \"off\", got {other:?}"
+            ))
+        }
+    };
     let mcp_servers = toml_values_to_json_array(raw.mcp.servers)?;
 
     Ok(LocalPolicy {
@@ -790,6 +822,7 @@ fn normalize_policy(id: &str, raw: RawPolicy, base_dir: &Path) -> anyhow::Result
             default_cwd,
             backend_may_set_cwd: raw.workspace.backend_may_set_cwd,
             allowed_roots: workspace_roots,
+            git_ops,
         },
         env: EnvPolicy {
             inherit: raw.env.inherit,

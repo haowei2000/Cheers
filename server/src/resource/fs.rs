@@ -592,6 +592,33 @@ async fn update_content(
     .map_err(super::db_err("update_content: read version column"))
 }
 
+/// Append ONE `channel_operations` audit row for an out-of-band write (e.g. a human
+/// editing a bot's remote workspace through the browser), in its own transaction,
+/// reusing [`insert_operation`] + the shared `channel_seq`. Not a `fs.*` mutation —
+/// there is no `context_files` row to touch; this is purely the bookkeeping tail so
+/// the write shows up on the channel activity feed. Returns the allocated `channel_seq`.
+pub async fn record_operation(
+    db: &PgPool,
+    channel_id: Uuid,
+    op_type: &str,
+    principal: Principal,
+    target_ref: &str,
+    payload: Value,
+) -> Result<i64, (String, String)> {
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(super::db_err("record_operation: begin tx"))?;
+    let seq = insert_operation(
+        &mut tx, channel_id, op_type, &principal, target_ref, payload,
+    )
+    .await?;
+    tx.commit()
+        .await
+        .map_err(super::db_err("record_operation: commit tx"))?;
+    Ok(seq)
+}
+
 async fn insert_operation(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     channel_id: Uuid,

@@ -40,6 +40,19 @@ pub trait Fanout: Send + Sync {
     fn online_users(&self, _channel_id: Uuid) -> Vec<Uuid> {
         Vec::new()
     }
+
+    /// 工作台在看焦点：记录某连接正在查看哪个 bot 的工作区（可含路径）。
+    /// 默认空实现；进程内实现覆盖。
+    fn set_focus(&self, _conn_id: Uuid, _channel_id: Uuid, _bot_id: Uuid, _path: Option<String>) {}
+
+    /// 清除某连接的在看焦点（退订、清焦点或断线）。默认空；进程内实现覆盖。
+    fn clear_focus(&self, _conn_id: Uuid) {}
+
+    /// 频道内所有在看焦点：`(user_id, bot_id, path)`，随 presence 快照下发。
+    /// 不去重（同一用户多连接可重复；前端去重）。默认空；进程内实现覆盖。
+    fn channel_focus(&self, _channel_id: Uuid) -> Vec<(Uuid, Uuid, Option<String>)> {
+        Vec::new()
+    }
 }
 
 // ── 进程内实现 ────────────────────────────────────────────────────────────────
@@ -57,6 +70,17 @@ pub struct InProcessFanout {
     /// conn_id → user_id。用于把频道订阅（按 conn 记录）映射回在线用户，
     /// 供 presence 广播使用。
     conn_users: DashMap<Uuid, Uuid>,
+    /// conn_id → 工作台在看焦点。某连接当前正在查看哪个 bot 的工作区（可含路径），
+    /// 随 presence 快照下发，供 UI 显示「X 也在看 src/…」。断线自动清除（镜像 conn_users）。
+    conn_focus: DashMap<Uuid, FocusEntry>,
+}
+
+/// 一个连接的工作台「在看焦点」。
+#[derive(Clone)]
+struct FocusEntry {
+    channel_id: Uuid,
+    bot_id: Uuid,
+    path: Option<String>,
 }
 
 /// 连接的标识符 + 发送端
@@ -73,6 +97,7 @@ impl InProcessFanout {
             users: DashMap::new(),
             closers: DashMap::new(),
             conn_users: DashMap::new(),
+            conn_focus: DashMap::new(),
         })
     }
 
@@ -146,6 +171,41 @@ impl InProcessFanout {
         }
         self.closers.remove(&conn_id);
         self.conn_users.remove(&conn_id);
+        // 断线自动清焦点，镜像 conn_users 生命周期，避免遗留幽灵在看态。
+        self.conn_focus.remove(&conn_id);
+    }
+
+    /// 记录/替换某连接的工作台在看焦点。
+    pub fn set_focus(&self, conn_id: Uuid, channel_id: Uuid, bot_id: Uuid, path: Option<String>) {
+        self.conn_focus.insert(
+            conn_id,
+            FocusEntry {
+                channel_id,
+                bot_id,
+                path,
+            },
+        );
+    }
+
+    /// 清除某连接的在看焦点。
+    pub fn clear_focus(&self, conn_id: Uuid) {
+        self.conn_focus.remove(&conn_id);
+    }
+
+    /// 频道内所有在看焦点：`(user_id, bot_id, path)`。经 conn_users 映射回 user_id。
+    /// 不去重（同一用户多连接可重复；前端去重）。
+    pub fn channel_focus(&self, channel_id: Uuid) -> Vec<(Uuid, Uuid, Option<String>)> {
+        let mut out = Vec::new();
+        for entry in self.conn_focus.iter() {
+            let focus = entry.value();
+            if focus.channel_id != channel_id {
+                continue;
+            }
+            if let Some(uid) = self.conn_users.get(entry.key()) {
+                out.push((*uid, focus.bot_id, focus.path.clone()));
+            }
+        }
+        out
     }
 }
 
@@ -156,6 +216,7 @@ impl Default for InProcessFanout {
             users: DashMap::new(),
             closers: DashMap::new(),
             conn_users: DashMap::new(),
+            conn_focus: DashMap::new(),
         }
     }
 }
@@ -200,6 +261,18 @@ impl Fanout for InProcessFanout {
 
     fn online_users(&self, channel_id: Uuid) -> Vec<Uuid> {
         self.channel_online_users(channel_id)
+    }
+
+    fn set_focus(&self, conn_id: Uuid, channel_id: Uuid, bot_id: Uuid, path: Option<String>) {
+        InProcessFanout::set_focus(self, conn_id, channel_id, bot_id, path);
+    }
+
+    fn clear_focus(&self, conn_id: Uuid) {
+        InProcessFanout::clear_focus(self, conn_id);
+    }
+
+    fn channel_focus(&self, channel_id: Uuid) -> Vec<(Uuid, Uuid, Option<String>)> {
+        InProcessFanout::channel_focus(self, channel_id)
     }
 }
 
@@ -252,6 +325,46 @@ mod tests {
         fanout.broadcast_user(user, frame("message_stream")).await; // 满 → 静默丢弃
 
         assert!(close_rx.try_recv().is_err(), "流式帧丢弃不应触发关闭");
+    }
+
+    /// 焦点生命周期：set_focus 后 channel_focus 映射回 user_id；断线自动清除。
+    #[tokio::test]
+    async fn focus_set_reported_and_cleared_on_deregister() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let channel = Uuid::new_v4();
+        let bot = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<()>(1);
+        fanout.register_user(user, conn, tx, close_tx);
+
+        fanout.set_focus(conn, channel, bot, Some("src/lib.rs".into()));
+        let focus = fanout.channel_focus(channel);
+        assert_eq!(focus.len(), 1);
+        assert_eq!(focus[0], (user, bot, Some("src/lib.rs".to_string())));
+        // 另一个频道看不到该焦点。
+        assert!(fanout.channel_focus(Uuid::new_v4()).is_empty());
+
+        // 断线自动清焦点。
+        fanout.deregister_user(user, conn);
+        assert!(fanout.channel_focus(channel).is_empty());
+    }
+
+    /// clear_focus 显式清除某连接的在看态。
+    #[tokio::test]
+    async fn clear_focus_removes_entry() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let conn = Uuid::new_v4();
+        let channel = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel::<WireFrame>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<()>(1);
+        fanout.register_user(user, conn, tx, close_tx);
+        fanout.set_focus(conn, channel, Uuid::new_v4(), None);
+        assert_eq!(fanout.channel_focus(channel).len(), 1);
+        fanout.clear_focus(conn);
+        assert!(fanout.channel_focus(channel).is_empty());
     }
 
     /// 断线注销后清掉关闭信号端，不泄漏。

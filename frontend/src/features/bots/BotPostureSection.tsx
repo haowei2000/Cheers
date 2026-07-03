@@ -102,6 +102,13 @@ export function BotPostureSection({ botId }: { botId: string }) {
             connector via <code className="text-zinc-500">set_mode</code>, clamped by the
             host’s L0 allow-list.
           </p>
+          <p className="text-[11px] text-zinc-600 mt-2 leading-relaxed">
+            Approval cards only appear when the agent chooses to ask. To require human
+            review of commits, keep <code className="text-zinc-500">git commit</code> /{" "}
+            <code className="text-zinc-500">git push</code> out of the agent’s auto-allow
+            rules — a whitelisted <code className="text-zinc-500">Bash(git *)</code> bypasses
+            the card entirely (the platform doesn’t intercept already-allowed commands).
+          </p>
         </div>
       )}
 

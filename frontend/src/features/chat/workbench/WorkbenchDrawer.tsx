@@ -19,6 +19,9 @@ interface Props {
   sendResourceReq: SendResourceReq;
   /** Deep-link: open the File panel focused on this path (e.g. a clicked Desk ref). */
   openFilePath?: string;
+  /** Live-push tick for the Desk ("files" board): bump → the File panel re-pulls the
+   *  tree and reloads a clean open file (unsaved edits are never clobbered). */
+  filesTick?: number;
 }
 
 interface WbConfig {
@@ -48,7 +51,7 @@ const WB_DOC =
 // plus the always-on File panel. Installing global templates / plugins lives in
 // Settings → Workbench extensions (admin); the drawer only CONSUMES them, and offers
 // a no-persistence temporary upload to anyone.
-export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath }: Props) {
+export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -198,7 +201,9 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
     () => [...getPanels(), ...views.map(viewToTab)],
     [views]
   );
-  const ctx: PanelContext = useMemo(
+  // `filesTick` rides on ctx as an extra field (PanelContext is defined in the shared
+  // panelRegistry, so we widen the type here rather than change that contract).
+  const ctx: PanelContext & { filesTick?: number } = useMemo(
     () => ({
       channelId,
       fs,
@@ -211,8 +216,9 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       views,
       toggleView,
       openTarget: openFilePath ?? null,
+      filesTick,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath]
+    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath, filesTick]
   );
 
   // Deep-link: when opened with a target Desk path, focus the always-on File panel.
