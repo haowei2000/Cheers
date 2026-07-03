@@ -262,7 +262,7 @@ export function MessageComposer({
 
   // Request transcription for every pending audio attachment, poll until all
   // transcripts land (2s interval, 120s ceiling), then send. Any failure keeps
-  // the warning open with the error so "直接发送" stays available.
+  // the warning open with the error so "Send anyway" stays available.
   async function transcribeThenSend() {
     setTranscribing(true);
     try {
@@ -275,10 +275,10 @@ export function MessageComposer({
         for (const id of Array.from(remaining)) {
           const s = await getFileStatus(id);
           if (s.transcript_status === "done") remaining.delete(id);
-          else if (s.last_error) throw new Error(`转写失败:${s.last_error}`);
+          else if (s.last_error) throw new Error(`Transcription failed: ${s.last_error}`);
         }
       }
-      if (remaining.size) throw new Error("转写超时,可稍后重试或直接发送");
+      if (remaining.size) throw new Error("Transcription timed out — retry later or send anyway");
       setTranscribedIds((prev) => {
         const next = new Set(prev);
         pending.forEach((a) => next.add(a.file_id));
@@ -291,7 +291,7 @@ export function MessageComposer({
       setTranscribing(false);
       setVoiceWarning((prev) =>
         prev
-          ? { ...prev, error: e instanceof Error ? e.message : "转写失败" }
+          ? { ...prev, error: e instanceof Error ? e.message : "Transcription failed" }
           : prev
       );
     }
@@ -440,7 +440,10 @@ export function MessageComposer({
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
             >
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="max-w-[160px] truncate">
+              <span
+                className="max-w-[160px] truncate"
+                title={a.original_filename || a.file_id}
+              >
                 {a.original_filename || a.file_id.slice(0, 8)}
               </span>
               <button
@@ -448,6 +451,7 @@ export function MessageComposer({
                 onClick={() => removeAttachment(a.file_id)}
                 className="text-zinc-500 hover:text-zinc-200"
                 aria-label="Remove attachment"
+                title="Remove attachment"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -482,7 +486,7 @@ export function MessageComposer({
         <div className="mb-2 rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
           <p className="flex items-center gap-1.5">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
-            {voiceWarning.deafBots.join("、")} 无法接收语音——不转写的话,它只能看到文件名。
+            {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
           </p>
           {voiceWarning.error && (
             <p className="mt-1 text-rose-300">{voiceWarning.error}</p>
@@ -495,7 +499,7 @@ export function MessageComposer({
               className="inline-flex items-center gap-1 rounded bg-amber-600/80 px-2 py-1 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
             >
               {transcribing && <Loader2 className="h-3 w-3 animate-spin" />}
-              {transcribing ? "转写中…" : "转写后发送"}
+              {transcribing ? "Transcribing…" : "Transcribe, then send"}
             </button>
             <button
               type="button"
@@ -503,7 +507,7 @@ export function MessageComposer({
               disabled={transcribing}
               className="rounded border border-amber-700/60 px-2 py-1 text-amber-200 hover:bg-amber-900/40 disabled:opacity-50"
             >
-              直接发送
+              Send anyway
             </button>
             <button
               type="button"
@@ -511,7 +515,7 @@ export function MessageComposer({
               disabled={transcribing}
               className="ml-auto text-amber-400/70 hover:text-amber-200"
             >
-              取消
+              Cancel
             </button>
           </div>
         </div>
@@ -539,6 +543,7 @@ export function MessageComposer({
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
             )}
             aria-label="Attach file"
+            title="Attach file"
           >
             <Paperclip className="w-4 h-4" />
           </button>
@@ -553,7 +558,7 @@ export function MessageComposer({
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
               >
                 <Upload className="w-3.5 h-3.5 text-zinc-500" />
-                从电脑上传
+                Upload from computer
               </button>
               <button
                 type="button"
@@ -564,7 +569,7 @@ export function MessageComposer({
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
-                选择频道文件
+                Pick a channel file
               </button>
             </div>
           )}
@@ -601,6 +606,7 @@ export function MessageComposer({
               : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
           )}
           aria-label="Send message"
+          title="Send message"
         >
           <SendHorizontal className="w-4 h-4" />
         </button>

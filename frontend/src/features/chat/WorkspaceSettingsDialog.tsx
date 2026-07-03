@@ -86,9 +86,9 @@ export function WorkspaceSettingsDialog({
       setWorkspaces(
         workspaces.map((w) => (w.workspace_id === workspace.workspace_id ? { ...w, ...updated } : w))
       );
-      toast.success("已保存");
+      toast.success("Saved");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "保存失败");
+      toast.error(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSavingMeta(false);
     }
@@ -101,16 +101,16 @@ export function WorkspaceSettingsDialog({
           identifier: u.user_id,
           role,
         });
-        toast.success(res.status === "exists" ? "对方已是成员" : "邀请已发送");
+        toast.success(res.status === "exists" ? "Already a member" : "Invite sent");
       } else {
         await addWorkspaceMember(workspace.workspace_id, { identifier: u.user_id, role });
-        toast.success(`已添加 ${u.display_name || u.username}`);
+        toast.success(`Added ${u.display_name || u.username}`);
       }
       setQuery("");
       setResults([]);
       await refreshMembers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "操作失败");
+      toast.error(e instanceof Error ? e.message : "Operation failed");
     }
   }
 
@@ -119,20 +119,20 @@ export function WorkspaceSettingsDialog({
       await removeWorkspaceMember(workspace.workspace_id, m.user_id);
       await refreshMembers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "移除失败");
+      toast.error(e instanceof Error ? e.message : "Failed to remove");
     }
   }
 
   async function doDelete() {
-    if (!confirm(`删除工作空间「${workspace.name}」？其下频道将一并删除，不可撤销。`)) return;
+    if (!confirm(`Delete workspace "${workspace.name}"? Its channels will be deleted too. This cannot be undone.`)) return;
     try {
       await deleteWorkspace(workspace.workspace_id);
       setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
       selectWorkspace(personalWorkspace?.workspace_id ?? null);
-      toast.success("工作空间已删除");
+      toast.success("Workspace deleted");
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "删除失败");
+      toast.error(e instanceof Error ? e.message : "Failed to delete");
     }
   }
 
@@ -141,34 +141,34 @@ export function WorkspaceSettingsDialog({
       await setWorkspaceMemberRole(workspace.workspace_id, m.user_id, role);
       await refreshMembers();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "改角色失败");
+      toast.error(e instanceof Error ? e.message : "Failed to change role");
     }
   }
 
   async function leave() {
-    if (!confirm(`退出工作空间「${workspace.name}」？`)) return;
+    if (!confirm(`Leave workspace "${workspace.name}"?`)) return;
     try {
       await leaveWorkspace(workspace.workspace_id);
       setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
       selectWorkspace(personalWorkspace?.workspace_id ?? null);
-      toast.success("已退出工作空间");
+      toast.success("Left workspace");
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "退出失败");
+      toast.error(e instanceof Error ? e.message : "Failed to leave");
     }
   }
 
   return (
-    <Dialog title={`工作空间设置 · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
+    <Dialog title={`Workspace settings · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
         {!canManage && (
           <p className="text-xs text-amber-400/80 bg-amber-950/30 rounded-lg px-3 py-2">
-            你不是该工作空间的管理员，只能查看名称。
+            You are not an admin of this workspace, so you can only view its name.
           </p>
         )}
 
         <div className="space-y-2">
-          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">名称</label>
+          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Name</label>
           <div className="flex gap-2">
             <input
               value={name}
@@ -178,7 +178,7 @@ export function WorkspaceSettingsDialog({
             />
             {canManage && (
               <Button size="sm" loading={savingMeta} onClick={() => void saveMeta()}>
-                保存
+                Save
               </Button>
             )}
           </div>
@@ -188,7 +188,7 @@ export function WorkspaceSettingsDialog({
           <>
             <div className="space-y-2">
               <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
-                成员 ({members.length})
+                Members ({members.length})
               </label>
               <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800 divide-y divide-zinc-800/60">
                 {members.map((m) => (
@@ -198,7 +198,7 @@ export function WorkspaceSettingsDialog({
                       <p className="text-sm text-zinc-200 truncate">
                         {m.display_name || m.username}
                         {m.status === "pending" && (
-                          <span className="ml-1.5 text-[10px] text-amber-400">待接受</span>
+                          <span className="ml-1.5 text-[10px] text-amber-400">Pending</span>
                         )}
                       </p>
                       {m.user_id !== me?.user_id ? (
@@ -220,8 +220,8 @@ export function WorkspaceSettingsDialog({
                     {m.user_id !== me?.user_id && m.role !== "owner" && (
                       <button
                         onClick={() => void removeMember(m)}
-                        title="移除"
-                        className="text-zinc-500 hover:text-red-400 p-1"
+                        title="Remove member"
+                        className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded p-1"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -229,7 +229,7 @@ export function WorkspaceSettingsDialog({
                   </div>
                 ))}
                 {members.length === 0 && (
-                  <div className="px-3 py-4 text-xs text-zinc-600 text-center">暂无成员</div>
+                  <div className="px-3 py-4 text-xs text-zinc-600 text-center">No members yet</div>
                 )}
               </div>
 
@@ -239,7 +239,7 @@ export function WorkspaceSettingsDialog({
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="搜索用户名…"
+                    placeholder="Search users…"
                     className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
                   />
                   <select
@@ -257,7 +257,7 @@ export function WorkspaceSettingsDialog({
                 {(results.length > 0 || searching) && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 shadow-lg max-h-44 overflow-y-auto">
                     {searching && (
-                      <div className="px-3 py-2 text-xs text-zinc-500">搜索中…</div>
+                      <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
                     )}
                     {results.map((u) => (
                       <div
@@ -270,15 +270,17 @@ export function WorkspaceSettingsDialog({
                         </span>
                         <button
                           onClick={() => void add(u, true)}
+                          title="Send an invite the user must accept"
                           className="text-xs text-indigo-400 hover:text-indigo-300"
                         >
-                          邀请
+                          Invite
                         </button>
                         <button
                           onClick={() => void add(u, false)}
+                          title="Add the user without an invite"
                           className="text-xs text-zinc-400 hover:text-zinc-200"
                         >
-                          直接加
+                          Add directly
                         </button>
                       </div>
                     ))}
@@ -289,12 +291,12 @@ export function WorkspaceSettingsDialog({
 
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-200">删除工作空间</p>
-                <p className="text-xs text-zinc-500 mt-0.5">连同其下频道一并删除，不可撤销。</p>
+                <p className="text-sm font-medium text-zinc-200">Delete workspace</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Deletes its channels too. This cannot be undone.</p>
               </div>
               <Button variant="danger" size="sm" onClick={() => void doDelete()}>
                 <Trash2 className="w-3.5 h-3.5" />
-                删除
+                Delete
               </Button>
             </div>
           </>
@@ -307,12 +309,12 @@ export function WorkspaceSettingsDialog({
         {(!canManage || members.some((m) => m.user_id === me?.user_id)) && (
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-zinc-200">退出工作空间</p>
-              <p className="text-xs text-zinc-500 mt-0.5">把自己移出该工作空间。</p>
+              <p className="text-sm font-medium text-zinc-200">Leave workspace</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Remove yourself from this workspace.</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => void leave()}>
               <LogOut className="w-3.5 h-3.5" />
-              退出
+              Leave
             </Button>
           </div>
         )}

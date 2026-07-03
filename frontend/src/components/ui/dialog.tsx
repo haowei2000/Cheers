@@ -26,7 +26,11 @@ export function Dialog({
         {title !== undefined && (
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-zinc-100">{title}</span>
-            <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300">
+            <button
+              onClick={onClose}
+              title="Close"
+              className="ml-auto text-zinc-500 hover:text-zinc-300"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>

@@ -70,8 +70,8 @@ function ImageBody({ file }: { file: FileInfo }) {
       if (url) URL.revokeObjectURL(url);
     };
   }, [file.file_id]);
-  if (failed) return <Centered tone="error">图片加载失败</Centered>;
-  if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> 加载图片…</Centered>;
+  if (failed) return <Centered tone="error">Failed to load image</Centered>;
+  if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading image…</Centered>;
   return (
     <div className="max-h-[70vh] overflow-auto rounded-lg bg-zinc-950/40 p-2 text-center">
       <img src={src} alt={file.original_filename || "image"} className="mx-auto max-w-full rounded" />
@@ -81,8 +81,8 @@ function ImageBody({ file }: { file: FileInfo }) {
 
 function MarkdownBody({ file }: { file: FileInfo }) {
   const { state, text } = useFileText(file.file_id);
-  if (state === "loading") return <Centered><Loader2 className="h-4 w-4 animate-spin" /> 加载中…</Centered>;
-  if (state === "error") return <Centered tone="error">加载失败</Centered>;
+  if (state === "loading") return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Centered>;
+  if (state === "error") return <Centered tone="error">Failed to load</Centered>;
   return (
     <div className="max-h-[70vh] overflow-auto rounded-lg bg-zinc-950/40 p-4">
       <MarkdownRenderer content={text} />
@@ -92,8 +92,8 @@ function MarkdownBody({ file }: { file: FileInfo }) {
 
 function TextBody({ file }: { file: FileInfo }) {
   const { state, text } = useFileText(file.file_id);
-  if (state === "loading") return <Centered><Loader2 className="h-4 w-4 animate-spin" /> 加载中…</Centered>;
-  if (state === "error") return <Centered tone="error">加载失败</Centered>;
+  if (state === "loading") return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Centered>;
+  if (state === "error") return <Centered tone="error">Failed to load</Centered>;
   const ext = extOf(file);
   let html: string;
   try {
@@ -157,7 +157,7 @@ function OfficeBody({ file }: { file: FileInfo }) {
   if (phase === "failed") return <UnsupportedBody file={file} office />;
   return (
     <Centered>
-      <Loader2 className="h-4 w-4 animate-spin" /> 文档预览生成中…
+      <Loader2 className="h-4 w-4 animate-spin" /> Generating document preview…
     </Centered>
   );
 }
@@ -182,8 +182,8 @@ function AudioBody({ file }: { file: FileInfo }) {
       if (url) URL.revokeObjectURL(url);
     };
   }, [file.file_id]);
-  if (failed) return <Centered tone="error">音频加载失败</Centered>;
-  if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> 加载音频…</Centered>;
+  if (failed) return <Centered tone="error">Failed to load audio</Centered>;
+  if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading audio…</Centered>;
   return (
     <div className="flex flex-col gap-3 rounded-lg bg-zinc-950/40 p-4">
       <audio controls src={src} className="w-full" />
@@ -201,7 +201,7 @@ function UnsupportedBody({ file, office = false }: { file: FileInfo; office?: bo
     <Centered>
       <div className="flex flex-col items-center gap-3 text-center">
         <FileTypeIcon file={file} size={48} />
-        <span>{office ? "文档预览暂不可用，请下载查看。" : "此文件类型暂不支持预览，请下载。"}</span>
+        <span>{office ? "Document preview isn't available yet — download to view." : "Preview isn't supported for this file type — download it instead."}</span>
       </div>
     </Centered>
   );
@@ -212,7 +212,9 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
   const title = (
     <span className="flex min-w-0 items-center gap-2">
       <FileTypeIcon file={file} size={16} />
-      <span className="truncate">{file.original_filename || file.file_id}</span>
+      <span className="truncate" title={file.original_filename || file.file_id}>
+        {file.original_filename || file.file_id.slice(0, 8)}
+      </span>
     </span>
   );
   return (
@@ -229,9 +231,10 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
         <button
           type="button"
           onClick={() => downloadFile(file)}
+          title="Download this file"
           className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-800"
         >
-          <Download className="h-3.5 w-3.5" /> 下载
+          <Download className="h-3.5 w-3.5" /> Download
         </button>
       </div>
     </Dialog>

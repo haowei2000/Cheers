@@ -22,7 +22,7 @@
       <span style="flex: 1"></span>
       <button id="save">Save</button>
     </header>
-    <textarea id="t" placeholder="这是一个沙箱插件：自带渲染器、跑在隔离 iframe（碰不到主站 token），经 host 代理读写 plugins/sandbox-notes/notes.md"></textarea>
+    <textarea id="t" placeholder="This is a sandboxed plugin: it ships its own renderer, runs in an isolated iframe (no access to the host token), and reads/writes plugins/sandbox-notes/notes.md through the host proxy"></textarea>
     <div id="st"></div>
     <script>
       // A self-contained sandboxed plugin. It talks to the host ONLY via postMessage:

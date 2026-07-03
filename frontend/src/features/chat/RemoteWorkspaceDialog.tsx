@@ -151,7 +151,7 @@ export function RemoteWorkspaceDialog({
   const isImage = file?.content_type.startsWith("image/");
 
   return (
-    <Dialog title="远程工作区" onClose={onClose} maxWidth="max-w-5xl">
+    <Dialog title="Remote workspace" onClose={onClose} maxWidth="max-w-5xl">
       {/* Bot picker */}
       <div className="flex items-center gap-2 mb-2 text-xs">
         <span className="text-zinc-500">Bot</span>
@@ -165,10 +165,10 @@ export function RemoteWorkspaceDialog({
           }}
           className="bg-zinc-800 text-zinc-200 rounded px-2 py-1 outline-none"
         >
-          <option value="">{bots === null ? "加载中…" : "选择 bot"}</option>
+          <option value="">{bots === null ? "Loading…" : "Select a bot"}</option>
           {bots?.map((b) => (
             <option key={b.bot_id} value={b.bot_id} disabled={!b.online}>
-              {b.display_name || b.username} {b.online ? "" : "(离线)"}
+              {b.display_name || b.username} {b.online ? "" : "(offline)"}
             </option>
           ))}
         </select>
@@ -178,7 +178,7 @@ export function RemoteWorkspaceDialog({
 
       {!botId ? (
         <div className="py-10 text-center text-xs text-zinc-600">
-          选择一个在线的 bot 来浏览它机器上的工作区。
+          Select an online bot to browse the workspace on its machine.
         </div>
       ) : (
         <div className="flex gap-3 h-[62vh]">
@@ -188,13 +188,13 @@ export function RemoteWorkspaceDialog({
               <button
                 onClick={() => parent !== null && loadDir(parent)}
                 disabled={!cwd}
-                title="上一级"
+                title="Go up one level"
                 className="p-0.5 rounded hover:bg-zinc-800 disabled:opacity-30"
               >
                 <ArrowUp className="w-3.5 h-3.5" />
               </button>
               <span className="truncate flex-1" title={"/" + cwd}>/{cwd}</span>
-              <button onClick={() => loadDir(cwd)} title="刷新" className="p-0.5 rounded hover:bg-zinc-800">
+              <button onClick={() => loadDir(cwd)} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -216,7 +216,7 @@ export function RemoteWorkspaceDialog({
                 </button>
               ))}
               {entries?.length === 0 && (
-                <div className="px-2 py-3 text-[11px] text-zinc-600">空目录</div>
+                <div className="px-2 py-3 text-[11px] text-zinc-600">Empty directory</div>
               )}
             </div>
           </div>
@@ -225,7 +225,7 @@ export function RemoteWorkspaceDialog({
           <div className="flex-1 border border-zinc-800 rounded overflow-hidden flex flex-col">
             {!file ? (
               <div className="flex-1 flex items-center justify-center text-xs text-zinc-600">
-                选择左侧文件查看
+                Select a file on the left to view it
               </div>
             ) : (
               <>
@@ -237,17 +237,18 @@ export function RemoteWorkspaceDialog({
                   {file.is_text && dirty && (
                     <button
                       onClick={save}
+                      title="Save changes back to the bot's machine"
                       className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-zinc-100"
                     >
-                      <Save className="w-3 h-3" /> 保存
+                      <Save className="w-3 h-3" /> Save
                     </button>
                   )}
                   <button
                     onClick={() => downloadWorkspaceFile(file)}
-                    title="下载"
+                    title="Download this file"
                     className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
                   >
-                    <Download className="w-3 h-3" /> 下载
+                    <Download className="w-3 h-3" /> Download
                   </button>
                 </div>
                 <div className="flex-1 overflow-auto">
@@ -269,7 +270,7 @@ export function RemoteWorkspaceDialog({
                     />
                   ) : (
                     <div className="p-4 text-xs text-zinc-500">
-                      二进制文件,无法预览。点上方「下载」获取。
+                      Binary file — no preview. Use "Download" above to get it.
                     </div>
                   )}
                 </div>

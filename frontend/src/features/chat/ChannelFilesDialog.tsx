@@ -28,12 +28,12 @@ export function ChannelFilesDialog({
   }, [channelId]);
 
   return (
-    <Dialog title="频道文件" onClose={onClose} maxWidth="max-w-2xl">
+    <Dialog title="Channel files" onClose={onClose} maxWidth="max-w-2xl">
       {files === null ? (
-        <div className="py-8 text-center text-xs text-zinc-500">加载中…</div>
+        <div className="py-8 text-center text-xs text-zinc-500">Loading…</div>
       ) : files.length === 0 ? (
         <div className="py-8 text-center text-xs text-zinc-600">
-          这个频道还没有文件。在输入框用 📎 上传。
+          No files in this channel yet. Upload with 📎 in the composer.
         </div>
       ) : (
         <div className="max-h-[60vh] overflow-auto">

@@ -5,7 +5,7 @@ import { Dialog } from "./dialog";
 // and the user needs a clear, dismissible explanation.
 export function ErrorDialog({
   message,
-  title = "打开失败",
+  title = "Something went wrong",
   onClose,
 }: {
   message: string;
@@ -29,7 +29,7 @@ export function ErrorDialog({
           onClick={onClose}
           className="px-3 py-1.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
         >
-          知道了
+          Got it
         </button>
       </div>
     </Dialog>

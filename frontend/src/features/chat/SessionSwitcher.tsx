@@ -89,11 +89,11 @@ export function SessionSwitcher({
   function handleSelect(next: string) {
     onChange(next);
     if (!next) {
-      toast("已恢复默认路由（@提及 → 主会话）");
+      toast("Default routing restored (@mention → primary session)");
       return;
     }
     const t = targetFor(next);
-    if (t) toast.success(`已切换 · 消息将直接发给 @${t.bot.name}（${t.label}）`);
+    if (t) toast.success(`Switched · messages will go directly to @${t.bot.name} (${t.label})`);
   }
 
   // If the targeted session vanished (closed elsewhere, or channel changed), fall
@@ -136,7 +136,7 @@ export function SessionSwitcher({
           {grouped.map((g) => (
             <optgroup key={g.bot.botId} label={g.bot.name}>
               {g.sessions.map((s) => (
-                <option key={s.session_id} value={s.session_id}>
+                <option key={s.session_id} value={s.session_id} title={s.session_id}>
                   {s.is_primary
                     ? `primary (${s.status})`
                     : `other · ${s.session_id.slice(0, 8)} (${s.status})`}
@@ -151,7 +151,7 @@ export function SessionSwitcher({
       {selected && (
         <span
           className="inline-flex items-center gap-1 text-[11px] text-indigo-300"
-          title={`消息将直接发给 @${selected.bot.name} 的这个 session，忽略 @提及`}
+          title={`Messages will go directly to this session of @${selected.bot.name}, ignoring @mentions`}
         >
           <ArrowRight className="w-3 h-3" />
           <span className="font-medium">@{selected.bot.name}</span>

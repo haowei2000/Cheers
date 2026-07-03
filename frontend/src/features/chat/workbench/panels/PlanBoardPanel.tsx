@@ -73,9 +73,13 @@ function PlanCard({ plan }: { plan: BotPlan }) {
       <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
-          <span className="text-xs text-zinc-200 font-medium truncate">{plan.bot_id}</span>
+          <span className="text-xs text-zinc-200 font-medium truncate" title={plan.bot_id}>
+            {plan.bot_id.slice(0, 8)}
+          </span>
           {plan.session_id ? (
-            <span className="text-[10px] text-zinc-600 truncate">· {plan.session_id}</span>
+            <span className="text-[10px] text-zinc-600 truncate" title={plan.session_id}>
+              · {plan.session_id.slice(0, 8)}
+            </span>
           ) : null}
           <div className="flex-1" />
           <span className="text-[11px] text-zinc-400 tabular-nums flex-shrink-0">

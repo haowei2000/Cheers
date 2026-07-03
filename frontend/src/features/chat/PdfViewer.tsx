@@ -68,11 +68,11 @@ export function PdfViewer({ path }: { path: string }) {
     <div>
       {state === "loading" && (
         <div className="flex items-center justify-center gap-2 py-12 text-sm text-zinc-400">
-          <Loader2 className="h-4 w-4 animate-spin" /> 加载 PDF…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading PDF…
         </div>
       )}
       {state === "error" && (
-        <div className="py-12 text-center text-sm text-rose-400">PDF 加载失败，可尝试下载原件。</div>
+        <div className="py-12 text-center text-sm text-rose-400">Failed to load the PDF — try downloading the original.</div>
       )}
       <div
         ref={hostRef}

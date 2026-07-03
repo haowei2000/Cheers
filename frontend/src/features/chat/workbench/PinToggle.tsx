@@ -15,7 +15,7 @@ export function PinToggle({
   return (
     <button
       onClick={() => togglePin(path)}
-      title={isPinned ? "已 pin：每次提示词都注入，点此取消" : "pin：把此文件内容注入每次 bot 提示词"}
+      title={isPinned ? "Pinned: injected into every prompt — click to unpin" : "Pin: inject this file's content into every bot prompt"}
     >
       <Pin
         className={`w-3.5 h-3.5 ${

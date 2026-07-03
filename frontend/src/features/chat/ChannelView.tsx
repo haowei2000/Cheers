@@ -99,6 +99,14 @@ export function ChannelView({ channel }: Props) {
     return map;
   }, [mentionables]);
 
+  // Member id → display label (users and bots), so messages missing a
+  // sender_name still render a name instead of a sliced id.
+  const memberNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of mentionables) map.set(m.id, m.label);
+    return map;
+  }, [mentionables]);
+
   // Highest delivered channel_seq, used as the reconnect/refresh catch-up cursor.
   const lastSeqRef = useRef(0);
   useEffect(() => {
@@ -366,6 +374,7 @@ export function ChannelView({ channel }: Props) {
     async ({ senderBotId, ref, files }: RefClick) => {
       if (!channel) return;
       const base = ref.split("/").pop() || ref;
+      const senderBotLabel = botLabels.get(senderBotId) || senderBotId.slice(0, 8);
       const openInbox = (fileId: string) => {
         setFilesFocus(fileId);
         setFilesOpen(true);
@@ -395,20 +404,20 @@ export function ChannelView({ channel }: Props) {
             const offline = String(e).includes("offline");
             setRefError(
               offline
-                ? `打不开「${base}」:这个文件在 bot「${senderBotId}」的机器上,但它的连接器当前不在线,暂时取不到。`
-                : `没找到「${base}」。\n它不在这条回复的附件、频道 Desk,工作区里也没有这个文件——bot 可能只是提到了它,并没有真的产出或分享。`
+                ? `Can't open "${base}": this file lives on bot "${senderBotLabel}"'s machine, but its connector is currently offline.`
+                : `Couldn't find "${base}".\nIt isn't attached to this reply, on the channel Desk, or in the workspace — the bot may have only mentioned it without actually producing or sharing it.`
             );
           }
         } else {
           setRefError(
-            `没找到「${base}」。\n它不在这条回复的附件里,也不在频道的 Desk,更不在可达的工作区里——bot 可能提到了这个文件,但并没有真的产出或分享它。`
+            `Couldn't find "${base}".\nIt isn't attached to this reply, on the channel Desk, or in any reachable workspace — the bot may have mentioned this file without actually producing or sharing it.`
           );
         }
       } catch (e) {
-        setRefError(`打开「${base}」失败:${e instanceof Error ? e.message : String(e)}`);
+        setRefError(`Failed to open "${base}": ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [channel]
+    [channel, botLabels]
   );
 
   async function handleSend(
@@ -482,7 +491,7 @@ export function ChannelView({ channel }: Props) {
             setFilesFocus(undefined);
             setFilesOpen(true);
           }}
-          title="频道文件"
+          title="Channel files"
           className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
         >
           <Paperclip className="w-4 h-4" />
@@ -492,7 +501,7 @@ export function ChannelView({ channel }: Props) {
             setWsInit({});
             setWsOpen(true);
           }}
-          title="远程工作区"
+          title="Remote workspace"
           className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
         >
           <FolderTree className="w-4 h-4" />
@@ -519,7 +528,7 @@ export function ChannelView({ channel }: Props) {
         {channel.type !== "dm" && (
           <button
             onClick={() => setSettingsOpen(true)}
-            title="频道设置"
+            title="Channel settings"
             className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
           >
             <Settings className="w-4 h-4" />
@@ -538,6 +547,7 @@ export function ChannelView({ channel }: Props) {
             messages={messages}
             currentUserId={user?.user_id}
             channelId={channel.channel_id}
+            senderNames={memberNames}
             hasMore={hasMore}
             onLoadMore={loadMore}
             loading={loadingMore}

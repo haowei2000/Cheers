@@ -60,7 +60,7 @@ export function MarkdownRenderer({ content, className }: Props) {
               <button
                 type="button"
                 onClick={() => onPath(text)}
-                title="在远程工作区打开"
+                title="Open in the remote workspace"
                 className="bg-zinc-800 px-1 py-0.5 rounded text-sm text-sky-400 hover:text-sky-300 hover:underline"
               >
                 {children} ↗

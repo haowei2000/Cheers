@@ -109,6 +109,7 @@ export function BotTracePanel({ channelId, msgId }: Props) {
       <button
         type="button"
         onClick={toggle}
+        title={expanded ? "Hide agent steps" : "Show agent steps"}
         className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
       >
         {expanded ? (
@@ -153,7 +154,9 @@ export function BotTracePanel({ channelId, msgId }: Props) {
                   {isApproval && e.decision && (
                     <div className="text-[10px] text-zinc-600 truncate">
                       {e.decision}
-                      {e.actor_id ? ` · ${e.actor_id.slice(0, 8)}` : ""}
+                      {e.actor_id ? (
+                        <span title={e.actor_id}> · {e.actor_id.slice(0, 8)}</span>
+                      ) : null}
                     </div>
                   )}
                   {!isApproval && e.message && (

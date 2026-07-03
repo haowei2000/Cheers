@@ -35,6 +35,7 @@ function Section({ label, children, defaultOpen = true, onAdd }: SectionProps) {
               e.stopPropagation();
               onAdd();
             }}
+            title="Add"
             className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-zinc-700 transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -99,7 +100,7 @@ export function Sidebar({ workspace }: Props) {
       <div className="h-12 flex items-center px-3 border-b border-zinc-800/60 flex-shrink-0">
         <button
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
-          title={canOpenSettings ? "工作空间设置" : undefined}
+          title={canOpenSettings ? "Workspace settings" : undefined}
           className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800/60 transition-colors w-full group"
         >
           <span className="font-semibold text-zinc-100 text-sm truncate flex-1 text-left">
@@ -155,7 +156,7 @@ export function Sidebar({ workspace }: Props) {
             </button>
           ))}
           {dms.length === 0 && (
-            <div className="px-3 py-1 text-xs text-zinc-600">点 + 发起私信</div>
+            <div className="px-3 py-1 text-xs text-zinc-600">Click + to start a direct message</div>
           )}
         </Section>
 

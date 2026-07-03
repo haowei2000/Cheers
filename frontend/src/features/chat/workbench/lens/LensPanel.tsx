@@ -22,14 +22,14 @@ function LensPanel({ ctx, view }: { ctx: PanelContext; view: ViewDef }) {
         <div className="flex-1" />
         <PinToggle path={view.file} pinned={pinned} togglePin={togglePin} />
         <button onClick={() => void save(data)} className="flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
-          <Save className="w-3.5 h-3.5" /> 保存
+          <Save className="w-3.5 h-3.5" /> Save
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
         {lens ? (
           lens.render({ data, config: view.config, onChange: setData })
         ) : (
-          <div className="p-3 text-amber-500">未知 lens: {view.lens}</div>
+          <div className="p-3 text-amber-500">Unknown lens: {view.lens}</div>
         )}
       </div>
       {status && (

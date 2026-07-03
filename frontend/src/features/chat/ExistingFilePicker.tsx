@@ -53,14 +53,14 @@ export function ExistingFilePicker({
   }
 
   return (
-    <Dialog title="选择频道文件" onClose={onClose} maxWidth="max-w-xl">
+    <Dialog title="Pick channel files" onClose={onClose} maxWidth="max-w-xl">
       {files === null ? (
         <div className="py-8 flex items-center justify-center gap-2 text-xs text-zinc-500">
-          <Loader2 className="w-4 h-4 animate-spin" /> 加载中…
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : files.length === 0 ? (
         <div className="py-8 text-center text-xs text-zinc-600">
-          这个频道还没有文件。先用 📎 上传一个。
+          No files in this channel yet. Upload one with 📎 first.
         </div>
       ) : (
         <div className="max-h-[50vh] overflow-auto -mx-1">
@@ -92,13 +92,16 @@ export function ExistingFilePicker({
                   {checked && <Check className="w-3 h-3" />}
                 </span>
                 <FileTypeIcon file={f} size={16} className="flex-shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">
+                <span
+                  className="min-w-0 flex-1 truncate text-sm text-zinc-200"
+                  title={f.original_filename || f.file_id}
+                >
                   {f.original_filename || f.file_id.slice(0, 8)}
                 </span>
                 {typeof f.size_bytes === "number" && (
                   <span className="text-xs text-zinc-500">{formatBytes(f.size_bytes)}</span>
                 )}
-                {isAttached && <span className="text-[10px] text-zinc-500">已添加</span>}
+                {isAttached && <span className="text-[10px] text-zinc-500">Added</span>}
               </button>
             );
           })}
@@ -111,7 +114,7 @@ export function ExistingFilePicker({
           onClick={onClose}
           className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
         >
-          取消
+          Cancel
         </button>
         <button
           type="button"
@@ -119,7 +122,7 @@ export function ExistingFilePicker({
           disabled={selected.size === 0}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
         >
-          添加{selected.size > 0 ? ` (${selected.size})` : ""}
+          Add{selected.size > 0 ? ` (${selected.size})` : ""}
         </button>
       </div>
     </Dialog>

@@ -113,7 +113,7 @@ export function WorkspaceRail() {
         selected={personalSelected}
         onClick={() => personalWorkspace && selectWorkspace(personalWorkspace.workspace_id)}
         disabled={!personalWorkspace}
-        title={personalWorkspace ? "Personal（私信 / 个人空间）" : "Cheers"}
+        title={personalWorkspace ? "Personal (DMs / personal space)" : "Cheers"}
       >
         <div
           className={cn(
@@ -158,7 +158,7 @@ export function WorkspaceRail() {
         {inviteCount > 0 && (
           <button
             onClick={() => setInvitesOpen(true)}
-            title="工作空间邀请"
+            title="Workspace invites"
             className="relative w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
           >
             <Mail className="w-4 h-4" />

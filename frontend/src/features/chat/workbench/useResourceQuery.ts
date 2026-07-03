@@ -2,7 +2,7 @@
 // verb (e.g. a future `channel.plan.read` or `channel.usage.read`) through the
 // same `sendResourceReq` seam the File panel already uses for `fs.*`.
 //
-// This is the shared frontend底座 for the Phase-A "telemetry → artifact" panels
+// This is the shared frontend foundation for the Phase-A "telemetry → artifact" panels
 // (plan board, cost dashboard): it owns loading/error/data + manual refetch, so
 // each panel only declares its verb + params and renders the result.
 import { useCallback, useEffect, useState } from "react";

@@ -43,7 +43,7 @@ function TableLens({ data, config, onChange }: LensProps) {
                 </td>
               ))}
               <td className="p-1">
-                <button onClick={() => del(i)} title="删除">
+                <button onClick={() => del(i)} title="Delete row">
                   <Trash2 className="w-3 h-3 text-zinc-600 hover:text-red-400" />
                 </button>
               </td>
@@ -51,13 +51,13 @@ function TableLens({ data, config, onChange }: LensProps) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length + 1} className="p-3 text-zinc-600">空，点下方「加一行」</td>
+              <td colSpan={columns.length + 1} className="p-3 text-zinc-600">Empty — click "Add row" below</td>
             </tr>
           )}
         </tbody>
       </table>
       <button onClick={add} className="mt-2 flex items-center gap-1 text-zinc-400 hover:text-zinc-100">
-        <Plus className="w-3.5 h-3.5" /> 加一行
+        <Plus className="w-3.5 h-3.5" /> Add row
       </button>
     </div>
   );
@@ -95,7 +95,7 @@ function KanbanLens({ data, onChange }: LensProps) {
 
   return (
     <div className="p-2 text-xs flex gap-2 items-start overflow-auto h-full">
-      {cols.length === 0 && <div className="p-3 text-zinc-600">空看板</div>}
+      {cols.length === 0 && <div className="p-3 text-zinc-600">Empty board</div>}
       {cols.map((c, ci) => (
         <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded border border-zinc-800">
           <div className="px-2 py-1 text-zinc-300 border-b border-zinc-800">
@@ -104,14 +104,14 @@ function KanbanLens({ data, onChange }: LensProps) {
           <div className="p-1 space-y-1">
             {c.items.map((it, ii) => (
               <div key={ii} className="group bg-zinc-800/70 rounded px-1.5 py-1 text-zinc-200 flex items-center gap-1">
-                <button onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} className="disabled:opacity-20">
-                  <ChevronLeft className="w-3 h-3 text-zinc-500" />
+                <button onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-20">
+                  <ChevronLeft className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
                 </button>
                 <span className="flex-1 break-words">{it}</span>
-                <button onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} className="disabled:opacity-20">
-                  <ChevronRight className="w-3 h-3 text-zinc-500" />
+                <button onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-20">
+                  <ChevronRight className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
                 </button>
-                <button onClick={() => delItem(ci, ii)} className="opacity-0 group-hover:opacity-100">
+                <button onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
                   <X className="w-3 h-3 text-zinc-600 hover:text-red-400" />
                 </button>
               </div>
@@ -121,10 +121,10 @@ function KanbanLens({ data, onChange }: LensProps) {
                 value={drafts[ci] ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && addItem(ci)}
-                placeholder="+ 任务"
+                placeholder="+ Task"
                 className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-600"
               />
-              <button onClick={() => addItem(ci)}>
+              <button onClick={() => addItem(ci)} title="Add task">
                 <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
               </button>
             </div>
@@ -144,7 +144,7 @@ function MarkdownLens({ data, onChange }: LensProps) {
       value={text}
       onChange={(e) => onChange(e.target.value)}
       spellCheck={false}
-      placeholder="# 提示词 / 文档…"
+      placeholder="# Prompt / document…"
       className="w-full h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-3 outline-none"
     />
   );

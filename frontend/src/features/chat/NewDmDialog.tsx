@@ -52,7 +52,7 @@ export function NewDmDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Dialog title="发起私信" onClose={onClose}>
+    <Dialog title="New direct message" onClose={onClose}>
       <>
         <div className="flex items-center gap-2 rounded-lg bg-zinc-950 border border-zinc-800 px-2">
           <Search className="w-3.5 h-3.5 text-zinc-500" />
@@ -60,7 +60,7 @@ export function NewDmDialog({ onClose }: { onClose: () => void }) {
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索用户…"
+            placeholder="Search users…"
             className="flex-1 bg-transparent py-2 text-sm text-zinc-200 outline-none"
           />
         </div>

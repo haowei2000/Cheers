@@ -33,20 +33,20 @@ export function WorkspaceInvitesDialog({
       if (accept) await acceptInvite(inv.workspace_id);
       else await declineInvite(inv.workspace_id);
       setInvites((prev) => prev.filter((i) => i.workspace_id !== inv.workspace_id));
-      toast.success(accept ? `已加入 ${inv.name}` : "已拒绝");
+      toast.success(accept ? `Joined ${inv.name}` : "Declined");
       onChanged();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "操作失败");
+      toast.error(e instanceof Error ? e.message : "Operation failed");
     } finally {
       setBusy(null);
     }
   }
 
   return (
-    <Dialog title="工作空间邀请" onClose={onClose}>
+    <Dialog title="Workspace invites" onClose={onClose}>
       <div className="space-y-2">
         {invites.length === 0 && (
-          <p className="text-sm text-zinc-500 py-4 text-center">没有待处理的邀请。</p>
+          <p className="text-sm text-zinc-500 py-4 text-center">No pending invites.</p>
         )}
         {invites.map((inv) => (
           <div
@@ -56,8 +56,8 @@ export function WorkspaceInvitesDialog({
             <div className="min-w-0 flex-1">
               <p className="text-sm text-zinc-200 truncate">{inv.name}</p>
               <p className="text-[11px] text-zinc-500">
-                角色 {inv.role}
-                {inv.invited_by ? ` · 来自 ${inv.invited_by}` : ""}
+                Role {inv.role}
+                {inv.invited_by ? ` · from ${inv.invited_by}` : ""}
               </p>
             </div>
             <Button
@@ -65,7 +65,7 @@ export function WorkspaceInvitesDialog({
               loading={busy === inv.workspace_id}
               onClick={() => void act(inv, true)}
             >
-              接受
+              Accept
             </Button>
             <Button
               variant="ghost"
@@ -73,7 +73,7 @@ export function WorkspaceInvitesDialog({
               disabled={busy === inv.workspace_id}
               onClick={() => void act(inv, false)}
             >
-              拒绝
+              Decline
             </Button>
           </div>
         ))}

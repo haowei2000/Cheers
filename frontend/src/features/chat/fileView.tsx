@@ -39,7 +39,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
   if (!src) {
     return (
       <div className="h-32 w-32 rounded-lg border border-zinc-700 bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-500">
-        加载图片…
+        Loading image…
       </div>
     );
   }
@@ -91,15 +91,16 @@ function AudioTile({ file }: { file: FileInfo }) {
         <button
           type="button"
           onClick={() => downloadFile(file)}
+          title="Download this audio file"
           className="text-left text-[11px] text-zinc-400 hover:text-zinc-200"
         >
-          播放不可用，点击下载
+          Playback unavailable — click to download
         </button>
       ) : src ? (
         <audio controls src={src} preload="metadata" className="h-9 w-full" />
       ) : (
         <div className="flex h-9 items-center gap-1.5 text-[11px] text-zinc-500">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 加载音频…
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading audio…
         </div>
       )}
       <TranscriptSection file={file} />
@@ -108,13 +109,13 @@ function AudioTile({ file }: { file: FileInfo }) {
 }
 
 // Transcript area under the audio player: the snippet when transcription is
-// done; a "转写" button when never requested (opt-in per file); pending/failed
+// done; a "Transcribe" button when never requested (opt-in per file); pending/failed
 // states in between. `file.transcript_status` is kept live by the
 // `file_transcribed` realtime frame; the local state only bridges the gap
 // between clicking and the server acknowledging.
 function TranscriptSection({ file }: { file: FileInfo }) {
   const [requested, setRequested] = useState(false);
-  // A terminal-failure frame flips the tile back from "转写中" to the retry button.
+  // A terminal-failure frame flips the tile back from "Transcribing" to the retry button.
   useEffect(() => {
     if (file.transcript_status === "failed") setRequested(false);
   }, [file.transcript_status]);
@@ -131,7 +132,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   if (requested || status === "pending") {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500">
-        <Loader2 className="h-3 w-3 animate-spin" /> 转写中…
+        <Loader2 className="h-3 w-3 animate-spin" /> Transcribing…
       </span>
     );
   }
@@ -140,7 +141,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
     transcribeFile(file.file_id)
       .then(() => setRequested(true))
       .catch((e) => {
-        toast.error(e instanceof Error ? e.message : "转写请求失败");
+        toast.error(e instanceof Error ? e.message : "Transcription request failed");
       });
   };
 
@@ -148,10 +149,11 @@ function TranscriptSection({ file }: { file: FileInfo }) {
     <button
       type="button"
       onClick={request}
+      title="Transcribe this audio to text"
       className="inline-flex w-fit items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors"
     >
       <Captions className="h-3 w-3" />
-      {status === "failed" ? "转写失败,重试" : "转写为文字"}
+      {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
     </button>
   );
 }
@@ -203,10 +205,10 @@ function StagedFileTile({ file }: { file: FileInfo }) {
 
   const label =
     phase === "realizing"
-      ? "加载中…"
+      ? "Loading…"
       : phase === "error"
-        ? "加载失败，点击重试"
-        : file.original_filename || "远程文件";
+        ? "Failed to load — click to retry"
+        : file.original_filename || "Remote file";
 
   return (
     <button
@@ -241,7 +243,7 @@ export function FileTile({ file }: { file: FileInfo }) {
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          className="block"
+          className="block rounded-lg transition-opacity hover:opacity-90"
         >
           <ImagePreview file={file} />
         </button>

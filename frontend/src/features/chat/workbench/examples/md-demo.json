@@ -1,9 +1,9 @@
 {
   "id": "md-demo",
-  "title": "Markdown 演示（纯 seed）",
+  "title": "Markdown demo (seed only)",
   "views": [],
   "seed": {
-    "demo/todo.md": "# 今日待办\n\n- [ ] 试用渲染器插件\n- [ ] 勾选这一项看看会不会写回 markdown\n- [x] 安装 md-checklist 渲染器\n\n> 在 Files 面板打开本文件，右上「渲染器」下拉选「清单」即可交互。",
-    "demo/notes.md": "# 关于这个模板\n\n这是一个**纯 seed** 环境模板：它只往频道里放了几个 Markdown 文件，\n**不指定**用什么渲染器。怎么渲染由你在 Files 面板按文件挑（内置 lens 或已装插件）。\n\n这正是「模板=数据/文件、渲染器=代码/能力」两轴解耦的样子。"
+    "demo/todo.md": "# Today's tasks\n\n- [ ] Try the renderer plugin\n- [ ] Check this item and see whether it writes back to the markdown\n- [x] Install the md-checklist renderer\n\n> Open this file in the Files panel and pick \"Checklist\" from the renderer dropdown (top right) to make it interactive.",
+    "demo/notes.md": "# About this template\n\nThis is a **seed-only** environment template: it just drops a few Markdown files\ninto the channel and **does not specify** how to render them. You pick a renderer\nper file in the Files panel (a built-in lens or an installed plugin).\n\nThis is exactly what decoupling the two axes looks like: template = data/files,\nrenderer = code/capability."
   }
 }

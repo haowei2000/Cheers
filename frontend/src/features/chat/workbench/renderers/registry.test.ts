@@ -5,12 +5,12 @@ import { accepts, candidatesFor, formatOf, getRenderer, specificity } from "./re
 // A renderer plugin that only accepts markdown containing task lines.
 const checklist: PluginMeta = {
   plugin_id: "md-checklist",
-  title: "Markdown 清单",
+  title: "Markdown checklist",
   manifest: {
     id: "md-checklist",
-    title: "Markdown 清单",
+    title: "Markdown checklist",
     renderers: [
-      { id: "checklist", title: "清单", match: { format: "markdown", requireAny: ["- [ ]", "- [x]"] } },
+      { id: "checklist", title: "Checklist", match: { format: "markdown", requireAny: ["- [ ]", "- [x]"] } },
     ],
   },
 };
@@ -97,7 +97,7 @@ describe("getRenderer", () => {
   it("resolves built-ins (incl. unpickable) and plugin renderers", () => {
     expect(getRenderer("builtin:markdown", [])?.lensId).toBe("markdown");
     expect(getRenderer("builtin:table", [])?.pickable).toBe(false);
-    expect(getRenderer("plugin:md-checklist:checklist", [checklist])?.title).toBe("清单");
+    expect(getRenderer("plugin:md-checklist:checklist", [checklist])?.title).toBe("Checklist");
     expect(getRenderer("nope", [])).toBeUndefined();
   });
 });

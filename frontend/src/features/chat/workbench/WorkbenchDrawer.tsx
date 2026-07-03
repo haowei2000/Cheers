@@ -36,10 +36,10 @@ interface WbConfig {
 // the file understands the schema without external docs. NOT a free-form comment — the UI
 // rewrites this file, so only fields (like this one) survive; see docs/arch/WORKBENCH.md.
 const WB_DOC =
-  "工作台配置（per-channel，由工作台 UI 维护，可手改）。" +
-  "views=顶部 tab 的精选文件[{path,title}]，用各文件 bindings 里绑定的渲染器渲染（未绑定则原文）；" +
-  "bindings=文件路径→渲染器 id；pinned=每次注入 bot 提示词的文件。" +
-  "文件本身只是内容，类型与渲染由本文件决定、不写进文件。";
+  "Workbench config (per-channel, maintained by the workbench UI, hand-editable). " +
+  "views = curated files shown as top tabs [{path,title}], rendered with each file's bound renderer from bindings (raw text if unbound); " +
+  "bindings = file path → renderer id; pinned = files injected into every bot prompt. " +
+  "Files themselves are pure content — type and rendering are decided by this config, never written into the file.";
 
 // Right-side per-channel workbench. Scenarios come from three places:
 //  - GLOBAL templates (DATA, admin-installed, lens-rendered) — shared by every channel
@@ -137,11 +137,11 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       try {
         parsed = JSON.parse(text);
       } catch {
-        setNotice("不是合法 JSON");
+        setNotice("Not valid JSON");
         return;
       }
       if (!validateManifest(parsed)) {
-        setNotice("无效模板：缺 id/title/views，或引用了未知 lens");
+        setNotice("Invalid template: missing id/title/views, or references an unknown lens");
         return;
       }
       const m = parsed;
@@ -152,7 +152,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           await seedManifest(fs, m);
           await writeCfg({ ...cfg, environment: m.id });
           setActive(m.views[0]?.id ?? "");
-          setNotice(`已临时加载：${m.title}（仅本会话；要全局共享请到 设置 → Workbench extensions）`);
+          setNotice(`Loaded temporarily: ${m.title} (this session only; to share globally go to Settings → Workbench extensions)`);
         } finally {
           setBusy(false);
         }
@@ -167,7 +167,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       setBusy(false);
       const file = e.dataTransfer.files?.[0];
       if (file && file.name.endsWith(".json")) void file.text().then(loadTemporary);
-      else setNotice("请拖入一个 .json 模板文件");
+      else setNotice("Drop a .json template file");
     },
     [loadTemporary]
   );
@@ -268,10 +268,10 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           <select
             value={selectedId ?? ""}
             onChange={(e) => void switchScenario(e.target.value || null)}
-            title="场景 / Template / Plugin"
+            title="Scenario / template"
             className="bg-zinc-800 text-zinc-300 text-xs rounded px-1 py-0.5 outline-none max-w-[160px]"
           >
-            <option value="">通用</option>
+            <option value="">General</option>
             {allEnvs.map((e) => (
               <option key={e.id} value={e.id}>
                 {sessionIds.has(e.id) ? "⏱ " : ""}
@@ -283,17 +283,17 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           </select>
           <button
             onClick={() => fileRef.current?.click()}
-            title="临时装模板：选一个 manifest .json，仅本会话生效（全局安装在 设置 → Workbench extensions）"
+            title="Load a temporary template: pick a manifest .json, this session only (install globally in Settings → Workbench extensions)"
             className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100"
           >
-            <Clock className="w-3.5 h-3.5" /> 临时模板
+            <Clock className="w-3.5 h-3.5" /> Temp template
           </button>
           <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
           {pinned.length > 0 && (
             <div className="relative">
               <button
                 onClick={() => setPinMenu((o) => !o)}
-                title="已 pin 的文件（点此管理 / 取消）"
+                title="Pinned files (click to manage / unpin)"
                 className="text-[11px] text-amber-500/80 hover:text-amber-400"
               >
                 📌 {pinned.length}
@@ -301,7 +301,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
               {pinMenu && (
                 <div className="absolute left-0 top-6 z-50 w-64 rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl">
                   <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
-                    Pinned（注入每次提示词）
+                    Pinned (injected into every prompt)
                   </div>
                   {pinned.map((p) => (
                     <div
@@ -313,7 +313,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
                       </span>
                       <button
                         onClick={() => togglePin(p)}
-                        title="取消 pin"
+                        title="Unpin"
                         className="text-zinc-500 hover:text-red-400 flex-shrink-0"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -333,7 +333,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
         {notice && (
           <div className="px-3 py-1 text-[11px] text-amber-400/90 bg-amber-500/5 border-b border-zinc-800 flex items-center gap-2">
             <span className="flex-1">{notice}</span>
-            <button onClick={() => setNotice(null)} className="text-zinc-500 hover:text-zinc-300">
+            <button onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
               <X className="w-3 h-3" />
             </button>
           </div>
@@ -358,14 +358,15 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
             <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-500 text-xs p-6 text-center">
               <Package className="w-8 h-8 text-zinc-700" />
               <div>
-                还没有场景。全局模板和插件由管理员在 设置 → Workbench extensions 安装；也可拖入 .json
-                或点上方「临时模板」仅本会话试用。
+                No scenarios yet. Global templates and plugins are installed by an admin in
+                Settings → Workbench extensions; you can also drop a .json file here or click
+                "Temp template" above to try one for this session only.
               </div>
               <button
                 onClick={() => loadTemporary(JSON.stringify(researchExample))}
                 className="mt-1 px-3 py-1 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
               >
-                临时试用：科研
+                Try it now: Research
               </button>
             </div>
           ) : (

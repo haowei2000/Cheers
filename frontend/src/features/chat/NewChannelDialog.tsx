@@ -39,7 +39,7 @@ export function NewChannelDialog({
   }
 
   return (
-    <Dialog title="新建频道" onClose={onClose}>
+    <Dialog title="New channel" onClose={onClose}>
       <div className="space-y-3">
         <div className="flex items-center gap-2 rounded-lg bg-zinc-950 border border-zinc-800 px-2">
           <Hash className="w-3.5 h-3.5 text-zinc-500" />
@@ -48,7 +48,7 @@ export function NewChannelDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void submit()}
-            placeholder="频道名称…"
+            placeholder="Channel name…"
             className="flex-1 bg-transparent py-2 text-sm text-zinc-200 outline-none"
           />
         </div>
@@ -61,7 +61,7 @@ export function NewChannelDialog({
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-sm transition-colors",
                 type === t
-                  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100"
+                  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
                   : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
               )}
             >
@@ -70,7 +70,7 @@ export function NewChannelDialog({
               ) : (
                 <Lock className="w-3.5 h-3.5" />
               )}
-              {t === "public" ? "公开" : "私有"}
+              {t === "public" ? "Public" : "Private"}
             </button>
           ))}
         </div>
@@ -80,14 +80,14 @@ export function NewChannelDialog({
             onClick={onClose}
             className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 transition-colors"
           >
-            取消
+            Cancel
           </button>
           <button
             disabled={!name.trim() || busy}
             onClick={() => void submit()}
             className="px-4 py-1.5 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
           >
-            创建
+            Create
           </button>
         </div>
       </div>

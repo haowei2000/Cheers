@@ -7,6 +7,10 @@ import {
   type BotPermissions,
 } from "@/api/bots";
 
+// Display helper: show UUID-like ids in a short 8-char form (full id in the tooltip);
+// human-readable config ids (e.g. "model") are shown as-is.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Posture surface (docs/arch/ACP_EVENT_TAXONOMY.md): the agent's session mode (when does
  * it ask?) + the session config options it advertised (model / reasoning / …). Self-loading
@@ -144,7 +148,12 @@ export function BotPostureSection({ botId }: { botId: string }) {
               <div className="space-y-1">
                 {Object.entries(configOptions.desired).map(([id, value]) => (
                   <div key={id} className="flex items-center gap-2 text-[11px]">
-                    <code className="text-zinc-400 min-w-[120px]">{id}</code>
+                    <code
+                      className="text-zinc-400 min-w-[120px]"
+                      title={UUID_RE.test(id) ? id : undefined}
+                    >
+                      {UUID_RE.test(id) ? `${id.slice(0, 8)}…` : id}
+                    </code>
                     <span className="text-zinc-500 truncate">{value}</span>
                     <span className="ml-auto text-[10px] text-indigo-400">override</span>
                   </div>
@@ -170,6 +179,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 type="button"
                 disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()}
                 onClick={submitManualConfig}
+                title="Apply this config override"
                 className="rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Set
