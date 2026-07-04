@@ -142,7 +142,10 @@ pub fn dedup_mode_config_options(
 /// only via `session/set_model`. The synthesized id is "model" — the same id
 /// the connector's L0 `allowed_config_options` whitelists, and its set path
 /// falls back to `session/set_model` when `session/set_config_option` fails.
-pub fn overlay_model_state(snapshot: &serde_json::Value, mut options: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+pub fn overlay_model_state(
+    snapshot: &serde_json::Value,
+    mut options: Vec<serde_json::Value>,
+) -> Vec<serde_json::Value> {
     use serde_json::{json, Value};
     let has_model = options.iter().any(|o| {
         let field = |k: &str| o.get(k).and_then(Value::as_str);
