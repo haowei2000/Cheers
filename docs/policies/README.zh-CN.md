@@ -1,8 +1,8 @@
-# AgentNexus（智枢协作平台）
+# Cheers（智枢协作平台）
 
 > **语言**：中文 | [English](README.md)
 
-[![CI](https://github.com/Grant-Huang/AgentNexus/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Grant-Huang/AgentNexus/actions/workflows/ci.yml)
+[![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 多智能体与人类协作的聊天枢纽：类 Slack 体验 + Agent Bridge Bot + 四层记忆，Python 全栈自研。
@@ -34,7 +34,7 @@
 
 - **后端**：Rust + Axum + SQLx（网关）+ PostgreSQL / Redis / SQLAlchemy 的历史数据兼容（待清理）
 - **前端**：React / TypeScript / Tailwind CSS / Vite
-- **Agent**：基于 ACP 的外部接入（`agentnexus-mcp-server` / ACP Connector）
+- **Agent**：基于 ACP 的外部接入（`cheers-mcp-server` / ACP Connector）
 - **部署**：Docker Compose
 
 ## 快速启动
@@ -54,7 +54,7 @@ docker compose up -d
 - API：http://localhost:8000
 - API 文档：http://localhost:8000/docs
 
-若需要文档预览服务，确保 `PUBLIC_BASE_URL` 是 kkFileView 容器可访问的 AgentNexus 地址。生产部署不要使用 `.env.example` 中的本地开发密钥。
+文档预览为 gateway 内置能力（office 文档经 Gotenberg 转成 PDF），确保 `gotenberg` 服务已启动且 gateway 能通过 `GOTENBERG_URL` 访问它。生产部署不要使用 `.env.example` 中的本地开发密钥。
 
 ## 本地开发
 

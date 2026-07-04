@@ -27,6 +27,10 @@ pub struct SendMessageRequest {
     pub file_ids: Vec<String>,
     #[serde(default)]
     pub mention_ids: Vec<Uuid>,
+    /// Optional: route the prompt to a specific "other" session in this channel
+    /// (else the channel's primary session).
+    #[serde(default)]
+    pub session_id: Option<Uuid>,
 }
 
 pub async fn send_message(
@@ -55,6 +59,17 @@ pub async fn send_message(
         return Err(AppError::BadRequest("content cannot be empty".into()));
     }
 
+    // Block enforcement on an *existing* DM: create_dm gates opening a DM, but a
+    // block placed afterwards must also stop further sends. If this is a 1:1 DM
+    // and either side has blocked the other, refuse before persisting.
+    if let Some(peer_id) = dm_peer(&state, channel_id, user_id).await? {
+        if crate::api::friends::is_blocked(&state.db, &user_id.to_string(), &peer_id).await? {
+            return Err(AppError::Forbidden(
+                "you can't message a user you've blocked or who has blocked you".into(),
+            ));
+        }
+    }
+
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
@@ -68,6 +83,7 @@ pub async fn send_message(
             reply_to_msg_id: body.reply_to_msg_id,
             file_ids: body.file_ids,
             mention_ids: body.mention_ids,
+            session_id: body.session_id,
         },
     )
     .await?;
@@ -93,6 +109,9 @@ pub struct ListMessagesQuery {
     pub after: Option<String>,
     #[serde(rename = "after_id")]
     pub after_id: Option<String>,
+    /// `channel_seq`-based catch-up cursor: return terminal messages with
+    /// `channel_seq > since_seq` ascending (reconnect/refresh path).
+    pub since_seq: Option<i64>,
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
@@ -121,10 +140,13 @@ pub async fn list_messages(
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
 
     let limit = q.limit.clamp(1, 200);
-    let before = q.before.or(q.before_id).or(q.around_id);
-    let after = q.after.or(q.after_id);
-    let page =
-        messages::list_messages(&state.db, user_id, channel_id, before, after, limit).await?;
+    let page = if let Some(since_seq) = q.since_seq {
+        messages::list_messages_since_seq(&state.db, user_id, channel_id, since_seq, limit).await?
+    } else {
+        let before = q.before.or(q.before_id).or(q.around_id);
+        let after = q.after.or(q.after_id);
+        messages::list_messages(&state.db, user_id, channel_id, before, after, limit).await?
+    };
     let messages = page.messages;
     let has_more = page.has_more;
     info!(
@@ -182,6 +204,38 @@ pub async fn cancel_message(
     .and_then(|raw| raw.parse::<Uuid>().ok())
     .ok_or(AppError::NotFound)?;
 
+    // INITIATE(cancel) gate (docs/arch/ACP_EVENT_TAXONOMY.md): may this user cancel
+    // the bot's running turn here? Default-allow for members; an owner can deny it
+    // per role/user via the event matrix. Fail-open on a rules error.
+    let role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .bind(user_id.to_string())
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string());
+    let may_cancel = crate::domain::acp_policy::allows(
+        &state.db,
+        &bot_id.to_string(),
+        &channel_id.to_string(),
+        &user_id.to_string(),
+        &role,
+        "session/cancel",
+        crate::domain::bot_event_policy::Capability::Initiate,
+    )
+    .await
+    .unwrap_or(true);
+    if !may_cancel {
+        return Err(AppError::Forbidden(
+            "not authorized to cancel this bot here".into(),
+        ));
+    }
+
     let frame = serde_json::json!({
         "type": "cancel",
         "msg_id": msg_id,
@@ -193,6 +247,29 @@ pub async fn cancel_message(
         msg_id: msg_id.to_string(),
         delivered,
     }))
+}
+
+/// For a 1:1 DM channel, the *other* user member's id (None for non-DM channels
+/// or self-DMs/bot-DMs). Used to enforce blocking on ongoing DM sends.
+async fn dm_peer(
+    state: &AppState,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    let peer = sqlx::query(
+        "SELECT cm.member_id
+         FROM channels c
+         JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+        WHERE c.channel_id = $1 AND c.type = 'dm'
+          AND cm.member_type = 'user' AND cm.member_id <> $2
+        LIMIT 1",
+    )
+    .bind(channel_id.to_string())
+    .bind(user_id.to_string())
+    .fetch_optional(&state.db)
+    .await?
+    .and_then(|row| row.try_get::<String, _>("member_id").ok());
+    Ok(peer)
 }
 
 async fn ensure_channel_member(

@@ -16,7 +16,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::{chains, chains::MAX_BOT_REPLY_DEPTH, channel_seq, mentions, sessions},
+    domain::{chains, channel_seq, mentions, sessions},
     gateway::{
         realtime::{fanout::Fanout, frame::WireFrame},
         registry::BotLocator,
@@ -39,7 +39,7 @@ pub struct StreamEntry {
     pub channel_id: Uuid,
     /// task id
     pub task_id: Uuid,
-    /// 任务 session（AgentNexusSession.id）——用于会话生命周期更新
+    /// 任务 session（CheersSession.id）——用于会话生命周期更新
     pub session_id: Option<Uuid>,
     /// 是否已 finalize（R4 守卫：finalize 后拒绝迟到 delta）
     pub finalized: bool,
@@ -96,6 +96,11 @@ impl StreamRegistry {
     pub fn remove(&self, msg_id: Uuid) {
         self.entries.remove(&msg_id);
         self.seq_counters.remove(&msg_id);
+    }
+
+    /// 是否存在该 msg_id 的存活流（孤儿回收器据此跳过正在流式的占位）。
+    pub fn contains(&self, msg_id: Uuid) -> bool {
+        self.entries.contains_key(&msg_id)
     }
 }
 
@@ -178,9 +183,6 @@ pub async fn handle_done(
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse().ok())
         .ok_or("missing msg_id")?;
-    let session_id = extract_session_id(frame);
-    let provider_session_key = extract_provider_session_key(frame);
-    let provider_session_id = extract_provider_session_id(frame);
     let entry_session_id = registry
         .entries
         .get(&msg_id)
@@ -204,10 +206,16 @@ pub async fn handle_done(
     }
 
     // ── 先落库（写后投递原则）────────────────────────────────────────────────
-    let mut tx = db.begin().await.map_err(|_| "db error")?;
-    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+    let mut tx = db
+        .begin()
         .await
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.done: begin tx"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "stream.done: allocate channel_seq",
+            ))?;
     let details = sqlx::query(
         "UPDATE messages
          SET channel_seq = $1,
@@ -223,21 +231,26 @@ pub async fn handle_done(
     .bind(msg_id.to_string())
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|_| "db error")?
+    .map_err(crate::gateway::log_db_err("stream.done: finalize message update"))?
     .ok_or("message not found")?;
     mentions::replace_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(|_| "db error")?;
-    tx.commit().await.map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.done: replace mentions"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("stream.done: commit tx"))?;
 
     let channel_id = details
         .try_get::<String, _>("channel_id")
         .map_err(|_| "invalid channel_id")?
         .parse()
         .map_err(|_| "invalid channel_id")?;
-    let channel_seq = details
-        .try_get::<i64, _>("channel_seq")
-        .map_err(|_| "db error")?;
+    let channel_seq =
+        details
+            .try_get::<i64, _>("channel_seq")
+            .map_err(crate::gateway::log_db_err(
+                "stream.done: read channel_seq column",
+            ))?;
     let depth = details.try_get::<i32, _>("depth").unwrap_or(0);
     let file_ids = details
         .try_get::<Vec<String>, _>("file_ids")
@@ -250,6 +263,13 @@ pub async fn handle_done(
         .try_get::<Option<String>, _>("reply_to_msg_id")
         .ok()
         .flatten();
+
+    // Resolve attachment metadata (incl. staged files, with status) so the live
+    // frame renders attachments immediately — e.g. a staged file as a clickable
+    // tile to realize — instead of only after a history reload.
+    let files = crate::domain::messages::load_message_files(db, &file_ids)
+        .await
+        .unwrap_or_default();
 
     let wire = WireFrame::channel(
         channel_id,
@@ -267,7 +287,7 @@ pub async fn handle_done(
             "reply_to_msg_id": reply_to_msg_id,
             "file_ids": file_ids,
             "mentions": mention_dtos(&mentions),
-            "files": [],
+            "files": files,
         }),
     );
     fanout.broadcast_channel(channel_id, wire).await;
@@ -275,72 +295,29 @@ pub async fn handle_done(
     // 清理注册表
     registry.remove(msg_id);
 
-    if depth < MAX_BOT_REPLY_DEPTH {
-        if let Err(e) = chains::trigger_bot_replies(
-            db,
-            fanout,
-            registry,
-            bot_locator,
-            channel_id,
-            msg_id,
-            channel_seq,
-            depth,
-            &mentions,
-        )
-        .await
-        {
-            tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
-        }
+    // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
+    if let Err(e) = chains::trigger_bot_replies(
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        depth,
+        bot_id,
+        &mentions,
+    )
+    .await
+    {
+        tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
     }
 
-    if let Some(session_id) = session_id {
-        if let Some(entry_session_id) = entry_session_id {
-            if entry_session_id != session_id {
-                tracing::warn!(
-                    bot_id = %bot_id,
-                    msg_id = %msg_id,
-                    expected = %entry_session_id,
-                    got = %session_id,
-                    "session mismatch: explicit session_id differs from stream entry"
-                );
-                if let Err(e) = sessions::finalize_session(db, entry_session_id).await {
-                    tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-                }
-            } else if let Err(e) = sessions::finalize_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-            }
-        } else if let Err(e) = sessions::finalize_session(db, session_id).await {
+    if let Some(sid) =
+        resolve_session_id(db, bot_id, provider_account_id, frame, entry_session_id).await
+    {
+        if let Err(e) = sessions::finalize_session(db, sid).await {
             tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-        }
-    } else if let Some(entry_session_id) = entry_session_id {
-        if let Err(e) = sessions::finalize_session(db, entry_session_id).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-        }
-    } else if let Some(provider_session_key) = provider_session_key {
-        if let Ok(session_id) = sessions::resolve_session_id_by_key(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_key,
-        )
-        .await
-        {
-            if let Err(e) = sessions::finalize_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-            }
-        }
-    } else if let Some(provider_session_id) = provider_session_id {
-        if let Ok(session_id) = sessions::resolve_session_id_by_provider_id(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_id,
-        )
-        .await
-        {
-            if let Err(e) = sessions::finalize_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session finalize failed");
-            }
         }
     }
 
@@ -415,13 +392,82 @@ fn extract_provider_session_id(frame: &Value) -> Option<String> {
         .map(ToString::to_string)
 }
 
+/// Pure precedence between an explicit session id and the stream entry id.
+///
+/// - Explicit id present + entry id present + they differ → log the "session
+///   mismatch" warning (once) and prefer the **entry** id.
+/// - Explicit id present + entry id present + equal → use the explicit id.
+/// - Only one of them present → use whichever is present.
+///
+/// No DB access; unit-testable without a live Postgres.
+fn decide_explicit_or_entry(
+    bot_id: Uuid,
+    explicit_session_id: Option<Uuid>,
+    entry_session_id: Option<Uuid>,
+) -> Option<Uuid> {
+    match (explicit_session_id, entry_session_id) {
+        (Some(explicit), Some(entry)) => {
+            if explicit != entry {
+                tracing::warn!(
+                    bot_id = %bot_id,
+                    expected = %entry,
+                    got = %explicit,
+                    "session mismatch: explicit session_id differs from stream entry"
+                );
+                Some(entry)
+            } else {
+                Some(explicit)
+            }
+        }
+        (Some(explicit), None) => Some(explicit),
+        (None, entry) => entry,
+    }
+}
+
+/// Resolve which session_id a done/update frame refers to, by the 4-source
+/// precedence (explicit id > stream entry > provider_session_key > provider_session_id).
+/// On explicit-vs-entry mismatch, logs the warning and prefers the entry id.
+/// Returns None if nothing resolves.
+async fn resolve_session_id(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    frame: &Value,
+    stream_entry_session_id: Option<Uuid>,
+) -> Option<Uuid> {
+    // Sources 1-2: explicit id vs stream entry (pure, no DB).
+    if let Some(sid) =
+        decide_explicit_or_entry(bot_id, extract_session_id(frame), stream_entry_session_id)
+    {
+        return Some(sid);
+    }
+
+    // Source 3: provider_session_key → DB lookup (errors silently ignored).
+    if let Some(key) = extract_provider_session_key(frame) {
+        return sessions::resolve_session_id_by_key(db, bot_id, provider_account_id, &key)
+            .await
+            .ok();
+    }
+
+    // Source 4: provider_session_id → DB lookup (errors silently ignored).
+    if let Some(id) = extract_provider_session_id(frame) {
+        return sessions::resolve_session_id_by_provider_id(db, bot_id, provider_account_id, &id)
+            .await
+            .ok();
+    }
+
+    None
+}
+
 /// 处理 bot 主动发新消息（send 帧）。
 ///
 /// 不同于 delta/done（续写占位），send 是建全新 Message。
 /// 权限检查：bot token 只映射身份；频道写权限由 membership role 决定。
 pub async fn handle_send(
+    registry: &StreamRegistry,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
+    bot_locator: &Arc<dyn BotLocator>,
     bot_id: Uuid,
     frame: &Value,
 ) -> Result<Uuid, &'static str> {
@@ -465,10 +511,16 @@ pub async fn handle_send(
         .map_err(mention_parse_error_to_static)?;
 
     // 先落库
-    let mut tx = db.begin().await.map_err(|_| "db error")?;
-    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+    let mut tx = db
+        .begin()
         .await
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.send: begin tx"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "stream.send: allocate channel_seq",
+            ))?;
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -485,11 +537,13 @@ pub async fn handle_send(
     .bind(&reply_to_msg_id)
     .execute(&mut *tx)
     .await
-    .map_err(|_| "db error")?;
+    .map_err(crate::gateway::log_db_err("stream.send: insert message"))?;
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(|_| "db error")?;
-    tx.commit().await.map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("stream.send: insert mentions"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("stream.send: commit tx"))?;
 
     // 再 fan-out
     let wire = WireFrame::channel(
@@ -513,7 +567,113 @@ pub async fn handle_send(
     );
     fanout.broadcast_channel(channel_id, wire).await;
 
+    // 主动 send 里的 @bot 也要能派活。视作 depth=0（与用户发消息触发对等），
+    // 后续 done 链再逐跳 +1 受 MAX_BOT_REPLY_DEPTH 约束。自 @ 过滤与 INITIATE
+    // 门禁在 trigger_bot_replies 内部统一处理。
+    if let Err(e) = chains::trigger_bot_replies(
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        0,
+        bot_id,
+        &mentions,
+    )
+    .await
+    {
+        tracing::warn!(msg_id = %msg_id, err = %e, "bot send @bot trigger failed");
+    }
+
     Ok(msg_id)
+}
+
+/// `channel.messages.create`（bot 主动 post_message 走的 resource 路径）落库后的副作用：
+/// **live 广播** + **bot@bot 触发**。
+///
+/// `resource::dispatch` 只带 `db`，广播/触发所需的 fanout/registry/bot_locator 只在
+/// bot-bridge WS 边界才有，所以在 agent_bridge 收到 `resource_res` 后由这里补做——
+/// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
+/// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
+/// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
+pub async fn broadcast_and_trigger_created_message(
+    registry: &StreamRegistry,
+    fanout: &Arc<dyn Fanout>,
+    db: &PgPool,
+    bot_locator: &Arc<dyn BotLocator>,
+    author_bot_id: Uuid,
+    created: &Value,
+) {
+    let (Some(msg_id), Some(channel_id)) = (
+        created
+            .get("msg_id")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<Uuid>().ok()),
+        created
+            .get("channel_id")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<Uuid>().ok()),
+    ) else {
+        return;
+    };
+
+    // 1) live 广播：DTO 原样投递，前端与 handle_send 的 "message" 帧同形（多余字段无害）。
+    let wire = WireFrame::channel(channel_id, "message", created.clone());
+    fanout.broadcast_channel(channel_id, wire).await;
+
+    // 2) bot@bot 触发：从 DTO 的 mentions 还原 Vec<Mention>，depth=0（与用户发消息对等）。
+    let mentions = dto_mentions(created);
+    if mentions.is_empty() {
+        return;
+    }
+    let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
+        return;
+    };
+    if let Err(e) = chains::trigger_bot_replies(
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        0,
+        author_bot_id,
+        &mentions,
+    )
+    .await
+    {
+        tracing::warn!(msg_id = %msg_id, err = %e, "resource-create @bot trigger failed");
+    }
+}
+
+/// 从 `MessageDto` JSON 的 `mentions` 数组还原 [`mentions::Mention`]（丢弃无法解析的项）。
+fn dto_mentions(created: &Value) -> Vec<mentions::Mention> {
+    created
+        .get("mentions")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| {
+                    let member_id = m
+                        .get("member_id")
+                        .and_then(Value::as_str)
+                        .and_then(|s| s.parse::<Uuid>().ok())?;
+                    let member_type = match m.get("member_type").and_then(Value::as_str) {
+                        Some("bot") => mentions::MemberType::Bot,
+                        Some("user") => mentions::MemberType::User,
+                        _ => return None,
+                    };
+                    Some(mentions::Mention {
+                        member_id,
+                        member_type,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn mention_parse_error_to_static(error: mentions::MentionParseError) -> &'static str {
@@ -576,62 +736,17 @@ async fn mark_session_alive(
     frame: &Value,
     stream_entry_session_id: Option<Uuid>,
 ) {
-    if let Some(session_id) = extract_session_id(frame) {
-        if let Some(entry_session_id) = stream_entry_session_id {
-            if entry_session_id != session_id {
-                tracing::warn!(
-                    bot_id = %bot_id,
-                    expected = %entry_session_id,
-                    got = %session_id,
-                    "session mismatch: explicit session_id differs from stream entry"
-                );
-                if let Err(e) = sessions::touch_session(db, entry_session_id).await {
-                    tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-                }
-            } else if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
-        } else if let Err(e) = sessions::touch_session(db, session_id).await {
+    if let Some(sid) = resolve_session_id(
+        db,
+        bot_id,
+        provider_account_id,
+        frame,
+        stream_entry_session_id,
+    )
+    .await
+    {
+        if let Err(e) = sessions::touch_session(db, sid).await {
             tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-        }
-        return;
-    }
-
-    if let Some(session_id) = stream_entry_session_id {
-        if let Err(e) = sessions::touch_session(db, session_id).await {
-            tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-        }
-        return;
-    }
-
-    if let Some(provider_session_key) = extract_provider_session_key(frame) {
-        if let Ok(session_id) = sessions::resolve_session_id_by_key(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_key,
-        )
-        .await
-        {
-            if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
-        }
-        return;
-    }
-
-    if let Some(provider_session_id) = extract_provider_session_id(frame) {
-        if let Ok(session_id) = sessions::resolve_session_id_by_provider_id(
-            db,
-            bot_id,
-            provider_account_id,
-            &provider_session_id,
-        )
-        .await
-        {
-            if let Err(e) = sessions::touch_session(db, session_id).await {
-                tracing::warn!(bot_id = %bot_id, err = %e, "session touch failed");
-            }
         }
     }
 }
@@ -650,11 +765,17 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
     .bind(msg_id.to_string())
     .fetch_optional(db)
     .await
-    .map_err(|_| "db error")?
+    .map_err(crate::gateway::log_db_err(
+        "verify_ownership: select message",
+    ))?
     .ok_or("message not found")?;
 
     // owner 必须是当前 bot
-    let sender_id: String = row.try_get("sender_id").map_err(|_| "db error")?;
+    let sender_id: String = row
+        .try_get("sender_id")
+        .map_err(crate::gateway::log_db_err(
+            "verify_ownership: read sender_id column",
+        ))?;
     if sender_id != bot_id.to_string() {
         return Err("ownership check failed: msg_id not owned by this bot");
     }
@@ -666,7 +787,11 @@ async fn verify_ownership(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Result<Uui
         return Err("message already finalized");
     }
 
-    let channel_id_str: String = row.try_get("channel_id").map_err(|_| "db error")?;
+    let channel_id_str: String = row
+        .try_get("channel_id")
+        .map_err(crate::gateway::log_db_err(
+            "verify_ownership: read channel_id column",
+        ))?;
     channel_id_str.parse().map_err(|_| "invalid channel_id")
 }
 
@@ -683,6 +808,71 @@ mod tests {
             session_id: None,
             finalized: false,
         }
+    }
+
+    // ── R9: session-id 解析优先级（纯逻辑，不依赖 DB）─────────────────────────
+
+    /// Source 1: 显式 session_id 存在且与 entry 一致 → 用显式 id。
+    #[test]
+    fn resolve_explicit_equals_entry_uses_explicit() {
+        let bot = Uuid::new_v4();
+        let sid = Uuid::new_v4();
+        assert_eq!(
+            decide_explicit_or_entry(bot, Some(sid), Some(sid)),
+            Some(sid)
+        );
+    }
+
+    /// Source 1 (mismatch): 显式与 entry 不一致 → 用 **entry** id（并告警）。
+    #[test]
+    fn resolve_explicit_mismatch_prefers_entry() {
+        let bot = Uuid::new_v4();
+        let explicit = Uuid::new_v4();
+        let entry = Uuid::new_v4();
+        assert_ne!(explicit, entry);
+        assert_eq!(
+            decide_explicit_or_entry(bot, Some(explicit), Some(entry)),
+            Some(entry),
+            "mismatch 必须落到 entry_session_id"
+        );
+    }
+
+    /// Source 1（仅显式）：只有显式 id、无 entry → 用显式 id。
+    #[test]
+    fn resolve_explicit_only_uses_explicit() {
+        let bot = Uuid::new_v4();
+        let explicit = Uuid::new_v4();
+        assert_eq!(
+            decide_explicit_or_entry(bot, Some(explicit), None),
+            Some(explicit)
+        );
+    }
+
+    /// Source 2: 无显式 id、有 entry → 用 entry id。
+    #[test]
+    fn resolve_entry_only_uses_entry() {
+        let bot = Uuid::new_v4();
+        let entry = Uuid::new_v4();
+        assert_eq!(
+            decide_explicit_or_entry(bot, None, Some(entry)),
+            Some(entry)
+        );
+    }
+
+    /// Sources 1-2 均无 → None（交给 provider_* 的 DB 分支处理）。
+    #[test]
+    fn resolve_no_explicit_no_entry_is_none() {
+        let bot = Uuid::new_v4();
+        assert_eq!(decide_explicit_or_entry(bot, None, None), None);
+    }
+
+    /// extract_session_id 解析帧里的显式 session_id（喂给 source 1）。
+    #[test]
+    fn extract_session_id_parses_frame() {
+        let sid = Uuid::new_v4();
+        let frame = json!({ "session_id": sid.to_string() });
+        assert_eq!(extract_session_id(&frame), Some(sid));
+        assert_eq!(extract_session_id(&json!({})), None);
     }
 
     /// R2 / I7：seq 由 Backend 单调盖戳，从 0 起每帧 +1。

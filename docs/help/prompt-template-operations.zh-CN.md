@@ -1,15 +1,15 @@
-# AgentNexus 提示词模板操作文档
+# Cheers 提示词模板操作文档
 
 > **语言**：中文 | [English](prompt-template-operations.md)
 
-本文说明 AgentNexus 中提示词模板的存储、选择、渲染与操作方式。内容基于当前代码实现核对，主要涉及 `backend/app/core/prompt_templates.py`、`backend/app/features/bot_runtime/adapters/prompt_template.py`、Bot 运行流水线以及前端设置界面。
+本文说明 Cheers 中提示词模板的存储、选择、渲染与操作方式。内容基于当前代码实现核对，主要涉及 `backend/app/core/prompt_templates.py`、`backend/app/features/bot_runtime/adapters/prompt_template.py`、Bot 运行流水线以及前端设置界面。
 
 ## 适用范围
 
 提示词模板主要作用于可配置 Bot：
 
 - **HTTP Bot**：按 Bot 绑定的 AI 模型和提示词模板，调用 OpenAI 兼容 Chat Completions API。
-- **Agent Bridge Bot**：可使用提示词模板把 AgentNexus 消息渲染成最终任务文本，再发送给外部 provider。
+- **Agent Bridge Bot**：可使用提示词模板把 Cheers 消息渲染成最终任务文本，再发送给外部 provider。
 - **内置 Bot**：例如 `Coordinator`，运行时优先使用专用 adapter，不依赖数据库里的 `AIModel` 或 `PromptTemplate` 记录。
 
 ## 数据模型
@@ -326,7 +326,7 @@ curl -X POST http://localhost:8000/api/v1/channels/<channel_id>/messages \
 ### Agent Bridge 任务模板
 
 ```text
-来自 AgentNexus 的任务
+来自 Cheers 的任务
 频道：{{channel_name}}
 发送者：{{sender_name}}
 

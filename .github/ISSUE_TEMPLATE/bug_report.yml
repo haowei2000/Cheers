@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in AgentNexus.
+description: Report a reproducible problem in Cheers.
 title: "[Bug]: "
 labels: ["bug", "needs-triage"]
 body:

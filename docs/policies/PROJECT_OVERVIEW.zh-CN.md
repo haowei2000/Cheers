@@ -1,4 +1,4 @@
-# AgentNexus（智枢协作平台）
+# Cheers（智枢协作平台）
 
 > **语言**：中文 | [English](PROJECT_OVERVIEW.md)
 

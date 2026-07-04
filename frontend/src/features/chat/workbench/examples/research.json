@@ -1,0 +1,51 @@
+{
+  "id": "research",
+  "title": "Research",
+  "views": [
+    {
+      "id": "journals",
+      "title": "Target journals",
+      "file": "research/journals.json",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "name", "label": "Journal" },
+          { "key": "impact", "label": "IF" },
+          { "key": "deadline", "label": "Deadline" },
+          { "key": "status", "label": "Status", "options": ["Candidate", "Drafting", "Submitting", "Submitted", "Accepted", "Rejected"] }
+        ]
+      }
+    },
+    { "id": "progress", "title": "Progress board", "file": "research/progress.json", "lens": "kanban" },
+    {
+      "id": "reviews",
+      "title": "Paper reviews",
+      "file": "research/reviews.json",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "paper", "label": "Paper" },
+          { "key": "reviewer", "label": "Reviewer" },
+          { "key": "status", "label": "Status", "options": ["To review", "Reviewing", "Reviewed", "Returned"] },
+          { "key": "notes", "label": "Notes" }
+        ]
+      }
+    },
+    { "id": "prompt", "title": "Review prompt", "file": "prompts/review.md", "lens": "markdown" }
+  ],
+  "seed": {
+    "research/journals.json": [
+      { "name": "Nature", "impact": "50.5", "deadline": "", "status": "Candidate" },
+      { "name": "Science", "impact": "44.7", "deadline": "", "status": "Candidate" }
+    ],
+    "research/progress.json": {
+      "columns": [
+        { "name": "To do", "items": ["Define the research question", "Literature review"] },
+        { "name": "In progress", "items": [] },
+        { "name": "Done", "items": [] }
+      ]
+    },
+    "research/reviews.json": [],
+    "prompts/review.md": "You are a rigorous peer reviewer. For each paper, assess novelty, soundness, and clarity; list concrete strengths and weaknesses; finish with a recommendation (accept / minor / major / reject)."
+  }
+}

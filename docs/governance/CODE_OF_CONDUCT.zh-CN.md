@@ -2,7 +2,7 @@
 
 > **语言**：中文 | [English](CODE_OF_CONDUCT.md)
 
-AgentNexus 社区希望保持专业、友善和以问题解决为导向的协作氛围。
+Cheers 社区希望保持专业、友善和以问题解决为导向的协作氛围。
 
 ## Expected Behavior
 

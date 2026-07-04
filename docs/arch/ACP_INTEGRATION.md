@@ -1,11 +1,17 @@
-# AgentNexus ACP 接入设计（外部 Agent / Agent Bridge）
+# Cheers ACP 接入设计（外部 Agent / Agent Bridge）
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
-> 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md)
+> 配套：[ARCHITECTURE_OVERVIEW](./ARCHITECTURE_OVERVIEW.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md) · [WIRE_PROTOCOL](./WIRE_PROTOCOL.md) · [ACP_RUST_SDK_ADOPTION](./ACP_RUST_SDK_ADOPTION.md)（官方库采用 Tier A/B）
 
 本文确定 **ACP 协议 / ACP connector**（外部 Agent，如 OpenCode、Claude、Codex 等）
 在 Rust Backend 架构下的接入设计。**平台无内置 Agent Service**；见 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)。
+
+> ⚠️ **部分内容描述的是已废弃模型。** 本文涉及的过时概念：`channel.memory` / `channel.memory.update`
+> 这两个 resource 动词（指向已删表）、写记忆需 `Grant`、以及把「频道记忆层 / platform memory」推入
+> 上下文正文（`channel.context → {..., memory, ...}`）。**现行模型**：无独立 memory 概念；文件是唯一基质；
+> Context = 插件策展的文件；agent 一律 pull；授权唯 channel-role。详见
+> [context-and-environment.md](./context-and-environment.md) 顶部的「⚠️ CURRENT MODEL (2026-06-23)」声明。
 
 ---
 
@@ -15,7 +21,7 @@
 |------|------|------|
 | Rust Backend 职责 | **全量**：REST API + WS Gateway + Agent Bridge 协议 | 单一 Rust 进程，内部模块边界分明 |
 | 内置 Agent | **无**——平台外接优先，无内置 runtime | Intelligence 来自用户自己连接的外部 ACP Agent |
-| MCP Agent 接入 | **`agentnexus-mcp-server`（stdio）** 作为标准桥 | MCP ↔ Agent Bridge 翻译；agent 和 server 本地共存 |
+| MCP Agent 接入 | **`cheers-mcp-server`（stdio）** 作为标准桥 | MCP ↔ Agent Bridge 翻译；agent 和 server 本地共存 |
 | 资源访问 | **统一 `resource_req/res` 协议**（data channel） | bot 通过协议访问平台资源，不直连 DB |
 | connector 鉴权 | **botToken（agb_）在 Rust Backend 验** | 统一鉴权入口 |
 | 客户端线协议 | **不变** | Bot 输出经 Rust Backend realtime fan-out → 浏览器 |
@@ -27,7 +33,7 @@
 
 ### 形态
 ACP connector 跑在**开发者机器/私有环境**，拉起本地 ACP stdio agent（OpenCode、Claude 兼容），
-**反向连接**到 AgentNexus 服务端，把用户消息/附件转发给本地 agent，再把回复+生成文件流式回传。
+**反向连接**到 Cheers 服务端，把用户消息/附件转发给本地 agent，再把回复+生成文件流式回传。
 
 ### 连接
 三条服务端 WS 端点（`app/api/v1/agent_bridge/routes.py`）：
@@ -61,7 +67,7 @@ Browser / Mobile
 │  └──────────────────────────────────────────────────────┘ │
 │                                                           │
 │  ┌─ domain ─────────────────────────────────────────────┐ │
-│  │  channels / messages / bots / files / memory / ...    │ │
+│  │  channels / messages / bots / files / memory / ...    │ │  ⚠️ "memory" 域已废弃，文件是唯一基质（见 CURRENT MODEL）
 │  └──────────────────────────────────────────────────────┘ │
 │                                                           │
 │  ┌─ realtime ───────────────────────────────────────────┐ │
@@ -103,10 +109,10 @@ Browser / Mobile
 
 ### 3.1 接入方式对比
 
-| 维度 | ACP connector（直连） | agentnexus-mcp-server（MCP 桥） |
+| 维度 | ACP connector（直连） | cheers-mcp-server（MCP 桥） |
 |------|----------------------|-------------------------------|
 | 适用 agent | OpenCode 等原生 ACP agent | Claude / Codex / Cursor 等 MCP agent |
-| 本地组件 | connector + 可选 Daemon | agentnexus-mcp-server（stdio） |
+| 本地组件 | connector + 可选 Daemon | cheers-mcp-server（stdio） |
 | Agent Bridge | connector 直接持有 WS | mcp-server 通过 connector IPC 转发 |
 | 资源访问 | `resource_req` on data WS | MCP tool call → IPC → `resource_req` |
 | 部署 | 用户本地 | 用户本地，和 agent 共存 |
@@ -123,11 +129,13 @@ Rust Backend 通过 control WS 派发 task 帧给对应 bot:
   ▼
 外置 agent（OpenCode / Claude via mcp-server / 任何 ACP bot）收到任务:
   ├─ resource_req: channel.context  → resource_res: {messages, memory, members}
+  │   # ⚠️ 历史设计，已废弃 — context 不再 push memory 正文；agent 一律 pull（fs.* / history）。见 CURRENT MODEL
   ├─ resource_req: channel.files    → resource_res: {files: [...]}
   ├─ 调本地 LLM（流式）
   │   ├─ data WS: delta(msg_id, seq:0, "...")  → Rust fan-out → 浏览器
   │   └─ ...
   ├─ resource_req: fs.write / channel.memory.update（写记忆，需 Grant）
+  │   # ⚠️ 历史设计，已废弃 — channel.memory.update 指向已删表、Grant 已废；改用 fs.*，授权唯 channel-role。见 CURRENT MODEL
   └─ data WS: done(msg_id)  → Rust Backend → DB finalize → fan-out → 浏览器
 ```
 
@@ -162,7 +170,7 @@ Rust Backend 通过 control WS 派发 task 帧给对应 bot:
 | 查询频道成员 | `channel.members` | 知道谁在频道里 |
 | 查询历史消息 | `channel.messages` | 读取上下文 |
 | 查询/上传文件 | `channel.files` / `channel.files.create` | 统一文件操作 |
-| 读写记忆 | `channel.memory` / `channel.memory.update` | 访问频道记忆层 |
+| 读写记忆 | `channel.memory` / `channel.memory.update` | 访问频道记忆层 ⚠️ 历史设计，已废弃 — 表已删，改用 `fs.*` 文件树。见 CURRENT MODEL |
 | 聚合上下文 | `channel.context` | 一次取多维信息 |
 
 **这是统一契约的自然红利** — 内置 bot 能做的事，外置 bot 也能做（受权限约束）。

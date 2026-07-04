@@ -2,7 +2,7 @@
 
 > **语言**：中文 | [English](RustFS对象存储部署说明.md)
 
-本文档说明 AgentNexus 第一阶段的对象存储接入方式。当前项目把 RustFS 当作标准 S3-compatible object storage 使用，业务代码不直接依赖 RustFS 私有接口，后续也可以平滑切换到 MinIO、AWS S3 或 R2。
+本文档说明 Cheers 第一阶段的对象存储接入方式。当前项目把 RustFS 当作标准 S3-compatible object storage 使用，业务代码不直接依赖 RustFS 私有接口，后续也可以平滑切换到 MinIO、AWS S3 或 R2。
 
 ## 一、架构定位
 
@@ -22,7 +22,7 @@
 - `STORAGE_S3_REGION=us-east-1`
 - `STORAGE_S3_ACCESS_KEY=<same-as-rustfs-access-key>`
 - `STORAGE_S3_SECRET_KEY=<same-as-rustfs-secret-key>`
-- `STORAGE_S3_BUCKET=agentnexus-files`
+- `STORAGE_S3_BUCKET=cheers-files`
 - `STORAGE_S3_FORCE_PATH_STYLE=true`
 - `STORAGE_S3_AUTO_CREATE_BUCKET=true`
 - `STORAGE_PRESIGN_EXPIRES_SECONDS=900`
@@ -49,14 +49,14 @@ cp .env.example .env
 2. 编辑 `.env`，至少填好以下字段：
 
 ```env
-RUSTFS_ACCESS_KEY=agentnexus-local-access-key
-RUSTFS_SECRET_KEY=agentnexus-local-secret-key
+RUSTFS_ACCESS_KEY=cheers-local-access-key
+RUSTFS_SECRET_KEY=cheers-local-secret-key
 STORAGE_BACKEND=s3
 STORAGE_S3_ENDPOINT=http://rustfs:9000
 STORAGE_S3_PUBLIC_ENDPOINT=http://localhost:9000
-STORAGE_S3_ACCESS_KEY=agentnexus-local-access-key
-STORAGE_S3_SECRET_KEY=agentnexus-local-secret-key
-STORAGE_S3_BUCKET=agentnexus-files
+STORAGE_S3_ACCESS_KEY=cheers-local-access-key
+STORAGE_S3_SECRET_KEY=cheers-local-secret-key
+STORAGE_S3_BUCKET=cheers-files
 ```
 
 3. 启动服务：

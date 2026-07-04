@@ -1,10 +1,14 @@
 pub mod activity;
 pub mod channel_info;
+pub mod commands;
 pub mod context;
 pub mod files;
 pub mod fs;
 pub mod members;
 pub mod messages;
+pub mod plan;
+pub mod sessions;
+pub mod usage;
 
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
@@ -85,12 +89,22 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
         "channel.activity.read" => activity::handle_read(db, &principal, &params).await,
         "channel.messages.index" => activity::handle_index(db, &principal, &params).await,
         "channel.messages.by-seq" => messages::handle_by_seq(db, &principal, &params).await,
+        "channel.messages.search" => messages::handle_search(db, &principal, &params).await,
         "fs.ls" => fs::handle_ls(db, &principal, &params).await,
         "fs.read" => fs::handle_read(db, &principal, &params).await,
 
+        // ── Phase A：promoted session/update artifacts（计划/成本/命令读侧）──
+        "channel.plan.read" => plan::handle_read(db, &principal, &params).await,
+        "channel.usage.read" => usage::handle_read(db, &principal, &params).await,
+        "channel.commands.read" => commands::handle_read(db, &principal, &params).await,
+        "channel.sessions.read" => sessions::handle_read(db, &principal, &params).await,
+
         // ── 写操作（频道成员 role 可写）────────────────────────────────
         "channel.messages.create" => messages::handle_create(db, &principal, &params).await,
+        "channel.leave" => members::handle_leave(db, &principal, &params).await,
         "channel.files.create" => files::handle_create(db, &principal, &params).await,
+        "channel.files.stage" => files::handle_stage(db, &principal, &params).await,
+        "channel.files.realize" => files::handle_realize(db, &principal, &params).await,
 
         // ── mesh step 6：新增写操作（fs.*）───────────────────────────────
         "fs.write" => fs::handle_write(db, &principal, &params).await,
@@ -106,22 +120,57 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
     };
 
     match result {
-        Ok(data) => json!({
-            "type": "resource_res",
-            "v": 1,
-            "req_id": req_id,
-            "ok": true,
-            "data": data,
-        }),
-        Err((code, msg)) => json!({
-            "type": "resource_res",
-            "v": 1,
-            "req_id": req_id,
-            "ok": false,
-            "code": code,
-            "error": msg,
-        }),
+        Ok(data) => ok_res(req_id, data),
+        Err((code, msg)) => err_res(req_id, &code, &msg),
     }
+}
+
+/// 浏览器用户经 WS 发起的 resource_req 入口。在通用 `dispatch` 之上加「用户路径」
+/// 专属策略：破坏性 `fs.rm` / `fs.mv` 需 owner/admin（bot 路径不受此限——bot 是
+/// 工作区文件的主要作者）。其余 verb 沿用 `dispatch` 内的 channel-role 鉴权。
+pub async fn dispatch_user(db: &PgPool, user_id: Uuid, frame: &Value) -> Value {
+    let resource = frame.get("resource").and_then(|v| v.as_str()).unwrap_or("");
+    let req_id = frame.get("req_id").and_then(|v| v.as_str()).unwrap_or("");
+    let principal = Principal::user(user_id);
+
+    if matches!(resource, "fs.rm" | "fs.mv") {
+        let params = frame.get("params").cloned().unwrap_or(Value::Null);
+        if let Err((code, msg)) = require_channel_admin(db, &principal, &params).await {
+            return err_res(req_id, &code, &msg);
+        }
+    }
+    dispatch(db, principal, frame).await
+}
+
+/// 破坏性 fs 操作的门控：principal 在目标频道须为 owner/admin。
+async fn require_channel_admin(
+    db: &PgPool,
+    principal: &Principal,
+    params: &Value,
+) -> Result<(), (String, String)> {
+    let channel_id = params
+        .get("channel_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<Uuid>().ok())
+        .ok_or_else(|| resource_error("INVALID_PARAMS", "channel_id required"))?;
+    let membership = authorize_channel_read(db, principal, channel_id).await?;
+    if role_can_admin(&membership.role) {
+        Ok(())
+    } else {
+        Err(permission_denied(
+            "destructive fs ops (rm/mv) require admin or owner",
+        ))
+    }
+}
+
+/// 构造成功的 resource_res 帧。
+fn ok_res(req_id: &str, data: Value) -> Value {
+    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": true, "data": data })
+}
+
+/// 构造失败的 resource_res 帧。
+fn err_res(req_id: &str, code: &str, msg: &str) -> Value {
+    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": false, "code": code, "error": msg })
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
@@ -130,6 +179,26 @@ pub type ResourceResult = Result<Value, (String, String)>;
 
 pub fn resource_error(code: &str, msg: impl Into<String>) -> (String, String) {
     (code.to_string(), msg.into())
+}
+
+/// Map an internal failure (DB/IO/etc.) to an opaque client-facing error while
+/// logging the real cause server-side with `ctx` for debugging. The returned
+/// (code, message) is identical to the previous hard-coded form — no client
+/// behavior change.
+pub fn internal_err<E: std::fmt::Display>(
+    code: &'static str,
+    client_msg: &'static str,
+    ctx: &'static str,
+) -> impl FnOnce(E) -> (String, String) {
+    move |e| {
+        tracing::error!(error = %e, ctx = ctx, "resource internal error");
+        resource_error(code, client_msg)
+    }
+}
+
+/// Convenience for the common ("INTERNAL_ERROR", "db error") case.
+pub fn db_err<E: std::fmt::Display>(ctx: &'static str) -> impl FnOnce(E) -> (String, String) {
+    internal_err("INTERNAL_ERROR", "db error", ctx)
 }
 
 pub fn not_member() -> (String, String) {
@@ -159,7 +228,7 @@ pub async fn authorize_channel_read(
     .bind(principal.member_type())
     .fetch_optional(db)
     .await
-    .map_err(|_| resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(db_err("authorize_channel_read: select membership role"))?;
 
     row.map(|row| ChannelMembership {
         role: row
@@ -187,6 +256,11 @@ pub fn role_can_write(role: &str) -> bool {
     matches!(role, "owner" | "admin" | "member")
 }
 
+/// owner/admin —— 破坏性操作（user 路径的 `fs.rm` / `fs.mv`）门控用。
+pub fn role_can_admin(role: &str) -> bool {
+    matches!(role, "owner" | "admin")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,7 +276,9 @@ mod tests {
     /// 其余角色只读；匹配区分大小写（不接受 "Owner"/"ADMIN"）。
     #[test]
     fn other_roles_are_read_only() {
-        for role in ["viewer", "guest", "observer", "", "Owner", "ADMIN", "members"] {
+        for role in [
+            "viewer", "guest", "observer", "", "Owner", "ADMIN", "members",
+        ] {
             assert!(!role_can_write(role), "{role} 必须只读");
         }
     }

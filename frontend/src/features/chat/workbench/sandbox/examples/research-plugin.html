@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Embedded manifest — the host reads this on upload (inert; never executed). -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "research-sandbox",
+        "title": "Research (sandbox plugin)",
+        "panels": [
+          { "id": "journals", "title": "Target journals" },
+          { "id": "progress", "title": "Progress board" },
+          { "id": "reviews", "title": "Paper reviews" },
+          { "id": "prompt", "title": "Review prompt" }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; display: flex; flex-direction: column; height: 100vh; }
+      header { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+      header b { font-size: 12px; }
+      #root { flex: 1; overflow: auto; padding: 8px; }
+      button { background: #27272a; color: #e4e4e7; border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit; }
+      button:hover { background: #3f3f46; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th { text-align: left; font-weight: 400; color: #71717a; padding: 4px; }
+      td { padding: 2px 4px; border-top: 1px solid #27272a55; }
+      input, select, textarea { background: transparent; color: #e4e4e7; border: 0; outline: 0; font: inherit; width: 100%; }
+      select { background: #27272a; border-radius: 3px; padding: 1px 2px; }
+      .cols { display: flex; gap: 8px; align-items: flex-start; }
+      .col { width: 150px; flex-shrink: 0; background: #09090955; border: 1px solid #27272a; border-radius: 6px; }
+      .col h4 { margin: 0; padding: 4px 6px; border-bottom: 1px solid #27272a; font-size: 12px; }
+      .item { background: #27272a99; border-radius: 4px; padding: 3px 6px; margin: 4px; font-size: 12px; }
+      textarea { height: 100%; resize: none; font: 12px ui-monospace, monospace; padding: 6px; }
+      #st { padding: 2px 10px 6px; color: #71717a; font-size: 11px; }
+      .x { color: #71717a; cursor: pointer; float: right; }
+    </style>
+  </head>
+  <body>
+    <header><b id="ttl">Research</b><span style="flex: 1"></span><button id="save">Save</button></header>
+    <div id="root"></div>
+    <div id="st"></div>
+    <script>
+      var PANEL = null, rid = 0, pending = {}, state = null, FILE = null, KIND = null;
+      function fs(op, args) {
+        return new Promise(function (res) { var id = ++rid; pending[id] = res; parent.postMessage({ type: "cheers:fs", reqId: id, op: op, args: args || {} }, "*"); });
+      }
+      window.addEventListener("message", function (e) {
+        var m = e.data; if (!m || typeof m !== "object") return;
+        if (m.type === "cheers:init") { PANEL = m.panelId; boot(); }
+        else if (m.type === "cheers:fs:result") { var p = pending[m.reqId]; if (p) { delete pending[m.reqId]; p(m); } }
+      });
+
+      var COLS = {
+        journals: [["name", "Journal"], ["impact", "IF"], ["deadline", "Deadline"], ["status", "Status", ["Candidate","Drafting","Submitting","Submitted","Accepted","Rejected"]]],
+        reviews: [["paper", "Paper"], ["reviewer", "Reviewer"], ["status", "Status", ["To review","Reviewing","Reviewed","Returned"]], ["notes", "Notes"]],
+      };
+      var SEED = {
+        "journals.json": [{ name: "Nature", impact: "50.5", deadline: "", status: "Candidate" }],
+        "progress.json": { columns: [{ name: "To do", items: ["Define the research question"] }, { name: "In progress", items: [] }, { name: "Done", items: [] }] },
+        "reviews.json": [],
+        "review-prompt.md": "You are a rigorous peer reviewer. Assess novelty, soundness, clarity; end with a recommendation.",
+      };
+
+      async function boot() {
+        var map = { journals: ["journals.json","table"], reviews: ["reviews.json","table"], progress: ["progress.json","kanban"], prompt: ["review-prompt.md","md"] };
+        var cfg = map[PANEL]; if (!cfg) { document.getElementById("root").textContent = "unknown panel: " + PANEL; return; }
+        FILE = cfg[0]; KIND = cfg[1];
+        document.getElementById("ttl").textContent = { journals: "Target journals", reviews: "Paper reviews", progress: "Progress board", prompt: "Review prompt" }[PANEL];
+        var r = await fs("read", { path: FILE });
+        if (r.ok && r.data && r.data.content != null && r.data.content !== "") {
+          state = KIND === "md" ? r.data.content : JSON.parse(r.data.content);
+        } else {
+          state = SEED[FILE];                 // self-seed if missing
+        }
+        render();
+      }
+
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+      document.getElementById("save").onclick = async function () {
+        var content = KIND === "md" ? state : JSON.stringify(state, null, 2);
+        var r = await fs("write", { path: FILE, content: content });
+        setStatus(r.ok ? "Saved v" + (r.data && r.data.version) : "Error: " + (r.error || ""));
+      };
+
+      function render() {
+        var root = document.getElementById("root"); root.innerHTML = "";
+        if (KIND === "table") renderTable(root);
+        else if (KIND === "kanban") renderKanban(root);
+        else renderMd(root);
+      }
+
+      function renderTable(root) {
+        var cols = COLS[PANEL], tbl = document.createElement("table");
+        var thead = "<tr>"; cols.forEach(function (c) { thead += "<th>" + c[1] + "</th>"; }); thead += "<th></th></tr>";
+        var tb = document.createElement("tbody");
+        state.forEach(function (row, i) {
+          var tr = document.createElement("tr");
+          cols.forEach(function (c) {
+            var td = document.createElement("td"), key = c[0], opts = c[2];
+            var el = opts ? document.createElement("select") : document.createElement("input");
+            if (opts) opts.forEach(function (o) { var op = document.createElement("option"); op.textContent = o; el.appendChild(op); });
+            el.value = row[key] == null ? "" : row[key];
+            el.oninput = function () { state[i][key] = el.value; };
+            td.appendChild(el); tr.appendChild(td);
+          });
+          var del = document.createElement("td"); del.innerHTML = '<span class="x">✕</span>';
+          del.querySelector(".x").onclick = function () { state.splice(i, 1); render(); };
+          tr.appendChild(del); tb.appendChild(tr);
+        });
+        tbl.innerHTML = "<thead>" + thead + "</thead>"; tbl.appendChild(tb); root.appendChild(tbl);
+        var add = document.createElement("button"); add.textContent = "+ Add row"; add.style.marginTop = "6px";
+        add.onclick = function () { var o = {}; cols.forEach(function (c) { o[c[0]] = c[2] ? c[2][0] : ""; }); state.push(o); render(); };
+        root.appendChild(add);
+      }
+
+      function renderKanban(root) {
+        var wrap = document.createElement("div"); wrap.className = "cols";
+        (state.columns || []).forEach(function (col, ci) {
+          var d = document.createElement("div"); d.className = "col";
+          d.innerHTML = "<h4>" + col.name + " <span style='color:#52525b'>" + col.items.length + "</span></h4>";
+          col.items.forEach(function (it, ii) {
+            var item = document.createElement("div"); item.className = "item"; item.textContent = it;
+            var x = document.createElement("span"); x.className = "x"; x.textContent = "✕";
+            x.onclick = function () { col.items.splice(ii, 1); render(); };
+            item.appendChild(x); d.appendChild(item);
+          });
+          var inp = document.createElement("input"); inp.placeholder = "+ Task"; inp.style.margin = "4px"; inp.style.width = "calc(100% - 8px)";
+          inp.onkeydown = function (e) { if (e.key === "Enter" && inp.value.trim()) { col.items.push(inp.value.trim()); render(); } };
+          d.appendChild(inp); wrap.appendChild(d);
+        });
+        root.appendChild(wrap);
+      }
+
+      function renderMd(root) {
+        var ta = document.createElement("textarea"); ta.value = state || ""; ta.style.minHeight = "300px";
+        ta.oninput = function () { state = ta.value; };
+        root.appendChild(ta);
+      }
+
+      parent.postMessage({ type: "cheers:ready" }, "*");
+    </script>
+  </body>
+</html>

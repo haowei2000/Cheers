@@ -1,26 +1,34 @@
 services:
-  backend:
-    ports:
-      - "${BACKEND_HOST_BIND:-127.0.0.1}:${BACKEND_HOST_PORT:-8000}:8000"
+  postgres:
+    # The base file publishes this on 0.0.0.0 unconditionally; restrict it to
+    # loopback in production so Postgres isn't reachable from the internet.
+    ports: !override
+      - "${POSTGRES_HOST_BIND:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
+
+  gateway:
+    ports: !override
+      - "${BACKEND_HOST_BIND:-127.0.0.1}:${GATEWAY_HOST_PORT:-8000}:8000"
     environment:
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-https://agentnexus.example.com}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-https://cheers.example.com}
+      # Public websocket base handed to external connectors by the onboarding
+      # flow. Without it the gateway falls back to ws://localhost:8000, which
+      # only works for same-machine dev — never for a TLS deployment.
+      - CHEERS_CONNECTOR_PUBLIC_BASE=${CHEERS_CONNECTOR_PUBLIC_BASE:-wss://${APP_DOMAIN:-cheers.example.com}}
 
   frontend:
-    ports:
-      - "${FRONTEND_HOST_BIND:-127.0.0.1}:${FRONTEND_HOST_PORT:-80}:80"
+    # No host port here: FRONTEND_HOST_PORT defaults to 80, same as tls-edge's
+    # HTTP_PORT below, so publishing both collides. Caddy reaches this service
+    # over the internal Docker network (frontend:80) instead.
+    ports: !override []
 
   rustfs:
-    ports:
+    ports: !override
       - "${RUSTFS_API_HOST_BIND:-127.0.0.1}:${RUSTFS_API_HOST_PORT:-9000}:9000"
       - "${RUSTFS_CONSOLE_HOST_BIND:-127.0.0.1}:${RUSTFS_CONSOLE_HOST_PORT:-9001}:9001"
     environment:
-      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-
-  kkfileview:
-    ports:
-      - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
+      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
 
   tls-edge:
     image: caddy:2-alpine
@@ -34,14 +42,13 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - APP_DOMAIN=${APP_DOMAIN:-agentnexus.example.com}
-      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
+      - APP_DOMAIN=${APP_DOMAIN:-cheers.example.com}
+      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-cheers-files}
       - TLS_CERT_FILE=${TLS_CERT_FILE:-/etc/caddy/certs/fullchain.pem}
       - TLS_KEY_FILE=${TLS_KEY_FILE:-/etc/caddy/certs/privkey.pem}
     depends_on:
-      - backend
+      - gateway
       - frontend
-      - kkfileview
       - rustfs
     command: ["caddy","run","--config","/etc/caddy/Caddyfile"]
 

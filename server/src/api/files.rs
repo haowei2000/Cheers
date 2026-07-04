@@ -1,12 +1,10 @@
 use axum::{
-    body::Body,
-    extract::{Path, State},
-    http::{header, HeaderValue, StatusCode},
+    body::Bytes,
+    extract::{Path, Query, State},
     response::Response,
     Extension, Json,
 };
 use chrono::{DateTime, Duration, Utc};
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -41,6 +39,12 @@ struct FileRecord {
     summary_3lines: Option<String>,
     last_error: Option<String>,
     expires_at: Option<DateTime<Utc>>,
+    /// S3 key of the generated PDF preview rendition (office docs), if any.
+    preview_object_key: Option<String>,
+    /// S3 key of the audio transcript (`transcripts/{id}.txt`), if produced.
+    md_path: Option<String>,
+    /// When a user requested transcription for this (audio) file; NULL = never.
+    transcribe_requested_at: Option<DateTime<Utc>>,
 }
 
 fn safe_filename(raw: &str) -> Result<String, AppError> {
@@ -49,12 +53,6 @@ fn safe_filename(raw: &str) -> Result<String, AppError> {
         return Err(AppError::BadRequest("filename is required".into()));
     }
     Ok(name.to_string())
-}
-
-fn sanitize_disposition_name(raw: &str) -> String {
-    raw.chars()
-        .filter(|ch| !matches!(ch, '\\' | '"' | '\n' | '\r'))
-        .collect()
 }
 
 fn resolve_expires_in(seconds: Option<i64>) -> i64 {
@@ -77,7 +75,8 @@ fn resolve_file_url(config: &crate::config::Config, object_key: &str) -> String 
 async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord, AppError> {
     let row = sqlx::query(
         "SELECT file_id, channel_id, workspace_id, uploader_id, object_key, original_filename,
-                content_type, status, size_bytes, summary_3lines, last_error, expires_at
+                content_type, status, size_bytes, summary_3lines, last_error, expires_at,
+                preview_object_key, md_path, transcribe_requested_at
          FROM file_records
          WHERE file_id = $1",
     )
@@ -126,6 +125,15 @@ async fn load_file_record(state: &AppState, file_id: &str) -> Result<FileRecord,
             .flatten(),
         expires_at: row
             .try_get::<Option<DateTime<Utc>>, _>("expires_at")
+            .ok()
+            .flatten(),
+        preview_object_key: row
+            .try_get::<Option<String>, _>("preview_object_key")
+            .ok()
+            .flatten(),
+        md_path: row.try_get::<Option<String>, _>("md_path").ok().flatten(),
+        transcribe_requested_at: row
+            .try_get::<Option<DateTime<Utc>>, _>("transcribe_requested_at")
             .ok()
             .flatten(),
     })
@@ -244,22 +252,135 @@ async fn ensure_file_for_access(
     Ok(file)
 }
 
-async fn fetch_file_bytes(file_url: String) -> Result<Vec<u8>, AppError> {
-    let response = Client::new()
-        .get(file_url)
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    pub channel_id: String,
+    pub filename: String,
+    pub content_type: Option<String>,
+}
 
-    if !response.status().is_success() {
-        return Err(AppError::NotFound);
+/// GET /api/v1/channels/:channel_id/files — the channel's CHAT files (file_records /
+/// S3 attachments). Distinct from workbench context_files: this is the channel's file
+/// library, browsed via its own UI. Membership-gated.
+pub async fn list_channel_files(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<Vec<Value>>, AppError> {
+    let member = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+            SELECT 1 FROM channel_memberships
+            WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'
+        )",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db)
+    .await?;
+    if !member && !matches!(claims.role.as_str(), "system_admin" | "admin") {
+        return Err(AppError::Forbidden("channel member required".into()));
     }
+    let rows = sqlx::query(
+        "SELECT file_id, original_filename, content_type, size_bytes
+         FROM file_records
+         WHERE channel_id = $1 AND status IN ('uploaded', 'converted')
+         ORDER BY created_at DESC
+         LIMIT 200",
+    )
+    .bind(&channel_id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.iter()
+            .map(|r| {
+                json!({
+                    "file_id": r.try_get::<String, _>("file_id").unwrap_or_default(),
+                    "original_filename": r.try_get::<Option<String>, _>("original_filename").unwrap_or(None),
+                    "content_type": r.try_get::<Option<String>, _>("content_type").unwrap_or(None),
+                    "size_bytes": r.try_get::<Option<i32>, _>("size_bytes").unwrap_or(None),
+                })
+            })
+            .collect(),
+    ))
+}
 
-    response
-        .bytes()
-        .await
-        .map(|b| b.to_vec())
-        .map_err(|e| AppError::Internal(e.to_string()))
+/// POST /api/v1/files?channel_id=&filename=&content_type= — gateway-proxied
+/// upload. The browser sends the raw file bytes as the request body; the gateway
+/// streams them to object storage with SigV4 (no browser-side S3 signing/CORS)
+/// and records the file as `uploaded` in one round trip.
+pub async fn upload_file(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Query(q): Query<UploadQuery>,
+    body: Bytes,
+) -> Result<Json<Value>, AppError> {
+    let member = sqlx::query(
+        "SELECT c.workspace_id
+         FROM channels c
+         JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+         WHERE c.channel_id = $1 AND cm.member_id = $2 AND cm.member_type = 'user'",
+    )
+    .bind(&q.channel_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Forbidden("not a channel member".into()))?;
+    let workspace_id: Option<String> = member.try_get("workspace_id").ok();
+
+    if body.is_empty() {
+        return Err(AppError::BadRequest("empty file".into()));
+    }
+    let filename = safe_filename(&q.filename)?;
+    let content_type = q
+        .content_type
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let size_bytes =
+        i32::try_from(body.len()).map_err(|_| AppError::BadRequest("file too large".into()))?;
+    let file_id = Uuid::new_v4().to_string();
+    let object_key = format!("uploads/{}/{}", file_id, filename);
+
+    crate::infra::s3::put_object(
+        &state.s3,
+        &state.config.s3_bucket,
+        &object_key,
+        &content_type,
+        body.to_vec(),
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("upload failed: {e}")))?;
+
+    let expires_at = Utc::now() + Duration::seconds(7 * 24 * 60 * 60);
+    sqlx::query(
+        "INSERT INTO file_records
+            (file_id, channel_id, workspace_id, uploader_id, original_path, object_key,
+             storage_bucket, original_filename, content_type, size_bytes, status,
+             uploaded_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 'uploaded', NOW(), $10)",
+    )
+    .bind(&file_id)
+    .bind(&q.channel_id)
+    .bind(&workspace_id)
+    .bind(&claims.sub)
+    .bind(&object_key)
+    .bind(&state.config.s3_bucket)
+    .bind(&filename)
+    .bind(&content_type)
+    .bind(size_bytes)
+    .bind(expires_at)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "file_id": file_id,
+        "original_filename": filename,
+        "content_type": content_type,
+        "size_bytes": size_bytes,
+        "status": "uploaded",
+        "preview_url": format!("/api/v1/files/{}/preview", file_id),
+        "download_url": format!("/api/v1/files/{}/download", file_id),
+    })))
 }
 
 fn attachment_response(
@@ -269,35 +390,9 @@ fn attachment_response(
     inline: bool,
     ttl_seconds: Option<i64>,
 ) -> Response {
-    let mut response = Response::new(Body::from(bytes));
-    *response.status_mut() = StatusCode::OK;
-
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_str(content_type.unwrap_or("application/octet-stream"))
-            .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
-    );
-
-    let disposition = if inline { "inline" } else { "attachment" };
-    let safe_name = sanitize_disposition_name(filename);
-    let content_disposition = format!("{}; filename=\"{}\"", disposition, safe_name);
-    headers.insert(
-        header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&content_disposition)
-            .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
-    );
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    if let Some(ttl) = ttl_seconds {
-        if ttl > 0 {
-            let value = format!("private, max-age={ttl}");
-            if let Ok(hv) = HeaderValue::from_str(&value) {
-                headers.insert(header::CACHE_CONTROL, hv);
-            }
-        }
-    }
-
-    response
+    // Delegate to the shared hardened builder (nosniff + active-type download +
+    // CSP sandbox) so every file-serving path applies the same anti-XSS policy.
+    crate::infra::http::file_response(bytes, filename, content_type, inline, ttl_seconds)
 }
 
 fn ttl_left_seconds(expires_at: Option<DateTime<Utc>>) -> Option<i64> {
@@ -415,6 +510,76 @@ pub async fn confirm_upload(
     })))
 }
 
+/// POST /api/v1/files/:file_id/realize
+/// Triggers on-demand upload of a staged remote file.
+/// The gateway sends a `realize_file` data frame to the connector that owns the file;
+/// the connector reads the local path, base64-encodes it, and calls channel.files.realize.
+/// Returns immediately with `{ "status": "realizing" }`; caller polls get_file_status
+/// until status transitions to "uploaded".
+pub async fn realize_file(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(file_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let file = load_file_record(&state, &file_id).await?;
+    ensure_file_scope(&state, &claims, &file).await?;
+
+    if file.status != "staged" {
+        return Err(AppError::BadRequest(format!(
+            "file status is '{}', expected 'staged'",
+            file.status
+        )));
+    }
+
+    let bot_id: uuid::Uuid = file
+        .uploader_id
+        .as_deref()
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| AppError::BadRequest("staged file has no associated bot".into()))?;
+
+    let remote_ref: String =
+        sqlx::query_scalar("SELECT remote_ref FROM file_records WHERE file_id = $1")
+            .bind(&file_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten()
+            .ok_or_else(|| AppError::BadRequest("staged file has no remote_ref".into()))?;
+
+    let channel_id = file
+        .channel_id
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("staged file has no channel".into()))?;
+
+    // Confine the realize to the (bot, channel) PRIMARY session's root set. The
+    // connector re-clamps against allowed_roots and falls back to default_cwd when
+    // this is empty (docs/arch/SESSION_WORKDIR_ROOTSET.md, Phase 6).
+    let roots = crate::domain::sessions::session_root_set(
+        &state.db,
+        &crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id),
+    )
+    .await;
+
+    let frame = serde_json::json!({
+        "type": "realize_file",
+        "file_id": file_id,
+        "remote_ref": remote_ref,
+        "channel_id": channel_id,
+        "roots": roots,
+    });
+
+    let sent = state.bot_locator.send_data(bot_id, frame).await;
+    if !sent {
+        return Err(AppError::BadRequest(
+            "bot connector is offline; cannot realize file".into(),
+        ));
+    }
+
+    Ok(Json(serde_json::json!({
+        "file_id": file_id,
+        "status": "realizing",
+    })))
+}
+
 pub async fn get_file_status(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -442,7 +607,71 @@ pub async fn get_file_status(
         "summary_3lines": row.summary_3lines,
         "last_error": row.last_error,
         "expires_at": row.expires_at.map(|dt| dt.to_rfc3339()),
+        // True once an office doc's PDF preview rendition is ready (Gotenberg).
+        "preview_ready": row.preview_object_key.is_some(),
+        // Audio transcription state: "done" | "pending" | null (never requested).
+        "transcript_status": if row.md_path.is_some() {
+            Some("done")
+        } else if row.transcribe_requested_at.is_some() {
+            Some("pending")
+        } else {
+            None
+        },
     })))
+}
+
+/// POST /api/v1/files/:file_id/transcribe — request speech-to-text for an audio
+/// chat file. Opt-in per file (the worker only processes requested files), any
+/// channel member may ask, idempotent. 409 when the admin hasn't enabled STT.
+pub async fn transcribe_file(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(file_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
+
+    let is_audio = file
+        .content_type
+        .as_deref()
+        .is_some_and(|ct| ct.starts_with("audio/"));
+    if !is_audio {
+        return Err(AppError::BadRequest("not an audio file".into()));
+    }
+    if file.md_path.is_some() {
+        return Ok(Json(
+            json!({ "status": "done", "summary": file.summary_3lines }),
+        ));
+    }
+
+    // Gate on the admin-configured STT setting so the button can explain itself
+    // instead of silently queueing work no worker will ever pick up.
+    let master_key = crate::infra::crypto::derive_master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    let stt_enabled = crate::domain::stt_settings::load(&state.db, &master_key)
+        .await?
+        .is_some_and(|s| s.enabled && !s.endpoint.is_empty());
+    if !stt_enabled {
+        return Err(AppError::Conflict(
+            "speech-to-text is not enabled on this instance (ask an admin)".into(),
+        ));
+    }
+
+    // First request stamps transcribe_requested_at; a re-request after terminal
+    // failure resets the attempt counter so the worker picks the file up again
+    // (otherwise the retry button would be a no-op at MAX_ATTEMPTS).
+    sqlx::query(
+        "UPDATE file_records
+         SET transcribe_requested_at = COALESCE(transcribe_requested_at, NOW()),
+             conversion_attempts = 0,
+             last_error = NULL
+         WHERE file_id = $1 AND md_path IS NULL",
+    )
+    .bind(&file_id)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(json!({ "status": "pending" })))
 }
 
 pub async fn preview_file(
@@ -451,9 +680,19 @@ pub async fn preview_file(
     Path(file_id): Path<String>,
 ) -> Result<Response, AppError> {
     let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
-    let object_key = file.object_key.ok_or_else(|| AppError::NotFound)?;
-    let file_url = resolve_file_url(&state.config, &object_key);
-    let bytes = fetch_file_bytes(file_url).await?;
+
+    // Office docs are previewed via their generated PDF rendition when available;
+    // everything else (images, native PDFs, text) is served as-is.
+    let (object_key, content_type) = match file.preview_object_key.clone() {
+        Some(key) => (key, Some("application/pdf".to_string())),
+        None => (
+            file.object_key.clone().ok_or(AppError::NotFound)?,
+            file.content_type.clone(),
+        ),
+    };
+    let bytes = crate::infra::s3::get_object(&state.s3, &state.config.s3_bucket, &object_key)
+        .await
+        .map_err(|_| AppError::NotFound)?;
 
     let ttl_seconds = ttl_left_seconds(file.expires_at);
     let filename = file.original_filename.unwrap_or_else(|| file_id.clone());
@@ -461,7 +700,7 @@ pub async fn preview_file(
     Ok(attachment_response(
         bytes,
         &filename,
-        file.content_type.as_deref(),
+        content_type.as_deref(),
         true,
         ttl_seconds,
     ))
@@ -474,8 +713,9 @@ pub async fn download_file(
 ) -> Result<Response, AppError> {
     let file = ensure_file_for_access(&state, &claims, &file_id, true).await?;
     let object_key = file.object_key.ok_or_else(|| AppError::NotFound)?;
-    let file_url = resolve_file_url(&state.config, &object_key);
-    let bytes = fetch_file_bytes(file_url).await?;
+    let bytes = crate::infra::s3::get_object(&state.s3, &state.config.s3_bucket, &object_key)
+        .await
+        .map_err(|_| AppError::NotFound)?;
 
     let ttl_seconds = ttl_left_seconds(file.expires_at);
     let filename = file.original_filename.unwrap_or_else(|| file_id);

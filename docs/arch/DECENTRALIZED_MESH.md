@@ -15,6 +15,24 @@
 
 ---
 
+> ## ⚠️ Partly superseded (see CURRENT MODEL, 2026-06-23)
+>
+> Parts of this doc describe a **superseded** model. The dead concepts that appear
+> below are: the `memory_entries` layer model (ANCHOR/DECISIONS/PROGRESS), the
+> `channel.memory` / `channel.memory.update` verbs (and the `resource/memory.rs`
+> path), `Grant` / `trust_level` fine-grained authz, and the notion of a pushed
+> platform "memory" as a hardcoded layer.
+>
+> **Current model:** no separate *memory* concept; files are the only substrate;
+> a Context = plugin-curated files; the agent always **pulls** (no body injection);
+> authorization is **channel-role only**. See the
+> [⚠️ CURRENT MODEL (2026-06-23)](./context-and-environment.md) declaration at the
+> top of `context-and-environment.md`. The `fs.*` / `context_files` direction this
+> doc already points to is correct; the inline ⚠️ notes mark only the spots that
+> still present a dead concept as live.
+
+---
+
 ## 1. Why: no coordinator
 
 The current built-in `Coordinator` uses an LLM agent to *guess* which bot should
@@ -26,6 +44,7 @@ replaces it with a deterministic protocol rule: **the channel only forwards `@`*
   `Coordinator` routing privilege and `AutoTakeoverStage` are removed.
 - `trust_level` still differs (built-in `system` vs external) but only affects
   *write Grants*, not routing.
+  > ⚠️ 历史设计，已废弃 — `Grant` / `trust_level` 细粒度授权由 R13 取消，channel-role 是唯一授权事实源。见 [CURRENT MODEL](./context-and-environment.md)。
 
 This makes Bot@Bot composition transparent (every hop is a visible channel
 message) and routing a deterministic `@mention → bot_id` table lookup.
@@ -156,6 +175,7 @@ re-read on next trigger.
 - The task frame carries `trigger_seq` (the trigger message's `channel_seq`) as a
   reference point; the bot owns its cursor (e.g. in its `channel.memory`). The
   gateway stays stateless about per-bot cursors.
+  > ⚠️ 历史设计，已废弃 — `channel.memory` 指向已删表（用 `fs.*` / `context_files`）；现行模型下 agent 自管记忆，平台无独立 memory 概念。见 [CURRENT MODEL](./context-and-environment.md)。
 - Active recovery: `channel.messages.index` returns `{ min_seq, max_seq, count }`
   (+ optional headers without content). Because the stream is contiguous, a bot
   can compute exactly what it is missing and fetch it by range/seq. This is the
@@ -171,6 +191,8 @@ The only change needed on the existing memory path before it is replaced by
 `fs.*`: wrap the `replace` mode (`DELETE` + loop `INSERT`) in a **transaction** to
 remove the torn-read window.
 
+> ⚠️ 历史设计，已废弃 — 这条 `memory_entries` `replace` 写路径已随该表 `DROP` 移除（`0003_decentralized_mesh.sql:89`），不再需要修补；文件是唯一基质，写入走 `fs.*`。见 [CURRENT MODEL](./context-and-environment.md)。
+
 ---
 
 ## 5. Resource API structure
@@ -184,16 +206,16 @@ Class 1 — self-maintained (agent read-only; change = domain action; system sta
 
 Class 2 — agent workspace (uniform fs.*; per-path version optimistic lock)
   fs.{ls, read, write(if_version), edit(old→new, if_version), append, rm, mv}
-  ← backed by a NEW memory_files tree (materialized path); replaces the old memory_entries layer model
+  ← backed by a NEW context_files tree (materialized path); replaces the old memory_entries layer model
   ← every write also emits a Class 1 operation event (system-written, different resource → no invariant violation)
 
 Environment layer (sits ABOVE the Resource API)
-  seed  → bulk-write memory_files + inject convention prompt
+  seed  → bulk-write context_files + inject convention prompt
   lens  → file → UI render rules (frontend; not a resource)
   tools? → scenario-specific domain actions (require dynamic per-channel resource registration)
 ```
 
-`memory_files` storage: materialized `path` (subtree via `WHERE path LIKE 'a/b/%'`),
+`context_files` storage: materialized `path` (subtree via `WHERE path LIKE 'a/b/%'`),
 per-node `version` for optimistic locking, partial edit via string-replace, multi-file
 edits wrapped in a DB transaction. Binary/large files stay in `file_records`.
 
@@ -359,18 +381,21 @@ already exist.
 Write-Before-Deliver in `create_message`; the `resource_req` static dispatcher;
 deterministic placeholder id (UUID v5) idempotency; the permission/Grant engine.
 
+> ⚠️ 历史设计，已废弃 — “permission/Grant engine” 不再是事实源；R13 后授权唯 channel-role。见 [CURRENT MODEL](./context-and-environment.md)。
+
 **Conflicts (existing behavior to change):**
 - `domain/messages.rs::resolve_bot_triggers` currently triggers **all online bots**
   in the channel (its own TODO notes "@mention / coordinator routing" is unbuilt).
   This is the opposite of the mesh and is the biggest behavioral reversal.
 - `resource/memory.rs::handle_update` `replace` is not wrapped in a transaction
   (torn-read).
+  > ⚠️ 历史设计，已废弃 — `resource/memory.rs` / `channel.memory.update` 指向已删 `memory_entries` 表；现行写路径是 `fs.*`，此“冲突”不再适用。见 [CURRENT MODEL](./context-and-environment.md)。
 - Message reads order by `created_at`; the cursor model needs `channel_seq`.
 
 **Missing (net-new):** `channel_seq` (+ allocation), `channels.default_bot_id`,
 Bot@Bot re-entry on finalize (absent in Rust — it lived in the Python
 `trigger_sub_bots_from_mentions`), `task_chains` + chain columns, the dispatch gate,
-`cancel_chain`, `channel_operations` + `channel.activity.read`, `memory_files` +
+`cancel_chain`, `channel_operations` + `channel.activity.read`, `context_files` +
 `fs.*`, `messages.handle_read` `since_seq`/index, dynamic Environment tool registration.
 
 ---
@@ -383,7 +408,7 @@ first** (fewest dependencies, highest value) and pure infra follows.
 1. **Migrations first — lock the schema.** Add: `channels.next_seq` +
    `channels.default_bot_id`; `messages.channel_seq`; `message_mentions` (the @mention
    join table, §2 / [context-and-environment §5.2](./context-and-environment.md));
-   `task_chains` + chain columns; `channel_operations`; `memory_files`. **DROP**:
+   `task_chains` + chain columns; `channel_operations`; `context_files`. **DROP**:
    `memory_entries` (the old layer model — clean rebuild, not coexistence) and the
    legacy `mention_bot_ids` / `mention_user_ids` columns. All ids `VARCHAR(36)` to
    match baseline.
@@ -398,7 +423,7 @@ first** (fewest dependencies, highest value) and pure infra follows.
    re-run `@`-resolution → dispatch next hops with `chain_id` and status gate.
 5. **`cancel_chain`** — flip status + fan-out the existing cancel frame.
 6. **Resource layer** — `since_seq`/index, `channel.activity.read`, `fs.*` +
-   `memory_files` (old `memory.*` retires).
+   `context_files` (old `memory.*` retires).
 7. **Environment dynamic tools** — upgrade the resource static `match` to a registry.
 
 Steps 1–2 already make the system decentralized (routing is the reversal; it does not

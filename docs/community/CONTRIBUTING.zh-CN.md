@@ -1,8 +1,8 @@
-# Contributing to AgentNexus
+# Contributing to Cheers
 
 > **语言**：中文 | [English](CONTRIBUTING.md)
 
-感谢你愿意参与 AgentNexus。项目主要使用中文维护文档和讨论，英文 Issue / PR 也可以接受。
+感谢你愿意参与 Cheers。项目主要使用中文维护文档和讨论，英文 Issue / PR 也可以接受。
 
 ## 分支规则
 
@@ -54,8 +54,8 @@ npm 包变更还需要运行对应包目录下的 `npm run lint`、`npm test`、
 
 ## npm 包发布说明
 
-旧 `packages/openclaw-channel-agentnexus` 和独立的
-`packages/agentnexus-bridge-client` 包已经删除，不要再为它们新增发布或 CI 配置。
+旧 `packages/openclaw-channel-cheers` 和独立的
+`packages/cheers-bridge-client` 包已经删除，不要再为它们新增发布或 CI 配置。
 
 ## PR 要求
 

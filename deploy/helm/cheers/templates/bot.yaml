@@ -1,0 +1,123 @@
+{{- if .Values.bot.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cheers.bot.fullname" . }}
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bot
+    cheers.dev/agent-type: {{ .Values.bot.agentType | quote }}
+spec:
+  replicas: {{ .Values.bot.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cheers.selectorLabels" (dict "ctx" . "component" "bot") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cheers.selectorLabels" (dict "ctx" . "component" "bot") | nindent 8 }}
+        cheers.dev/agent-type: {{ .Values.bot.agentType | quote }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: bot
+          image: {{ include "cheers.image" (dict "ctx" . "repository" (include "cheers.bot.imageRepository" .) "tag" .Values.bot.image.tag) }}
+          imagePullPolicy: {{ .Values.bot.image.pullPolicy }}
+          env:
+            - name: CHEERS_WS_BASE
+              value: {{ default (printf "ws://%s:%v" (include "cheers.gateway.fullname" .) .Values.gateway.port) .Values.bot.wsBase | quote }}
+            {{- if eq .Values.bot.agentType "codex" }}
+            - name: CHEERS_BOT_USERNAME
+              value: {{ .Values.bot.username | quote }}
+            - name: CHEERS_BOT_WORKSPACE_DIR
+              value: {{ .Values.bot.workspaceDir | quote }}
+            - name: CHEERS_BOT_STATE_DIR
+              value: {{ .Values.bot.stateDir | quote }}
+            - name: CHEERS_BOT_PROMPT_TIMEOUT_MS
+              value: {{ .Values.bot.promptTimeoutMs | quote }}
+            - name: CHEERS_BOT_REQUEST_TIMEOUT_MS
+              value: {{ .Values.bot.requestTimeoutMs | quote }}
+            - name: CHEERS_BOT_PERMISSION_TIMEOUT_MS
+              value: {{ .Values.bot.permissionTimeoutMs | quote }}
+            - name: CHEERS_BOT_ALLOWED_CONFIG_OPTIONS
+              value: {{ join "," .Values.bot.codex.allowedConfigOptions | quote }}
+            - name: CHEERS_BOT_EXTRA_ENV_ALLOW
+              value: {{ join "," .Values.bot.codex.extraEnvAllow | quote }}
+            - name: CODEX_ACP_COMMAND
+              value: {{ .Values.bot.codex.command | quote }}
+            - name: CODEX_ACP_ARGS
+              value: {{ join "," .Values.bot.codex.args | quote }}
+            {{- else }}
+            - name: OPENCODE_BOT_USERNAME
+              value: {{ .Values.bot.username | quote }}
+            - name: OPENCODE_WORKSPACE_DIR
+              value: {{ .Values.bot.workspaceDir | quote }}
+            - name: OPENCODE_STATE_DIR
+              value: {{ .Values.bot.stateDir | quote }}
+            - name: OPENCODE_PROMPT_TIMEOUT_MS
+              value: {{ .Values.bot.promptTimeoutMs | quote }}
+            - name: OPENCODE_REQUEST_TIMEOUT_MS
+              value: {{ .Values.bot.requestTimeoutMs | quote }}
+            - name: OPENCODE_ACP_COMMAND
+              value: {{ .Values.bot.opencode.command | quote }}
+            - name: OPENCODE_PROVIDER
+              value: {{ .Values.bot.opencode.provider | quote }}
+            - name: OPENCODE_MODEL
+              value: {{ .Values.bot.opencode.model | quote }}
+            - name: OPENCODE_OPENAI_BASE_URL
+              value: {{ .Values.bot.opencode.baseUrl | quote }}
+            - name: OPENCODE_NATIVE_PERMISSION_MODE
+              value: {{ .Values.bot.opencode.nativePermissionMode | quote }}
+            {{- end }}
+            - name: {{ include "cheers.bot.tokenKey" . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "cheers.secretName" .) .Values.bot.token.existingSecret }}
+                  key: {{ include "cheers.bot.tokenKey" . | quote }}
+            - name: {{ include "cheers.bot.apiKeyKey" . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "cheers.secretName" .) .Values.bot.openaiApiKey.existingSecret }}
+                  key: {{ include "cheers.bot.apiKeyKey" . | quote }}
+                  {{- if eq .Values.bot.agentType "codex" }}
+                  optional: true
+                  {{- end }}
+          volumeMounts:
+            - name: bot-state
+              mountPath: {{ .Values.bot.stateDir | quote }}
+            - name: bot-workspace
+              mountPath: {{ .Values.bot.workspaceDir | quote }}
+          resources:
+            {{- toYaml .Values.bot.resources | nindent 12 }}
+      volumes:
+        - name: bot-state
+          {{- if .Values.bot.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "cheers.bot.fullname" . }}-state
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: bot-workspace
+          emptyDir: {}
+{{- if .Values.bot.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cheers.bot.fullname" . }}-state
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bot
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.bot.persistence.size }}
+  {{- if .Values.bot.persistence.storageClass }}
+  storageClassName: {{ .Values.bot.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

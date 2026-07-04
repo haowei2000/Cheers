@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Embedded manifest: parsed lazily by the host on upload, never executed.
+         Declares this as a renderer plugin (render/save protocol). -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "md-checklist",
+        "title": "Markdown checklist",
+        "renderers": [
+          {
+            "id": "checklist",
+            "title": "Checklist",
+            "match": { "format": "markdown", "requireAny": ["- [ ]", "- [x]", "- [X]"] }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; }
+      #root { padding: 8px 10px; }
+      .task { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+      .task span { cursor: default; }
+      .task span.done { color: #71717a; text-decoration: line-through; }
+      .line { white-space: pre-wrap; color: #a1a1aa; padding: 1px 0; }
+      #st { padding: 4px 10px; color: #71717a; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="st"></div>
+    <script>
+      var ASSIGN = null;             // current assignment: { path, format, content, version, rendererId }
+      var lines = [];                // content split into lines (edited in place)
+      var TASK = /^(\s*[-*]\s+)\[([ xX])\]\s+(.*)$/; // - [ ] / - [x]
+
+      function send(msg) { parent.postMessage(msg, "*"); }
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+
+      window.addEventListener("message", function (e) {
+        var m = e.data; if (!m || typeof m !== "object") return;
+        if (m.type === "cheers:render") {            // host assigns a file
+          ASSIGN = m; lines = String(m.content || "").split("\n");
+          // Final runtime judgment: no task lines at all → can't render, tell the host
+          if (!lines.some(function (l) { return TASK.test(l); })) {
+            send({ type: "cheers:unsupported", reason: "no - [ ] / - [x] task lines" });
+            return;
+          }
+          render();
+        } else if (m.type === "cheers:saved") {      // write-back result
+          if (m.ok) { ASSIGN.version = m.version; setStatus("Saved v" + m.version); }
+          else setStatus("Save failed: " + (m.error || ""));
+        }
+      });
+
+      function save() { send({ type: "cheers:save", content: lines.join("\n") }); }
+
+      function render() {
+        var root = document.getElementById("root"); root.innerHTML = "";
+        lines.forEach(function (line, i) {
+          var mt = line.match(TASK);
+          if (mt) {
+            var row = document.createElement("label"); row.className = "task";
+            var cb = document.createElement("input"); cb.type = "checkbox";
+            cb.checked = mt[2].toLowerCase() === "x";
+            var txt = document.createElement("span");
+            txt.textContent = mt[3];                 // textContent → untrusted text, no XSS
+            if (cb.checked) txt.className = "done";
+            cb.onchange = function () {
+              lines[i] = mt[1] + "[" + (cb.checked ? "x" : " ") + "] " + mt[3];
+              render(); save();                      // edit this line in place → write back
+            };
+            row.appendChild(cb); row.appendChild(txt); root.appendChild(row);
+          } else {
+            var p = document.createElement("div"); p.className = "line";
+            p.textContent = line;                    // non-task lines kept verbatim
+            root.appendChild(p);
+          }
+        });
+      }
+
+      send({ type: "cheers:ready" });                // last step: tell the host we're ready
+    </script>
+  </body>
+</html>

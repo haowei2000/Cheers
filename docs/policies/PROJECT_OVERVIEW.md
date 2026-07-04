@@ -1,4 +1,4 @@
-# AgentNexus (Zhishu collaboration platform)
+# Cheers (Zhishu collaboration platform)
 
 > **Language**: English | [中文](PROJECT_OVERVIEW.zh-CN.md)
 

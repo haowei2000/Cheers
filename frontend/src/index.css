@@ -49,6 +49,11 @@ textarea {
   outline: none;
 }
 
+/* Buttons: always signal clickability */
+button:not(:disabled) {
+  cursor: pointer;
+}
+
 /* Prose / markdown */
 .prose {
   color: #e4e4e7;

@@ -1,4 +1,4 @@
-# AgentNexus 架构重构规划
+# Cheers 架构重构规划
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
@@ -331,7 +331,7 @@ services:
 - [x] Redis Fanout + BotRegistry
 - [x] REST 核心端点（bots / channels / files / friends / mcp / workspaces）
 - [x] sqlx 迁移文件（baseline + permission）
-- [ ] **(1) 网格 schema**：加 `channels.next_seq`/`default_bot_id`、`messages.channel_seq`、`message_mentions`(join 表)、`task_chains`+chain 列、`channel_operations`、`memory_files`；**DROP** `memory_entries` 和 `mention_bot_ids`/`mention_user_ids`；ids 一律 `VARCHAR(36)`
+- [ ] **(1) 网格 schema**：加 `channels.next_seq`/`default_bot_id`、`messages.channel_seq`、`message_mentions`(join 表)、`task_chains`+chain 列、`channel_operations`、`context_files`；**DROP** `memory_entries` 和 `mention_bot_ids`/`mention_user_ids`；ids 一律 `VARCHAR(36)`
 - [ ] **(2) 重写 `resolve_bot_triggers`**（行为反转，不依赖 seq）：写入时解析 `@`→`message_mentions`，读它 + 回落 `default_bot_id`（覆盖 workspace 级）。完成此步系统即去中心化
 - [ ] **(3) `channel_seq` 分配**：`create_message` 改成事务（现状是裸 INSERT）；双路径——用户消息 INSERT 时分配、bot 占位 finalize 时分配
 - [ ] **(4)** Bot@Bot 重入 + chain 传播 + 派发门
@@ -343,13 +343,13 @@ services:
 
 **收尾**
 - [ ] 旧 Python 单体整体下线（旧 REST API + 旧 bot_runtime + 旧 agent_bridge routes）
-- [ ] `agentnexus-mcp-server` 验证可作为标准接入桥（Claude / Codex 端到端测试）
+- [ ] `cheers-mcp-server` 验证可作为标准接入桥（Claude / Codex 端到端测试）
 - [ ] 集成测试基线通过（见 CLAUDE.md：需 Docker Compose 全栈）
 
 ### Phase 2：网格能力全量 + 全量 REST
 
 - [ ] 全量 REST 端点补齐（当前缺口端点）
-- [ ] DM / topic scope resource（当前只有 `channel.*`）
+- [ ] DM scope resource（当前只有 `channel.*`；topic 已砍 2026-06-24）
 - [ ] bot 权限 channel 覆盖 UI（前端新设置界面）
 - [ ] Environment Lens 渲染（v1 声明式：markdown / kanban / table / timeline）
 

@@ -2,14 +2,14 @@
 
 > Status: finalized decision
 > Date: 2026-06-02
-> Scope: AgentNexus browser frontend rebuild
+> Scope: Cheers browser frontend rebuild
 
 This document fixes the frontend rebuild direction after the Rust Backend and
 Rust local daemon architecture decisions.
 
 ## 1. Decision
 
-The new AgentNexus frontend will be rebuilt as:
+The new Cheers frontend will be rebuilt as:
 
 ```text
 TypeScript + React + Vite
@@ -35,7 +35,7 @@ move to `frontend-next/`.
 
 ## 2. Why This Stack
 
-AgentNexus is an authenticated realtime workbench, not a public marketing site.
+Cheers is an authenticated realtime workbench, not a public marketing site.
 The first-class workflows are:
 
 - workspace and channel navigation
@@ -53,7 +53,7 @@ TypeScript + React + Vite is the most direct fit for that shape.
 
 ### 3.1 Not Next.js
 
-Next.js is not the default rebuild target because AgentNexus already has a Rust
+Next.js is not the default rebuild target because Cheers already has a Rust
 Backend that owns API, WebSocket, auth, permissions, files, sessions, and Agent
 Bridge. Adding a Node full-stack layer would blur that boundary.
 
@@ -73,7 +73,7 @@ validation, or performance-sensitive transforms.
 ### 3.3 Not a Component-Library-First Rewrite
 
 The rebuild should not begin by importing a heavy visual component suite and
-forcing the product into it. AgentNexus needs a dense operational workbench, so
+forcing the product into it. Cheers needs a dense operational workbench, so
 the design system should start with tokens, layout rules, interaction states,
 and focused primitives.
 
@@ -115,7 +115,7 @@ The `frontend-next/` design language is:
 dynamic but grounded, icon-first, layered, always oriented
 ```
 
-AgentNexus should feel like a realtime agent operations workbench. The main
+Cheers should feel like a realtime agent operations workbench. The main
 content stays calm and readable; every changing piece of state is visibly alive.
 
 ### 5.1 Static Structure, Dynamic State

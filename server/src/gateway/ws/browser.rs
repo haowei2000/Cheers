@@ -5,7 +5,8 @@ use axum::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
     },
-    response::Response,
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -34,10 +35,40 @@ const SEND_QUEUE_SIZE: usize = 256;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientFrame {
-    Auth { token: String },
-    Subscribe { channel_id: Uuid },
-    Unsubscribe { channel_id: Uuid },
+    Auth {
+        token: String,
+    },
+    Subscribe {
+        channel_id: Uuid,
+    },
+    Unsubscribe {
+        channel_id: Uuid,
+    },
     Ping,
+    /// 工作台：浏览器对平台 fs/channel 资源的 req/res 请求（经 `resource::dispatch_user`）。
+    /// 回执是 `resource_res` 原始帧（按 `req_id` 关联），直接写回本连接 socket。
+    ResourceReq {
+        req_id: String,
+        resource: String,
+        #[serde(default)]
+        params: serde_json::Value,
+    },
+    /// 工作台在看焦点：本连接正在查看某 bot 的工作区（可含路径）。
+    /// `focus: null` 表示清除。焦点随 `presence` 全量快照下发给频道其他成员。
+    /// 仅对本连接已订阅的频道生效；断线自动清除。
+    PresenceFocus {
+        channel_id: Uuid,
+        focus: Option<FocusPayload>,
+    },
+}
+
+/// `presence_focus` 帧里的焦点载荷。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct FocusPayload {
+    bot_id: Uuid,
+    #[serde(default)]
+    path: Option<String>,
 }
 
 // ── 服务端控制回执（Backend → 客户端）────────────────────────────────────────
@@ -56,7 +87,17 @@ enum ServerControl {
 // ── Axum upgrade handler ──────────────────────────────────────────────────────
 
 /// axum 路由挂载：`Router::new().route("/ws", get(ws_handler))`
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    // CSWSH guard: reject browser upgrades from non-allowlisted origins before
+    // upgrading. Native clients send no Origin and fall through to token auth.
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    if !crate::infra::http::ws_origin_allowed(origin, &state.config.allowed_origins()) {
+        return (StatusCode::FORBIDDEN, "origin not allowed").into_response();
+    }
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -150,6 +191,15 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     state
         .conn_manager
         .on_disconnect(user_id, conn_id, &subscribed);
+    for channel_id in &subscribed {
+        broadcast_presence(&state, *channel_id).await;
+    }
+}
+
+/// presence 帧广播（订阅/退订/断线时触发）——统一实现见 gateway::presence，
+/// 名单同时包含在线用户与在线 bot。
+async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
+    crate::gateway::presence::broadcast_presence(state, channel_id).await;
 }
 
 // ── 鉴权阶段 ─────────────────────────────────────────────────────────────────
@@ -267,6 +317,7 @@ async fn handle_client_frame(
                 Ok(()) => {
                     subscribed.push(channel_id);
                     send_control(socket, &ServerControl::Subscribed { channel_id }).await;
+                    broadcast_presence(state, channel_id).await;
                 }
                 Err(_) => {
                     close(socket, CLOSE_NOT_MEMBER, "not a channel member").await;
@@ -278,10 +329,66 @@ async fn handle_client_frame(
             state.conn_manager.unsubscribe(conn_id, channel_id);
             subscribed.retain(|&id| id != channel_id);
             send_control(socket, &ServerControl::Unsubscribed { channel_id }).await;
+            broadcast_presence(state, channel_id).await;
         }
 
         ClientFrame::Ping => {
             send_control(socket, &ServerControl::Pong).await;
+        }
+
+        ClientFrame::PresenceFocus { channel_id, focus } => {
+            // 只对已订阅的频道生效——否则忽略（不能对未加入的频道声明在看态）。
+            if !subscribed.contains(&channel_id) {
+                return;
+            }
+            match focus {
+                Some(f) => state
+                    .fanout
+                    .set_focus(conn_id, channel_id, f.bot_id, f.path),
+                None => state.fanout.clear_focus(conn_id),
+            }
+            broadcast_presence(state, channel_id).await;
+        }
+
+        ClientFrame::ResourceReq {
+            req_id,
+            resource,
+            params,
+        } => {
+            // 用户路径：channel-role 鉴权在 dispatch_user 内（含破坏性 rm/mv 限 owner/admin）。
+            let frame = serde_json::json!({
+                "req_id": req_id,
+                "resource": resource,
+                "params": params,
+            });
+            let res = crate::resource::dispatch_user(&state.db, user_id, &frame).await;
+            // Live Desk (browser path): mirror the bot-side board_signal tick in
+            // agent_bridge.rs so a human's own Desk edit refreshes other open views.
+            // resource::dispatch_user only holds `db`, so the fanout tick is emitted
+            // here at the WS boundary. Data-free — clients re-pull via their own
+            // authz'd fs.ls/fs.read. board name "files" (cross-slice contract).
+            if matches!(
+                frame.get("resource").and_then(serde_json::Value::as_str),
+                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+            ) && res.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = res
+                    .get("data")
+                    .and_then(|d| d.get("channel_id"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    let wire = WireFrame::channel(
+                        cid,
+                        "board_signal",
+                        serde_json::json!({ "channel_id": cid, "board": "files" }),
+                    );
+                    state.fanout.broadcast_channel(cid, wire).await;
+                }
+            }
+            if let Ok(json) = serde_json::to_string(&res) {
+                let _ = socket.send(Message::Text(json)).await;
+            }
         }
     }
 }
@@ -331,6 +438,87 @@ mod tests {
     fn streaming_frames_are_not_terminal() {
         for ft in ["message_stream", "bot_trace", "pong", "presence"] {
             assert!(!is_terminal_frame(&frame(ft)), "{ft} 不是终态帧");
+        }
+    }
+
+    /// 工作台帧线格式：`{type:"resource_req", req_id, resource, params}` 必须
+    /// 反序列化进 `ClientFrame::ResourceReq`（serde tag/rename 接线正确）。
+    #[test]
+    fn resource_req_frame_deserializes() {
+        let raw = r#"{"type":"resource_req","req_id":"r1","resource":"fs.ls","params":{"channel_id":"c","path":"notes"}}"#;
+        let frame: ClientFrame = serde_json::from_str(raw).unwrap();
+        match frame {
+            ClientFrame::ResourceReq {
+                req_id,
+                resource,
+                params,
+            } => {
+                assert_eq!(req_id, "r1");
+                assert_eq!(resource, "fs.ls");
+                assert_eq!(params["channel_id"], "c");
+                assert_eq!(params["path"], "notes");
+            }
+            _ => panic!("expected ResourceReq"),
+        }
+    }
+
+    /// 缺省 params 也能反序列化（`#[serde(default)]`）。
+    #[test]
+    fn resource_req_without_params_defaults() {
+        let raw = r#"{"type":"resource_req","req_id":"r2","resource":"fs.ls"}"#;
+        let frame: ClientFrame = serde_json::from_str(raw).unwrap();
+        assert!(matches!(frame, ClientFrame::ResourceReq { .. }));
+    }
+
+    /// presence_focus 帧（带焦点）反序列化：bot_id + path 正确落入 FocusPayload。
+    #[test]
+    fn presence_focus_with_focus_deserializes() {
+        let cid = Uuid::new_v4();
+        let bid = Uuid::new_v4();
+        let raw = format!(
+            r#"{{"type":"presence_focus","channel_id":"{cid}","focus":{{"bot_id":"{bid}","path":"src/main.rs"}}}}"#
+        );
+        let frame: ClientFrame = serde_json::from_str(&raw).unwrap();
+        match frame {
+            ClientFrame::PresenceFocus { channel_id, focus } => {
+                assert_eq!(channel_id, cid);
+                let f = focus.expect("focus present");
+                assert_eq!(f.bot_id, bid);
+                assert_eq!(f.path.as_deref(), Some("src/main.rs"));
+            }
+            _ => panic!("expected PresenceFocus"),
+        }
+    }
+
+    /// presence_focus 帧（focus:null）反序列化为清除意图。
+    #[test]
+    fn presence_focus_null_clears() {
+        let cid = Uuid::new_v4();
+        let raw = format!(r#"{{"type":"presence_focus","channel_id":"{cid}","focus":null}}"#);
+        let frame: ClientFrame = serde_json::from_str(&raw).unwrap();
+        match frame {
+            ClientFrame::PresenceFocus { channel_id, focus } => {
+                assert_eq!(channel_id, cid);
+                assert!(focus.is_none());
+            }
+            _ => panic!("expected PresenceFocus"),
+        }
+    }
+
+    /// presence_focus 帧省略 path 时 path 为 None（`#[serde(default)]`）。
+    #[test]
+    fn presence_focus_without_path_defaults_none() {
+        let cid = Uuid::new_v4();
+        let bid = Uuid::new_v4();
+        let raw = format!(
+            r#"{{"type":"presence_focus","channel_id":"{cid}","focus":{{"bot_id":"{bid}"}}}}"#
+        );
+        let frame: ClientFrame = serde_json::from_str(&raw).unwrap();
+        match frame {
+            ClientFrame::PresenceFocus { focus, .. } => {
+                assert!(focus.unwrap().path.is_none());
+            }
+            _ => panic!("expected PresenceFocus"),
         }
     }
 }

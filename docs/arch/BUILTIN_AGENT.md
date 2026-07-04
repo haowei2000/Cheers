@@ -5,8 +5,18 @@
 > This document supersedes the earlier "one generic built-in runtime" direction.
 > The platform is **external-agent-first**: there is no built-in Python Agent Service.
 > Intelligence comes entirely from user-connected ACP agents (OpenCode, Claude,
-> Codex, or any ACP-compatible agent). The `agentnexus-mcp-server` package is the
+> Codex, or any ACP-compatible agent). The `cheers-mcp-server` package is the
 > standard bridge for MCP-capable agents to participate as ACP bots.
+
+> ⚠️ **Partly superseded — see CURRENT MODEL.** Parts of this doc describe a
+> SUPERSEDED model. The dead concepts that still appear here are: the hardcoded
+> memory layers (`ANCHOR` / `DECISIONS` / `PROGRESS`) and agent-side "memory
+> distillation" as a first-class platform concern. Current model: there is no
+> independent `memory` concept; files are the only substrate; Context = the files
+> a plugin curates; agents always **pull** (existence announced via system prompt,
+> never pushed as body); authorization is **channel-role only**. See the
+>「⚠️ CURRENT MODEL (2026-06-23)」declaration at the top of
+> [context-and-environment.md](./context-and-environment.md).
 
 ---
 
@@ -17,8 +27,8 @@ There is no built-in runtime. The platform is a pure protocol/data/routing layer
 | Layer | What it is | Who provides it |
 |---|---|---|
 | **Platform** | REST API, WS gateway, Agent Bridge, Resource API, mesh routing, DB/S3 | Rust Backend |
-| **Intelligence** | LLM reasoning, task execution, memory distillation | User-connected external ACP agent |
-| **Bridge** | MCP ↔ Agent Bridge translation for MCP-capable agents | `agentnexus-mcp-server` (stdio) |
+| **Intelligence** | LLM reasoning, task execution, ~~memory distillation~~ (⚠️ 历史设计，已废弃 — 见 CURRENT MODEL；文件是唯一基质，无独立 memory 概念) | User-connected external ACP agent |
+| **Bridge** | MCP ↔ Agent Bridge translation for MCP-capable agents | `cheers-mcp-server` (stdio) |
 
 A "bot in a channel" is always an external ACP agent connected via a user-owned
 connector or the MCP bridge. The platform never has a process of its own that reasons
@@ -35,13 +45,17 @@ or calls an LLM.
   Remaining levels: `trusted > standard > untrusted`.
 - Hardcoded memory layers (`ANCHOR` / `DECISIONS` / `PROGRESS`) — now files an
   Environment template seeds, if at all.
+  (⚠️ The layered `memory_entries` model these names came from is dead — dropped in
+  `0003_decentralized_mesh.sql:89`, replaced by the `context_files` file tree. There is
+  no independent memory layer anymore; these are just default Environment-seeded files.
+  See CURRENT MODEL.)
 - The "one generic runtime + seeded identity" model from the earlier version of this doc.
 
 ---
 
-## 3. `agentnexus-mcp-server` is the standard bridge
+## 3. `cheers-mcp-server` is the standard bridge
 
-`packages/agentnexus-mcp-server/` (already implemented) is the canonical way for
+`packages/cheers-mcp-server/` (already implemented) is the canonical way for
 MCP-capable agents (Claude Code, Codex, Cursor-hosted agents, OpenCode) to act as
 ACP bots in the platform.
 
@@ -50,7 +64,7 @@ User's machine
   ├─ Claude / Codex / OpenCode   ← the intelligence; calls LLM, reasons, acts
   │       │ MCP stdio
   │       ▼
-  │  agentnexus-mcp-server       ← translates MCP tools/resources ↔ resource_req/res
+  │  cheers-mcp-server       ← translates MCP tools/resources ↔ resource_req/res
   │       │ Agent Bridge WS
   │       ▼
 Rust Backend                     ← platform; routes tasks, persists messages, fan-out
@@ -119,7 +133,7 @@ Browser / Mobile
                │ Agent Bridge WS (control + data)
     ┌──────────┴──────────┐
     ▼                     ▼
-OpenCode / Codex     agentnexus-mcp-server
+OpenCode / Codex     cheers-mcp-server
 (ACP connector)      (MCP ↔ Agent Bridge bridge)
                           │ MCP stdio
                           ▼

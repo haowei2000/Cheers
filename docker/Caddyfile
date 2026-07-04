@@ -15,31 +15,27 @@ http://{$APP_DOMAIN} {
   encode gzip
 
   handle /api/v1/* {
-    reverse_proxy backend:8000
+    reverse_proxy gateway:8000
   }
 
   handle /api/* {
-    reverse_proxy backend:8000
+    reverse_proxy gateway:8000
   }
 
   handle /docs* {
-    reverse_proxy backend:8000
+    reverse_proxy gateway:8000
   }
 
   handle /openapi* {
-    reverse_proxy backend:8000
+    reverse_proxy gateway:8000
   }
 
   handle /health* {
-    reverse_proxy backend:8000
+    reverse_proxy gateway:8000
   }
 
   handle /ws* {
-    reverse_proxy backend:8000
-  }
-
-  handle /preview* {
-    reverse_proxy kkfileview:8012
+    reverse_proxy gateway:8000
   }
 
   handle /{$STORAGE_S3_BUCKET}/* {

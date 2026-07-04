@@ -1,4 +1,4 @@
-# AgentNexus Troubleshooting Q&A
+# Cheers Troubleshooting Q&A
 
 > **Language**: English | [中文](技术排查Q&A.zh-CN.md)
 
@@ -14,7 +14,7 @@ curl http://localhost:8000/docs
 
 Expected:
 
-- backend, frontend, postgres, redis, rustfs, and kkfileview are running.
+- backend, frontend, postgres, redis, rustfs, and gotenberg are running.
 - `/health` returns `{"status":"ok"}`.
 - Swagger opens at `http://localhost:8000/docs`.
 
@@ -28,7 +28,7 @@ docker compose logs -f postgres
 
 Backend file logs are written to `data/logs` when `LOG_DIR` is enabled:
 
-- `agentnexus.log`: general logs
+- `cheers.log`: general logs
 - `error.log`: errors and tracebacks
 
 ## Frontend Does Not Open
@@ -88,28 +88,30 @@ curl -H "X-Agent-Bridge-Token: <AGENT_BRIDGE_TOKEN>" \
 
 ## File Preview Fails
 
-First verify regular download, then inspect kkFileView:
+Preview is a built-in gateway feature: the frontend calls
+`GET /files/:id/preview`, and the gateway converts office documents to PDF via
+Gotenberg. First verify regular download, then inspect the gateway and Gotenberg:
 
 ```bash
-curl -I http://localhost/preview/
-docker compose logs --tail=200 kkfileview
+curl -I http://localhost:8000/api/v1/files/<file_id>/preview
+docker compose logs --tail=200 gateway
+docker compose logs --tail=200 gotenberg
 ```
 
 Common causes:
 
-- `PUBLIC_BASE_URL` is not reachable from the kkFileView container.
-- `KKFILEVIEW_BASE_URL` does not include `/preview`.
-- `KKFILEVIEW_TRUST_HOST` does not match the public hostname.
+- The gateway cannot reach Gotenberg at `GOTENBERG_URL`.
+- The `gotenberg` service is not running.
 - Object storage key, bucket, or endpoint is wrong.
 
-See [kkFileView Preview Guide](kkFileView配置说明.md) and [RustFS Object Storage Guide](RustFS对象存储部署说明.md).
+See [RustFS Object Storage Guide](RustFS对象存储部署说明.md).
 
 ## Database Inspection
 
-AgentNexus defaults to PostgreSQL. Use the connection values in `.env`:
+Cheers defaults to PostgreSQL. Use the connection values in `.env`:
 
 ```bash
-docker compose exec postgres psql -U "${POSTGRES_USER:-agentnexus}" "${POSTGRES_DB:-agentnexus}"
+docker compose exec postgres psql -U "${POSTGRES_USER:-cheers}" "${POSTGRES_DB:-cheers}"
 ```
 
 Common tables:

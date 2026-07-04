@@ -21,17 +21,22 @@ use super::{
 };
 
 // ── Redis key 命名规范 ────────────────────────────────────────────────────────
-// agentnexus:rt:channel:{channel_id}  ← 频道事件
-// agentnexus:rt:user:{user_id}        ← 用户级通知
+// cheers:rt:channel:{channel_id}  ← 频道事件
+// cheers:rt:user:{user_id}        ← 用户级通知
 
-const CHANNEL_PATTERN: &str = "agentnexus:rt:channel:*";
-const USER_PATTERN: &str = "agentnexus:rt:user:*";
+const CHANNEL_PATTERN: &str = "cheers:rt:channel:*";
+const USER_PATTERN: &str = "cheers:rt:user:*";
+// SEE-filtered channel events carry an allow-list; each instance filters locally.
+const CHANNEL_SEE_PATTERN: &str = "cheers:rt:channelsee:*";
 
 fn channel_subject(channel_id: Uuid) -> String {
-    format!("agentnexus:rt:channel:{channel_id}")
+    format!("cheers:rt:channel:{channel_id}")
+}
+fn channel_see_subject(channel_id: Uuid) -> String {
+    format!("cheers:rt:channelsee:{channel_id}")
 }
 fn user_subject(user_id: Uuid) -> String {
-    format!("agentnexus:rt:user:{user_id}")
+    format!("cheers:rt:user:{user_id}")
 }
 
 // ── RedisFanout ───────────────────────────────────────────────────────────────
@@ -109,6 +114,34 @@ impl Fanout for RedisFanout {
         publish(&self.publisher.clone(), &subject, &frame).await;
     }
 
+    async fn broadcast_channel_to_users(
+        &self,
+        channel_id: Uuid,
+        frame: WireFrame,
+        allowed_users: Vec<Uuid>,
+    ) {
+        // Publish a {frame, allowed} envelope; every instance filters locally
+        // against its own connections (per-subscriber SEE works across instances).
+        let envelope = serde_json::json!({
+            "frame": frame,
+            "allowed": allowed_users.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        });
+        let payload = match serde_json::to_string(&envelope) {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        let subject = channel_see_subject(channel_id);
+        let mut c = self.publisher.clone();
+        if let Err(e) = redis::cmd("PUBLISH")
+            .arg(&subject)
+            .arg(&payload)
+            .query_async::<_, i64>(&mut c)
+            .await
+        {
+            tracing::warn!(subject, err = %e, "redis publish (see) failed");
+        }
+    }
+
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame) {
         let subject = user_subject(user_id);
         publish(&self.publisher.clone(), &subject, &frame).await;
@@ -135,6 +168,7 @@ async fn do_subscribe(client: redis::Client, local: Arc<InProcessFanout>) -> any
     let mut pubsub = conn.into_pubsub();
 
     pubsub.psubscribe(CHANNEL_PATTERN).await?;
+    pubsub.psubscribe(CHANNEL_SEE_PATTERN).await?;
     pubsub.psubscribe(USER_PATTERN).await?;
 
     let mut stream = pubsub.on_message();
@@ -145,17 +179,44 @@ async fn do_subscribe(client: redis::Client, local: Arc<InProcessFanout>) -> any
             Err(_) => continue,
         };
 
+        // SEE-filtered channel events arrive as a {frame, allowed} envelope on the
+        // channelsee subject; filter locally. (Checked before the plain channel
+        // prefix since "channelsee:" also starts with "channel".)
+        if let Some(id_str) = channel.strip_prefix("cheers:rt:channelsee:") {
+            if let Ok(channel_id) = id_str.parse::<Uuid>() {
+                if let Ok(env) = serde_json::from_str::<Value>(&payload) {
+                    if let Ok(frame) = serde_json::from_value::<WireFrame>(
+                        env.get("frame").cloned().unwrap_or(Value::Null),
+                    ) {
+                        let allowed: Vec<Uuid> = env
+                            .get("allowed")
+                            .and_then(Value::as_array)
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        local
+                            .broadcast_channel_to_users(channel_id, frame, allowed)
+                            .await;
+                    }
+                }
+            }
+            continue;
+        }
+
         let frame: WireFrame = match serde_json::from_str(&payload) {
             Ok(f) => f,
             Err(_) => continue,
         };
 
         // 按主题路由到本地连接
-        if let Some(id_str) = channel.strip_prefix("agentnexus:rt:channel:") {
+        if let Some(id_str) = channel.strip_prefix("cheers:rt:channel:") {
             if let Ok(channel_id) = id_str.parse::<Uuid>() {
                 local.broadcast_channel(channel_id, frame).await;
             }
-        } else if let Some(id_str) = channel.strip_prefix("agentnexus:rt:user:") {
+        } else if let Some(id_str) = channel.strip_prefix("cheers:rt:user:") {
             if let Ok(user_id) = id_str.parse::<Uuid>() {
                 local.broadcast_user(user_id, frame).await;
             }

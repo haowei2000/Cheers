@@ -1,4 +1,4 @@
-# AgentNexus 架构重构总览
+# Cheers 架构重构总览
 
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
@@ -20,6 +20,13 @@
 > - [DECENTRALIZED_MESH.md](./DECENTRALIZED_MESH.md) —— 去中心化 Bot 网格（去调度层、channel_seq 事件时钟、两类资源一致性、频道操作日志、Bot@Bot 任务链与取消、可选预算）
 > - [BUILTIN_AGENT.md](./BUILTIN_AGENT.md) —— 内置 Agent：删光所有内置 bot 类，改为**一份通用 runtime**（代码只写一次、无 per-bot 分支）；身份是**数据**（seed 的 bot_account，≥1 个保住网格多 peer）；行为是 Environment 模板；确定性逻辑下沉成 tool 而非 bot
 > - [MESSAGE_CONTENT_FORMAT.md](./MESSAGE_CONTENT_FORMAT.md) —— 消息正文格式：text + 扁平 token（`<@bot:id>`/`<@user:id>`/`<#file:id>`/`<#chan:id>`）；操作永不进正文（typed resource_req）；不上 XML/AST；富内容走 content_data；token=渲染位置、message_mentions 表=查询，互补
+
+---
+
+> ⚠️ **本文部分内容描述的是已被取代的旧模型（SUPERSEDED）。** 本文中出现的死概念包括：
+> **Grant / trust_level 细粒度授权**（第四节资源写契约、第六节权限模型）与 **Python `features/memory/` 分层记忆**（第三节职责切分）。
+> 现行模型一句话：**无独立 memory 概念；文件是唯一基质；Context = 插件策展的文件；agent 一律 pull；授权唯 channel-role**。
+> 权威定义见 [context-and-environment.md](./context-and-environment.md) 顶部的「⚠️ CURRENT MODEL (2026-06-23)」声明。下文相关断言已就地加 ⚠️ 注，正文保留作历史记录。
 
 ---
 
@@ -59,7 +66,7 @@ Browser / Mobile
     ┌──────┴──────────────────────────────────┐
     ▼                                         ▼
 ┌───────────────────────┐     ┌───────────────────────────────┐
-│  外置 ACP Agent        │     │  agentnexus-mcp-server (stdio) │
+│  外置 ACP Agent        │     │  cheers-mcp-server (stdio) │
 │  OpenCode / Codex /   │     │  MCP ↔ Agent Bridge 桥         │
 │  任何 ACP connector   │     │  (Claude / Codex / Cursor 等)   │
 └───────────────────────┘     └───────────────────────────────┘
@@ -70,7 +77,7 @@ Browser / Mobile
 - **没有 NATS**：WS 直连，不需要消息总线（单实例前提，见下文部署模型）
 - **没有 Python REST API**：所有 REST 端点迁移到 Rust
 - **没有内置 Python Agent Service**：平台不提供内置 runtime；bot 全部来自外部连接
-- **`agentnexus-mcp-server`** 是 MCP 能力 agent 接入平台的标准桥，非独立服务
+- **`cheers-mcp-server`** 是 MCP 能力 agent 接入平台的标准桥，非独立服务
 
 > **外置 ACP bot 的本地形态**：外置 bot 通过本地 **Daemon（事件网关）** 接入——Daemon 负责本地事件过滤、设备认证、本地文件白名单（见 [BOT_PERMISSION](./BOT_PERMISSION.md) / [SECURITY](./SECURITY.md)）。
 
@@ -80,7 +87,7 @@ Browser / Mobile
 │  Claude / Codex / OpenCode          │     │  Rust Backend（单实例）  │
 │    │ MCP stdio                       │     │  transport/domain/       │
 │    ▼                                │     │  realtime/agent_bridge   │
-│  agentnexus-mcp-server              │     │                          │
+│  cheers-mcp-server              │     │                          │
 │    │ 或直接 ACP connector + Daemon   │─WSS▶│                          │
 └────────────────────────────────────┘     └──────────────────────────┘
 ```
@@ -108,7 +115,7 @@ Browser / Mobile
 | 层 | 语言 | 拿走的现有模块 |
 |----|------|--------------|
 | **Rust Backend** | Rust | `api/v1/*` + `services/*` + `features/agent_bridge/` + `db/` |
-| **Python Agent Service** | Python | `features/bot_runtime/` + `features/memory/` + `tools/` |
+| **Python Agent Service** | Python | `features/bot_runtime/` + `features/memory/`（⚠️ 历史设计，已废弃 — `memory_entries` 分层记忆已被 `context_files` 文件树取代，见 CURRENT MODEL）+ `tools/` |
 | **共用** | — | PostgreSQL + Alembic；JWT（RS256）；S3 |
 
 ---
@@ -123,8 +130,8 @@ Browser / Mobile
 | 浏览器顺序 | 流式帧带 `seq`，客户端去重排序 | WIRE §5 |
 | bot 接入 | Agent Bridge WS（control + data） | ACP_INTEGRATION |
 | bot 资源访问（读） | `resource_req/res`，仅需频道成员 | AGENT_BRIDGE_RESOURCE §3.4 |
-| bot 资源访问（写） | `resource_req/res`，频道成员 **+ Grant**（按 trust_level） | AGENT_BRIDGE_RESOURCE §3.4 / BOT_PERMISSION §5.3 |
-| bot 权限 | ACP RBAC（Grant + 覆盖 + 审批）；trust_level 枚举 `system>trusted>standard>untrusted` | BOT_PERMISSION |
+| bot 资源访问（写） | `resource_req/res`，频道成员 **+ Grant**（按 trust_level）<br>⚠️ 历史设计，已废弃 — Grant/trust_level 细粒度授权在 R13 退场，channel-role 是唯一授权事实源，见 CURRENT MODEL | AGENT_BRIDGE_RESOURCE §3.4 / BOT_PERMISSION §5.3 |
+| bot 权限 | ACP RBAC（Grant + 覆盖 + 审批）；trust_level 枚举 `system>trusted>standard>untrusted`<br>⚠️ 历史设计，已废弃 — 授权唯 channel-role，见 CURRENT MODEL | BOT_PERMISSION |
 | **写后投递（Write-Before-Deliver）** | **终态帧必须先落 PG，再 fan-out**；流式帧（delta）直接 fan-out 不落库，靠 `message_done` 全量自愈 | WIRE §4.2 |
 | 实时传输模型 | 单实例进程内 fan-out（无 NATS）；fan-out/locator 抽象为 trait | WIRE §8 / 部署模型 |
 | E2EE | **默认关闭；按 bot 配置可选开启。当前仅“配置+握手”入链，数据内容加密未全面落地** | SECURITY / E2EE_NOTES / BOT_CONFIG_LAYERING |
@@ -141,7 +148,7 @@ Browser / Mobile
 | Phase | 目标 | 关键动作 |
 |-------|------|---------|
 | **1** | Rust Backend + 新 Agent Service | Rust Backend（已启动）补齐网格 schema + 路由重写；新 Python Agent Service 通用 runtime 从零写；旧 Python 单体整体下线 |
-| **2** | 全量 REST + 网格能力 | 补齐 REST 端点；DM/topic resource；Lens 渲染 v1 |
+| **2** | 全量 REST + 网格能力 | 补齐 REST 端点；DM resource（topic 已砍 2026-06-24）；Lens 渲染 v1 |
 | **3** | 优化 | Agent Service 扩容（多身份分片）；OpenTelemetry；权限审计日志 |
 
 ---
@@ -151,15 +158,15 @@ Browser / Mobile
 | # | 事项 | 状态 |
 |---|------|------|
 | 1 | **resource 协议** — bot 通过协议访问平台资源 | ✅ 已定稿 → AGENT_BRIDGE_RESOURCE.md |
-| 2 | **ACP 权限模型** — Grant + 覆盖 + 审批；资源写走 Grant | ✅ 已定稿 → BOT_PERMISSION.md |
+| 2 | **ACP 权限模型** — Grant + 覆盖 + 审批；资源写走 Grant ⚠️ 历史设计，已废弃 — Grant 授权 R13 退场，授权唯 channel-role，见 CURRENT MODEL | ✅ 已定稿 → BOT_PERMISSION.md |
 | 3 | **任务投递** — Backend 直接通过 Agent Bridge WS 派发 | ✅ 已定稿 → TASK_DELIVERY v2 |
 | 4 | **E2EE 范围** — 默认仅层级 A；ACP 端点 E2EE 改为 bot 可选能力（`binding_config.acp_security`），当前先落地控制面（握手元数据） | ✅ 已定调 → SECURITY / E2EE_NOTES / BOT_CONFIG_LAYERING |
 | 5 | **部署模型** — 单实例 + fan-out/locator trait 预留 | ✅ 已定调 → 部署模型节 |
-| 6 | **trust_level 枚举** — `system>trusted>standard>untrusted` | ✅ 已统一 → BOT_PERMISSION §7 |
+| 6 | **trust_level 枚举** — `system>trusted>standard>untrusted` ⚠️ 历史设计，已废弃 — trust_level 细粒度授权退场，授权唯 channel-role，见 CURRENT MODEL | ✅ 已统一 → BOT_PERMISSION §7 |
 | 7 | **token 里无 workspace_id** — 工作区级 / 全局限流需另想办法（resource 限流目前只有 per-bot） | 🔶 留意 |
 | 8 | **Rust Backend 重写范围** — 90 个 REST 端点 + 27 张表 | ⚠️ Phase 1 核心挑战 |
 | 9 | **bot 权限的 channel 覆盖 UI** — 前端需要新的设置界面 | ⚠️ Phase 2 |
-| 10 | **resource 协议缺 DM/topic scope 与 search 资源** — 当前只有 `channel.*`，RAG/检索无对应 resource | 🔶 待补契约 |
+| 10 | **resource 协议缺 DM scope 与 search 资源** — 当前只有 `channel.*`，RAG/检索无对应 resource（topic 已砍 2026-06-24，不再列入） | 🔶 待补契约 |
 | 11 | **presence 来源** — `channel.context.online_users` 在单进程外如何聚合 | 🔶 多实例时再定 |
 
 ---

@@ -1,23 +1,36 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, MessageSquare, Plus } from "lucide-react";
+import { Settings, LogOut, MessageSquare, Plus, Users, Mail } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
+import { listWorkspaces, listMyInvites } from "@/api/workspaces";
+import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
+import { WorkspaceInvitesDialog } from "./WorkspaceInvitesDialog";
 import type { Workspace } from "@/types";
 
-interface WorkspaceButtonProps {
-  workspace: Workspace;
+// Shared rail-button shell: the left selection indicator bar + hover state. Children are
+// the inner visual (a workspace Avatar, or the personal/brand icon box).
+function RailButton({
+  selected,
+  onClick,
+  title,
+  disabled,
+  children,
+}: {
   selected: boolean;
   onClick: () => void;
-}
-
-function WorkspaceButton({ workspace, selected, onClick }: WorkspaceButtonProps) {
+  title: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
   return (
     <button
       onClick={onClick}
-      title={workspace.name}
+      disabled={disabled}
+      title={title}
       className="group relative w-10 h-10 flex items-center justify-center"
     >
       <div
@@ -26,6 +39,22 @@ function WorkspaceButton({ workspace, selected, onClick }: WorkspaceButtonProps)
           selected ? "h-5" : "h-0 group-hover:h-2"
         )}
       />
+      {children}
+    </button>
+  );
+}
+
+function WorkspaceButton({
+  workspace,
+  selected,
+  onClick,
+}: {
+  workspace: Workspace;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <RailButton selected={selected} onClick={onClick} title={workspace.name}>
       <Avatar
         name={workspace.name}
         src={workspace.avatar_url}
@@ -36,14 +65,38 @@ function WorkspaceButton({ workspace, selected, onClick }: WorkspaceButtonProps)
           selected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
         )}
       />
-    </button>
+    </RailButton>
   );
 }
 
 export function WorkspaceRail() {
   const navigate = useNavigate();
-  const { workspaces, selectedWorkspaceId, selectWorkspace } = useChatStore();
+  const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
+    useChatStore();
+  const setWorkspaces = useChatStore((s) => s.setWorkspaces);
   const { user, logout } = useAuthStore();
+  const [wsOpen, setWsOpen] = useState(false);
+  const [invitesOpen, setInvitesOpen] = useState(false);
+  const [inviteCount, setInviteCount] = useState(0);
+  const personalSelected =
+    !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
+
+  function refreshInvites() {
+    listMyInvites()
+      .then((inv) => setInviteCount(inv.length))
+      .catch(() => setInviteCount(0));
+  }
+
+  // Pending-invite count for the rail badge. Polled once on mount (no WS event).
+  useEffect(() => {
+    refreshInvites();
+  }, []);
+
+  // After accepting/declining, the workspace list and the badge both change.
+  function onInvitesChanged() {
+    listWorkspaces().then(setWorkspaces).catch(() => {});
+    refreshInvites();
+  }
 
   function handleLogout() {
     logout();
@@ -53,16 +106,36 @@ export function WorkspaceRail() {
 
   return (
     <div className="w-14 bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40">
-      {/* Brand */}
-      <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center mb-1 shadow-md shadow-indigo-500/20">
-        <MessageSquare className="w-5 h-5 text-white" />
-      </div>
+      {/* Personal workspace — the user's home (DMs + private space), the most important
+          one, so it takes the prominent top slot. Selectable; falls back to a static brand
+          mark until it's loaded. */}
+      <RailButton
+        selected={personalSelected}
+        onClick={() => personalWorkspace && selectWorkspace(personalWorkspace.workspace_id)}
+        disabled={!personalWorkspace}
+        title={personalWorkspace ? "Personal (DMs / personal space)" : "Cheers"}
+      >
+        <div
+          className={cn(
+            "w-10 h-10 bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 transition-all duration-150",
+            personalSelected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
+          )}
+        >
+          <MessageSquare className="w-5 h-5 text-white" />
+        </div>
+      </RailButton>
 
       <div className="w-8 h-px bg-zinc-700/60 my-1" />
 
-      {/* Workspaces */}
+      {/* Team workspaces (personal is the top slot, never listed here) */}
       <div className="flex flex-col items-center gap-2 flex-1">
-        {workspaces.map((ws) => (
+        {workspaces
+          .filter(
+            (ws) =>
+              ws.kind !== "personal" &&
+              ws.workspace_id !== personalWorkspace?.workspace_id
+          )
+          .map((ws) => (
           <WorkspaceButton
             key={ws.workspace_id}
             workspace={ws}
@@ -73,6 +146,7 @@ export function WorkspaceRail() {
 
         <button
           title="Add workspace"
+          onClick={() => setWsOpen(true)}
           className="w-10 h-10 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-600 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -81,6 +155,27 @@ export function WorkspaceRail() {
 
       {/* Bottom actions */}
       <div className="flex flex-col items-center gap-2 mt-auto">
+        {inviteCount > 0 && (
+          <button
+            onClick={() => setInvitesOpen(true)}
+            title="Workspace invites"
+            className="relative w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          >
+            <Mail className="w-4 h-4" />
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center">
+              {inviteCount}
+            </span>
+          </button>
+        )}
+
+        <button
+          onClick={() => navigate("/friends")}
+          title="Friends"
+          className="w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+        >
+          <Users className="w-4 h-4" />
+        </button>
+
         <button
           onClick={() => navigate("/settings")}
           title="Settings"
@@ -106,6 +201,14 @@ export function WorkspaceRail() {
           className="cursor-pointer hover:opacity-80 transition-opacity"
         />
       </div>
+
+      {wsOpen && <NewWorkspaceDialog onClose={() => setWsOpen(false)} />}
+      {invitesOpen && (
+        <WorkspaceInvitesDialog
+          onClose={() => setInvitesOpen(false)}
+          onChanged={onInvitesChanged}
+        />
+      )}
     </div>
   );
 }

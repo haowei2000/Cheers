@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { listWorkspaces } from "@/api/workspaces";
-import { listChannels } from "@/api/channels";
+import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
+import { listChannels, listDms } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
@@ -13,27 +13,31 @@ export default function ChatLayout() {
     selectedWorkspaceId,
     selectedChannelId,
     setWorkspaces,
+    setPersonalWorkspace,
     setChannels,
     selectWorkspace,
   } = useChatStore();
 
-  // Load workspaces on mount
+  // Load workspaces + the personal workspace on mount. The personal workspace is the
+  // user's home (DMs + private space), so it's the default selection.
   useEffect(() => {
-    listWorkspaces()
-      .then((ws) => {
+    Promise.all([listWorkspaces(), getPersonalWorkspace().catch(() => null)])
+      .then(([ws, personal]) => {
         setWorkspaces(ws);
-        if (ws.length > 0 && !selectedWorkspaceId) {
-          selectWorkspace(ws[0].workspace_id);
+        if (personal) setPersonalWorkspace(personal);
+        if (!selectedWorkspaceId) {
+          selectWorkspace(personal?.workspace_id ?? ws[0]?.workspace_id ?? null);
         }
       })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load channels when workspace changes
+  // Load channels when workspace changes. DMs are workspace-agnostic (type='dm' channels,
+  // reached by membership), so they're loaded alongside and merged into the same list.
   useEffect(() => {
     if (!selectedWorkspaceId) return;
-    listChannels(selectedWorkspaceId)
-      .then((chs) => setChannels(chs))
+    Promise.all([listChannels(selectedWorkspaceId), listDms().catch(() => [])])
+      .then(([chs, dms]) => setChannels([...chs, ...dms]))
       .catch(() => {});
   }, [selectedWorkspaceId, setChannels]);
 
@@ -46,7 +50,7 @@ export default function ChatLayout() {
   return (
     <div className="flex h-full bg-zinc-950">
       <WorkspaceRail />
-      <Sidebar workspaceName={selectedWorkspace?.name} />
+      <Sidebar workspace={selectedWorkspace} />
       <main className="flex-1 min-w-0 flex flex-col">
         <ChannelView channel={selectedChannel} />
       </main>

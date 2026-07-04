@@ -41,6 +41,9 @@ pub struct CreateMessageParams {
     pub reply_to_msg_id: Option<Uuid>,
     pub file_ids: Vec<String>,
     pub mention_ids: Vec<Uuid>,
+    /// Target a specific "other" session (else the channel's primary). Must be a
+    /// session bound to this channel; it determines which bot is prompted.
+    pub session_id: Option<Uuid>,
 }
 
 pub async fn create_message(
@@ -95,7 +98,6 @@ pub async fn create_message(
     let msg_id = Uuid::new_v4();
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
-    let workspace_id = resolve_channel_workspace_id(db, params.channel_id).await?;
 
     let mut tx = db.begin().await.map_err(AppError::Db)?;
     let seq = channel_seq::allocate(&mut tx, params.channel_id)
@@ -153,6 +155,7 @@ pub async fn create_message(
             .collect(),
         files: load_message_files(&db, &file_ids).await?,
         created_at: now,
+        content_data: None,
     };
 
     // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
@@ -173,6 +176,9 @@ pub async fn create_message(
             "file_ids": &dto.file_ids,
             "mentions": &dto.mentions,
             "files": &dto.files,
+            // Reply linkage rides the live frame too — without it the reply's
+            // quote block only appears after a history refetch.
+            "reply_to_msg_id": dto.reply_to_msg_id,
             "created_at": now,
         }),
     );
@@ -180,33 +186,103 @@ pub async fn create_message(
     info!(message_id = %msg_id, channel_id = %params.channel_id, "message fanout broadcast dispatched");
 
     // ── 5. 解析 bot 触发，派发 task ───────────────────────────────────
-    let bots = resolve_bot_triggers(db, params.channel_id, &mentions).await;
-    info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
-    for bot_id in bots {
-        let provider_session_key = provider_session_key_for_bot_workspace(workspace_id, bot_id);
-        let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
-            .await
-            .unwrap_or_else(|_| bot_id.to_string());
-        let session = sessions::acquire_scope_session(
-            db,
-            bot_id,
-            &provider_account_id,
-            &provider_session_key,
-            sessions::SESSION_SCOPE_WORKSPACE,
-            &workspace_id.to_string(),
-            None,
-            "primary",
-        )
-        .await;
-
-        if let Err(e) = &session {
-            warn!(
-                bot_id = %bot_id,
-                channel_id = %params.channel_id,
-                err = %e,
-                "session acquire failed, fallback to unbound task dispatch"
-            );
+    // A `session_id` targets a specific "other" session in this channel; it
+    // overrides mention-based routing and determines which bot is prompted.
+    let targeted_session = match params.session_id {
+        Some(sid) => {
+            let (bot, key) =
+                sessions::resolve_channel_session(db, &params.channel_id.to_string(), sid)
+                    .await
+                    .map_err(|_| {
+                        AppError::BadRequest("session not found in this channel".into())
+                    })?;
+            Some((bot, sid, key))
         }
+        None => None,
+    };
+    let bots = match &targeted_session {
+        Some((bot, _, _)) => vec![*bot],
+        None => resolve_bot_triggers(db, params.channel_id, &mentions).await,
+    };
+    // readonly 角色的 bot 不派发：它在 resource 层本就发不出消息，唤醒只会
+    // 产生一个必然失败的回合。消息本身照常入库。
+    let bots = filter_writable_bots(db, params.channel_id, bots).await;
+    info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
+    // Sender's channel role (for the INITIATE matrix); default 'member'.
+    let sender_role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(params.channel_id.to_string())
+    .bind(params.user_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string());
+    for bot_id in bots {
+        // Event-policy INITIATE gate (docs/arch/ACP_EVENT_TAXONOMY.md): may THIS user
+        // trigger a `prompt` for THIS bot here? The message still posts to the channel;
+        // we only skip waking the bot. Fail-open on a rules error (membership already
+        // passed, and absence-of-policy = allowed).
+        let may_prompt = crate::domain::acp_policy::allows(
+            db,
+            &bot_id.to_string(),
+            &params.channel_id.to_string(),
+            &params.user_id.to_string(),
+            &sender_role,
+            "session/prompt",
+            crate::domain::bot_event_policy::Capability::Initiate,
+        )
+        .await
+        .unwrap_or(true);
+        if !may_prompt {
+            info!(
+                bot_id = %bot_id,
+                user_id = %params.user_id,
+                role = %sender_role,
+                "INITIATE(prompt) denied by bot_event_policy; message posted, bot not triggered"
+            );
+            continue;
+        }
+
+        // Resolve the session to prompt. A targeted "other" session reuses its
+        // own key (cheers:session:{id}); otherwise the channel PRIMARY session is
+        // acquired (scope-derived stable key, resumed across turns).
+        let (provider_session_key, resolved_session_id) = match &targeted_session {
+            Some((_, sid, key)) => {
+                let _ = sessions::touch_session(db, *sid).await;
+                (key.clone(), Some(*sid))
+            }
+            None => {
+                let provider_session_key =
+                    provider_session_key_for_bot_channel(params.channel_id, bot_id);
+                let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
+                    .await
+                    .unwrap_or_else(|_| bot_id.to_string());
+                let session = sessions::acquire_scope_session(
+                    db,
+                    bot_id,
+                    &provider_account_id,
+                    &provider_session_key,
+                    sessions::SESSION_SCOPE_CHANNEL,
+                    &params.channel_id.to_string(),
+                    None,
+                    "primary",
+                )
+                .await;
+                if let Err(e) = &session {
+                    warn!(
+                        bot_id = %bot_id,
+                        channel_id = %params.channel_id,
+                        err = %e,
+                        "session acquire failed, fallback to unbound task dispatch"
+                    );
+                }
+                (provider_session_key, session.ok().map(|s| s.session_id))
+            }
+        };
 
         let result = dispatcher::dispatch(
             db,
@@ -220,7 +296,7 @@ pub async fn create_message(
                 channel_id: params.channel_id,
                 depth: 0,
                 provider_session_key,
-                session_id: session.ok().map(|session| session.session_id),
+                session_id: resolved_session_id,
             },
         )
         .await;
@@ -234,11 +310,11 @@ pub async fn create_message(
     Ok(dto)
 }
 
-fn provider_session_key_for_bot_workspace(workspace_id: Uuid, bot_id: Uuid) -> String {
-    format!("agentnexus:workspace:{workspace_id}:bot:{bot_id}")
+fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
+    format!("cheers:channel:{channel_id}:bot:{bot_id}")
 }
 
-async fn resolve_provider_account_id_for_bot(
+pub async fn resolve_provider_account_id_for_bot(
     db: &PgPool,
     bot_id: Uuid,
 ) -> Result<String, AppError> {
@@ -300,20 +376,6 @@ fn resolve_provider_account_id_from_binding_config(
     }
 
     None
-}
-
-async fn resolve_channel_workspace_id(db: &PgPool, channel_id: Uuid) -> Result<Uuid, AppError> {
-    use sqlx::Row;
-    let workspace_id = sqlx::query("SELECT workspace_id FROM channels WHERE channel_id = $1")
-        .bind(channel_id.to_string())
-        .fetch_optional(db)
-        .await
-        .map_err(AppError::Db)?
-        .and_then(|row| row.try_get::<String, _>("workspace_id").ok())
-        .and_then(|value| Uuid::parse_str(&value).ok())
-        .ok_or_else(|| AppError::BadRequest("invalid channel".into()))?;
-
-    Ok(workspace_id)
 }
 
 fn normalize_file_ids(file_ids: &[String]) -> Vec<String> {
@@ -425,6 +487,40 @@ async fn resolve_bot_triggers(
     }
 }
 
+/// 过滤出频道内角色可写（owner/admin/member）的 bot 成员。
+/// readonly bot 不应被派发（见 resource 层 role_can_write）；查询失败时保守放行，
+/// 与 INITIATE(prompt) gate 的 fail-open 语义一致（成员资格早已校验过）。
+pub(crate) async fn filter_writable_bots(
+    db: &PgPool,
+    channel_id: Uuid,
+    bots: Vec<Uuid>,
+) -> Vec<Uuid> {
+    if bots.is_empty() {
+        return bots;
+    }
+    let ids: Vec<String> = bots.iter().map(Uuid::to_string).collect();
+    let writable: Result<Vec<String>, _> = sqlx::query_scalar(
+        "SELECT member_id FROM channel_memberships
+         WHERE channel_id = $1 AND member_type = 'bot'
+           AND member_id = ANY($2)
+           AND role IN ('owner', 'admin', 'member')",
+    )
+    .bind(channel_id.to_string())
+    .bind(&ids)
+    .fetch_all(db)
+    .await;
+    match writable {
+        Ok(writable) => bots
+            .into_iter()
+            .filter(|id| writable.contains(&id.to_string()))
+            .collect(),
+        Err(e) => {
+            warn!(channel_id = %channel_id, err = %e, "filter_writable_bots query failed; fail-open");
+            bots
+        }
+    }
+}
+
 fn mention_parse_error_to_app(error: MentionParseError) -> AppError {
     match error {
         MentionParseError::Db(error) => AppError::Db(error),
@@ -450,7 +546,34 @@ pub async fn list_messages(
     after: Option<String>,
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
-    // 成员校验
+    ensure_member(db, channel_id, user_id).await?;
+
+    if before.is_some() && after.is_some() {
+        return Err(AppError::BadRequest(
+            "set either before or after, not both".into(),
+        ));
+    }
+
+    list_channel_messages(&db, &channel_id, before, after, limit).await
+}
+
+/// Permission-checked `channel_seq`-based catch-up: returns terminal messages
+/// with `channel_seq > since_seq` ascending. This is the reconnect/refresh path
+/// (the client tracks its last delivered `channel_seq` from the WS stream).
+pub async fn list_messages_since_seq(
+    db: &PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    since_seq: i64,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    ensure_member(db, channel_id, user_id).await?;
+    list_channel_messages_since_seq(db, &channel_id, since_seq, limit).await
+}
+
+/// Channel membership guard shared by the read paths. Any membership row
+/// (user or bot) grants read access to the channel's history.
+async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
     let is_member = sqlx::query(
         "SELECT EXISTS(
             SELECT 1 FROM channel_memberships
@@ -465,22 +588,25 @@ pub async fn list_messages(
     .try_get::<bool, _>("ok")
     .unwrap_or(false);
 
-    if !is_member {
-        return Err(AppError::Forbidden("not a channel member".into()));
+    if is_member {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("not a channel member".into()))
     }
-
-    if before.is_some() && after.is_some() {
-        return Err(AppError::BadRequest(
-            "set either before or after, not both".into(),
-        ));
-    }
-
-    list_channel_messages(&db, &channel_id, before, after, limit).await
 }
 
 /// 无权限透传的消息列表读取（供 resource 层复用统一消息模型）。
 ///
 /// 返回顺序为创建时间升序（调用者可直接返回）。
+/// Shared SELECT projection + FROM/JOIN for channel message listing.
+/// Callers append their own WHERE / ORDER BY / LIMIT (with placeholders).
+const MESSAGE_LIST_SELECT: &str = "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+        m.channel_seq, u.display_name AS sender_name,
+        m.content, m.msg_type, m.is_partial, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at, m.content_data
+ FROM messages m
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id";
+
 pub async fn list_channel_messages(
     db: &PgPool,
     channel_id: &Uuid,
@@ -493,31 +619,11 @@ pub async fn list_channel_messages(
 
     let (rows, anchor_found, has_more_before, has_more_after) = match (before, after) {
         (Some(before_id), None) => {
-            let anchor = sqlx::query(
-                "SELECT msg_id, created_at
-                 FROM messages
-                 WHERE msg_id = $1 AND channel_id = $2
-                 LIMIT 1",
-            )
-            .bind(before_id.clone())
-            .bind(channel_id.to_string())
-            .fetch_optional(db)
-            .await
-            .map_err(AppError::Db)?
-            .and_then(|row| {
-                let created_at = row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok();
-                let msg_id = row.try_get::<String, _>("msg_id").ok();
-                created_at.zip(msg_id)
-            });
+            let anchor = fetch_anchor(db, &before_id, channel_id).await?;
 
             if let Some((created_at, anchor_msg_id)) = anchor {
-                let rows = sqlx::query(
-                    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            m.channel_seq, u.display_name AS sender_name,
-                            m.content, m.msg_type, m.is_partial, m.file_ids,
-                            m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                     FROM messages m
-                     LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+                let rows = sqlx::query(&format!(
+                    "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND (
@@ -525,8 +631,8 @@ pub async fn list_channel_messages(
                            OR (m.created_at = $2 AND m.msg_id < $3)
                        )
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $4",
-                )
+                     LIMIT $4"
+                ))
                 .bind(channel_id.to_string())
                 .bind(created_at)
                 .bind(anchor_msg_id)
@@ -536,18 +642,13 @@ pub async fn list_channel_messages(
                 .map_err(AppError::Db)?;
                 (rows, true, true, false)
             } else {
-                let rows = sqlx::query(
-                    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            m.channel_seq, u.display_name AS sender_name,
-                            m.content, m.msg_type, m.is_partial, m.file_ids,
-                            m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                     FROM messages m
-                     LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+                let rows = sqlx::query(&format!(
+                    "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $2",
-                )
+                     LIMIT $2"
+                ))
                 .bind(channel_id.to_string())
                 .bind(requested_limit + 1)
                 .fetch_all(db)
@@ -557,31 +658,11 @@ pub async fn list_channel_messages(
             }
         }
         (None, Some(after_id)) => {
-            let anchor = sqlx::query(
-                "SELECT msg_id, created_at
-                 FROM messages
-                 WHERE msg_id = $1 AND channel_id = $2
-                 LIMIT 1",
-            )
-            .bind(after_id)
-            .bind(channel_id.to_string())
-            .fetch_optional(db)
-            .await
-            .map_err(AppError::Db)?
-            .and_then(|row| {
-                let created_at = row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok();
-                let msg_id = row.try_get::<String, _>("msg_id").ok();
-                created_at.zip(msg_id)
-            });
+            let anchor = fetch_anchor(db, &after_id, channel_id).await?;
 
             if let Some((created_at, anchor_msg_id)) = anchor {
-                let rows = sqlx::query(
-                    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                            m.channel_seq, u.display_name AS sender_name,
-                            m.content, m.msg_type, m.is_partial, m.file_ids,
-                            m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                     FROM messages m
-                     LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+                let rows = sqlx::query(&format!(
+                    "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
                        AND (
@@ -589,8 +670,8 @@ pub async fn list_channel_messages(
                            OR (m.created_at = $2 AND m.msg_id > $3)
                        )
                      ORDER BY m.created_at DESC, m.msg_id DESC
-                     LIMIT $4",
-                )
+                     LIMIT $4"
+                ))
                 .bind(channel_id.to_string())
                 .bind(created_at)
                 .bind(anchor_msg_id)
@@ -604,17 +685,12 @@ pub async fn list_channel_messages(
             }
         }
         (None, None) => {
-            let rows = sqlx::query(
-                "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                        m.channel_seq, u.display_name AS sender_name,
-                        m.content, m.msg_type, m.is_partial, m.file_ids,
-                        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-                 FROM messages m
-                 LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+            let rows = sqlx::query(&format!(
+                "{MESSAGE_LIST_SELECT}
                  WHERE m.channel_id = $1 AND m.is_partial = FALSE
                  ORDER BY m.created_at DESC, m.msg_id DESC
-                 LIMIT $2",
-            )
+                 LIMIT $2"
+            ))
             .bind(channel_id.to_string())
             .bind(requested_limit + 1)
             .fetch_all(db)
@@ -649,20 +725,15 @@ pub async fn list_channel_messages_since_seq(
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(
-        "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                m.channel_seq, u.display_name AS sender_name,
-                m.content, m.msg_type, m.is_partial, m.file_ids,
-                m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-         FROM messages m
-         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+    let rows = sqlx::query(&format!(
+        "{MESSAGE_LIST_SELECT}
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq > $2
          ORDER BY m.channel_seq ASC
-         LIMIT $3",
-    )
+         LIMIT $3"
+    ))
     .bind(channel_id.to_string())
     .bind(since_seq.max(0))
     .bind(limit + 1)
@@ -695,21 +766,16 @@ pub async fn list_channel_messages_by_seq(
     limit: i64,
 ) -> Result<MessageListPage, AppError> {
     let limit = limit.clamp(1, 200);
-    let rows = sqlx::query(
-        "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
-                m.channel_seq, u.display_name AS sender_name,
-                m.content, m.msg_type, m.is_partial, m.file_ids,
-                m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at
-         FROM messages m
-         LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+    let rows = sqlx::query(&format!(
+        "{MESSAGE_LIST_SELECT}
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq >= $2
            AND ($3::bigint IS NULL OR m.channel_seq <= $3)
          ORDER BY m.channel_seq ASC
-         LIMIT $4",
-    )
+         LIMIT $4"
+    ))
     .bind(channel_id.to_string())
     .bind(min_seq.max(1))
     .bind(max_seq)
@@ -733,6 +799,121 @@ pub async fn list_channel_messages_by_seq(
         has_more,
         anchor_found: true,
     })
+}
+
+/// 无权限透传的消息内容搜索（供 resource 层复用统一消息模型）。
+///
+/// ILIKE 子串匹配（大小写不敏感；查询按字面处理，`%`/`_`/`\` 已转义），
+/// 中英文皆可、无需额外索引或迁移。返回最新命中的一页（页内按时间升序，
+/// 与其余 list_* 一致）；`before` 传上一页最旧命中的 msg_id 向更早翻页。
+pub async fn search_channel_messages(
+    db: &PgPool,
+    channel_id: &Uuid,
+    query: &str,
+    before: Option<String>,
+    limit: i64,
+) -> Result<MessageListPage, AppError> {
+    let limit = limit.clamp(1, 200);
+    let pattern = format!("%{}%", escape_like_pattern(query));
+
+    let (rows, anchor_found) = if let Some(before_id) = before {
+        let anchor = fetch_anchor(db, &before_id, channel_id).await?;
+        if let Some((created_at, anchor_msg_id)) = anchor {
+            let rows = sqlx::query(&format!(
+                "{MESSAGE_LIST_SELECT}
+                 WHERE m.channel_id = $1
+                   AND m.is_partial = FALSE
+                   AND m.content ILIKE $2
+                   AND (
+                       m.created_at < $3
+                       OR (m.created_at = $3 AND m.msg_id < $4)
+                   )
+                 ORDER BY m.created_at DESC, m.msg_id DESC
+                 LIMIT $5"
+            ))
+            .bind(channel_id.to_string())
+            .bind(&pattern)
+            .bind(created_at)
+            .bind(anchor_msg_id)
+            .bind(limit + 1)
+            .fetch_all(db)
+            .await
+            .map_err(AppError::Db)?;
+            (rows, true)
+        } else {
+            (Vec::new(), false)
+        }
+    } else {
+        let rows = sqlx::query(&format!(
+            "{MESSAGE_LIST_SELECT}
+             WHERE m.channel_id = $1
+               AND m.is_partial = FALSE
+               AND m.content ILIKE $2
+             ORDER BY m.created_at DESC, m.msg_id DESC
+             LIMIT $3"
+        ))
+        .bind(channel_id.to_string())
+        .bind(&pattern)
+        .bind(limit + 1)
+        .fetch_all(db)
+        .await
+        .map_err(AppError::Db)?;
+        (rows, true)
+    };
+
+    let has_more = rows.len() > limit as usize;
+    let rows = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows[..]
+    };
+    let mut messages = hydrate_message_rows(db, rows).await?;
+    messages.reverse(); // 按时间升序返回
+
+    Ok(MessageListPage {
+        messages,
+        has_more_before: has_more,
+        has_more_after: false,
+        has_more,
+        anchor_found,
+    })
+}
+
+/// LIKE/ILIKE 通配符转义：让用户查询按字面子串匹配（Postgres 默认转义符 `\`）。
+pub fn escape_like_pattern(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+/// (created_at, msg_id) cursor anchor for keyset pagination.
+#[derive(Debug, sqlx::FromRow)]
+struct AnchorRow {
+    created_at: chrono::DateTime<Utc>,
+    msg_id: String,
+}
+
+/// Resolve a pagination anchor message (created_at + msg_id) within a channel.
+/// Returns None if the anchor message does not exist or fails to decode.
+async fn fetch_anchor(
+    db: &PgPool,
+    anchor_id: &str,
+    channel_id: &Uuid,
+) -> Result<Option<(chrono::DateTime<Utc>, String)>, AppError> {
+    let anchor = sqlx::query_as::<_, AnchorRow>(
+        "SELECT msg_id, created_at
+         FROM messages
+         WHERE msg_id = $1 AND channel_id = $2
+         LIMIT 1",
+    )
+    .bind(anchor_id)
+    .bind(channel_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .map(|row| (row.created_at, row.msg_id));
+    Ok(anchor)
 }
 
 async fn hydrate_message_rows(
@@ -795,13 +976,14 @@ fn normalize_message_file_refs(
                 expires_at: None,
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+                summary: None,
             });
         }
     }
     normalized
 }
 
-async fn load_message_files(
+pub(crate) async fn load_message_files(
     db: &PgPool,
     file_ids: &[String],
 ) -> Result<Vec<MessageFileRef>, AppError> {
@@ -817,9 +999,20 @@ async fn load_message_files_map(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query(
+    #[derive(Debug, sqlx::FromRow)]
+    struct FileRow {
+        file_id: String,
+        original_filename: Option<String>,
+        content_type: Option<String>,
+        size_bytes: Option<i32>,
+        status: Option<String>,
+        expires_at: Option<chrono::DateTime<Utc>>,
+        summary_3lines: Option<String>,
+    }
+
+    let rows = sqlx::query_as::<_, FileRow>(
         "SELECT file_id, original_filename, content_type, size_bytes, status,
-                expires_at
+                expires_at, summary_3lines
          FROM file_records
          WHERE file_id = ANY($1)",
     )
@@ -830,34 +1023,19 @@ async fn load_message_files_map(
 
     let mut refs = HashMap::new();
     for row in rows {
-        let file_id = row.try_get::<String, _>("file_id").unwrap_or_default();
-        let size_bytes = row
-            .try_get::<Option<i32>, _>("size_bytes")
-            .ok()
-            .flatten()
-            .map(i64::from);
-
+        let file_id = row.file_id;
         refs.insert(
             file_id.clone(),
             MessageFileRef {
                 file_id: file_id.clone(),
-                original_filename: row
-                    .try_get::<Option<String>, _>("original_filename")
-                    .ok()
-                    .flatten(),
-                content_type: row
-                    .try_get::<Option<String>, _>("content_type")
-                    .ok()
-                    .flatten(),
-                size_bytes,
-                status: row.try_get::<Option<String>, _>("status").ok().flatten(),
-                expires_at: row
-                    .try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at")
-                    .ok()
-                    .flatten()
-                    .map(|at| at.to_rfc3339()),
+                original_filename: row.original_filename,
+                content_type: row.content_type,
+                size_bytes: row.size_bytes.map(i64::from),
+                status: row.status,
+                expires_at: row.expires_at.map(|at| at.to_rfc3339()),
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+                summary: row.summary_3lines,
             },
         );
     }
@@ -873,7 +1051,16 @@ async fn load_message_mentions(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query(
+    #[derive(Debug, sqlx::FromRow)]
+    struct MentionRow {
+        msg_id: String,
+        member_type: String,
+        member_id: String,
+        username: Option<String>,
+        display_name: Option<String>,
+    }
+
+    let rows = sqlx::query_as::<_, MentionRow>(
         "SELECT mm.msg_id,
                 mm.member_type,
                 mm.member_id,
@@ -895,19 +1082,32 @@ async fn load_message_mentions(
 
     let mut by_msg = HashMap::new();
     for row in rows {
-        let msg_id = row.try_get::<String, _>("msg_id").unwrap_or_default();
-        let member_type = row.try_get::<String, _>("member_type").unwrap_or_default();
         let mention = MessageMention {
-            member_id: row.try_get::<String, _>("member_id").unwrap_or_default(),
-            member_type,
-            username: row.try_get::<Option<String>, _>("username").ok().flatten(),
-            display_name: row
-                .try_get::<Option<String>, _>("display_name")
-                .ok()
-                .flatten(),
+            member_id: row.member_id,
+            member_type: row.member_type,
+            username: row.username,
+            display_name: row.display_name,
         };
-        by_msg.entry(msg_id).or_insert_with(Vec::new).push(mention);
+        by_msg
+            .entry(row.msg_id)
+            .or_insert_with(Vec::new)
+            .push(mention);
     }
 
     Ok(by_msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_like_pattern;
+
+    /// 搜索 query 中的 LIKE 通配符必须按字面转义（默认转义符 `\`）。
+    #[test]
+    fn escape_like_pattern_escapes_wildcards() {
+        assert_eq!(escape_like_pattern("plain"), "plain");
+        assert_eq!(escape_like_pattern("100%"), "100\\%");
+        assert_eq!(escape_like_pattern("a_b"), "a\\_b");
+        assert_eq!(escape_like_pattern(r"c:\dir"), r"c:\\dir");
+        assert_eq!(escape_like_pattern(r"\%_"), r"\\\%\_");
+    }
 }

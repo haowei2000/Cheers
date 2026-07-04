@@ -1,19 +1,45 @@
-import { memo } from "react";
+import { memo, useContext, useState } from "react";
+import { Square, Reply, Copy, Forward, CheckSquare, Check } from "lucide-react";
+import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { FileGrid } from "./fileView";
+import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
+import { PermissionCard } from "./PermissionCard";
+import { BotTracePanel } from "./BotTracePanel";
+import { cancelMessage } from "@/api/messages";
 import type { Message } from "@/types";
+
+/** Per-message action callbacks. Identity must be STABLE across selection
+ *  changes — selection state travels as the scalar `selectMode`/`selected`
+ *  props so memo() only re-renders the rows whose bits actually changed. */
+export interface MessageActionHandlers {
+  onReply: (m: Message) => void;
+  onForward: (m: Message) => void;
+  /** Toggle this message in the multi-select set (entering select mode if off). */
+  onToggleSelect: (m: Message) => void;
+}
 
 interface Props {
   message: Message;
   isConsecutive?: boolean;
   currentUserId?: string;
+  channelId?: string;
+  /** Channel-membership display label, used when the message has no sender_name. */
+  senderName?: string;
+  actions?: MessageActionHandlers;
+  selectMode?: boolean;
+  selected?: boolean;
+  /** The message this one replies to (resolved from the loaded window), if any. */
+  repliedTo?: Message | null;
+  /** Display name resolver for the reply-quote header. */
+  nameOf?: (senderId: string) => string;
 }
 
 const SYSTEM_TYPES = new Set([
   "routing",
-  "permission",
   "announcement",
   "notification",
 ]);
@@ -30,10 +56,100 @@ function SystemMessage({ message }: { message: Message }) {
   );
 }
 
+// Flat <#file:id> tokens render as chips, not inline text (also stripped on copy).
+const FILE_TOKEN_RE = /<#file:[^>]+>/g;
+
+/** Copy a message's visible text to the clipboard. */
+async function copyMessage(message: Message) {
+  const text = (message.content ?? "").replace(FILE_TOKEN_RE, "").trim();
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied");
+  } catch {
+    toast.error("Clipboard unavailable");
+  }
+}
+
+/** Hover toolbar: reply · copy · forward · select. Hidden while streaming. */
+function ActionBar({ message, actions }: { message: Message; actions: MessageActionHandlers }) {
+  const btn =
+    "flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-700/70";
+  return (
+    <div className="absolute -top-3 right-4 z-10 hidden group-hover:flex items-center gap-0.5 rounded-lg border border-zinc-700 bg-zinc-800/95 px-1 py-0.5 shadow-lg">
+      <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
+        <Reply className="w-3.5 h-3.5" />
+      </button>
+      <button type="button" title="Copy text" className={btn} onClick={() => void copyMessage(message)}>
+        <Copy className="w-3.5 h-3.5" />
+      </button>
+      <button type="button" title="Forward" className={btn} onClick={() => actions.onForward(message)}>
+        <Forward className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        title="Select (multi-select)"
+        className={btn}
+        onClick={() => actions.onToggleSelect(message)}
+      >
+        <CheckSquare className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/** Quote block shown above a reply's body, linking it to the original. */
+function ReplyQuote({
+  message,
+  repliedTo,
+  nameOf,
+}: {
+  message: Message;
+  repliedTo?: Message | null;
+  nameOf?: (senderId: string) => string;
+}) {
+  if (!message.reply_to_msg_id) return null;
+  const excerpt = repliedTo
+    ? (repliedTo.content ?? "").replace(FILE_TOKEN_RE, "").trim().slice(0, 120) ||
+      (repliedTo.files?.length ? "(attachment)" : "(empty message)")
+    : "original message not in view";
+  const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
+  return (
+    <div className="flex items-center gap-1.5 mb-0.5 pl-2 border-l-2 border-zinc-700 text-[11px] text-zinc-500 max-w-full">
+      <Reply className="w-3 h-3 flex-shrink-0 rotate-180" />
+      {who && <span className="font-medium text-zinc-400 flex-shrink-0">{who}</span>}
+      <span className="truncate italic">{excerpt}</span>
+    </div>
+  );
+}
+
+/** In select mode: leading checkbox column; whole row click toggles.
+ *  `className` lets the own-message (flex-row-reverse) row pin it visually
+ *  left via `order-last` so the selection column never flips sides. */
+function SelectBox({ selected, className }: { selected: boolean; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "flex items-center justify-center w-4 h-4 mt-1.5 rounded border flex-shrink-0",
+        selected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600",
+        className
+      )}
+    >
+      {selected && <Check className="w-3 h-3 text-white" />}
+    </span>
+  );
+}
+
 export const MessageItem = memo(function MessageItem({
   message,
   isConsecutive,
   currentUserId,
+  channelId,
+  senderName,
+  actions,
+  selectMode,
+  selected: selectedProp,
+  repliedTo,
+  nameOf,
 }: Props) {
   if (message.is_deleted) {
     return (
@@ -47,25 +163,79 @@ export const MessageItem = memo(function MessageItem({
     );
   }
 
+  if (message.msg_type === "permission") {
+    // Render inline in the bot's column (indented past the avatar gutter) so the
+    // approval box reads as part of the bot's reply / trace rather than a
+    // detached centered card.
+    return (
+      <div className="flex items-start gap-3 px-4 py-0.5">
+        <div className="w-9 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <PermissionCard
+            message={message}
+            channelId={channelId}
+            currentUserId={currentUserId}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (message.msg_type && SYSTEM_TYPES.has(message.msg_type)) {
     return <SystemMessage message={message} />;
   }
 
   const isOwn = message.sender_id === currentUserId;
-  const name = message.sender_name || message.sender_id.slice(0, 8);
+  const name =
+    message.sender_name || senderName || message.sender_id.slice(0, 8);
+  const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
+
+  const active = message._streaming || message.is_partial;
+  const showActions = actions && !active && !selectMode;
+  const selectable = Boolean(actions && selectMode);
+  const selected = Boolean(selectedProp);
+  const rowSelectProps = selectable
+    ? {
+        onClick: (e: React.MouseEvent) => {
+          // Don't hijack clicks meant for inner controls (Stop, links, file chips):
+          // only toggle when the click landed on non-interactive row content.
+          if ((e.target as HTMLElement).closest("button, a")) return;
+          actions?.onToggleSelect(message);
+        },
+        role: "checkbox" as const,
+        "aria-checked": selected,
+      }
+    : {};
 
   if (isConsecutive) {
     return (
-      <div className="group flex items-start gap-3 px-4 py-0.5 hover:bg-zinc-900/40 transition-colors">
+      <div
+        className={cn(
+          "group relative flex items-start gap-3 px-4 py-0.5 hover:bg-zinc-900/40 transition-colors",
+          selectable && "cursor-pointer",
+          selected && "bg-indigo-950/30 hover:bg-indigo-950/40"
+        )}
+        {...rowSelectProps}
+      >
+        {selectable && <SelectBox selected={selected} />}
         <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
           <span className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity select-none">
             {formatTime(message.created_at)}
           </span>
         </div>
         <div className="flex-1 min-w-0">
-          <MessageBody message={message} />
+          <ReplyQuote message={message} repliedTo={repliedTo} nameOf={nameOf} />
+          <MessageBody message={message} channelId={channelId} isBot={isBot} />
+          {isBot && channelId && !message._streaming && !message.is_partial && (
+            <BotTracePanel
+              key={`trace-${message.msg_id}`}
+              channelId={channelId}
+              msgId={message.msg_id}
+            />
+          )}
         </div>
+        {showActions && <ActionBar message={message} actions={actions} />}
       </div>
     );
   }
@@ -73,10 +243,15 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div
       className={cn(
-        "group flex items-start gap-3 px-4 py-1.5 hover:bg-zinc-900/40 transition-colors",
-        isOwn && "flex-row-reverse"
+        "group relative flex items-start gap-3 px-4 py-1.5 hover:bg-zinc-900/40 transition-colors",
+        isOwn && "flex-row-reverse",
+        selectable && "cursor-pointer",
+        selected && "bg-indigo-950/30 hover:bg-indigo-950/40"
       )}
+      {...rowSelectProps}
     >
+      {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
+      {selectable && <SelectBox selected={selected} className={isOwn ? "order-last" : undefined} />}
       {/* Avatar */}
       <Avatar
         name={name}
@@ -89,7 +264,10 @@ export const MessageItem = memo(function MessageItem({
       <div className={cn("flex-1 min-w-0", isOwn && "flex flex-col items-end")}>
         {/* Header */}
         <div className="flex items-baseline gap-2 mb-0.5">
-          <span className={cn("text-sm font-semibold text-zinc-100", isOwn && "order-2")}>
+          <span
+            className={cn("text-sm font-semibold text-zinc-100", isOwn && "order-2")}
+            title={hasName ? undefined : message.sender_id}
+          >
             {name}
           </span>
           {isBot && (
@@ -103,50 +281,146 @@ export const MessageItem = memo(function MessageItem({
         </div>
 
         {/* Body */}
-        <MessageBody message={message} />
+        <ReplyQuote message={message} repliedTo={repliedTo} nameOf={nameOf} />
+        <MessageBody message={message} channelId={channelId} isBot={isBot} />
+        {isBot && channelId && !message._streaming && !message.is_partial && (
+          <BotTracePanel
+            key={`trace-${message.msg_id}`}
+            channelId={channelId}
+            msgId={message.msg_id}
+          />
+        )}
       </div>
+      {showActions && <ActionBar message={message} actions={actions} />}
     </div>
   );
 });
 
-function MessageBody({ message }: { message: Message }) {
-  if (message._streaming && !message.content) {
+/**
+ * Per-message "Stop" control for an in-flight bot turn. Sends the ACP
+ * `session/cancel` (POST …/messages/:id/cancel); the gateway gates it as an
+ * INITIATE event (members allowed by default). We attach it to the bot's own
+ * reply bubble rather than the composer, so each turn is cancelled in place.
+ */
+function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) {
+  const [stopping, setStopping] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={stopping}
+      onClick={async () => {
+        setStopping(true);
+        try {
+          await cancelMessage(channelId, msgId);
+          // Leave it disabled: the turn finalizes via the stream and the bubble
+          // drops out of its active state, unmounting this button.
+        } catch (e) {
+          const raw = e instanceof Error ? e.message : String(e);
+          // A turn that already finished 404s ("not found") — a benign race, not
+          // worth a toast. Surface anything else (e.g. a 403 authz denial).
+          if (!/not found/i.test(raw)) {
+            let detail = raw;
+            try {
+              detail = (JSON.parse(raw) as { detail?: string }).detail ?? raw;
+            } catch {
+              /* not JSON — use raw */
+            }
+            toast.error(detail);
+          }
+          setStopping(false);
+        }
+      }}
+      className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60 hover:text-zinc-100 disabled:opacity-50"
+      title="Stop the agent's current turn"
+    >
+      <Square className="w-3 h-3" fill="currentColor" />
+      {stopping ? "Stopping…" : "Stop"}
+    </button>
+  );
+}
+
+function MessageBody({
+  message,
+  channelId,
+  isBot,
+}: {
+  message: Message;
+  channelId?: string;
+  isBot?: boolean;
+}) {
+  const resolveRefClick = useContext(ResolveRefContext);
+  // Bind a clicked reference to THIS message's bot + its own attachments, so the
+  // resolver can prefer "a file this turn actually produced" and pick the right
+  // store (multi-bot ambiguity resolved for free).
+  const pathOpen =
+    message.sender_type === "bot" && resolveRefClick
+      ? (ref: string) =>
+          resolveRefClick({ senderBotId: message.sender_id, ref, files: message.files })
+      : null;
+  const files = message.files ?? [];
+  const content = (message.content ?? "").replace(FILE_TOKEN_RE, "").trim();
+  // Treat a pending bot placeholder (is_partial) as active too — the agent
+  // trace + typing indicator must show during the "thinking" phase, which
+  // happens before the first delta sets _streaming.
+  const active = message._streaming || message.is_partial;
+
+  if (active && !content && files.length === 0) {
     return (
-      <div className="flex items-center gap-1 py-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:150ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:300ms]" />
+      <div className="flex items-center gap-2 py-1">
+        <div className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:150ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:300ms]" />
+        </div>
+        {message._trace && (
+          <span className="text-xs text-zinc-500 italic truncate">
+            {message._trace}
+          </span>
+        )}
+        {isBot && channelId && (
+          <StopButton channelId={channelId} msgId={message.msg_id} />
+        )}
       </div>
     );
   }
 
   if (message.error) {
-    return (
-      <p className="text-sm text-red-400 italic">{message.error}</p>
-    );
+    return <p className="text-sm text-red-400 italic">{message.error}</p>;
   }
 
   const hasMarkdown =
-    message.content.includes("```") ||
-    message.content.includes("**") ||
-    message.content.includes("*") ||
-    message.content.includes("#") ||
-    message.content.includes("[") ||
-    message.content.includes("\n") ||
-    message.content.includes("`");
+    content.includes("```") ||
+    content.includes("**") ||
+    content.includes("*") ||
+    content.includes("#") ||
+    content.includes("[") ||
+    content.includes("\n") ||
+    content.includes("`");
 
   return (
     <div className="relative">
-      {hasMarkdown ? (
-        <MarkdownRenderer content={message.content} className="text-sm" />
-      ) : (
-        <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">
-          {message.content}
-        </p>
-      )}
+      {content &&
+        (hasMarkdown ? (
+          <PathOpenContext.Provider value={pathOpen}>
+            <MarkdownRenderer content={content} className="text-sm" />
+          </PathOpenContext.Provider>
+        ) : (
+          <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">
+            {content}
+          </p>
+        ))}
       {message._streaming && (
         <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink ml-0.5 align-text-bottom" />
       )}
+      {active && message._trace && (
+        <p className="text-xs text-zinc-500 italic mt-0.5">{message._trace}</p>
+      )}
+      {active && isBot && channelId && (
+        <div className="mt-1">
+          <StopButton channelId={channelId} msgId={message.msg_id} />
+        </div>
+      )}
+      <FileGrid files={files} className="mt-1.5" />
     </div>
   );
 }

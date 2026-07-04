@@ -1,4 +1,4 @@
-# AgentNexus Documentation Index
+# Cheers Documentation Index
 
 > **Language**: English | [中文](INDEX.zh-CN.md)
 
@@ -14,7 +14,6 @@ This is the consolidated documentation entrypoint for the repository.
 - [Agent Bridge Guide](help/AgentBridge接入指南.md)
 - [Troubleshooting Q&A](help/技术排查Q&A.md)
 - [RustFS Deployment](help/RustFS对象存储部署说明.md)
-- [kkFileView Deployment](help/kkFileView配置说明.md)
 
 ## Architecture and Protocol Documentation
 

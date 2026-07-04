@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- 内嵌 manifest：host 上传时惰性解析，不执行。声明这是个渲染器插件（render/save 协议）。 -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "md-checklist",
+        "title": "Markdown 清单",
+        "renderers": [
+          {
+            "id": "checklist",
+            "title": "清单",
+            "match": { "format": "markdown", "requireAny": ["- [ ]", "- [x]", "- [X]"] }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; }
+      #root { padding: 8px 10px; }
+      .task { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+      .task span { cursor: default; }
+      .task span.done { color: #71717a; text-decoration: line-through; }
+      .line { white-space: pre-wrap; color: #a1a1aa; padding: 1px 0; }
+      #st { padding: 4px 10px; color: #71717a; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="st"></div>
+    <script>
+      var ASSIGN = null;             // 当前指派：{ path, format, content, version, rendererId }
+      var lines = [];                // 内容按行拆开（就地编辑）
+      var TASK = /^(\s*[-*]\s+)\[([ xX])\]\s+(.*)$/; // - [ ] / - [x]
+
+      function send(msg) { parent.postMessage(msg, "*"); }
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+
+      window.addEventListener("message", function (e) {
+        var m = e.data; if (!m || typeof m !== "object") return;
+        if (m.type === "cheers:render") {            // host 指派一个文件
+          ASSIGN = m; lines = String(m.content || "").split("\n");
+          // 运行期最终裁决：没有任何 task 行 → 我渲染不了,告诉 host
+          if (!lines.some(function (l) { return TASK.test(l); })) {
+            send({ type: "cheers:unsupported", reason: "没有 - [ ] / - [x] 待办行" });
+            return;
+          }
+          render();
+        } else if (m.type === "cheers:saved") {      // 写回结果
+          if (m.ok) { ASSIGN.version = m.version; setStatus("已保存 v" + m.version); }
+          else setStatus("保存失败：" + (m.error || ""));
+        }
+      });
+
+      function save() { send({ type: "cheers:save", content: lines.join("\n") }); }
+
+      function render() {
+        var root = document.getElementById("root"); root.innerHTML = "";
+        lines.forEach(function (line, i) {
+          var mt = line.match(TASK);
+          if (mt) {
+            var row = document.createElement("label"); row.className = "task";
+            var cb = document.createElement("input"); cb.type = "checkbox";
+            cb.checked = mt[2].toLowerCase() === "x";
+            var txt = document.createElement("span");
+            txt.textContent = mt[3];                 // textContent → 不可信文本无 XSS
+            if (cb.checked) txt.className = "done";
+            cb.onchange = function () {
+              lines[i] = mt[1] + "[" + (cb.checked ? "x" : " ") + "] " + mt[3];
+              render(); save();                      // 就地改这一行 → 写回
+            };
+            row.appendChild(cb); row.appendChild(txt); root.appendChild(row);
+          } else {
+            var p = document.createElement("div"); p.className = "line";
+            p.textContent = line;                    // 非 task 行原样保留
+            root.appendChild(p);
+          }
+        });
+      }
+
+      send({ type: "cheers:ready" });                // 最后一步：告诉 host 我就绪
+    </script>
+  </body>
+</html>

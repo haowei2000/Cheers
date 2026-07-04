@@ -21,7 +21,7 @@ Local daemon process
   ├─ Local Loopback Resource Server
   └─ Child processes
        ├─ ACP agent
-       └─ agentnexus-mcp-server
+       └─ cheers-mcp-server
 ```
 
 ## 1. Component Boundaries
@@ -34,8 +34,8 @@ Local daemon process
 | BridgeRuntime | Task orchestration and local runtime state machine | BridgeSession, RuntimeAdapter, Loopback Resource Server | Does not implement vendor-specific ACP/stdout parsing itself. |
 | RuntimeAdapter | Runtime protocol adapter interface | BridgeRuntime | Does not know Agent Bridge transport details. |
 | AcpAdapter | ACP JSON-RPC stdio lifecycle and ACP session calls | ACP agent child process | Does not hold bot token or open Agent Bridge WS. |
-| Local Loopback Resource Server | Local endpoint for MCP tool calls | agentnexus-mcp-server, BridgeRuntime | Does not validate platform grants locally. |
-| agentnexus-mcp-server | MCP tools for AgentNexus resources | Loopback endpoint | Does not open its own Agent Bridge connection. |
+| Local Loopback Resource Server | Local endpoint for MCP tool calls | cheers-mcp-server, BridgeRuntime | Does not validate platform grants locally. |
+| cheers-mcp-server | MCP tools for Cheers resources | Loopback endpoint | Does not open its own Agent Bridge connection. |
 | Rust Backend | Platform facts, permission, persistence, fanout | Agent Bridge Protocol | Does not manage local ACP/MCP child processes. |
 
 One-line rule:
@@ -99,7 +99,7 @@ BridgeRuntime  <── RuntimeAdapter trait ──>  AcpAdapter  <── ACP JSO
 MCP is only inside the ACP agent / local resource path:
 
 ```text
-ACP agent  <── MCP stdio ──>  agentnexus-mcp-server  <── loopback ──>  BridgeRuntime
+ACP agent  <── MCP stdio ──>  cheers-mcp-server  <── loopback ──>  BridgeRuntime
 ```
 
 Do not let ACP fields leak into Backend contracts. Do not let Agent Bridge transport logic leak into
@@ -165,7 +165,7 @@ Agent Bridge task != ACP session/prompt.
 The platform session identity and provider session identity are different:
 
 ```text
-AgentNexus runtime session:
+Cheers runtime session:
   session_id
   provider_session_key
 
@@ -196,15 +196,15 @@ metadata and audit context.
 
 ## 6. MCP / Resource Flow
 
-The daemon must not directly manage `agentnexus-mcp-server` as a child process. MCP lifecycle belongs
+The daemon must not directly manage `cheers-mcp-server` as a child process. MCP lifecycle belongs
 to the ACP `mcpServers` mechanism.
 
 ```text
 BridgeRuntime
   -> AcpAdapter session/new or session/load with mcpServers
 ACP agent
-  -> starts agentnexus-mcp-server by ACP/MCP stdio rules
-agentnexus-mcp-server
+  -> starts cheers-mcp-server by ACP/MCP stdio rules
+cheers-mcp-server
   -> calls local loopback endpoint
 Local Loopback Resource Server
   -> BridgeRuntime
@@ -214,7 +214,7 @@ Backend
   -> data.resource_res
 BridgeRuntime
   -> loopback response
-agentnexus-mcp-server
+cheers-mcp-server
   -> MCP tool result
 ACP agent
 ```
@@ -224,7 +224,7 @@ only a transport bridge; it is not the permission authority.
 
 ## 7. Permission Flow
 
-Provider permission requests must be resolved through AgentNexus, not forged locally.
+Provider permission requests must be resolved through Cheers, not forged locally.
 
 ```text
 ACP agent
@@ -287,8 +287,8 @@ Current and target Rust module ownership:
 - Do not make the supervisor parse or execute Agent Bridge tasks.
 - Do not make BridgeSession call ACP or build prompts.
 - Do not make AcpAdapter open Agent Bridge WebSockets or hold bot tokens.
-- Do not let daemon directly spawn or own `agentnexus-mcp-server`.
-- Do not decide AgentNexus channel/file/grant permissions locally.
+- Do not let daemon directly spawn or own `cheers-mcp-server`.
+- Do not decide Cheers channel/file/grant permissions locally.
 - Do not replace `task` with ACP `session/prompt`; they are different concepts.
 - Do not add compatibility placeholders to fake a working runtime path.
 

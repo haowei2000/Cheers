@@ -1,5 +1,5 @@
 const API_BASE =
-  (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ??
+  (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ||
   "/api/v1";
 
 function getToken(): string | null {
@@ -52,7 +52,7 @@ export async function apiJson<T>(
 export function buildWsUrl(path: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const wsBase =
-    (import.meta as { env?: Record<string, string> }).env?.VITE_WS_BASE_URL ??
+    (import.meta as { env?: Record<string, string> }).env?.VITE_WS_BASE_URL ||
     `${proto}//${location.host}`;
   return `${wsBase}${path}`;
 }

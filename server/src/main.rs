@@ -1,4 +1,4 @@
-//! AgentNexus backend entrypoint.
+//! Cheers backend entrypoint.
 //!
 //! Builds runtime dependencies (config, database pool, in-process gateway
 //! registries), initializes tracing, applies migrations, and starts the Axum
@@ -42,6 +42,19 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(&db).await?;
     info!("migrations applied");
 
+    // Bootstrap a default admin on an empty database (there is no seed
+    // migration), so the gateway is reachable for the login/demo flow.
+    server::domain::seed::ensure_admin_user(&db).await?;
+
+    // S3 / RustFS client for gateway-proxied file storage. Bucket bootstrap is
+    // best-effort: a missing object store must not block the core chat loop.
+    let s3 = infra::s3::build_client(&config);
+    if let Err(e) = infra::s3::ensure_bucket(&s3, &config.s3_bucket).await {
+        tracing::warn!(error = %e, bucket = %config.s3_bucket, "S3 bucket bootstrap failed; file upload/download will be unavailable until storage is reachable");
+    }
+    // Let the resource layer (channel.files.read / inbox_open) read chat-file bytes.
+    server::resource::files::init_s3(s3.clone(), config.s3_bucket.clone());
+
     // Single-instance deployment (R1-A): in-process fan-out + bot registry.
     // Redis is NOT a startup dependency on the realtime path. The Redis impls
     // (redis_fanout.rs / redis_registry.rs) stay compiled for a future
@@ -59,16 +72,76 @@ async fn main() -> anyhow::Result<()> {
     let bot_locator = locator as Arc<dyn gateway::registry::BotLocator>;
 
     let stream_registry = StreamRegistry::new();
+    let workspace_rpc = Arc::new(gateway::workspace_rpc::WorkspaceRpc::new());
 
     let state = AppState {
         db,
         config: config.clone(),
+        s3,
         fanout,
         conn_manager,
         bot_locator,
         bot_registry,
         stream_registry,
+        workspace_rpc,
     };
+
+    // Orphan-placeholder reclaimer (flow 8 gap): finalize placeholders that
+    // never got a `done` (backend restart lost the in-memory registry, or a bot
+    // vanished mid-task) so chat bubbles don't hang on "thinking" forever.
+    gateway::reclaimer::spawn(
+        state.db.clone(),
+        state.stream_registry.clone(),
+        state.fanout.clone(),
+        config.orphan_reclaim_interval_secs,
+        config.orphan_reclaim_threshold_secs,
+    );
+
+    // Approval-card TTL sweeper: finalize permission cards that were never
+    // resolved and whose connector died before its own timeout could cancel
+    // them, so they don't hang pending forever (no other server-side expiry).
+    gateway::approval_sweeper::spawn(
+        state.db.clone(),
+        state.fanout.clone(),
+        config.approval_sweep_interval_secs,
+        config.approval_card_ttl_secs,
+    );
+
+    // Reap spent/expired bot-onboarding enrollment codes (audit follow-up L2):
+    // the per-owner/per-bot caps count only live codes, so terminal rows would
+    // otherwise accumulate without bound. Hourly, keeping rows 1 day for audit.
+    gateway::enrollment_reaper::spawn(state.db.clone(), 3600, 86_400);
+
+    // Prune bot bridge connection history (bot_connection_events) — kept 30 days
+    // for uptime inspection, then reaped hourly so a flapping connector can't
+    // grow the table without bound.
+    gateway::connection_event_reaper::spawn(state.db.clone(), 3600, 30 * 86_400);
+
+    // Office→PDF preview conversion (Gotenberg). Only runs when GOTENBERG_URL is
+    // configured; otherwise office files simply have no preview rendition.
+    if let Some(gotenberg_url) = config.gotenberg_url.clone() {
+        gateway::conversion_worker::spawn(
+            state.db.clone(),
+            state.s3.clone(),
+            state.config.clone(),
+            gotenberg_url,
+            config.conversion_poll_interval_secs,
+        );
+        info!("gotenberg conversion worker started");
+    } else {
+        info!("GOTENBERG_URL unset; office→PDF preview conversion disabled");
+    }
+
+    // Audio→text transcription via the admin-configured STT endpoint. Always
+    // spawned: whether it does anything is a runtime DB setting (admin UI),
+    // re-read each poll cycle — enabling STT needs no restart.
+    gateway::transcription_worker::spawn(
+        state.db.clone(),
+        state.s3.clone(),
+        state.config.clone(),
+        state.fanout.clone(),
+        config.conversion_poll_interval_secs,
+    );
 
     let app = router::build(state);
 

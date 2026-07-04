@@ -2,7 +2,7 @@
 
 > **语言**：中文 | [English](FRONTEND.md)
 
-AgentNexus 前端组件层级与复用约定。
+Cheers 前端组件层级与复用约定。
 
 本文覆盖主应用 `frontend/src`。`skillhub-standalone/` 是独立前端，不纳入本组件层级。
 

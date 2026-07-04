@@ -1,4 +1,4 @@
-# AgentNexus Documentation Index (Compatibility Entry)
+# Cheers Documentation Index (Compatibility Entry)
 
 > **Language**: English | [中文](INDEX.zh-CN.md)
 

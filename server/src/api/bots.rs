@@ -1,5 +1,6 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
+    http::HeaderMap,
     Extension, Json,
 };
 use serde::Deserialize;
@@ -7,7 +8,12 @@ use serde_json::{json, Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{api::middleware::Claims, app_state::AppState, errors::AppError};
+use crate::{
+    api::middleware::Claims,
+    app_state::AppState,
+    errors::AppError,
+    infra::crypto::{generate_bot_token, hash_bot_token},
+};
 
 #[derive(Deserialize)]
 pub struct BotAcpSecurityConfig {
@@ -24,14 +30,12 @@ pub struct BotAcpSecurityConfig {
 
 #[derive(Deserialize)]
 pub struct BotCreateRequest {
-    pub bot_id: Option<String>,
     pub username: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub model_id: Option<String>,
     pub template_id: Option<String>,
     pub custom_system_prompt: Option<String>,
-    pub status: Option<String>,
     pub scope: Option<String>,
     pub intro: Option<String>,
     pub avatar_url: Option<String>,
@@ -41,33 +45,170 @@ pub struct BotCreateRequest {
     pub acp_security: Option<BotAcpSecurityConfig>,
 }
 
+/// Per-user cap on bot creation for non-admins (resource-abuse bound, audit H1).
+const MAX_BOTS_PER_USER: i64 = 50;
+
+pub(crate) fn is_admin(claims: &Claims) -> bool {
+    matches!(claims.role.as_str(), "system_admin" | "admin")
+}
+
+/// Fetch a bot's `created_by` owner; NotFound if the bot doesn't exist.
+async fn bot_owner(state: &AppState, bot_id: &str) -> Result<Option<String>, AppError> {
+    let row = sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
+        .bind(bot_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(row
+        .try_get::<Option<String>, _>("created_by")
+        .ok()
+        .flatten())
+}
+
+/// Authorize a privileged bot op (issue token, edit/delete): admin or the bot's
+/// creator. A legacy bot with `created_by = NULL` is admin-only (never matches a
+/// caller), so consolidating callers onto this helper can't open an authz bypass.
+pub(crate) async fn ensure_bot_owner_or_admin(
+    state: &AppState,
+    claims: &Claims,
+    bot_id: &str,
+) -> Result<(), AppError> {
+    let owner = bot_owner(state, bot_id).await?;
+    if is_admin(claims) || owner.as_deref() == Some(claims.sub.as_str()) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "only the bot owner or an admin may do this".into(),
+        ))
+    }
+}
+
+/// Whether `claims` may see a bot: admin, owner, or a member of a channel the
+/// bot is in. Gates non-destructive reads (status/test). Returns NotFound for
+/// both missing and forbidden so it isn't an existence oracle.
+async fn ensure_bot_visible(
+    state: &AppState,
+    claims: &Claims,
+    bot_id: &str,
+) -> Result<(), AppError> {
+    if is_admin(claims) {
+        bot_owner(state, bot_id).await?; // existence → correct 404
+        return Ok(());
+    }
+    let visible: bool = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM bot_accounts b
+            WHERE b.bot_id = $1 AND (
+                b.created_by = $2
+                OR EXISTS (
+                    SELECT 1 FROM channel_memberships bcm
+                    JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id
+                    WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
+                      AND ucm.member_id = $2 AND ucm.member_type = 'user'
+                )
+            )
+        ) AS ok",
+    )
+    .bind(bot_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db)
+    .await?
+    .try_get("ok")
+    .unwrap_or(false);
+    if visible {
+        Ok(())
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
 pub async fn list_bots(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
+    // IDOR fix (audit H2): scope to bots the caller owns or shares a channel
+    // with (admins see all). binding_config (connector wiring) is redacted for
+    // non-owners even when the bot is visible via a shared channel.
+    let admin = is_admin(&claims);
     let rows = sqlx::query(
-        "SELECT bot_id, username, display_name, description, avatar_url, status, scope,
-                binding_type, bridge_provider, model_id, template_id, intro, binding_config, created_at
-         FROM bot_accounts
+        "SELECT bot_id, username, display_name, description, avatar_url, is_disabled, scope,
+                binding_type, bridge_provider, model_id, template_id, intro, binding_config,
+                created_by, status_text, status_emoji, status_updated_at,
+                status_auto_update, status_update_prompt, status_update_interval_minutes
+         FROM bot_accounts b
+         WHERE $1
+            OR b.created_by = $2
+            OR EXISTS (
+                SELECT 1 FROM channel_memberships bcm
+                JOIN channel_memberships ucm ON ucm.channel_id = bcm.channel_id
+                WHERE bcm.member_id = b.bot_id AND bcm.member_type = 'bot'
+                  AND ucm.member_id = $2 AND ucm.member_type = 'user'
+            )
          ORDER BY username",
     )
+    .bind(admin)
+    .bind(&claims.sub)
     .fetch_all(&state.db)
     .await?;
-    Ok(Json(rows.into_iter().map(|r| json!({
-        "bot_id": r.try_get::<String, _>("bot_id").unwrap_or_default(),
-        "username": r.try_get::<String, _>("username").unwrap_or_default(),
-        "display_name": r.try_get::<String, _>("display_name").ok(),
-        "description": r.try_get::<String, _>("description").ok(),
-        "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
-        "status": r.try_get::<String, _>("status").unwrap_or_else(|_| "online".into()),
-        "scope": r.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
-        "binding_type": r.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
-        "bridge_provider": r.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
-        "model_id": r.try_get::<String, _>("model_id").ok(),
-        "template_id": r.try_get::<String, _>("template_id").ok(),
-        "intro": r.try_get::<String, _>("intro").ok(),
-        "binding_config": r.try_get::<Value, _>("binding_config").ok(),
-    })).collect()))
+    let mut bots = Vec::with_capacity(rows.len());
+    for r in rows {
+        let created_by = r.try_get::<Option<String>, _>("created_by").ok().flatten();
+        let is_owner = created_by.as_deref() == Some(claims.sub.as_str());
+        let can_manage = admin || is_owner;
+        let binding_config = if can_manage {
+            r.try_get::<Value, _>("binding_config").ok()
+        } else {
+            None
+        };
+        // The auto-update prompt/config is only meaningful to a manager, and the
+        // prompt may embed private instructions — redact for channel-mates.
+        let status_update_prompt = if can_manage {
+            r.try_get::<Option<String>, _>("status_update_prompt").ok().flatten()
+        } else {
+            None
+        };
+        // LIVE connectivity from the connection registry — the only honest "online"
+        // signal. `status` is a persisted enable flag that's set 'online' at creation
+        // and never flipped, so it can't tell a connected bot from a dead one. All
+        // bots dispatch through the WS bridge (see gateway::dispatcher), so the
+        // registry is authoritative for every binding type.
+        let bot_id = r.try_get::<String, _>("bot_id").unwrap_or_default();
+        let is_online = match Uuid::parse_str(&bot_id) {
+            Ok(id) => state.bot_locator.is_online(id).await,
+            Err(_) => false,
+        };
+        bots.push(json!({
+            "bot_id": bot_id,
+            "username": r.try_get::<String, _>("username").unwrap_or_default(),
+            "display_name": r.try_get::<String, _>("display_name").ok(),
+            "description": r.try_get::<String, _>("description").ok(),
+            "avatar_url": r.try_get::<String, _>("avatar_url").ok(),
+            "is_disabled": r.try_get::<bool, _>("is_disabled").unwrap_or(false),
+            "can_manage": can_manage,
+            "is_online": is_online,
+            "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
+            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+            "status_updated_at": r
+                .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
+                .ok()
+                .flatten()
+                .map(|t| t.to_rfc3339()),
+            "status_auto_update": r.try_get::<bool, _>("status_auto_update").unwrap_or(false),
+            "status_update_interval_minutes": r
+                .try_get::<Option<i32>, _>("status_update_interval_minutes")
+                .ok()
+                .flatten(),
+            "status_update_prompt": status_update_prompt,
+            "scope": r.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
+            "binding_type": r.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
+            "bridge_provider": r.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
+            "model_id": r.try_get::<String, _>("model_id").ok(),
+            "template_id": r.try_get::<String, _>("template_id").ok(),
+            "intro": r.try_get::<String, _>("intro").ok(),
+            "binding_config": binding_config,
+        }));
+    }
+    Ok(Json(bots))
 }
 
 pub async fn create_bot(
@@ -78,19 +219,33 @@ pub async fn create_bot(
     if body.username.trim().is_empty() {
         return Err(AppError::BadRequest("username is required".into()));
     }
+    // Resource-abuse bound (audit H1): cap how many bots a non-admin can own.
+    if !is_admin(&claims) {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM bot_accounts WHERE created_by = $1")
+                .bind(&claims.sub)
+                .fetch_one(&state.db)
+                .await?;
+        if count >= MAX_BOTS_PER_USER {
+            return Err(AppError::Forbidden(format!(
+                "bot limit reached ({MAX_BOTS_PER_USER} per user)"
+            )));
+        }
+    }
     let binding_config = normalize_binding_config(body.binding_config, body.acp_security)?;
-    let bot_id = body.bot_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-    let status = body.status.unwrap_or_else(|| "online".into());
+    // Always server-generate the id (audit H1): a client-supplied bot_id allowed
+    // ID squatting and collision-as-existence-oracle.
+    let bot_id = Uuid::new_v4().to_string();
     let scope = body.scope.unwrap_or_else(|| "friend".into());
     let binding_type = body.binding_type.unwrap_or_else(|| "http".into());
     let bridge_provider = body.bridge_provider.unwrap_or_else(|| "generic".into());
     let row = sqlx::query(
         "INSERT INTO bot_accounts
          (bot_id, username, display_name, description, avatar_url, model_id, template_id,
-             custom_system_prompt, status, scope, intro, binding_type, bridge_provider,
+             custom_system_prompt, scope, intro, binding_type, bridge_provider,
              binding_config, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-         RETURNING bot_id, username, display_name, description, avatar_url, status, scope,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         RETURNING bot_id, username, display_name, description, avatar_url, is_disabled, scope,
                    binding_type, bridge_provider, model_id, template_id, intro, binding_config",
     )
     .bind(&bot_id)
@@ -101,7 +256,6 @@ pub async fn create_bot(
     .bind(body.model_id)
     .bind(body.template_id)
     .bind(body.custom_system_prompt)
-    .bind(status)
     .bind(scope)
     .bind(body.intro)
     .bind(binding_type)
@@ -116,7 +270,8 @@ pub async fn create_bot(
         "display_name": row.try_get::<String, _>("display_name").ok(),
         "description": row.try_get::<String, _>("description").ok(),
         "avatar_url": row.try_get::<String, _>("avatar_url").ok(),
-        "status": row.try_get::<String, _>("status").unwrap_or_else(|_| "online".into()),
+        "is_disabled": row.try_get::<bool, _>("is_disabled").unwrap_or(false),
+        "can_manage": true,
         "scope": row.try_get::<String, _>("scope").unwrap_or_else(|_| "friend".into()),
         "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
         "bridge_provider": row.try_get::<String, _>("bridge_provider").unwrap_or_else(|_| "generic".into()),
@@ -174,30 +329,217 @@ fn normalize_binding_config(
 
 pub async fn get_bot_status(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let row =
-        sqlx::query("SELECT bot_id, status, binding_type FROM bot_accounts WHERE bot_id = $1")
+    ensure_bot_visible(&state, &claims, &bot_id).await?;
+    let row = sqlx::query(
+        "SELECT bot_id, is_disabled, binding_type, created_by,
+                status_text, status_emoji, status_updated_at
+         FROM bot_accounts WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let is_disabled: bool = row.try_get("is_disabled").unwrap_or(false);
+
+    // bridge_connected is the LIVE truth from the connection registry (a control
+    // + data WS are bound right now), distinct from the persisted `status` flag.
+    // A bot can be status="online" (eligible to connect) yet have no live bridge.
+    let bridge_connected = match Uuid::parse_str(&bot_id) {
+        Ok(id) => state.bot_locator.is_online(id).await,
+        Err(_) => false,
+    };
+
+    // Live enrollment-code count is owner/admin-only: it reveals pending onboarding
+    // secrets' existence, which a channel-mate (visible-but-not-owner) shouldn't see.
+    let owner = row
+        .try_get::<Option<String>, _>("created_by")
+        .ok()
+        .flatten();
+    let is_owner_or_admin = is_admin(&claims) || owner.as_deref() == Some(claims.sub.as_str());
+    let live_codes: Option<i64> = if is_owner_or_admin {
+        Some(
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM enrollment_codes
+                 WHERE bot_id = $1 AND redeemed_at IS NULL AND NOT revoked AND expires_at > NOW()",
+            )
             .bind(&bot_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(AppError::NotFound)?;
-    let status: String = row.try_get("status").unwrap_or_else(|_| "offline".into());
+            .fetch_one(&state.db)
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    // Recent control-bridge history: when the connector last attached/detached.
+    // Complements the live flag with a minimal timeline anchor (full history via
+    // GET /bots/:bot_id/connection-events).
+    let (last_connected_at, last_disconnected_at) = sqlx::query_as::<
+        _,
+        (Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>),
+    >(
+        "SELECT MAX(created_at) FILTER (WHERE event = 'connected'),
+                MAX(created_at) FILTER (WHERE event = 'disconnected')
+         FROM bot_connection_events
+         WHERE bot_id = $1 AND stream = 'control'",
+    )
+    .bind(&bot_id)
+    .fetch_one(&state.db)
+    .await?;
+
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or(bot_id),
-        "status": status,
+        "is_disabled": is_disabled,
         "binding_type": row.try_get::<String, _>("binding_type").unwrap_or_else(|_| "http".into()),
-        "connection_status": if status == "offline" { "offline" } else { "online" },
-        "is_online": status != "offline",
+        // `connection_status`/`is_online` are LIVE (bridge bound right now); `is_disabled`
+        // is the separate admin enable flag. Don't conflate them — a bot can be enabled
+        // yet have no live connector.
+        "connection_status": if bridge_connected { "online" } else { "offline" },
+        "is_online": bridge_connected,
+        "bridge_connected": bridge_connected,
+        "last_connected_at": last_connected_at.map(|t| t.to_rfc3339()),
+        "last_disconnected_at": last_disconnected_at.map(|t| t.to_rfc3339()),
+        "live_enrollment_codes": live_codes,
+        "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
+        "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+        "status_updated_at": row
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
+            .ok()
+            .flatten()
+            .map(|t| t.to_rfc3339()),
     })))
+}
+
+#[derive(Deserialize)]
+pub struct ConnectionEventsQuery {
+    pub limit: Option<i64>,
+}
+
+/// GET /api/v1/bots/{bot_id}/connection-events — recent bridge connect/disconnect
+/// history (newest first). Presence frames only carry the current state; this is
+/// the persisted timeline behind it, including WHY a connector went away
+/// (closed / superseded / idle_timeout / protocol_error / write_failed / unbound).
+pub async fn list_connection_events(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Query(params): Query<ConnectionEventsQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_visible(&state, &claims, &bot_id).await?;
+    let limit = params.limit.unwrap_or(50).clamp(1, 200);
+    let rows = sqlx::query(
+        "SELECT stream, event, reason, connection_id, created_at
+         FROM bot_connection_events
+         WHERE bot_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2",
+    )
+    .bind(&bot_id)
+    .bind(limit)
+    .fetch_all(&state.db)
+    .await?;
+    let events: Vec<Value> = rows
+        .into_iter()
+        .map(|r| {
+            json!({
+                "stream": r.try_get::<String, _>("stream").unwrap_or_default(),
+                "event": r.try_get::<String, _>("event").unwrap_or_default(),
+                "reason": r.try_get::<Option<String>, _>("reason").ok().flatten(),
+                "connection_id": r.try_get::<Option<String>, _>("connection_id").ok().flatten(),
+                "created_at": r
+                    .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                    .map(|t| t.to_rfc3339())
+                    .unwrap_or_default(),
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "bot_id": bot_id, "events": events })))
+}
+
+/// POST /api/v1/bots/{bot_id}/disable — admin/owner kill-switch. Sets is_disabled
+/// and kicks any live connector (closes its bridge); the connect gate then blocks
+/// reconnect until re-enabled.
+pub async fn disable_bot(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    set_bot_disabled(&state, &claims, &bot_id, true).await
+}
+
+/// POST /api/v1/bots/{bot_id}/enable — lift a disable (admin/owner).
+pub async fn enable_bot(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    set_bot_disabled(&state, &claims, &bot_id, false).await
+}
+
+async fn set_bot_disabled(
+    state: &AppState,
+    claims: &Claims,
+    bot_id: &str,
+    disabled: bool,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(state, claims, bot_id).await?;
+    let res = sqlx::query("UPDATE bot_accounts SET is_disabled = $2 WHERE bot_id = $1")
+        .bind(bot_id)
+        .bind(disabled)
+        .execute(&state.db)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    // Disabling must take effect now: drop the live session so the connector is
+    // disconnected and no further tasks dispatch (the connect gate blocks reconnect).
+    if disabled {
+        if let Ok(id) = Uuid::parse_str(bot_id) {
+            state.bot_registry.kick(id);
+        }
+    }
+    Ok(Json(json!({ "bot_id": bot_id, "is_disabled": disabled })))
+}
+
+/// DELETE /api/v1/bots/{bot_id} — hard-delete a bot (admin/owner). Kicks the live
+/// connector, removes its channel memberships, and deletes the account row; FK
+/// `ON DELETE CASCADE` clears its sessions/bindings, enrollment codes, permission
+/// rules, approvals, capability delegations and event-access rules. Irreversible.
+pub async fn delete_bot(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    // Disconnect the live connector first so nothing dispatches mid-delete.
+    if let Ok(id) = Uuid::parse_str(&bot_id) {
+        state.bot_registry.kick(id);
+    }
+    let mut tx = state.db.begin().await?;
+    // channel_memberships.member_id has no FK (generic user|bot id) → delete by hand.
+    sqlx::query("DELETE FROM channel_memberships WHERE member_id = $1 AND member_type = 'bot'")
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
+    let res = sqlx::query("DELETE FROM bot_accounts WHERE bot_id = $1")
+        .bind(&bot_id)
+        .execute(&mut *tx)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    tx.commit().await?;
+    Ok(Json(json!({ "bot_id": bot_id, "deleted": true })))
 }
 
 pub async fn test_bot(
     State(state): State<AppState>,
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     Path(bot_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    ensure_bot_visible(&state, &claims, &bot_id).await?;
     let exists = sqlx::query("SELECT EXISTS(SELECT 1 FROM bot_accounts WHERE bot_id = $1) AS ok")
         .bind(&bot_id)
         .fetch_one(&state.db)
@@ -210,4 +552,283 @@ pub async fn test_bot(
     Ok(Json(
         json!({"bot_id": bot_id, "ok": true, "message": "bot configuration is readable"}),
     ))
+}
+
+/// Mint (or rotate) a bot's Agent Bridge token. Returns `(plaintext, prefix)`;
+/// only the SHA-256 is persisted, and the control/data WS authenticates by
+/// matching that hash. This is the **single** token-mint path — `issue_bot_token`
+/// (manual rotate) and `enrollment::redeem` (one-time onboarding) both call here
+/// so a rotated token can never come from two divergent code paths. Authorization
+/// is the caller's responsibility (see `ensure_bot_owner_or_admin` / the
+/// single-use enrollment code). NotFound if the bot row is gone.
+pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, String), AppError> {
+    let token = generate_bot_token();
+    let token_hash = hash_bot_token(&token);
+    let token_prefix = token[..token.len().min(12)].to_string();
+
+    let updated = sqlx::query(
+        "UPDATE bot_accounts
+         SET bot_token_hash = $1, bot_token_prefix = $2, bot_token_rotated_at = NOW()
+         WHERE bot_id = $3",
+    )
+    .bind(&token_hash)
+    .bind(&token_prefix)
+    .bind(bot_id)
+    .execute(&state.db)
+    .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok((token, token_prefix))
+}
+
+/// POST /api/v1/bots/{bot_id}/token — issue (or rotate) the bot's Agent Bridge
+/// token. The plaintext is returned **once**; only its SHA-256 is persisted, and
+/// the Agent Bridge control/data WS authenticates by matching that hash.
+pub async fn issue_bot_token(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    // The token grants the connector authority to act as this bot, so only the
+    // bot's creator or an admin may issue/rotate it.
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+
+    let (token, token_prefix) = mint_bot_token(&state, &bot_id).await?;
+
+    Ok(Json(json!({
+        "bot_id": bot_id,
+        "token": token,
+        "token_prefix": token_prefix,
+        "note": "Store this token now — it is shown only once and replaces any previous token.",
+    })))
+}
+
+// ── Status + information (identity metadata a manager or the bot itself edits) ──
+
+/// One patch field: absent (leave unchanged) vs present (set; empty string → NULL).
+/// Reading the raw JSON object lets an omitted key differ from an explicit `null`.
+struct BotPatchField {
+    provided: bool,
+    value: Option<String>,
+}
+
+impl BotPatchField {
+    fn read(obj: &Map<String, Value>, key: &str) -> Self {
+        match obj.get(key) {
+            Some(v) => BotPatchField {
+                provided: true,
+                value: v
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            },
+            None => BotPatchField {
+                provided: false,
+                value: None,
+            },
+        }
+    }
+}
+
+/// PATCH /api/v1/bots/{bot_id}/profile — the bot's manager (owner/admin) edits its
+/// identity + status + scheduled-self-update config. Every field is optional;
+/// omitted keys are untouched, empty strings clear to NULL. Distinct from
+/// self-status (which the bot writes with its own token): this is the human editing
+/// the bot, including turning the auto-refresh schedule on/off and its prompt.
+pub async fn update_bot_profile(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let obj = body
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("request body must be a JSON object".into()))?;
+
+    let display_name = BotPatchField::read(obj, "display_name");
+    let description = BotPatchField::read(obj, "description");
+    let intro = BotPatchField::read(obj, "intro");
+    let status_text = BotPatchField::read(obj, "status_text");
+    let status_emoji = BotPatchField::read(obj, "status_emoji");
+    let status_prompt = BotPatchField::read(obj, "status_update_prompt");
+
+    if status_text.value.as_deref().is_some_and(|s| s.chars().count() > 140) {
+        return Err(AppError::BadRequest("status_text too long (≤140 chars)".into()));
+    }
+    if status_emoji.value.as_deref().is_some_and(|s| s.chars().count() > 32) {
+        return Err(AppError::BadRequest("status_emoji too long".into()));
+    }
+
+    // Schedule toggles: auto_update (bool) + interval (minutes, clamped sane).
+    let auto_update_provided = obj.contains_key("status_auto_update");
+    let auto_update = obj
+        .get("status_auto_update")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let interval_provided = obj.contains_key("status_update_interval_minutes");
+    let interval: Option<i32> = match obj.get("status_update_interval_minutes") {
+        Some(Value::Null) | None => None,
+        Some(v) => {
+            let n = v
+                .as_i64()
+                .ok_or_else(|| AppError::BadRequest("interval must be an integer".into()))?;
+            // Floor at 5 min so a runaway schedule can't hammer the agent; cap at a week.
+            Some(n.clamp(5, 10_080) as i32)
+        }
+    };
+    // Guard against enabling a schedule with no prompt to run.
+    if auto_update_provided && auto_update {
+        let has_prompt = status_prompt.value.is_some()
+            || (!status_prompt.provided
+                && sqlx::query_scalar::<_, Option<String>>(
+                    "SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1",
+                )
+                .bind(&bot_id)
+                .fetch_optional(&state.db)
+                .await?
+                .flatten()
+                .is_some());
+        if !has_prompt {
+            return Err(AppError::BadRequest(
+                "status_update_prompt is required to enable scheduled self-update".into(),
+            ));
+        }
+    }
+
+    let touched_status = status_text.provided || status_emoji.provided;
+
+    let res = sqlx::query(
+        "UPDATE bot_accounts SET
+            display_name = CASE WHEN $2 THEN $3 ELSE display_name END,
+            description  = CASE WHEN $4 THEN $5 ELSE description END,
+            intro        = CASE WHEN $6 THEN $7 ELSE intro END,
+            status_text  = CASE WHEN $8 THEN $9 ELSE status_text END,
+            status_emoji = CASE WHEN $10 THEN $11 ELSE status_emoji END,
+            status_updated_at = CASE WHEN $12 THEN NOW() ELSE status_updated_at END,
+            status_auto_update = CASE WHEN $13 THEN $14 ELSE status_auto_update END,
+            status_update_prompt = CASE WHEN $15 THEN $16 ELSE status_update_prompt END,
+            status_update_interval_minutes = CASE WHEN $17 THEN $18 ELSE status_update_interval_minutes END
+         WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .bind(display_name.provided)
+    .bind(&display_name.value)
+    .bind(description.provided)
+    .bind(&description.value)
+    .bind(intro.provided)
+    .bind(&intro.value)
+    .bind(status_text.provided)
+    .bind(&status_text.value)
+    .bind(status_emoji.provided)
+    .bind(&status_emoji.value)
+    .bind(touched_status)
+    .bind(auto_update_provided)
+    .bind(auto_update)
+    .bind(status_prompt.provided)
+    .bind(&status_prompt.value)
+    .bind(interval_provided)
+    .bind(interval)
+    .execute(&state.db)
+    .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "bot_id": bot_id, "updated": true })))
+}
+
+#[derive(Deserialize)]
+pub struct BotSelfStatusRequest {
+    #[serde(default)]
+    pub status_text: Option<String>,
+    #[serde(default)]
+    pub status_emoji: Option<String>,
+    /// Optional: the bot may also refresh its own "information" line.
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// POST /api/v1/bots/{bot_id}/self-status — the bot updates ITS OWN status, authed
+/// by the bot's Agent Bridge token (the connector already holds it), NOT a user JWT.
+/// This is the write-back for "the bot updates itself": either ad-hoc, or on its
+/// schedule after re-running `status_update_prompt`. Bumps `status_last_auto_update_at`
+/// so the scheduler's "due?" clock resets. The path `bot_id` must match the token's
+/// bot (a token is scoped to exactly one bot).
+pub async fn bot_self_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(bot_id): Path<String>,
+    Json(body): Json<BotSelfStatusRequest>,
+) -> Result<Json<Value>, AppError> {
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| raw.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| AppError::Unauthorized("missing bot token".into()))?;
+
+    let token_hash = hash_bot_token(token);
+    // The token IS the credential and resolves to exactly one bot; matching the
+    // path bot_id closes the door on a valid token editing a different bot's row.
+    let matched: Option<String> = sqlx::query_scalar(
+        "SELECT bot_id FROM bot_accounts WHERE bot_token_hash = $1 AND bot_id = $2",
+    )
+    .bind(&token_hash)
+    .bind(&bot_id)
+    .fetch_optional(&state.db)
+    .await?;
+    if matched.is_none() {
+        return Err(AppError::Unauthorized("invalid bot token for this bot".into()));
+    }
+
+    let status_text = body
+        .status_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let status_emoji = body
+        .status_emoji
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let description = body
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    if status_text.as_deref().is_some_and(|s| s.chars().count() > 140) {
+        return Err(AppError::BadRequest("status_text too long (≤140 chars)".into()));
+    }
+
+    let description_provided = body.description.is_some();
+    sqlx::query(
+        "UPDATE bot_accounts SET
+            status_text = $2,
+            status_emoji = $3,
+            description = CASE WHEN $4 THEN $5 ELSE description END,
+            status_updated_at = NOW(),
+            status_last_auto_update_at = NOW()
+         WHERE bot_id = $1",
+    )
+    .bind(&bot_id)
+    .bind(&status_text)
+    .bind(&status_emoji)
+    .bind(description_provided)
+    .bind(&description)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "bot_id": bot_id,
+        "status_text": status_text,
+        "status_emoji": status_emoji,
+        "updated": true,
+    })))
 }

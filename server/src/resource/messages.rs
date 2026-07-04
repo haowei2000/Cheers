@@ -29,7 +29,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         let page =
             domain_messages::list_channel_messages_since_seq(db, &channel_id, since_seq, limit)
                 .await
-                .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+                .map_err(super::db_err("messages.read: list since_seq"))?;
         return message_page_response(channel_id, page, limit);
     }
 
@@ -71,7 +71,7 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         limit,
     )
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("messages.read: list channel messages page"))?;
     message_page_response(channel_id, page, limit)
 }
 
@@ -96,8 +96,38 @@ pub async fn handle_by_seq(db: &PgPool, principal: &Principal, params: &Value) -
     let page =
         domain_messages::list_channel_messages_by_seq(db, &channel_id, min_seq, max_seq, limit)
             .await
-            .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+            .map_err(super::db_err("messages.by_seq: list by seq range"))?;
 
+    message_page_response(channel_id, page, limit)
+}
+
+pub async fn handle_search(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    let channel_id: Uuid = params
+        .get("channel_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "channel_id required"))?;
+    authorize_channel_read(db, principal, channel_id).await?;
+
+    let query = params
+        .get("query")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| super::resource_error("INVALID_PARAMS", "query required"))?;
+    let before = params
+        .get("before")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(20)
+        .clamp(1, 200);
+
+    let page = domain_messages::search_channel_messages(db, &channel_id, query, before, limit)
+        .await
+        .map_err(super::db_err("messages.search: search channel messages"))?;
     message_page_response(channel_id, page, limit)
 }
 
@@ -212,10 +242,10 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     let mut tx = db
         .begin()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: begin tx"))?;
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: allocate channel_seq"))?;
     sqlx::query(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -234,13 +264,13 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(channel_seq)
     .execute(&mut *tx)
     .await
-    .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    .map_err(super::db_err("messages.create: insert message"))?;
     mentions::insert_batch(&mut tx, msg_id, &mentions)
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: insert mentions"))?;
     tx.commit()
         .await
-        .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+        .map_err(super::db_err("messages.create: commit tx"))?;
 
     let files = load_message_file_refs(db, &file_ids)
         .await
@@ -264,6 +294,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         mentions: mention_dtos,
         files,
         created_at: now,
+        content_data: None,
     };
 
     Ok(serde_json::to_value(dto).unwrap_or_else(|_| {
@@ -342,14 +373,17 @@ async fn load_message_file_refs(
     }
 
     let rows = sqlx::query(
-        "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at
+        "SELECT file_id, original_filename, content_type, size_bytes, status, expires_at,
+                summary_3lines
          FROM file_records
          WHERE file_id = ANY($1)",
     )
     .bind(file_ids)
     .fetch_all(db)
     .await
-    .map_err(|_| ())?;
+    .map_err(|e| {
+        tracing::error!(error = %e, ctx = "load_message_file_refs: select file records", "resource internal error");
+    })?;
 
     let mut refs = Vec::new();
     for row in rows {
@@ -374,6 +408,10 @@ async fn load_message_file_refs(
                 .map(|at| at.to_rfc3339()),
             preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
             download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+            summary: row
+                .try_get::<Option<String>, _>("summary_3lines")
+                .ok()
+                .flatten(),
         });
     }
 
@@ -391,6 +429,7 @@ async fn load_message_file_refs(
                 expires_at: None,
                 preview_url: Some(format!("/api/v1/files/{}/preview", file_id)),
                 download_url: Some(format!("/api/v1/files/{}/download", file_id)),
+                summary: None,
             });
         }
     }

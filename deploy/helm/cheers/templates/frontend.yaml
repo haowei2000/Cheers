@@ -1,0 +1,131 @@
+{{- $gw := printf "%s:%v" (include "cheers.gateway.fullname" .) .Values.gateway.port -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cheers.frontend.fullname" . }}-nginx
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+data:
+  # Overrides the image's baked nginx config (which still points at the old
+  # `backend:8000` host) so the SPA proxies /api + /ws to the gateway Service.
+  default.conf: |
+    server {
+      listen 80;
+      root /usr/share/nginx/html;
+      index index.html;
+
+      # Security headers (audit M2): clickjacking + MIME-sniff + referrer + a
+      # minimal CSP. CSP is intentionally narrow (no script-src lockdown) to
+      # avoid breaking the Vite SPA; tighten with nonces later. No location here
+      # defines its own add_header, so these inherit to every response.
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-Frame-Options "DENY" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+
+      # The SPA shell must never be cached. Without this, the browser heuristically
+      # caches index.html (it has Last-Modified/ETag but no Cache-Control), so after
+      # a redeploy it keeps serving an old index.html that points at old, now-absent
+      # hashed chunks — the new build stays invisible until a manual hard refresh.
+      # The content-hashed assets under /assets are safe to cache and fall through to
+      # nginx defaults. NOTE: setting add_header in a location drops the inherited
+      # security headers, so they are repeated here.
+      location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+      }
+
+      location /api {
+        proxy_pass http://{{ $gw }};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      location /ws {
+        proxy_pass http://{{ $gw }};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+      }
+
+      location = /health {
+        proxy_pass http://{{ $gw }};
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cheers.frontend.fullname" . }}
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cheers.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pods when the nginx config changes.
+        checksum/nginx: {{ printf "%s:%v" (include "cheers.gateway.fullname" .) .Values.gateway.port | sha256sum }}
+      labels:
+        {{- include "cheers.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: {{ include "cheers.image" (dict "ctx" . "repository" .Values.frontend.image.repository "tag" .Values.frontend.image.tag) }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: {{ include "cheers.frontend.fullname" . }}-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cheers.frontend.fullname" . }}
+  labels:
+    {{- include "cheers.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "cheers.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.port }}
+      targetPort: http
+      {{- if and (eq .Values.frontend.service.type "NodePort") .Values.frontend.service.nodePort }}
+      nodePort: {{ .Values.frontend.service.nodePort }}
+      {{- end }}

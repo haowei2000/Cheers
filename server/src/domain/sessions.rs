@@ -1,5 +1,5 @@
 use chrono::Utc;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -8,10 +8,8 @@ use crate::errors::AppError;
 const PROVIDER: &str = "acp";
 const PROVIDER_AGENT_ID: &str = "main";
 
-pub const SESSION_SCOPE_CHANNEL: &str = "channel";
+pub const SESSION_SCOPE_CHANNEL: &str = "channel"; // also covers DM (DM = type='dm' channel)
 pub const SESSION_SCOPE_TASK: &str = "task";
-pub const SESSION_SCOPE_TOPIC: &str = "topic";
-pub const SESSION_SCOPE_DM: &str = "dm";
 pub const SESSION_SCOPE_WORKSPACE: &str = "workspace";
 pub const SESSION_SCOPE_GLOBAL: &str = "global";
 pub const SESSION_SCOPE_USER: &str = "user";
@@ -29,11 +27,10 @@ pub fn normalize_scope_type(raw: &str) -> &str {
     match raw {
         SESSION_SCOPE_CHANNEL
         | SESSION_SCOPE_TASK
-        | SESSION_SCOPE_TOPIC
-        | SESSION_SCOPE_DM
         | SESSION_SCOPE_WORKSPACE
         | SESSION_SCOPE_GLOBAL
         | SESSION_SCOPE_USER => raw,
+        // "dm" (and anything unknown) folds into channel — a DM is a type='dm' channel.
         _ => SESSION_SCOPE_CHANNEL,
     }
 }
@@ -41,26 +38,14 @@ pub fn normalize_scope_type(raw: &str) -> &str {
 fn scope_columns(
     scope_type: &str,
     scope_id: &str,
-    task_id: Option<&str>,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
+    _task_id: Option<&str>,
+) -> (Option<String>, Option<String>) {
     let scope_id = scope_id.to_string();
     match scope_type {
-        SESSION_SCOPE_CHANNEL => (Some(scope_id), None, None, None),
-        SESSION_SCOPE_TOPIC => (None, Some(scope_id), None, None),
-        SESSION_SCOPE_DM => (None, None, Some(scope_id), None),
-        SESSION_SCOPE_TASK => {
-            let task = scope_id;
-            (None, None, None, Some(task))
-        }
-        SESSION_SCOPE_WORKSPACE | SESSION_SCOPE_GLOBAL | SESSION_SCOPE_USER => {
-            (None, None, None, None)
-        }
-        _ => (Some(scope_id), None, None, None),
+        SESSION_SCOPE_CHANNEL => (Some(scope_id), None),
+        SESSION_SCOPE_TASK => (None, Some(scope_id)),
+        SESSION_SCOPE_WORKSPACE | SESSION_SCOPE_GLOBAL | SESSION_SCOPE_USER => (None, None),
+        _ => (Some(scope_id), None), // dm + unknown → channel
     }
 }
 
@@ -68,20 +53,6 @@ fn fallback_task_id(scope_type: &str, scope_id: &str, provided: Option<&str>) ->
     match scope_type {
         SESSION_SCOPE_TASK => Some(scope_id.to_string()),
         SESSION_SCOPE_CHANNEL => provided.and_then(|v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_string())
-            }
-        }),
-        SESSION_SCOPE_TOPIC => provided.and_then(|v| {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.to_string())
-            }
-        }),
-        SESSION_SCOPE_DM => provided.and_then(|v| {
             if v.is_empty() {
                 None
             } else {
@@ -101,6 +72,9 @@ fn fallback_task_id(scope_type: &str, scope_id: &str, provided: Option<&str>) ->
 #[derive(Debug)]
 pub struct SessionHandle {
     pub session_id: Uuid,
+    /// The connector resume key for this session (scope-derived for the primary,
+    /// `cheers:session:{id}` for an "other" session).
+    pub provider_session_key: String,
 }
 
 /// 依据 provider 维度创建/复用 session，并绑定当前 scope。
@@ -128,7 +102,7 @@ pub async fn acquire_scope_session(
 
     let now = Utc::now();
     let session_id: String = sqlx::query_scalar(
-        "INSERT INTO agentnexus_sessions (
+        "INSERT INTO cheers_sessions (
             session_id, bot_id, provider, provider_account_id, provider_agent_id,
             provider_session_key, provider_session_id, current_scope_type, current_scope_id,
             status, metadata, last_used_at, created_at, updated_at
@@ -175,7 +149,348 @@ pub async fn acquire_scope_session(
 
     Ok(SessionHandle {
         session_id: session_uuid,
+        provider_session_key: provider_session_key.to_string(),
     })
+}
+
+/// Build the `metadata` jsonb for a new session: `{}` when no workspace is pinned,
+/// else `{"workspace": {"cwd", "additional_dirs"}}` — the per-session ACP root set
+/// (`[cwd, ...additional_dirs]`). Paths are stored verbatim; the connector
+/// re-validates them against its local `allowed_roots`.
+pub fn workspace_metadata(cwd: Option<&str>, additional_dirs: &[String]) -> Value {
+    if cwd.is_none() && additional_dirs.is_empty() {
+        return json!({});
+    }
+    json!({
+        "workspace": {
+            "cwd": cwd,
+            "additional_dirs": additional_dirs,
+        }
+    })
+}
+
+/// Create an additional ("other") session bound to a channel, keyed by its own
+/// `session_id` (`cheers:session:{id}`) so it's addressed independently of the
+/// channel's primary. Topic-free: extras are distinguished by session_id + the
+/// non-primary binding role, never by a label. An optional `cwd` +
+/// `additional_dirs` pin the session's ACP root set (stored in `metadata.workspace`).
+pub async fn create_channel_session(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    channel_id: &str,
+    role: &str,
+    cwd: Option<&str>,
+    additional_dirs: &[String],
+) -> Result<SessionHandle, AppError> {
+    let provider_account_id = provider_account_id.trim();
+    if provider_account_id.is_empty() {
+        return Err(AppError::BadRequest(
+            "provider_account_id can not be empty".into(),
+        ));
+    }
+    let channel_id = channel_id.trim();
+    if channel_id.is_empty() {
+        return Err(AppError::BadRequest("channel_id can not be empty".into()));
+    }
+    let session_uuid = Uuid::new_v4();
+    let provider_session_key = format!("cheers:session:{session_uuid}");
+    let now = Utc::now();
+    let metadata = workspace_metadata(cwd, additional_dirs);
+    sqlx::query(
+        "INSERT INTO cheers_sessions (
+            session_id, bot_id, provider, provider_account_id, provider_agent_id,
+            provider_session_key, provider_session_id, current_scope_type, current_scope_id,
+            status, metadata, last_used_at, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $11::jsonb, $10, $10, $10)",
+    )
+    .bind(session_uuid.to_string())
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(PROVIDER_AGENT_ID)
+    .bind(&provider_session_key)
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .bind(SESSION_STATUS_IDLE)
+    .bind(now)
+    .bind(metadata)
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    upsert_session_binding(
+        db,
+        &session_uuid,
+        bot_id,
+        provider_account_id,
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        None,
+        role,
+    )
+    .await?;
+
+    Ok(SessionHandle {
+        session_id: session_uuid,
+        provider_session_key,
+    })
+}
+
+/// The scope-derived provider session key for a channel's PRIMARY session — stable
+/// across turns so the lazy (first-message) and eager (invite-time) paths converge
+/// on the same row via `ON CONFLICT`. Mirrors the key used in `messages`/`chains`.
+pub fn primary_provider_session_key(channel_id: &str, bot_id: Uuid) -> String {
+    format!("cheers:channel:{channel_id}:bot:{bot_id}")
+}
+
+/// Eagerly ensure a channel's PRIMARY session exists for a bot, pinning its ACP
+/// workspace (`metadata.workspace`) when the row is created here. Inviting a bot
+/// into a channel = creating its primary session
+/// (docs/arch/SESSION_WORKDIR_ROOTSET.md). **Idempotent**: if the primary already
+/// exists (lazily created on first message, or a prior invite), the workspace is
+/// LEFT UNCHANGED — `cwd` is immutable for a session's lifetime (ACP). Returns the
+/// primary's handle either way.
+pub async fn ensure_primary_session_workspace(
+    db: &PgPool,
+    bot_id: Uuid,
+    provider_account_id: &str,
+    channel_id: &str,
+    cwd: Option<&str>,
+    additional_dirs: &[String],
+) -> Result<SessionHandle, AppError> {
+    let provider_account_id = provider_account_id.trim();
+    if provider_account_id.is_empty() {
+        return Err(AppError::BadRequest(
+            "provider_account_id can not be empty".into(),
+        ));
+    }
+    let channel_id = channel_id.trim();
+    if channel_id.is_empty() {
+        return Err(AppError::BadRequest("channel_id can not be empty".into()));
+    }
+    let provider_session_key = primary_provider_session_key(channel_id, bot_id);
+    let now = Utc::now();
+    let metadata = workspace_metadata(cwd, additional_dirs);
+    // Insert-if-absent, pinning the workspace on creation. On conflict, a no-op
+    // touch of `updated_at` so we still get the existing session_id back WITHOUT
+    // overwriting the immutable `metadata.workspace`.
+    let session_id: String = sqlx::query_scalar(
+        "INSERT INTO cheers_sessions (
+            session_id, bot_id, provider, provider_account_id, provider_agent_id,
+            provider_session_key, provider_session_id, current_scope_type, current_scope_id,
+            status, metadata, last_used_at, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $11::jsonb, $10, $10, $10)
+        ON CONFLICT (provider, provider_account_id, provider_session_key)
+        DO UPDATE SET updated_at = EXCLUDED.updated_at
+        RETURNING session_id",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(bot_id.to_string())
+    .bind(PROVIDER)
+    .bind(provider_account_id)
+    .bind(PROVIDER_AGENT_ID)
+    .bind(&provider_session_key)
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .bind(SESSION_STATUS_IDLE)
+    .bind(now)
+    .bind(metadata)
+    .fetch_one(db)
+    .await
+    .map_err(AppError::Db)?;
+
+    let session_uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| AppError::Internal("invalid session_id".into()))?;
+    upsert_session_binding(
+        db,
+        &session_uuid,
+        bot_id,
+        provider_account_id,
+        SESSION_SCOPE_CHANNEL,
+        channel_id,
+        None,
+        "primary",
+    )
+    .await?;
+
+    Ok(SessionHandle {
+        session_id: session_uuid,
+        provider_session_key,
+    })
+}
+
+/// A session's ACP root set as a flat list `[cwd?, ...additional_dirs]` — for
+/// passing to the connector to scope a browse or a realize to the session's roots.
+/// Empty when the session has no pinned workspace (the connector then falls back to
+/// its `default_cwd`). Best-effort: a DB error yields an empty list.
+pub async fn session_root_set(db: &PgPool, provider_session_key: &str) -> Vec<String> {
+    let ws: Option<Value> = sqlx::query_scalar::<_, Option<Value>>(
+        "SELECT metadata->'workspace' FROM cheers_sessions WHERE provider_session_key = $1 LIMIT 1",
+    )
+    .bind(provider_session_key)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+    let mut out = Vec::new();
+    if let Some(ws) = ws {
+        if let Some(cwd) = ws.get("cwd").and_then(|v| v.as_str()) {
+            out.push(cwd.to_string());
+        }
+        if let Some(dirs) = ws.get("additional_dirs").and_then(|v| v.as_array()) {
+            out.extend(dirs.iter().filter_map(|d| d.as_str().map(str::to_string)));
+        }
+    }
+    out
+}
+
+/// Update **only** `metadata.workspace.additional_dirs` for a session, preserving
+/// the immutable `cwd`. This is the mutable lever of the ACP root set: extra
+/// accessible roots may change across loads while `cwd` stays fixed. Takes effect
+/// on the session's next task/load (which resends the full `additionalDirectories`
+/// list). Returns `NotFound` if the session doesn't belong to `bot_id`.
+pub async fn set_session_additional_dirs(
+    db: &PgPool,
+    bot_id: Uuid,
+    session_id: Uuid,
+    additional_dirs: &[String],
+) -> Result<(), AppError> {
+    let dirs = serde_json::to_value(additional_dirs)
+        .map_err(|e| AppError::Internal(format!("serialize additional_dirs: {e}")))?;
+    // Shallow-merge a rebuilt `workspace` object so `cwd` (and any other keys)
+    // survive: keep the existing workspace, overwrite only `additional_dirs`.
+    let updated: Option<String> = sqlx::query_scalar(
+        "UPDATE cheers_sessions
+         SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                 'workspace',
+                 COALESCE(metadata->'workspace', '{}'::jsonb)
+                     || jsonb_build_object('additional_dirs', $1::jsonb)),
+             updated_at = now()
+         WHERE session_id = $2 AND bot_id = $3
+         RETURNING session_id",
+    )
+    .bind(dirs)
+    .bind(session_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?;
+    updated.map(|_| ()).ok_or(AppError::NotFound)
+}
+
+/// A channel's sessions for a bot (primary first), for the session switcher.
+pub async fn list_channel_sessions(
+    db: &PgPool,
+    bot_id: Uuid,
+    channel_id: &str,
+) -> Result<Vec<Value>, AppError> {
+    let rows = sqlx::query(
+        // No detached_at filter: bindings are detached on every finalize, but an
+        // idle session stays addressable. Exclude only truly-closed sessions.
+        "SELECT s.session_id, b.role, s.status, s.provider_session_key, s.last_used_at, s.metadata
+         FROM cheers_session_bindings b
+         JOIN cheers_sessions s ON s.session_id = b.session_id
+         WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
+           AND s.status NOT IN ('terminated', 'revoked', 'expired')
+         ORDER BY (b.role = 'primary') DESC, s.last_used_at DESC",
+    )
+    .bind(bot_id.to_string())
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .fetch_all(db)
+    .await
+    .map_err(AppError::Db)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let role: String = r.try_get("role").unwrap_or_default();
+            // The session's mode/config overrides (set via set_mode / set_config_option),
+            // so the UI can show each session's *current* mode + config values.
+            let session_config = r
+                .try_get::<Option<Value>, _>("metadata")
+                .ok()
+                .flatten()
+                .and_then(|m| m.get("session_config").cloned())
+                .unwrap_or_else(|| json!({}));
+            json!({
+                "session_id": r.try_get::<String, _>("session_id").unwrap_or_default(),
+                "role": role.clone(),
+                "is_primary": role == "primary",
+                "status": r.try_get::<String, _>("status").unwrap_or_default(),
+                "last_used_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("last_used_at")
+                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "session_config": session_config,
+            })
+        })
+        .collect())
+}
+
+/// Resolve a session targeted by a message, verifying it is bound to the given
+/// channel (so a message can't target a session from another channel). Returns
+/// `(bot_id, provider_session_key)` to dispatch with.
+pub async fn resolve_channel_session(
+    db: &PgPool,
+    channel_id: &str,
+    session_id: Uuid,
+) -> Result<(Uuid, String), AppError> {
+    let row = sqlx::query(
+        "SELECT s.bot_id, s.provider_session_key
+         FROM cheers_session_bindings b
+         JOIN cheers_sessions s ON s.session_id = b.session_id
+         WHERE b.scope_type = $1 AND b.scope_id = $2
+           AND b.session_id = $3
+           AND s.status NOT IN ('terminated', 'revoked', 'expired')
+         LIMIT 1",
+    )
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .bind(session_id.to_string())
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?
+    .ok_or(AppError::NotFound)?;
+    let bot_id = row
+        .try_get::<String, _>("bot_id")
+        .ok()
+        .and_then(|v| Uuid::parse_str(&v).ok())
+        .ok_or(AppError::NotFound)?;
+    let key = row
+        .try_get::<String, _>("provider_session_key")
+        .map_err(|_| AppError::NotFound)?;
+    Ok((bot_id, key))
+}
+
+/// Close a channel session: mark it terminated + detach its binding, so it drops
+/// out of the switcher and can no longer be targeted. Verifies it is bound (active)
+/// to the channel first. Cheers-level only — the agent's ACP session is left to go
+/// idle (no `session/delete` round-trip needed).
+pub async fn close_channel_session(
+    db: &PgPool,
+    channel_id: &str,
+    session_id: Uuid,
+) -> Result<(), AppError> {
+    // Reuse the bound-to-this-channel check (errors NotFound if not).
+    resolve_channel_session(db, channel_id, session_id).await?;
+    let now = Utc::now();
+    sqlx::query("UPDATE cheers_sessions SET status = $1, updated_at = $2 WHERE session_id = $3")
+        .bind(SESSION_STATUS_TERMINATED)
+        .bind(now)
+        .bind(session_id.to_string())
+        .execute(db)
+        .await
+        .map_err(AppError::Db)?;
+    sqlx::query(
+        "UPDATE cheers_session_bindings SET detached_at = COALESCE(detached_at, $1)
+         WHERE session_id = $2 AND detached_at IS NULL",
+    )
+    .bind(now)
+    .bind(session_id.to_string())
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+    Ok(())
 }
 
 async fn upsert_session_binding(
@@ -188,16 +503,16 @@ async fn upsert_session_binding(
     task_id: Option<String>,
     role: &str,
 ) -> Result<(), AppError> {
-    let (channel_id, topic_id, dm_id, binding_task_id) =
-        scope_columns(scope_type, scope_id, task_id.as_deref());
+    let (channel_id, binding_task_id) = scope_columns(scope_type, scope_id, task_id.as_deref());
     sqlx::query(
-        "INSERT INTO agentnexus_session_bindings (
+        "INSERT INTO cheers_session_bindings (
             binding_id, session_id, bot_id, provider, provider_account_id, provider_agent_id,
-            scope_type, scope_id, channel_id, topic_id, dm_id, task_id, role, created_at
+            scope_type, scope_id, channel_id, task_id, role, created_at
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW()
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
         )
-        ON CONFLICT ON CONSTRAINT uq_agentnexus_session_binding_scope
+        ON CONFLICT (bot_id, provider, provider_agent_id, provider_account_id, scope_type, scope_id)
+        WHERE role = 'primary'
         DO UPDATE SET
             session_id = EXCLUDED.session_id,
             role = EXCLUDED.role,
@@ -208,8 +523,6 @@ async fn upsert_session_binding(
             provider_agent_id = EXCLUDED.provider_agent_id,
             task_id = EXCLUDED.task_id,
             channel_id = EXCLUDED.channel_id,
-            topic_id = EXCLUDED.topic_id,
-            dm_id = EXCLUDED.dm_id,
             created_at = EXCLUDED.created_at
         ",
     )
@@ -222,8 +535,6 @@ async fn upsert_session_binding(
     .bind(scope_type)
     .bind(scope_id)
     .bind(channel_id)
-    .bind(topic_id)
-    .bind(dm_id)
     .bind(binding_task_id.or(task_id))
     .bind(role)
     .execute(db)
@@ -236,7 +547,7 @@ async fn upsert_session_binding(
 pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
     let now = Utc::now();
     sqlx::query(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET status = $1, last_used_at = $2, updated_at = $2
          WHERE session_id = $3",
     )
@@ -253,7 +564,7 @@ pub async fn touch_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError
 pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppError> {
     let now = Utc::now();
     sqlx::query(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET status = $1, last_used_at = $2, updated_at = $2
          WHERE session_id = $3",
     )
@@ -265,7 +576,7 @@ pub async fn finalize_session(db: &PgPool, session_id: Uuid) -> Result<(), AppEr
     .map_err(AppError::Db)?;
 
     sqlx::query(
-        "UPDATE agentnexus_session_bindings
+        "UPDATE cheers_session_bindings
          SET detached_at = COALESCE(detached_at, $1)
          WHERE session_id = $2 AND detached_at IS NULL",
     )
@@ -285,7 +596,7 @@ pub async fn resolve_session_id_by_key(
     provider_session_key: &str,
 ) -> Result<Uuid, AppError> {
     sqlx::query(
-        "SELECT session_id FROM agentnexus_sessions
+        "SELECT session_id FROM cheers_sessions
          WHERE provider = $1
            AND provider_account_id = $2
            AND bot_id = $3
@@ -311,7 +622,7 @@ pub async fn resolve_session_id_by_provider_id(
     provider_session_id: &str,
 ) -> Result<Uuid, AppError> {
     sqlx::query(
-        "SELECT session_id FROM agentnexus_sessions
+        "SELECT session_id FROM cheers_sessions
          WHERE provider = $1
            AND provider_account_id = $2
            AND bot_id = $3
@@ -373,7 +684,7 @@ pub async fn apply_session_update(
     let metadata_json = metadata.map(|value| value.to_string());
 
     let updated: String = sqlx::query_scalar(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET provider_session_id = COALESCE($1, provider_session_id),
              metadata = CASE
                 WHEN $2 IS NULL THEN metadata
@@ -441,7 +752,7 @@ pub async fn apply_runtime_session_ack(
     let metadata_json = metadata.map(|value| value.to_string());
 
     let updated: String = sqlx::query_scalar(
-        "UPDATE agentnexus_sessions
+        "UPDATE cheers_sessions
          SET provider_session_id = COALESCE($1, provider_session_id),
              provider_session_key = COALESCE($2, provider_session_key),
              metadata = CASE
@@ -473,4 +784,38 @@ pub async fn apply_runtime_session_ack(
     .ok_or_else(|| AppError::NotFound)?;
 
     Uuid::parse_str(&updated).map_err(|_| AppError::Internal("invalid session_id".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_metadata_empty_when_no_root_set() {
+        assert_eq!(workspace_metadata(None, &[]), json!({}));
+    }
+
+    #[test]
+    fn workspace_metadata_carries_cwd_and_additional_dirs() {
+        let dirs = vec!["/repo/shared".to_string(), "/repo/docs".to_string()];
+        assert_eq!(
+            workspace_metadata(Some("/repo/service"), &dirs),
+            json!({
+                "workspace": {
+                    "cwd": "/repo/service",
+                    "additional_dirs": ["/repo/shared", "/repo/docs"],
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn workspace_metadata_carries_additional_dirs_without_cwd() {
+        // additionalDirectories may be set even when cwd falls back to the default.
+        let dirs = vec!["/repo/shared".to_string()];
+        assert_eq!(
+            workspace_metadata(None, &dirs),
+            json!({ "workspace": { "cwd": Value::Null, "additional_dirs": ["/repo/shared"] } })
+        );
+    }
 }

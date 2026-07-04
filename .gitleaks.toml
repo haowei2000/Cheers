@@ -1,0 +1,15 @@
+# gitleaks config. Extends the default ruleset and allowlists known example /
+# placeholder values so `gitleaks git .` reports clean.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation placeholders, not real secrets"
+# Truncated example PEM shown to illustrate the .env format in the deploy guides.
+regexes = [
+  '''MIIEvQIBADANBgkq''',
+]
+paths = [
+  '''docs/help/docker-compose-deploy\.md''',
+  '''docs/help/docker-compose-deploy\.zh-CN\.md''',
+]

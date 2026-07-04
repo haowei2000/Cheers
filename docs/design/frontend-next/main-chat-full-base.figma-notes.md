@@ -1,4 +1,4 @@
-# AgentNexus Main Chat Mockup - Full Base Layer Notes
+# Cheers Main Chat Mockup - Full Base Layer Notes
 
 > Status: visual direction draft v2
 > File: `main-chat-full-base.svg`

@@ -1,11 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { login } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageSquare } from "lucide-react";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -24,6 +23,7 @@ export default function LoginPage() {
           user_id: res.user_id,
           display_name: res.display_name,
           username: form.login,
+          role: res.role,
         },
         res.access_token
       );
@@ -40,11 +40,16 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20">
-            <MessageSquare className="w-6 h-6 text-white" />
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-teal-500/20 overflow-hidden">
+            <img
+              src="/cheers-icon.svg"
+              alt=""
+              className="w-12 h-12"
+              aria-hidden="true"
+            />
           </div>
           <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
-            ChatEverywhere
+            Cheers
           </h1>
           <p className="text-zinc-500 text-sm mt-1">Sign in to continue</p>
         </div>
@@ -91,6 +96,15 @@ export default function LoginPage() {
           >
             Sign in
           </Button>
+
+          <div className="flex items-center justify-between text-xs text-zinc-500">
+            <Link to="/register" className="text-indigo-400 hover:text-indigo-300">
+              Create account
+            </Link>
+            <Link to="/forgot" className="text-indigo-400 hover:text-indigo-300">
+              Forgot password?
+            </Link>
+          </div>
         </form>
       </div>
     </div>

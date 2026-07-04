@@ -1,8 +1,13 @@
-# AgentNexus Bot 权限模型
+# Cheers Bot 权限模型
 
-> 版本：v7
+> 版本：v7.1（2026-06-25，R13 现状标注）
 > 分支：`break/rust-gateway-arch`
 > 配套：[ACP_INTEGRATION](./ACP_INTEGRATION.md) · [AGENT_BRIDGE_RESOURCE](./AGENT_BRIDGE_RESOURCE.md)
+
+> **⚠️ 现状（R13 / M2 决策，2026-06-23）：写权限 = channel-role 模型；Grant 体系未实现 / 已搁置（R13）。**
+> 授权以 **channel-role**（owner / admin / member）为唯一事实来源——读取需频道成员、写入按角色；
+> 代码里对 `bot_grants` / `trust_level` **零引用**（`permission::evaluate()` 不存在）。
+> schema 里残留的 `Grant` / `trust_level` 字段保留但不接线；本文下述任何 Grant/trust_level 段落仅作历史设计参考。
 
 本文定义 bot 的能力声明、权限控制与安全边界模型。
 
@@ -195,7 +200,7 @@ grant_eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiSldUIn0...
 ```python
 # Session 删除
 def delete_session(session_id, user_id):
-    session = db.get(AgentNexusSession, session_id)
+    session = db.get(CheersSession, session_id)
 
     # 第 1 层: Grant
     grant = evaluate(bot_id=session.bot_id, resource="session", action="delete",
@@ -215,7 +220,7 @@ def delete_session(session_id, user_id):
 ```python
 # Session 停止
 def stop_session(session_id, user_id):
-    session = db.get(AgentNexusSession, session_id)
+    session = db.get(CheersSession, session_id)
 
     # 第 1 层: Grant
     grant = evaluate(...)
@@ -511,14 +516,14 @@ CREATE INDEX idx_grants_expires ON bot_grants(expires_at)
 ### Session 表
 
 ```sql
-ALTER TABLE agentnexus_sessions ADD COLUMN created_by TEXT REFERENCES users(id);
+ALTER TABLE cheers_sessions ADD COLUMN created_by TEXT REFERENCES users(id);
 -- 记录 session 创建者，用于对象级权限检查
 ```
 
 ### Daemon 侧（用户本地）
 
 ```
-~/.agentnexus/
+~/.cheers/
 ├── daemon.json              ← 事件过滤策略（服务端不可修改）
 ├── device.key               ← 设备私钥
 ├── device.cert              ← 设备证书
@@ -652,7 +657,7 @@ Agent 不可修改:
 
 | Phase | 动作 |
 |-------|------|
-| **0** | DB: `bot_grants` 表 + 索引；`agentnexus_sessions.created_by`；按 trust_level 填充默认 grants |
+| **0** | DB: `bot_grants` 表 + 索引；`cheers_sessions.created_by`；按 trust_level 填充默认 grants |
 | **1** | Backend: Grant CRUD API；evaluate()；业务逻辑检查（session 所有权等）；设备注册 |
 | **2** | Daemon: 事件过滤引擎；确认弹窗 |
 | **3** | 前端: Grant 管理 UI；审批卡增强；设备管理 |

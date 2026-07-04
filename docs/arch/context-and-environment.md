@@ -2,16 +2,51 @@
 
 > **Status**: Design (v1) · **Decided**: 2026-05-30 · **Language**: English default
 >
-> This document records the agreed architecture for how AgentNexus builds context
+> This document records the agreed architecture for how Cheers builds context
 > for bots, how channel memory is modeled, and how per-scenario "Environments"
 > are packaged as registrable plugins. It is design intent — verify against code
 > (`gateway/src/acp_bridge/resource/`, `backend/app/features/memory/`,
 > `backend/app/features/bot_runtime/pipeline/`) before implementing.
 
+---
+
+> ## ⚠️ CURRENT MODEL (2026-06-23 — supersedes parts of this doc)
+>
+> This doc was written (2026-05-30) when a **Python backend owned the bot runtime**, so a
+> platform-owned *memory* that the gateway **pushed** into the prompt was unambiguous —
+> platform memory *was* bot memory. **External-agent-first broke that premise**: the bot
+> (e.g. `claude-agent-acp`) is now an **external** process with **its own** memory/context.
+> A platform "memory" pushed into it would **compete for authority** with the bot's own. The
+> model is therefore:
+>
+> - **No platform "memory" concept.** The platform owns **shared files** (per-channel
+>   workspace = `context_files`). The bot owns its own memory; the platform never pushes a
+>   competing one.
+> - **Files are the only substrate.** Some files are **"Contexts"** — curated,
+>   plugin-maintained files (`project.md`, conventions, glossary…). A Context *is a file*,
+>   not a separate store. There is **no `memory` substrate** distinct from files.
+> - **Pull, not push-bodies.** The agent **pulls** what it needs (history tool, `fs.*`). The
+>   platform does **not** inject file bodies. That Context files *exist* is delivered as a
+>   **system-prompt convention** (the semantic layer, §3), never by pushing their contents.
+>   "Push the index, pull the leaves" survives only as *awareness*, not body-injection.
+> - **Plugin = the Environment/Lens concept (§2.3)**, realized as workbench **Context
+>   plugins** + a generic **File plugin**. Honestly a *panel/Context convention*, not a
+>   backend isolation contract; the backend seam is just a `ResourceRegistry` of verbs.
+>
+> **Dead concepts — do NOT implement (kept for history only):**
+> `memory_entries` (the ANCHOR/DECISIONS/PROGRESS *layer model* — `DROP`ped in
+> `0003_decentralized_mesh.sql:89`; superseded by the `context_files` tree) ·
+> `channel.memory` / `channel.memory.update` verbs (point at the dropped table — use
+> `fs.*`) · `Grant` / `trust_level` fine-grained authz (**R13** — channel-role is the only
+> authz source). Sections below that rely on these describe the *original* design, not
+> current behavior.
+
+---
+
 ## 1. The problem this solves
 
 External agents (ACP bots reverse-connected through the connector, and third-party
-MCP hosts) need to **read and operate** AgentNexus. Two layers were separated early:
+MCP hosts) need to **read and operate** Cheers. Two layers were separated early:
 
 - **Capability layer (HOW)** — what an agent can actually execute: read messages,
   list members, edit memory. Strongly typed, discoverable, authenticated,
@@ -26,7 +61,7 @@ that channel's messages."
 
 ### MCP exposure split (already prototyped)
 
-- **Local stdio MCP** (`packages/agentnexus-mcp-server/`) — for the project's own
+- **Local stdio MCP** (`packages/cheers-mcp-server/`) — for the project's own
   reverse-connected ACP bot. Co-located with the agent, gets the bound channel via
   env injection. **This is the primary channel.** Most mature MCP transport.
 - **Remote HTTP MCP** (`backend/app/api/v1/mcp/`) — for third-party MCP hosts
@@ -83,7 +118,7 @@ The dividing judge is **where the source of truth lives**:
 | | Class 1: self-maintained | Class 2: agent-edited |
 |---|---|---|
 | Examples | conversation history, file index, member roster | progress.md, anchor.md, any scenario file |
-| Truth | **elsewhere** (messages / file_records / membership) | **the file itself** (the memory tree) |
+| Truth | **elsewhere** (messages / file_records / membership) | **the file itself** (the `context_files` tree) |
 | The "file" is | a projection/render of other data | first-class content |
 | Read | per-purpose tool / Resource (heterogeneous) | uniform `fs.read` |
 | Change | **no "edit the file"** — only domain actions | uniform `fs.write` / `fs.edit` |
@@ -112,7 +147,7 @@ the invariant, not "only the agent writes.")
 
 #### Storage
 
-- **New table** (e.g. `memory_files`), do not overload the existing
+- **New table** (e.g. `context_files`), do not overload the existing
   `memory_entries` (its ANCHOR/DECISIONS/PROGRESS layer model would clash).
 - **Materialized path** (`path = 'notes/2026-05-30.md'`); list a subtree with
   `WHERE path LIKE 'a/b/%'`. Folders are virtual (derived from path prefixes)
@@ -176,9 +211,9 @@ currently returns metadata with `content: null` — the body is a pull concern.)
 
 - **Reads → Resources** (URI-addressable), plus a tool version as fallback where
   the host can't let the model self-fetch resources:
-  - `agentnexus://channel/{cid}/memory` → whole tree outline (also pushed)
-  - `agentnexus://channel/{cid}/memory/{path}` → one file (ResourceTemplate)
-  - `agentnexus://channel/{cid}/members`, `/history?page=N`, `/file/{id}`
+  - `cheers://channel/{cid}/memory` → whole tree outline (also pushed)
+  - `cheers://channel/{cid}/memory/{path}` → one file (ResourceTemplate)
+  - `cheers://channel/{cid}/members`, `/history?page=N`, `/file/{id}`
 - **Writes → Tools** (Grant-gated): `fs.write / edit / rm / mv` for class 2;
   `post_message`, `upload_file`, `invite_member` (domain actions) for class 1.
 - **Conventions → Prompt** (MCP Prompts or direct system-prompt injection) —

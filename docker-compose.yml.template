@@ -3,25 +3,34 @@ services:
     build:
       context: ./server
     restart: unless-stopped
+    # Resource caps (single-host defaults; raise for heavier workloads).
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          memory: 256M
     ports:
       - "${GATEWAY_HOST_PORT:-8000}:8000"
     env_file:
       - .env
     environment:
       # sqlx 用纯 postgres:// （非 SQLAlchemy 的 +asyncpg）
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-agentnexus}:${POSTGRES_PASSWORD:-agentnexus}@postgres:5432/${POSTGRES_DB:-agentnexus}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cheers}:${POSTGRES_PASSWORD:-cheers}@postgres:5432/${POSTGRES_DB:-cheers}
       - PORT=8000
       - REDIS_URL=redis://redis:6379/0
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
       # JWT RS256：必填，由 .env 提供（缺失则 gateway 启动 panic）
       - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:-}
       - JWT_PUBLIC_KEY=${JWT_PUBLIC_KEY:-}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       # S3 / RustFS
       - S3_ENDPOINT=${STORAGE_S3_ENDPOINT:-http://rustfs:9000}
-      - S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
-      - S3_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-agentnexus-local-access-key}
-      - S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-agentnexus-local-secret-key}
+      - S3_BUCKET=${STORAGE_S3_BUCKET:-cheers-files}
+      - S3_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-cheers-local-access-key}
+      - S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-cheers-local-secret-key}
+      # Office→PDF preview conversion (Gotenberg)
+      - GOTENBERG_URL=${GOTENBERG_URL:-http://gotenberg:3000}
       # SMTP（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -34,6 +43,8 @@ services:
         condition: service_started
       rustfs:
         condition: service_healthy
+      gotenberg:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
       interval: 10s
@@ -41,13 +52,30 @@ services:
       retries: 12
       start_period: 20s
 
+  # Optional agent bot. It needs an Agent Bridge token that can only be minted
+  # from a running gateway, so it is NOT started by `docker compose up -d`. Bring
+  # up the core stack first, mint a token (see the Docker Compose deploy guide),
+  # put it in OPENCODE_BOT_TOKEN, then start this with:
+  #   docker compose --profile bot up -d opencode-bot
   opencode-bot:
-    image: ${OPENCODE_BOT_IMAGE:-registry.example.invalid:5000/ai/agentnexus-opencode:latest}
+    profiles: ["bot"]
+    build:
+      context: .
+      dockerfile: docker/opencode-bot/Dockerfile
+    image: ${OPENCODE_BOT_IMAGE:-cheers/opencode-bot:latest}
     restart: unless-stopped
+    # The agent runtime (node + ACP) is the heaviest workload — allow more headroom.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          memory: 256M
     env_file:
       - .env
     environment:
-      - AGENTNEXUS_WS_BASE=${OPENCODE_BOT_WS_BASE:-ws://gateway:8000}
+      - CHEERS_WS_BASE=${OPENCODE_BOT_WS_BASE:-ws://gateway:8000}
       - OPENCODE_BOT_USERNAME=${OPENCODE_BOT_USERNAME:-opencode}
       - OPENCODE_BOT_TOKEN=${OPENCODE_BOT_TOKEN:-}
       - OPENCODE_OPENAI_API_KEY=${OPENCODE_OPENAI_API_KEY:-}
@@ -79,42 +107,51 @@ services:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
         VITE_ENABLE_MERMAID: ${VITE_ENABLE_MERMAID:-1}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
     ports:
       - "${FRONTEND_HOST_PORT:-80}:80"
     depends_on:
       - gateway
-      - kkfileview
 
-  kkfileview:
-    image: ${KKFILEVIEW_IMAGE:-keking/kkfileview:latest}
+  # Office→PDF conversion for in-app document preview. Stateless; the gateway
+  # feeds it bytes over the internal network (GOTENBERG_URL). LibreOffice inside
+  # needs a little memory.
+  gotenberg:
+    image: ${GOTENBERG_IMAGE:-gotenberg/gotenberg:8}
     restart: unless-stopped
-    ports:
-      - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
-    environment:
-      - KK_CONTEXT_PATH=/preview
-      - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-http://localhost/preview}
-      - KK_TRUST_HOST=${KKFILEVIEW_TRUST_HOST:-localhost}
-      - KK_FILE_DIR=${KKFILEVIEW_FILE_DIR:-/opt/kkfileview/file/}
-      - KK_OFFICE_PREVIEW_TYPE=${KKFILEVIEW_OFFICE_PREVIEW_TYPE:-pdf}
-      - KK_PDF_DOWNLOAD_DISABLE=${KKFILEVIEW_PDF_DOWNLOAD_DISABLE:-true}
-      - KK_PDF_PRINT_DISABLE=${KKFILEVIEW_PDF_PRINT_DISABLE:-true}
-      - KK_MEDIA_CONVERT_DISABLE=${KKFILEVIEW_MEDIA_CONVERT_DISABLE:-true}
-    volumes:
-      - ./data/kkfileview:/opt/kkfileview/file
+    # LibreOffice conversions are memory-hungry.
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          memory: 256M
 
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          memory: 256M
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-agentnexus}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentnexus}
-      - POSTGRES_DB=${POSTGRES_DB:-agentnexus}
+      - POSTGRES_USER=${POSTGRES_USER:-cheers}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-cheers}
+      - POSTGRES_DB=${POSTGRES_DB:-cheers}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentnexus}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cheers}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -122,10 +159,22 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
   rustfs:
     image: rustfs/rustfs:latest
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          memory: 256M
     security_opt:
       - "no-new-privileges:true"
     ports:
@@ -136,10 +185,10 @@ services:
       - RUSTFS_ADDRESS=0.0.0.0:9000
       - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
       - RUSTFS_CONSOLE_ENABLE=true
-      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://agentnexus.example.com}
-      - RUSTFS_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-agentnexus-local-access-key}
-      - RUSTFS_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-agentnexus-local-secret-key}
+      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
+      - RUSTFS_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-cheers-local-access-key}
+      - RUSTFS_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-cheers-local-secret-key}
       - RUSTFS_OBS_LOGGER_LEVEL=${RUSTFS_OBS_LOGGER_LEVEL:-info}
       - RUSTFS_OBJECT_CACHE_ENABLE=${RUSTFS_OBJECT_CACHE_ENABLE:-true}
       - RUSTFS_OBJECT_CACHE_TTL_SECS=${RUSTFS_OBJECT_CACHE_TTL_SECS:-300}

@@ -1,4 +1,4 @@
-# AgentNexus 技术排查 Q&A
+# Cheers 技术排查 Q&A
 
 > **语言**：中文 | [English](技术排查Q&A.md)
 
@@ -30,7 +30,7 @@ docker compose logs -f postgres
 
 后端文件日志默认写入 `data/logs`，常见文件：
 
-- `agentnexus.log`：通用日志
+- `cheers.log`：通用日志
 - `error.log`：错误日志
 
 ## 三、常见问题
@@ -101,21 +101,23 @@ curl -H "X-Agent-Bridge-Token: <AGENT_BRIDGE_TOKEN>" \
 
 ### 3.5 文件预览失败
 
-先确认普通下载是否正常，再检查 kkFileView：
+预览是 gateway 内置能力：前端调用 `GET /files/:id/preview`，gateway 通过
+Gotenberg 把 office 文档转成 PDF。先确认普通下载是否正常，再检查 gateway 和
+Gotenberg：
 
 ```bash
-curl -I http://localhost/preview/
-docker compose logs --tail=200 kkfileview
+curl -I http://localhost:8000/api/v1/files/<file_id>/preview
+docker compose logs --tail=200 gateway
+docker compose logs --tail=200 gotenberg
 ```
 
 常见原因：
 
-- `PUBLIC_BASE_URL` 不是 kkFileView 容器可访问的地址。
-- `KKFILEVIEW_BASE_URL` 没有包含 `/preview` 路径。
-- `KKFILEVIEW_TRUST_HOST` 与实际域名不一致。
+- gateway 无法通过 `GOTENBERG_URL` 访问 Gotenberg。
+- `gotenberg` 服务未启动。
 - 对象存储访问密钥或桶配置错误。
 
-详见 [kkFileView配置说明](kkFileView配置说明.md) 和 [RustFS对象存储部署说明](RustFS对象存储部署说明.md)。
+详见 [RustFS对象存储部署说明](RustFS对象存储部署说明.md)。
 
 ## 四、数据库排查
 
@@ -124,7 +126,7 @@ docker compose logs --tail=200 kkfileview
 Docker 内部可先进入 postgres：
 
 ```bash
-docker compose exec postgres psql -U "${POSTGRES_USER:-agentnexus}" "${POSTGRES_DB:-agentnexus}"
+docker compose exec postgres psql -U "${POSTGRES_USER:-cheers}" "${POSTGRES_DB:-cheers}"
 ```
 
 常看表：

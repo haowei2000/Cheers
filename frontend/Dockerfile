@@ -1,13 +1,18 @@
-FROM docker.m.daocloud.io/library/node:20-alpine AS builder
+# Override for regional mirrors, e.g.
+#   --build-arg BASE_REGISTRY=docker.m.daocloud.io
+#   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+ARG BASE_REGISTRY=docker.io
+FROM ${BASE_REGISTRY}/library/node:20-alpine AS builder
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY package*.json ./
-RUN npm config set registry https://registry.npmmirror.com && \
+RUN npm config set registry "${NPM_REGISTRY}" && \
     npm ci --legacy-peer-deps
-ARG VITE_API_PROXY_TARGET
-ARG VITE_WS_PROXY_TARGET
-ARG VITE_PUBLIC_BASE_PATH
-ARG VITE_API_BASE_URL
-ARG VITE_ENABLE_MERMAID
+ARG VITE_API_PROXY_TARGET=http://gateway:8000
+ARG VITE_WS_PROXY_TARGET=ws://gateway:8000
+ARG VITE_PUBLIC_BASE_PATH=/
+ARG VITE_API_BASE_URL=/api/v1
+ARG VITE_ENABLE_MERMAID=1
 ENV VITE_API_PROXY_TARGET=${VITE_API_PROXY_TARGET}
 ENV VITE_WS_PROXY_TARGET=${VITE_WS_PROXY_TARGET}
 ENV VITE_PUBLIC_BASE_PATH=${VITE_PUBLIC_BASE_PATH}
@@ -16,7 +21,7 @@ ENV VITE_ENABLE_MERMAID=${VITE_ENABLE_MERMAID}
 COPY . .
 RUN npm run build
 
-FROM docker.m.daocloud.io/library/nginx:alpine
+FROM ${BASE_REGISTRY}/library/nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

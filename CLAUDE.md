@@ -34,18 +34,59 @@ This is the English default edition prepared for the open-source documentation s
 
 The platform is **external-agent-first** (no Python service): the **Rust gateway**
 (`server/`) is the only backend, the **React frontend** (`frontend/`) is kept, and
-agents connect externally (`packages/agentnexus-mcp-server` is the standard bridge). See
+agents connect externally (`packages/cheers-mcp-server` is the standard bridge). See
 [docs/arch/ARCHITECTURE_OVERVIEW.md](docs/arch/ARCHITECTURE_OVERVIEW.md).
 
 ```bash
-# Gateway unit/build checks
+# Gateway unit/build checks (no cluster needed)
 cd server && cargo build && cargo test
-
-# Full stack (Docker Compose: gateway + frontend + postgres + redis + rustfs)
-cp docker-compose.yml.template docker-compose.yml
-docker compose up -d --wait     # gateway runs sqlx migrations on startup
-docker compose down
 ```
+
+### Local run: Kubernetes (canonical)
+
+The local stack runs on a **kind** cluster via the **Helm chart** at
+`deploy/helm/cheers` — gateway + frontend + postgres + rustfs (redis is opt-in).
+This is the supported "start the stack" path; the `docker-compose.*` files are a
+legacy fallback (and the gitignored local `docker-compose.yml` may be stale —
+re-copy from `docker-compose.yml.template` if you use it). Full chart docs:
+[deploy/helm/cheers/README.md](deploy/helm/cheers/README.md).
+
+Cluster: kind cluster `cheers` (kube context `kind-cheers`), namespace `cheers`.
+UI: frontend NodePort → <http://localhost:30080> (sign in `admin` / `admin12345`).
+
+```bash
+# First-time install: build images → load into kind → install the release
+docker build -t cheers/gateway:dev server
+docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
+kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/jwt_priv.pem
+openssl rsa -in /tmp/jwt_priv.pem -pubout -out /tmp/jwt_pub.pem
+helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
+  -f deploy/helm/cheers/values-dev.yaml \
+  --set-file secrets.jwtPrivateKey=/tmp/jwt_priv.pem \
+  --set-file secrets.jwtPublicKey=/tmp/jwt_pub.pem   # gateway runs sqlx migrations on startup
+```
+
+```bash
+# Redeploy after a code change: rebuild → reload into kind → roll the pod.
+# Shortcut for all of the below: ./scripts/redeploy.sh [gateway|frontend|both]
+docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend  # gateway: docker build -t cheers/gateway:dev server
+kind load docker-image cheers/frontend:dev --name cheers
+kubectl -n cheers rollout restart deployment/cheers-frontend   # or deployment/cheers-gateway
+kubectl -n cheers rollout status  deployment/cheers-frontend
+
+# Restart a service without rebuilding (just bounce the pods)
+kubectl -n cheers rollout restart deployment/cheers-gateway
+
+# Status / logs / teardown
+kubectl get pods -n cheers
+kubectl -n cheers logs deploy/cheers-gateway -f
+helm uninstall cheers -n cheers           # remove the release (keeps the kind cluster)
+```
+
+> Fast frontend-only inner loop: you can still run Vite
+> (`npm --prefix frontend run dev`) pointed at the in-cluster gateway, but the
+> canonical, reproducible stack is the Helm/kind path above — start it with k8s.
 
 > Integration tests against the running stack are being re-established on the Rust
 > gateway (the old `pytest -m integration` suite was removed with the Python backend).

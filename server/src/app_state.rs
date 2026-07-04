@@ -8,6 +8,7 @@ use crate::{
         realtime::{fanout::Fanout, manager::ConnectionManager},
         registry::{BotLocator, BotRegistry},
         stream::StreamRegistry,
+        workspace_rpc::WorkspaceRpc,
     },
 };
 
@@ -15,6 +16,8 @@ use crate::{
 pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Config>,
+    /// S3 / RustFS client for gateway-proxied file upload/download.
+    pub s3: aws_sdk_s3::Client,
     /// 广播给浏览器连接的 fan-out 实现（可替换：单实例=进程内，多实例=Redis）。
     pub fanout: Arc<dyn Fanout>,
     /// 浏览器 WS 连接管理器（subscribe/unsubscribe + 成员资格缓存）。
@@ -25,4 +28,6 @@ pub struct AppState {
     pub bot_registry: Arc<dyn BotRegistry>,
     /// delta/done 回流注册表（msg_id → StreamEntry）。
     pub stream_registry: Arc<StreamRegistry>,
+    /// 远程工作区 RPC：gateway→connector 的 workspace_req/res 关联表。
+    pub workspace_rpc: Arc<WorkspaceRpc>,
 }

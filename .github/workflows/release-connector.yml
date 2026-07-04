@@ -1,0 +1,81 @@
+name: release-connector
+
+# Publish prebuilt `cce-acp-connector` binaries so non-developers can onboard an
+# agent without a Rust toolchain (install.sh downloads these). Trigger by pushing a
+# tag like `connector-v0.1.22`, or run manually.
+on:
+  push:
+    tags: ["connector-v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # create the release + upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # one target failing must not block the others
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: cce-acp-connector-darwin-arm64
+            asset_mcp: cheers-mcp-server-darwin-arm64
+          # Intel macOS is cross-compiled from the arm64 runner: GitHub retired
+          # the macos-13 (Intel) runner pool, so an x86_64 job queues forever.
+          - os: macos-14
+            target: x86_64-apple-darwin
+            asset: cce-acp-connector-darwin-amd64
+            asset_mcp: cheers-mcp-server-darwin-amd64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: cce-acp-connector-linux-amd64
+            asset_mcp: cheers-mcp-server-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            asset: cce-acp-connector-linux-arm64
+            asset_mcp: cheers-mcp-server-linux-arm64
+            linker: aarch64-linux-gnu-gcc
+            apt: gcc-aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust + target
+        run: |
+          rustup update stable --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cross linker (Linux arm64)
+        if: matrix.apt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+          echo "CARGO_TARGET_$(echo '${{ matrix.target }}' | tr 'a-z-' 'A-Z_')_LINKER=${{ matrix.linker }}" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: packages/cheers-acp-connector-rs
+        run: cargo build --release --locked --bin cce-acp-connector --target ${{ matrix.target }}
+
+      # The connector injects this stdio MCP server into every agent session
+      # (policy.mcp.inject_cheers) and resolves it next to its own executable, so
+      # the release must ship both binaries or installed bots get no cheers tools.
+      - name: Build MCP server
+        working-directory: packages/cheers-mcp-server
+        run: cargo build --release --locked --bin cheers-mcp-server --target ${{ matrix.target }}
+
+      - name: Stage assets
+        run: |
+          cp "packages/cheers-acp-connector-rs/target/${{ matrix.target }}/release/cce-acp-connector" "${{ matrix.asset }}"
+          cp "packages/cheers-mcp-server/target/${{ matrix.target }}/release/cheers-mcp-server" "${{ matrix.asset_mcp }}"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset_mcp }}
+          # On tag pushes this creates/updates the release for the tag; each matrix
+          # job appends its binaries to the same release.
+          fail_on_unmatched_files: true

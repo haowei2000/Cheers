@@ -57,7 +57,7 @@
     <g id="agent-streaming-message">
       <circle cx="468" cy="402" r="16" fill="#EEF4FF"/>
       <path d="M461 403c4-9 13-9 18 0M463 409h16" class="iconActive"/>
-      <text x="496" y="397" class="title">AgentNexus ACP</text>
+      <text x="496" y="397" class="title">Cheers ACP</text>
       <text x="606" y="397" class="small">running</text>
       <rect x="496" y="410" width="594" height="112" rx="10" fill="#FFFFFF" fill-opacity="0.9" stroke="#BFDBFE"/>
       <text x="516" y="438" class="body">BridgeRuntime is loading the provider session and waiting for ACP output.</text>
@@ -127,7 +127,7 @@
   <!-- Channel list floating layer. -->
   <g id="channel-list-panel" filter="url(#panelShadow)">
     <rect x="98" y="78" width="296" height="778" rx="14" fill="#FFFFFF" fill-opacity="0.94" stroke="#E4E7EC"/>
-    <text x="122" y="116" class="title">AgentNexus</text>
+    <text x="122" y="116" class="title">Cheers</text>
     <text x="122" y="138" class="small">Workspace · live</text>
     <circle cx="358" cy="116" r="5" fill="#16A34A"/>
     <g transform="translate(122 162)">

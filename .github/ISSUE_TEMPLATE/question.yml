@@ -1,5 +1,5 @@
 name: Question
-description: Ask for help using or deploying AgentNexus.
+description: Ask for help using or deploying Cheers.
 title: "[Question]: "
 labels: ["question", "needs-triage"]
 body:

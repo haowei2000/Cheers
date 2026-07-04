@@ -1,27 +1,67 @@
-import { useEffect, useRef } from "react";
-import { MessageItem } from "./MessageItem";
+import { useEffect, useMemo, useRef } from "react";
+import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
-import type { Message } from "@/types";
+import type { Message, PermissionContentData } from "@/types";
+
+// A RESOLVED approval no longer needs its own line in the channel — the decision is
+// persisted in the bot turn's trace and reachable via the per-message "Agent steps"
+// reveal (BotTracePanel). Pending approvals stay inline: they're actionable. Filtering
+// these out up front keeps day-label / consecutive grouping correct.
+function isResolvedPermission(m: Message): boolean {
+  return (
+    m.msg_type === "permission" &&
+    (m.content_data as PermissionContentData | null | undefined)?.resolved === true
+  );
+}
 
 interface Props {
   messages: Message[];
   currentUserId?: string;
+  channelId?: string;
+  /** Member id → display label, for messages that arrive without a sender_name. */
+  senderNames?: Map<string, string>;
   hasMore?: boolean;
   onLoadMore?: () => void;
   loading?: boolean;
+  /** Reply / copy / forward / multi-select callbacks (stable identity). */
+  actions?: MessageActionHandlers;
+  selectMode?: boolean;
+  selectedIds?: ReadonlySet<string>;
 }
 
 export function MessageList({
   messages,
   currentUserId,
+  channelId,
+  senderNames,
   hasMore,
   onLoadMore,
   loading,
+  actions,
+  selectMode,
+  selectedIds,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
-  const prevLenRef = useRef(messages.length);
+
+  // Resolved approvals are folded into each bot turn's trace, not shown as their own rows.
+  const visible = useMemo(
+    () => messages.filter((m) => !isResolvedPermission(m)),
+    [messages]
+  );
+
+  // msg_id → message, to resolve each reply's quoted original from the loaded window.
+  const byId = useMemo(() => {
+    const m = new Map<string, Message>();
+    for (const msg of messages) m.set(msg.msg_id, msg);
+    return m;
+  }, [messages]);
+  const nameOf = useMemo(
+    () => (senderId: string) => senderNames?.get(senderId) ?? senderId.slice(0, 8),
+    [senderNames]
+  );
+  const prevLenRef = useRef(visible.length);
 
   // Track scroll position
   function handleScroll() {
@@ -38,21 +78,21 @@ export function MessageList({
 
   // Auto-scroll on new messages
   useEffect(() => {
-    const newLen = messages.length;
+    const newLen = visible.length;
     const grew = newLen > prevLenRef.current;
     prevLenRef.current = newLen;
 
     if (grew && isAtBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [visible]);
 
   // Initial scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView();
   }, []);
 
-  if (!loading && messages.length === 0) {
+  if (!loading && visible.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
         No messages yet. Start the conversation!
@@ -72,8 +112,8 @@ export function MessageList({
         </div>
       )}
 
-      {messages.map((msg, i) => {
-        const prev = messages[i - 1];
+      {visible.map((msg, i) => {
+        const prev = visible[i - 1];
         const showDayLabel = !prev || !sameDay(prev.created_at, msg.created_at);
         const isConsecutive =
           !showDayLabel &&
@@ -97,6 +137,15 @@ export function MessageList({
               message={msg}
               isConsecutive={!!isConsecutive}
               currentUserId={currentUserId}
+              channelId={channelId}
+              senderName={senderNames?.get(msg.sender_id)}
+              actions={actions}
+              selectMode={selectMode}
+              selected={selectedIds?.has(msg.msg_id) ?? false}
+              repliedTo={
+                msg.reply_to_msg_id ? byId.get(msg.reply_to_msg_id) ?? null : null
+              }
+              nameOf={nameOf}
             />
           </div>
         );

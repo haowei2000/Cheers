@@ -1,4 +1,4 @@
-# AgentNexus Documentation Hub
+# Cheers Documentation Hub
 
 > **Language**: English | [中文](README.zh-CN.md)
 

@@ -1,4 +1,4 @@
-# AgentNexus 文件存储与权限
+# Cheers 文件存储与权限
 
 > 版本：v1
 > 分支：`break/rust-gateway-arch`
@@ -410,9 +410,15 @@ CREATE TABLE file_records (
 );
 ```
 
-### 9.2 FileScopeLink (现有，不变)
+### 9.2 FileScopeLink (已废弃 / DROPPED)
+
+> ⚠️ **未实现，已删除。** 这套 scope-link 模型从未被任何写入路径落地（表一直为空），
+> 因此 bot 的文件鉴权改为直接按 `file_records.channel_id` + channel 成员关系
+> （`authorize_channel_read`）。该表已在迁移 `0017_drop_file_scope_links` 中 `DROP`。
+> 本节及下文凡涉及 `FileScopeLink` / `scope link` 的描述均为历史设计，**以当前代码为准**。
 
 ```sql
+-- 历史设计（已删除，仅作参考）
 CREATE TABLE file_scope_links (
     file_id     TEXT NOT NULL REFERENCES file_records(file_id),
     scope_type  TEXT NOT NULL,            -- personal | channel | dm | workspace | task | personal_hidden

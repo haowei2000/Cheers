@@ -6,6 +6,8 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
+# assets/ holds files embedded via include_str! (e.g. the mode-2 install.sh).
+COPY assets ./assets
 RUN cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────
@@ -17,4 +19,5 @@ WORKDIR /app
 COPY --from=builder /app/target/release/server /usr/local/bin/gateway
 EXPOSE 8000
 # 启动即跑 sqlx 迁移（main.rs: sqlx::migrate!），无需独立 migrate 步骤。
-CMD ["server"]
+# The binary is installed as `gateway` (renamed on COPY above), so run that.
+CMD ["gateway"]

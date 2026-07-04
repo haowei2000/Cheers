@@ -1,0 +1,9 @@
+{
+  "id": "md-demo",
+  "title": "Markdown demo (seed only)",
+  "views": [],
+  "seed": {
+    "demo/todo.md": "# Today's tasks\n\n- [ ] Try the renderer plugin\n- [ ] Check this item and see whether it writes back to the markdown\n- [x] Install the md-checklist renderer\n\n> Open this file in the Files panel and pick \"Checklist\" from the renderer dropdown (top right) to make it interactive.",
+    "demo/notes.md": "# About this template\n\nThis is a **seed-only** environment template: it just drops a few Markdown files\ninto the channel and **does not specify** how to render them. You pick a renderer\nper file in the Files panel (a built-in lens or an installed plugin).\n\nThis is exactly what decoupling the two axes looks like: template = data/files,\nrenderer = code/capability."
+  }
+}

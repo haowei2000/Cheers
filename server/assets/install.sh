@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# Cheers connector installer (bot onboarding — mode 2).
+#
+# Canonical use (code via env, NEVER on the command line / URL):
+#   CHEERS_ENROLL_CODE='agbenr_…' bash <(curl -fsSL https://<host>/api/v1/install.sh)
+#   ^ note the LEADING SPACE: with `HISTCONTROL=ignorespace` the code stays out
+#     of your shell history. The code is single-use and expires in ~15 min.
+#
+# What it does: redeems the one-time code over the API → receives a freshly
+# rotated bot token + a ready connector config → writes both (token to a 0600
+# sidecar) → installs a keep-alive service (launchd/systemd) → starts it.
+#
+# Env knobs:
+#   CHEERS_ENROLL_CODE   the one-time code (required; prompted if a TTY)
+#   CHEERS_API_BASE      gateway API base; default injected at serve time
+#   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH, else a
+#                        prebuilt release binary is downloaded for this platform)
+#   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default haowei2000/Cheers)
+#   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.22 (default: latest)
+#   CHEERS_INSTALL_DAEMON=0  skip the launchd/systemd unit (just write + start)
+set -euo pipefail
+
+API_BASE="${CHEERS_API_BASE:-__CHEERS_API_BASE__}"
+CONFIG_DIR="${CHEERS_CONFIG_DIR:-$HOME/.cheers}"
+
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+info() { printf '\033[1;36m▸\033[0m %s\n' "$*"; }
+
+# Detect an un-substituted placeholder. The serve-time replace is a global
+# string substitution, so the sentinel here is split into two literals that
+# never form the contiguous token — only the assignment above gets rewritten.
+_PLACEHOLDER='__CHEERS''_API_BASE__'
+if [ -z "$API_BASE" ] || [ "$API_BASE" = "$_PLACEHOLDER" ]; then
+  die "CHEERS_API_BASE is not set. Re-run with CHEERS_API_BASE=https://<host>/api/v1"
+fi
+command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v python3 >/dev/null 2>&1 || die "python3 is required (used to parse JSON safely)"
+
+# ── 1. resolve the one-time code (env, then TTY prompt — never an argument) ────
+CODE="${CHEERS_ENROLL_CODE:-}"
+if [ -z "$CODE" ]; then
+  if [ -t 0 ]; then
+    printf 'Enrollment code (agbenr_…): ' >&2
+    read -rs CODE; printf '\n' >&2
+  fi
+fi
+[ -n "$CODE" ] || die "no enrollment code (set CHEERS_ENROLL_CODE)"
+
+# ── 2. redeem (single-use, over the API). Response holds token + config. ──────
+info "redeeming enrollment code at $API_BASE …"
+RESP_FILE="$(mktemp)"
+trap 'rm -f "$RESP_FILE"' EXIT
+# Code goes in the JSON body, never the URL/argv. --fail-with-body keeps the
+# opaque 400 message; we don't echo the code on any path.
+if ! printf '{"code":"%s"}' "$CODE" \
+    | curl -fsS -X POST "$API_BASE/enrollment/redeem" \
+        -H 'Content-Type: application/json' --data-binary @- > "$RESP_FILE"; then
+  die "redeem failed — code invalid, expired, already used, or gateway unreachable"
+fi
+
+field() { python3 -c 'import sys,json; sys.stdout.write(str(json.load(open(sys.argv[1])).get(sys.argv[2],"")))' "$RESP_FILE" "$1"; }
+ACCOUNT_ID="$(field account_id)"
+TOKEN_FILE="$(field token_file)"      # relative, e.g. secrets/codex.token
+CONTROL_URL="$(field control_url)"
+AGENT_TYPE="$(field agent_type)"
+[ -n "$ACCOUNT_ID" ] && [ -n "$TOKEN_FILE" ] || die "unexpected redeem response"
+
+CONFIG_FILE="$CONFIG_DIR/cheers-daemon.$ACCOUNT_ID.toml"
+TOKEN_PATH="$CONFIG_DIR/$TOKEN_FILE"
+
+# ── 3. write config + token (token straight to a 0600 file, never a var) ──────
+mkdir -p "$CONFIG_DIR/workspace" "$(dirname "$TOKEN_PATH")"
+python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["config_toml"])' "$RESP_FILE" > "$CONFIG_FILE"
+umask 077
+python3 -c 'import sys,json; sys.stdout.write(json.load(open(sys.argv[1]))["token"])' "$RESP_FILE" > "$TOKEN_PATH"
+chmod 600 "$TOKEN_PATH"
+info "wrote config → $CONFIG_FILE"
+info "wrote token  → $TOKEN_PATH (chmod 600)"
+
+# ── 4. locate (or download) the connector binary ──────────────────────────────
+BIN="${CHEERS_CONNECTOR_BIN:-}"
+if [ -z "$BIN" ]; then
+  BIN="$(command -v cce-acp-connector 2>/dev/null || true)"
+fi
+# Not on PATH → fetch a prebuilt release binary for this OS/arch.
+if [ -z "$BIN" ]; then
+  REPO="${CHEERS_CONNECTOR_REPO:-haowei2000/Cheers}"
+  VER="${CHEERS_CONNECTOR_VERSION:-latest}"
+  os="$(uname -s)"; arch="$(uname -m)"
+  case "$os" in Darwin) os=darwin ;; Linux) os=linux ;; *) os="" ;; esac
+  case "$arch" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=amd64 ;; *) arch="" ;; esac
+  if [ -n "$os" ] && [ -n "$arch" ]; then
+    ASSET="cce-acp-connector-$os-$arch"
+    if [ "$VER" = "latest" ]; then
+      URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+    else
+      URL="https://github.com/$REPO/releases/download/connector-v$VER/$ASSET"
+    fi
+    DEST="$CONFIG_DIR/bin/cce-acp-connector"
+    mkdir -p "$CONFIG_DIR/bin"
+    info "downloading connector binary ($os/$arch) from $REPO …"
+    if curl -fsSL "$URL" -o "$DEST" && [ -s "$DEST" ]; then
+      chmod +x "$DEST"
+      BIN="$DEST"
+      info "installed connector → $BIN"
+    else
+      rm -f "$DEST"
+      info "no prebuilt binary for $os/$arch (will fall back to build instructions)"
+    fi
+  fi
+fi
+
+# ── 4b. install the cheers MCP server next to the connector ───────────────────
+# The connector injects this stdio MCP server into every agent session and
+# resolves it from the directory of its own executable, so it must live next to
+# the connector binary. Best-effort: the bot works without it, but agents lose
+# their cheers platform tools (send message / fetch resources).
+if [ -n "$BIN" ] && [ -n "${os:-}" ] && [ -n "${arch:-}" ]; then
+  MCP_DEST="$(dirname "$BIN")/cheers-mcp-server"
+  if [ ! -x "$MCP_DEST" ]; then
+    MCP_ASSET="cheers-mcp-server-$os-$arch"
+    if [ "$VER" = "latest" ]; then
+      MCP_URL="https://github.com/$REPO/releases/latest/download/$MCP_ASSET"
+    else
+      MCP_URL="https://github.com/$REPO/releases/download/connector-v$VER/$MCP_ASSET"
+    fi
+    info "downloading cheers MCP server ($os/$arch) from $REPO …"
+    if curl -fsSL "$MCP_URL" -o "$MCP_DEST" && [ -s "$MCP_DEST" ]; then
+      chmod +x "$MCP_DEST"
+      info "installed MCP server → $MCP_DEST"
+    else
+      rm -f "$MCP_DEST"
+      info "WARNING: no prebuilt cheers-mcp-server for $os/$arch — agent sessions will lack cheers MCP tools (set CHEERS_MCP_SERVER_BIN to a locally built binary to fix)"
+    fi
+  fi
+fi
+if [ -z "$BIN" ]; then
+  cat >&2 <<EOF
+
+  Config and token are in place, but no connector binary was found and none could
+  be downloaded for this platform. Build it once:
+      git clone https://github.com/haowei2000/Cheers && cd Cheers/packages/cheers-acp-connector-rs
+      cargo build --release    # → target/release/cce-acp-connector
+  then re-run with CHEERS_CONNECTOR_BIN=/path/to/cce-acp-connector, or start by hand:
+      cce-acp-connector start --config "$CONFIG_FILE" --name "$ACCOUNT_ID"
+EOF
+  exit 0
+fi
+info "connector binary: $BIN"
+
+# ── 5. keep-alive service (default on) ────────────────────────────────────────
+START_BY_HAND=1
+if [ "${CHEERS_INSTALL_DAEMON:-1}" = "1" ]; then
+  OS="$(uname -s)"
+  if [ "$OS" = "Darwin" ]; then
+    LABEL="com.cheers.connector.$ACCOUNT_ID"
+    PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>$BIN</string><string>run</string><string>--config</string><string>$CONFIG_FILE</string><string>--name</string><string>$ACCOUNT_ID</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$CONFIG_DIR/$ACCOUNT_ID.out.log</string>
+  <key>StandardErrorPath</key><string>$CONFIG_DIR/$ACCOUNT_ID.err.log</string>
+</dict></plist>
+EOF
+    launchctl unload "$PLIST" >/dev/null 2>&1 || true
+    launchctl load "$PLIST"
+    info "installed launchd unit → $PLIST"
+    START_BY_HAND=0
+  elif command -v systemctl >/dev/null 2>&1; then
+    UNIT_DIR="$HOME/.config/systemd/user"
+    UNIT="$UNIT_DIR/cheers-connector-$ACCOUNT_ID.service"
+    mkdir -p "$UNIT_DIR"
+    cat > "$UNIT" <<EOF
+[Unit]
+Description=Cheers ACP connector ($ACCOUNT_ID)
+After=network-online.target
+
+[Service]
+ExecStart=$BIN run --config $CONFIG_FILE --name $ACCOUNT_ID
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable --now "cheers-connector-$ACCOUNT_ID.service"
+    info "installed systemd --user unit → $UNIT"
+    START_BY_HAND=0
+  else
+    info "no launchd/systemd found — falling back to the connector's own daemon"
+  fi
+fi
+
+# ── 6. fallback start + status ────────────────────────────────────────────────
+if [ "$START_BY_HAND" = "1" ]; then
+  "$BIN" start --config "$CONFIG_FILE" --name "$ACCOUNT_ID" || true
+fi
+sleep 1
+"$BIN" status --name "$ACCOUNT_ID" || true
+
+printf '\n\033[1;32m✓ done.\033[0m bot "%s" (%s) connecting to %s\n' "$ACCOUNT_ID" "$AGENT_TYPE" "$CONTROL_URL"

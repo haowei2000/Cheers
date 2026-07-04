@@ -21,7 +21,10 @@ use crate::{
     domain::{acp_capability, channel_seq, sessions},
     gateway::{
         realtime::frame::WireFrame,
-        stream::{handle_delta, handle_done, handle_send, handle_session_update},
+        stream::{
+            broadcast_and_trigger_created_message, handle_delta, handle_done, handle_send,
+            handle_session_update,
+        },
     },
     infra::crypto::hash_bot_token,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
@@ -33,7 +36,22 @@ use sqlx::PgPool;
 const CLOSE_AUTH_FAIL: u16 = 4401;
 const CLOSE_BOT_UNAVAILABLE: u16 = 4403;
 const CLOSE_SUPERSEDED: u16 = 4402;
+/// A connector that keeps sending unparseable frames is buggy/hostile — close it
+/// with a protocol-error code after this many CONSECUTIVE malformed frames so it
+/// can't spin the read loop / hammer logs. A good frame resets the counter.
+const CLOSE_PROTOCOL_ERROR: u16 = 4400;
+/// Heartbeat idle close (WIRE_PROTOCOL §10.1): a connector whose process died
+/// without a clean TCP FIN would otherwise stay "online" until the OS notices.
+const CLOSE_IDLE_TIMEOUT: u16 = 4409;
+const MAX_MALFORMED_FRAMES: u32 = 20;
 const BRIDGE_PROTOCOL_VERSION: u32 = 1;
+
+/// Gateway-side liveness: probe with a WS ping every PROBE_INTERVAL (the peer's
+/// WS stack auto-pongs, so this needs no connector cooperation), reap after
+/// IDLE_TIMEOUT with no inbound traffic (= 3 missed probes; the connector's own
+/// 25s app-level heartbeat also resets the timer).
+const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+const PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// bot 连接的元信息（从 DB 查出来后到处用）。
 #[derive(Debug, Clone)]
@@ -101,21 +119,83 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         return;
     }
 
+    // Connect-sync the persisted L1 posture mode (Axis A): a reconnecting connector
+    // boots from its TOML default, so re-push any owner override made while it was
+    // offline. The connector re-clamps via L0 (both gates) — we only transport it.
+    if let Some(mode) = bot
+        .connector_config
+        .as_ref()
+        .and_then(|c| c.get("agentNativePermissionMode"))
+        .and_then(Value::as_str)
+    {
+        let cfg = json!({
+            "type": "config_update",
+            "v": BRIDGE_PROTOCOL_VERSION,
+            "settings": { "agentNativePermissionMode": mode },
+        });
+        let _ = ws_send(&mut socket, &cfg).await;
+    }
+
+    // Connect-sync the owner's desired ACP config options too (same rationale as
+    // posture): a reconnecting connector boots from its TOML default, so re-push
+    // any overrides. The connector re-clamps via L0 allowed_config_options.
+    if let Some(opts) = bot
+        .connector_config
+        .as_ref()
+        .and_then(|c| c.get("configOptions"))
+        .filter(|v| v.as_object().is_some_and(|m| !m.is_empty()))
+    {
+        let cfg = json!({
+            "type": "config_update",
+            "v": BRIDGE_PROTOCOL_VERSION,
+            "settings": { "configOptions": opts },
+        });
+        let _ = ws_send(&mut socket, &cfg).await;
+    }
+
     tracing::info!(bot_id = %bot.bot_id, "control connected");
+    crate::domain::bot_events::record_bg(
+        &state.db,
+        bot.bot_id,
+        "control",
+        crate::domain::bot_events::EVENT_CONNECTED,
+        None,
+        connection_id,
+    );
+
+    // bot 在线状态可能刚翻转（is_online = control + data 均在线）→ 向其频道广播 presence。
+    crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
-    let superseded = loop {
+    let mut malformed: u32 = 0;
+    let idle = tokio::time::sleep(IDLE_TIMEOUT);
+    tokio::pin!(idle);
+    let mut probe = tokio::time::interval(PROBE_INTERVAL);
+    probe.tick().await; // first tick fires immediately — skip it.
+    let reason = loop {
         tokio::select! {
-            // 收 bot 发来的控制帧
+            // 收 bot 发来的控制帧（任何入站流量都重置 idle 计时器）
             msg = socket.recv() => {
+                idle.as_mut().reset(tokio::time::Instant::now() + IDLE_TIMEOUT);
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        if let Ok(frame) = serde_json::from_str::<Value>(&text) {
-                            handle_control_frame(&frame, &state, &bot).await;
+                        match serde_json::from_str::<Value>(&text) {
+                            Ok(frame) => {
+                                malformed = 0;
+                                handle_control_frame(&frame, &state, &bot).await;
+                            }
+                            Err(e) => {
+                                malformed += 1;
+                                tracing::warn!(bot_id = %bot.bot_id, malformed, error = %e, "malformed control frame (ignored)");
+                                if malformed >= MAX_MALFORMED_FRAMES {
+                                    close(&mut socket, CLOSE_PROTOCOL_ERROR, "too many malformed frames").await;
+                                    break "protocol_error";
+                                }
+                            }
                         }
                     }
                     Some(Ok(Message::Ping(d))) => { let _ = socket.send(Message::Pong(d)).await; }
-                    Some(Ok(Message::Close(_))) | None => break false,
+                    Some(Ok(Message::Close(_))) | None => break "closed",
                     _ => {}
                 }
             }
@@ -124,9 +204,9 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
             task = task_rx.recv() => {
                 match task {
                     Some(t) => {
-                        if ws_send(&mut socket, &t).await.is_err() { break false; }
+                        if ws_send(&mut socket, &t).await.is_err() { break "write_failed"; }
                     }
-                    None => break false,
+                    None => break "unbound",
                 }
             }
 
@@ -134,20 +214,39 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
             result = &mut supersede_rx => {
                 if result.is_ok() {
                     close(&mut socket, CLOSE_SUPERSEDED, "superseded by new connection").await;
-                    break true;
+                    break "superseded";
                 }
-                break false;
+                break "closed";
+            }
+
+            // 心跳兜底：连 IDLE_TIMEOUT 没有任何入站帧（含 WS pong）→ 回收连接。
+            _ = &mut idle => {
+                close(&mut socket, CLOSE_IDLE_TIMEOUT, "heartbeat idle timeout").await;
+                break "idle_timeout";
+            }
+            _ = probe.tick() => {
+                if socket.send(Message::Ping(Vec::new())).await.is_err() { break "closed"; }
             }
         }
     };
 
-    tracing::info!(bot_id = %bot.bot_id, superseded, "control disconnected");
+    let superseded = reason == "superseded";
+    tracing::info!(bot_id = %bot.bot_id, reason, "control disconnected");
+    crate::domain::bot_events::record_bg(
+        &state.db,
+        bot.bot_id,
+        "control",
+        crate::domain::bot_events::EVENT_DISCONNECTED,
+        Some(reason),
+        connection_id,
+    );
 
     // 被 supersede 时新连接已写入 session，不能 unbind（会删掉新 session）
     if !superseded {
         state
             .bot_registry
             .unbind_if_connection(bot.bot_id, connection_id);
+        crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
     }
 }
 
@@ -158,6 +257,35 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
         "ping" => {} // pong 由 WS 层处理
         "ready" => {
             tracing::info!(bot_id = %bot_id, version = ?frame.get("plugin_version"), "bot ready");
+            // Persist the connector's advertised capabilities (e.g. whether the
+            // downstream agent accepts audio/image prompts) so the platform can
+            // consult them offline — the composer warns before sending voice to
+            // a bot that can't hear it, and the dispatcher skips inlining bytes
+            // the agent would only discard. Refreshed on every (re)connect, so
+            // a connector upgrade updates them automatically.
+            if let Some(caps) = frame.get("connector_capabilities") {
+                let caps_str = serde_json::to_string(caps).unwrap_or_else(|_| "{}".into());
+                let result = sqlx::query(
+                    "UPDATE bot_accounts
+                     SET binding_config = COALESCE(binding_config, '{}'::jsonb)
+                         || jsonb_build_object(
+                             'connector_control',
+                             COALESCE(binding_config->'connector_control', '{}'::jsonb)
+                             || jsonb_build_object(
+                                 'capabilities', $2::jsonb,
+                                 'capabilities_updated_at', to_jsonb(NOW())
+                             )
+                     )
+                     WHERE bot_id = $1",
+                )
+                .bind(bot_id.to_string())
+                .bind(&caps_str)
+                .execute(&state.db)
+                .await;
+                if let Err(e) = result {
+                    tracing::warn!(bot_id = %bot_id, err = %e, "capabilities persist failed");
+                }
+            }
         }
         "runtime_session_control_ack" => {
             match handle_runtime_session_control_ack(frame, state, bot).await {
@@ -302,7 +430,9 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     let connection_id = Uuid::new_v4();
     let (res_tx, mut res_rx) = mpsc::channel::<Value>(128);
 
-    state.bot_registry.bind_data(bot.bot_id, res_tx);
+    state
+        .bot_registry
+        .bind_data(bot.bot_id, connection_id, res_tx);
 
     // ── 3. 发 hello 帧 ──────────────────────────────────────────────────
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
@@ -325,14 +455,32 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     }
 
     tracing::info!(bot_id = %bot.bot_id, "data connected");
+    crate::domain::bot_events::record_bg(
+        &state.db,
+        bot.bot_id,
+        "data",
+        crate::domain::bot_events::EVENT_CONNECTED,
+        None,
+        connection_id,
+    );
+
+    // data WS 接上后 is_online 可能翻转为在线 → 向其频道广播 presence。
+    crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 
     // ── 4. 双向读写循环 ───────────────────────────────────────────────────
-    loop {
+    let mut malformed: u32 = 0;
+    let idle = tokio::time::sleep(IDLE_TIMEOUT);
+    tokio::pin!(idle);
+    let mut probe = tokio::time::interval(PROBE_INTERVAL);
+    probe.tick().await; // first tick fires immediately — skip it.
+    let reason = loop {
         tokio::select! {
             msg = socket.recv() => {
+                idle.as_mut().reset(tokio::time::Instant::now() + IDLE_TIMEOUT);
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         if let Ok(frame) = serde_json::from_str::<Value>(&text) {
+                            malformed = 0;
                             if bot.require_capability {
                                 if let Err(err) =
                                     acp_capability::authorize_data_frame(
@@ -410,10 +558,17 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
                                 }
                             }
                             handle_data_frame(&frame, &state, &bot, &mut socket).await;
+                        } else {
+                            malformed += 1;
+                            tracing::warn!(bot_id = %bot.bot_id, malformed, "malformed data frame (ignored)");
+                            if malformed >= MAX_MALFORMED_FRAMES {
+                                close(&mut socket, CLOSE_PROTOCOL_ERROR, "too many malformed frames").await;
+                                break "protocol_error";
+                            }
                         }
                     }
                     Some(Ok(Message::Ping(d))) => { let _ = socket.send(Message::Pong(d)).await; }
-                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Close(_))) | None => break "closed",
                     _ => {}
                 }
             }
@@ -422,16 +577,36 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
             outbound = res_rx.recv() => {
                 match outbound {
                     Some(frame) => {
-                        if ws_send(&mut socket, &frame).await.is_err() { break; }
+                        if ws_send(&mut socket, &frame).await.is_err() { break "write_failed"; }
                     }
-                    None => break,
+                    None => break "unbound",
                 }
             }
-        }
-    }
 
-    tracing::info!(bot_id = %bot.bot_id, "data disconnected");
-    state.bot_registry.unbind_data(bot.bot_id);
+            // 心跳兜底：连 IDLE_TIMEOUT 没有任何入站帧（含 WS pong）→ 回收连接。
+            _ = &mut idle => {
+                close(&mut socket, CLOSE_IDLE_TIMEOUT, "heartbeat idle timeout").await;
+                break "idle_timeout";
+            }
+            _ = probe.tick() => {
+                if socket.send(Message::Ping(Vec::new())).await.is_err() { break "closed"; }
+            }
+        }
+    };
+
+    tracing::info!(bot_id = %bot.bot_id, reason, "data disconnected");
+    crate::domain::bot_events::record_bg(
+        &state.db,
+        bot.bot_id,
+        "data",
+        crate::domain::bot_events::EVENT_DISCONNECTED,
+        Some(reason),
+        connection_id,
+    );
+    // conn 守护：重连后旧 data socket 的迟到 cleanup 不会打掉新绑定（也就不会
+    // 把实际在线的 bot 广播成离线）。
+    state.bot_registry.unbind_data(bot.bot_id, connection_id);
+    crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 }
 
 async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socket: &mut WebSocket) {
@@ -440,6 +615,17 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
     match ftype {
         // ── 流式输出（写后投递）────────────────────────────────────────────
         "delta" => {
+            tracing::debug!(
+                bot_id = %bot.bot_id,
+                msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
+                bytes = frame
+                    .get("delta")
+                    .or_else(|| frame.get("content"))
+                    .and_then(|v| v.as_str())
+                    .map(str::len)
+                    .unwrap_or(0),
+                "delta frame"
+            );
             if let Err(e) = handle_delta(
                 &state.stream_registry,
                 &state.fanout,
@@ -456,6 +642,11 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         }
 
         "done" => {
+            tracing::info!(
+                bot_id = %bot.bot_id,
+                msg_id = frame.get("msg_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "terminal (done) frame received"
+            );
             handle_terminal_frame(frame, state, bot, socket, TerminalAckKind::Terminal).await;
         }
 
@@ -494,7 +685,16 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         // ── bot 主动发新消息 ───────────────────────────────────────────────
         "send" => {
             let client_msg_id = client_msg_id(frame);
-            match handle_send(&state.fanout, &state.db, bot.bot_id, frame).await {
+            match handle_send(
+                &state.stream_registry,
+                &state.fanout,
+                &state.db,
+                &state.bot_locator,
+                bot.bot_id,
+                frame,
+            )
+            .await
+            {
                 Ok(msg_id) => {
                     if let Some(client_msg_id) = client_msg_id {
                         let _ = ws_send(socket, &send_ack_ok(&client_msg_id, msg_id, false)).await;
@@ -516,8 +716,82 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         "resource_req" => {
             let resp =
                 resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await;
+            // bot 主动 post_message（channel.messages.create）落库后，resource::dispatch 只有
+            // db、无 fanout/registry/bot_locator，故在此 WS 边界补 live 广播 + bot@bot 触发。
+            if frame.get("resource").and_then(Value::as_str) == Some("channel.messages.create")
+                && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(created) = resp.get("data") {
+                    broadcast_and_trigger_created_message(
+                        &state.stream_registry,
+                        &state.fanout,
+                        &state.db,
+                        &state.bot_locator,
+                        bot.bot_id,
+                        created,
+                    )
+                    .await;
+                }
+            }
+            // bot 退出频道成功 → 成员集变了，在 WS 边界补发全量 presence
+            //（resource::dispatch 只有 db，拿不到 fanout/bot_locator）。
+            if frame.get("resource").and_then(Value::as_str) == Some("channel.leave")
+                && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = frame
+                    .get("params")
+                    .and_then(|p| p.get("channel_id"))
+                    .and_then(Value::as_str)
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                {
+                    crate::gateway::presence::broadcast_presence(state, cid).await;
+                }
+            }
+            // Live Desk: a successful mutating `fs.*` verb changed the channel's
+            // workspace files — nudge any open Desk view to re-pull. Mirrors the
+            // channel.messages.create / channel.leave live-broadcast pattern above:
+            // resource::dispatch only holds `db`, so the fanout tick is emitted here
+            // at the WS boundary. Data-free — clients re-fetch via their own authz'd
+            // fs.ls/fs.read. board name "files" (cross-slice contract).
+            if matches!(
+                frame.get("resource").and_then(Value::as_str),
+                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
+            ) && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                if let Some(cid) = resp
+                    .get("data")
+                    .and_then(|d| d.get("channel_id"))
+                    .and_then(Value::as_str)
+                    .and_then(|s| s.parse::<Uuid>().ok())
+                {
+                    let wire = WireFrame::channel(
+                        cid,
+                        "board_signal",
+                        json!({ "channel_id": cid, "board": "files" }),
+                    );
+                    state.fanout.broadcast_channel(cid, wire).await;
+                }
+            }
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
+        }
+
+        // ── 远程工作区 RPC 响应（connector → gateway，按 req_id 关联）──────────
+        "workspace_res" => {
+            if let Some(req_id) = frame.get("req_id").and_then(Value::as_str) {
+                state.workspace_rpc.resolve(req_id, frame.clone());
+            }
+        }
+
+        // ── 远程工作区文件变更推送（connector → gateway，主动 push）──────────
+        // The connector's live watcher fires `{root, paths, kind}` when watched
+        // files change. The frame is bot-scoped (this WS is authenticated as the
+        // bot), so fan a signal-only `workspace_signal{bot_id, root, paths}` to every
+        // channel the bot is a member of — recipients re-pull via their own authz'd
+        // workspace REST reads (no file content crosses here). Mirrors the
+        // board_signal / trace validated-then-fanned pattern.
+        "workspace_event" => {
+            handle_workspace_event_frame(frame, state, bot).await;
         }
 
         // ── 审批请求（转发给频道内用户）─────────────────────────────────────
@@ -544,6 +818,10 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     }
                 }
             }
+        }
+        // ── 审批终态（超时/取消，连接器本地裁决后通知，避免卡片永久 pending）──
+        "permission_cancel" => {
+            handle_permission_cancel_frame(frame, state, bot).await;
         }
         "session_update" => {
             if let Err(e) =
@@ -580,10 +858,294 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             .await;
         }
 
+        // ── agent 进度（trace）：记录 + 转发给浏览器，让 UI 显示「思考中」状态 ──
+        "trace" => {
+            handle_trace_frame(frame, state, bot).await;
+        }
+
+        // ── generic ACP event passthrough (docs/arch/ACP_EVENT_TAXONOMY.md) ──
+        // The connector forwards every ACP session/update verbatim; classify via
+        // the acp_events registry and record to acp_event_log (skip streaming chunks).
+        "acp_event" => {
+            handle_acp_event_frame(frame, state, bot).await;
+        }
+
         other => {
             tracing::debug!(bot_id = %bot.bot_id, frame_type = other, "unknown data frame");
         }
     }
+}
+
+/// Persist a generic ACP event (the complete-stream passthrough). Best-effort:
+/// a log-write failure must never disrupt the live agent. Streaming text chunks
+/// are dropped here (the bot's message already carries the text).
+async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let name = frame
+        .get("name")
+        .or_else(|| frame.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if name.is_empty() || !crate::domain::acp_events::should_log(name) {
+        return;
+    }
+    let home = crate::domain::acp_events::classify(name)
+        .map(|e| e.home.as_str())
+        .unwrap_or("");
+    let payload = frame.get("payload").cloned().unwrap_or(Value::Null);
+    if let Err(err) = sqlx::query(
+        "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(bot.bot_id.to_string())
+    .bind(frame.get("channel_id").and_then(Value::as_str))
+    .bind(frame.get("session_id").and_then(Value::as_str))
+    .bind(name)
+    .bind(home)
+    .bind(payload.to_string())
+    .execute(&state.db)
+    .await
+    {
+        tracing::warn!(bot_id = %bot.bot_id, %name, error = %err, "acp_event log write failed");
+    }
+
+    // ── Phase A: promote the three artifact updates (plan / usage / available
+    // commands) into typed, queryable storage. The parse layer is shared
+    // (domain::acp_session_updates); each store is per-feature and best-effort —
+    // it swallows its own errors so the live turn is never disrupted. ──
+    if let Some(parsed) = crate::domain::acp_session_updates::parse(name, &payload) {
+        use crate::domain::acp_session_updates::ParsedUpdate;
+        let channel_id = frame.get("channel_id").and_then(Value::as_str);
+        let session_id = frame.get("session_id").and_then(Value::as_str);
+        let bot_id = bot.bot_id.to_string();
+        // Which ViewBoard this update feeds (for the live-push nudge below).
+        let board = match &parsed {
+            ParsedUpdate::AvailableCommands(_) => "commands",
+            ParsedUpdate::Plan(_) => "plan",
+            ParsedUpdate::Usage(_) => "cost",
+        };
+        match parsed {
+            ParsedUpdate::AvailableCommands(ac) => {
+                crate::domain::commands_store::record(
+                    &state.db, channel_id, &bot_id, session_id, &ac,
+                )
+                .await
+            }
+            ParsedUpdate::Plan(p) => {
+                crate::domain::plan_store::record(&state.db, channel_id, &bot_id, session_id, &p)
+                    .await
+            }
+            ParsedUpdate::Usage(u) => {
+                crate::domain::usage_store::record(&state.db, channel_id, &bot_id, session_id, &u)
+                    .await
+            }
+        }
+        // Live-push: nudge the channel's ViewBoards to re-pull. These board events
+        // don't otherwise fan out to browsers (DECENTRALIZED_MESH §6: realtime is
+        // conversational-only), so the board is pull-only without this signal. The
+        // frame carries no data — boards re-fetch via their own authz'd *.read verb.
+        if let Some(cid) = channel_id.and_then(|s| s.parse::<Uuid>().ok()) {
+            let wire = WireFrame::channel(
+                cid,
+                "board_signal",
+                json!({ "channel_id": cid, "board": board }),
+            );
+            state.fanout.broadcast_channel(cid, wire).await;
+        }
+    }
+}
+
+/// 记录 agent 进度（trace）并 fan-out 一个 `bot_trace` 帧给频道内浏览器。
+/// trace 非终态帧，队列满时可丢弃（下一条 trace 或 message_done 会覆盖状态）。
+async fn handle_trace_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let msg_id = frame.get("msg_id").and_then(Value::as_str);
+    let phase = frame.get("phase").and_then(Value::as_str);
+    let status = frame.get("status").and_then(Value::as_str);
+    let title = frame.get("title").and_then(Value::as_str);
+
+    tracing::info!(
+        bot_id = %bot.bot_id,
+        msg_id = msg_id.unwrap_or(""),
+        phase = phase.unwrap_or(""),
+        status = status.unwrap_or(""),
+        title = title.unwrap_or(""),
+        "agent trace"
+    );
+
+    let Some(channel_id) = frame
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<Uuid>().ok())
+    else {
+        return;
+    };
+
+    // The channel_id is bot-supplied and must not be trusted: only forward
+    // progress into channels the bot is actually a member of (mirrors the
+    // delta/done/send/permission_request handlers). Otherwise a self-registered
+    // bot could spoof agent-progress text into arbitrary channels.
+    if ensure_bot_channel_member(&state.db, bot.bot_id, channel_id)
+        .await
+        .is_err()
+    {
+        return;
+    }
+
+    // Persist the trace durably (best-effort, fire-and-forget — never .await
+    // before the live fan-out below, so a slow DB can't backpressure the
+    // connector frame loop). The write-time allowlist thins high-frequency rows;
+    // kind='approval' is always kept. docs/arch/TRACE_PERSISTENCE.md.
+    if let Some(mid) = msg_id {
+        let phase_s = phase.unwrap_or("").to_string();
+        let kind: &'static str = if phase_s == "approval" {
+            "approval"
+        } else {
+            "trace"
+        };
+        if crate::domain::trace::should_persist(kind, &phase_s) {
+            let ev = crate::domain::trace::TraceEvent {
+                msg_id: mid.to_string(),
+                channel_id: channel_id.to_string(),
+                bot_id: Some(bot.bot_id.to_string()),
+                task_id: frame
+                    .get("task_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                run_id: frame
+                    .get("run_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                stream: frame
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                kind,
+                phase: phase_s,
+                status: status.map(str::to_string),
+                title: title.map(str::to_string),
+                message: frame
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                data: frame.get("data").cloned(),
+                request_id: frame
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                approval_kind: frame
+                    .get("data")
+                    .and_then(|d| d.get("approval_kind"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                ..Default::default()
+            };
+            let db = state.db.clone();
+            tokio::spawn(async move {
+                if let Err(err) = crate::domain::trace::record(&db, ev).await {
+                    tracing::warn!(error = %err, "message_traces persist failed");
+                }
+            });
+        }
+    }
+
+    let wire = WireFrame::channel(
+        channel_id,
+        "bot_trace",
+        json!({
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "phase": phase,
+            "status": status,
+            "title": title,
+            "message": frame.get("message").and_then(Value::as_str),
+        }),
+    );
+    // Live per-subscriber SEE (docs/arch/ACP_EVENT_TAXONOMY.md): the bot's internal
+    // activity is gated by SEE(tool_call); approval traces by SEE(permission_request).
+    // Members an owner denied SEE for don't receive the live frame.
+    let see_class = if phase == Some("approval") {
+        crate::domain::bot_event_policy::EV_PERMISSION_REQUEST
+    } else {
+        crate::domain::bot_event_policy::EV_TOOL_CALL
+    };
+    let allowed = allowed_seers(state, bot.bot_id, channel_id, see_class).await;
+    state
+        .fanout
+        .broadcast_channel_to_users(channel_id, wire, allowed)
+        .await;
+}
+
+/// Live per-subscriber SEE (docs/arch/ACP_EVENT_TAXONOMY.md): the online channel
+/// users allowed to SEE an agent event of `event_class` for `bot`. Platform admins
+/// bypass; absent rules → members allowed (the default). Fail-open on a rules error
+/// (return everyone online) so a query hiccup never *hides* the bot's activity.
+async fn allowed_seers(
+    state: &AppState,
+    bot_id: Uuid,
+    channel_id: Uuid,
+    event_class: &str,
+) -> Vec<Uuid> {
+    let online = state.fanout.online_users(channel_id);
+    if online.is_empty() {
+        return Vec::new();
+    }
+    let rules =
+        match crate::domain::bot_event_policy::load_rules(&state.db, &bot_id.to_string()).await {
+            Ok(r) => r,
+            Err(_) => return online,
+        };
+    let mut chan_role: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut platform_admin: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(rows) = sqlx::query(
+        "SELECT cm.member_id, cm.role AS crole, u.role AS prole
+         FROM channel_memberships cm JOIN users u ON u.user_id = cm.member_id
+         WHERE cm.channel_id = $1 AND cm.member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .fetch_all(&state.db)
+    .await
+    {
+        for r in rows {
+            let mid: String = r.try_get("member_id").unwrap_or_default();
+            if let Ok(Some(c)) = r.try_get::<Option<String>, _>("crole") {
+                chan_role.insert(mid.clone(), c);
+            }
+            if matches!(
+                r.try_get::<Option<String>, _>("prole")
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+                Some("system_admin") | Some("admin")
+            ) {
+                platform_admin.insert(mid);
+            }
+        }
+    }
+    let bot_s = bot_id.to_string();
+    let chan_s = channel_id.to_string();
+    let mut out = Vec::new();
+    for uid in online {
+        let id = uid.to_string();
+        if platform_admin.contains(&id) {
+            out.push(uid);
+            continue;
+        }
+        let role = chan_role.get(&id).map(String::as_str).unwrap_or("member");
+        let groups =
+            crate::domain::bot_event_policy::matched_groups(&state.db, &bot_s, &id, &rules).await;
+        if crate::domain::bot_event_policy::resolve_access(
+            &rules,
+            &chan_s,
+            &id,
+            role,
+            &groups,
+            event_class,
+            crate::domain::bot_event_policy::Capability::See,
+        ) {
+            out.push(uid);
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -617,6 +1179,29 @@ async fn handle_terminal_frame(
     .await
     {
         Ok(()) => {
+            // Turn-complete workspace freshness: the turn just finalized. If this
+            // bot is workspace-capable (its connector is online), it may have
+            // mutated its Desk during the turn — emit one data-free tick so any open
+            // workspace view re-pulls. board name "workspace" (cross-slice contract);
+            // clients re-fetch via their own authz'd reads. channel_id is re-derived
+            // from the (now finalized, bot-owned) msg_id — handle_done already
+            // verified ownership but consumes the channel_id internally.
+            if let Some(mid) = msg_id {
+                if state.bot_locator.is_online(bot.bot_id).await {
+                    if let Some(cid) = channel_of_bot_message(&state.db, bot.bot_id, mid).await {
+                        let wire = WireFrame::channel(
+                            cid,
+                            "board_signal",
+                            json!({
+                                "channel_id": cid,
+                                "board": "workspace",
+                                "bot_id": bot.bot_id,
+                            }),
+                        );
+                        state.fanout.broadcast_channel(cid, wire).await;
+                    }
+                }
+            }
             let Some(client_msg_id) = client_msg_id else {
                 return;
             };
@@ -663,6 +1248,9 @@ async fn handle_permission_request_frame(
         .ok_or("missing channel_id")?;
     ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
 
+    // The agent decides WHEN to ask (its mode); Cheers always surfaces the ask as a
+    // pending card and routes the answer to RESPOND-authorized users (see
+    // docs/arch/ACP_EVENT_TAXONOMY.md). No per-tool-kind auto-answer here.
     let msg_id = Uuid::new_v4();
     let title = frame
         .get("title")
@@ -698,10 +1286,17 @@ async fn handle_permission_request_frame(
     });
     let content_data_for_db = content_data.to_string();
 
-    let mut tx = state.db.begin().await.map_err(|_| "db error")?;
-    let channel_seq = channel_seq::allocate(&mut tx, channel_id)
+    let mut tx = state
+        .db
+        .begin()
         .await
-        .map_err(|_| "db error")?;
+        .map_err(crate::gateway::log_db_err("permission_request: begin tx"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "permission_request: allocate channel_seq",
+            ))?;
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
@@ -716,8 +1311,73 @@ async fn handle_permission_request_frame(
     .bind(channel_seq)
     .execute(&mut *tx)
     .await
-    .map_err(|_| "db error")?;
-    tx.commit().await.map_err(|_| "db error")?;
+    .map_err(crate::gateway::log_db_err(
+        "permission_request: insert message",
+    ))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("permission_request: commit tx"))?;
+
+    // Audit the request itself so `approval_audit` holds the full
+    // requested → resolved/timeout chain in one place (resolve and timeout are
+    // already audited; this closes the gap at card creation). Best-effort: an
+    // audit-write failure must not block the user-visible card.
+    if let Err(err) = crate::domain::approval::record_audit(
+        &state.db,
+        crate::domain::approval::AuditEvent {
+            event_type: "requested",
+            bot_id: Some(bot.bot_id),
+            channel_id,
+            request_id: frame
+                .get("request_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            msg_id: Some(msg_id),
+            detail: Some(json!({
+                "title": title,
+                "tool": frame.get("tool").cloned().unwrap_or(Value::Null),
+            })),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        tracing::warn!(%channel_id, error = %err, "permission_request: audit write failed");
+    }
+
+    // Mirror the request into the durable trace timeline as an approval event,
+    // anchored to the BOT TURN (source_msg_id, = frame.msg_id) — NOT the
+    // permission card's own msg_id — so it interleaves with that turn's
+    // tool_call/plan traces. Best-effort, after the legal audit write.
+    let trace_anchor = frame
+        .get("msg_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| msg_id.to_string());
+    if let Err(err) = crate::domain::trace::record(
+        &state.db,
+        crate::domain::trace::TraceEvent {
+            msg_id: trace_anchor,
+            channel_id: channel_id.to_string(),
+            bot_id: Some(bot.bot_id.to_string()),
+            kind: "approval",
+            phase: "approval".to_string(),
+            status: Some("pending".to_string()),
+            title: Some(title.to_string()),
+            message: Some(body.to_string()),
+            data: Some(json!({ "tool": frame.get("tool").cloned().unwrap_or(Value::Null) })),
+            request_id: frame
+                .get("request_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            approval_kind: Some("requested".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    {
+        tracing::warn!(%channel_id, error = %err, "permission_request: trace write failed");
+    }
 
     let wire = WireFrame::channel(
         channel_id,
@@ -739,9 +1399,67 @@ async fn handle_permission_request_frame(
             "content_data": content_data,
         }),
     );
-    state.fanout.broadcast_channel(channel_id, wire).await;
+    // Live per-subscriber SEE: only members allowed to SEE permission_request get
+    // the card frame (RESPOND still separately gates who may *answer* it).
+    let allowed = allowed_seers(
+        state,
+        bot.bot_id,
+        channel_id,
+        crate::domain::bot_event_policy::EV_PERMISSION_REQUEST,
+    )
+    .await;
+    state
+        .fanout
+        .broadcast_channel_to_users(channel_id, wire, allowed)
+        .await;
 
     Ok(msg_id)
+}
+
+/// Finalize a still-pending approval card after the connector reported the ACP
+/// request reached a terminal state locally (timeout / cancel) with no human
+/// decision. Idempotent: skips cards already resolved by a human.
+async fn handle_permission_cancel_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let Some(request_id) = frame.get("request_id").and_then(Value::as_str) else {
+        return;
+    };
+    let reason = frame
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("timeout");
+
+    let pending =
+        match crate::domain::approval::find_pending_by_request_id(&state.db, request_id).await {
+            Ok(Some(p)) => p,
+            Ok(None) => return, // never forwarded, or already swept
+            Err(e) => {
+                tracing::warn!(error = %e, request_id, "permission_cancel: lookup failed");
+                return;
+            }
+        };
+    // Only this bot's own requests; and skip if a human already resolved it.
+    if pending.bot_id != bot.bot_id
+        || pending
+            .content_data
+            .get("resolved")
+            .and_then(Value::as_bool)
+            == Some(true)
+    {
+        return;
+    }
+
+    // Shared finalize (atomic CAS + audit + trace + broadcast); identical to the
+    // server-side TTL sweeper so the two paths can never diverge.
+    if crate::gateway::approval_sweeper::finalize_expired(
+        &state.db,
+        &state.fanout,
+        &pending,
+        reason,
+    )
+    .await
+    {
+        tracing::info!(request_id, reason, "permission card finalized as expired");
+    }
 }
 
 async fn ensure_bot_channel_member(
@@ -759,7 +1477,9 @@ async fn ensure_bot_channel_member(
     .bind(bot_id.to_string())
     .fetch_one(db)
     .await
-    .map_err(|_| "db error")?
+    .map_err(crate::gateway::log_db_err(
+        "ensure_bot_channel_member: select membership exists",
+    ))?
     .try_get::<bool, _>("ok")
     .unwrap_or(false);
 
@@ -768,6 +1488,25 @@ async fn ensure_bot_channel_member(
     } else {
         Err("bot is not a member of the target channel")
     }
+}
+
+/// Resolve the channel a bot's message belongs to (bot-scoped). Used post-`handle_done`
+/// to target the turn-complete `board_signal`: `handle_done` already verified the bot
+/// owns `msg_id` but consumes its channel_id internally, and the message is now
+/// finalized (so `verify_ownership` can no longer be reused), so we re-derive it here.
+async fn channel_of_bot_message(db: &PgPool, bot_id: Uuid, msg_id: Uuid) -> Option<Uuid> {
+    sqlx::query(
+        "SELECT channel_id FROM messages
+         WHERE msg_id = $1 AND sender_id = $2 AND sender_type = 'bot'",
+    )
+    .bind(msg_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|row| row.try_get::<String, _>("channel_id").ok())
+    .and_then(|s| s.parse::<Uuid>().ok())
 }
 
 fn client_msg_id(frame: &Value) -> Option<String> {
@@ -942,7 +1681,7 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     let token_hash = hash_bot_token(token);
 
     let row = sqlx::query(
-        "SELECT bot_id, username, display_name, status, binding_config, created_by
+        "SELECT bot_id, username, display_name, is_disabled, binding_config, created_by
          FROM bot_accounts WHERE bot_token_hash = $1",
     )
     .bind(&token_hash)
@@ -952,8 +1691,10 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     .flatten()
     .ok_or(AuthFailure::InvalidToken)?;
 
-    let status: String = row.try_get("status").unwrap_or_default();
-    if status != "online" {
+    // Admin kill-switch: a disabled bot may not establish the bridge, so a kicked
+    // connector can't immediately reconnect.
+    let is_disabled: bool = row.try_get("is_disabled").unwrap_or(false);
+    if is_disabled {
         return Err(AuthFailure::BotUnavailable);
     }
 
@@ -968,12 +1709,19 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
         .flatten();
     let provider_account_id = resolve_bot_provider_account_id(binding_config.as_ref())
         .unwrap_or_else(|| bot_id.to_string());
+    // H6 (non-breaking): honor an explicit require_capability, else enforce only
+    // when the bot has an active capability delegation. A bot that never opted
+    // into signed capabilities keeps working with an unsigned data plane.
+    let require_capability = match resolve_bot_require_capability(binding_config.as_ref()) {
+        Some(explicit) => explicit,
+        None => bot_has_active_delegation(db, &bot_id).await,
+    };
     Ok(BotInfo {
         bot_id,
         provider_account_id,
         username: row.try_get("username").unwrap_or_default(),
         display_name: row.try_get("display_name").ok(),
-        require_capability: resolve_bot_require_capability(binding_config.as_ref()),
+        require_capability,
         acp_security: resolve_bot_acp_security(binding_config.as_ref()),
         connector_config: resolve_bot_connector_config(binding_config.as_ref()),
         owner_id: row
@@ -983,12 +1731,37 @@ async fn resolve_bot(db: &PgPool, token: &str) -> Result<BotInfo, AuthFailure> {
     })
 }
 
-fn resolve_bot_require_capability(binding_config: Option<&Value>) -> bool {
+/// Explicit `acp_security.require_capability` setting, or None when unset. When
+/// None the gateway defaults to "enforce iff the bot has an active capability
+/// delegation" (see resolve_bot): bots that opted into signed capabilities are
+/// fail-closed, bots that never did keep working unsigned (audit H6,
+/// non-breaking rollout).
+fn resolve_bot_require_capability(binding_config: Option<&Value>) -> Option<bool> {
     binding_config
         .and_then(|cfg| cfg.get("acp_security"))
         .and_then(|acp| acp.get("require_capability"))
         .and_then(Value::as_bool)
-        .unwrap_or(false)
+}
+
+/// Whether a bot has at least one active (non-revoked, in-status, non-expired,
+/// not uses-exhausted) capability delegation.
+async fn bot_has_active_delegation(db: &PgPool, bot_id: &Uuid) -> bool {
+    sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM acp_capability_delegations
+            WHERE bot_id = $1
+              AND revoked = FALSE
+              AND status = 'active'
+              AND (expires_at IS NULL OR expires_at > NOW())
+              AND (max_uses IS NULL OR use_count < max_uses)
+        ) AS ok",
+    )
+    .bind(bot_id.to_string())
+    .fetch_one(db)
+    .await
+    .ok()
+    .and_then(|row| row.try_get::<bool, _>("ok").ok())
+    .unwrap_or(false)
 }
 
 fn resolve_bot_provider_account_id(binding_config: Option<&Value>) -> Option<String> {
@@ -1073,6 +1846,41 @@ fn resolve_bot_acp_security(binding_config: Option<&Value>) -> Option<Value> {
         "require_capability": require_capability,
         "phase": "negotiated",
     }))
+}
+
+/// Fan the connector's `workspace_event` file-change push out to browsers as a
+/// signal-only `workspace_signal` frame. The frame is bot-scoped (the WS is already
+/// authenticated as `bot`), so we look up every channel the bot belongs to and
+/// broadcast `{bot_id, root, paths}` — no file content, recipients re-fetch through
+/// their own authorized workspace REST reads. `kind` is advisory only.
+async fn handle_workspace_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let root = frame.get("root").cloned().unwrap_or(Value::Null);
+    let paths = frame.get("paths").cloned().unwrap_or_else(|| json!([]));
+
+    let channels: Vec<Uuid> = sqlx::query_scalar::<_, String>(
+        "SELECT channel_id FROM channel_memberships
+         WHERE member_id = $1 AND member_type = 'bot'",
+    )
+    .bind(bot.bot_id.to_string())
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .filter_map(|s| Uuid::parse_str(&s).ok())
+    .collect();
+
+    for cid in channels {
+        let wire = WireFrame::channel(
+            cid,
+            "workspace_signal",
+            json!({
+                "bot_id": bot.bot_id.to_string(),
+                "root": root,
+                "paths": paths,
+            }),
+        );
+        state.fanout.broadcast_channel(cid, wire).await;
+    }
 }
 
 async fn load_memberships(db: &PgPool, bot_id: Uuid) -> Vec<Value> {

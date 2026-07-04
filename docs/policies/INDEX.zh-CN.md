@@ -1,4 +1,4 @@
-# AgentNexus 文档索引
+# Cheers 文档索引
 
 > **语言**：中文 | [English](INDEX.md)
 
@@ -14,7 +14,6 @@
 - [AgentBridge 接入指南](help/AgentBridge接入指南.md)
 - [技术排查 Q&A](help/技术排查Q&A.md)
 - [RustFS 对象存储部署说明](help/RustFS对象存储部署说明.md)
-- [kkFileView 配置说明](help/kkFileView配置说明.md)
 
 ## 架构与协议文档
 

@@ -16,12 +16,12 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "cargo"
-    directory: "/packages/agentnexus-acp-connector-rs"
+    directory: "/packages/cheers-acp-connector-rs"
     target-branch: "develop"
     schedule:
       interval: "weekly"
   - package-ecosystem: "cargo"
-    directory: "/packages/agentnexus-mcp-server"
+    directory: "/packages/cheers-mcp-server"
     target-branch: "develop"
     schedule:
       interval: "weekly"

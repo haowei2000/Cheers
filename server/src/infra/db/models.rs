@@ -71,6 +71,10 @@ pub struct MessageFileRef {
     pub expires_at: Option<String>,
     pub preview_url: Option<String>,
     pub download_url: Option<String>,
+    /// Short derived text for the file when a pipeline produced one — today the
+    /// audio transcript snippet (`summary_3lines`); shown under the audio player.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub summary: Option<String>,
 }
 
 // ── DTO（API 响应用）─────────────────────────────────────────────────────────
@@ -94,6 +98,10 @@ pub struct MessageDto {
     pub mentions: Vec<MessageMention>,
     pub files: Vec<MessageFileRef>,
     pub created_at: DateTime<Utc>,
+    /// Structured payload for system messages (e.g. ACP approval cards). NULL
+    /// for plain chat messages.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub content_data: Option<Value>,
 }
 
 impl MessageDto {
@@ -125,6 +133,7 @@ impl MessageDto {
             mentions: Vec::new(),
             files: Vec::new(),
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
+            content_data: row.try_get::<Value, _>("content_data").ok(),
         }
     }
 }

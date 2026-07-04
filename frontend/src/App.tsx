@@ -3,8 +3,12 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
+const RegisterPage = lazy(() => import("@/features/auth/RegisterPage"));
+const ForgotPasswordPage = lazy(() => import("@/features/auth/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("@/features/auth/ResetPasswordPage"));
 const ChatLayout = lazy(() => import("@/features/chat/ChatLayout"));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
+const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
 
 function Spinner() {
   return (
@@ -25,6 +29,9 @@ export default function App() {
     <Suspense fallback={<Spinner />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot" element={<ForgotPasswordPage />} />
+        <Route path="/reset" element={<ResetPasswordPage />} />
         <Route
           path="/chat/*"
           element={
@@ -38,6 +45,14 @@ export default function App() {
           element={
             <RequireAuth>
               <SettingsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/friends/*"
+          element={
+            <RequireAuth>
+              <FriendsPage />
             </RequireAuth>
           }
         />
