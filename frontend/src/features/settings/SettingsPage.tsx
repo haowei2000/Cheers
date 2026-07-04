@@ -113,9 +113,9 @@ export default function SettingsPage() {
   const items = NAV.filter((n) => !n.adminOnly || isAdmin);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
       {/* Header */}
-      <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
+      <div className="shrink-0 border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
         <button
           type="button"
           onClick={() => navigate(-1)}
@@ -127,6 +127,7 @@ export default function SettingsPage() {
         <h1 className="text-lg font-semibold">Settings</h1>
       </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="max-w-5xl mx-auto p-6 flex flex-col sm:flex-row gap-6">
         {/* Nav rail */}
         <nav className="flex sm:flex-col gap-1 sm:w-48 sm:shrink-0 overflow-x-auto">
@@ -241,6 +242,7 @@ export default function SettingsPage() {
             </section>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
