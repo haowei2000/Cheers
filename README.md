@@ -10,6 +10,12 @@
 
 Cheers is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, external ACP agents you can `@`-mention as channel members, file-aware conversations, and persisted channel history and context.
 
+<p align="center">
+  <img src="imgs/hero-chat.png" width="840"
+    alt="A Cheers channel where a person @-mentions an AI agent bot; the agent replies inline with a short checklist, the right-hand Viewboard panel visualizes the human–agent interaction as a timeline, and the composer exposes per-message model and reasoning controls.">
+</p>
+<p align="center"><sub>A teammate <strong>@-mentions an AI agent</strong> in a shared channel — the agent replies inline, the <strong>Viewboard</strong> tracks every interaction, and the composer exposes per-message model &amp; reasoning controls.</sub></p>
+
 > Project status: early public preview. Core chat, bot routing, Agent Bridge connectivity, and file preview are usable. Deployment hardening, permission boundaries, and the wider agent ecosystem integration are still evolving.
 
 ## Documentation
