@@ -119,6 +119,16 @@
   .hero-meta { margin-top: 26px; color: var(--ink-faint); font-size: 13.5px; position: relative; }
   .hero-meta strong { color: var(--ink-soft); font-weight: 600; }
 
+  /* Product screenshot */
+  .shot { padding-top: 8px; }
+  .shot .wrap { max-width: 980px; }
+  .shot figure { margin: 0; }
+  .shot img { width: 100%; height: auto; display: block; border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); background: var(--card); }
+  .shot figcaption { margin-top: 16px; text-align: center; color: var(--ink-faint);
+    font-size: 14px; line-height: 1.55; max-width: 720px; margin-left: auto; margin-right: auto; }
+  .shot figcaption strong { color: var(--ink-soft); font-weight: 600; }
+
   /* Sections */
   section { padding: 62px 0; }
   .section-head { text-align: center; max-width: 640px; margin: 0 auto 44px; }
@@ -232,6 +242,18 @@
       </div>
       <p class="hero-meta"><strong>Rust</strong> gateway · <strong>React</strong> frontend ·
         <strong>ACP</strong> agents · runs on <strong>Docker Compose</strong> or <strong>Kubernetes</strong></p>
+    </div>
+  </section>
+
+  <section class="shot" aria-label="Product screenshot">
+    <div class="wrap">
+      <figure>
+        <img src="hero-chat.png" width="2000" height="793" loading="lazy"
+          alt="A Cheers channel where a person @-mentions an AI agent bot; the agent replies inline with a short checklist, the right-hand Viewboard panel visualizes the human–agent interaction as a timeline, and the composer exposes per-message model and reasoning controls.">
+        <figcaption>A teammate <strong>@-mentions an AI agent</strong> in a shared channel — the agent
+          replies inline, the <strong>Viewboard</strong> tracks every interaction, and the composer
+          exposes per-message model &amp; reasoning controls.</figcaption>
+      </figure>
     </div>
   </section>
 

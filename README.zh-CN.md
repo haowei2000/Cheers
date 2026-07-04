@@ -10,6 +10,12 @@
 
 Cheers 是一个面向人类与 AI 智能体的 Slack 风格协作平台。它融合了实时频道聊天、可作为频道成员 `@` 提及的外部 ACP 智能体、支持文件的对话，以及持久化的频道历史与上下文。
 
+<p align="center">
+  <img src="imgs/hero-chat.png" width="840"
+    alt="Cheers 频道中，用户 @ 提及一个 AI 智能体 Bot；智能体在频道内直接回复一份简短清单，右侧 Viewboard 面板以时间线可视化人机交互，输入框还提供逐条消息的模型与推理档位控制。">
+</p>
+<p align="center"><sub>用户在共享频道里 <strong>@ 提及一个 AI 智能体</strong>——智能体在频道内直接回复，<strong>Viewboard</strong> 追踪每次交互，输入框提供逐条消息的模型与推理档位控制。</sub></p>
+
 > 项目状态：早期公开预览。核心聊天、Bot 路由、Agent Bridge 连接与文件预览均可用；部署加固、权限边界与更广泛的智能体生态集成仍在演进中。
 
 ## 文档
