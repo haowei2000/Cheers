@@ -16,10 +16,14 @@ python3 -m http.server -d website 8080   # → http://localhost:8080
 
 ## Deploy
 
-Any static host works. For **GitHub Pages**, either:
+**GitHub Pages deployment is automated.** The workflow
+[`.github/workflows/pages.yml`](../.github/workflows/pages.yml) publishes
+`website/` on every push to `main` that touches it (or on manual
+`workflow_dispatch`). One-time setup: repo Settings → Pages → Source =
+**"GitHub Actions"**. Live site: <https://haowei2000.github.io/Cheers/>
 
-- set Pages source to the `/website` folder on your default branch, or
-- copy `index.html` to the repo root / a `docs/` Pages source.
+Any other static host also works — the site is a single self-contained
+`index.html` with no build step.
 
 ## Notes
 

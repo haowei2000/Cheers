@@ -99,7 +99,10 @@ docker compose up -d
 适合集群、生产与横向扩展（多副本网关 + Redis 广播）。
 
 ```bash
-# 本地 kind 集群：构建镜像、加载、安装 release。
+# 本地 kind 集群：先创建集群（配置文件把 NodePort 30080 映射到 localhost:30080），
+# 再构建镜像、加载、安装 release。
+kind create cluster --name cheers --config deploy/kind-config.yaml
+
 docker build -t cheers/gateway:dev server
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
@@ -115,6 +118,10 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 
 - UI：前端 NodePort → `http://localhost:30080`（登录 `admin` / `admin12345`，
   开发默认值，正式环境务必修改）。
+- 不想本地构建？GHCR 上有预构建的公开镜像
+  （`ghcr.io/haowei2000/cheers-gateway`、`ghcr.io/haowei2000/cheers-frontend`；
+  tag 用 `main` 或某个发布版本）—— `--set *.image.repository/tag` 覆盖方式见
+  chart README。
 - 启用 OpenCode 智能体 bot：`--set bot.enabled=true`，并提供其 token / API-key secret。
 
 **chart values、secrets、ingress、生产 overlay 与 bot：**

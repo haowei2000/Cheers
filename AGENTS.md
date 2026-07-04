@@ -101,6 +101,6 @@ docker compose down
 
 ## Related Documentation
 
-- [Documentation Home](../help/README.md)
-- [User Manual](../help/使用说明书.md)
-- [Roadmap](../ROADMAP.md)
+- [Documentation Home](docs/help/README.md)
+- [User Manual](docs/help/使用说明书.md)
+- [Roadmap](docs/ROADMAP.md)

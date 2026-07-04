@@ -9,14 +9,14 @@ Use this guide to diagnose common deployment, runtime, Bot, file, and database p
 ```bash
 docker compose ps
 curl http://localhost:8000/health
-curl http://localhost:8000/docs
 ```
 
 Expected:
 
 - backend, frontend, postgres, redis, rustfs, and gotenberg are running.
-- `/health` returns `{"status":"ok"}`.
-- Swagger opens at `http://localhost:8000/docs`.
+- `/health` returns `ok`.
+
+The Rust gateway has no Swagger UI — there is no `/docs` route. The REST surface is defined in `server/src/router.rs`.
 
 ## Logs
 

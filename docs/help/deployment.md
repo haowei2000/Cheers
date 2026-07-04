@@ -108,7 +108,10 @@ troubleshooting): [docker-compose-deploy.md](docker-compose-deploy.md) /
 Best for clusters, production, and scale-out (multi-replica gateway + Redis fan-out).
 
 ```bash
-# Local kind cluster: build images, load them, install the release.
+# Local kind cluster: create it (the config maps NodePort 30080 → localhost:30080),
+# build images, load them, install the release.
+kind create cluster --name cheers --config deploy/kind-config.yaml
+
 docker build -t cheers/gateway:dev server
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
@@ -124,6 +127,10 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 
 - UI: frontend NodePort → `http://localhost:30080` (sign in `admin` /
   `admin12345`, the dev default — change it for anything real).
+- Prefer not to build? Prebuilt public images are on GHCR
+  (`ghcr.io/haowei2000/cheers-gateway`, `ghcr.io/haowei2000/cheers-frontend`;
+  tag `main` or a release version) — see the chart README for the
+  `--set *.image.repository/tag` overrides.
 - Enable the OpenCode agent bot with `--set bot.enabled=true` plus its token /
   API-key secret.
 
