@@ -18,6 +18,7 @@ This directory contains user-facing, administrator-facing, and operations-facing
 | Prompt operator | [Prompt Template Operations Guide](prompt-template-operations.md) | Prompt template variables, runtime priority, Bot binding, overrides, and troubleshooting |
 | Agent provider author | [Agent Bridge Integration Guide](AgentBridge接入指南.md) | Registering Agent Bridge Bots and connecting local ACP-capable agents; OpenClaw links are legacy/deprecated |
 | Local ACP agent (developer) | [Local Bot Setup Guide](本地Bot配置指南.md) | Host daemon: one TOML per bot, sidecar-file tokens, multi-bot management, full field reference, troubleshooting |
+| Anyone asking "what is a Bot?" | [MCP Cheers: Bots vs. Users](mcp-bot-vs-user.md) | The MCP tool surface, the bot auth chain, and how a Bot is the same as / different from a regular user |
 | Object storage operator | [RustFS Object Storage Guide](RustFS对象存储部署说明.md) | S3-compatible storage, bucket, and key setup |
 | Troubleshooter | [Troubleshooting Q&A](技术排查Q&A.md) | Health checks, logs, database, Bot no-response, preview failures |
 
