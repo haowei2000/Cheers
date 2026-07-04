@@ -1,0 +1,21 @@
+{
+  "id": "code-project",
+  "title": "Code project",
+  "views": [
+    { "id": "board", "title": "Sprint board", "file": "dev/board.json", "lens": "kanban" },
+    { "id": "prompt", "title": "Code review prompt", "file": "prompts/code-review.md", "lens": "markdown" }
+  ],
+  "seed": {
+    "dev/board.json": {
+      "columns": [
+        { "name": "Backlog", "items": ["Set up CI", "Write the API design doc"] },
+        { "name": "In progress", "items": [] },
+        { "name": "In review", "items": [] },
+        { "name": "Done", "items": [] }
+      ]
+    },
+    "dev/review-findings.md": "# Review findings\n\nOne `##` section per file; one `- [ ] [P0|P1|P2]` line per finding.\nInstall the code-review plugin and pick \"Review findings\" as the renderer to get badges and a progress bar.\n\n## src/api/auth.rs\n\n- [ ] [P0] Token expiry is never checked on the refresh path\n- [ ] [P2] `validate_scope` duplicates the check in middleware\n\n## src/db/pool.rs\n\n- [x] [P1] Pool size is hard-coded; read it from config\n",
+    "dev/tasks.md": "# Tasks\n\n- [ ] Reproduce the bug locally\n- [ ] Add a failing test\n- [x] File the issue\n\n> Works with the md-checklist renderer: check an item and it writes back to this file.\n",
+    "prompts/code-review.md": "You are a strict code reviewer. For each diff I give you, list findings as markdown checkboxes, one per line, in the form `- [ ] [P0|P1|P2] description`, grouped under a `## file-path` heading. P0 = correctness/security, P1 = should fix, P2 = nit."
+  }
+}

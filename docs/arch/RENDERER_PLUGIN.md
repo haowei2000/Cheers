@@ -1,5 +1,7 @@
 # 渲染器插件开发指南
 
+> **Language**: [English](../developer/PLUGIN_DEVELOPMENT.md) | 中文(本文,设计原文)
+
 > 状态:**v1 已实现**。host 侧 `render/save` 协议已落地——工作台 **File 面板**里选中一个文件,用顶部「渲染器」下拉选内置 lens 或已装插件;绑定(`path → renderer id`)存进 `.workbench.json`。旧的 `panels`/`init` 沙箱(场景插件)仍并存。代码:`renderers/registry.ts`、`renderers/RendererHost.tsx`、`sandbox/SandboxRenderer.tsx`、`panels/FilePanel.tsx`。
 > 关联:[[WORKBENCH]]「关系与边界」· [[context-and-environment]]
 

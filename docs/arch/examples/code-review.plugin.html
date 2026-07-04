@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Embedded manifest: the host parses this on upload (inert; never executed). -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "code-review",
+        "title": "Code review notes",
+        "renderers": [
+          { "id": "findings", "title": "Review findings", "match": { "format": "markdown", "requireAny": ["[P0]", "[P1]", "[P2]"] } }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; }
+      #root { padding: 8px 10px; }
+      h2 { font: 600 12px ui-monospace, monospace; color: #a1a1aa; margin: 12px 0 4px; padding-bottom: 2px; border-bottom: 1px solid #27272a; }
+      .task { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+      .task span.done { color: #71717a; text-decoration: line-through; }
+      .sev { font: 700 10px ui-monospace, monospace; border-radius: 3px; padding: 0 5px; flex-shrink: 0; }
+      .p0 { background: #7f1d1d; color: #fecaca; }
+      .p1 { background: #78350f; color: #fde68a; }
+      .p2 { background: #27272a; color: #a1a1aa; }
+      .line { white-space: pre-wrap; color: #a1a1aa; padding: 1px 0; }
+      #bar { position: sticky; top: 0; background: #0a0a0a; padding: 6px 10px; border-bottom: 1px solid #27272a; font-size: 11px; color: #71717a; }
+      #st { padding: 4px 10px; color: #71717a; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div id="bar"></div>
+    <div id="root"></div>
+    <div id="st"></div>
+    <script>
+      // Renders a markdown code-review file: "## path/to/file.rs" section headings and
+      // "- [ ] [P1] finding text" items with severity badges. Checking an item rewrites
+      // that markdown line in place and saves the file back through the host.
+      var ASSIGN = null, lines = [];
+      var TASK = /^(\s*[-*]\s+)\[([ xX])\]\s+(?:\[(P[012])\]\s+)?(.*)$/;
+      var HEAD = /^##\s+(.+)$/;
+
+      function send(msg) { parent.postMessage(msg, "*"); }
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+      function save() { send({ type: "cheers:save", content: lines.join("\n") }); }
+
+      window.addEventListener("message", function (e) {
+        var m = e.data; if (!m || typeof m !== "object") return;
+        if (m.type === "cheers:render") {
+          ASSIGN = m; lines = String(m.content || "").split("\n");
+          if (!lines.some(function (l) { return TASK.test(l); })) { send({ type: "cheers:unsupported", reason: "no review-finding lines (- [ ] [P0..P2] …)" }); return; }
+          render();
+        } else if (m.type === "cheers:saved") {
+          if (m.ok) { ASSIGN.version = m.version; setStatus("Saved v" + m.version); }
+          else setStatus("Save failed: " + (m.error || ""));
+        }
+      });
+
+      function render() {
+        var root = document.getElementById("root"); root.innerHTML = "";
+        var open = 0, total = 0;
+        lines.forEach(function (line, i) {
+          var mh = line.match(HEAD);
+          if (mh) {
+            var h = document.createElement("h2");
+            h.textContent = mh[1];               // textContent: untrusted text, never innerHTML
+            root.appendChild(h);
+            return;
+          }
+          var mt = line.match(TASK);
+          if (mt) {
+            total++; if (mt[2] === " ") open++;
+            var row = document.createElement("label"); row.className = "task";
+            var cb = document.createElement("input"); cb.type = "checkbox";
+            cb.checked = mt[2].toLowerCase() === "x";
+            if (mt[3]) {
+              var sev = document.createElement("span");
+              sev.className = "sev " + mt[3].toLowerCase(); sev.textContent = mt[3];
+              row.appendChild(cb); row.appendChild(sev);
+            } else {
+              row.appendChild(cb);
+            }
+            var txt = document.createElement("span");
+            txt.textContent = mt[4];
+            if (cb.checked) txt.className = "done";
+            cb.onchange = function () {
+              lines[i] = mt[1] + "[" + (cb.checked ? "x" : " ") + "] " + (mt[3] ? "[" + mt[3] + "] " : "") + mt[4];
+              render(); save();
+            };
+            row.appendChild(txt); root.appendChild(row);
+          } else {
+            var p = document.createElement("div"); p.className = "line";
+            p.textContent = line;
+            root.appendChild(p);
+          }
+        });
+        document.getElementById("bar").textContent = open + " open / " + total + " findings";
+      }
+
+      send({ type: "cheers:ready" });
+    </script>
+  </body>
+</html>

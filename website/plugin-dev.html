@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Workbench Plugin Development — Cheers</title>
+<meta name="description" content="How to build a Cheers workbench renderer plugin: a single sandboxed HTML file with an embedded manifest, talking to the host over a small postMessage protocol." />
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --bg-soft: #f3f0e9;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --ink-soft: #55524b;
+    --ink-faint: #8a857c;
+    --border: #e7e2d7;
+    --accent: #c77d11;
+    --accent-strong: #a5650a;
+    --accent-tint: #fbeccf;
+    --code-bg: #1b1e24;
+    --code-ink: #e6e1d6;
+    --shadow: 0 1px 2px rgba(20,16,8,.04), 0 8px 24px rgba(20,16,8,.06);
+    --radius: 14px;
+    --maxw: 880px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"] {
+      --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
+      --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
+      --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
+      --code-bg: #0a0c10; --code-ink: #e6e1d6;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
+    --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
+    --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
+    --code-bg: #0a0c10; --code-ink: #e6e1d6;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-strong); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3 { line-height: 1.25; letter-spacing: -0.02em; }
+  code { font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace; font-size: .92em; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  header.nav {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; gap: 20px; height: 62px; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--ink); }
+  .brand .glass { font-size: 22px; }
+  .nav-links { display: flex; gap: 22px; margin-left: auto; }
+  .nav-links a { color: var(--ink-soft); font-size: 14.5px; font-weight: 500; }
+  .nav-links a:hover { color: var(--ink); text-decoration: none; }
+  .nav-actions { display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 9px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); color: var(--ink-soft); font-size: 16px;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--accent); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 14.5px;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #1a1305; }
+  .btn-primary:hover { background: var(--accent-strong); text-decoration: none; color: #1a1305; }
+  @media (max-width: 760px) { .nav-links { display: none; } }
+
+  article { padding: 48px 0 70px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12.5px; font-weight: 700; color: var(--accent-strong); }
+  article h1 { font-size: clamp(28px, 5vw, 42px); margin: 10px 0 12px; }
+  p.lead { font-size: 17.5px; color: var(--ink-soft); margin: 0 0 8px; }
+  article h2 { font-size: 24px; margin: 44px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+  article h3 { font-size: 18px; margin: 26px 0 8px; }
+  article p, article li { color: var(--ink-soft); font-size: 15.5px; }
+  article strong { color: var(--ink); }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 14px 0; }
+  th { text-align: left; color: var(--ink); font-weight: 650; padding: 8px 10px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--ink-soft); vertical-align: top; }
+  td code, th code { white-space: nowrap; }
+
+  pre.code {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 12px;
+    padding: 20px 22px; overflow-x: auto; font-size: 13px; line-height: 1.65; margin: 14px 0;
+    border: 1px solid #00000030;
+    font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre.code .c { color: #8a9bb0; }
+  pre.code .p { color: #e8a33d; }
+
+  .callout {
+    background: var(--accent-tint); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 12px; padding: 14px 18px; margin: 16px 0; font-size: 14.5px; color: var(--ink-soft);
+  }
+  .callout strong { color: var(--accent-strong); }
+
+  .docs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 16px 0; }
+  @media (max-width: 760px) { .docs-grid { grid-template-columns: 1fr; } }
+  .doc {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+  .doc:hover { border-color: var(--accent); text-decoration: none; }
+  .doc .dt { font-weight: 650; color: var(--ink); font-size: 14.5px; }
+  .doc .dd { color: var(--ink-soft); font-size: 13px; }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 36px 0;
+    color: var(--ink-faint); font-size: 14px;
+  }
+  .foot-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .foot-links a { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="./index.html"><span class="glass">🍻</span> Cheers</a>
+    <nav class="nav-links">
+      <a href="./index.html#features">Features</a>
+      <a href="./index.html#developers">For Developers</a>
+      <a href="./index.html#quickstart">Quick Start</a>
+      <a href="./index.html#docs">Docs</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light and dark theme">◐</button>
+      <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<article>
+  <div class="wrap">
+    <div class="eyebrow">Developer Guide</div>
+    <h1>Workbench plugin development</h1>
+    <p class="lead">A Cheers workbench plugin is <strong>one sandboxed HTML file</strong> that renders a channel file
+      as an interactive UI — a checklist, a paper tracker, a review board — and writes edits back.
+      No build step, no SDK: an embedded JSON manifest plus a small <code>postMessage</code> protocol.</p>
+
+    <h2 id="model">1. Mental model: renderers are CSS for files</h2>
+    <ul>
+      <li>A <strong>file</strong> is pure content (Markdown first). It never declares which renderer to use.</li>
+      <li>A <strong>renderer plugin</strong> carries all the judgment — <em>what it accepts, how it parses, how it draws</em> —
+        and can save edits back to that one file.</li>
+      <li>An <strong>environment template</strong> only seeds initial files; it never references a renderer.</li>
+    </ul>
+    <p>Renderers can be narrow ("markdown checklists with <code>- [ ]</code> lines") or broad. Small, focused
+      renderers coexist, like CSS rules that each match a specific selector.</p>
+
+    <h2 id="anatomy">2. Anatomy of a plugin</h2>
+    <p>A single <code>.html</code> file containing:</p>
+    <ol>
+      <li>an <strong>embedded manifest</strong> — parsed with <code>DOMParser</code> on upload, never executed;</li>
+      <li>your rendering logic — vanilla JS or bundled framework code, all inlined;</li>
+      <li><code>postMessage</code> calls to talk to the host.</li>
+    </ol>
+    <p>It runs in an <code>&lt;iframe sandbox="allow-scripts"&gt;</code> with an <strong>opaque (null) origin</strong>:
+      it cannot read the host's token, cookies, or localStorage, and it can only reach the one file the host assigns to it.</p>
+
+<pre class="code">&lt;script type="application/json" id="cheers-plugin"&gt;
+{
+  "id": "md-checklist",
+  "title": "Markdown checklist",
+  "renderers": [
+    { "id": "checklist", "title": "Checklist", "match": { "format": "markdown" } }
+  ]
+}
+&lt;/script&gt;</pre>
+
+    <div class="tablewrap"><table>
+      <tr><th>Manifest field</th><th>Meaning</th></tr>
+      <tr><td><code>id</code></td><td>Globally unique plugin id (primary key on install)</td></tr>
+      <tr><td><code>title</code></td><td>Human-readable name</td></tr>
+      <tr><td><code>renderers[]</code></td><td>Renderers this plugin provides (one or more)</td></tr>
+      <tr><td><code>renderers[].match.format</code></td><td><code>markdown</code> / <code>json</code> / <code>toml</code> / <code>xml</code> / <code>text</code></td></tr>
+      <tr><td><code>renderers[].match.glob</code></td><td>Optional path narrowing, e.g. <code>"reviews/*.md"</code></td></tr>
+      <tr><td><code>renderers[].match.requireAll</code> / <code>requireAny</code></td><td>Content must contain all / at least one of these substrings</td></tr>
+      <tr><td><code>renderers[].match.jsonHas</code></td><td>JSON only: parsed object must have all these top-level keys</td></tr>
+    </table></div>
+
+    <div class="callout"><strong>Two-layer acceptance.</strong> <code>match</code> is a cheap host-side pre-filter
+      (your sandbox is not started). The final verdict is yours at runtime: when <code>cheers:render</code> arrives,
+      actually parse the content — if it doesn't fit, reply <code>cheers:unsupported {reason}</code>.</div>
+
+    <h2 id="protocol">3. The postMessage protocol</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Direction</th><th><code>type</code></th><th>Payload</th><th>When</th></tr>
+      <tr><td>plugin → host</td><td><code>cheers:ready</code></td><td>—</td><td>iframe loaded; "assign me work"</td></tr>
+      <tr><td>host → plugin</td><td><code>cheers:render</code></td><td><code>{ path, format, content, version, rendererId }</code></td><td>Assigns <strong>one</strong> file; re-sent when it changes externally</td></tr>
+      <tr><td>plugin → host</td><td><code>cheers:unsupported</code></td><td><code>{ reason? }</code></td><td>Runtime verdict: can't render this content</td></tr>
+      <tr><td>plugin → host</td><td><code>cheers:save</code></td><td><code>{ content }</code></td><td>Write the assigned file back</td></tr>
+      <tr><td>host → plugin</td><td><code>cheers:saved</code></td><td><code>{ ok, version, error? }</code></td><td>Optimistic-lock result; on <code>ok</code>, update your <code>version</code></td></tr>
+      <tr><td>plugin → host</td><td><code>cheers:resource</code></td><td><code>{ reqId, resource, params }</code></td><td>Read-only channel info (whitelisted)</td></tr>
+      <tr><td>host → plugin</td><td><code>cheers:resource:result</code></td><td><code>{ reqId, ok, data|error }</code></td><td>Resource read result</td></tr>
+    </table></div>
+    <ul>
+      <li><strong>Single-file capability.</strong> One <code>cheers:render</code> = one file. You can only render and save that <code>path</code>.</li>
+      <li><strong>Optimistic locking.</strong> On a version conflict, <code>cheers:saved.ok=false</code> and the host re-sends a fresh <code>cheers:render</code> — just re-render.</li>
+      <li><strong>Safe rendering.</strong> <code>content</code> is untrusted (it may come from a bot or another member).
+        Use <code>textContent</code> or controlled form values — <strong>never concatenate into <code>innerHTML</code></strong>.</li>
+    </ul>
+
+    <h2 id="skeleton">4. Minimal skeleton</h2>
+<pre class="code">&lt;!doctype html&gt;
+&lt;html&gt;
+&lt;head&gt;
+  &lt;meta charset="utf-8" /&gt;
+  &lt;script type="application/json" id="cheers-plugin"&gt;
+    { "id": "my-plugin", "title": "My plugin",
+      "renderers": [{ "id": "main", "title": "My renderer", "match": { "format": "markdown" } }] }
+  &lt;/script&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;div id="root"&gt;&lt;/div&gt;
+  &lt;script&gt;
+    var ASSIGN = null;
+    window.addEventListener("message", function (e) {
+      var m = e.data; if (!m || typeof m !== "object") return;
+      if (m.type === "cheers:render") {
+        ASSIGN = m;
+        <span class="c">// 1. parse m.content — if it doesn't fit, bail out:</span>
+        <span class="c">//    parent.postMessage({ type: "cheers:unsupported", reason: "…" }, "*");</span>
+        <span class="c">// 2. draw UI (textContent only for untrusted text)</span>
+        <span class="c">// 3. on edit:</span>
+        <span class="c">//    parent.postMessage({ type: "cheers:save", content: newContent }, "*");</span>
+      } else if (m.type === "cheers:saved") {
+        if (m.ok) ASSIGN.version = m.version;
+      }
+    });
+    parent.postMessage({ type: "cheers:ready" }, "*");
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+
+    <h2 id="examples">5. Working examples</h2>
+    <p>Ready to upload as-is (Settings → Workbench extensions → upload the <code>.html</code>):</p>
+    <div class="docs-grid">
+      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/md-checklist.plugin.html">
+        <span class="dt">✅ md-checklist</span>
+        <span class="dd">Markdown todos → interactive checklist; checking writes back to the file.</span>
+      </a>
+      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/lit-review.plugin.html">
+        <span class="dt">🔬 lit-review</span>
+        <span class="dd">Paper-tracker table over <code>{"papers": []}</code> JSON — status dropdown, star ratings.</span>
+      </a>
+      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/code-review.plugin.html">
+        <span class="dt">🧑‍💻 code-review</span>
+        <span class="dd">Markdown review findings with P0/P1/P2 severity badges and progress bar.</span>
+      </a>
+    </div>
+    <p>Matching environment templates (Workbench drawer → upload the <code>.json</code>):
+      <a href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/md-demo.template.json">md-demo</a> ·
+      <a href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/lit-review.template.json">lit-review</a> ·
+      <a href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/code-project.template.json">code-project</a>.
+      Full index: <a href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/examples/README.md">examples README</a>.</p>
+
+    <h2 id="security">6. Security model</h2>
+    <ol>
+      <li><strong>Opaque origin</strong> — <code>sandbox="allow-scripts"</code> without <code>allow-same-origin</code>: the plugin cannot steal host credentials.</li>
+      <li><strong>Single-file capability</strong> — the host proxy pins the plugin to the one assigned path; server-side channel-role auth is unchanged.</li>
+      <li><strong>Inert manifest</strong> — parsed with <code>DOMParser</code>, never executed.</li>
+    </ol>
+    <div class="callout"><strong>Note:</strong> the sandbox isolates tokens and DOM, not network — that is why the
+      channel-resource whitelist is read-only and conservative, and plugins are <strong>admin-installed</strong>
+      (the installer vouches for them).</div>
+
+    <h2 id="install">7. Install &amp; bind</h2>
+    <ul>
+      <li><strong>Install</strong> (admin): Settings → Workbench extensions → upload the <code>.html</code>.</li>
+      <li><strong>Bind</strong>: open a file in the Files panel and pick a renderer from the dropdown; the choice
+        persists per path in <code>.workbench.json</code>. Candidates are ordered CSS-style — the most specific
+        <code>match</code> first — and the user's explicit choice always wins. Bindings never live in the file itself.</li>
+    </ul>
+
+    <h2 id="more">Read more</h2>
+    <div class="docs-grid">
+      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/developer/PLUGIN_DEVELOPMENT.md">
+        <span class="dt">📖 Full guide (English)</span>
+        <span class="dd">This guide in the repo, kept in sync with the code.</span>
+      </a>
+      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/RENDERER_PLUGIN.md">
+        <span class="dt">📐 Design original (中文)</span>
+        <span class="dd">The renderer-plugin design doc with full rationale.</span>
+      </a>
+      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/WORKBENCH.md">
+        <span class="dt">🗂️ Workbench architecture</span>
+        <span class="dd">Files, views, templates, and how renderers fit in.</span>
+      </a>
+    </div>
+  </div>
+</article>
+
+<footer>
+  <div class="foot-inner">
+    <div>🍻 <strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
+    <div class="foot-links">
+      <a href="./index.html">Home</a>
+      <a href="https://github.com/haowei2000/Cheers">GitHub</a>
+      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">License</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Theme toggle: auto → light → dark, persisted (same key as index.html).
+  (function () {
+    var root = document.documentElement;
+    var saved = localStorage.getItem("cheers-theme");
+    if (saved) root.setAttribute("data-theme", saved);
+    document.getElementById("themeToggle").addEventListener("click", function () {
+      var order = ["auto", "light", "dark"];
+      var cur = root.getAttribute("data-theme") || "auto";
+      var next = order[(order.indexOf(cur) + 1) % order.length];
+      root.setAttribute("data-theme", next);
+      localStorage.setItem("cheers-theme", next);
+      this.title = "Theme: " + next + " (click to change)";
+    });
+  })();
+</script>
+</body>
+</html>
