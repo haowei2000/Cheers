@@ -391,16 +391,62 @@ fn describe_plan(update: &Value) -> SessionUpdateTrace {
     }
 }
 
+/// Snapshot fields we mirror to the gateway (stored under
+/// `connector_control.options.options`). PATCH semantics: a field is included
+/// only when the source payload actually carries it, so a later
+/// `available_commands_update` can never null out a previously-reported
+/// `configOptions` (the gateway merges field-wise).
+const OPTIONS_REPORT_FIELDS: &[&str] = &[
+    "configOptions",
+    "modes",
+    "models",
+    "availableCommands",
+    "currentModeId",
+    "currentModelId",
+];
+
 pub(super) fn normalize_config_options_report(update: &Value) -> Value {
-    json!({
-        "source": "acp",
-        "updatedAt": Utc::now().to_rfc3339(),
-        "sessionUpdate": update.get("sessionUpdate").cloned(),
-        "configOptions": update.get("configOptions").cloned(),
-        "modes": update.get("modes").cloned(),
-        "availableCommands": update.get("availableCommands").cloned(),
-        "currentModeId": update.get("currentModeId").cloned(),
-    })
+    let mut out = serde_json::Map::new();
+    out.insert("source".into(), json!("acp"));
+    out.insert("updatedAt".into(), json!(Utc::now().to_rfc3339()));
+    if let Some(kind) = update.get("sessionUpdate") {
+        out.insert("sessionUpdate".into(), kind.clone());
+    }
+    for field in OPTIONS_REPORT_FIELDS {
+        if let Some(v) = update.get(field) {
+            if !v.is_null() {
+                out.insert((*field).to_string(), v.clone());
+            }
+        }
+    }
+    Value::Object(out)
+}
+
+/// Normalize a `session/new` / `session/load` RESPONSE into the same report
+/// shape as [`normalize_config_options_report`]. This is the agent's INITIAL
+/// advertisement (configOptions / modes / models / availableCommands) — before
+/// this report existed it was silently dropped, so agents that never re-send a
+/// `session/update` (e.g. codex-acp's model list) stayed invisible to the
+/// platform. The response nests `currentModeId`/`currentModelId` inside
+/// `modes`/`models`; flatten them so readers see one shape.
+pub(super) fn normalize_session_snapshot_report(response: &Value) -> Value {
+    let mut report = normalize_config_options_report(response);
+    if let Some(obj) = report.as_object_mut() {
+        obj.insert("sessionUpdate".into(), json!("session_snapshot"));
+        for (state, current_key) in [("modes", "currentModeId"), ("models", "currentModelId")] {
+            if obj.contains_key(current_key) {
+                continue;
+            }
+            if let Some(id) = response
+                .get(state)
+                .and_then(|s| s.get(current_key))
+                .filter(|v| !v.is_null())
+            {
+                obj.insert(current_key.to_string(), id.clone());
+            }
+        }
+    }
+    report
 }
 
 /// Locate codex's `_meta.codex.params` blob, which carries the richest, most
@@ -580,6 +626,51 @@ pub(super) fn resolve_mcp_server_command() -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn config_options_report_omits_absent_fields() {
+        // available_commands_update carries NO configOptions — the report must
+        // not include a null configOptions that would clobber a prior snapshot.
+        let update = json!({
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": [{"name": "review"}],
+        });
+        let report = normalize_config_options_report(&update);
+        assert_eq!(report["sessionUpdate"], "available_commands_update");
+        assert_eq!(report["availableCommands"][0]["name"], "review");
+        assert!(report.get("configOptions").is_none());
+        assert!(report.get("modes").is_none());
+        assert!(report.get("models").is_none());
+    }
+
+    #[test]
+    fn session_snapshot_report_extracts_initial_advertisement() {
+        // A codex-style session/new response: models via the native model-state
+        // API, modes as SessionModeState, no configOptions.
+        let response = json!({
+            "sessionId": "s-1",
+            "modes": {
+                "currentModeId": "auto",
+                "availableModes": [{"id": "auto"}, {"id": "read-only"}],
+            },
+            "models": {
+                "currentModelId": "gpt-5-codex",
+                "availableModels": [
+                    {"modelId": "gpt-5-codex", "name": "GPT-5 Codex"},
+                    {"modelId": "gpt-5", "name": "GPT-5"},
+                ],
+            },
+            "configOptions": null,
+        });
+        let report = normalize_session_snapshot_report(&response);
+        assert_eq!(report["sessionUpdate"], "session_snapshot");
+        assert_eq!(report["models"]["currentModelId"], "gpt-5-codex");
+        // Nested current ids are flattened to the update-shaped top level.
+        assert_eq!(report["currentModeId"], "auto");
+        assert_eq!(report["currentModelId"], "gpt-5-codex");
+        // Null configOptions stays OUT (patch semantics).
+        assert!(report.get("configOptions").is_none());
+    }
 
     fn options() -> Value {
         json!({

@@ -192,12 +192,39 @@ impl RuntimeContext {
                 .await?;
             return Ok(());
         };
-        let result = self
+        let mut result = self
             .adapter
             .lock()
             .await
             .set_config_option(&acp_session_id, &config_id, &value)
             .await;
+        // "model" has a native ACP twin: agents that predate the config-options
+        // extension (e.g. older codex-acp) only accept `session/set_model` —
+        // retry there before reporting failure. Same L0 envelope: the id
+        // "model" already passed config_option_allowed above.
+        if result.is_err() && config_id == "model" {
+            let native = self
+                .adapter
+                .lock()
+                .await
+                .set_model(&acp_session_id, &value)
+                .await;
+            match native {
+                Ok(()) => {
+                    tracing::info!(
+                        account = %self.account_id,
+                        session = %acp_session_id,
+                        value = %value,
+                        "applied model via native session/set_model fallback"
+                    );
+                    result = Ok(Value::Null);
+                }
+                Err(err) => tracing::warn!(
+                    account = %self.account_id,
+                    "session/set_model fallback also failed: {err}"
+                ),
+            }
+        }
         match result {
             Ok(options) => {
                 self.io

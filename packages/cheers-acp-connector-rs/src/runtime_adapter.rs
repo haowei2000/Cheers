@@ -104,6 +104,11 @@ pub trait RuntimeAdapter: Send {
     ) -> anyhow::Result<Value>;
     /// Set the session mode via ACP `session/set_mode` (session-targeted).
     async fn set_mode(&mut self, session_id: &str, mode: &str) -> anyhow::Result<()>;
+    /// Select the session model via the ACP native model-state API
+    /// (`session/set_model`). Fallback for agents (e.g. older codex-acp) that
+    /// expose models only through `models`/`session/set_model` rather than a
+    /// `configOptions` entry with id "model".
+    async fn set_model(&mut self, session_id: &str, model_id: &str) -> anyhow::Result<()>;
     async fn apply_settings(
         &mut self,
         settings: &ConnectorControlSettings,

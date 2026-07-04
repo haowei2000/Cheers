@@ -134,6 +134,62 @@ pub fn dedup_mode_config_options(
     options
 }
 
+/// Overlay the ACP native model-state API onto the advertised config options:
+/// when the snapshot (`connector_control.options.options`) carries `models`
+/// (SessionModelState: `availableModels` / `currentModelId`) but no config
+/// option with id/category "model", synthesize a select option so the owner UI
+/// gets a model dropdown for agents (e.g. older codex-acp) that expose models
+/// only via `session/set_model`. The synthesized id is "model" — the same id
+/// the connector's L0 `allowed_config_options` whitelists, and its set path
+/// falls back to `session/set_model` when `session/set_config_option` fails.
+pub fn overlay_model_state(snapshot: &serde_json::Value, mut options: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    use serde_json::{json, Value};
+    let has_model = options.iter().any(|o| {
+        let field = |k: &str| o.get(k).and_then(Value::as_str);
+        field("id") == Some("model") || field("category") == Some("model")
+    });
+    if has_model {
+        return options;
+    }
+    let Some(models) = snapshot.get("models") else {
+        return options;
+    };
+    let values: Vec<Value> = models
+        .get("availableModels")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|m| {
+                    let id = m.get("modelId").and_then(Value::as_str)?;
+                    Some(json!({
+                        "value": id,
+                        "name": m.get("name").and_then(Value::as_str).unwrap_or(id),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if values.is_empty() {
+        return options;
+    }
+    // The flattened top-level currentModelId (session snapshot / current_model_update)
+    // wins over the possibly-stale one nested in the models state.
+    let current = snapshot
+        .get("currentModelId")
+        .or_else(|| models.get("currentModelId"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    options.push(json!({
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": current,
+        "options": values,
+    }));
+    options
+}
+
 /// Inputs for [`render_toml`]. `account_id` is the TOML table key under
 /// `[accounts.<id>...]` and the daemon `--name`; it is sanitized for you.
 pub struct RenderParams<'a> {
@@ -370,6 +426,47 @@ mod tests {
         let generic = dedup_mode_config_options("generic", opts());
         assert_eq!(generic.len(), 3);
         assert!(generic.iter().any(|o| o["id"] == "mode"));
+    }
+
+    #[test]
+    fn overlay_model_state_synthesizes_model_option() {
+        // codex-style snapshot: models via the native model-state API, no
+        // configOptions → a "model" select option is synthesized.
+        let snapshot = serde_json::json!({
+            "models": {
+                "currentModelId": "gpt-5-codex",
+                "availableModels": [
+                    {"modelId": "gpt-5-codex", "name": "GPT-5 Codex"},
+                    {"modelId": "gpt-5"},
+                ],
+            },
+        });
+        let out = overlay_model_state(&snapshot, Vec::new());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["id"], "model");
+        assert_eq!(out[0]["currentValue"], "gpt-5-codex");
+        assert_eq!(out[0]["options"][0]["value"], "gpt-5-codex");
+        // A missing name falls back to the model id.
+        assert_eq!(out[0]["options"][1]["name"], "gpt-5");
+
+        // Flattened top-level currentModelId (from a current_model_update)
+        // wins over the nested one.
+        let updated = serde_json::json!({
+            "currentModelId": "gpt-5",
+            "models": snapshot["models"].clone(),
+        });
+        let out = overlay_model_state(&updated, Vec::new());
+        assert_eq!(out[0]["currentValue"], "gpt-5");
+
+        // An advertised "model" configOption (claude-style) is left alone —
+        // no duplicate synthesized option.
+        let advertised = vec![serde_json::json!({"id": "model", "options": []})];
+        let out = overlay_model_state(&snapshot, advertised);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].get("currentValue").is_none());
+
+        // No models state and no options → stays empty.
+        assert!(overlay_model_state(&serde_json::json!({}), Vec::new()).is_empty());
     }
 
     #[test]

@@ -413,6 +413,30 @@ impl AcpAdapter {
                     value = %value,
                     "applied ACP config option"
                 ),
+                // "model" has a native ACP twin: agents that predate the
+                // config-options extension (e.g. older codex-acp) only accept
+                // `session/set_model` — retry there before giving up.
+                Err(err) if config_id == "model" => {
+                    match self
+                        .request(
+                            "session/set_model",
+                            json!({ "sessionId": session_id, "modelId": value }),
+                            self.request_timeout_ms(),
+                        )
+                        .await
+                    {
+                        Ok(_) => tracing::info!(
+                            account = %self.account_id,
+                            session = %session_id,
+                            value = %value,
+                            "applied model via native session/set_model fallback"
+                        ),
+                        Err(err2) => tracing::warn!(
+                            account = %self.account_id,
+                            "model rejected by both set_config_option ({err}) and set_model ({err2})"
+                        ),
+                    }
+                }
                 Err(err) => tracing::warn!(
                     account = %self.account_id,
                     config_id = %config_id,
@@ -709,6 +733,16 @@ impl RuntimeAdapter for AcpAdapter {
         self.request(
             "session/set_mode",
             json!({ "sessionId": session_id, "modeId": mode }),
+            self.request_timeout_ms(),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn set_model(&mut self, session_id: &str, model_id: &str) -> anyhow::Result<()> {
+        self.request(
+            "session/set_model",
+            json!({ "sessionId": session_id, "modelId": model_id }),
             self.request_timeout_ms(),
         )
         .await

@@ -271,10 +271,13 @@ async fn gate_initiate(
 }
 
 /// The agent's advertised ACP config options (connector_control.options.options.configOptions),
-/// minus the `mode` option for preset-backed agents (mode is a first-class posture control,
-/// changed via set_mode — see `connector_config::dedup_mode_config_options`).
+/// plus a synthesized "model" option for agents that expose models only via the ACP
+/// native model-state API (`models` + `session/set_model` — see
+/// `connector_config::overlay_model_state`), minus the `mode` option for preset-backed
+/// agents (mode is a first-class posture control, changed via set_mode — see
+/// `connector_config::dedup_mode_config_options`).
 async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value> {
-    let options = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
+    let snapshot = sqlx::query("SELECT binding_config FROM bot_accounts WHERE bot_id = $1")
         .bind(bot_id.to_string())
         .fetch_optional(&state.db)
         .await
@@ -288,12 +291,16 @@ async fn advertised_config_options(state: &AppState, bot_id: Uuid) -> Vec<Value>
         .and_then(|b| {
             b.get("connector_control")?
                 .get("options")?
-                .get("options")?
-                .get("configOptions")?
-                .as_array()
+                .get("options")
                 .cloned()
         })
+        .unwrap_or_else(|| json!({}));
+    let options = snapshot
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .cloned()
         .unwrap_or_default();
+    let options = connector_config::overlay_model_state(&snapshot, options);
     let agent_type = bot_agent_type(state, bot_id).await;
     connector_config::dedup_mode_config_options(&agent_type, options)
 }

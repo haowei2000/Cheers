@@ -114,15 +114,23 @@ async fn load_connector_control(state: &AppState, bot_id: &str) -> Result<Value,
 /// The agent's advertised ACP config options array, as last reported by the
 /// connector. The connector stores a composite session snapshot at
 /// `connector_control.options.options`; the ACP `configOptions` array lives inside
-/// it (sibling to `modes`/`availableCommands`). `None` if the agent advertises none
-/// (e.g. it uses the older `modes` API → `configOptions` is null) — callers then
-/// skip the friendly pre-validation (the connector re-validates regardless).
+/// it (sibling to `modes`/`models`/`availableCommands`). Agents that expose models
+/// only via the native model-state API (`models` + `session/set_model`, e.g. older
+/// codex-acp) get a synthesized "model" select option overlaid. `None` if the agent
+/// advertises nothing at all — callers then skip the friendly pre-validation (the
+/// connector re-validates regardless).
 fn advertised_options(cc: &Value) -> Option<Vec<Value>> {
-    cc.get("options")
-        .and_then(|o| o.get("options"))
-        .and_then(|o| o.get("configOptions"))
+    let snapshot = cc.get("options").and_then(|o| o.get("options"))?;
+    let base = snapshot
+        .get("configOptions")
         .and_then(Value::as_array)
-        .cloned()
+        .cloned();
+    let had_config_options = base.is_some();
+    let merged = connector_config::overlay_model_state(snapshot, base.unwrap_or_default());
+    if merged.is_empty() && !had_config_options {
+        return None;
+    }
+    Some(merged)
 }
 
 // ── PUT /bots/:bot_id/permissions/posture ───────────────────────────────────

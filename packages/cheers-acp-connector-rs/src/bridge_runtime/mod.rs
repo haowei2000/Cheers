@@ -1758,12 +1758,12 @@ impl RuntimeContext {
         if let Some(session_id) = existing {
             let supports_load = self.adapter.lock().await.supports_load_session();
             if supports_load && self.config.policy.sessions.load {
-                let mut adapter = self.adapter.lock().await;
-                if adapter
-                    .load_session(&session_id, options.clone())
-                    .await
-                    .is_ok()
-                {
+                let load_result = {
+                    let mut adapter = self.adapter.lock().await;
+                    adapter.load_session(&session_id, options.clone()).await
+                };
+                if let Ok(loaded) = load_result {
+                    self.report_session_snapshot(&loaded.metadata).await;
                     self.report_provider_session(&task.provider_session_key, &session_id)
                         .await?;
                     return Ok(session_id);
@@ -1779,6 +1779,7 @@ impl RuntimeContext {
             let mut adapter = self.adapter.lock().await;
             adapter.new_session(options).await?
         };
+        self.report_session_snapshot(&new_session.metadata).await;
         self.state
             .lock()
             .await
@@ -1791,6 +1792,31 @@ impl RuntimeContext {
         self.report_provider_session(&task.provider_session_key, &new_session.session_id)
             .await?;
         Ok(new_session.session_id)
+    }
+
+    /// Mirror the agent's INITIAL advertisement (the `session/new`/`session/load`
+    /// response's configOptions / modes / models / availableCommands) to the
+    /// gateway as a `config_options` control frame. Best-effort: the snapshot is
+    /// a UI surface, never worth failing the session over.
+    async fn report_session_snapshot(&self, metadata: &Value) {
+        let report = normalize_session_snapshot_report(metadata);
+        // Nothing advertised beyond the envelope keys → nothing to report.
+        let has_payload = report
+            .as_object()
+            .is_some_and(|o| o.keys().any(|k| k != "source" && k != "updatedAt" && k != "sessionUpdate"));
+        if !has_payload {
+            return;
+        }
+        if let Err(err) = self
+            .io
+            .send_control(ControlOutbound::ConfigOptions {
+                v: BRIDGE_PROTOCOL_VERSION,
+                options: report,
+            })
+            .await
+        {
+            tracing::warn!(account = %self.account_id, "session snapshot report failed: {err}");
+        }
     }
 
     async fn report_provider_session(
@@ -1973,7 +1999,10 @@ impl RuntimeContext {
             .unwrap_or("unknown");
         if matches!(
             kind,
-            "config_option_update" | "current_mode_update" | "available_commands_update"
+            "config_option_update"
+                | "current_mode_update"
+                | "current_model_update"
+                | "available_commands_update"
         ) {
             self.io
                 .send_control(ControlOutbound::ConfigOptions {

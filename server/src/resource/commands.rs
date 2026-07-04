@@ -20,11 +20,23 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         .ok_or_else(|| super::resource_error("BAD_REQUEST", "missing channel_id"))?;
     authorize_channel_read(db, principal, channel_id).await?;
 
+    // Per-channel rows (recorded from mid-turn `available_commands_update`
+    // events) win; the bot-level connector snapshot — the INITIAL advertisement
+    // reported at `session/new` — is the fallback for channel bots that never
+    // re-advertised inside this channel. Without the fallback the palette stays
+    // empty until an agent happens to update its commands mid-turn.
     let rows = sqlx::query(
-        "SELECT bot_id, commands
-         FROM bot_available_commands
-         WHERE channel_id = $1
-         ORDER BY bot_id ASC",
+        "SELECT cm.member_id AS bot_id,
+                COALESCE(
+                    bac.commands,
+                    ba.binding_config #> '{connector_control,options,options,availableCommands}'
+                ) AS commands
+         FROM channel_memberships cm
+         JOIN bot_accounts ba ON ba.bot_id = cm.member_id
+         LEFT JOIN bot_available_commands bac
+                ON bac.channel_id = cm.channel_id AND bac.bot_id = cm.member_id
+         WHERE cm.channel_id = $1 AND cm.member_type = 'bot'
+         ORDER BY cm.member_id ASC",
     )
     .bind(channel_id.to_string())
     .fetch_all(db)
@@ -40,8 +52,9 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
             // `commands` is a JSONB array of AvailableCommand; project each to the
             // read shape, skipping any entry missing a name.
             let commands: Vec<Value> = row
-                .try_get::<Value, _>("commands")
+                .try_get::<Option<Value>, _>("commands")
                 .ok()
+                .flatten()
                 .and_then(|v| v.as_array().cloned())
                 .unwrap_or_default()
                 .into_iter()

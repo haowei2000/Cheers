@@ -305,11 +305,53 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 }
             }
         }
-        ftype @ ("config_status" | "config_options" | "config_option_status") => {
+        "config_options" => {
+            // Advertised-options snapshot (configOptions / modes / models /
+            // availableCommands / currentModeId / currentModelId). PATCH-merge:
+            // each report carries only the fields its source event had (e.g. an
+            // available_commands_update has no configOptions), so incoming
+            // fields overlay the stored snapshot instead of replacing it —
+            // otherwise a later commands update would null out the model list.
+            let mut incoming = frame
+                .get("options")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            // Defense against older connectors that still send explicit nulls.
+            incoming.retain(|_, v| !v.is_null());
+            let incoming_str =
+                serde_json::to_string(&Value::Object(incoming)).unwrap_or_else(|_| "{}".into());
+            let v_str = serde_json::to_string(&frame.get("v").cloned().unwrap_or(json!(1)))
+                .unwrap_or_else(|_| "1".into());
+            let result = sqlx::query(
+                "UPDATE bot_accounts SET binding_config = jsonb_set(
+                     jsonb_set(
+                         COALESCE(binding_config, '{}'::jsonb),
+                         '{connector_control}',
+                         COALESCE(binding_config -> 'connector_control', '{}'::jsonb),
+                         true),
+                     '{connector_control,options}',
+                     jsonb_build_object(
+                         'v', $2::jsonb,
+                         'options',
+                         COALESCE(binding_config #> '{connector_control,options,options}',
+                                  '{}'::jsonb) || $3::jsonb),
+                     true)
+                 WHERE bot_id = $1",
+            )
+            .bind(bot_id.to_string())
+            .bind(&v_str)
+            .bind(&incoming_str)
+            .execute(&state.db)
+            .await;
+            if let Err(e) = result {
+                tracing::warn!(bot_id = %bot_id, err = %e, "config options merge failed");
+            }
+        }
+        ftype @ ("config_status" | "config_option_status") => {
             // connector 上报配置状态，统一写入 binding_config.connector_control.*
             let config_key = match ftype {
                 "config_status" => "last_status",
-                "config_options" => "options",
                 "config_option_status" => "last_option_status",
                 _ => return,
             };
