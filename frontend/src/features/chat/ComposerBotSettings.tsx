@@ -16,7 +16,9 @@ export interface MentionedBot {
 }
 
 /**
- * Inline mode/config controls for the bot(s) currently @mentioned in the composer
+ * Inline mode/config controls for the bot(s) currently @mentioned in the composer —
+ * or, when nothing is mentioned, the channel's bots (the parent passes the
+ * fallback set, so the controls are reachable without typing a mention)
  * (docs/arch/SESSION_MODEL.md). The CURRENT mode + config values are always shown
  * for any channel member; whether they're editable is gated per-control by the
  * caller's set_mode / set_config_option INITIATE grant. No grant → the value is

@@ -792,9 +792,16 @@ export function ChannelView({ channel }: Props) {
               value={selectedSessionId}
               onChange={setSelectedSessionId}
             />
+            {/* Settings for the @mentioned bot(s); with no live mention, fall
+                back to the channel's bots so the controls are always reachable
+                (each bot's row self-hides when it advertises nothing). */}
             <ComposerBotSettings
               channelId={channel.channel_id}
-              bots={mentionedBots.map((m) => ({ botId: m.id, name: m.label }))}
+              bots={
+                mentionedBots.length > 0
+                  ? mentionedBots.map((m) => ({ botId: m.id, name: m.label }))
+                  : switcherBots
+              }
               selectedSessionId={selectedSessionId}
             />
           </>
