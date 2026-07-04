@@ -16,11 +16,21 @@ separately under `connector-v*` tags.
   The first-run/quickstart flow is unaffected (it signs in as the seeded
   admin); the Helm dev overlay (`values-dev.yaml`) keeps registration enabled
   for local development.
-- New `TRUST_PROXY_HEADERS` (default `false`): the login/registration/reset
-  rate limiter keys on the peer socket address instead of the spoofable
-  `X-Real-IP`/`X-Forwarded-For`. Deployments where the gateway sits behind a
-  trusted proxy must set it to `true` (the compose TLS overlay and the Helm
-  chart already do) or all clients share one rate-limit bucket.
+- New `TRUST_PROXY_HEADERS` (gateway default `false`): the
+  login/registration/reset rate limiter keys on the peer socket address
+  instead of the spoofable `X-Real-IP`/`X-Forwarded-For`. Deployments where
+  the gateway sits behind a trusted proxy must set it to `true` (the compose
+  templates and the Helm chart already do) or all clients share one
+  rate-limit bucket.
+- **The base docker-compose template now binds the gateway host port to
+  loopback** (`${BACKEND_HOST_BIND:-127.0.0.1}:8000`, the pattern the TLS
+  overlay already used), making the frontend nginx the only external ingress —
+  required for `TRUST_PROXY_HEADERS=true` to be safe. Operators who called
+  `http://<host>:8000` from other machines must now go through the frontend
+  port (nginx proxies `/api` + `/ws`) or explicitly set
+  `BACKEND_HOST_BIND=0.0.0.0` **and** `TRUST_PROXY_HEADERS=false`. Same-host
+  clients and connectors (`http://localhost:8000` / `ws://localhost:8000`)
+  are unaffected.
 - The Helm chart no longer ships a default admin password; installs with
   `secrets.create=true` must set `secrets.adminPassword` (or use
   `values-dev.yaml` for local dev).

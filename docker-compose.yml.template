@@ -12,7 +12,13 @@ services:
         reservations:
           memory: 256M
     ports:
-      - "${GATEWAY_HOST_PORT:-8000}:8000"
+      # Loopback-only: the frontend nginx is the sole external ingress (it
+      # proxies /api + /ws and stamps X-Real-IP). Exposing :8000 to the world
+      # would let clients bypass the proxy and spoof rate-limit headers. The
+      # localhost bind still serves same-host connectors (ws://localhost:8000)
+      # and local debugging; set BACKEND_HOST_BIND=0.0.0.0 ONLY if you accept
+      # header spoofing and also set TRUST_PROXY_HEADERS=false.
+      - "${BACKEND_HOST_BIND:-127.0.0.1}:${GATEWAY_HOST_PORT:-8000}:8000"
     env_file:
       - .env
     environment:
@@ -31,10 +37,11 @@ services:
       - S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-cheers-local-secret-key}
       # Office→PDF preview conversion (Gotenberg)
       - GOTENBERG_URL=${GOTENBERG_URL:-http://gotenberg:3000}
-      # 限流客户端识别：裸 compose 把 gateway 端口直接发布到宿主机，代理头可被
-      # 直连客户端伪造 → 默认不信任（按对端 socket 地址限流）。TLS overlay
-      # (docker-compose.production.tls.yml) 会覆盖为 true。
-      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
+      # 限流客户端识别：gateway 端口只绑定宿主机 loopback（见上），外部流量一律
+      # 经 frontend nginx（它覆写 X-Real-IP）→ 代理头可信、且是区分真实客户端 IP
+      # 的唯一途径 → true。若你把 BACKEND_HOST_BIND 改成 0.0.0.0（gateway 可被
+      # 直连），必须同时把这里改为 false，否则限流可被伪造头绕过。
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-true}
       # 自助注册默认关闭（安全默认）；公开实例显式设为 true。
       - OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
       # SMTP（可选）
