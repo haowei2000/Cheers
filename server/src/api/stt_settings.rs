@@ -67,7 +67,9 @@ pub async fn put_settings(
             ));
         }
         if req.model.trim().is_empty() {
-            return Err(AppError::BadRequest("model is required when enabled".into()));
+            return Err(AppError::BadRequest(
+                "model is required when enabled".into(),
+            ));
         }
     }
     let key = master_key(&state);

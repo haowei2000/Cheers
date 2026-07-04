@@ -1143,10 +1143,13 @@ pub enum DataInbound {
     /// Gateway → connector: browse/read/write the agent's real workspace, confined
     /// to `policy.workspace.allowed_roots`. Connector replies with `workspace_res`
     /// correlated by `req_id`. `op` ∈ { "ls", "read", "write", "validate_cwd",
-    /// "git_status", "git_diff", "git_log", "git_show", "watch", "unwatch" }. The
-    /// git ops are READ-ONLY. `watch` starts a debounced recursive fs watcher on the
-    /// resolved (clamped) dir and streams unsolicited `workspace_event` frames;
-    /// `unwatch` (by `watch_id`) stops it.
+    /// "git_status", "git_diff", "git_log", "git_show", "git_commit_files",
+    /// "workspace_meta", "watch", "unwatch" }. The git ops are READ-ONLY.
+    /// `workspace_meta` describes the workspace policy (allowed/effective roots,
+    /// default_cwd, git availability) without touching the filesystem. `watch`
+    /// starts a debounced recursive fs watcher on the resolved (clamped) dir and
+    /// streams unsolicited `workspace_event` frames; `unwatch` (by `watch_id`)
+    /// stops it.
     #[serde(rename = "workspace_req")]
     WorkspaceReq {
         req_id: String,
@@ -1179,10 +1182,20 @@ pub enum DataInbound {
         /// connector).
         #[serde(default)]
         limit: Option<u32>,
-        /// `op == "git_show"`: the commit ref to show (a hex hash, as emitted by
-        /// `git_log`; validated `^[0-9a-fA-F]{7,64}$` before use as argv).
+        /// `op == "git_log"`: commits to skip before collecting (`--skip`), for
+        /// pagination (clamped to ≤100000 by the connector).
+        #[serde(default)]
+        skip: Option<u32>,
+        /// `op == "git_show" | "git_commit_files"`: the commit ref (a hex hash, as
+        /// emitted by `git_log`; validated `^[0-9a-fA-F]{7,64}$` before use as argv).
         #[serde(default)]
         commit: Option<String>,
+        /// `op == "git_show"`: optional repo-root-relative path filter — limits the
+        /// commit diff to one file (as listed by `git_commit_files`). Validated
+        /// (relative, no `..`, no leading `-`/`:`) and passed as a `:(top)`-anchored
+        /// pathspec after `--`, never as a flag.
+        #[serde(default)]
+        commit_path: Option<String>,
         /// `op == "unwatch"`: the `watch_id` returned by a prior `watch` reply,
         /// identifying the fs watcher to stop.
         #[serde(default)]

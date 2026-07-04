@@ -302,25 +302,91 @@ async fn conflict_snapshot(path: &std::path::Path, max: u64) -> (Option<String>,
     }
 }
 
-/// Best-effort parse of `git status --porcelain=v2 --branch`. Returns
-/// `(branch, ahead, behind, entries)`; the caller also returns the raw stdout, so
-/// this parse is advisory (unrecognized lines are skipped). Entry `xy` is the
-/// two-char status code (`??` untracked, `!!` ignored), `path` the repo-relative
-/// path (rename → the destination path).
-fn parse_status_porcelain_v2(raw: &str) -> (Option<String>, Option<i64>, Option<i64>, Vec<Value>) {
-    let mut branch = None;
-    let mut ahead = None;
-    let mut behind = None;
-    let mut entries: Vec<Value> = Vec::new();
+/// Pagination knobs for `git_log` (`-n` / `--skip`), grouped so the workspace
+/// dispatch signature stays readable as ops grow.
+#[derive(Debug, Clone, Copy, Default)]
+struct GitPageParams {
+    limit: Option<u32>,
+    skip: Option<u32>,
+}
+
+/// Parsed subset of `git status --porcelain=v2 --branch` headers + entries.
+#[derive(Debug, Default)]
+struct GitStatusParse {
+    branch: Option<String>,
+    upstream: Option<String>,
+    ahead: Option<i64>,
+    behind: Option<i64>,
+    entries: Vec<Value>,
+}
+
+/// Validate a repo-root-relative path filter for `git show <commit> -- <pathspec>`
+/// and anchor it with `:(top)` so it matches against the repo root regardless of
+/// which subdirectory `git -C` runs in. The pathspec only FILTERS the commit's own
+/// tree (it can never read the filesystem), but it still must not be interpretable
+/// as a flag or as caller-supplied pathspec magic.
+fn commit_pathspec(path: &str) -> Result<String, (String, String)> {
+    let p = path.trim();
+    let bad = |m: &str| ("E_INVALID".to_string(), m.to_string());
+    if p.is_empty() {
+        return Err(bad("empty commit path"));
+    }
+    if p.len() > 4096 || p.contains('\0') {
+        return Err(bad("invalid commit path"));
+    }
+    if p.starts_with('-') || p.starts_with(':') || p.starts_with('/') || p.starts_with('\\') {
+        return Err(bad("commit path must be repo-relative"));
+    }
+    if p.split('/').any(|seg| seg == "..") {
+        return Err(bad("commit path must not contain '..'"));
+    }
+    Ok(format!(":(top){p}"))
+}
+
+/// Validate a caller-supplied commit ref before use as argv: must be a bare hex
+/// hash (what `git_log` emits). Rejecting anything else blocks a `-`-prefixed
+/// value being read as a git flag (there is no shell, but argv-flag injection
+/// must still be blocked).
+fn validate_hex_commit(commit: Option<&str>) -> Result<&str, (String, String)> {
+    let commit = commit.unwrap_or("").trim();
+    if commit.is_empty() {
+        return Err(("E_BAD_REF".to_string(), "missing commit ref".to_string()));
+    }
+    let is_hex_hash =
+        commit.len() >= 7 && commit.len() <= 64 && commit.bytes().all(|b| b.is_ascii_hexdigit());
+    if !is_hex_hash {
+        return Err((
+            "E_BAD_REF".to_string(),
+            "commit ref must be a hex hash".to_string(),
+        ));
+    }
+    Ok(commit)
+}
+
+/// Best-effort parse of `git status --porcelain=v2 --branch`. The caller also
+/// returns the raw stdout, so this parse is advisory (unrecognized lines are
+/// skipped). Entry `xy` is the two-char status code (`??` untracked, `!!`
+/// ignored), `path` the repo-relative path (rename → the destination path).
+fn parse_status_porcelain_v2(raw: &str) -> GitStatusParse {
+    let mut parsed = GitStatusParse::default();
+    let GitStatusParse {
+        branch,
+        upstream,
+        ahead,
+        behind,
+        entries,
+    } = &mut parsed;
     for line in raw.lines() {
         if let Some(rest) = line.strip_prefix("# branch.head ") {
-            branch = Some(rest.trim().to_string());
+            *branch = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("# branch.upstream ") {
+            *upstream = Some(rest.trim().to_string());
         } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
             for tok in rest.split_whitespace() {
                 if let Some(a) = tok.strip_prefix('+') {
-                    ahead = a.parse().ok();
+                    *ahead = a.parse().ok();
                 } else if let Some(b) = tok.strip_prefix('-') {
-                    behind = b.parse().ok();
+                    *behind = b.parse().ok();
                 }
             }
         } else if line.starts_with('#') {
@@ -329,16 +395,18 @@ fn parse_status_porcelain_v2(raw: &str) -> (Option<String>, Option<i64>, Option<
             entries.push(serde_json::json!({ "xy": "??", "path": rest }));
         } else if let Some(rest) = line.strip_prefix("! ") {
             entries.push(serde_json::json!({ "xy": "!!", "path": rest }));
-        } else if line.starts_with("1 ") || line.starts_with("2 ") {
-            let is_rename = line.starts_with("2 ");
+        } else if line.starts_with("1 ") {
+            // Changed: "1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>"
             let parts: Vec<&str> = line.splitn(9, ' ').collect();
             if parts.len() == 9 {
-                let path = if is_rename {
-                    // Rename/copy: "<path>\t<origPath>"
-                    parts[8].split('\t').next().unwrap_or(parts[8])
-                } else {
-                    parts[8]
-                };
+                entries.push(serde_json::json!({ "xy": parts[1], "path": parts[8] }));
+            }
+        } else if line.starts_with("2 ") {
+            // Rename/copy: "2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\t<origPath>"
+            // — one field MORE than a "1" line (the score) before the path pair.
+            let parts: Vec<&str> = line.splitn(10, ' ').collect();
+            if parts.len() == 10 {
+                let path = parts[9].split('\t').next().unwrap_or(parts[9]);
                 entries.push(serde_json::json!({ "xy": parts[1], "path": path }));
             }
         } else if line.starts_with("u ") {
@@ -349,7 +417,33 @@ fn parse_status_porcelain_v2(raw: &str) -> (Option<String>, Option<i64>, Option<
             }
         }
     }
-    (branch, ahead, behind, entries)
+    parsed
+}
+
+/// Parse `git show --name-status --format=` output into `{status, path, old_path?}`
+/// entries. Lines are `X\tpath` or, for renames/copies, `RNNN\told\tnew`.
+fn parse_name_status(raw: &str) -> Vec<Value> {
+    raw.lines()
+        .filter_map(|line| {
+            let mut cols = line.split('\t');
+            let status = cols.next()?.trim();
+            if status.is_empty() {
+                return None;
+            }
+            let first = cols.next()?;
+            let kind = status.chars().next()?;
+            if matches!(kind, 'R' | 'C') {
+                let dest = cols.next()?;
+                Some(serde_json::json!({
+                    "status": status,
+                    "path": dest,
+                    "old_path": first,
+                }))
+            } else {
+                Some(serde_json::json!({ "status": status, "path": first }))
+            }
+        })
+        .collect()
 }
 
 struct RuntimeContext {
@@ -603,7 +697,9 @@ impl RuntimeContext {
                 roots,
                 staged,
                 limit,
+                skip,
                 commit,
+                commit_path,
                 watch_id,
             } => {
                 let runtime = self.clone();
@@ -617,8 +713,9 @@ impl RuntimeContext {
                             if_etag.as_deref(),
                             &roots,
                             staged.unwrap_or(false),
-                            limit,
+                            GitPageParams { limit, skip },
                             commit.as_deref(),
+                            commit_path.as_deref(),
                             watch_id.as_deref(),
                         )
                         .await
@@ -792,8 +889,9 @@ impl RuntimeContext {
         if_etag: Option<&str>,
         session_roots: &[String],
         staged: bool,
-        log_limit: Option<u32>,
+        page: GitPageParams,
         commit: Option<&str>,
+        commit_path: Option<&str>,
         watch_id: Option<&str>,
     ) -> Result<Value, (String, String, Option<Value>)> {
         const MAX_READ: u64 = 10 * 1024 * 1024;
@@ -822,6 +920,34 @@ impl RuntimeContext {
             let id = watch_id.ok_or_else(|| err("E_INVALID", "watch_id required".into()))?;
             self.shared.lock().await.watches.remove(id);
             return Ok(json!({ "ok": true }));
+        }
+
+        // `workspace_meta` describes this connector's workspace policy so the UI can
+        // render a root picker / explain what a session may use, without probing the
+        // filesystem. It reports both the hard clamp (`allowed_roots`) and the
+        // narrowed view for the given session scope (`effective_roots`), so it never
+        // fails on an empty root set the way the browse ops do.
+        if op == "workspace_meta" {
+            let ws = &self.config.policy.workspace;
+            let to_strings = |roots: &[PathBuf]| -> Vec<String> {
+                roots
+                    .iter()
+                    .map(|p| canonical_path(p).to_string_lossy().to_string())
+                    .collect()
+            };
+            let effective = self.effective_roots(session_roots, true);
+            return Ok(json!({
+                "allowed_roots": to_strings(&ws.allowed_roots),
+                "effective_roots": to_strings(&effective),
+                "default_cwd": ws
+                    .default_cwd
+                    .as_ref()
+                    .map(|p| canonical_path(p).to_string_lossy().to_string()),
+                "backend_may_set_cwd": ws.backend_may_set_cwd,
+                "git_ops": if ws.git_ops == GitOpsMode::Off { "off" } else { "read" },
+                "max_read_bytes": MAX_READ,
+                "max_write_bytes": MAX_WRITE,
+            }));
         }
 
         // Effective roots: narrow to the session's root set when provided, else the
@@ -1163,7 +1289,7 @@ impl RuntimeContext {
             // caller-controlled inputs are the validated in-root directory and, for
             // diff, an optional validated in-root pathspec (a distinct argv element,
             // never interpolated into a shell — no shell is used).
-            "git_status" | "git_diff" | "git_log" | "git_show" => {
+            "git_status" | "git_diff" | "git_log" | "git_show" | "git_commit_files" => {
                 if self.config.policy.workspace.git_ops == GitOpsMode::Off {
                     return Err(err(
                         "E_GIT_DISABLED",
@@ -1196,13 +1322,14 @@ impl RuntimeContext {
                             return Err(err("E_GIT", git_stderr(&out)));
                         }
                         let raw = String::from_utf8_lossy(&out.stdout).to_string();
-                        let (branch, ahead, behind, entries) = parse_status_porcelain_v2(&raw);
+                        let st = parse_status_porcelain_v2(&raw);
                         Ok(serde_json::json!({
                             "raw": raw,
-                            "branch": branch,
-                            "ahead": ahead,
-                            "behind": behind,
-                            "entries": entries,
+                            "branch": st.branch,
+                            "upstream": st.upstream,
+                            "ahead": st.ahead,
+                            "behind": st.behind,
+                            "entries": st.entries,
                         }))
                     }
                     "git_diff" => {
@@ -1233,23 +1360,23 @@ impl RuntimeContext {
                         }))
                     }
                     "git_show" => {
-                        // Required commit ref. The pathspec is ignored — `git_dir`
-                        // (resolved above) locates the repo, exactly like git_status.
-                        let commit = commit.unwrap_or("").trim();
-                        if commit.is_empty() {
-                            return Err(err("E_BAD_REF", "missing commit ref".into()));
+                        // Required commit ref (validated hex hash). The resolved
+                        // `pathspec` from the browse path is ignored — `git_dir`
+                        // locates the repo, exactly like git_status. An optional
+                        // `commit_path` narrows the diff to one file of the commit
+                        // (a `:(top)`-anchored pathspec — it filters the commit's
+                        // tree and can reference files deleted from the worktree).
+                        let commit = validate_hex_commit(commit).map_err(|(c, m)| (c, m, None))?;
+                        let filter = commit_path
+                            .map(commit_pathspec)
+                            .transpose()
+                            .map_err(|(c, m)| (c, m, None))?;
+                        let mut args: Vec<&str> = vec!["show", "--no-color", commit];
+                        if let Some(ps) = filter.as_deref() {
+                            args.push("--");
+                            args.push(ps);
                         }
-                        // VALIDATE before use as argv: must be a bare hex hash (what
-                        // git_log emits). Reject anything else — this blocks a
-                        // `-`-prefixed value being read as a `git show` flag (there is
-                        // no shell, but argv-flag injection must still be blocked).
-                        let is_hex_hash = commit.len() >= 7
-                            && commit.len() <= 64
-                            && commit.bytes().all(|b| b.is_ascii_hexdigit());
-                        if !is_hex_hash {
-                            return Err(err("E_BAD_REF", "commit ref must be a hex hash".into()));
-                        }
-                        let out = run_git(&git_dir, &["show", "--no-color", commit])
+                        let out = run_git(&git_dir, &args)
                             .await
                             .map_err(|(c, m)| (c, m, None))?;
                         if out.stdout.len() as u64 > MAX_READ {
@@ -1260,24 +1387,50 @@ impl RuntimeContext {
                         }
                         Ok(serde_json::json!({
                             "commit": commit,
+                            "path": commit_path,
                             "diff": String::from_utf8_lossy(&out.stdout),
                         }))
                     }
-                    // "git_log"
-                    _ => {
-                        let n = log_limit.unwrap_or(50).clamp(1, 100);
-                        let n_str = n.to_string();
+                    "git_commit_files" => {
+                        // The commit's changed-file list (`--name-status`, no diff
+                        // body) so the UI can render a per-commit file tree without
+                        // fetching the full patch. `--format=` suppresses the header.
+                        let commit = validate_hex_commit(commit).map_err(|(c, m)| (c, m, None))?;
                         let out = run_git(
                             &git_dir,
-                            &[
-                                "log",
-                                "--pretty=format:%H%x1f%an%x1f%aI%x1f%s",
-                                "-n",
-                                &n_str,
-                            ],
+                            &["show", "--no-color", "--name-status", "--format=", commit],
                         )
                         .await
                         .map_err(|(c, m)| (c, m, None))?;
+                        if out.stdout.len() as u64 > MAX_READ {
+                            return Err(err("E_TOO_LARGE", "git show exceeds read cap".into()));
+                        }
+                        if !out.status.success() {
+                            return Err(err("E_GIT", git_stderr(&out)));
+                        }
+                        let files = parse_name_status(&String::from_utf8_lossy(&out.stdout));
+                        Ok(serde_json::json!({ "commit": commit, "files": files }))
+                    }
+                    // "git_log"
+                    _ => {
+                        let n = page.limit.unwrap_or(50).clamp(1, 100);
+                        let n_str = n.to_string();
+                        // `--skip` pages older history; the clamp bounds the work git
+                        // does for a hostile/looping client without limiting real use.
+                        let skip = page.skip.unwrap_or(0).min(100_000);
+                        let skip_str = format!("--skip={skip}");
+                        let mut args: Vec<&str> = vec![
+                            "log",
+                            "--pretty=format:%H%x1f%an%x1f%aI%x1f%s",
+                            "-n",
+                            &n_str,
+                        ];
+                        if skip > 0 {
+                            args.push(&skip_str);
+                        }
+                        let out = run_git(&git_dir, &args)
+                            .await
+                            .map_err(|(c, m)| (c, m, None))?;
                         if out.stdout.len() as u64 > MAX_READ {
                             return Err(err("E_TOO_LARGE", "git log exceeds read cap".into()));
                         }
@@ -1301,7 +1454,7 @@ impl RuntimeContext {
                                 }))
                             })
                             .collect();
-                        Ok(serde_json::json!({ "commits": commits }))
+                        Ok(serde_json::json!({ "commits": commits, "skip": skip, "limit": n }))
                     }
                 }
             }
@@ -2582,6 +2735,55 @@ mod tests {
             allow_images: true,
             allow_audio: true,
             allow_local_file_refs: false,
+        }
+    }
+
+    #[test]
+    fn porcelain_v2_parse_extracts_upstream_and_entries() {
+        let raw = "# branch.oid 1234abcd\n\
+                   # branch.head main\n\
+                   # branch.upstream origin/main\n\
+                   # branch.ab +2 -1\n\
+                   1 .M N... 100644 100644 100644 aaa bbb src/lib.rs\n\
+                   2 R. N... 100644 100644 100644 aaa bbb R100 new.rs\told.rs\n\
+                   ? untracked.txt\n\
+                   ! ignored.txt\n";
+        let st = parse_status_porcelain_v2(raw);
+        assert_eq!(st.branch.as_deref(), Some("main"));
+        assert_eq!(st.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(st.ahead, Some(2));
+        assert_eq!(st.behind, Some(1));
+        assert_eq!(st.entries.len(), 4);
+        assert_eq!(st.entries[0]["xy"], ".M");
+        assert_eq!(st.entries[1]["path"], "new.rs");
+        assert_eq!(st.entries[2]["xy"], "??");
+    }
+
+    #[test]
+    fn name_status_parse_handles_plain_and_rename_rows() {
+        let raw = "M\tsrc/main.rs\nA\tdocs/new.md\nD\tgone.txt\nR087\told/name.rs\tnew/name.rs\n";
+        let files = parse_name_status(raw);
+        assert_eq!(files.len(), 4);
+        assert_eq!(files[0]["status"], "M");
+        assert_eq!(files[0]["path"], "src/main.rs");
+        assert_eq!(files[3]["status"], "R087");
+        assert_eq!(files[3]["path"], "new/name.rs");
+        assert_eq!(files[3]["old_path"], "old/name.rs");
+    }
+
+    #[test]
+    fn commit_pathspec_anchors_and_rejects_hostile_input() {
+        assert_eq!(commit_pathspec("src/a.rs").unwrap(), ":(top)src/a.rs");
+        for bad in ["", "-p", ":!secret", "/etc/passwd", "a/../b", ".."] {
+            assert!(commit_pathspec(bad).is_err(), "must reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn hex_commit_validation_blocks_flag_injection() {
+        assert!(validate_hex_commit(Some("abcdef0123")).is_ok());
+        for bad in [None, Some(""), Some("--exec=x"), Some("HEAD"), Some("abc")] {
+            assert!(validate_hex_commit(bad).is_err(), "must reject {bad:?}");
         }
     }
 

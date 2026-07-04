@@ -52,7 +52,7 @@ pub async fn search_invitable(
     caller: &InvitableCaller<'_>,
     channel_id: &str,
     query: &str,
-    ) -> Result<Vec<InvitableItem>, AppError> {
+) -> Result<Vec<InvitableItem>, AppError> {
     let query = query.trim();
     if query.is_empty() {
         return Ok(Vec::new());
