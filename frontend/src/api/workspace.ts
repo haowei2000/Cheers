@@ -6,6 +6,8 @@ export interface WorkspaceBot {
   username: string;
   display_name: string | null;
   online: boolean;
+  /** False when the `workspace/read` policy hides this bot's workspace from the caller. */
+  can_read: boolean;
   /** True only when the caller holds a write grant for this bot's workspace. */
   can_write: boolean;
 }
@@ -229,6 +231,8 @@ export interface GitStatus {
   /** Raw `git status --porcelain=v2 --branch` stdout (authoritative). */
   raw: string;
   branch: string | null;
+  /** Upstream ref (`# branch.upstream`, e.g. "origin/main") — what ahead/behind count against. */
+  upstream: string | null;
   ahead: number | null;
   behind: number | null;
   entries: GitStatusEntry[];
@@ -286,10 +290,12 @@ export async function getGitLog(
   path = "",
   limit?: number,
   root?: string,
-  sessionId?: string
+  sessionId?: string,
+  skip?: number
 ): Promise<GitLog> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (limit != null) qs.set("limit", String(limit));
+  if (skip != null && skip > 0) qs.set("skip", String(skip));
   if (root) qs.set("root", root);
   if (sessionId) qs.set("session_id", sessionId);
   return apiJson<GitLog>(`/channels/${channelId}/workspace/git/log?${qs}`);
@@ -297,22 +303,88 @@ export async function getGitLog(
 
 export interface GitShow {
   commit: string;
-  /** Unified diff text of the commit (`git show --no-color <commit>`). */
+  /** The `path` filter this diff was narrowed to, when one was given. */
+  path?: string | null;
+  /** Unified diff text of the commit (`git show --no-color <commit> [-- <path>]`). */
   diff: string;
 }
 
-/** A single commit's full diff (read-only). `commit` is a hash from getGitLog. */
+/**
+ * A single commit's diff (read-only). `commit` is a hash from getGitLog; `path`
+ * (repo-root-relative, as listed by {@link getGitCommitFiles}) narrows the diff to
+ * one file — it may reference a file that no longer exists in the working tree.
+ */
 export async function getGitShow(
   channelId: string,
   botId: string,
   commit: string,
   root?: string,
-  sessionId?: string
+  sessionId?: string,
+  path?: string
 ): Promise<GitShow> {
   const qs = new URLSearchParams({ bot_id: botId, commit });
+  if (path) qs.set("path", path);
   if (root) qs.set("root", root);
   if (sessionId) qs.set("session_id", sessionId);
   return apiJson<GitShow>(`/channels/${channelId}/workspace/git/show?${qs}`);
+}
+
+/** One changed file of a commit (`git show --name-status`). */
+export interface GitCommitFile {
+  /** Status letter(s): M / A / D, or R### / C### with a similarity score. */
+  status: string;
+  /** Repo-root-relative path (rename/copy → the destination). */
+  path: string;
+  /** Rename/copy source path. */
+  old_path?: string | null;
+}
+
+export interface GitCommitFiles {
+  commit: string;
+  files: GitCommitFile[];
+}
+
+/** A commit's changed-file list (no diff bodies) — pair with getGitShow(path). */
+export async function getGitCommitFiles(
+  channelId: string,
+  botId: string,
+  commit: string,
+  root?: string,
+  sessionId?: string
+): Promise<GitCommitFiles> {
+  const qs = new URLSearchParams({ bot_id: botId, commit });
+  if (root) qs.set("root", root);
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<GitCommitFiles>(
+    `/channels/${channelId}/workspace/git/commit-files?${qs}`
+  );
+}
+
+/* ── Workspace policy metadata (allowed roots / cwd / git availability) ──────── */
+
+export interface WorkspaceMeta {
+  /** The connector's hard clamp: every browse/read/write stays inside these. */
+  allowed_roots: string[];
+  /** The roots actually browsable in the current scope (session ∩ allowed). */
+  effective_roots: string[];
+  default_cwd: string | null;
+  /** Whether the platform may pick a session cwd (connector policy). */
+  backend_may_set_cwd: boolean;
+  /** "read" (git inspection enabled) or "off". */
+  git_ops: "read" | "off";
+  max_read_bytes: number;
+  max_write_bytes: number;
+}
+
+/** Describe the bot's workspace policy — backs the root picker & session dialogs. */
+export async function getWorkspaceMeta(
+  channelId: string,
+  botId: string,
+  sessionId?: string
+): Promise<WorkspaceMeta> {
+  const qs = new URLSearchParams({ bot_id: botId });
+  if (sessionId) qs.set("session_id", sessionId);
+  return apiJson<WorkspaceMeta>(`/channels/${channelId}/workspace/meta?${qs}`);
 }
 
 /** Where a clicked file reference actually lives (resolved by provenance, not syntax). */

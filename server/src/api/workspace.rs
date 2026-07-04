@@ -100,7 +100,7 @@ pub struct GitDiffQuery {
     pub staged: Option<bool>,
 }
 
-/// `GET workspace/git/log` — same shape as [`TreeQuery`] plus `limit`.
+/// `GET workspace/git/log` — same shape as [`TreeQuery`] plus `limit`/`skip`.
 #[derive(Deserialize)]
 pub struct GitLogQuery {
     pub bot_id: Uuid,
@@ -110,6 +110,9 @@ pub struct GitLogQuery {
     pub session_id: Option<Uuid>,
     /// Max commits to return (connector clamps to ≤100).
     pub limit: Option<u32>,
+    /// Commits to skip before collecting (`git log --skip`) — pagination for the
+    /// history view's "Load more" (connector clamps to ≤100000).
+    pub skip: Option<u32>,
 }
 
 /// `POST workspace/unwatch` — stop a live file watch. Only the connector-issued
@@ -121,21 +124,27 @@ pub struct UnwatchQuery {
     pub watch_id: String,
 }
 
-/// `GET workspace/git/show` — commit-detail diff. `commit` is a hex hash (as
-/// emitted by `git log`); the repo is located from the session roots / default
-/// cwd (no `path` — commit-only).
+/// `GET workspace/git/show` (and `git/commit-files`) — commit-detail queries.
+/// `commit` is a hex hash (as emitted by `git log`); the repo is located from the
+/// session roots / default cwd.
 #[derive(Deserialize)]
 pub struct GitShowQuery {
     pub bot_id: Uuid,
     /// The commit ref to show (connector validates `^[0-9a-fA-F]{7,64}$`).
     pub commit: String,
+    /// Optional repo-root-relative file filter (as listed by `git/commit-files`):
+    /// limits the `show` diff to that one file. Ignored by `commit-files`.
+    pub path: Option<String>,
     pub root: Option<String>,
     pub session_id: Option<Uuid>,
 }
 
 /// Caller must be a channel user-member (or admin); the target bot must itself be a
 /// member of the channel — so you can only browse a bot you actually share a channel
-/// with.
+/// with. On top of membership, the `workspace/read` policy class must allow the
+/// caller (member-ALLOW by default, so nothing changes until the bot owner writes a
+/// rule; a deny narrows visibility per role/user/group/channel). Every workspace
+/// op — tree/read/git/watch and the write path — flows through here.
 async fn ensure_access(
     state: &AppState,
     claims: &Claims,
@@ -170,7 +179,43 @@ async fn ensure_access(
             "bot is not a member of this channel".into(),
         ));
     }
+    if !resolve_can_read(state, claims, channel_id, bot_id).await {
+        return Err(AppError::Forbidden(
+            "this agent's workspace is not visible to you in this channel".into(),
+        ));
+    }
     Ok(())
+}
+
+/// Whether `claims` may READ (browse/inspect) `bot_id`'s remote workspace in this
+/// channel. Bot owner / platform admin always may; everyone else resolves the
+/// `workspace/read` policy class — member-ALLOW by default (visibility restriction
+/// is opt-in), FAIL-CLOSED on a rules/DB error. Backs [`ensure_access`] and the
+/// per-bot `can_read` flag on [`list_workspace_bots`]. Mirrors [`resolve_can_write`].
+async fn resolve_can_read(
+    state: &AppState,
+    claims: &Claims,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> bool {
+    if crate::api::bots::ensure_bot_owner_or_admin(state, claims, &bot_id.to_string())
+        .await
+        .is_ok()
+    {
+        return true;
+    }
+    let role = caller_channel_role(state, channel_id, &claims.sub).await;
+    crate::domain::acp_policy::allows(
+        &state.db,
+        &bot_id.to_string(),
+        &channel_id.to_string(),
+        &claims.sub,
+        &role,
+        "workspace/read",
+        Capability::Initiate,
+    )
+    .await
+    .unwrap_or(false) // fail-closed: a rules/DB error denies the read
 }
 
 async fn ensure_channel_member_or_admin(
@@ -491,17 +536,25 @@ pub async fn list_workspace_bots(
             Some(id) => state.bot_locator.is_online(id).await,
             None => false,
         };
-        // Per-caller write authorization for this bot's workspace (same gate PUT uses),
-        // so the UI can show/hide the editor without probing.
-        let can_write = match parsed {
-            Some(id) => resolve_can_write(&state, &claims, channel_id, id).await,
+        // Per-caller read/write authorization for this bot's workspace (the same
+        // gates the browse/PUT paths use), so the UI can show/hide affordances
+        // without probing.
+        let can_read = match parsed {
+            Some(id) => resolve_can_read(&state, &claims, channel_id, id).await,
             None => false,
         };
+        // A caller who can't see the workspace can't write to it either.
+        let can_write = can_read
+            && match parsed {
+                Some(id) => resolve_can_write(&state, &claims, channel_id, id).await,
+                None => false,
+            };
         bots.push(json!({
             "bot_id": bot_id,
             "username": username,
             "display_name": display_name,
             "online": online,
+            "can_read": can_read,
             "can_write": can_write,
         }));
     }
@@ -777,10 +830,7 @@ pub async fn get_git_log(
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
     let roots = browse_roots(&state, q.bot_id, q.session_id).await;
-    let extra = match q.limit {
-        Some(n) => json!({ "limit": n }),
-        None => Value::Null,
-    };
+    let extra = json!({ "limit": q.limit, "skip": q.skip });
     let data = workspace_call(
         &state,
         q.bot_id,
@@ -795,9 +845,10 @@ pub async fn get_git_log(
     Ok(Json(data))
 }
 
-/// GET /api/v1/channels/:channel_id/workspace/git/show?bot_id=&commit=&root=&session_id=
-/// Read-only `git show --no-color <commit>` → `{ "commit": string, "diff": string }`.
-/// `path` is "" — the repo is located from the session roots / default cwd.
+/// GET /api/v1/channels/:channel_id/workspace/git/show?bot_id=&commit=&path=&root=&session_id=
+/// Read-only `git show --no-color <commit> [-- <path>]` → `{ commit, path?, diff }`.
+/// The browse `path` is "" — the repo is located from the session roots / default
+/// cwd; `q.path` is the optional per-file filter within the commit.
 pub async fn get_git_show(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -812,7 +863,60 @@ pub async fn get_git_show(
         "git_show",
         "",
         q.root.as_deref(),
+        json!({ "commit": q.commit, "commit_path": q.path }),
+        None,
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/git/commit-files?bot_id=&commit=&root=&session_id=
+/// A commit's changed-file list (`git show --name-status`, no diff body) →
+/// `{ commit, files: [{status, path, old_path?}] }` — lets the UI render a
+/// per-commit file list and fetch single-file diffs lazily via `git/show?path=`.
+pub async fn get_git_commit_files(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<GitShowQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "git_commit_files",
+        "",
+        q.root.as_deref(),
         json!({ "commit": q.commit }),
+        None,
+        &roots,
+    )
+    .await?;
+    Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/meta?bot_id=&session_id=
+/// The connector's workspace policy description: `{ allowed_roots, effective_roots,
+/// default_cwd, backend_may_set_cwd, git_ops, max_read_bytes, max_write_bytes }`.
+/// Backs the dialog's root picker and the session dialogs' "pick from allowed
+/// roots" affordance (instead of typing absolute paths blind).
+pub async fn get_workspace_meta(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<TreeQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let roots = browse_roots(&state, q.bot_id, q.session_id).await;
+    let data = workspace_call(
+        &state,
+        q.bot_id,
+        "workspace_meta",
+        "",
+        None,
+        Value::Null,
         None,
         &roots,
     )

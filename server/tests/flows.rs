@@ -1403,10 +1403,17 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
     let cid = ch.to_string();
 
     // Create an "other" session bound to the channel (status = idle).
-    let handle =
-        server::domain::sessions::create_channel_session(&db, bot, "acct1", &cid, "other", None, &[])
-            .await
-            .expect("create channel session");
+    let handle = server::domain::sessions::create_channel_session(
+        &db,
+        bot,
+        "acct1",
+        &cid,
+        "other",
+        None,
+        &[],
+    )
+    .await
+    .expect("create channel session");
 
     let r = dispatch(
         &db,
@@ -1727,12 +1734,14 @@ async fn invitable_search_scopes_users_and_bots(db: PgPool) {
 
     // 用户候选：workspace 成员 wanda；好友 fred；无关 randy。
     let wanda = seed_named_user(&db, "wanda", "Wanda Findable").await;
-    sqlx::query("INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
-        .bind(ws.to_string())
-        .bind(wanda.to_string())
-        .execute(&db)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
+    )
+    .bind(ws.to_string())
+    .bind(wanda.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
     let fred = seed_named_user(&db, "fred", "Fred Findable").await;
     let (a, b) = if caller.to_string() <= fred.to_string() {
         (caller, fred)
@@ -1788,26 +1797,51 @@ async fn invitable_search_scopes_users_and_bots(db: PgPool) {
         .unwrap();
 
     let ids: Vec<&str> = items.iter().map(|i| i.member_id.as_str()).collect();
-    assert!(ids.contains(&wanda.to_string().as_str()), "workspace 成员应可见");
+    assert!(
+        ids.contains(&wanda.to_string().as_str()),
+        "workspace 成员应可见"
+    );
     assert!(ids.contains(&fred.to_string().as_str()), "好友应可见");
     assert!(
-        !items.iter().any(|i| i.display_name.as_deref() == Some("Randy Findable")),
+        !items
+            .iter()
+            .any(|i| i.display_name.as_deref() == Some("Randy Findable")),
         "无关用户不可见"
     );
-    assert!(ids.contains(&alpha.to_string().as_str()), "own 的 bot 应可见");
     assert!(
-        !items.iter().any(|i| i.display_name.as_deref() == Some("Findable Beta")),
+        ids.contains(&alpha.to_string().as_str()),
+        "own 的 bot 应可见"
+    );
+    assert!(
+        !items
+            .iter()
+            .any(|i| i.display_name.as_deref() == Some("Findable Beta")),
         "他人 bot（无授权）不可见"
     );
-    assert!(ids.contains(&gamma.to_string().as_str()), "有 session_create 授权的 bot 应可见");
     assert!(
-        !items.iter().any(|i| i.display_name.as_deref() == Some("Findable Delta")),
+        ids.contains(&gamma.to_string().as_str()),
+        "有 session_create 授权的 bot 应可见"
+    );
+    assert!(
+        !items
+            .iter()
+            .any(|i| i.display_name.as_deref() == Some("Findable Delta")),
         "禁用 bot 不可见"
     );
-    let alpha_item = items.iter().find(|i| i.member_id == alpha.to_string()).unwrap();
-    assert!(alpha_item.already_member, "已在频道的 bot 应标 already_member");
+    let alpha_item = items
+        .iter()
+        .find(|i| i.member_id == alpha.to_string())
+        .unwrap();
+    assert!(
+        alpha_item.already_member,
+        "已在频道的 bot 应标 already_member"
+    );
     assert_eq!(alpha_item.member_type, "bot");
-    assert_eq!(alpha_item.is_online, Some(false), "未连 bridge 的 bot 应离线");
+    assert_eq!(
+        alpha_item.is_online,
+        Some(false),
+        "未连 bridge 的 bot 应离线"
+    );
     // 平台管理员对 bot 侧直通。
     let admin_caller = InvitableCaller {
         user_id: &other.to_string(),
@@ -1964,7 +1998,10 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     let r = dispatch(
         &db,
         Principal::bot(bot),
-        &req("channel.leave", serde_json::json!({ "channel_id": dm.to_string() })),
+        &req(
+            "channel.leave",
+            serde_json::json!({ "channel_id": dm.to_string() }),
+        ),
     )
     .await;
     assert_eq!(r["ok"], false, "DM 不可退出: {r}");

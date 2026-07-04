@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import {
   ArrowUp,
@@ -16,11 +16,13 @@ import {
 } from "lucide-react";
 import {
   downloadWorkspaceFile,
+  getGitCommitFiles,
   getGitDiff,
   getGitLog,
   getGitShow,
   getGitStatus,
   getWorkspaceFile,
+  getWorkspaceMeta,
   getWorkspaceTree,
   listWorkspaceBots,
   putWorkspaceFile,
@@ -28,11 +30,13 @@ import {
   watchWorkspace,
   WorkspaceConflictError,
   type GitCommit as GitCommitInfo,
+  type GitCommitFile,
   type GitStatus,
   type GitStatusEntry,
   type WorkspaceBot,
   type WorkspaceEntry,
   type WorkspaceFile,
+  type WorkspaceMeta,
 } from "@/api/workspace";
 import { DiffView } from "./DiffView";
 import type { PresenceFocus } from "./hooks/useChatRealtime";
@@ -102,6 +106,9 @@ function relDate(iso: string): string {
   if (mo < 12) return `${mo}mo ago`;
   return `${Math.floor(mo / 12)}y ago`;
 }
+
+/** Commits per history page (`git log -n LOG_PAGE --skip=…`). */
+const LOG_PAGE = 50;
 
 /** A file (index) status char that means the change is staged (not `.` clean, not `?` untracked). */
 function isStagedCode(xy: string): boolean {
@@ -177,6 +184,12 @@ export function RemoteWorkspaceDialog({
   // "整个允许目录" drops the session id so the user sees the bot's ENTIRE allowed roots.
   const [scoped, setScoped] = useState(true);
   const effectiveSessionId = scoped ? sessionId : undefined;
+  // Workspace policy metadata (allowed/effective roots, cwd, git availability) for the
+  // selected bot + scope; backs the root picker. Best-effort — null hides the picker.
+  const [meta, setMeta] = useState<WorkspaceMeta | null>(null);
+  // Explicitly selected browse root (one of meta.effective_roots). null = "Auto"
+  // (connector default: session root / default_cwd / first allowed root).
+  const [root, setRoot] = useState<string | null>(null);
 
   // ── Read-only git visibility for the current directory's repo (supplementary) ──
   // Cleared silently when the dir isn't a git repo (E_NOT_A_REPO / HTTP 409) or git
@@ -188,15 +201,31 @@ export function RemoteWorkspaceDialog({
   // A diff shown in the RIGHT pane, overlaying the editor non-destructively.
   //   kind "file"   → a working-tree diff; `path` is repo-relative ("" = whole tree),
   //                   `staged` selects the index (true) vs worktree (false) diff.
-  //   kind "commit" → a single commit's full diff (immutable; never auto-refreshed).
+  //   kind "commit" → a commit's diff (immutable; never auto-refreshed). `files` is
+  //                   its changed-file list (--name-status, lazy); `path` non-null
+  //                   narrows the shown diff to that one file of the commit.
   type DiffPane =
     | { kind: "file"; path: string; staged: boolean; text: string }
-    | { kind: "commit"; hash: string; subject: string; text: string };
+    | {
+        kind: "commit";
+        hash: string;
+        subject: string;
+        text: string;
+        files: GitCommitFile[] | null;
+        path: string | null;
+      };
   const [diff, setDiff] = useState<DiffPane | null>(null);
   const [diffBusy, setDiffBusy] = useState(false);
   // Commit history for the current repo (lazy: loaded when the History view opens).
   const [log, setLog] = useState<GitCommitInfo[] | null>(null);
   const [logBusy, setLogBusy] = useState(false);
+  // True once a history page comes back short — hides "Load more".
+  const [logDone, setLogDone] = useState(false);
+  // Commit data is immutable, so cache it for the dialog's lifetime: re-clicking a
+  // commit (or flipping between its files) renders instantly instead of refetching.
+  // Keys are bot-scoped; different bots may browse unrelated repos.
+  const showCache = useRef(new Map<string, string>()); // `${bot}:${hash}:${path}` → diff
+  const commitFilesCache = useRef(new Map<string, GitCommitFile[]>()); // `${bot}:${hash}`
 
   useEffect(() => {
     let alive = true;
@@ -205,7 +234,8 @@ export function RemoteWorkspaceDialog({
         if (!alive) return;
         setBots(bs);
         if (!botId) {
-          const online = bs.find((b) => b.online);
+          // Prefer a bot we can actually see into (online + read-visible).
+          const online = bs.find((b) => b.online && b.can_read !== false);
           if (online) setBotId(online.bot_id);
         }
       })
@@ -214,6 +244,9 @@ export function RemoteWorkspaceDialog({
       alive = false;
     };
   }, [channelId, botId]);
+
+  // The explicitly selected browse root (undefined = connector's default choice).
+  const rootParam = root ?? undefined;
 
   const loadDir = useCallback(
     async (path: string) => {
@@ -224,7 +257,7 @@ export function RemoteWorkspaceDialog({
       setEtag(null);
       setConflict(null);
       try {
-        const t = await getWorkspaceTree(channelId, botId, path, undefined, effectiveSessionId);
+        const t = await getWorkspaceTree(channelId, botId, path, rootParam, effectiveSessionId);
         setEntries(t.entries);
         setCwd(t.path);
       } catch (e) {
@@ -233,7 +266,7 @@ export function RemoteWorkspaceDialog({
         setBusy(false);
       }
     },
-    [channelId, botId, effectiveSessionId]
+    [channelId, botId, rootParam, effectiveSessionId]
   );
 
   const openFile = useCallback(
@@ -242,7 +275,7 @@ export function RemoteWorkspaceDialog({
       setBusy(true);
       setErr(null);
       try {
-        const f = await getWorkspaceFile(channelId, botId, path, undefined, effectiveSessionId);
+        const f = await getWorkspaceFile(channelId, botId, path, rootParam, effectiveSessionId);
         setFile(f);
         setEdit(f.content ?? "");
         setEtag(f.etag);
@@ -260,7 +293,7 @@ export function RemoteWorkspaceDialog({
         setBusy(false);
       }
     },
-    [channelId, botId, loadDir, effectiveSessionId]
+    [channelId, botId, loadDir, rootParam, effectiveSessionId]
   );
 
   // Fetch git state for the *current directory's* repo. Supplementary: any failure
@@ -272,11 +305,32 @@ export function RemoteWorkspaceDialog({
       return;
     }
     try {
-      setGit(await getGitStatus(channelId, botId, cwd, undefined, effectiveSessionId));
+      setGit(await getGitStatus(channelId, botId, cwd, rootParam, effectiveSessionId));
     } catch {
       setGit(null);
     }
-  }, [channelId, botId, cwd, effectiveSessionId]);
+  }, [channelId, botId, cwd, rootParam, effectiveSessionId]);
+
+  // Workspace policy metadata for the selected bot + scope (best-effort; backs the
+  // root picker and the git-availability hint). An explicit root that fell out of
+  // the new effective set is dropped back to Auto.
+  useEffect(() => {
+    if (!botId) {
+      setMeta(null);
+      return;
+    }
+    let alive = true;
+    getWorkspaceMeta(channelId, botId, effectiveSessionId)
+      .then((m) => {
+        if (!alive) return;
+        setMeta(m);
+        setRoot((r) => (r && !m.effective_roots.includes(r) ? null : r));
+      })
+      .catch(() => alive && setMeta(null));
+    return () => {
+      alive = false;
+    };
+  }, [channelId, botId, effectiveSessionId]);
 
   // Refetch whenever the browse context changes (bot / directory / scope).
   useEffect(() => {
@@ -301,7 +355,7 @@ export function RemoteWorkspaceDialog({
       setDiffBusy(true);
       setErr(null);
       try {
-        const d = await getGitDiff(channelId, botId, path, staged, undefined, effectiveSessionId);
+        const d = await getGitDiff(channelId, botId, path, staged, rootParam, effectiveSessionId);
         setDiff({ kind: "file", path, staged, text: d.diff });
       } catch (e) {
         setErr(cleanErr(e));
@@ -309,29 +363,58 @@ export function RemoteWorkspaceDialog({
         setDiffBusy(false);
       }
     },
-    [channelId, botId, effectiveSessionId]
+    [channelId, botId, rootParam, effectiveSessionId]
   );
 
-  // Load a single commit's full diff into the same right-pane overlay (read-only;
-  // commits are immutable, so this is never re-fetched on refresh/tick).
+  // Load a commit's diff into the right pane — the whole commit (`path` null) or one
+  // file of it. Commits are immutable, so both the diff text and the changed-file
+  // list are cached per (bot, hash): re-opening is instant and never refetched.
   const openCommit = useCallback(
-    async (c: GitCommitInfo) => {
+    async (c: GitCommitInfo, path: string | null = null) => {
       if (!botId) return;
+      const showKey = `${botId}:${c.hash}:${path ?? ""}`;
+      const filesKey = `${botId}:${c.hash}`;
+      const cachedText = showCache.current.get(showKey);
+      const cachedFiles = commitFilesCache.current.get(filesKey) ?? null;
+      if (cachedText != null && cachedFiles != null) {
+        setDiff({
+          kind: "commit",
+          hash: c.hash,
+          subject: c.subject,
+          text: cachedText,
+          files: cachedFiles,
+          path,
+        });
+        return;
+      }
       setDiffBusy(true);
       setErr(null);
       try {
-        const s = await getGitShow(channelId, botId, c.hash, undefined, effectiveSessionId);
-        setDiff({ kind: "commit", hash: c.hash, subject: c.subject, text: s.diff });
+        const [s, cf] = await Promise.all([
+          cachedText != null
+            ? Promise.resolve(null)
+            : getGitShow(channelId, botId, c.hash, rootParam, effectiveSessionId, path ?? undefined),
+          cachedFiles != null
+            ? Promise.resolve(null)
+            : getGitCommitFiles(channelId, botId, c.hash, rootParam, effectiveSessionId).catch(
+                () => null // file list is an enhancement — the diff still renders without it
+              ),
+        ]);
+        const text = cachedText ?? s?.diff ?? "";
+        const files = cachedFiles ?? cf?.files ?? null;
+        showCache.current.set(showKey, text);
+        if (files) commitFilesCache.current.set(filesKey, files);
+        setDiff({ kind: "commit", hash: c.hash, subject: c.subject, text, files, path });
       } catch (e) {
         setErr(cleanErr(e));
       } finally {
         setDiffBusy(false);
       }
     },
-    [channelId, botId, effectiveSessionId]
+    [channelId, botId, rootParam, effectiveSessionId]
   );
 
-  // Load the commit log for the current directory's repo (most-recent 50).
+  // Load the FIRST page of the commit log for the current directory's repo.
   const loadLog = useCallback(async () => {
     if (!botId) {
       setLog(null);
@@ -339,14 +422,41 @@ export function RemoteWorkspaceDialog({
     }
     setLogBusy(true);
     try {
-      const r = await getGitLog(channelId, botId, cwd, 50, undefined, effectiveSessionId);
+      const r = await getGitLog(channelId, botId, cwd, LOG_PAGE, rootParam, effectiveSessionId);
       setLog(r.commits);
+      setLogDone(r.commits.length < LOG_PAGE);
     } catch {
       setLog([]);
+      setLogDone(true);
     } finally {
       setLogBusy(false);
     }
-  }, [channelId, botId, cwd, effectiveSessionId]);
+  }, [channelId, botId, cwd, rootParam, effectiveSessionId]);
+
+  // Append the next page (git log --skip=<loaded so far>). A short page ends paging.
+  const loadMoreLog = useCallback(async () => {
+    if (!botId || log === null || logBusy || logDone) return;
+    setLogBusy(true);
+    try {
+      const r = await getGitLog(
+        channelId,
+        botId,
+        cwd,
+        LOG_PAGE,
+        rootParam,
+        effectiveSessionId,
+        log.length
+      );
+      // Dedup on hash: a commit landing between pages shifts --skip windows.
+      const seen = new Set(log.map((c) => c.hash));
+      setLog([...log, ...r.commits.filter((c) => !seen.has(c.hash))]);
+      setLogDone(r.commits.length < LOG_PAGE);
+    } catch {
+      setLogDone(true);
+    } finally {
+      setLogBusy(false);
+    }
+  }, [channelId, botId, cwd, rootParam, effectiveSessionId, log, logBusy, logDone]);
 
   // Lazy-load the history when its view opens (and reload if the browse context changes
   // while it's open — loadLog's identity tracks bot/dir/scope).
@@ -363,21 +473,52 @@ export function RemoteWorkspaceDialog({
     if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
   }, [loadDir, cwd, loadGitStatus, leftView, loadLog, diff, openDiff]);
 
-  // The git marker for a tree entry, matched by path suffix; prefer the most specific
-  // (longest) match, falling back to an exact one. Directories are never decorated.
-  const markFor = useCallback(
-    (entPath: string): { m: string; cls: string } | null => {
-      if (!git) return null;
+  // Debounced live refetch, shared by the board tick and the live-watch signal. An
+  // agent touching many files fans MANY signals in quick succession; each refetch is
+  // up to 5 parallel requests (tree/status/log/file/diff), so coalesce bursts into
+  // one trailing refetch instead of a request wave per signal.
+  const refetchTimer = useRef<number | null>(null);
+  const scheduleLiveRefetch = useCallback(() => {
+    if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
+    refetchTimer.current = window.setTimeout(() => {
+      refetchTimer.current = null;
+      void loadDir(cwd);
+      void loadGitStatus();
+      if (leftView === "history") void loadLog();
+      if (file && !dirty) void openFile(file.path);
+      if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
+    }, 400);
+  }, [loadDir, cwd, loadGitStatus, leftView, loadLog, file, dirty, openFile, diff, openDiff]);
+  useEffect(
+    () => () => {
+      if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
+    },
+    []
+  );
+
+  // The git marker per tree entry, matched by path suffix (most specific match wins).
+  // Precomputed as a map whenever the listing or the status changes — the old
+  // per-row scan was O(files × changes) on EVERY render. Directories undecorated.
+  const markMap = useMemo(() => {
+    const m = new Map<string, { m: string; cls: string } | null>();
+    if (!git || !entries) return m;
+    for (const ent of entries) {
+      if (ent.is_dir) continue;
       let best: GitStatusEntry | null = null;
+      let exact: GitStatusEntry | null = null;
       for (const e of git.entries) {
-        if (!pathSuffixMatch(e.path, entPath)) continue;
-        if (e.path === entPath) return gitMark(e.xy);
+        if (!pathSuffixMatch(e.path, ent.path)) continue;
+        if (e.path === ent.path) {
+          exact = e;
+          break;
+        }
         if (!best || e.path.length > best.path.length) best = e;
       }
-      return best ? gitMark(best.xy) : null;
-    },
-    [git]
-  );
+      const hit = exact ?? best;
+      m.set(ent.path, hit ? gitMark(hit.xy) : null);
+    }
+    return m;
+  }, [git, entries]);
 
   // When a bot is selected: deep-link to initialPath once, else list the root.
   useEffect(() => {
@@ -403,11 +544,28 @@ export function RemoteWorkspaceDialog({
     setGit(null);
     setDiff(null);
     setLog(null);
+    setLogDone(false);
+    setRoot(null); // the other scope has a different effective root set
+  }, []);
+
+  // Switch the browse to another allowed root (null = Auto): reset like a scope flip.
+  const selectRoot = useCallback((r: string | null) => {
+    setRoot(r);
+    setEntries(null);
+    setFile(null);
+    setEtag(null);
+    setConflict(null);
+    setCwd("");
+    setGit(null);
+    setDiff(null);
+    setLog(null);
+    setLogDone(false);
   }, []);
 
   // Live-push: the "workspace" board ticked → the agent changed files on this bot's
-  // machine. Refetch the current directory; refetch the open file only if it's clean, so
-  // a dirty buffer is never clobbered. Only acts on a genuine tick change (not on mount).
+  // machine. Debounce-refetch the current directory; the open file is refetched only
+  // if it's clean, so a dirty buffer is never clobbered. Only acts on a genuine tick
+  // change (not on mount).
   // NOTE: the board tick carries no bot_id through the onBoardSignal seam, so this reacts
   // to any "workspace" tick for the channel; the refetch is non-destructive.
   const seenWsTick = useRef(workspaceTick);
@@ -415,25 +573,8 @@ export function RemoteWorkspaceDialog({
     if (workspaceTick === undefined || workspaceTick === seenWsTick.current) return;
     seenWsTick.current = workspaceTick;
     if (!botId) return;
-    void loadDir(cwd);
-    void loadGitStatus();
-    if (leftView === "history") void loadLog();
-    if (file && !dirty) void openFile(file.path);
-    if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
-  }, [
-    workspaceTick,
-    botId,
-    cwd,
-    file,
-    dirty,
-    loadDir,
-    openFile,
-    loadGitStatus,
-    leftView,
-    loadLog,
-    diff,
-    openDiff,
-  ]);
+    scheduleLiveRefetch();
+  }, [workspaceTick, botId, scheduleLiveRefetch]);
 
   // ── Live-watch lifecycle ──────────────────────────────────────────────────
   // While the dialog is open on a bot, register interest in the CURRENT directory so
@@ -448,7 +589,7 @@ export function RemoteWorkspaceDialog({
     let alive = true;
     const register = async () => {
       try {
-        const w = await watchWorkspace(channelId, botId, cwd, undefined, effectiveSessionId);
+        const w = await watchWorkspace(channelId, botId, cwd, rootParam, effectiveSessionId);
         if (!alive) {
           // Raced with unmount/navigate: release the just-created watch immediately.
           void unwatchWorkspace(channelId, botId, w.watch_id).catch(() => {});
@@ -470,44 +611,22 @@ export function RemoteWorkspaceDialog({
       watchIdRef.current = null;
       if (wid) void unwatchWorkspace(channelId, botId, wid).catch(() => {});
     };
-  }, [channelId, botId, cwd, effectiveSessionId]);
+  }, [channelId, botId, cwd, rootParam, effectiveSessionId]);
 
   // ── Refresh on a live-watch signal ────────────────────────────────────────
   // A `workspace_signal` for THIS bot arrived (the agent changed files on its machine):
-  // refetch the listing + git status, the open history/live diff, and a CLEAN open file.
-  // A dirty buffer is NEVER clobbered (the safe-writes conflict UI still guards Save).
-  // Routed by bot_id; the `seq` guard fires each signal exactly once; `busy` defers a
-  // refetch while one is already in flight (the effect re-runs when `busy` clears).
+  // debounce-refetch the listing + git status, the open history/live diff, and a CLEAN
+  // open file. A dirty buffer is NEVER clobbered (the safe-writes conflict UI still
+  // guards Save). Routed by bot_id; the `seq` guard consumes each signal exactly once;
+  // the shared debounce coalesces a burst of signals into one trailing refetch.
   const seenSignalSeq = useRef(workspaceSignal?.seq);
   useEffect(() => {
     if (!workspaceSignal || workspaceSignal.seq === seenSignalSeq.current) return;
-    // Not for the bot we're browsing (or none selected): consume + ignore.
-    if (!botId || workspaceSignal.botId !== botId) {
-      seenSignalSeq.current = workspaceSignal.seq;
-      return;
-    }
-    if (busy) return; // a fetch is in flight — wait; this effect re-runs when it clears
     seenSignalSeq.current = workspaceSignal.seq;
-    void loadDir(cwd);
-    void loadGitStatus();
-    if (leftView === "history") void loadLog();
-    if (file && !dirty) void openFile(file.path);
-    if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
-  }, [
-    workspaceSignal,
-    botId,
-    busy,
-    cwd,
-    file,
-    dirty,
-    leftView,
-    diff,
-    loadDir,
-    loadGitStatus,
-    loadLog,
-    openFile,
-    openDiff,
-  ]);
+    // Not for the bot we're browsing (or none selected): consume + ignore.
+    if (!botId || workspaceSignal.botId !== botId) return;
+    scheduleLiveRefetch();
+  }, [workspaceSignal, botId, scheduleLiveRefetch]);
 
   // ── Workspace presence (broadcast our own focus) ──────────────────────────
   // Tell peers which bot's workspace we're viewing, and at what path (the open file,
@@ -556,7 +675,7 @@ export function RemoteWorkspaceDialog({
         botId,
         file.path,
         edit,
-        undefined,
+        rootParam,
         effectiveSessionId,
         ifEtag
       );
@@ -596,20 +715,51 @@ export function RemoteWorkspaceDialog({
             setGit(null);
             setDiff(null);
             setLog(null);
+            setLogDone(false);
+            setRoot(null);
             deepLinked.current = true; // manual switch: don't re-deep-link
           }}
           className="bg-zinc-800 text-zinc-200 rounded px-2 py-1 outline-none"
         >
           <option value="">{bots === null ? "Loading…" : "Select a bot"}</option>
           {bots?.map((b) => (
-            <option key={b.bot_id} value={b.bot_id} disabled={!b.online}>
-              {b.display_name || b.username} {b.online ? "" : "(offline)"}
+            <option
+              key={b.bot_id}
+              value={b.bot_id}
+              disabled={!b.online || b.can_read === false}
+            >
+              {b.display_name || b.username}{" "}
+              {!b.online ? "(offline)" : b.can_read === false ? "(no access)" : ""}
             </option>
           ))}
         </select>
+        {/* Root picker — only when this scope actually has several roots to choose from. */}
+        {meta && meta.effective_roots.length > 1 && (
+          <select
+            value={root ?? ""}
+            onChange={(e) => selectRoot(e.target.value || null)}
+            title="Workspace root to browse (the connector's allowed_roots)"
+            className="max-w-[220px] bg-zinc-800 text-zinc-300 rounded px-2 py-1 outline-none"
+          >
+            <option value="">Root: auto</option>
+            {meta.effective_roots.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        )}
         {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
         {err && <span className="text-red-400 truncate" title={err}>{err}</span>}
         <div className="flex-1" />
+        {meta?.git_ops === "off" && (
+          <span
+            className="text-zinc-600"
+            title="This connector's policy disables git inspection (git_ops = off)"
+          >
+            git off
+          </span>
+        )}
         {sessionId && (
           <label
             className="flex items-center gap-1 text-zinc-500 cursor-pointer select-none"
@@ -638,6 +788,14 @@ export function RemoteWorkspaceDialog({
           </span>
           {!!git.ahead && <span className="text-emerald-400">↑{git.ahead}</span>}
           {!!git.behind && <span className="text-amber-400">↓{git.behind}</span>}
+          {git.upstream && (
+            <span
+              className="text-zinc-600 font-mono truncate"
+              title={`Tracking ${git.upstream}`}
+            >
+              vs {git.upstream}
+            </span>
+          )}
           <span className="text-zinc-500">
             {git.entries.length} change{git.entries.length === 1 ? "" : "s"}
           </span>
@@ -865,6 +1023,15 @@ export function RemoteWorkspaceDialog({
                   {log === null && logBusy && (
                     <div className="px-2 py-3 text-[11px] text-zinc-600">Loading…</div>
                   )}
+                  {log !== null && log.length > 0 && !logDone && (
+                    <button
+                      onClick={() => void loadMoreLog()}
+                      disabled={logBusy}
+                      className="w-full px-2 py-1.5 text-[11px] text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      {logBusy ? "Loading…" : `Load ${LOG_PAGE} more`}
+                    </button>
+                  )}
                 </div>
               </>
             ) : (
@@ -879,36 +1046,59 @@ export function RemoteWorkspaceDialog({
                     <ArrowUp className="w-3.5 h-3.5" />
                   </button>
                   <span className="truncate flex-1" title={"/" + cwd}>/{cwd}</span>
+                  {git && !!cwd && (
+                    <button
+                      onClick={() => openDiff(cwd, false)}
+                      title="Diff this directory (working tree)"
+                      className="p-0.5 rounded hover:bg-zinc-800"
+                    >
+                      <GitCompare className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button onClick={refreshAll} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 <div className="flex-1 overflow-auto">
                   {entries?.map((ent) => {
-                    const mk = ent.is_dir ? null : markFor(ent.path);
+                    const mk = ent.is_dir ? null : (markMap.get(ent.path) ?? null);
                     return (
-                      <button
-                        key={ent.path}
-                        onClick={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
-                        className={`flex items-center gap-1.5 w-full px-2 py-1 text-left text-xs hover:bg-zinc-800 ${
-                          file?.path === ent.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-300"
-                        }`}
-                      >
-                        {ent.is_dir ? (
-                          <Folder className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                        ) : (
-                          <FileText className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                        )}
-                        <span className="truncate flex-1">{ent.name}</span>
-                        {mk && (
-                          <span
-                            className={`shrink-0 font-mono text-[10px] ${mk.cls}`}
-                            title={`git: ${mk.m}`}
+                      <div key={ent.path} className="group/row relative">
+                        <button
+                          onClick={() => (ent.is_dir ? loadDir(ent.path) : openFile(ent.path))}
+                          className={`flex items-center gap-1.5 w-full px-2 py-1 text-left text-xs hover:bg-zinc-800 ${
+                            file?.path === ent.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-300"
+                          }`}
+                        >
+                          {ent.is_dir ? (
+                            <Folder className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          ) : (
+                            <FileText className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                          )}
+                          <span className="truncate flex-1">{ent.name}</span>
+                          {mk && (
+                            <span
+                              className={`shrink-0 font-mono text-[10px] ${mk.cls}`}
+                              title={`git: ${mk.m}`}
+                            >
+                              {mk.m}
+                            </span>
+                          )}
+                        </button>
+                        {/* Directory-scoped diff, on hover (repo dirs only). */}
+                        {ent.is_dir && git && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openDiff(ent.path, false);
+                            }}
+                            title={`Diff ${ent.name}/ (working tree)`}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center p-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-100"
                           >
-                            {mk.m}
-                          </span>
+                            <GitCompare className="w-3 h-3" />
+                          </button>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                   {entries?.length === 0 && (
@@ -960,6 +1150,60 @@ export function RemoteWorkspaceDialog({
                     <X className="w-3 h-3" /> Close
                   </button>
                 </div>
+                {/* Changed-file strip for a commit: jump between per-file diffs without
+                    fetching (cached) or scrolling through the whole patch. */}
+                {diff.kind === "commit" && diff.files && diff.files.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 max-h-20 overflow-auto px-2 py-1 border-b border-zinc-800 text-[10px]">
+                    <button
+                      onClick={() =>
+                        void openCommit(
+                          { hash: diff.hash, subject: diff.subject, author: "", date: "" },
+                          null
+                        )
+                      }
+                      className={`px-1.5 py-0.5 rounded ${
+                        diff.path === null
+                          ? "bg-zinc-700 text-zinc-100"
+                          : "bg-zinc-800/70 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      All files ({diff.files.length})
+                    </button>
+                    {diff.files.map((f) => {
+                      const letter = f.status.charAt(0);
+                      const cls =
+                        letter === "A"
+                          ? "text-emerald-400"
+                          : letter === "D"
+                            ? "text-rose-400"
+                            : letter === "R" || letter === "C"
+                              ? "text-sky-400"
+                              : "text-amber-400";
+                      return (
+                        <button
+                          key={f.path}
+                          onClick={() =>
+                            void openCommit(
+                              { hash: diff.hash, subject: diff.subject, author: "", date: "" },
+                              f.path
+                            )
+                          }
+                          title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-mono ${
+                            diff.path === f.path
+                              ? "bg-zinc-700 text-zinc-100"
+                              : "bg-zinc-800/70 text-zinc-400 hover:text-zinc-200"
+                          }`}
+                        >
+                          <span className={cls}>{letter}</span>
+                          <span className="max-w-[180px] truncate">
+                            {f.path.split("/").pop()}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <DiffView diff={diff.text} className="flex-1" />
               </>
             ) : !file ? (
