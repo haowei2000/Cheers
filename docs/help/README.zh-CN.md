@@ -16,6 +16,7 @@
 | 提示词配置人员 | [提示词模板操作文档](prompt-template-operations.zh-CN.md) | 提示词模板变量、生效优先级、Bot 绑定、覆盖与排障 |
 | ACP Agent 接入方 | [AgentBridge接入指南](AgentBridge接入指南.md) | 注册 Agent Bridge Bot、配置 WebSocket、连接支持 ACP 的本地 Agent；OpenClaw 链接已标记为废弃/遗留 |
 | 本地接 ACP Agent（开发者） | [本地 Bot 配置指南](本地Bot配置指南.md) | host 守护进程：一个 TOML 一个 bot、token 用 sidecar 文件、多 bot 管理、完整字段参考、排障 |
+| 想搞懂「Bot 是什么」 | [MCP Cheers：Bot 与普通用户的异同](mcp-bot-vs-user.zh-CN.md) | MCP 工具面、bot 鉴权链路，以及 Bot 与普通用户的相同与不同 |
 | 对象存储部署者 | [RustFS 对象存储部署说明](RustFS对象存储部署说明.md) | S3 兼容存储、桶和访问密钥配置 |
 | 排查问题 | [技术排查Q&A](技术排查Q&A.md) | 健康检查、日志、数据库、Bot 无回复、文件预览失败 |
 
