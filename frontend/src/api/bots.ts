@@ -273,8 +273,9 @@ export interface EventRule {
 /** Effective decision for one (event × role) cell of the baseline matrix. */
 export interface EffectiveDecision {
   allow: boolean;
-  /** "rule" = a stored bot-wide grant decided it; "default" = membership default. */
-  source: "default" | "rule";
+  /** "rule" = a stored bot-wide grant decided it; "default" = membership default;
+   *  "owner" = the bot owner's built-in privilege (not revocable by rules). */
+  source: "default" | "rule" | "owner";
 }
 
 /** One row of the read-only effective-defaults matrix: an event with its per-role
@@ -283,6 +284,9 @@ export interface EffectiveCell {
   capability: Capability;
   event_class: string;
   roles: Record<string, EffectiveDecision>;
+  /** The bot OWNER's own effective decision — Do/Answer are always allowed
+   *  (owner privilege); View follows the same rules as everyone else. */
+  bot_owner?: EffectiveDecision;
 }
 
 export interface EventAccess {

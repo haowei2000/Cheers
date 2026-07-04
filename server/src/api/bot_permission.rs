@@ -361,12 +361,14 @@ pub async fn list_event_access(
     let rules = bot_event_policy::list_rules_json(&state.db, &bot_id).await?;
     // Same rules, typed, to compute the effective bot-wide baseline matrix.
     let rule_set = bot_event_policy::load_rules(&state.db, &bot_id).await?;
+    let owner_id = bot_event_policy::bot_owner_id(&state.db, &bot_id).await;
     let groups = group_catalog(&state, &bot_id).await;
     Ok(Json(json!({
         "rules": rules,
         // Read-only baseline: the effective decision per (capability × event × role)
         // at bot-wide scope, so defaults (not just overrides) are visible in the UI.
-        "effective": bot_event_policy::effective_matrix(&rule_set),
+        // Each cell also carries the bot owner's own decision ("you" column).
+        "effective": bot_event_policy::effective_matrix(&rule_set, owner_id.as_deref()),
         "initiate_events": bot_event_policy::initiate_events(),
         "see_events": bot_event_policy::see_events(),
         "respond_events": bot_event_policy::respond_events(),

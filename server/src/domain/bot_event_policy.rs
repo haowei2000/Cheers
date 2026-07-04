@@ -241,7 +241,9 @@ pub async fn matched_groups(
     out
 }
 
-async fn bot_owner_id(db: &PgPool, bot_id: &str) -> Option<String> {
+/// The bot's owning user (`bot_accounts.created_by`), if any. Public so the
+/// owner API can label the effective-matrix "you (bot owner)" column.
+pub async fn bot_owner_id(db: &PgPool, bot_id: &str) -> Option<String> {
     sqlx::query("SELECT created_by FROM bot_accounts WHERE bot_id = $1")
         .bind(bot_id)
         .fetch_optional(db)
@@ -366,8 +368,18 @@ pub const MATRIX_ROLES: &[&str] = &["owner", "admin", "member"];
 /// make the user/group tiers no-ops, leaving `role ▸ ∗ ▸ default` — the per-role
 /// baseline. (A user subject_id is never empty — see `upsert_rule` validation — so the
 /// empty id matches no stored rule.)
-pub fn effective_matrix(rules: &[Rule]) -> Vec<Value> {
+///
+/// Each cell also carries `bot_owner` — the BOT OWNER's own effective decision,
+/// so the owner UI can show a "you (bot owner)" column and the deny-by-default
+/// DO rows stop reading as "nobody can, not even me". It mirrors the real gates:
+/// - INITIATE / RESPOND: always allowed (`gate_initiate` and `is_approver` both
+///   short-circuit for the bot owner / platform admin), `source: "owner"`.
+/// - SEE: NO owner bypass exists — visibility follows the same rules as anyone
+///   else, resolved here with the owner's user id (their per-user overrides
+///   apply) at the channel-owner role tier.
+pub fn effective_matrix(rules: &[Rule], owner_user_id: Option<&str>) -> Vec<Value> {
     const NO_USER: &str = "";
+    let owner_id = owner_user_id.unwrap_or(NO_USER);
     let mut out = Vec::new();
     for cap in [Capability::Initiate, Capability::See, Capability::Respond] {
         for ec in events_for(cap) {
@@ -386,10 +398,30 @@ pub fn effective_matrix(rules: &[Rule]) -> Vec<Value> {
                     json!({ "allow": allow, "source": if from_rule { "rule" } else { "default" } }),
                 );
             }
+            let bot_owner = match cap {
+                Capability::Initiate | Capability::Respond => {
+                    json!({ "allow": true, "source": "owner" })
+                }
+                Capability::See => {
+                    let allow = resolve_access(rules, BOT_WIDE, owner_id, "owner", &[], ec, cap);
+                    let from_rule = rules.iter().any(|r| {
+                        r.channel_id == BOT_WIDE
+                            && r.event_class == ec
+                            && r.capability == cap.as_str()
+                            && ((!owner_id.is_empty()
+                                && r.subject_kind == SUBJECT_USER
+                                && r.subject_id == owner_id)
+                                || (r.subject_kind == SUBJECT_ROLE
+                                    && (r.subject_id == "owner" || r.subject_id == ANY_SUBJECT)))
+                    });
+                    json!({ "allow": allow, "source": if from_rule { "rule" } else { "default" } })
+                }
+            };
             out.push(json!({
                 "capability": cap.as_str(),
                 "event_class": ec,
                 "roles": Value::Object(by_role),
+                "bot_owner": bot_owner,
             }));
         }
     }
@@ -948,7 +980,7 @@ mod tests {
 
         // No rules: cancel is member-allow by default; set_mode is member-deny;
         // respond/permission_request is deny for everyone (must be granted).
-        let m = effective_matrix(&[]);
+        let m = effective_matrix(&[], None);
         let cancel = find(&m, "initiate", "cancel");
         assert_eq!(cancel["roles"]["member"]["allow"], json!(true));
         assert_eq!(cancel["roles"]["member"]["source"], json!("default"));
@@ -971,12 +1003,85 @@ mod tests {
             Capability::Initiate,
             false,
         )];
-        let m2 = effective_matrix(&rules);
+        let m2 = effective_matrix(&rules, None);
         let cancel2 = find(&m2, "initiate", "cancel");
         assert_eq!(cancel2["roles"]["member"]["allow"], json!(false));
         assert_eq!(cancel2["roles"]["member"]["source"], json!("rule"));
         assert_eq!(cancel2["roles"]["admin"]["allow"], json!(true));
         assert_eq!(cancel2["roles"]["admin"]["source"], json!("default"));
+    }
+
+    #[test]
+    fn effective_matrix_bot_owner_column() {
+        let find = |m: &[Value], cap: &str, ec: &str| -> Value {
+            m.iter()
+                .find(|c| c["capability"] == cap && c["event_class"] == ec)
+                .cloned()
+                .unwrap_or_else(|| panic!("no {cap}/{ec} cell"))
+        };
+
+        // With no rules: the owner may always DO (even the deny-by-default
+        // set_mode) and always ANSWER — mirroring the gate_initiate/is_approver
+        // short-circuits — while SEE follows the membership default.
+        let m = effective_matrix(&[], Some("owner-1"));
+        assert_eq!(
+            find(&m, "initiate", "set_mode")["bot_owner"],
+            json!({ "allow": true, "source": "owner" })
+        );
+        assert_eq!(
+            find(&m, "respond", EV_PERMISSION_REQUEST)["bot_owner"],
+            json!({ "allow": true, "source": "owner" })
+        );
+        assert_eq!(
+            find(&m, "see", EV_TOOL_CALL)["bot_owner"],
+            json!({ "allow": true, "source": "default" })
+        );
+
+        // SEE has NO owner bypass: a bot-wide deny for role `*` hides the stream
+        // from the owner too — the column must show that honestly. A per-user
+        // allow for the owner id wins back visibility (user ▸ role).
+        let deny_all = vec![rule(
+            BOT_WIDE,
+            SUBJECT_ROLE,
+            ANY_SUBJECT,
+            EV_TOOL_CALL,
+            Capability::See,
+            false,
+        )];
+        let m2 = effective_matrix(&deny_all, Some("owner-1"));
+        assert_eq!(
+            find(&m2, "see", EV_TOOL_CALL)["bot_owner"],
+            json!({ "allow": false, "source": "rule" })
+        );
+        let mut with_user_allow = deny_all.clone();
+        with_user_allow.push(rule(
+            BOT_WIDE,
+            SUBJECT_USER,
+            "owner-1",
+            EV_TOOL_CALL,
+            Capability::See,
+            true,
+        ));
+        let m3 = effective_matrix(&with_user_allow, Some("owner-1"));
+        assert_eq!(
+            find(&m3, "see", EV_TOOL_CALL)["bot_owner"],
+            json!({ "allow": true, "source": "rule" })
+        );
+        // ...but INITIATE stays owner-allowed even under a blanket deny rule
+        // (the runtime gate short-circuits before rules are consulted).
+        let deny_initiate = vec![rule(
+            BOT_WIDE,
+            SUBJECT_ROLE,
+            ANY_SUBJECT,
+            EV_PROMPT,
+            Capability::Initiate,
+            false,
+        )];
+        let m4 = effective_matrix(&deny_initiate, Some("owner-1"));
+        assert_eq!(
+            find(&m4, "initiate", EV_PROMPT)["bot_owner"]["allow"],
+            json!(true)
+        );
     }
 
     #[test]

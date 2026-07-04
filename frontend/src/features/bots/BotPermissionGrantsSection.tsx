@@ -182,6 +182,12 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             <thead>
               <tr className="text-zinc-500">
                 <th className="px-2.5 py-1 text-left font-normal">Event</th>
+                <th
+                  className="px-2 py-1 text-center font-normal text-indigo-300"
+                  title="The bot owner (you). Do/Answer are always allowed — owner privilege, not revocable by grants. View follows the same rules as everyone else."
+                >
+                  you · bot owner
+                </th>
                 {MATRIX_ROLES.map((r) => (
                   <th key={r} className="px-2 py-1 text-center font-normal">
                     {r}
@@ -197,7 +203,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                   <Fragment key={cap}>
                     <tr>
                       <td
-                        colSpan={1 + MATRIX_ROLES.length}
+                        colSpan={2 + MATRIX_ROLES.length}
                         className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-600"
                         title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
                       >
@@ -215,6 +221,33 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                           >
                             {gl.label}
                           </span>
+                        </td>
+                        <td className="px-2 py-1 text-center">
+                          {c.bot_owner ? (
+                            <span
+                              className={
+                                c.bot_owner.source === "owner"
+                                  ? "text-indigo-300"
+                                  : c.bot_owner.allow
+                                  ? "text-emerald-400"
+                                  : "text-zinc-600"
+                              }
+                              title={
+                                c.bot_owner.source === "owner"
+                                  ? "always allowed — you own this bot"
+                                  : c.bot_owner.source === "rule"
+                                  ? "set by a grant (View has no owner bypass)"
+                                  : "membership default (View has no owner bypass)"
+                              }
+                            >
+                              {c.bot_owner.allow ? "✓" : "✗"}
+                              {c.bot_owner.source === "rule" && (
+                                <span className="text-indigo-400">•</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-700">—</span>
+                          )}
                         </td>
                         {MATRIX_ROLES.map((role) => {
                           const d = c.roles[role];
