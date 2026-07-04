@@ -15,7 +15,6 @@ services:
       # loopback — so keying the rate limiter on X-Real-IP/X-Forwarded-For is
       # safe here and required to distinguish real client IPs.
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-true}
-      - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-https://cheers.example.com}
       # Public websocket base handed to external connectors by the onboarding
       # flow. Without it the gateway falls back to ws://localhost:8000, which
       # only works for same-machine dev — never for a TLS deployment.
