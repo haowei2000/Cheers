@@ -268,6 +268,10 @@ export interface EventRule {
   decision: "allow" | "deny";
   updated_by?: string | null;
   updated_at?: string;
+  /** RFC3339 expiry; null/absent = permanent. */
+  expires_at?: string | null;
+  /** True when past expires_at: no longer enforced, listed until deleted/renewed. */
+  expired?: boolean;
 }
 
 /** Effective decision for one (event × role) cell of the baseline matrix. */
@@ -315,6 +319,8 @@ export async function upsertEventRule(
     event_class: string;
     capability: Capability;
     decision: "allow" | "deny";
+    /** RFC3339 expiry in the future; omit for a permanent rule. */
+    expires_at?: string;
   }
 ): Promise<void> {
   await apiJson(`/bots/${botId}/event-access`, {

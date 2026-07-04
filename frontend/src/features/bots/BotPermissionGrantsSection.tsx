@@ -41,6 +41,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   const [scope, setScope] = useState(""); // "" = bot-wide
   const [subject, setSubject] = useState(""); // "role:member" | "group:<ref>" | "user:<id>"
   const [decision, setDecision] = useState<"allow" | "deny">("allow");
+  // Time-box for the new rule: seconds until expiry ("" = permanent).
+  const [expiry, setExpiry] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -136,6 +138,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
     setScope("");
     setSubject("");
     setDecision("allow");
+    setExpiry("");
   };
 
   if (!access) {
@@ -360,6 +363,19 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               <option value="allow">allow</option>
               <option value="deny">deny</option>
             </select>
+            <select
+              value={expiry}
+              onChange={(e) => setExpiry(e.target.value)}
+              title="Time-box the rule: past the expiry it stops applying (listed as expired until deleted)"
+              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+            >
+              <option value="">permanent</option>
+              <option value="3600">for 1 hour</option>
+              <option value="28800">for 8 hours</option>
+              <option value="86400">for 1 day</option>
+              <option value="604800">for 7 days</option>
+              <option value="2592000">for 30 days</option>
+            </select>
             <button
               type="button"
               disabled={!perm || !subject || busy !== null}
@@ -374,6 +390,9 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     event_class: ec,
                     capability: cap as Capability,
                     decision,
+                    expires_at: expiry
+                      ? new Date(Date.now() + Number(expiry) * 1000).toISOString()
+                      : undefined,
                   });
                   resetDraft();
                 })
@@ -439,7 +458,31 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               <span className="text-zinc-400" title={r.channel_id || undefined}>
                 {scopeLabel(r.channel_id)}
               </span>
-              <span className={`ml-auto ${r.decision === "allow" ? "text-emerald-300" : "text-red-300"}`}>
+              {r.expired ? (
+                <span
+                  className="rounded px-1 py-0.5 text-[10px] border border-zinc-700 text-zinc-500"
+                  title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
+                >
+                  expired
+                </span>
+              ) : r.expires_at ? (
+                <span
+                  className="text-amber-400/80 text-[10px]"
+                  title={new Date(r.expires_at).toLocaleString()}
+                >
+                  until {new Date(r.expires_at).toLocaleDateString()}{" "}
+                  {new Date(r.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              ) : null}
+              <span
+                className={`ml-auto ${
+                  r.expired
+                    ? "text-zinc-600 line-through"
+                    : r.decision === "allow"
+                      ? "text-emerald-300"
+                      : "text-red-300"
+                }`}
+              >
                 {r.decision}
               </span>
               <button

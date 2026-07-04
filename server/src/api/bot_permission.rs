@@ -385,6 +385,10 @@ pub struct UpsertEventRuleRequest {
     pub event_class: String,
     pub capability: String, // initiate | see | respond
     pub decision: String,   // allow | deny
+    /// Optional expiry (RFC3339, must be in the future). Absent/null = permanent.
+    /// Past `expires_at` the rule stops matching (load_rules filters it) and shows
+    /// as `expired` in the list until deleted or re-upserted with a new expiry.
+    pub expires_at: Option<String>,
 }
 
 /// PUT /bots/:bot_id/event-access — owner/admin upsert one rule.
@@ -421,6 +425,20 @@ pub async fn upsert_event_rule(
     if subject_id.is_empty() {
         return Err(AppError::BadRequest("subject_id required".into()));
     }
+    let expires_at = match body.expires_at.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(raw) => {
+            let t = chrono::DateTime::parse_from_rfc3339(raw)
+                .map_err(|e| AppError::BadRequest(format!("invalid expires_at: {e}")))?
+                .with_timezone(&chrono::Utc);
+            if t <= chrono::Utc::now() {
+                return Err(AppError::BadRequest(
+                    "expires_at must be in the future".into(),
+                ));
+            }
+            Some(t)
+        }
+    };
     let channel = normalize_channel(body.channel_id);
     bot_event_policy::upsert_rule(
         &state.db,
@@ -432,6 +450,7 @@ pub async fn upsert_event_rule(
         capability,
         allow,
         &claims.sub,
+        expires_at,
     )
     .await?;
     Ok(Json(json!({ "ok": true })))

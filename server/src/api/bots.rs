@@ -163,7 +163,9 @@ pub async fn list_bots(
         // The auto-update prompt/config is only meaningful to a manager, and the
         // prompt may embed private instructions — redact for channel-mates.
         let status_update_prompt = if can_manage {
-            r.try_get::<Option<String>, _>("status_update_prompt").ok().flatten()
+            r.try_get::<Option<String>, _>("status_update_prompt")
+                .ok()
+                .flatten()
         } else {
             None
         };
@@ -378,7 +380,10 @@ pub async fn get_bot_status(
     // GET /bots/:bot_id/connection-events).
     let (last_connected_at, last_disconnected_at) = sqlx::query_as::<
         _,
-        (Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>),
+        (
+            Option<chrono::DateTime<chrono::Utc>>,
+            Option<chrono::DateTime<chrono::Utc>>,
+        ),
     >(
         "SELECT MAX(created_at) FILTER (WHERE event = 'connected'),
                 MAX(created_at) FILTER (WHERE event = 'disconnected')
@@ -656,10 +661,20 @@ pub async fn update_bot_profile(
     let status_emoji = BotPatchField::read(obj, "status_emoji");
     let status_prompt = BotPatchField::read(obj, "status_update_prompt");
 
-    if status_text.value.as_deref().is_some_and(|s| s.chars().count() > 140) {
-        return Err(AppError::BadRequest("status_text too long (≤140 chars)".into()));
+    if status_text
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 140)
+    {
+        return Err(AppError::BadRequest(
+            "status_text too long (≤140 chars)".into(),
+        ));
     }
-    if status_emoji.value.as_deref().is_some_and(|s| s.chars().count() > 32) {
+    if status_emoji
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 32)
+    {
         return Err(AppError::BadRequest("status_emoji too long".into()));
     }
 
@@ -782,7 +797,9 @@ pub async fn bot_self_status(
     .fetch_optional(&state.db)
     .await?;
     if matched.is_none() {
-        return Err(AppError::Unauthorized("invalid bot token for this bot".into()));
+        return Err(AppError::Unauthorized(
+            "invalid bot token for this bot".into(),
+        ));
     }
 
     let status_text = body
@@ -803,8 +820,13 @@ pub async fn bot_self_status(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    if status_text.as_deref().is_some_and(|s| s.chars().count() > 140) {
-        return Err(AppError::BadRequest("status_text too long (≤140 chars)".into()));
+    if status_text
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 140)
+    {
+        return Err(AppError::BadRequest(
+            "status_text too long (≤140 chars)".into(),
+        ));
     }
 
     let description_provided = body.description.is_some();

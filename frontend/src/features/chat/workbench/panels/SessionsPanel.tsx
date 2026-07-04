@@ -22,6 +22,7 @@ import {
   type SessionControls,
 } from "@/api/sessionControl";
 import { listChannelMembers } from "@/api/channels";
+import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Dialog } from "@/components/ui/dialog";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
 
@@ -340,6 +341,23 @@ function NewSessionDialog({
   const [cwd, setCwd] = useState("");
   const [dirs, setDirs] = useState("");
   const [busy, setBusy] = useState(false);
+  // The connector's workspace policy for the selected bot — turns the blind
+  // absolute-path inputs into a pick-from-allowed-roots affordance. Best-effort:
+  // null (offline connector / older gateway) keeps the plain inputs.
+  const [meta, setMeta] = useState<WorkspaceMeta | null>(null);
+  useEffect(() => {
+    if (!botId) {
+      setMeta(null);
+      return;
+    }
+    let alive = true;
+    getWorkspaceMeta(channelId, botId)
+      .then((m) => alive && setMeta(m))
+      .catch(() => alive && setMeta(null));
+    return () => {
+      alive = false;
+    };
+  }, [channelId, botId]);
 
   async function create() {
     if (!botId || busy) return;
@@ -391,11 +409,35 @@ function NewSessionDialog({
             type="text"
             value={cwd}
             disabled={busy}
-            placeholder="/abs/workdir"
+            placeholder={meta?.default_cwd ?? "/abs/workdir"}
+            list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void create()}
             className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-indigo-500"
           />
+          {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
+          <datalist id="ws-allowed-roots">
+            {meta?.allowed_roots.map((r) => <option key={r} value={r} />)}
+          </datalist>
+          {meta && meta.allowed_roots.length > 0 && (
+            <span className="block text-[10px] text-zinc-600">
+              {meta.backend_may_set_cwd
+                ? "Must be inside an allowed root: "
+                : "This connector does not let the platform set a cwd. Allowed roots: "}
+              {meta.allowed_roots.map((r, i) => (
+                <button
+                  key={r}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setCwd(r)}
+                  className="font-mono text-zinc-500 hover:text-indigo-300 underline decoration-dotted"
+                >
+                  {r}
+                  {i < meta.allowed_roots.length - 1 ? ", " : ""}
+                </button>
+              ))}
+            </span>
+          )}
         </label>
         <label className="block space-y-1">
           <span className="text-xs text-zinc-500">Extra roots (optional, one absolute path per line)</span>

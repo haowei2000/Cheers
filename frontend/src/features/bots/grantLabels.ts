@@ -57,6 +57,10 @@ const EVENT_LABEL: Record<string, GrantLabel> = {
     label: "Remote file write",
     desc: "Write files onto the bot's machine via the workspace browser",
   },
+  workspace_read: {
+    label: "Remote workspace visibility",
+    desc: "Browse files and git state on the bot's machine (allowed for members by default; deny to restrict)",
+  },
   // ── SEE: agent→user streams ─────────────────────────────────────────────────
   output: {
     label: "Bot replies",

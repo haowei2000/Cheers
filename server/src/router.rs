@@ -392,6 +392,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/workspace/git/show",
             get(api::workspace::get_git_show),
         )
+        .route(
+            "/api/v1/channels/:channel_id/workspace/git/commit-files",
+            get(api::workspace::get_git_commit_files),
+        )
+        // 工作区策略元数据(allowed_roots / default_cwd / git 开关),给根目录选择器用
+        .route(
+            "/api/v1/channels/:channel_id/workspace/meta",
+            get(api::workspace::get_workspace_meta),
+        )
         // 远程工作区实时监听:start/stop 连接器的文件变更 watcher
         .route(
             "/api/v1/channels/:channel_id/workspace/watch",

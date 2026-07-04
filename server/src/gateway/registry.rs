@@ -273,7 +273,10 @@ mod tests {
 
         // The server finally notices the old data socket died: guarded no-op.
         reg.unbind_data(bot, old_data_conn);
-        assert!(reg.is_online(bot), "stale cleanup must not take the bot offline");
+        assert!(
+            reg.is_online(bot),
+            "stale cleanup must not take the bot offline"
+        );
 
         // The real (new) data socket closing does unbind.
         reg.unbind_data(bot, new_data_conn);

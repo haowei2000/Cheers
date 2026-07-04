@@ -135,6 +135,20 @@ pub const REGISTRY: &[AcpEvent] = &[
         Some("initiate"),
         false,
     ),
+    // Cheers-level remote-workspace READ visibility (not a raw ACP method): who may
+    // browse the tree, read files, and run the read-only git inspections in the
+    // workspace browser. Unlike `workspace/write` this DEFAULTS TO MEMBER-ALLOWED
+    // (channel membership stays the baseline — see bot_event_policy::default_access),
+    // so registering it changes nothing until a rule exists; it makes read visibility
+    // deniable/grantable per-subject (e.g. owner restricts a channel to owner-only,
+    // or denies one member) exactly like the other matrix classes.
+    ev(
+        "workspace/read",
+        Home::Cheers,
+        Some("workspace_read"),
+        Some("initiate"),
+        false,
+    ),
     // ── agent→client requests ────────────────────────────────────────────────
     // permission_request: Cheers SEE (view the card) + RESPOND (answer it).
     ev(

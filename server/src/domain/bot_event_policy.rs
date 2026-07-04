@@ -301,11 +301,15 @@ async fn is_workspace_member(db: &PgPool, workspace_id: &str, user_id: &str) -> 
     .unwrap_or(false)
 }
 
-/// Load all access rules for a bot (cheap; a bot has few rules).
+/// Load all access rules for a bot (cheap; a bot has few rules). Time-boxed rules
+/// past their `expires_at` are filtered out HERE — the single load point every
+/// enforcement path (resolve / effective_matrix / gates) goes through — so an
+/// expired grant simply stops matching and the membership default takes over.
 pub async fn load_rules(db: &PgPool, bot_id: &str) -> Result<Vec<Rule>, AppError> {
     let rows = sqlx::query(
         "SELECT channel_id, subject_kind, subject_id, event_class, capability, decision
-         FROM bot_event_access WHERE bot_id = $1",
+         FROM bot_event_access
+         WHERE bot_id = $1 AND (expires_at IS NULL OR expires_at > NOW())",
     )
     .bind(bot_id)
     .fetch_all(db)
@@ -432,7 +436,8 @@ pub fn effective_matrix(rules: &[Rule], owner_user_id: Option<&str>) -> Vec<Valu
 pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, AppError> {
     let rows = sqlx::query(
         "SELECT channel_id, subject_kind, subject_id, event_class, capability, decision,
-                updated_by, updated_at
+                updated_by, updated_at, expires_at,
+                (expires_at IS NOT NULL AND expires_at <= NOW()) AS expired
          FROM bot_event_access WHERE bot_id = $1
          ORDER BY updated_at DESC",
     )
@@ -452,12 +457,22 @@ pub async fn list_rules_json(db: &PgPool, bot_id: &str) -> Result<Vec<Value>, Ap
                 "updated_by": r.try_get::<Option<String>, _>("updated_by").ok().flatten(),
                 "updated_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at")
                     .map(|t| t.to_rfc3339()).unwrap_or_default(),
+                // Time-box: null = permanent. `expired` rules no longer match at
+                // resolution (load_rules filters them) but stay listed until deleted.
+                "expires_at": r
+                    .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("expires_at")
+                    .ok()
+                    .flatten()
+                    .map(|t| t.to_rfc3339()),
+                "expired": r.try_get::<bool, _>("expired").unwrap_or(false),
             })
         })
         .collect())
 }
 
-/// Upsert one access rule (owner API). `allow=false` stores a `deny`.
+/// Upsert one access rule (owner API). `allow=false` stores a `deny`. `expires_at`
+/// time-boxes the rule (`None` = permanent); re-upserting an expired rule with a new
+/// expiry renews it in place.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_rule(
     db: &PgPool,
@@ -469,15 +484,17 @@ pub async fn upsert_rule(
     capability: Capability,
     allow: bool,
     updated_by: &str,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO bot_event_access
             (bot_id, channel_id, subject_kind, subject_id, event_class, capability,
-             decision, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+             decision, updated_by, updated_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
          ON CONFLICT (bot_id, channel_id, subject_kind, subject_id, event_class, capability)
          DO UPDATE SET decision = EXCLUDED.decision,
-                       updated_by = EXCLUDED.updated_by, updated_at = NOW()",
+                       updated_by = EXCLUDED.updated_by, updated_at = NOW(),
+                       expires_at = EXCLUDED.expires_at",
     )
     .bind(bot_id)
     .bind(channel_id)
@@ -487,6 +504,7 @@ pub async fn upsert_rule(
     .bind(capability.as_str())
     .bind(if allow { "allow" } else { "deny" })
     .bind(updated_by)
+    .bind(expires_at)
     .execute(db)
     .await?;
     Ok(())
@@ -938,6 +956,75 @@ mod tests {
         ));
         // ...and it is in the INITIATE grant vocabulary so the owner UI can grant it.
         assert!(initiate_events().contains(&"workspace_write"));
+    }
+
+    #[test]
+    fn workspace_read_is_member_default_but_deniable_and_grantable() {
+        // Baseline unchanged: with no rules, a plain member may read (browse/git).
+        assert!(allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "workspace_read",
+            Capability::Initiate
+        ));
+        // The owner can RESTRICT: a channel-scoped role deny turns visibility off
+        // for members there, without touching other channels.
+        let deny_members = vec![rule(
+            "c1",
+            SUBJECT_ROLE,
+            "member",
+            "workspace_read",
+            Capability::Initiate,
+            false,
+        )];
+        assert!(!allows(
+            &deny_members,
+            "c1",
+            "u1",
+            "member",
+            "workspace_read",
+            Capability::Initiate
+        ));
+        assert!(allows(
+            &deny_members,
+            "c2",
+            "u1",
+            "member",
+            "workspace_read",
+            Capability::Initiate
+        ));
+        // ...and re-widen for one trusted user (user ▸ role precedence).
+        let with_exception = vec![
+            deny_members[0].clone(),
+            rule(
+                "c1",
+                SUBJECT_USER,
+                "u1",
+                "workspace_read",
+                Capability::Initiate,
+                true,
+            ),
+        ];
+        assert!(allows(
+            &with_exception,
+            "c1",
+            "u1",
+            "member",
+            "workspace_read",
+            Capability::Initiate
+        ));
+        assert!(!allows(
+            &with_exception,
+            "c1",
+            "u2",
+            "member",
+            "workspace_read",
+            Capability::Initiate
+        ));
+        // It is in the INITIATE vocabulary so the owner UI can manage it.
+        assert!(initiate_events().contains(&"workspace_read"));
     }
 
     #[test]
