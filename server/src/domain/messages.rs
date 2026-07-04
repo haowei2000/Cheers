@@ -202,7 +202,9 @@ pub async fn create_message(
     };
     let bots = match &targeted_session {
         Some((bot, _, _)) => vec![*bot],
-        None => resolve_bot_triggers(db, params.channel_id, &mentions).await,
+        None => {
+            resolve_bot_triggers(db, params.channel_id, &mentions, params.reply_to_msg_id).await
+        }
     };
     // readonly 角色的 bot 不派发：它在 resource 层本就发不出消息，唤醒只会
     // 产生一个必然失败的回合。消息本身照常入库。
@@ -436,16 +438,19 @@ async fn validate_file_ids(
 
 /// 判断哪些 bot 应该响应这条消息（去中心化网格路由）。
 ///
-/// 目标规则（DECENTRALIZED_MESH §2）：
+/// 目标规则（DECENTRALIZED_MESH §2 + reply 路由）：
 ///   1. 从 `mentions`（写入时已解析）中取 type=bot 的成员。
-///   2. 若无 @bot mention，回落 `channels.default_bot_id`（覆盖 workspace 级）。
-///   3. 返回空 → 静默（消息仍记录）。
+///   2. 无 @bot 但回复的是某个 bot 的消息 → 触发该 bot（回复即指名道姓；
+///      排在显式 @mention 之后、default_bot 之前）。
+///   3. 否则回落 `channels.default_bot_id`（覆盖 workspace 级）。
+///   4. 返回空 → 静默（消息仍记录）。
 ///
 /// `mentions` 由 `create_message` 在消息事务内写入前扫描并验证，无额外查询。
 async fn resolve_bot_triggers(
     db: &PgPool,
     channel_id: Uuid,
     mentions: &[crate::domain::mentions::Mention],
+    reply_to_msg_id: Option<Uuid>,
 ) -> Vec<Uuid> {
     use crate::domain::mentions::MemberType;
 
@@ -460,7 +465,29 @@ async fn resolve_bot_triggers(
         return mentioned_bots;
     }
 
-    // 2. 无 @bot → 回落 channels.default_bot_id
+    // 2. 回复目标是本频道内某个 bot 的消息 → 触发该 bot。同频道校验防止跨频道
+    //    注入；成员资格/可写角色由下游 filter_writable_bots 统一把关（与
+    //    mention 路径一致）。此路径只在用户发消息时走到（bot 回帖不经过这里）。
+    if let Some(reply_id) = reply_to_msg_id {
+        let bot: Option<String> = sqlx::query_scalar(
+            "SELECT sender_id FROM messages
+             WHERE msg_id = $1 AND channel_id = $2 AND sender_type = 'bot'
+               AND is_deleted = FALSE",
+        )
+        .bind(reply_id.to_string())
+        .bind(channel_id.to_string())
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten();
+        if let Some(raw) = bot {
+            if let Ok(bot_id) = Uuid::parse_str(&raw) {
+                return vec![bot_id];
+            }
+        }
+    }
+
+    // 3. 无 @bot、非回复 bot → 回落 channels.default_bot_id
     use sqlx::Row;
 
     match sqlx::query(
