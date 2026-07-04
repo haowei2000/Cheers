@@ -19,7 +19,10 @@ async fn reap_once(db: &PgPool, retention_secs: i64) {
     .await;
     match res {
         Ok(r) if r.rows_affected() > 0 => {
-            tracing::info!(deleted = r.rows_affected(), "reaped old bot connection events");
+            tracing::info!(
+                deleted = r.rows_affected(),
+                "reaped old bot connection events"
+            );
         }
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "bot connection event reaper failed"),

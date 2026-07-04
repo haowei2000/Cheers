@@ -57,3 +57,35 @@ pub async fn get_or_create_personal_workspace(
 fn parse_ws(s: String) -> Result<Uuid, AppError> {
     Uuid::parse_str(&s).map_err(|_| AppError::Internal("invalid workspace_id".into()))
 }
+
+/// Channel invite ⇒ workspace membership (Slack semantics): pulling a user into a
+/// channel of a TEAM workspace makes them an active member of that workspace, so
+/// the channel lands under the workspace on their rail instead of being orphaned.
+/// PERSONAL workspaces are deliberately excluded — they are private, unlisted, and
+/// unjoinable by design, so a personal-space channel share stays a guest membership
+/// (surfaced by the sidebar's "shared with you" section via `/channels?guest=true`).
+/// Never downgrades: an existing member keeps their role; a pending invite is
+/// activated (being added to a channel is a stronger signal than the invite).
+pub async fn ensure_member_for_channel_invite<'e, E>(
+    db: E,
+    channel_id: &str,
+    user_id: &str,
+) -> Result<(), AppError>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    sqlx::query(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+         SELECT c.workspace_id, $2, 'member', 'active'
+         FROM channels c
+         JOIN workspaces w ON w.workspace_id = c.workspace_id
+         WHERE c.channel_id = $1 AND w.kind <> 'personal'
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET status = 'active'",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .execute(db)
+    .await
+    .map_err(AppError::Db)?;
+    Ok(())
+}

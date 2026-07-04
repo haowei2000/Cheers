@@ -88,9 +88,11 @@ export function Sidebar({ workspace }: Props) {
   // Only team workspaces have a settings panel (the personal workspace isn't managed).
   const canOpenSettings = !!workspace && workspace.kind !== "personal";
 
-  // Guest channels: ones the user was invited into whose WORKSPACE they aren't a
-  // member of (loaded via /channels?guest=true). They belong to no rail workspace,
-  // so they get their own always-visible section instead of vanishing.
+  // Guest channels (via /channels?guest=true): ones the user belongs to whose
+  // WORKSPACE they aren't a member of. Team invites auto-join the workspace, so
+  // in practice these are personal-workspace shares (unjoinable by design) or
+  // leftovers from a workspace removal. No rail workspace owns them, so they get
+  // their own section instead of vanishing.
   const isGuest = (c: Channel) =>
     c.type !== "dm" && !!c.workspace_id && c.workspace_id !== selectedWorkspaceId;
   const publicChannels = channels.filter(

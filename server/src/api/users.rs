@@ -86,9 +86,9 @@ pub async fn update_me(
     Extension(claims): Extension<Claims>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let obj = body.as_object().ok_or_else(|| {
-        AppError::BadRequest("request body must be a JSON object".into())
-    })?;
+    let obj = body
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("request body must be a JSON object".into()))?;
     let display_name = PatchField::read(obj, "display_name");
     let bio = PatchField::read(obj, "bio");
     let avatar_url = PatchField::read(obj, "avatar_url");
@@ -96,10 +96,20 @@ pub async fn update_me(
     let status_emoji = PatchField::read(obj, "status_emoji");
 
     // Length guards (columns are VARCHAR(140)/(32); reject early with a clean 400).
-    if status_text.value.as_deref().is_some_and(|s| s.chars().count() > 140) {
-        return Err(AppError::BadRequest("status_text too long (≤140 chars)".into()));
+    if status_text
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 140)
+    {
+        return Err(AppError::BadRequest(
+            "status_text too long (≤140 chars)".into(),
+        ));
     }
-    if status_emoji.value.as_deref().is_some_and(|s| s.chars().count() > 32) {
+    if status_emoji
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 32)
+    {
         return Err(AppError::BadRequest("status_emoji too long".into()));
     }
 

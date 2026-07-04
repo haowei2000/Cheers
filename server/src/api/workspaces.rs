@@ -327,10 +327,7 @@ pub async fn search_workspace_invitable(
         return Ok(Json(Vec::new()));
     }
     let me = current_user_id(&claims);
-    let pattern = format!(
-        "%{}%",
-        crate::domain::messages::escape_like_pattern(term)
-    );
+    let pattern = format!("%{}%", crate::domain::messages::escape_like_pattern(term));
     let rows = sqlx::query(
         "SELECT u.user_id, u.username, u.display_name, u.avatar_url, wm.status AS membership
          FROM users u

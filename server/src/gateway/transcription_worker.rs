@@ -106,14 +106,27 @@ async fn transcribe_batch(
         };
 
         match transcribe_one(
-            db, s3client, http, bucket, &settings, &file_id, &object_key, &filename,
+            db,
+            s3client,
+            http,
+            bucket,
+            &settings,
+            &file_id,
+            &object_key,
+            &filename,
         )
         .await
         {
             Ok(summary) => {
                 transcribed += 1;
-                notify_transcribed(fanout, channel_id.as_deref(), &file_id, "done", Some(&summary))
-                    .await;
+                notify_transcribed(
+                    fanout,
+                    channel_id.as_deref(),
+                    &file_id,
+                    "done",
+                    Some(&summary),
+                )
+                .await;
             }
             Err(e) => {
                 let attempts = record_failure(db, &file_id, &e.to_string()).await;
@@ -126,7 +139,10 @@ async fn transcribe_batch(
         }
     }
     if transcribed > 0 {
-        tracing::info!(count = transcribed, "transcription worker: transcripts stored");
+        tracing::info!(
+            count = transcribed,
+            "transcription worker: transcripts stored"
+        );
     }
     transcribed
 }

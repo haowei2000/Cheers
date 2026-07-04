@@ -37,12 +37,10 @@ pub struct SttSettingsUpdate {
 /// longer decrypts (master key rotated) degrades to `api_key: None` with a log —
 /// the admin UI shows the key as unset and asks for re-entry.
 pub async fn load(db: &PgPool, master_key: &[u8; 32]) -> Result<Option<SttSettings>, AppError> {
-    let value = sqlx::query_scalar::<_, Value>(
-        "SELECT value FROM system_settings WHERE key = $1",
-    )
-    .bind(SETTINGS_KEY)
-    .fetch_optional(db)
-    .await?;
+    let value = sqlx::query_scalar::<_, Value>("SELECT value FROM system_settings WHERE key = $1")
+        .bind(SETTINGS_KEY)
+        .fetch_optional(db)
+        .await?;
     let Some(value) = value else {
         return Ok(None);
     };
@@ -60,7 +58,10 @@ pub async fn load(db: &PgPool, master_key: &[u8; 32]) -> Result<Option<SttSettin
         });
 
     Ok(Some(SttSettings {
-        enabled: value.get("enabled").and_then(Value::as_bool).unwrap_or(false),
+        enabled: value
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         endpoint: value
             .get("endpoint")
             .and_then(Value::as_str)
@@ -82,18 +83,17 @@ pub async fn save(
     master_key: &[u8; 32],
     update: SttSettingsUpdate,
 ) -> Result<(), AppError> {
-    let existing_enc = sqlx::query_scalar::<_, Value>(
-        "SELECT value FROM system_settings WHERE key = $1",
-    )
-    .bind(SETTINGS_KEY)
-    .fetch_optional(db)
-    .await?
-    .and_then(|v| {
-        v.get("api_key_enc")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-    });
+    let existing_enc =
+        sqlx::query_scalar::<_, Value>("SELECT value FROM system_settings WHERE key = $1")
+            .bind(SETTINGS_KEY)
+            .fetch_optional(db)
+            .await?
+            .and_then(|v| {
+                v.get("api_key_enc")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            });
 
     let api_key_enc = match update.api_key.as_deref() {
         None => existing_enc,
