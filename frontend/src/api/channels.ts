@@ -6,6 +6,16 @@ export async function listChannels(workspaceId?: string): Promise<Channel[]> {
   return apiJson<Channel[]>(`/channels${qs}`);
 }
 
+/**
+ * Channels the caller belongs to WITHOUT being a member of their workspace
+ * (invited into the channel from outside). They never appear under a rail
+ * workspace, so the sidebar shows them in a separate "shared with you" section;
+ * each carries `workspace_name` as its label.
+ */
+export async function listGuestChannels(): Promise<Channel[]> {
+  return apiJson<Channel[]>("/channels?guest=true");
+}
+
 export async function getChannel(channelId: string): Promise<Channel> {
   return apiJson<Channel>(`/channels/${channelId}`);
 }

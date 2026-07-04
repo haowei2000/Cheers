@@ -75,6 +75,29 @@ export async function inviteWorkspaceMember(
   });
 }
 
+/** A workspace-invite candidate; `membership` non-null means already in (or invited). */
+export interface WorkspaceInvitable {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  membership?: "active" | "pending" | null;
+}
+
+/**
+ * Candidate search for the invite box (admin only). Privacy-preserving: substring
+ * search matches only YOUR accepted friends; anyone else needs their EXACT
+ * username or email (there is no site-wide directory to browse).
+ */
+export async function searchWorkspaceInvitable(
+  workspaceId: string,
+  q: string
+): Promise<WorkspaceInvitable[]> {
+  return apiJson<WorkspaceInvitable[]>(
+    `/workspaces/${workspaceId}/invitable?q=${encodeURIComponent(q)}`
+  );
+}
+
 export async function removeWorkspaceMember(
   workspaceId: string,
   userId: string

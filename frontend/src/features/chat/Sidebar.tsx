@@ -88,10 +88,16 @@ export function Sidebar({ workspace }: Props) {
   // Only team workspaces have a settings panel (the personal workspace isn't managed).
   const canOpenSettings = !!workspace && workspace.kind !== "personal";
 
+  // Guest channels: ones the user was invited into whose WORKSPACE they aren't a
+  // member of (loaded via /channels?guest=true). They belong to no rail workspace,
+  // so they get their own always-visible section instead of vanishing.
+  const isGuest = (c: Channel) =>
+    c.type !== "dm" && !!c.workspace_id && c.workspace_id !== selectedWorkspaceId;
   const publicChannels = channels.filter(
-    (c) => c.type !== "dm" && c.type !== "private"
+    (c) => c.type !== "dm" && c.type !== "private" && !isGuest(c)
   );
-  const privateChannels = channels.filter((c) => c.type === "private");
+  const privateChannels = channels.filter((c) => c.type === "private" && !isGuest(c));
+  const guestChannels = channels.filter(isGuest);
   const dms = channels.filter((c) => c.type === "dm");
 
   return (
@@ -134,6 +140,28 @@ export function Sidebar({ workspace }: Props) {
                 selected={selectedChannelId === ch.channel_id}
                 onClick={() => selectChannel(ch.channel_id)}
               />
+            ))}
+          </Section>
+        )}
+
+        {/* Channels shared from workspaces the user is NOT a member of (guest
+            membership via channel invite). Labelled with the owning workspace so
+            "why is this here" answers itself. */}
+        {guestChannels.length > 0 && (
+          <Section label="Shared with you" defaultOpen>
+            {guestChannels.map((ch) => (
+              <div key={ch.channel_id} title={ch.workspace_name ? `From workspace “${ch.workspace_name}”` : undefined}>
+                <ChannelItem
+                  channel={ch}
+                  selected={selectedChannelId === ch.channel_id}
+                  onClick={() => selectChannel(ch.channel_id)}
+                />
+                {ch.workspace_name && (
+                  <div className="pl-9 -mt-0.5 pb-0.5 text-[10px] text-zinc-600 truncate">
+                    {ch.workspace_name}
+                  </div>
+                )}
+              </div>
             ))}
           </Section>
         )}

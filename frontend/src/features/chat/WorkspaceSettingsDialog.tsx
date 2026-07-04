@@ -9,13 +9,14 @@ import {
   addWorkspaceMember,
   inviteWorkspaceMember,
   removeWorkspaceMember,
+  searchWorkspaceInvitable,
   updateWorkspace,
   deleteWorkspace,
   setWorkspaceMemberRole,
   leaveWorkspace,
+  type WorkspaceInvitable,
   type WorkspaceMember,
 } from "@/api/workspaces";
-import { searchUsers, type UserSearchResult } from "@/api/users";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { Workspace } from "@/types";
@@ -45,7 +46,7 @@ export function WorkspaceSettingsDialog({
 
   const [query, setQuery] = useState("");
   const [role, setRole] = useState<(typeof ROLES)[number]>("member");
-  const [results, setResults] = useState<UserSearchResult[]>([]);
+  const [results, setResults] = useState<WorkspaceInvitable[]>([]);
   const [searching, setSearching] = useState(false);
 
   async function refreshMembers() {
@@ -61,6 +62,9 @@ export function WorkspaceSettingsDialog({
     void refreshMembers();
   }, [workspace.workspace_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Candidate search: friends by substring, anyone by exact username/email — the
+  // dedicated workspace endpoint. (The old code hit /friends/search, which only
+  // matches an exact UUID, so typing a name always found nobody.)
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
@@ -69,13 +73,13 @@ export function WorkspaceSettingsDialog({
     }
     setSearching(true);
     const t = setTimeout(() => {
-      searchUsers(q)
+      searchWorkspaceInvitable(workspace.workspace_id, q)
         .then(setResults)
         .catch(() => setResults([]))
         .finally(() => setSearching(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, workspace.workspace_id]);
 
   async function saveMeta() {
     const trimmed = name.trim();
@@ -94,7 +98,7 @@ export function WorkspaceSettingsDialog({
     }
   }
 
-  async function add(u: UserSearchResult, invite: boolean) {
+  async function add(u: WorkspaceInvitable, invite: boolean) {
     try {
       if (invite) {
         const res = await inviteWorkspaceMember(workspace.workspace_id, {
@@ -239,7 +243,7 @@ export function WorkspaceSettingsDialog({
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search users…"
+                    placeholder="Search friends, or exact username / email…"
                     className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
                   />
                   <select
@@ -254,7 +258,7 @@ export function WorkspaceSettingsDialog({
                     ))}
                   </select>
                 </div>
-                {(results.length > 0 || searching) && (
+                {(results.length > 0 || searching || query.trim().length >= 2) && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 shadow-lg max-h-44 overflow-y-auto">
                     {searching && (
                       <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
@@ -268,22 +272,36 @@ export function WorkspaceSettingsDialog({
                         <span className="text-sm text-zinc-200 truncate flex-1">
                           {u.display_name || u.username}
                         </span>
-                        <button
-                          onClick={() => void add(u, true)}
-                          title="Send an invite the user must accept"
-                          className="text-xs text-indigo-400 hover:text-indigo-300"
-                        >
-                          Invite
-                        </button>
-                        <button
-                          onClick={() => void add(u, false)}
-                          title="Add the user without an invite"
-                          className="text-xs text-zinc-400 hover:text-zinc-200"
-                        >
-                          Add directly
-                        </button>
+                        {u.membership ? (
+                          <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
+                            {u.membership === "pending" ? "Invited" : "Member"}
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => void add(u, true)}
+                              title="Send an invite the user must accept"
+                              className="text-xs text-indigo-400 hover:text-indigo-300"
+                            >
+                              Invite
+                            </button>
+                            <button
+                              onClick={() => void add(u, false)}
+                              title="Add the user without an invite"
+                              className="text-xs text-zinc-400 hover:text-zinc-200"
+                            >
+                              Add directly
+                            </button>
+                          </>
+                        )}
                       </div>
                     ))}
+                    {!searching && results.length === 0 && query.trim().length >= 2 && (
+                      <div className="px-3 py-2 text-xs text-zinc-500">
+                        No matches. Name search covers your friends — for anyone else,
+                        type their exact username or email.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -24,6 +24,11 @@ pub struct ChannelDto {
     /// 0 for queries that don't compute it (create/get/update single-channel).
     #[serde(default)]
     pub unread_count: i64,
+    /// The owning workspace's name — populated ONLY by the `guest=true` listing,
+    /// where the caller isn't a workspace member and the sidebar needs a label
+    /// for the "shared with you" section. Absent everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +95,9 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         allow_member_invites: row.try_get("allow_member_invites").unwrap_or(true),
         allow_bot_adds: row.try_get("allow_bot_adds").unwrap_or(true),
         unread_count: row.try_get("unread_count").unwrap_or(0),
+        // Only the guest-scope query selects this column (labels the "shared with
+        // you" section); every other query leaves it absent → None.
+        workspace_name: row.try_get("workspace_name").ok(),
     }
 }
 
@@ -148,6 +156,11 @@ async fn ensure_channel_admin(
 #[derive(Deserialize)]
 pub struct ListChannelsQuery {
     pub workspace_id: Option<String>,
+    /// `guest=true` → ONLY channels the caller belongs to whose workspace they are
+    /// NOT an active member of (invited into a channel from outside the workspace).
+    /// These never show under a rail workspace, so the sidebar lists them in a
+    /// separate "shared with you" section. Mutually exclusive with `workspace_id`.
+    pub guest: Option<bool>,
 }
 
 pub async fn list_channels(
@@ -155,6 +168,35 @@ pub async fn list_channels(
     Extension(claims): Extension<Claims>,
     Query(q): Query<ListChannelsQuery>,
 ) -> Result<Json<Vec<ChannelDto>>, AppError> {
+    // Guest scope: channel member ∧ NOT active workspace member. Carries the
+    // workspace name purely as a display label — membership still isn't granted.
+    if q.guest == Some(true) {
+        let rows = sqlx::query(
+            "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
+                    c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
+                    w.name AS workspace_name,
+                    COALESCE((
+                        SELECT count(*) FROM messages m
+                        WHERE m.channel_id = c.channel_id
+                          AND m.is_partial = FALSE
+                          AND m.sender_id <> $1
+                          AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                    ), 0) AS unread_count
+             FROM channels c
+             JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+                    AND cm.member_id = $1 AND cm.member_type = 'user'
+             JOIN workspaces w ON w.workspace_id = c.workspace_id
+             LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id
+                    AND wm.user_id = $1 AND wm.status = 'active'
+             WHERE c.type != 'dm'
+               AND wm.user_id IS NULL
+             ORDER BY c.created_at DESC",
+        )
+        .bind(&claims.sub)
+        .fetch_all(&state.db)
+        .await?;
+        return Ok(Json(rows.into_iter().map(dto).collect()));
+    }
     // Scope to one workspace when `?workspace_id=` is given (the sidebar always
     // passes it). The handler previously ignored the param entirely, leaking
     // every workspace's channels into whichever one you had selected.

@@ -287,6 +287,92 @@ pub async fn list_workspace_members(
     ))
 }
 
+#[derive(Deserialize)]
+pub struct InvitableQuery {
+    pub q: String,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceInvitableDto {
+    pub user_id: String,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    /// Existing membership in this workspace: 'active' | 'pending' | null (none).
+    pub membership: Option<String>,
+}
+
+/// GET /api/v1/workspaces/{workspace_id}/invitable?q= — candidate search for the
+/// invite box (admin-gated like the rest of member management). Mirrors the
+/// channel-invite privacy stance (`domain::invitable`): there is NO site-wide name
+/// directory, so substring search covers only the caller's ACCEPTED FRIENDS; anyone
+/// else is findable by EXACT username or email (you must already know them). Existing
+/// members aren't hidden — they come back tagged with their membership status so the
+/// UI can grey them out.
+pub async fn search_workspace_invitable(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(workspace_id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<InvitableQuery>,
+) -> Result<Json<Vec<WorkspaceInvitableDto>>, AppError> {
+    ensure_workspace_admin(
+        &state,
+        &workspace_id,
+        &current_user_id(&claims),
+        &claims.role,
+    )
+    .await?;
+    let term = q.q.trim();
+    if term.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+    let me = current_user_id(&claims);
+    let pattern = format!(
+        "%{}%",
+        crate::domain::messages::escape_like_pattern(term)
+    );
+    let rows = sqlx::query(
+        "SELECT u.user_id, u.username, u.display_name, u.avatar_url, wm.status AS membership
+         FROM users u
+         LEFT JOIN workspace_memberships wm
+                ON wm.workspace_id = $1 AND wm.user_id = u.user_id
+         WHERE u.is_deleted = FALSE
+           AND u.user_id <> $2
+           AND (
+               (
+                   (u.username ILIKE $3 OR u.display_name ILIKE $3)
+                   AND EXISTS (
+                       SELECT 1 FROM friendships f
+                       WHERE f.status = 'accepted'
+                         AND ((f.user_id = $2 AND f.friend_id = u.user_id)
+                           OR (f.friend_id = $2 AND f.user_id = u.user_id))
+                   )
+               )
+               OR u.username = $4
+               OR u.email = $4
+           )
+         ORDER BY u.username
+         LIMIT 20",
+    )
+    .bind(&workspace_id)
+    .bind(&me)
+    .bind(&pattern)
+    .bind(term)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| WorkspaceInvitableDto {
+                user_id: r.try_get("user_id").unwrap_or_default(),
+                username: r.try_get("username").unwrap_or_default(),
+                display_name: r.try_get("display_name").ok(),
+                avatar_url: r.try_get("avatar_url").ok(),
+                membership: r.try_get("membership").ok(),
+            })
+            .collect(),
+    ))
+}
+
 async fn resolve_user_id(state: &AppState, identifier: &str) -> Result<String, AppError> {
     let row =
         sqlx::query("SELECT user_id FROM users WHERE user_id = $1 OR username = $1 OR email = $1")
