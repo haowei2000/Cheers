@@ -1,9 +1,13 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard } from "lucide-react";
+import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
+import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers, markChannelRead } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
+import { MembersPopover } from "./MembersPopover";
+import { ForwardDialog } from "./ForwardDialog";
+import type { MessageActionHandlers } from "./MessageItem";
 import {
   MessageComposer,
   type MentionCandidate,
@@ -77,6 +81,13 @@ export function ChannelView({ channel }: Props) {
   // Bots @mentioned in the current draft (from the composer), so we can show their
   // mode/config controls inline when the caller is allowed to change them.
   const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
+  // Header members dropdown (read-only list; management stays in settings).
+  const [membersOpen, setMembersOpen] = useState(false);
+  // Message actions: reply target, multi-select set, pending forward payload.
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [forward, setForward] = useState<{ content: string; count: number } | null>(null);
 
   // Bots in the channel, derived from the mention candidates — the switcher lists
   // each bot's sessions under it.
@@ -93,7 +104,27 @@ export function ChannelView({ channel }: Props) {
     setSelectedSessionId("");
     setMentionedBots([]);
     setCommands([]);
+    setMembersOpen(false);
+    setReplyTo(null);
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setForward(null);
   }, [channel?.channel_id]);
+
+  // Esc backs out of the transient message-action states (reply draft / selection).
+  // Composer popups (mention/command picker, attach menu) preventDefault their own
+  // Escape — skip those so one Esc doesn't also cancel the reply underneath.
+  useEffect(() => {
+    if (!replyTo && !selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setReplyTo(null);
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [replyTo, selectMode]);
 
   // Per-bot display label, so a command can show which bot advertised it.
   const botLabels = useMemo(() => {
@@ -459,7 +490,87 @@ export function ChannelView({ channel }: Props) {
       ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
       ...(fileIds.length ? { file_ids: fileIds } : {}),
       ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
+      ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
     });
+    setReplyTo(null);
+  }
+
+  // ── Message actions: reply / copy / forward / multi-select ────────────────
+  const displayName = useCallback(
+    (m: Message) =>
+      m.sender_name || memberNames.get(m.sender_id) || m.sender_id.slice(0, 8),
+    [memberNames]
+  );
+
+  /** Markdown quote block with provenance — the forward payload. */
+  const buildForwardContent = useCallback(
+    (msgs: Message[]): string => {
+      const blocks = msgs.map((m) => {
+        const text = (m.content ?? "").replace(/<#file:[^>]+>/g, "").trim();
+        const body = (text || "(empty message)")
+          .split("\n")
+          .map((l) => `> ${l}`)
+          .join("\n");
+        const files = m.files?.length
+          ? `\n> _(${m.files.length} attachment${m.files.length > 1 ? "s" : ""} not included)_`
+          : "";
+        return `> **${displayName(m)}**:\n${body}${files}`;
+      });
+      // DM channels are nameless (labelled by peer) — don't render a bare "#".
+      const source =
+        channel?.type === "dm"
+          ? "a direct message"
+          : `#${channel?.name ?? "channel"}`;
+      return `**↪ Forwarded from ${source}**\n${blocks.join("\n>\n")}`;
+    },
+    [channel?.type, channel?.name, displayName]
+  );
+
+  /** Selected messages in channel order (selection set has no order of its own). */
+  const selectedMessages = useMemo(
+    () => messages.filter((m) => selectedIds.has(m.msg_id)),
+    [messages, selectedIds]
+  );
+
+  // Stable identity: selection state deliberately NOT captured here (it travels
+  // as scalar props), so a selection toggle only re-renders the affected rows
+  // instead of defeating memo(MessageItem) list-wide.
+  const messageActions: MessageActionHandlers = useMemo(
+    () => ({
+      onReply: (m) => setReplyTo(m),
+      onForward: (m) => setForward({ content: buildForwardContent([m]), count: 1 }),
+      onToggleSelect: (m) => {
+        setSelectMode(true);
+        // Entering select mode hides the reply banner — disarm the reply too so
+        // the next send can't silently become a reply to an invisible target.
+        setReplyTo(null);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(m.msg_id)) next.delete(m.msg_id);
+          else next.add(m.msg_id);
+          return next;
+        });
+      },
+    }),
+    [buildForwardContent]
+  );
+
+  const clearSelection = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  async function copySelected() {
+    const text = selectedMessages
+      .map((m) => `${displayName(m)}: ${(m.content ?? "").replace(/<#file:[^>]+>/g, "").trim()}`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`Copied ${selectedMessages.length} message${selectedMessages.length > 1 ? "s" : ""}`);
+      clearSelection();
+    } catch {
+      toast.error("Clipboard unavailable");
+    }
   }
 
   // Reserve room on the right for open instrument panels so they get their OWN column
@@ -509,10 +620,28 @@ export function ChannelView({ channel }: Props) {
               {onlineCount} online
             </span>
           )}
-          <span className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5" />
-            {mentionables.length || "Members"}
-          </span>
+          {/* Members: was a dead-looking span — now a real button opening the roster. */}
+          <div className="relative" data-members-root>
+            <button
+              type="button"
+              onClick={() => setMembersOpen((v) => !v)}
+              title="Channel members"
+              className={`flex items-center gap-1.5 rounded px-1.5 py-1 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
+                membersOpen ? "text-zinc-100 bg-zinc-800" : ""
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              {mentionables.length || "Members"}
+            </button>
+            {membersOpen && (
+              <MembersPopover
+                channelId={channel.channel_id}
+                isDm={channel.type === "dm"}
+                onManage={() => setSettingsOpen(true)}
+                onClose={() => setMembersOpen(false)}
+              />
+            )}
+          </div>
         </div>
         {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
         <button
@@ -580,8 +709,73 @@ export function ChannelView({ channel }: Props) {
             hasMore={hasMore}
             onLoadMore={loadMore}
             loading={loadingMore}
+            actions={messageActions}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
           />
         </ResolveRefContext.Provider>
+      )}
+
+      {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
+      {selectMode && (
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-zinc-800 bg-zinc-900/80 text-xs">
+          <span className="text-zinc-300 font-medium">
+            {selectedIds.size} selected
+          </span>
+          <span className="text-zinc-600">· click messages to toggle</span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            disabled={selectedIds.size === 0}
+            onClick={() => void copySelected()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            Copy
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.size === 0}
+            onClick={() =>
+              setForward({
+                content: buildForwardContent(selectedMessages),
+                count: selectedMessages.length,
+              })
+            }
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+          >
+            <Forward className="w-3.5 h-3.5" />
+            Forward
+          </button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-500 hover:text-zinc-200"
+          >
+            <X className="w-3.5 h-3.5" />
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Reply banner — the composer's next send answers this message. */}
+      {replyTo && !selectMode && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-t border-zinc-800 bg-zinc-900/60 text-xs">
+          <Reply className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+          <span className="text-zinc-500 flex-shrink-0">Replying to</span>
+          <span className="text-zinc-300 font-medium flex-shrink-0">{displayName(replyTo)}</span>
+          <span className="text-zinc-600 truncate italic">
+            {(replyTo.content ?? "").replace(/<#file:[^>]+>/g, "").trim().slice(0, 120)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setReplyTo(null)}
+            title="Cancel reply"
+            className="ml-auto text-zinc-500 hover:text-zinc-200 flex-shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )}
 
       {/* Composer */}
@@ -638,6 +832,17 @@ export function ChannelView({ channel }: Props) {
       )}
       {settingsOpen && (
         <ChannelSettingsDialog channel={channel} onClose={() => setSettingsOpen(false)} />
+      )}
+      {forward && (
+        <ForwardDialog
+          content={forward.content}
+          sourceChannelId={channel.channel_id}
+          messageCount={forward.count}
+          onClose={() => {
+            setForward(null);
+            clearSelection();
+          }}
+        />
       )}
       {refError && <ErrorDialog message={refError} onClose={() => setRefError(null)} />}
       {wsOpen && (

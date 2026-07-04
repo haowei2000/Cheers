@@ -542,7 +542,7 @@ fn json_rpc_error(code: i64, message: &str) -> Value {
 fn tool_definitions() -> Vec<Value> {
     vec![
         tool("get_channel_info", "Get channel info", "Metadata for a channel: name, type, workspace.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
-        tool("list_members", "List channel members", "Users and bots that are members of the channel.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("list_members", "List channel members", "Users and bots that are members of the channel. Each member includes their member_id, display_name, username, info (a short self-description / bio), and current status (status_emoji + status_text, with status_updated_at). Use this to learn who is in the room, what they do, and what they're currently up to.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("read_messages", "Read recent messages", "Read channel messages by pagination cursor or channel_seq cursor.", object_schema(vec![
             channel_id_prop(),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),

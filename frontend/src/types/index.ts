@@ -5,7 +5,12 @@ export interface User {
   email?: string | null;
   role?: string;
   avatar_url?: string | null;
+  /** Longer self-description ("information"). */
   bio?: string | null;
+  /** Short presence line (Slack-style custom status). */
+  status_text?: string | null;
+  status_emoji?: string | null;
+  status_updated_at?: string | null;
 }
 
 export interface Workspace {
@@ -122,7 +127,10 @@ export interface Message {
     | "routing"
     | "permission"
     | "notification";
-  in_reply_to_msg_id?: string | null;
+  /** The message this one replies to. Wire name is `reply_to_msg_id` on every
+   *  server path (REST DTO + WS frames) — the DB column `in_reply_to_msg_id`
+   *  never crosses the API boundary. */
+  reply_to_msg_id?: string | null;
   files?: FileInfo[];
   file_ids?: string[];
   mentions?: MessageMention[];
@@ -164,6 +172,16 @@ export interface BotItem {
   is_disabled?: boolean;
   /** Whether the caller (admin or owner) may manage this bot. */
   can_manage?: boolean;
+  /** Longer self-description ("information"). */
+  description?: string | null;
+  /** Short presence line, set by a manager or the bot itself. */
+  status_text?: string | null;
+  status_emoji?: string | null;
+  status_updated_at?: string | null;
+  /** Scheduled self-refresh config (manager-only; prompt redacted for others). */
+  status_auto_update?: boolean;
+  status_update_prompt?: string | null;
+  status_update_interval_minutes?: number | null;
 }
 
 export interface WsEvent {

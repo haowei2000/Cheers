@@ -19,11 +19,20 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
         .unwrap_or(100)
         .min(500);
 
+    // Members carry their self-describable "information" (users.bio / bot.description)
+    // and their short status line (status_text + emoji) so the agent can address the
+    // room with context — who's here, what they do, and their current status. A
+    // membership row is exactly one of user|bot, so the other side of each COALESCE
+    // is NULL from the LEFT JOIN.
     let rows = sqlx::query(
         r#"
         SELECT cm.member_id, cm.member_type, cm.joined_at,
                COALESCE(u.display_name, b.display_name) AS display_name,
-               COALESCE(u.username, b.username) AS username
+               COALESCE(u.username, b.username) AS username,
+               COALESCE(u.bio, b.description) AS info,
+               COALESCE(u.status_text, b.status_text) AS status_text,
+               COALESCE(u.status_emoji, b.status_emoji) AS status_emoji,
+               COALESCE(u.status_updated_at, b.status_updated_at) AS status_updated_at
         FROM channel_memberships cm
         LEFT JOIN users u ON cm.member_type = 'user' AND u.user_id = cm.member_id
         LEFT JOIN bot_accounts b ON cm.member_type = 'bot' AND b.bot_id = cm.member_id
@@ -44,6 +53,10 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
             "member_type": r.try_get::<String, _>("member_type").unwrap_or_default(),
             "display_name": r.try_get::<Option<String>, _>("display_name").unwrap_or(None),
             "username": r.try_get::<Option<String>, _>("username").unwrap_or(None),
+            "info": r.try_get::<Option<String>, _>("info").unwrap_or(None),
+            "status_text": r.try_get::<Option<String>, _>("status_text").unwrap_or(None),
+            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").unwrap_or(None),
+            "status_updated_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at").unwrap_or(None),
             "joined_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("joined_at").unwrap_or(None),
         }))
         .collect();

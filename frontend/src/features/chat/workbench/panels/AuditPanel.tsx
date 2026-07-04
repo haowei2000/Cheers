@@ -37,20 +37,57 @@ function detailSummary(detail: unknown): string | null {
   return null;
 }
 
-// Decision/event → icon + tone. Allow reads quiet, deny/reject reads rose, expired muted,
-// a bare request (no decision yet) gets the amber shield.
-function meta(e: AuditEvent): { Icon: typeof Check; tone: string; label: string } {
+// Cheers-facing headlines for the raw ids the backend records: ACP permission
+// option kinds (decision) and audit event types. Raw ids stay in the tooltip.
+const DECISION_LABEL: Record<string, string> = {
+  allow_once: "Approved once",
+  allow_always: "Always approved",
+  reject_once: "Denied once",
+  reject_always: "Always denied",
+};
+const EVENT_TYPE_LABEL: Record<string, string> = {
+  requested: "Approval requested",
+  resolved: "Resolved",
+  access_requested: "Access requested",
+  access_granted: "Access granted",
+  access_revoked: "Access revoked",
+  timeout: "Timed out",
+};
+/** Last-resort humanizer so an unmapped id never headlines as snake_case. */
+const humanize = (id: string) => id.replaceAll("_", " ");
+
+// Decision/event → icon + tone + Cheers label. Allow reads quiet, deny/reject reads
+// rose, expired/timeout muted, a bare request (no decision yet) gets the amber shield.
+function meta(e: AuditEvent): { Icon: typeof Check; tone: string; label: string; raw: string } {
   const d = (e.decision ?? "").toLowerCase();
   const et = (e.event_type ?? "").toLowerCase();
-  if (d.startsWith("allow") || et.includes("allow")) return { Icon: Check, tone: "text-emerald-500/80", label: e.decision || "allowed" };
+  const raw = [e.event_type, e.decision].filter(Boolean).join(" · ");
+  if (d.startsWith("allow") || et.includes("allow"))
+    return {
+      Icon: Check,
+      tone: "text-emerald-500/80",
+      label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Approved",
+      raw,
+    };
   if (d.startsWith("reject") || d.startsWith("deny") || et.includes("reject") || et.includes("deny"))
-    return { Icon: X, tone: "text-rose-400/80", label: e.decision || "denied" };
-  if (et.includes("expire")) return { Icon: Clock, tone: "text-zinc-500", label: "expired" };
-  return { Icon: ShieldQuestion, tone: "text-amber-400/70", label: e.event_type || "request" };
+    return {
+      Icon: X,
+      tone: "text-rose-400/80",
+      label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Denied",
+      raw,
+    };
+  if (et.includes("expire") || et === "timeout")
+    return { Icon: Clock, tone: "text-zinc-500", label: EVENT_TYPE_LABEL[et] ?? "Expired", raw };
+  return {
+    Icon: ShieldQuestion,
+    tone: "text-amber-400/70",
+    label: e.event_type ? EVENT_TYPE_LABEL[et] ?? humanize(e.event_type) : "Request",
+    raw,
+  };
 }
 
 function AuditRow({ e }: { e: AuditEvent }) {
-  const { Icon, tone, label } = meta(e);
+  const { Icon, tone, label, raw } = meta(e);
   const summary = detailSummary(e.detail);
   return (
     <li className="px-3 py-2">
@@ -58,7 +95,7 @@ function AuditRow({ e }: { e: AuditEvent }) {
         <Icon className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${tone}`} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className={`text-xs font-medium ${tone}`}>{label}</span>
+            <span className={`text-xs font-medium ${tone}`} title={raw || undefined}>{label}</span>
             {e.bot_id && <span className="text-[10px] text-zinc-500 font-mono">bot {short(e.bot_id)}</span>}
             <div className="flex-1" />
             <span className="text-[10px] text-zinc-600 tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>
