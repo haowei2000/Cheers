@@ -98,9 +98,9 @@ export function BotPostureSection({ botId }: { botId: string }) {
           <p className="text-[11px] text-zinc-600 mt-2 leading-relaxed">
             The session mode controls <em>when the agent asks</em> (e.g.{" "}
             <code className="text-zinc-500">default</code> = prompt per tool,{" "}
-            <code className="text-zinc-500">plan</code> = no execution). Pushed to the live
-            connector via <code className="text-zinc-500">set_mode</code>, clamped by the
-            host’s L0 allow-list.
+            <code className="text-zinc-500">plan</code> = no execution). Switching it is the
+            “Switch approval mode” permission in the grants below — pushed to the live
+            connector, clamped by the host’s L0 allow-list.
           </p>
           <p className="text-[11px] text-zinc-600 mt-2 leading-relaxed">
             Approval cards only appear when the agent chooses to ask. To require human
@@ -144,9 +144,9 @@ export function BotPostureSection({ botId }: { botId: string }) {
               );
             })}
             <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed">
-              Owner-set overrides are pushed to the connector and applied to every session via{" "}
-              <code className="text-zinc-500">set_config_option</code>, clamped by the host’s L0
-              allow-list.
+              Changing these is the “Change agent settings” permission in the grants below —
+              owner-set overrides are pushed to the connector and applied to every session,
+              clamped by the host’s L0 allow-list.
             </p>
           </div>
         ) : (
