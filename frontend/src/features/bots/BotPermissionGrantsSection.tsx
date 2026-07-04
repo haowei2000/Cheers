@@ -12,6 +12,7 @@ import {
 } from "@/api/bots";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
+import { grantLabel, CAPABILITY_LABEL } from "./grantLabels";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
 // Real channel roles shown as columns in the effective-defaults matrix (no `*`).
@@ -147,8 +148,10 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
         <div>
           <p className="text-xs font-medium text-zinc-300">Permission grants</p>
           <p className="text-[11px] text-zinc-600 mt-0.5">
-            Who is authorized for what. No grant → the default (members may initiate + see;
-            respond is owner-only). Precedence: user ▸ group ▸ role ▸ ∗; deny wins ties.
+            Who is authorized for what. No grant → the default: members may message the bot,
+            cancel a running task, and view its activity; agent settings, session controls,
+            remote file write, and answering approvals start owner-only. Precedence: user ▸
+            group ▸ role ▸ ∗; deny wins ties.
           </p>
         </div>
         {!creating && (
@@ -196,14 +199,22 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                       <td
                         colSpan={1 + MATRIX_ROLES.length}
                         className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-600"
+                        title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
                       >
-                        {cap}
+                        {CAPABILITY_LABEL[cap].label}
                       </td>
                     </tr>
-                    {cells.map((c) => (
+                    {cells.map((c) => {
+                      const gl = grantLabel(cap, c.event_class);
+                      return (
                       <tr key={`${cap}:${c.event_class}`} className="border-t border-zinc-800/50">
                         <td className="px-2.5 py-1">
-                          <code className="text-zinc-300">{c.event_class}</code>
+                          <span
+                            className="text-zinc-300"
+                            title={gl.desc ? `${gl.desc} (${cap} · ${c.event_class})` : `${cap} · ${c.event_class}`}
+                          >
+                            {gl.label}
+                          </span>
                         </td>
                         {MATRIX_ROLES.map((role) => {
                           const d = c.roles[role];
@@ -227,7 +238,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                           );
                         })}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </Fragment>
                 );
               })}
@@ -255,10 +267,10 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     ? access.see_events
                     : access.respond_events;
                 return (
-                  <optgroup key={cap} label={cap}>
+                  <optgroup key={cap} label={`${CAPABILITY_LABEL[cap].label} — ${CAPABILITY_LABEL[cap].desc}`}>
                     {evs.map((ec) => (
-                      <option key={`${cap}::${ec}`} value={`${cap}::${ec}`}>
-                        {cap} · {ec}
+                      <option key={`${cap}::${ec}`} value={`${cap}::${ec}`} title={`${cap} · ${ec}`}>
+                        {grantLabel(cap, ec).label}
                       </option>
                     ))}
                   </optgroup>
@@ -345,6 +357,16 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               Cancel
             </button>
           </div>
+          {perm &&
+            (() => {
+              const [cap, ec] = perm.split("::");
+              const gl = grantLabel(cap as Capability, ec);
+              return gl.desc ? (
+                <p className="text-[11px] text-zinc-500">
+                  {gl.desc} <code className="text-zinc-600">({cap} · {ec})</code>
+                </p>
+              ) : null;
+            })()}
         </div>
       )}
 
@@ -361,10 +383,18 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               key={`${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_kind}:${r.subject_id}`}
               className="flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
             >
-              <span className={`rounded px-1 py-0.5 text-[10px] border ${CAP_BADGE[r.capability]}`}>
-                {r.capability}
+              <span
+                className={`rounded px-1 py-0.5 text-[10px] border ${CAP_BADGE[r.capability]}`}
+                title={`${r.capability} — ${CAPABILITY_LABEL[r.capability].desc}`}
+              >
+                {CAPABILITY_LABEL[r.capability].label}
               </span>
-              <code className="text-zinc-300">{r.event_class}</code>
+              <span
+                className="text-zinc-300"
+                title={`${r.capability} · ${r.event_class}${grantLabel(r.capability, r.event_class).desc ? ` — ${grantLabel(r.capability, r.event_class).desc}` : ""}`}
+              >
+                {grantLabel(r.capability, r.event_class).label}
+              </span>
               <span className="text-zinc-600">→</span>
               <span className={`rounded px-1 py-0.5 text-[10px] border ${subjectBadge(r.subject_kind)}`}>
                 {r.subject_kind}

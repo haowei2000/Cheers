@@ -127,7 +127,10 @@ export interface Message {
     | "routing"
     | "permission"
     | "notification";
-  in_reply_to_msg_id?: string | null;
+  /** The message this one replies to. Wire name is `reply_to_msg_id` on every
+   *  server path (REST DTO + WS frames) — the DB column `in_reply_to_msg_id`
+   *  never crosses the API boundary. */
+  reply_to_msg_id?: string | null;
   files?: FileInfo[];
   file_ids?: string[];
   mentions?: MessageMention[];

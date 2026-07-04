@@ -176,6 +176,9 @@ pub async fn create_message(
             "file_ids": &dto.file_ids,
             "mentions": &dto.mentions,
             "files": &dto.files,
+            // Reply linkage rides the live frame too — without it the reply's
+            // quote block only appears after a history refetch.
+            "reply_to_msg_id": dto.reply_to_msg_id,
             "created_at": now,
         }),
     );
