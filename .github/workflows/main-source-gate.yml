@@ -1,0 +1,24 @@
+# Enforces the branch flow: PRs into `main` may only come from `develop`.
+# This job is a REQUIRED status check on main's branch protection, so a PR from
+# any other branch can never merge — even if a PR tries to delete this file, the
+# required context simply never reports and the merge stays blocked.
+name: Main Source Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  enforce:
+    name: Main PRs must come from develop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "develop" ]; then
+            echo "::error::PRs to main must come from 'develop' (got '$HEAD_REF'). Merge into develop first, then open develop → main."
+            exit 1
+          fi
+          echo "OK: PR comes from develop."
