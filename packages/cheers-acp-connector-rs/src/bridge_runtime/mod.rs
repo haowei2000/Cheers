@@ -1801,9 +1801,10 @@ impl RuntimeContext {
     async fn report_session_snapshot(&self, metadata: &Value) {
         let report = normalize_session_snapshot_report(metadata);
         // Nothing advertised beyond the envelope keys → nothing to report.
-        let has_payload = report
-            .as_object()
-            .is_some_and(|o| o.keys().any(|k| k != "source" && k != "updatedAt" && k != "sessionUpdate"));
+        let has_payload = report.as_object().is_some_and(|o| {
+            o.keys()
+                .any(|k| k != "source" && k != "updatedAt" && k != "sessionUpdate")
+        });
         if !has_payload {
             return;
         }
