@@ -190,6 +190,90 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
     assert_eq!(seqs, vec![3, 4, 5], "since-seq=2 应只返回 3,4,5");
 }
 
+// ── Reply 路由：回复 bot 的消息（无 @mention）应触发该 bot ────────────────────
+
+/// 无 @bot、无 default_bot，但 reply_to 指向 bot 的消息 → 该 bot 被派发；
+/// 回复用户消息则保持静默（不误触发）。
+#[sqlx::test]
+async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let counter = Arc::new(CountingBotLocator::default());
+    let bot_locator: Arc<dyn BotLocator> = counter.clone();
+
+    // 频道里已有一条 bot 消息（模拟 bot 此前的回复）。
+    let bot_msg = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO messages (msg_id, channel_id, sender_id, sender_type, content, is_partial)
+         VALUES ($1, $2, $3, 'bot', 'earlier bot answer', FALSE)",
+    )
+    .bind(bot_msg.to_string())
+    .bind(ch.to_string())
+    .bind(bot.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    // 用户回复该 bot 消息，无任何 @mention → 应派发给该 bot。
+    let dto = messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &bot_locator,
+        CreateMessageParams {
+            user_id: user,
+            channel_id: ch,
+            content: "再详细一点".into(),
+            msg_type: None,
+            reply_to_msg_id: Some(bot_msg),
+            file_ids: vec![],
+            mention_ids: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(dto.reply_to_msg_id.as_deref(), Some(bot_msg.to_string().as_str()));
+    assert_eq!(
+        counter.dispatched.load(Ordering::SeqCst),
+        1,
+        "回复 bot 消息必须触发该 bot"
+    );
+
+    // 对照组：回复用户自己的消息（无 default_bot）→ 不触发任何 bot。
+    let user_msg = dto.msg_id.clone();
+    messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &bot_locator,
+        CreateMessageParams {
+            user_id: user,
+            channel_id: ch,
+            content: "self follow-up".into(),
+            msg_type: None,
+            reply_to_msg_id: Some(user_msg.parse().unwrap()),
+            file_ids: vec![],
+            mention_ids: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        counter.dispatched.load(Ordering::SeqCst),
+        1,
+        "回复用户消息不应误触发 bot"
+    );
+}
+
 // ── R5：并发 dispatch 同一 (trigger, bot) 只派一次 task ───────────────────────
 
 /// 计数用的 BotLocator 测试替身：永远“在线”，记录 dispatch_task 调用次数。
