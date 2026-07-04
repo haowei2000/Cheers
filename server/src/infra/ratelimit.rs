@@ -3,9 +3,10 @@
 //! Login is the one unauthenticated, CPU-heavy (bcrypt) endpoint, so it is the
 //! brute-force + algorithmic-DoS target (audit H3). This caps failed attempts
 //! per client key. It is per-process (single gateway replica today); a
-//! multi-replica deploy should move this to Redis. The login path keys on the
-//! nginx-provided `X-Real-IP`, so one source is throttled without locking out a
-//! whole account.
+//! multi-replica deploy should move this to Redis. The client key is the peer
+//! socket address by default; only with `TRUST_PROXY_HEADERS=true` (gateway
+//! reachable exclusively through a trusted proxy) does it use the proxy-set
+//! `X-Real-IP` / `X-Forwarded-For` — see [`client_key`].
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -102,26 +103,90 @@ pub fn register_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(5, Duration::from_secs(300)))
 }
 
-/// Best-effort client identity for throttling: prefer the proxy-set `X-Real-IP`
-/// (nginx sets it to the real socket address), then the last `X-Forwarded-For`
-/// hop, else a fixed bucket. The gateway is only reachable via the in-cluster
-/// proxy, so these headers are not client-spoofable in the deployed topology.
-pub fn client_key(headers: &axum::http::HeaderMap) -> String {
-    if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        let ip = ip.trim();
-        if !ip.is_empty() {
-            return ip.to_string();
+/// Best-effort client identity for throttling.
+///
+/// `trust_proxy_headers = false` (the default, `TRUST_PROXY_HEADERS` unset):
+/// key on the peer socket address ONLY. `X-Real-IP` / `X-Forwarded-For` are
+/// plain request headers — whenever the gateway port is directly reachable, an
+/// attacker rotates them freely and every rotation gets a fresh brute-force
+/// window, so they must not be trusted by default.
+///
+/// `trust_proxy_headers = true` (gateway reachable exclusively through a proxy
+/// that overwrites these headers — the bundled frontend nginx, the compose TLS
+/// Caddy edge, or a k8s ingress): prefer `X-Real-IP`, then the LAST
+/// `X-Forwarded-For` hop (the entry appended by the trusted proxy; earlier
+/// entries are client-supplied), then the peer address.
+pub fn client_key(
+    headers: &axum::http::HeaderMap,
+    peer: Option<std::net::SocketAddr>,
+    trust_proxy_headers: bool,
+) -> String {
+    if trust_proxy_headers {
+        if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+            let ip = ip.trim();
+            if !ip.is_empty() {
+                return ip.to_string();
+            }
         }
-    }
-    if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(last) = xff
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .last()
+        if let Some(last) = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|xff| {
+                xff.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .last()
+            })
         {
             return last.to_string();
         }
     }
-    "unknown".to_string()
+    peer.map(|a| a.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    fn peer() -> Option<std::net::SocketAddr> {
+        Some("10.1.2.3:55555".parse().unwrap())
+    }
+
+    fn spoofing_headers() -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("x-real-ip", "6.6.6.6".parse().unwrap());
+        h.insert("x-forwarded-for", "1.1.1.1, 2.2.2.2".parse().unwrap());
+        h
+    }
+
+    /// Default (untrusted): spoofable headers are ignored — the key is the peer
+    /// socket IP, so rotating X-Real-IP cannot reset a brute-force window.
+    #[test]
+    fn untrusted_ignores_proxy_headers() {
+        assert_eq!(client_key(&spoofing_headers(), peer(), false), "10.1.2.3");
+    }
+
+    /// Trusted-proxy mode keeps the historical behavior: X-Real-IP first.
+    #[test]
+    fn trusted_prefers_x_real_ip() {
+        assert_eq!(client_key(&spoofing_headers(), peer(), true), "6.6.6.6");
+    }
+
+    /// Trusted-proxy mode without X-Real-IP: the LAST XFF hop (appended by the
+    /// trusted proxy) wins, never a client-supplied earlier entry.
+    #[test]
+    fn trusted_falls_back_to_last_xff_hop() {
+        let mut h = HeaderMap::new();
+        h.insert("x-forwarded-for", "1.1.1.1, 2.2.2.2".parse().unwrap());
+        assert_eq!(client_key(&h, peer(), true), "2.2.2.2");
+    }
+
+    /// No headers, no peer: a fixed shared bucket rather than a panic.
+    #[test]
+    fn no_signal_yields_fixed_bucket() {
+        assert_eq!(client_key(&HeaderMap::new(), None, true), "unknown");
+        assert_eq!(client_key(&HeaderMap::new(), None, false), "unknown");
+    }
 }

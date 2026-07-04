@@ -85,6 +85,16 @@ pub struct Config {
     /// Default true; set `OPEN_REGISTRATION=0/false` for invite/admin-only instances.
     pub open_registration: bool,
 
+    /// Whether the rate limiter may key clients on `X-Real-IP` /
+    /// `X-Forwarded-For`. Default **false** (use the peer socket address): the
+    /// headers are client-controlled whenever the gateway port is directly
+    /// reachable, so trusting them would let an attacker rotate a header to
+    /// bypass the login brute-force cap. Set `TRUST_PROXY_HEADERS=true` ONLY
+    /// when the gateway is reachable exclusively through a trusted proxy that
+    /// overwrites those headers (the bundled frontend nginx, Caddy TLS edge, or
+    /// a k8s ingress) — otherwise every client shares the proxy's IP bucket.
+    pub trust_proxy_headers: bool,
+
     // 孤儿占位回收器（流程 8 缺口）
     /// 占位早于该秒数且无存活流时才回收（默认 900 = 15 分钟，给 bot 重启重连留时间）。
     pub orphan_reclaim_threshold_secs: u64,
@@ -182,6 +192,8 @@ impl Config {
                 })
                 .unwrap_or(true),
 
+            trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
+
             orphan_reclaim_threshold_secs: env::var("ORPHAN_RECLAIM_THRESHOLD_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -226,6 +238,18 @@ fn require(key: &str) -> String {
     match env::var(key) {
         Ok(v) if !v.trim().is_empty() => v,
         _ => panic!("required env var {key} is missing or empty — see docs/help/deployment.md"),
+    }
+}
+
+/// Parse a boolean env flag. Only `1/true/yes/on` (case-insensitive) enable it;
+/// unset or empty falls back to `default`.
+fn env_flag(key: &str, default: bool) -> bool {
+    match env::var(key) {
+        Ok(v) if !v.trim().is_empty() => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        _ => default,
     }
 }
 

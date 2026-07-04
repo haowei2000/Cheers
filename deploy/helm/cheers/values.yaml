@@ -20,6 +20,11 @@ gateway:
   adminUsername: admin
   adminDisplayName: "Demo Admin"
   corsAllowedOrigins: "" # empty = allow all (dev). Set explicit origins in prod.
+  # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
+  # every client request passes the bundled frontend nginx (which sets
+  # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if
+  # you expose the gateway Service directly (NodePort/LoadBalancer).
+  trustProxyHeaders: true
   s3Region: us-east-1
   extraEnv: {} # map of EXTRA_VAR: value
   resources: {}

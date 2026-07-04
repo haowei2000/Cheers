@@ -31,6 +31,10 @@ services:
       - S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-cheers-local-secret-key}
       # Office→PDF preview conversion (Gotenberg)
       - GOTENBERG_URL=${GOTENBERG_URL:-http://gotenberg:3000}
+      # 限流客户端识别：裸 compose 把 gateway 端口直接发布到宿主机，代理头可被
+      # 直连客户端伪造 → 默认不信任（按对端 socket 地址限流）。TLS overlay
+      # (docker-compose.production.tls.yml) 会覆盖为 true。
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
       # SMTP（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}

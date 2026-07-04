@@ -148,7 +148,13 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!(addr, "listening");
-    axum::serve(listener, app).await?;
+    // ConnectInfo gives handlers the peer socket address — the rate limiter keys
+    // on it unless TRUST_PROXY_HEADERS explicitly opts into proxy headers.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

@@ -1,4 +1,10 @@
-use axum::{extract::State, http::HeaderMap, Extension, Json};
+use std::net::SocketAddr;
+
+use axum::{
+    extract::{ConnectInfo, State},
+    http::HeaderMap,
+    Extension, Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{error::DatabaseError, Row};
@@ -41,13 +47,18 @@ pub struct LoginResponse {
 /// POST /api/v1/auth/login
 pub async fn login(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
     // Throttle brute-force / bcrypt-DoS (audit H3): cap failed attempts per
     // client source; a successful login clears the counter.
     let limiter = crate::infra::ratelimit::login_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -98,6 +109,7 @@ pub struct RegisterRequest {
 /// self-assignable (admins are provisioned via `POST /users`).
 pub async fn register(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
@@ -107,7 +119,11 @@ pub async fn register(
         ));
     }
     let limiter = crate::infra::ratelimit::register_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -271,11 +287,16 @@ pub struct ForgotPasswordRequest {
 /// exists — user-enumeration hardening). Rate-limited per client.
 pub async fn forgot_password(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::password_reset_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -318,11 +339,16 @@ pub struct ResetPasswordRequest {
 /// new password, and revokes every existing session (token_version bump). Rate-limited.
 pub async fn reset_password(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::password_reset_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
