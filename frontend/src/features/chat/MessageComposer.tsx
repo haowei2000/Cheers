@@ -140,8 +140,12 @@ export function MessageComposer({
       if (attachRef.current && !attachRef.current.contains(e.target as Node))
         setAttachMenuOpen(false);
     };
-    const onKey = (e: globalThis.KeyboardEvent) =>
-      e.key === "Escape" && setAttachMenuOpen(false);
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Claim this Esc so outer handlers (reply/selection cancel) skip it.
+      e.preventDefault();
+      setAttachMenuOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {

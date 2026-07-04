@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { MessageItem } from "./MessageItem";
+import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
 import type { Message, PermissionContentData } from "@/types";
 
@@ -23,6 +23,10 @@ interface Props {
   hasMore?: boolean;
   onLoadMore?: () => void;
   loading?: boolean;
+  /** Reply / copy / forward / multi-select callbacks (stable identity). */
+  actions?: MessageActionHandlers;
+  selectMode?: boolean;
+  selectedIds?: ReadonlySet<string>;
 }
 
 export function MessageList({
@@ -33,6 +37,9 @@ export function MessageList({
   hasMore,
   onLoadMore,
   loading,
+  actions,
+  selectMode,
+  selectedIds,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,6 +49,17 @@ export function MessageList({
   const visible = useMemo(
     () => messages.filter((m) => !isResolvedPermission(m)),
     [messages]
+  );
+
+  // msg_id → message, to resolve each reply's quoted original from the loaded window.
+  const byId = useMemo(() => {
+    const m = new Map<string, Message>();
+    for (const msg of messages) m.set(msg.msg_id, msg);
+    return m;
+  }, [messages]);
+  const nameOf = useMemo(
+    () => (senderId: string) => senderNames?.get(senderId) ?? senderId.slice(0, 8),
+    [senderNames]
   );
   const prevLenRef = useRef(visible.length);
 
@@ -121,6 +139,13 @@ export function MessageList({
               currentUserId={currentUserId}
               channelId={channelId}
               senderName={senderNames?.get(msg.sender_id)}
+              actions={actions}
+              selectMode={selectMode}
+              selected={selectedIds?.has(msg.msg_id) ?? false}
+              repliedTo={
+                msg.reply_to_msg_id ? byId.get(msg.reply_to_msg_id) ?? null : null
+              }
+              nameOf={nameOf}
             />
           </div>
         );
