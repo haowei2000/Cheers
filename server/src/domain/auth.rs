@@ -1,4 +1,4 @@
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{encode, Algorithm, Header};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -28,10 +28,9 @@ pub fn create_access_token(
     let mut header = Header::new(Algorithm::RS256);
     header.kid = Some("v1".into()); // kid 支持密钥轮换
 
-    let key = EncodingKey::from_rsa_pem(config.jwt_private_key_pem.as_bytes())
-        .map_err(|e| AppError::Internal(format!("invalid private key: {e}")))?;
-
-    encode(&header, &claims, &key).map_err(|e| AppError::Internal(format!("jwt encode: {e}")))
+    // Key parsed once at startup (config::JwtKeys) — bad PEM can't reach here.
+    encode(&header, &claims, &config.jwt.encoding)
+        .map_err(|e| AppError::Internal(format!("jwt encode: {e}")))
 }
 
 // ── 用户查找 + 密码验证 ────────────────────────────────────────────────────────

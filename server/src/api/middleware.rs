@@ -43,8 +43,8 @@ pub async fn jwt_auth(
 ) -> Result<Response, StatusCode> {
     let token = extract_bearer(req.headers()).ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let claims = verify_rs256(&token, &state.config.jwt_public_key_pem)
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let claims =
+        verify_rs256(&token, &state.config.jwt.decoding).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     // Session revocation + account status (W6): reject deleted/suspended users
     // and JWTs that predate a forced logout (token_version bump). A token with no
@@ -82,16 +82,15 @@ pub fn verify_token(
     token: &str,
     state: &crate::app_state::AppState,
 ) -> Result<Claims, &'static str> {
-    verify_rs256(token, &state.config.jwt_public_key_pem).map_err(|_| "invalid or expired token")
+    verify_rs256(token, &state.config.jwt.decoding).map_err(|_| "invalid or expired token")
 }
 
-fn verify_rs256(token: &str, public_key_pem: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let key = DecodingKey::from_rsa_pem(public_key_pem.as_bytes())?;
+fn verify_rs256(token: &str, key: &DecodingKey) -> Result<Claims, jsonwebtoken::errors::Error> {
     // Algorithm is pinned by the decoding-key type (RS256); also enforce exp + nbf
     // and require our own issuer so tokens minted for another service can't be reused.
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = true;
     validation.validate_nbf = true;
     validation.set_issuer(&[JWT_ISSUER]);
-    decode::<Claims>(token, &key, &validation).map(|d| d.claims)
+    decode::<Claims>(token, key, &validation).map(|d| d.claims)
 }
