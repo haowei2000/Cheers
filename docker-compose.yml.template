@@ -35,6 +35,8 @@ services:
       # 直连客户端伪造 → 默认不信任（按对端 socket 地址限流）。TLS overlay
       # (docker-compose.production.tls.yml) 会覆盖为 true。
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
+      # 自助注册默认关闭（安全默认）；公开实例显式设为 true。
+      - OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
       # SMTP（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}

@@ -82,7 +82,8 @@ pub struct Config {
     pub smtp_password: Option<String>,
 
     /// Whether public self-service sign-up (`POST /auth/register`) is enabled.
-    /// Default true; set `OPEN_REGISTRATION=0/false` for invite/admin-only instances.
+    /// Default **false** (secure by default: accounts come from the seeded admin
+    /// or `POST /users`); set `OPEN_REGISTRATION=true` to open sign-up.
     pub open_registration: bool,
 
     /// Whether the rate limiter may key clients on `X-Real-IP` /
@@ -182,15 +183,7 @@ impl Config {
             smtp_username: env::var("SMTP_USERNAME").ok(),
             smtp_password: env::var("SMTP_PASSWORD").ok(),
 
-            open_registration: env::var("OPEN_REGISTRATION")
-                .ok()
-                .map(|v| {
-                    !matches!(
-                        v.trim().to_ascii_lowercase().as_str(),
-                        "0" | "false" | "no" | "off"
-                    )
-                })
-                .unwrap_or(true),
+            open_registration: env_flag("OPEN_REGISTRATION", false),
 
             trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 
