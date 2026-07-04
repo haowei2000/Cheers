@@ -197,6 +197,25 @@ impl InProcessFanout {
         }
     }
 
+    /// 成员资格被撤销（管理员移除 / 自己退出）：把该用户的**所有**连接从该频道
+    /// 的订阅表移除，新消息立即停止投递。订阅时查成员资格（subscribe），这是它
+    /// 的反向边。
+    pub fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid) {
+        if let Some(mut senders) = self.channels.get_mut(&channel_id) {
+            senders.retain(|s| {
+                self.conn_users
+                    .get(&s.conn_id)
+                    .map(|uid| *uid != user_id)
+                    .unwrap_or(true)
+            });
+        }
+    }
+
+    /// 频道被删除：丢弃整张订阅表（否则残留到各连接断线为止）。
+    pub fn drop_channel(&self, channel_id: Uuid) {
+        self.channels.remove(&channel_id);
+    }
+
     /// 浏览器断线时，移除该连接的所有注册（含关闭信号端）。
     pub fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
         if let Some(mut senders) = self.users.get_mut(&user_id) {

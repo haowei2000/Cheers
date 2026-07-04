@@ -420,6 +420,10 @@ pub async fn delete_channel(
         .bind(&channel_id)
         .execute(&state.db)
         .await?;
+    // Drop every live realtime subscription to the deleted channel.
+    if let Ok(cid) = Uuid::parse_str(&channel_id) {
+        state.conn_manager.drop_channel(cid);
+    }
     Ok(Json(json!({"deleted": true})))
 }
 
@@ -675,6 +679,16 @@ pub async fn remove_channel_member(
         .execute(&state.db)
         .await?;
     if let Ok(cid) = Uuid::parse_str(&channel_id) {
+        // Membership checks happen at subscribe time, so removal must cut any
+        // LIVE subscriptions too — otherwise the removed member keeps receiving
+        // every new message until their socket happens to close. (No-op for
+        // bots: they have no browser connections.)
+        if let Ok(uid) = Uuid::parse_str(&member_id) {
+            state
+                .conn_manager
+                .revoke_channel_subscriptions(uid, cid)
+                .await;
+        }
         crate::gateway::presence::broadcast_presence(&state, cid).await;
     }
     Ok(Json(json!({"removed": true})))
@@ -781,6 +795,15 @@ pub async fn leave_channel(
         .bind(&claims.sub)
         .execute(&state.db)
         .await?;
+    }
+    // Same reverse edge as remove_channel_member: cut the leaver's live
+    // subscriptions so they stop receiving new frames immediately.
+    if let (Ok(cid), Ok(uid)) = (Uuid::parse_str(&channel_id), Uuid::parse_str(&claims.sub)) {
+        state
+            .conn_manager
+            .revoke_channel_subscriptions(uid, cid)
+            .await;
+        crate::gateway::presence::broadcast_presence(&state, cid).await;
     }
     Ok(Json(json!({ "left": true })))
 }

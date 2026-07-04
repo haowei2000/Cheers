@@ -21,6 +21,10 @@ pub trait LocalRegistry: Send + Sync {
     );
     fn subscribe_channel(&self, channel_id: Uuid, conn_id: Uuid, tx: mpsc::Sender<WireFrame>);
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid);
+    /// 成员资格被服务器撤销：移除该用户在该频道的所有连接订阅（subscribe 的反向边）。
+    fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid);
+    /// 频道被删除：丢弃该频道的整张订阅表。
+    fn drop_channel(&self, channel_id: Uuid);
     fn deregister_user(&self, user_id: Uuid, conn_id: Uuid);
 }
 
@@ -43,6 +47,12 @@ impl LocalRegistry for InProcessFanout {
     }
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
         InProcessFanout::unsubscribe_channel(self, channel_id, conn_id);
+    }
+    fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid) {
+        InProcessFanout::unsubscribe_user_channel(self, channel_id, user_id);
+    }
+    fn drop_channel(&self, channel_id: Uuid) {
+        InProcessFanout::drop_channel(self, channel_id);
     }
     fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
         InProcessFanout::deregister_user(self, user_id, conn_id);
@@ -159,8 +169,18 @@ impl ConnectionManager {
         self.registry.unsubscribe_channel(channel_id, conn_id);
     }
 
-    pub async fn evict_membership(&self, user_id: Uuid, channel_id: Uuid) {
+    /// Reverse edge of `subscribe` (membership is only checked at subscribe
+    /// time): when a member is removed or leaves, cut their live subscriptions
+    /// so new frames stop immediately, and evict the membership cache so a
+    /// concurrent resubscribe can't ride the 45s cached "member" verdict.
+    pub async fn revoke_channel_subscriptions(&self, user_id: Uuid, channel_id: Uuid) {
         self.membership_cache.evict(user_id, channel_id).await;
+        self.registry.unsubscribe_user_channel(channel_id, user_id);
+    }
+
+    /// Channel deleted: drop every live subscription to it.
+    pub fn drop_channel(&self, channel_id: Uuid) {
+        self.registry.drop_channel(channel_id);
     }
 
     async fn check_membership(&self, user_id: Uuid, channel_id: Uuid) -> Result<bool, sqlx::Error> {

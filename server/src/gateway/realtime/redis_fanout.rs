@@ -102,6 +102,15 @@ impl LocalRegistry for RedisFanout {
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
         self.local.unsubscribe_channel(channel_id, conn_id);
     }
+    // NOTE: like the close-signal path, these only affect connections on THIS
+    // instance; a multi-instance rollout must propagate revocations over pub/sub
+    // (R1-B/M4 — the Redis path is not wired in main.rs today).
+    fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid) {
+        self.local.unsubscribe_user_channel(channel_id, user_id);
+    }
+    fn drop_channel(&self, channel_id: Uuid) {
+        self.local.drop_channel(channel_id);
+    }
     fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
         self.local.deregister_user(user_id, conn_id);
     }
