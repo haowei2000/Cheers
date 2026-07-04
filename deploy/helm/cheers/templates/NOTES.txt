@@ -25,4 +25,4 @@ Access the UI:
 {{- end }}
 
 Sign in with the seeded admin: {{ .Values.gateway.adminUsername }} / (secrets.adminPassword)
-{{- if .Values.secrets.create }} — DEV default is in values.yaml; CHANGE IT for anything real.{{ end }}
+{{- if .Values.secrets.create }} — the password you set at install time (values-dev.yaml pins the local-dev one; there is no chart default).{{ end }}

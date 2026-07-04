@@ -585,6 +585,13 @@ pub async fn mint_bot_token(state: &AppState, bot_id: &str) -> Result<(String, S
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    // Rotation revokes the OLD token NOW: kick any live connector that
+    // authenticated with it (same seam as the disable kill-switch), forcing a
+    // reconnect that the connect gate only accepts with the new token. No-op
+    // when the bot has no live session (e.g. first mint via enrollment).
+    if let Ok(id) = Uuid::parse_str(bot_id) {
+        state.bot_registry.kick(id);
+    }
     Ok((token, token_prefix))
 }
 

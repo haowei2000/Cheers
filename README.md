@@ -3,7 +3,10 @@
 > **Language**: English | [中文](README.zh-CN.md)
 
 [![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/haowei2000/Cheers)](https://github.com/haowei2000/Cheers/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+🌐 **Live overview:** <https://haowei2000.github.io/Cheers/>
 
 Cheers is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, external ACP agents you can `@`-mention as channel members, file-aware conversations, and persisted channel history and context.
 
@@ -84,6 +87,12 @@ Document preview (office→PDF) uses the bundled Gotenberg service and needs no 
 ```bash
 cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
+
+# Edit .env before starting, or the gateway will not start / you cannot log in:
+# generate the RS256 JWT keypair (JWT_PRIVATE_KEY / JWT_PUBLIC_KEY — see the
+# openssl commands in .env.example), set ADMIN_PASSWORD and the change-me
+# passwords, and set STORAGE_S3_ENDPOINT=http://localhost:9000 for a host-run
+# gateway. Details: docs/help/deployment.md (Method 1).
 docker compose up -d postgres redis rustfs gotenberg
 
 # Rust gateway (runs sqlx migrations on startup)

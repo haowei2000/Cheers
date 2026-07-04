@@ -1,0 +1,17 @@
+# kind cluster config for local Cheers development.
+#
+# Maps the frontend NodePort (30080, see deploy/helm/cheers/values-dev.yaml)
+# to the host, so the UI is reachable at http://localhost:30080 without a
+# port-forward. Without extraPortMappings a plain `kind create cluster` only
+# exposes NodePorts on the node container's IP.
+#
+# Usage:
+#   kind create cluster --name cheers --config deploy/kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP

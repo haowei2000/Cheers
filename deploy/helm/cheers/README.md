@@ -33,21 +33,26 @@ deploy/helm/cheers/
 ## Local dev (Docker Desktop k8s / kind / minikube)
 
 > The chart's default image names (`cheers/gateway`, `cheers/frontend`,
-> `cheers/codex-bot`) are **locally built** — there is no public registry that
-> serves them. Build + load them as below, or set `imageRegistry` /
-> `*.image.repository` to a registry you control.
+> `cheers/codex-bot`) are **locally built**. Build + load them as below, or
+> skip the build and pull the prebuilt public gateway/frontend images from
+> GHCR — see [Prebuilt images (GHCR)](#prebuilt-images-ghcr).
 
 ```bash
+# 0) create the kind cluster (the config maps NodePort 30080 → localhost:30080)
+kind create cluster --name cheers --config deploy/kind-config.yaml
+
 # 1) build the app images and load them into the cluster
 docker build -t cheers/gateway:dev server
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
-kind load docker-image cheers/gateway:dev cheers/frontend:dev --name <cluster>
+kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
 
 # 2) generate the RS256 JWT keypair the gateway requires
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/jwt_priv.pem
 openssl rsa -in /tmp/jwt_priv.pem -pubout -out /tmp/jwt_pub.pem
 
-# 3) install (postgres/rustfs pull from a mirror if docker.io is slow for you)
+# 3) install (postgres/rustfs pull from a mirror if docker.io is slow for you).
+#    values-dev.yaml pins the local-dev admin password (admin12345); the base
+#    chart has NO password default and refuses to render without one.
 helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
   -f deploy/helm/cheers/values-dev.yaml \
   --set-file secrets.jwtPrivateKey=/tmp/jwt_priv.pem \
@@ -61,6 +66,34 @@ open http://localhost:30080
 > host-loopback proxy, so image pulls fail. Point the node's containerd at the
 > host via `host.docker.internal`, or create the cluster with
 > `HTTP_PROXY=http://host.docker.internal:<port>`.
+
+## Prebuilt images (GHCR)
+
+You do not have to build the gateway/frontend images yourself. CD
+(`.github/workflows/cd.yml`) publishes public images on every push to `main`
+and every `v*.*.*` tag:
+
+| Image | Tags |
+|---|---|
+| `ghcr.io/haowei2000/cheers-gateway` | `main`, `latest`, semver (`0.1.0`, `0.1`), `sha-<short>` |
+| `ghcr.io/haowei2000/cheers-frontend` | `main`, `latest`, semver (`0.1.0`, `0.1`), `sha-<short>` |
+
+To install from GHCR instead of building + loading local images (skip step 1
+of the local-dev path):
+
+```bash
+helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
+  -f deploy/helm/cheers/values-dev.yaml \
+  --set gateway.image.repository=ghcr.io/haowei2000/cheers-gateway \
+  --set gateway.image.tag=main \
+  --set frontend.image.repository=ghcr.io/haowei2000/cheers-frontend \
+  --set frontend.image.tag=main \
+  --set-file secrets.jwtPrivateKey=/tmp/jwt_priv.pem \
+  --set-file secrets.jwtPublicKey=/tmp/jwt_pub.pem
+```
+
+The bot image (`cheers/codex-bot` / `cheers/opencode-bot`) is **not** published
+to GHCR — build it locally if you enable `bot.enabled`.
 
 ## Production
 
@@ -85,7 +118,13 @@ storage classes. For real workloads consider a managed Postgres
 
 ## Validate without a cluster
 
+The chart refuses to render placeholder secrets (`secrets.adminPassword`,
+`secrets.jwtPrivateKey/jwtPublicKey` are `required` when `secrets.create=true`),
+so pass dummies when validating:
+
 ```bash
-helm lint deploy/helm/cheers -f deploy/helm/cheers/values-dev.yaml
-helm template cheers deploy/helm/cheers -f deploy/helm/cheers/values-dev.yaml
+helm lint deploy/helm/cheers -f deploy/helm/cheers/values-dev.yaml \
+  --set secrets.jwtPrivateKey=dummy --set secrets.jwtPublicKey=dummy
+helm template cheers deploy/helm/cheers -f deploy/helm/cheers/values-dev.yaml \
+  --set secrets.jwtPrivateKey=dummy --set secrets.jwtPublicKey=dummy
 ```

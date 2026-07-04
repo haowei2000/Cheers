@@ -16,6 +16,9 @@ gateway:
     # /ws/* → gateway, so onboarding-generated connector configs point here and
     # work without a port-forward. GET /api/v1/ops/connector-discovery reports it.
     CHEERS_CONNECTOR_PUBLIC_BASE: "ws://localhost:30080"
+    # Self-service sign-up is off by default (gateway secure default); keep the
+    # local dev flow of registering extra test accounts working.
+    OPEN_REGISTRATION: "true"
   # Resource caps so nothing is unbounded on a dev machine.
   resources:
     requests: { cpu: 100m, memory: 256Mi }
@@ -64,9 +67,12 @@ rustfs:
 redis:
   enabled: false # single instance → in-process fan-out
 
-# Dev secrets are the chart defaults (admin / admin12345). Fine for local only.
+# Dev secrets: chart defaults + the documented local-dev admin password
+# (admin / admin12345 — see README/CLAUDE.md). Fine for local only; the base
+# chart deliberately has NO adminPassword default.
 secrets:
   create: true
+  adminPassword: admin12345
 
 ingress:
   enabled: false

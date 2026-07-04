@@ -9,14 +9,14 @@
 ```bash
 docker compose ps
 curl http://localhost:8000/health
-curl http://localhost:8000/docs
 ```
 
 正常情况下：
 
 - `backend`、`frontend`、`postgres`、`redis`、`rustfs` 应处于运行状态。
-- `/health` 返回 `{"status":"ok"}`。
-- Swagger 可通过 `http://localhost:8000/docs` 打开。
+- `/health` 返回 `ok`。
+
+Rust 网关没有 Swagger UI —— 不存在 `/docs` 路由。REST 路由定义见 `server/src/router.rs`。
 
 ## 二、日志位置
 

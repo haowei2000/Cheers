@@ -7,6 +7,18 @@ use uuid::Uuid;
 
 pub use super::frame::WireFrame;
 
+/// Why the server is closing a browser connection out-of-band (via the per-conn
+/// close signal registered in `register_user`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseReason {
+    /// A terminal frame couldn't be enqueued (I6) — close so the client falls
+    /// back to REST instead of silently missing a final state.
+    Backpressure,
+    /// The user's sessions were revoked (logout / password change / suspend /
+    /// delete) — close so the stale-token socket dies now, not at disconnect.
+    Revoked,
+}
+
 // ── Trait 定义（可替换实现的接口）────────────────────────────────────────────
 
 /// 广播给浏览器 WS 连接的接口。
@@ -36,6 +48,15 @@ pub trait Fanout: Send + Sync {
     /// 广播给指定用户的所有连接（未读通知等 user 级事件）。
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame);
 
+    /// Close every live browser WS connection belonging to `user_id` (session
+    /// revocation: logout / password change / suspend / delete). Default no-op
+    /// so a kick-unaware transport degrades to "revoked at next re-auth" rather
+    /// than erroring; both real impls override — InProcessFanout closes the
+    /// user's connections, RedisFanout kicks its LOCAL connections only
+    /// (cross-instance propagation over pub/sub is pending the R1-B/M4 HA
+    /// work; the Redis path is not wired in main.rs today).
+    fn kick_user(&self, _user_id: Uuid) {}
+
     /// 频道当前在线用户列表（presence）。默认空；进程内实现覆盖。
     fn online_users(&self, _channel_id: Uuid) -> Vec<Uuid> {
         Vec::new()
@@ -64,9 +85,9 @@ pub struct InProcessFanout {
     channels: DashMap<Uuid, Vec<ConnSender>>,
     /// user_id → 该用户的所有连接的发送端
     users: DashMap<Uuid, Vec<ConnSender>>,
-    /// conn_id → 背压关闭信号端（I6）。终态帧入队失败时触发，
-    /// 让该连接的写循环以 4408 关闭，客户端转 REST 补齐。
-    closers: DashMap<Uuid, mpsc::Sender<()>>,
+    /// conn_id → 服务端主动关闭信号端。背压（I6，终态帧入队失败 → 4408）与
+    /// 会话吊销（kick_user → 4401）都走这里，reason 决定关闭码。
+    closers: DashMap<Uuid, mpsc::Sender<CloseReason>>,
     /// conn_id → user_id。用于把频道订阅（按 conn 记录）映射回在线用户，
     /// 供 presence 广播使用。
     conn_users: DashMap<Uuid, Uuid>,
@@ -101,13 +122,13 @@ impl InProcessFanout {
         })
     }
 
-    /// 浏览器 WS 连接建立后，注册 user 级发送端及背压关闭信号端。
+    /// 浏览器 WS 连接建立后，注册 user 级发送端及服务端关闭信号端。
     pub fn register_user(
         &self,
         user_id: Uuid,
         conn_id: Uuid,
         tx: mpsc::Sender<WireFrame>,
-        close_tx: mpsc::Sender<()>,
+        close_tx: mpsc::Sender<CloseReason>,
     ) {
         self.closers.insert(conn_id, close_tx);
         self.conn_users.insert(conn_id, user_id);
@@ -142,8 +163,20 @@ impl InProcessFanout {
             if let Err(mpsc::error::TrySendError::Full(_)) = s.tx.try_send(frame.clone()) {
                 if terminal {
                     if let Some(closer) = self.closers.get(&s.conn_id) {
-                        let _ = closer.try_send(());
+                        let _ = closer.try_send(CloseReason::Backpressure);
                     }
+                }
+            }
+        }
+    }
+
+    /// 会话吊销：给该用户所有在线连接发关闭信号（写循环以 4401 收尾）。
+    /// 见 `Fanout::kick_user`。
+    pub fn kick_user(&self, user_id: Uuid) {
+        if let Some(senders) = self.users.get(&user_id) {
+            for s in senders.iter() {
+                if let Some(closer) = self.closers.get(&s.conn_id) {
+                    let _ = closer.try_send(CloseReason::Revoked);
                 }
             }
         }
@@ -162,6 +195,25 @@ impl InProcessFanout {
         if let Some(mut senders) = self.channels.get_mut(&channel_id) {
             senders.retain(|s| s.conn_id != conn_id);
         }
+    }
+
+    /// 成员资格被撤销（管理员移除 / 自己退出）：把该用户的**所有**连接从该频道
+    /// 的订阅表移除，新消息立即停止投递。订阅时查成员资格（subscribe），这是它
+    /// 的反向边。
+    pub fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid) {
+        if let Some(mut senders) = self.channels.get_mut(&channel_id) {
+            senders.retain(|s| {
+                self.conn_users
+                    .get(&s.conn_id)
+                    .map(|uid| *uid != user_id)
+                    .unwrap_or(true)
+            });
+        }
+    }
+
+    /// 频道被删除：丢弃整张订阅表（否则残留到各连接断线为止）。
+    pub fn drop_channel(&self, channel_id: Uuid) {
+        self.channels.remove(&channel_id);
     }
 
     /// 浏览器断线时，移除该连接的所有注册（含关闭信号端）。
@@ -259,6 +311,10 @@ impl Fanout for InProcessFanout {
         }
     }
 
+    fn kick_user(&self, user_id: Uuid) {
+        InProcessFanout::kick_user(self, user_id);
+    }
+
     fn online_users(&self, channel_id: Uuid) -> Vec<Uuid> {
         self.channel_online_users(channel_id)
     }
@@ -289,10 +345,10 @@ mod tests {
     fn full_conn(
         fanout: &InProcessFanout,
         user: Uuid,
-    ) -> (mpsc::Receiver<WireFrame>, mpsc::Receiver<()>) {
+    ) -> (mpsc::Receiver<WireFrame>, mpsc::Receiver<CloseReason>) {
         let conn = Uuid::new_v4();
         let (tx, rx) = mpsc::channel::<WireFrame>(1);
-        let (close_tx, close_rx) = mpsc::channel::<()>(1);
+        let (close_tx, close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(user, conn, tx, close_tx);
         (rx, close_rx)
     }
@@ -327,6 +383,23 @@ mod tests {
         assert!(close_rx.try_recv().is_err(), "流式帧丢弃不应触发关闭");
     }
 
+    /// 会话吊销：kick_user 给该用户的每条连接发 Revoked 关闭信号，且不波及他人。
+    #[tokio::test]
+    async fn kick_user_signals_all_of_that_users_conns_only() {
+        let fanout = InProcessFanout::new();
+        let user = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let (_rx1, mut close_rx1) = full_conn(&fanout, user);
+        let (_rx2, mut close_rx2) = full_conn(&fanout, user);
+        let (_rx3, mut close_rx3) = full_conn(&fanout, other);
+
+        fanout.kick_user(user);
+
+        assert_eq!(close_rx1.try_recv(), Ok(CloseReason::Revoked));
+        assert_eq!(close_rx2.try_recv(), Ok(CloseReason::Revoked));
+        assert!(close_rx3.try_recv().is_err(), "其他用户的连接不受影响");
+    }
+
     /// 焦点生命周期：set_focus 后 channel_focus 映射回 user_id；断线自动清除。
     #[tokio::test]
     async fn focus_set_reported_and_cleared_on_deregister() {
@@ -336,7 +409,7 @@ mod tests {
         let channel = Uuid::new_v4();
         let bot = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
-        let (close_tx, _close_rx) = mpsc::channel::<()>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(user, conn, tx, close_tx);
 
         fanout.set_focus(conn, channel, bot, Some("src/lib.rs".into()));
@@ -359,7 +432,7 @@ mod tests {
         let conn = Uuid::new_v4();
         let channel = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
-        let (close_tx, _close_rx) = mpsc::channel::<()>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(user, conn, tx, close_tx);
         fanout.set_focus(conn, channel, Uuid::new_v4(), None);
         assert_eq!(fanout.channel_focus(channel).len(), 1);
@@ -374,7 +447,7 @@ mod tests {
         let user = Uuid::new_v4();
         let conn = Uuid::new_v4();
         let (tx, _rx) = mpsc::channel::<WireFrame>(1);
-        let (close_tx, _close_rx) = mpsc::channel::<()>(1);
+        let (close_tx, _close_rx) = mpsc::channel::<CloseReason>(1);
         fanout.register_user(user, conn, tx, close_tx);
         assert!(fanout.closers.contains_key(&conn));
         fanout.deregister_user(user, conn);

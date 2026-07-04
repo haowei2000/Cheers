@@ -89,10 +89,23 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
           image: {{ include "cheers.image" (dict "ctx" . "repository" .Values.frontend.image.repository "tag" .Values.frontend.image.tag) }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          # Stock nginx:alpine: the master must start as root to bind :80 and
+          # setuid to its worker user, so runAsNonRoot/readOnlyRootFilesystem
+          # don't fit without switching to the unprivileged image + port. Drop
+          # everything except exactly those bootstrap capabilities and forbid
+          # re-escalation.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"]
           ports:
             - name: http
               containerPort: 80

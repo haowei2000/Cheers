@@ -1,4 +1,10 @@
-use axum::{extract::State, http::HeaderMap, Extension, Json};
+use std::net::SocketAddr;
+
+use axum::{
+    extract::{ConnectInfo, State},
+    http::HeaderMap,
+    Extension, Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{error::DatabaseError, Row};
@@ -41,13 +47,18 @@ pub struct LoginResponse {
 /// POST /api/v1/auth/login
 pub async fn login(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
     // Throttle brute-force / bcrypt-DoS (audit H3): cap failed attempts per
     // client source; a successful login clears the counter.
     let limiter = crate::infra::ratelimit::login_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -98,6 +109,7 @@ pub struct RegisterRequest {
 /// self-assignable (admins are provisioned via `POST /users`).
 pub async fn register(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
@@ -107,7 +119,11 @@ pub async fn register(
         ));
     }
     let limiter = crate::infra::ratelimit::register_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -225,6 +241,11 @@ pub async fn change_password(
     .bind(&new_hash)
     .execute(&state.db)
     .await?;
+    // Tear down live WS sessions authenticated with the now-stale version; the
+    // caller's own client reconnects with the fresh token returned below.
+    if let Ok(uid) = claims.sub.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
 
     // Mint a fresh token at the new version so the current caller stays signed in.
     let new_version = row.try_get::<i32, _>("token_version").unwrap_or(0) as i64 + 1;
@@ -249,6 +270,10 @@ pub async fn logout(
         .bind(&claims.sub)
         .execute(&state.db)
         .await?;
+    // Revocation must reach live sockets too, not just future HTTP requests.
+    if let Ok(uid) = claims.sub.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -262,11 +287,16 @@ pub struct ForgotPasswordRequest {
 /// exists — user-enumeration hardening). Rate-limited per client.
 pub async fn forgot_password(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::password_reset_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -309,11 +339,16 @@ pub struct ResetPasswordRequest {
 /// new password, and revokes every existing session (token_version bump). Rate-limited.
 pub async fn reset_password(
     State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::password_reset_limiter();
-    let key = crate::infra::ratelimit::client_key(&headers);
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
@@ -358,6 +393,11 @@ pub async fn reset_password(
     .bind(&hash)
     .execute(&state.db)
     .await?;
+    // Revocation must reach live sockets too (a reset usually means the old
+    // credential is considered compromised).
+    if let Ok(uid) = user_id.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
     // Burn this + any other live reset codes for the email.
     sqlx::query(
         "UPDATE email_codes SET used = TRUE

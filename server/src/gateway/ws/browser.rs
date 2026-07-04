@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::{
     api::middleware::{verify_token, Claims},
     app_state::AppState,
-    gateway::realtime::frame::WireFrame,
+    gateway::realtime::{fanout::CloseReason, frame::WireFrame},
 };
 
 // ── 关闭码 ────────────────────────────────────────────────────────────────────
@@ -121,9 +121,9 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     // ── 阶段 2：建立发送队列 + 注册连接 ──────────────────────────────────────
     let conn_id = Uuid::new_v4();
     let (tx, mut rx) = mpsc::channel::<WireFrame>(SEND_QUEUE_SIZE);
-    // 背压关闭信号：终态帧入队失败时由 fan-out 触发（I6，R3）。容量 1 即可——
-    // 一次信号就足以关连接，重复信号忽略。
-    let (close_tx, mut close_rx) = mpsc::channel::<()>(1);
+    // 服务端关闭信号：背压（终态帧入队失败，I6/R3）或会话吊销（kick_user）时由
+    // fan-out 触发。容量 1 即可——一次信号就足以关连接，重复信号忽略。
+    let (close_tx, mut close_rx) = mpsc::channel::<CloseReason>(1);
 
     state
         .conn_manager
@@ -139,7 +139,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        handle_client_frame(
+                        let keep_open = handle_client_frame(
                             &text,
                             user_id,
                             conn_id,
@@ -148,6 +148,9 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             &mut socket,
                             &state,
                         ).await;
+                        if !keep_open {
+                            break;
+                        }
                     }
                     Some(Ok(Message::Ping(data))) => {
                         let _ = socket.send(Message::Pong(data)).await;
@@ -179,9 +182,17 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                 }
             }
 
-            // fan-out 报告终态帧入队失败（背压）→ 关闭连接，客户端走 REST 补齐（I6）。
-            _ = close_rx.recv() => {
-                close(&mut socket, CLOSE_BACKPRESSURE, "send queue full").await;
+            // fan-out 的服务端关闭信号：背压（I6，客户端走 REST 补齐）或
+            // 会话吊销（logout/改密/封禁 → kick_user，客户端须重新登录）。
+            reason = close_rx.recv() => {
+                match reason {
+                    Some(CloseReason::Revoked) => {
+                        close(&mut socket, CLOSE_AUTH_FAIL, "session revoked").await;
+                    }
+                    _ => {
+                        close(&mut socket, CLOSE_BACKPRESSURE, "send queue full").await;
+                    }
+                }
                 break;
             }
         }
@@ -236,7 +247,9 @@ async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> 
 
                 match frame {
                     ClientFrame::Auth { token } => {
-                        match verify_token(&token, state) {
+                        // 与 HTTP 中间件同一套校验：验签 + DB 吊销检查（token_version /
+                        // is_suspended / is_deleted），登出/封禁用户拿旧 JWT 连不上。
+                        match verify_token(&token, state).await {
                             Ok(claims) => return Some(claims),
                             Err(reason) => {
                                 send_control(socket, &ServerControl::AuthErr {
@@ -260,6 +273,9 @@ async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> 
 
 // ── 客户端帧处理 ──────────────────────────────────────────────────────────────
 
+/// Handle one client frame. Returns `false` when the server has sent a Close
+/// frame and the connection loop must terminate (auth revoked mid-connection,
+/// or a subscribe by a non-member); `true` keeps the connection open.
 async fn handle_client_frame(
     text: &str,
     user_id: Uuid,
@@ -268,7 +284,7 @@ async fn handle_client_frame(
     subscribed: &mut Vec<Uuid>,
     socket: &mut WebSocket,
     state: &AppState,
-) {
+) -> bool {
     let frame: ClientFrame = match serde_json::from_str(text) {
         Ok(f) => f,
         Err(_) => {
@@ -279,14 +295,17 @@ async fn handle_client_frame(
                 },
             )
             .await;
-            return;
+            return true;
         }
     };
 
     match frame {
         ClientFrame::Auth { token } => {
-            // AUTHED 状态下再次收到 auth → token 续期
-            match verify_token(&token, state) {
+            // AUTHED 状态下再次收到 auth → token 续期（同样做 DB 吊销检查）。
+            // 续期失败即关闭：客户端递上来的就是「此会话已吊销」的证明，绝不能
+            // 只回 AuthErr 而让旧 socket 连同其订阅继续存活（覆盖没有走
+            // kick_user 的吊销路径，例如运维直接改库 bump token_version）。
+            match verify_token(&token, state).await {
                 Ok(_) => {
                     send_control(socket, &ServerControl::AuthOk { user_id }).await;
                 }
@@ -298,6 +317,8 @@ async fn handle_client_frame(
                         },
                     )
                     .await;
+                    close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
+                    return false;
                 }
             }
         }
@@ -306,7 +327,7 @@ async fn handle_client_frame(
             if subscribed.contains(&channel_id) {
                 // 已订阅，直接回执（幂等）
                 send_control(socket, &ServerControl::Subscribed { channel_id }).await;
-                return;
+                return true;
             }
 
             match state
@@ -321,6 +342,7 @@ async fn handle_client_frame(
                 }
                 Err(_) => {
                     close(socket, CLOSE_NOT_MEMBER, "not a channel member").await;
+                    return false;
                 }
             }
         }
@@ -339,7 +361,7 @@ async fn handle_client_frame(
         ClientFrame::PresenceFocus { channel_id, focus } => {
             // 只对已订阅的频道生效——否则忽略（不能对未加入的频道声明在看态）。
             if !subscribed.contains(&channel_id) {
-                return;
+                return true;
             }
             match focus {
                 Some(f) => state
@@ -391,6 +413,7 @@ async fn handle_client_frame(
             }
         }
     }
+    true
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────

@@ -303,6 +303,10 @@ pub async fn delete_user(
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    // Revocation must reach live sockets too, not just future HTTP requests.
+    if let Ok(uid) = user_id.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
     Ok(Json(json!({ "user_id": user_id, "deleted": true })))
 }
 
@@ -329,6 +333,11 @@ pub async fn suspend_user(
     .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound);
+    }
+    // A ban takes effect NOW: tear down the user's live WS sessions (mirrors the
+    // bot kill-switch, which kicks the connector on disable).
+    if let Ok(uid) = user_id.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
     }
     Ok(Json(json!({ "user_id": user_id, "suspended": true })))
 }

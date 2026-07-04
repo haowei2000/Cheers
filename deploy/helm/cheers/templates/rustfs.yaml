@@ -17,11 +17,19 @@ spec:
       labels:
         {{- include "cheers.selectorLabels" (dict "ctx" . "component" "rustfs") | nindent 8 }}
     spec:
+      # rustfs still runs as root: the upstream image ships no non-root user and
+      # chowns /data at startup. Compensating controls: RuntimeDefault seccomp,
+      # no privilege re-escalation, and a version-pinned image (values.yaml).
+      # Revisit runAsNonRoot when upstream publishes a non-root image.
       securityContext:
         runAsNonRoot: false
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rustfs
           image: {{ .Values.rustfs.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
           ports:
             - name: api
               containerPort: {{ .Values.rustfs.apiPort }}

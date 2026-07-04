@@ -20,6 +20,11 @@ gateway:
   adminUsername: admin
   adminDisplayName: "Demo Admin"
   corsAllowedOrigins: "" # empty = allow all (dev). Set explicit origins in prod.
+  # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
+  # every client request passes the bundled frontend nginx (which sets
+  # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if
+  # you expose the gateway Service directly (NodePort/LoadBalancer).
+  trustProxyHeaders: true
   s3Region: us-east-1
   extraEnv: {} # map of EXTRA_VAR: value
   resources: {}
@@ -132,7 +137,8 @@ postgres:
     enabled: false
     schedule: "0 3 * * *" # 03:00 daily (cluster timezone)
     retentionDays: 14
-    mcImage: minio/mc:latest
+    # Pinned (not :latest) so the backup job's tooling can't drift under us.
+    mcImage: minio/mc:RELEASE.2025-08-13T08-35-41Z
     prefix: postgres-backups
     # Override to target an external S3; empty → the bundled rustfs endpoint/bucket.
     s3Endpoint: ""
@@ -141,7 +147,9 @@ postgres:
 # ── RustFS (S3-compatible object store; the gateway auto-creates the bucket) ─
 rustfs:
   enabled: true
-  image: rustfs/rustfs:latest
+  # Pinned (not :latest): rustfs runs as root (its image has no non-root user
+  # yet), so at minimum the bits must be reproducible and not drift on restart.
+  image: rustfs/rustfs:1.0.0-beta.8
   bucket: cheers-files
   apiPort: 9000
   consolePort: 9001
@@ -181,7 +189,11 @@ secrets:
   postgresPassword: cheers
   s3AccessKey: cheers-local-access-key
   s3SecretKey: cheers-local-secret-key
-  adminPassword: admin12345
+  # Initial admin login password (seeded on first boot). NO default on purpose:
+  # a well-known password must never ship silently. REQUIRED when create=true —
+  # set it explicitly (--set secrets.adminPassword=...) or use values-dev.yaml,
+  # which pins the documented local-dev password.
+  adminPassword: ""
   # RS256 PEM keypair — the gateway requires BOTH. Provide via `--set-file`
   # (dev) or an existing Secret (prod). Generate:
   #   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out priv.pem

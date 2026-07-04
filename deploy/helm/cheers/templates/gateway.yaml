@@ -19,10 +19,23 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # The gateway binary needs no root, no capabilities, and never writes to
+      # its own filesystem (files go to S3, state to Postgres) — lock it down.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           image: {{ include "cheers.image" (dict "ctx" . "repository" .Values.gateway.image.repository "tag" .Values.gateway.image.tag) }}
           imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: {{ .Values.gateway.port }}
@@ -66,6 +79,8 @@ spec:
             {{- end }}
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.gateway.corsAllowedOrigins | quote }}
+            - name: TRUST_PROXY_HEADERS
+              value: {{ .Values.gateway.trustProxyHeaders | quote }}
             - name: ADMIN_USERNAME
               value: {{ .Values.gateway.adminUsername | quote }}
             - name: ADMIN_DISPLAY_NAME

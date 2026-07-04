@@ -1,5 +1,7 @@
 use std::env;
 
+use jsonwebtoken::{DecodingKey, EncodingKey};
+
 /// Browser origins allowed when CORS_ALLOWED_ORIGINS is unset (local dev). This
 /// is a fail-closed allowlist — NOT a wildcard — so an unconfigured deployment
 /// still rejects arbitrary cross-origin callers. Production must set the env var.
@@ -13,16 +15,35 @@ const DEV_DEFAULT_ORIGINS: &[&str] = &[
     "http://127.0.0.1:30080",
 ];
 
+/// RS256 keypair, parsed **once at startup** (fail-fast) and reused for every
+/// sign/verify instead of re-parsing the PEM on each call. A missing or invalid
+/// key therefore aborts the process before the listener binds, instead of
+/// surfacing as an unexplained 500 at first login.
+#[derive(Clone)]
+pub struct JwtKeys {
+    /// Signs tokens (login, file-preview grants). From JWT_PRIVATE_KEY.
+    pub encoding: EncodingKey,
+    /// Verifies tokens (HTTP middleware + WS auth). From JWT_PUBLIC_KEY.
+    pub decoding: DecodingKey,
+}
+
+impl std::fmt::Debug for JwtKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("JwtKeys(<redacted>)")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
     pub port: u16,
 
     // JWT — RS256
-    // 私钥：PEM 格式，用于签发 token（Bearer + botToken）
+    // 私钥 PEM 原文：仅用于派生 secret-store 主密钥（infra::crypto）；签发/验签
+    // 一律走下面已解析好的 `jwt`。
     pub jwt_private_key_pem: String,
-    // 公钥：PEM 格式，用于验签
-    pub jwt_public_key_pem: String,
+    /// Parsed RS256 keypair (see [`JwtKeys`]).
+    pub jwt: JwtKeys,
 
     // Redis
     pub redis_url: String,
@@ -61,8 +82,19 @@ pub struct Config {
     pub smtp_password: Option<String>,
 
     /// Whether public self-service sign-up (`POST /auth/register`) is enabled.
-    /// Default true; set `OPEN_REGISTRATION=0/false` for invite/admin-only instances.
+    /// Default **false** (secure by default: accounts come from the seeded admin
+    /// or `POST /users`); set `OPEN_REGISTRATION=true` to open sign-up.
     pub open_registration: bool,
+
+    /// Whether the rate limiter may key clients on `X-Real-IP` /
+    /// `X-Forwarded-For`. Default **false** (use the peer socket address): the
+    /// headers are client-controlled whenever the gateway port is directly
+    /// reachable, so trusting them would let an attacker rotate a header to
+    /// bypass the login brute-force cap. Set `TRUST_PROXY_HEADERS=true` ONLY
+    /// when the gateway is reachable exclusively through a trusted proxy that
+    /// overwrites those headers (the bundled frontend nginx, Caddy TLS edge, or
+    /// a k8s ingress) — otherwise every client shares the proxy's IP bucket.
+    pub trust_proxy_headers: bool,
 
     // 孤儿占位回收器（流程 8 缺口）
     /// 占位早于该秒数且无存活流时才回收（默认 900 = 15 分钟，给 bot 重启重连留时间）。
@@ -84,6 +116,25 @@ impl Config {
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
 
+        // Fail fast on the JWT keypair: read AND parse both PEMs here, before
+        // anything binds the listener, so `helm install` / `docker compose up`
+        // with blank or garbage keys dies with an actionable message instead of
+        // "succeeding" and then 500ing at first login.
+        let jwt_private_key_pem = require("JWT_PRIVATE_KEY");
+        let jwt_public_key_pem = require("JWT_PUBLIC_KEY");
+        let jwt = JwtKeys {
+            encoding: EncodingKey::from_rsa_pem(jwt_private_key_pem.as_bytes()).unwrap_or_else(
+                |e| {
+                    panic!("JWT_PRIVATE_KEY is missing or not a valid RSA private-key PEM ({e}) — see docs/help/deployment.md")
+                },
+            ),
+            decoding: DecodingKey::from_rsa_pem(jwt_public_key_pem.as_bytes()).unwrap_or_else(
+                |e| {
+                    panic!("JWT_PUBLIC_KEY is missing or not a valid RSA public-key PEM ({e}) — see docs/help/deployment.md")
+                },
+            ),
+        };
+
         Self {
             database_url: require("DATABASE_URL"),
             port: env::var("PORT")
@@ -91,8 +142,8 @@ impl Config {
                 .parse()
                 .expect("PORT must be a number"),
 
-            jwt_private_key_pem: require("JWT_PRIVATE_KEY"),
-            jwt_public_key_pem: require("JWT_PUBLIC_KEY"),
+            jwt_private_key_pem,
+            jwt,
 
             redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into()),
 
@@ -132,15 +183,9 @@ impl Config {
             smtp_username: env::var("SMTP_USERNAME").ok(),
             smtp_password: env::var("SMTP_PASSWORD").ok(),
 
-            open_registration: env::var("OPEN_REGISTRATION")
-                .ok()
-                .map(|v| {
-                    !matches!(
-                        v.trim().to_ascii_lowercase().as_str(),
-                        "0" | "false" | "no" | "off"
-                    )
-                })
-                .unwrap_or(true),
+            open_registration: env_flag("OPEN_REGISTRATION", false),
+
+            trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 
             orphan_reclaim_threshold_secs: env::var("ORPHAN_RECLAIM_THRESHOLD_SECS")
                 .ok()
@@ -178,8 +223,27 @@ impl Config {
     }
 }
 
+/// Read a required env var. Empty/whitespace-only values count as MISSING so a
+/// templated-but-blank value (e.g. compose's `${JWT_PRIVATE_KEY:-}` or a Helm
+/// secret defaulted to "") fails startup loudly instead of producing a gateway
+/// that boots but cannot mint or verify tokens.
 fn require(key: &str) -> String {
-    env::var(key).unwrap_or_else(|_| panic!("missing required env var: {key}"))
+    match env::var(key) {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => panic!("required env var {key} is missing or empty — see docs/help/deployment.md"),
+    }
+}
+
+/// Parse a boolean env flag. Only `1/true/yes/on` (case-insensitive) enable it;
+/// unset or empty falls back to `default`.
+fn env_flag(key: &str, default: bool) -> bool {
+    match env::var(key) {
+        Ok(v) if !v.trim().is_empty() => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        _ => default,
+    }
 }
 
 fn require_any(keys: &[&str]) -> String {

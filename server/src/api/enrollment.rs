@@ -218,11 +218,16 @@ pub struct RedeemRequest {
 /// an existence/状态 oracle.
 pub async fn redeem_enrollment_code(
     State(state): State<AppState>,
+    connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<RedeemRequest>,
 ) -> Result<Json<Value>, AppError> {
     let limiter = crate::infra::ratelimit::enrollment_redeem_limiter();
-    let rl_key = crate::infra::ratelimit::client_key(&headers);
+    let rl_key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|axum::extract::ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
     if let Some(retry_after_secs) = limiter.retry_after(&rl_key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }

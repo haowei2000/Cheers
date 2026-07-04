@@ -16,7 +16,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::{
-    fanout::{Fanout, InProcessFanout, WireFrame},
+    fanout::{CloseReason, Fanout, InProcessFanout, WireFrame},
     manager::LocalRegistry,
 };
 
@@ -71,7 +71,7 @@ impl RedisFanout {
         user_id: Uuid,
         conn_id: Uuid,
         tx: mpsc::Sender<WireFrame>,
-        close_tx: mpsc::Sender<()>,
+        close_tx: mpsc::Sender<CloseReason>,
     ) {
         self.local.register_user(user_id, conn_id, tx, close_tx);
     }
@@ -92,7 +92,7 @@ impl LocalRegistry for RedisFanout {
         user_id: Uuid,
         conn_id: Uuid,
         tx: mpsc::Sender<WireFrame>,
-        close_tx: mpsc::Sender<()>,
+        close_tx: mpsc::Sender<CloseReason>,
     ) {
         self.local.register_user(user_id, conn_id, tx, close_tx);
     }
@@ -101,6 +101,15 @@ impl LocalRegistry for RedisFanout {
     }
     fn unsubscribe_channel(&self, channel_id: Uuid, conn_id: Uuid) {
         self.local.unsubscribe_channel(channel_id, conn_id);
+    }
+    // NOTE: like the close-signal path, these only affect connections on THIS
+    // instance; a multi-instance rollout must propagate revocations over pub/sub
+    // (R1-B/M4 — the Redis path is not wired in main.rs today).
+    fn unsubscribe_user_channel(&self, channel_id: Uuid, user_id: Uuid) {
+        self.local.unsubscribe_user_channel(channel_id, user_id);
+    }
+    fn drop_channel(&self, channel_id: Uuid) {
+        self.local.drop_channel(channel_id);
     }
     fn deregister_user(&self, user_id: Uuid, conn_id: Uuid) {
         self.local.deregister_user(user_id, conn_id);
@@ -145,6 +154,14 @@ impl Fanout for RedisFanout {
     async fn broadcast_user(&self, user_id: Uuid, frame: WireFrame) {
         let subject = user_subject(user_id);
         publish(&self.publisher.clone(), &subject, &frame).await;
+    }
+
+    fn kick_user(&self, user_id: Uuid) {
+        // Local-instance kick: closes this instance's connections for the user.
+        // Cross-instance revocation needs a pub/sub control message (R1-B/M4 HA
+        // work) — until then, a multi-instance rollout leaves the user's
+        // sockets on OTHER instances open until they disconnect or re-auth.
+        self.local.kick_user(user_id);
     }
 }
 

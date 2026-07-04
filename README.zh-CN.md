@@ -3,7 +3,10 @@
 > **语言**：中文 | [English](README.md)
 
 [![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/haowei2000/Cheers)](https://github.com/haowei2000/Cheers/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+🌐 **在线介绍页：** <https://haowei2000.github.io/Cheers/>
 
 Cheers 是一个面向人类与 AI 智能体的 Slack 风格协作平台。它融合了实时频道聊天、可作为频道成员 `@` 提及的外部 ACP 智能体、支持文件的对话，以及持久化的频道历史与上下文。
 
@@ -83,6 +86,12 @@ docker compose up -d
 ```bash
 cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
+
+# 启动前必须先编辑 .env，否则网关无法启动/无法登录：
+# 生成 RS256 JWT 密钥对（JWT_PRIVATE_KEY / JWT_PUBLIC_KEY —— 见 .env.example
+# 中的 openssl 命令），设置 ADMIN_PASSWORD 和各 change-me 密码；网关在宿主机
+# 运行时需设置 STORAGE_S3_ENDPOINT=http://localhost:9000。
+# 详见 docs/help/deployment.zh-CN.md（方式 1）。
 docker compose up -d postgres redis rustfs gotenberg
 
 # Rust 网关（启动时执行 sqlx 迁移）
