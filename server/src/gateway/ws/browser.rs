@@ -139,7 +139,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        handle_client_frame(
+                        let keep_open = handle_client_frame(
                             &text,
                             user_id,
                             conn_id,
@@ -148,6 +148,9 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             &mut socket,
                             &state,
                         ).await;
+                        if !keep_open {
+                            break;
+                        }
                     }
                     Some(Ok(Message::Ping(data))) => {
                         let _ = socket.send(Message::Pong(data)).await;
@@ -270,6 +273,9 @@ async fn auth_phase(socket: &mut WebSocket, state: &AppState) -> Option<Claims> 
 
 // ── 客户端帧处理 ──────────────────────────────────────────────────────────────
 
+/// Handle one client frame. Returns `false` when the server has sent a Close
+/// frame and the connection loop must terminate (auth revoked mid-connection,
+/// or a subscribe by a non-member); `true` keeps the connection open.
 async fn handle_client_frame(
     text: &str,
     user_id: Uuid,
@@ -278,7 +284,7 @@ async fn handle_client_frame(
     subscribed: &mut Vec<Uuid>,
     socket: &mut WebSocket,
     state: &AppState,
-) {
+) -> bool {
     let frame: ClientFrame = match serde_json::from_str(text) {
         Ok(f) => f,
         Err(_) => {
@@ -289,13 +295,16 @@ async fn handle_client_frame(
                 },
             )
             .await;
-            return;
+            return true;
         }
     };
 
     match frame {
         ClientFrame::Auth { token } => {
-            // AUTHED 状态下再次收到 auth → token 续期（同样做 DB 吊销检查）
+            // AUTHED 状态下再次收到 auth → token 续期（同样做 DB 吊销检查）。
+            // 续期失败即关闭：客户端递上来的就是「此会话已吊销」的证明，绝不能
+            // 只回 AuthErr 而让旧 socket 连同其订阅继续存活（覆盖没有走
+            // kick_user 的吊销路径，例如运维直接改库 bump token_version）。
             match verify_token(&token, state).await {
                 Ok(_) => {
                     send_control(socket, &ServerControl::AuthOk { user_id }).await;
@@ -308,6 +317,8 @@ async fn handle_client_frame(
                         },
                     )
                     .await;
+                    close(socket, CLOSE_AUTH_FAIL, "auth failed").await;
+                    return false;
                 }
             }
         }
@@ -316,7 +327,7 @@ async fn handle_client_frame(
             if subscribed.contains(&channel_id) {
                 // 已订阅，直接回执（幂等）
                 send_control(socket, &ServerControl::Subscribed { channel_id }).await;
-                return;
+                return true;
             }
 
             match state
@@ -331,6 +342,7 @@ async fn handle_client_frame(
                 }
                 Err(_) => {
                     close(socket, CLOSE_NOT_MEMBER, "not a channel member").await;
+                    return false;
                 }
             }
         }
@@ -349,7 +361,7 @@ async fn handle_client_frame(
         ClientFrame::PresenceFocus { channel_id, focus } => {
             // 只对已订阅的频道生效——否则忽略（不能对未加入的频道声明在看态）。
             if !subscribed.contains(&channel_id) {
-                return;
+                return true;
             }
             match focus {
                 Some(f) => state
@@ -401,6 +413,7 @@ async fn handle_client_frame(
             }
         }
     }
+    true
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
