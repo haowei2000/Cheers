@@ -87,19 +87,14 @@ export function Sidebar({ workspace }: Props) {
   const [wsSettingsOpen, setWsSettingsOpen] = useState(false);
   // Only team workspaces have a settings panel (the personal workspace isn't managed).
   const canOpenSettings = !!workspace && workspace.kind !== "personal";
+  // DMs are consolidated into the personal workspace; team workspaces list only
+  // their own channels.
+  const isPersonal = workspace?.kind === "personal";
 
-  // Guest channels (via /channels?guest=true): ones the user belongs to whose
-  // WORKSPACE they aren't a member of. Team invites auto-join the workspace, so
-  // in practice these are personal-workspace shares (unjoinable by design) or
-  // leftovers from a workspace removal. No rail workspace owns them, so they get
-  // their own section instead of vanishing.
-  const isGuest = (c: Channel) =>
-    c.type !== "dm" && !!c.workspace_id && c.workspace_id !== selectedWorkspaceId;
   const publicChannels = channels.filter(
-    (c) => c.type !== "dm" && c.type !== "private" && !isGuest(c)
+    (c) => c.type !== "dm" && c.type !== "private"
   );
-  const privateChannels = channels.filter((c) => c.type === "private" && !isGuest(c));
-  const guestChannels = channels.filter(isGuest);
+  const privateChannels = channels.filter((c) => c.type === "private");
   const dms = channels.filter((c) => c.type === "dm");
 
   return (
@@ -146,49 +141,30 @@ export function Sidebar({ workspace }: Props) {
           </Section>
         )}
 
-        {/* Channels shared from workspaces the user is NOT a member of (guest
-            membership via channel invite). Labelled with the owning workspace so
-            "why is this here" answers itself. */}
-        {guestChannels.length > 0 && (
-          <Section label="Shared with you" defaultOpen>
-            {guestChannels.map((ch) => (
-              <div key={ch.channel_id} title={ch.workspace_name ? `From workspace “${ch.workspace_name}”` : undefined}>
-                <ChannelItem
-                  channel={ch}
-                  selected={selectedChannelId === ch.channel_id}
-                  onClick={() => selectChannel(ch.channel_id)}
-                />
-                {ch.workspace_name && (
-                  <div className="pl-9 -mt-0.5 pb-0.5 text-[10px] text-zinc-600 truncate">
-                    {ch.workspace_name}
-                  </div>
+        {/* Direct messages live only in the personal workspace (the DM home), so
+            they aren't duplicated across every team workspace's sidebar. */}
+        {isPersonal && (
+          <Section label="Direct Messages" onAdd={() => setDmOpen(true)}>
+            {dms.map((ch) => (
+              <button
+                key={ch.channel_id}
+                onClick={() => selectChannel(ch.channel_id)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-1 rounded-md text-sm transition-colors text-left",
+                  selectedChannelId === ch.channel_id
+                    ? "bg-zinc-700/70 text-zinc-50 font-medium"
+                    : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
                 )}
-              </div>
+              >
+                <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+                <span className="truncate">{ch.peer_name || ch.name || "Direct Message"}</span>
+              </button>
             ))}
+            {dms.length === 0 && (
+              <div className="px-3 py-1 text-xs text-zinc-600">Click + to start a direct message</div>
+            )}
           </Section>
         )}
-
-        {/* Direct messages — type='dm' channels, labelled by the peer's name. */}
-        <Section label="Direct Messages" onAdd={() => setDmOpen(true)}>
-          {dms.map((ch) => (
-            <button
-              key={ch.channel_id}
-              onClick={() => selectChannel(ch.channel_id)}
-              className={cn(
-                "w-full flex items-center gap-2 px-3 py-1 rounded-md text-sm transition-colors text-left",
-                selectedChannelId === ch.channel_id
-                  ? "bg-zinc-700/70 text-zinc-50 font-medium"
-                  : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-              )}
-            >
-              <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-              <span className="truncate">{ch.peer_name || ch.name || "Direct Message"}</span>
-            </button>
-          ))}
-          {dms.length === 0 && (
-            <div className="px-3 py-1 text-xs text-zinc-600">Click + to start a direct message</div>
-          )}
-        </Section>
 
         {channels.length === 0 && (
           <div className="px-3 py-4 text-xs text-zinc-600 text-center">

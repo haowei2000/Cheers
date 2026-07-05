@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
-import { listChannels, listDms, listGuestChannels } from "@/api/channels";
+import { listChannels, listDms } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
@@ -10,6 +10,7 @@ export default function ChatLayout() {
   const {
     workspaces,
     channels,
+    personalWorkspace,
     selectedWorkspaceId,
     selectedChannelId,
     setWorkspaces,
@@ -32,21 +33,21 @@ export default function ChatLayout() {
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load channels when workspace changes. DMs are workspace-agnostic (type='dm'
-  // channels, reached by membership), so they're loaded alongside and merged into
-  // the same list — as are GUEST channels (channels you were invited into whose
-  // workspace you're not a member of; without them the invite would be invisible,
-  // since the rail only lists your own workspaces).
+  // Load channels when the workspace changes. DMs are consolidated into the
+  // personal workspace (the user's home), so they're fetched only there — team
+  // workspaces show just their own channels, and DMs no longer duplicate across
+  // every sidebar.
   useEffect(() => {
     if (!selectedWorkspaceId) return;
+    const isPersonal =
+      !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
     Promise.all([
       listChannels(selectedWorkspaceId),
-      listDms().catch(() => []),
-      listGuestChannels().catch(() => []),
+      isPersonal ? listDms().catch(() => []) : Promise.resolve([]),
     ])
-      .then(([chs, dms, guests]) => setChannels([...chs, ...dms, ...guests]))
+      .then(([chs, dms]) => setChannels([...chs, ...dms]))
       .catch(() => {});
-  }, [selectedWorkspaceId, setChannels]);
+  }, [selectedWorkspaceId, personalWorkspace, setChannels]);
 
   const selectedWorkspace = workspaces.find(
     (w) => w.workspace_id === selectedWorkspaceId
