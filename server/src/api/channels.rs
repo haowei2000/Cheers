@@ -157,9 +157,12 @@ async fn ensure_channel_admin(
 pub struct ListChannelsQuery {
     pub workspace_id: Option<String>,
     /// `guest=true` → ONLY channels the caller belongs to whose workspace they are
-    /// NOT an active member of (invited into a channel from outside the workspace).
-    /// These never show under a rail workspace, so the sidebar lists them in a
-    /// separate "shared with you" section. Mutually exclusive with `workspace_id`.
+    /// NOT an active member of. Team-workspace invites auto-join the workspace
+    /// (`ensure_member_for_channel_invite`), so this catches the cases that can't:
+    /// channels shared from someone's PERSONAL workspace (unjoinable by design) and
+    /// members removed from a workspace but left in its channels. These never show
+    /// under a rail workspace, so the sidebar lists them in a separate "shared with
+    /// you" section. Mutually exclusive with `workspace_id`.
     pub guest: Option<bool>,
 }
 
@@ -388,10 +391,18 @@ pub async fn create_channel(
     for user_id in body.initial_user_ids {
         sqlx::query("INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'user', 'member', $3) ON CONFLICT DO NOTHING")
             .bind(&channel_id)
-            .bind(user_id)
+            .bind(&user_id)
             .bind(&claims.sub)
             .execute(&mut *tx)
             .await?;
+        // Same Slack semantics as add_channel_member: founding members from outside
+        // a TEAM workspace join it (inside the tx so the channel row is visible).
+        crate::domain::workspaces::ensure_member_for_channel_invite(
+            &mut *tx,
+            &channel_id,
+            &user_id,
+        )
+        .await?;
     }
     for bot_id in body.initial_bot_ids {
         sqlx::query("INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'bot', 'member', $3) ON CONFLICT DO NOTHING")
@@ -676,6 +687,18 @@ pub async fn add_channel_member(
         return Err(AppError::BadRequest(
             "member already exists with a different member_type".into(),
         ));
+    }
+
+    // Channel invite ⇒ workspace membership (team workspaces only): without this,
+    // an invitee from outside the workspace has no rail entry for it and the
+    // channel is unreachable. Personal workspaces stay guest-only (see the helper).
+    if body.member_type == "user" {
+        crate::domain::workspaces::ensure_member_for_channel_invite(
+            &state.db,
+            &channel_id,
+            &body.member_id,
+        )
+        .await?;
     }
 
     // Eagerly materialize the bot's PRIMARY session with its pinned (validated)
