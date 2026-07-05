@@ -33,10 +33,6 @@ export interface Channel {
   peer_name?: string;
   my_role?: string | null;
   can_manage?: boolean;
-  /** Only on guest-scope listings (`/channels?guest=true`): the owning workspace's
-   *  name, labelling the "shared with you" section for channels whose workspace
-   *  the caller isn't a member of. */
-  workspace_name?: string | null;
 }
 
 export interface DM {
