@@ -240,7 +240,10 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
     )
     .await
     .unwrap();
-    assert_eq!(dto.reply_to_msg_id.as_deref(), Some(bot_msg.to_string().as_str()));
+    assert_eq!(
+        dto.reply_to_msg_id.as_deref(),
+        Some(bot_msg.to_string().as_str())
+    );
     assert_eq!(
         counter.dispatched.load(Ordering::SeqCst),
         1,

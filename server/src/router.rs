@@ -142,6 +142,12 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::workspaces::list_workspace_members)
                 .post(api::workspaces::add_workspace_member),
         )
+        // 邀请候选搜索：好友按名字模糊匹配 ∪ 任何人按完整用户名/邮箱精确匹配
+        // （沿用无全站姓名目录的隐私决策；/friends/search 只认 UUID，不适用于此）
+        .route(
+            "/api/v1/workspaces/:workspace_id/invitable",
+            get(api::workspaces::search_workspace_invitable),
+        )
         .route(
             "/api/v1/workspaces/:workspace_id/members/:user_id",
             patch(api::workspaces::set_workspace_member_role)

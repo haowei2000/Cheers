@@ -24,6 +24,11 @@ pub struct ChannelDto {
     /// 0 for queries that don't compute it (create/get/update single-channel).
     #[serde(default)]
     pub unread_count: i64,
+    /// The owning workspace's name — populated ONLY by the `guest=true` listing,
+    /// where the caller isn't a workspace member and the sidebar needs a label
+    /// for the "shared with you" section. Absent everywhere else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +95,9 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         allow_member_invites: row.try_get("allow_member_invites").unwrap_or(true),
         allow_bot_adds: row.try_get("allow_bot_adds").unwrap_or(true),
         unread_count: row.try_get("unread_count").unwrap_or(0),
+        // Only the guest-scope query selects this column (labels the "shared with
+        // you" section); every other query leaves it absent → None.
+        workspace_name: row.try_get("workspace_name").ok(),
     }
 }
 
@@ -148,6 +156,14 @@ async fn ensure_channel_admin(
 #[derive(Deserialize)]
 pub struct ListChannelsQuery {
     pub workspace_id: Option<String>,
+    /// `guest=true` → ONLY channels the caller belongs to whose workspace they are
+    /// NOT an active member of. Team-workspace invites auto-join the workspace
+    /// (`ensure_member_for_channel_invite`), so this catches the cases that can't:
+    /// channels shared from someone's PERSONAL workspace (unjoinable by design) and
+    /// members removed from a workspace but left in its channels. These never show
+    /// under a rail workspace, so the sidebar lists them in a separate "shared with
+    /// you" section. Mutually exclusive with `workspace_id`.
+    pub guest: Option<bool>,
 }
 
 pub async fn list_channels(
@@ -155,6 +171,35 @@ pub async fn list_channels(
     Extension(claims): Extension<Claims>,
     Query(q): Query<ListChannelsQuery>,
 ) -> Result<Json<Vec<ChannelDto>>, AppError> {
+    // Guest scope: channel member ∧ NOT active workspace member. Carries the
+    // workspace name purely as a display label — membership still isn't granted.
+    if q.guest == Some(true) {
+        let rows = sqlx::query(
+            "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
+                    c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
+                    w.name AS workspace_name,
+                    COALESCE((
+                        SELECT count(*) FROM messages m
+                        WHERE m.channel_id = c.channel_id
+                          AND m.is_partial = FALSE
+                          AND m.sender_id <> $1
+                          AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                    ), 0) AS unread_count
+             FROM channels c
+             JOIN channel_memberships cm ON cm.channel_id = c.channel_id
+                    AND cm.member_id = $1 AND cm.member_type = 'user'
+             JOIN workspaces w ON w.workspace_id = c.workspace_id
+             LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id
+                    AND wm.user_id = $1 AND wm.status = 'active'
+             WHERE c.type != 'dm'
+               AND wm.user_id IS NULL
+             ORDER BY c.created_at DESC",
+        )
+        .bind(&claims.sub)
+        .fetch_all(&state.db)
+        .await?;
+        return Ok(Json(rows.into_iter().map(dto).collect()));
+    }
     // Scope to one workspace when `?workspace_id=` is given (the sidebar always
     // passes it). The handler previously ignored the param entirely, leaking
     // every workspace's channels into whichever one you had selected.
@@ -346,10 +391,18 @@ pub async fn create_channel(
     for user_id in body.initial_user_ids {
         sqlx::query("INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'user', 'member', $3) ON CONFLICT DO NOTHING")
             .bind(&channel_id)
-            .bind(user_id)
+            .bind(&user_id)
             .bind(&claims.sub)
             .execute(&mut *tx)
             .await?;
+        // Same Slack semantics as add_channel_member: founding members from outside
+        // a TEAM workspace join it (inside the tx so the channel row is visible).
+        crate::domain::workspaces::ensure_member_for_channel_invite(
+            &mut *tx,
+            &channel_id,
+            &user_id,
+        )
+        .await?;
     }
     for bot_id in body.initial_bot_ids {
         sqlx::query("INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'bot', 'member', $3) ON CONFLICT DO NOTHING")
@@ -634,6 +687,18 @@ pub async fn add_channel_member(
         return Err(AppError::BadRequest(
             "member already exists with a different member_type".into(),
         ));
+    }
+
+    // Channel invite ⇒ workspace membership (team workspaces only): without this,
+    // an invitee from outside the workspace has no rail entry for it and the
+    // channel is unreachable. Personal workspaces stay guest-only (see the helper).
+    if body.member_type == "user" {
+        crate::domain::workspaces::ensure_member_for_channel_invite(
+            &state.db,
+            &channel_id,
+            &body.member_id,
+        )
+        .await?;
     }
 
     // Eagerly materialize the bot's PRIMARY session with its pinned (validated)

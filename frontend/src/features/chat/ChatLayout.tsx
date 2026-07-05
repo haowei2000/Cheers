@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
-import { listChannels, listDms } from "@/api/channels";
+import { listChannels, listDms, listGuestChannels } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
@@ -32,12 +32,19 @@ export default function ChatLayout() {
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load channels when workspace changes. DMs are workspace-agnostic (type='dm' channels,
-  // reached by membership), so they're loaded alongside and merged into the same list.
+  // Load channels when workspace changes. DMs are workspace-agnostic (type='dm'
+  // channels, reached by membership), so they're loaded alongside and merged into
+  // the same list — as are GUEST channels (channels you were invited into whose
+  // workspace you're not a member of; without them the invite would be invisible,
+  // since the rail only lists your own workspaces).
   useEffect(() => {
     if (!selectedWorkspaceId) return;
-    Promise.all([listChannels(selectedWorkspaceId), listDms().catch(() => [])])
-      .then(([chs, dms]) => setChannels([...chs, ...dms]))
+    Promise.all([
+      listChannels(selectedWorkspaceId),
+      listDms().catch(() => []),
+      listGuestChannels().catch(() => []),
+    ])
+      .then(([chs, dms, guests]) => setChannels([...chs, ...dms, ...guests]))
       .catch(() => {});
   }, [selectedWorkspaceId, setChannels]);
 
