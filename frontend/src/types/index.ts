@@ -164,6 +164,11 @@ export interface MemberItem {
   username?: string;
   display_name?: string;
   avatar_url?: string | null;
+  /** Longer self-description for the profile hovercard (users: bio; bots: description). */
+  bio?: string | null;
+  /** Short presence line (Slack-style custom status). */
+  status_text?: string | null;
+  status_emoji?: string | null;
   /** Users: live browser connection subscribed to this channel; bots: connector liveness. */
   is_online?: boolean | null;
   /** Bots only: connector-reported "agent accepts audio prompts" (policy AND

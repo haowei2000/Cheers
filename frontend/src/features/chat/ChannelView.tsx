@@ -23,10 +23,11 @@ import { ChannelFilesDialog } from "./ChannelFilesDialog";
 import { ChannelSettingsDialog } from "./ChannelSettingsDialog";
 import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
+import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { useAuthStore } from "@/stores/authStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import type { Message, Channel, PermissionContentData } from "@/types";
+import type { Message, Channel, PermissionContentData, MemberItem } from "@/types";
 
 // In-flight bot placeholders arrive with `channel_seq: null`; they are the
 // newest thing in the channel until finalized, so order them last. Stable sort
@@ -73,6 +74,8 @@ export function ChannelView({ channel, onBack }: Props) {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
+  // Full channel members (with bio/status) — powers the profile hovercard by id.
+  const [members, setMembers] = useState<MemberItem[]>([]);
   // Slash-commands advertised by the channel's bots (⑦ command palette). Flat
   // list across all bots; refreshed on channel open and on reconnect catch-up.
   const [commands, setCommands] = useState<CommandCandidate[]>([]);
@@ -185,12 +188,14 @@ export function ChannelView({ channel, onBack }: Props) {
   useEffect(() => {
     if (!channel) {
       setMentionables([]);
+      setMembers([]);
       return;
     }
     listChannelMembers(channel.channel_id)
-      .then((members) =>
+      .then((rows) => {
+        setMembers(rows);
         setMentionables(
-          members
+          rows
             .filter((m) => m.member_type === "user" || m.member_type === "bot")
             .map((m) => ({
               id: m.member_id,
@@ -201,10 +206,20 @@ export function ChannelView({ channel, onBack }: Props) {
               // unknown → the composer treats it as "can't", fail-safe).
               canReceiveAudio: m.can_receive_audio ?? false,
             }))
-        )
-      )
-      .catch(() => setMentionables([]));
+        );
+      })
+      .catch(() => {
+        setMembers([]);
+        setMentionables([]);
+      });
   }, [channel?.channel_id]);
+
+  // id → member profile, so a message avatar/name click can open the hovercard
+  // even though the message itself carries no bio/status.
+  const memberById = useMemo<Map<string, ProfileData>>(
+    () => new Map(members.map((m) => [m.member_id, m])),
+    [members]
+  );
 
   const loadMore = useCallback(async () => {
     if (!channel || loadingMore || !hasMore) return;
@@ -652,6 +667,7 @@ export function ChannelView({ channel, onBack }: Props) {
   }
 
   return (
+    <ProfileCardProvider members={memberById}>
     <div
       className="flex flex-col h-full transition-[padding] duration-200"
       style={{ paddingRight: reservedRight }}
@@ -950,5 +966,6 @@ export function ChannelView({ channel, onBack }: Props) {
         />
       )}
     </div>
+    </ProfileCardProvider>
   );
 }
