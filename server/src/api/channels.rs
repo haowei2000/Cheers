@@ -493,6 +493,9 @@ pub async fn list_channel_members(
                 COALESCE(u.username, b.username) AS username,
                 COALESCE(u.display_name, b.display_name) AS display_name,
                 COALESCE(u.avatar_url, b.avatar_url) AS avatar_url,
+                COALESCE(u.bio, b.description) AS bio,
+                COALESCE(u.status_text, b.status_text) AS status_text,
+                COALESCE(u.status_emoji, b.status_emoji) AS status_emoji,
                 (b.binding_config->'connector_control'->'capabilities'->>'audio')::boolean
                     AS can_receive_audio
          FROM channel_memberships cm
@@ -534,6 +537,11 @@ pub async fn list_channel_members(
             "username": r.try_get::<String, _>("username").ok(),
             "display_name": r.try_get::<String, _>("display_name").ok(),
             "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            // Profile fields for the member hovercard: bio = the long self-description
+            // (users.bio, falling back to a bot's description); status = the short line.
+            "bio": r.try_get::<Option<String>, _>("bio").ok().flatten(),
+            "status_text": r.try_get::<Option<String>, _>("status_text").ok().flatten(),
+            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
             "is_online": is_online,
             // Bots only: whether the connector says the agent accepts audio
             // prompts (policy AND promptCapabilities.audio). NULL = unknown

@@ -11,6 +11,7 @@ import { PermissionCard } from "./PermissionCard";
 import { BotTracePanel } from "./BotTracePanel";
 import { cancelMessage } from "@/api/messages";
 import type { Message } from "@/types";
+import { useProfileCard } from "./ProfileHovercard";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -232,6 +233,17 @@ export const MessageItem = memo(function MessageItem({
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
   const showActions = actions && !active && !selectMode && !message._status;
   const selectable = Boolean(actions && selectMode);
+
+  // Click the sender's avatar/name → open their profile card (bio/status). In
+  // select mode the row-click owns the interaction, so skip it there.
+  const profileCard = useProfileCard();
+  const openProfile = (anchor: HTMLElement) => {
+    if (selectable) return;
+    profileCard?.openById(anchor, message.sender_id, {
+      display_name: message.sender_name ?? name,
+      member_type: message.sender_type,
+    });
+  };
   const selected = Boolean(selectedProp);
   const rowSelectProps = selectable
     ? {
@@ -293,24 +305,30 @@ export const MessageItem = memo(function MessageItem({
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
       {selectable && <SelectBox selected={selected} className={isOwn ? "order-last" : undefined} />}
-      {/* Avatar */}
-      <Avatar
-        name={name}
-        src={undefined}
-        id={message.sender_id}
-        size="sm"
-        className="mt-0.5 flex-shrink-0"
-      />
+      {/* Avatar — click to open the sender's profile card */}
+      <button
+        type="button"
+        onClick={(e) => openProfile(e.currentTarget)}
+        className="mt-0.5 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
+        title="View profile"
+      >
+        <Avatar name={name} src={undefined} id={message.sender_id} size="sm" />
+      </button>
 
       <div className={cn("flex-1 min-w-0", isOwn && "flex flex-col items-end")}>
         {/* Header */}
         <div className="flex items-baseline gap-2 mb-0.5">
-          <span
-            className={cn("text-sm font-semibold text-zinc-100", isOwn && "order-2")}
-            title={hasName ? undefined : message.sender_id}
+          <button
+            type="button"
+            onClick={(e) => openProfile(e.currentTarget)}
+            className={cn(
+              "text-sm font-semibold text-zinc-100 hover:underline",
+              isOwn && "order-2"
+            )}
+            title={hasName ? "View profile" : message.sender_id}
           >
             {name}
-          </span>
+          </button>
           {isBot && (
             <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
               BOT

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Users, Bot, Settings } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
 import { Avatar } from "@/components/ui/avatar";
+import { useProfileCard } from "./ProfileHovercard";
 import type { MemberItem } from "@/types";
 
 /**
@@ -21,6 +22,7 @@ export function MembersPopover({
   onClose: () => void;
 }) {
   const [members, setMembers] = useState<MemberItem[] | null>(null);
+  const card = useProfileCard();
 
   useEffect(() => {
     let alive = true;
@@ -74,7 +76,12 @@ export function MembersPopover({
             members.map((m) => {
               const name = m.display_name || m.username || m.member_id.slice(0, 8);
               return (
-                <div key={m.member_id} className="flex items-center gap-2.5 px-3 py-1.5">
+                <button
+                  key={m.member_id}
+                  type="button"
+                  onClick={(e) => card?.open(e.currentTarget, m)}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-zinc-800/60 transition-colors"
+                >
                   <div className="relative">
                     <Avatar name={name} id={m.member_id} size="sm" />
                     {m.is_online != null && (
@@ -97,7 +104,7 @@ export function MembersPopover({
                   {m.role && m.role !== "member" && (
                     <span className="text-[10px] text-zinc-500 capitalize">{m.role}</span>
                   )}
-                </div>
+                </button>
               );
             })
           )}
