@@ -700,9 +700,14 @@ export function RemoteWorkspaceDialog({
   const canWrite = selectedBot?.can_write === true;
 
   return (
-    <Dialog title="Remote workspace" onClose={onClose} maxWidth="max-w-5xl">
+    <Dialog
+      title="Remote workspace"
+      onClose={onClose}
+      maxWidth="max-w-5xl"
+      fullScreenOnMobile
+    >
       {/* Bot picker */}
-      <div className="flex items-center gap-2 mb-2 text-xs">
+      <div className="flex items-center gap-2 mb-2 text-xs flex-wrap max-md:flex-shrink-0">
         <span className="text-zinc-500">Bot</span>
         <select
           value={botId ?? ""}
@@ -837,9 +842,12 @@ export function RemoteWorkspaceDialog({
           Select an online bot to browse the workspace on its machine.
         </div>
       ) : (
-        <div className="flex gap-3 h-[62vh]">
+        // Desktop: side-by-side tree + editor at a fixed height. Mobile: the dialog is a
+        // full-screen sheet (fullScreenOnMobile), so stack the panes vertically and let
+        // this body fill the remaining height; each pane keeps its own internal scroll.
+        <div className="flex gap-3 h-[62vh] max-md:h-auto max-md:flex-1 max-md:min-h-0 max-md:flex-col">
           {/* Tree pane */}
-          <div className="w-1/3 min-w-[200px] border border-zinc-800 rounded overflow-hidden flex flex-col">
+          <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none border border-zinc-800 rounded overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
               <div className="flex items-center border-b border-zinc-800 text-[11px]">
@@ -1110,7 +1118,7 @@ export function RemoteWorkspaceDialog({
           </div>
 
           {/* Viewer / editor / diff pane */}
-          <div className="flex-1 border border-zinc-800 rounded overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 border border-zinc-800 rounded overflow-hidden flex flex-col">
             {diff !== null ? (
               <>
                 <div className="flex items-center gap-2 px-2 py-1.5 border-b border-zinc-800 text-xs">
@@ -1246,7 +1254,7 @@ export function RemoteWorkspaceDialog({
                   </button>
                 </div>
                 {conflict && (
-                  <div className="flex items-center gap-2 px-2 py-1.5 border-b border-amber-800/50 bg-amber-950/30 text-[11px] text-amber-300">
+                  <div className="flex items-center gap-2 max-md:flex-wrap px-2 py-1.5 border-b border-amber-800/50 bg-amber-950/30 text-[11px] text-amber-300">
                     <span className="flex-1">
                       文件已被其他进程修改(远端 {conflict.sizeBytes}B)。「重新载入」会用远端内容替换当前编辑;「强制覆盖」会覆盖远端改动。
                     </span>
@@ -1285,7 +1293,8 @@ export function RemoteWorkspaceDialog({
                         setDirty(true);
                       }}
                       spellCheck={false}
-                      className="w-full h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-2 outline-none"
+                      // 16px below md prevents iOS Safari's auto-zoom on focus.
+                      className="w-full h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-xs max-md:text-base p-2 outline-none"
                     />
                   ) : isImage ? (
                     <img

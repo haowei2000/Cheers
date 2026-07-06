@@ -265,7 +265,10 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
         }}
         onDragLeave={() => setBusy(false)}
         onDrop={onDrop}
-        className={`fixed top-12 right-0 h-[calc(100vh-3rem)] w-[560px] max-w-[94vw] bg-zinc-900 border-l z-40 flex flex-col transition-transform duration-200 ${
+        // Desktop: docked 560px column under the header (dvh == vh there). Mobile: a
+        // full-screen sheet — top-0, full width/height, safe-area padded — so panels
+        // are never crushed into a sliver next to the chat.
+        className={`fixed top-12 right-0 h-[calc(100dvh-3rem)] w-[560px] max-w-[94vw] max-md:top-0 max-md:h-[100dvh] max-md:w-full max-md:max-w-none max-md:border-l-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] bg-zinc-900 border-l z-40 flex flex-col transition-transform duration-200 ${
           busy ? "border-amber-500/60" : "border-zinc-800"
         } ${open ? "translate-x-0" : "translate-x-full"}`}
       >

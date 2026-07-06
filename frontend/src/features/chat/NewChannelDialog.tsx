@@ -10,9 +10,12 @@ import { cn } from "@/lib/cn";
 export function NewChannelDialog({
   workspaceId,
   onClose,
+  onPicked,
 }: {
   workspaceId: string;
   onClose: () => void;
+  /** Notified after the new channel is selected (mobile pushes the chat screen). */
+  onPicked?: () => void;
 }) {
   const upsertChannel = useChatStore((s) => s.upsertChannel);
   const selectChannel = useChatStore((s) => s.selectChannel);
@@ -32,6 +35,7 @@ export function NewChannelDialog({
       });
       upsertChannel(ch);
       selectChannel(ch.channel_id);
+      onPicked?.();
       onClose();
     } finally {
       setBusy(false);

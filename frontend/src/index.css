@@ -10,6 +10,11 @@
   box-sizing: border-box;
 }
 
+html {
+  /* iOS Safari: don't inflate text after orientation changes. */
+  -webkit-text-size-adjust: 100%;
+}
+
 html,
 body,
 #root {
@@ -17,6 +22,31 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
+}
+
+/* Mobile browsers: track the DYNAMIC viewport height so collapsing browser chrome
+   (URL bar) — and, with interactive-widget=resizes-content, the on-screen keyboard —
+   never hides the composer. Identical to 100% on desktop. */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
+/* Notched phones (viewport-fit=cover): keep app content out of the side cutouts.
+   Resolves to 0 on desktop and un-notched devices. */
+#root {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Momentum scrolling for every in-app scroll container (Tailwind utility classes). */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
 }
 
 body {
@@ -173,6 +203,15 @@ button:not(:disabled) {
   border: none;
   border-top: 1px solid #27272a;
   margin: 1em 0;
+}
+
+/* Phones: wide markdown tables scroll inside their own box instead of forcing
+   the message column (and the page) to scroll horizontally. Desktop untouched. */
+@media (max-width: 767px) {
+  .prose table {
+    display: block;
+    overflow-x: auto;
+  }
 }
 
 /* Highlight.js theme */

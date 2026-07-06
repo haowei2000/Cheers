@@ -392,7 +392,10 @@ export function MessageComposer({
     !disabled;
 
   return (
-    <div className="px-4 pb-4 pt-2 relative">
+    // Mobile: tighter gutters + safe-area bottom padding so the input clears the
+    // home indicator; the dvh root + interactive-widget=resizes-content keep it
+    // above the on-screen keyboard.
+    <div className="px-4 pb-4 pt-2 relative max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
         <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-10">
           {filteredMentions.map((c, i) => (
@@ -541,7 +544,7 @@ export function MessageComposer({
             onClick={() => setAttachMenuOpen((o) => !o)}
             disabled={disabled || !channelId}
             className={cn(
-              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
+              "w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
               attachMenuOpen
                 ? "text-zinc-200 bg-zinc-700/50"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
@@ -597,14 +600,15 @@ export function MessageComposer({
               ? "Select a channel to start chatting"
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
-          className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 resize-none outline-none leading-relaxed py-1 min-h-[24px] max-h-[200px]"
+          // text-base (16px) below md stops iOS Safari's auto-zoom on focus.
+          className="flex-1 bg-transparent text-base md:text-sm text-zinc-100 placeholder-zinc-500 resize-none outline-none leading-relaxed py-1 min-h-[24px] max-h-[200px]"
         />
 
         <button
           onClick={() => void submit()}
           disabled={!canSend}
           className={cn(
-            "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150 mb-0.5",
+            "flex-shrink-0 w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-all duration-150 mb-0.5",
             canSend
               ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm"
               : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
@@ -615,7 +619,8 @@ export function MessageComposer({
           <SendHorizontal className="w-4 h-4" />
         </button>
       </div>
-      <p className="text-[11px] text-zinc-600 mt-1.5 px-1">
+      {/* Hardware-keyboard hints — meaningless on touch, so hidden below md. */}
+      <p className="text-[11px] text-zinc-600 mt-1.5 px-1 max-md:hidden">
         <kbd className="font-mono">Enter</kbd> to send ·{" "}
         <kbd className="font-mono">Shift+Enter</kbd> for new line ·{" "}
         <kbd className="font-mono">@</kbd> to mention ·{" "}

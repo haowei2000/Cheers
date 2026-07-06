@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light window background (pre-Compose flash); dark override in values-night. -->
+    <color name="window_background">#FAFAFA</color>
+    <!-- Brand icon plate — slate-900 from frontend/public/cheers-icon.svg. -->
+    <color name="ic_launcher_background">#0F172A</color>
+</resources>

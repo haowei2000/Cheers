@@ -46,21 +46,21 @@ export default function FriendsPage() {
   }, [refreshIncoming]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+    <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="flex items-center gap-3 px-4 h-14 border-b border-zinc-800 flex-shrink-0">
         <button
           onClick={() => navigate("/chat")}
           title="Back to chat"
-          className="w-8 h-8 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          className="w-8 h-8 max-md:w-11 max-md:h-11 max-md:-ml-2 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <h1 className="text-base font-semibold">Friends</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl p-4">
-          <div className="flex gap-1 mb-4 border-b border-zinc-800">
+      <div className="flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto max-w-2xl p-4 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="flex gap-1 mb-4 border-b border-zinc-800 overflow-x-auto">
             <TabBtn active={tab === "friends"} onClick={() => setTab("friends")}>
               Friends
             </TabBtn>
@@ -103,7 +103,7 @@ function TabBtn({
     <button
       onClick={onClick}
       className={cn(
-        "px-3 py-2 text-sm border-b-2 -mb-px transition-colors flex items-center",
+        "px-3 py-2 max-md:py-2.5 text-sm border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
         active
           ? "border-indigo-500 text-zinc-100"
           : "border-transparent text-zinc-500 hover:text-zinc-300"
@@ -332,7 +332,8 @@ function AddTab() {
             }}
             onKeyDown={(e) => e.key === "Enter" && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+            // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
+            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-base md:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
           />
         </div>
         <button
@@ -463,7 +464,7 @@ function IconBtn({
       title={title}
       onClick={onClick}
       className={cn(
-        "w-8 h-8 rounded-md flex items-center justify-center transition-colors",
+        "w-8 h-8 max-md:w-11 max-md:h-11 rounded-md flex items-center justify-center transition-colors",
         primary
           ? "text-emerald-400 hover:bg-emerald-500/10"
           : danger

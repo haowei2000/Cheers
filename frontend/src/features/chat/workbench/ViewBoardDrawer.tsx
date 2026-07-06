@@ -6,6 +6,7 @@
 // Workbench (shiftedForWorkbench) so neither overlaps.
 import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SendResourceReq } from "./fsClient";
 import { getViewBoards, type ViewBoardContext } from "./viewBoard";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
@@ -122,6 +123,11 @@ export function ViewBoardDrawer({
     [channelId, sendResourceReq, scope, boardTick]
   );
 
+  // Mobile: the card spans the full width (left/right insets via classes below), so the
+  // desktop-only "shift left of the Workbench" offset must not apply — it would push the
+  // card off-screen on a phone.
+  const isMobile = useIsMobile();
+
   return (
     // Rounded, elevated instrument card docked top-right (Codex-style chrome). The chat
     // reserves its width (ChannelView.reservedRight) so it sits in its OWN column rather
@@ -129,14 +135,21 @@ export function ViewBoardDrawer({
     // full boards; minimal = a compact content-height 280 glance card (ViewBoardMinimized).
     // Slides off to the right when closed.
     <aside
-      className={`fixed top-14 z-40 flex max-w-[94vw] flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40 backdrop-blur-sm transition-all duration-200 ${
-        minimal ? "w-[280px] max-h-[calc(100vh-4.5rem)]" : "w-[420px] bottom-3"
+      className={`fixed top-14 z-40 flex max-w-[94vw] flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40 backdrop-blur-sm transition-all duration-200 max-md:left-2 max-md:w-auto max-md:max-w-none ${
+        minimal
+          ? "w-[280px] max-h-[calc(100dvh-4.5rem)]"
+          : "w-[420px] bottom-3 max-md:bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
       } ${
         open
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
       }`}
-      style={{ right: (shiftedForWorkbench && open ? WORKBENCH_WIDTH + EDGE_GAP : EDGE_GAP) }}
+      style={{
+        right:
+          !isMobile && shiftedForWorkbench && open
+            ? WORKBENCH_WIDTH + EDGE_GAP
+            : EDGE_GAP,
+      }}
     >
       <div className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0">
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />

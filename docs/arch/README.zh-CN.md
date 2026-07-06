@@ -37,6 +37,7 @@
 
 - [网关重构计划](REFACTOR_PLAN.md)
 - [去中心化 Mesh](DECENTRALIZED_MESH.md) / [中文](DECENTRALIZED_MESH.zh-CN.md)
+- [移动端客户端策略](MOBILE_CLIENT_STRATEGY.zh-CN.md) / [English](MOBILE_CLIENT_STRATEGY.md)
 
 ## 返回入口
 

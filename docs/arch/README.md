@@ -40,6 +40,7 @@ This directory stores architecture, protocol, and gateway design docs.
 
 - [Refactor Plan](REFACTOR_PLAN.md)
 - [Decentralized Mesh](DECENTRALIZED_MESH.md) / [中文](DECENTRALIZED_MESH.zh-CN.md)
+- [Mobile Client Strategy](MOBILE_CLIENT_STRATEGY.md) / [中文](MOBILE_CLIENT_STRATEGY.zh-CN.md)
 
 ## Back to Hub
 
