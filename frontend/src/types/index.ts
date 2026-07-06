@@ -142,6 +142,19 @@ export interface Message {
   _streaming?: boolean;
   /** Latest agent progress (trace) title shown while streaming. */
   _trace?: string | null;
+  /** Client-only: lifecycle of an outgoing message the server hasn't confirmed.
+   *  "sending" = a retry is in flight; "failed" = the send failed and is retryable.
+   *  Absent on normal (server-confirmed) messages. Never sent to the server. */
+  _status?: "sending" | "failed";
+  /** Client-only: the original send arguments, kept on a failed message so it can
+   *  be re-sent verbatim (mentions, attachments, reply target, session route). */
+  _sendParams?: {
+    content: string;
+    mention_ids?: string[];
+    file_ids?: string[];
+    reply_to_msg_id?: string;
+    session_id?: string;
+  };
 }
 
 export interface MemberItem {
