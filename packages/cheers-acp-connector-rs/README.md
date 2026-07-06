@@ -13,6 +13,11 @@ standalone `@haowei0520/bridge-client` package now live in this Rust crate under
 
 ## Config
 
+> 📖 **Full field-by-field reference:**
+> [docs/arch/CONNECTOR_TOML_CONFIG.md](../../docs/arch/CONNECTOR_TOML_CONFIG.md)
+> ([中文](../../docs/arch/CONNECTOR_TOML_CONFIG.zh-CN.md)) — every key, type,
+> default, and a Codex example. The block below is a quick annotated sample.
+
 The local config is TOML because it is a human-audited security policy. It
 defines what the remote Agent Bridge Backend may cause this machine to do.
 Protocol frames and state files remain JSON.

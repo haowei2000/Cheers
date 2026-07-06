@@ -44,6 +44,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 - [Bot Permission & Trust](docs/arch/BOT_PERMISSION.md)
 - [Gateway Architecture](docs/arch/GATEWAY_CODE_ARCH.md)
 - [ACP Connection & Resource Protocols](docs/arch/ACP_CONNECTION_MODEL.md) / [docs/arch/AGENT_BRIDGE_RESOURCE.md](docs/arch/AGENT_BRIDGE_RESOURCE.md)
+- [ACP Connector `config.toml` — Full Reference](docs/arch/CONNECTOR_TOML_CONFIG.md) / [中文](docs/arch/CONNECTOR_TOML_CONFIG.zh-CN.md) — every bot TOML key, default, and a Codex example
 - [Unified Architecture Index](docs/INDEX.md) / [中文](docs/INDEX.zh-CN.md)
 
 ## Stack
