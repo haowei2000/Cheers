@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.properties
+
+# Local config (SDK path etc.)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# OS
+.DS_Store
+
+# The repo-root .gitignore excludes any `data/` directory (runtime data);
+# re-include the Kotlin source package `...cheers.android.data` (a directory
+# must itself be negated before files under it can be un-ignored).
+!app/src/main/java/com/cheers/android/data/
