@@ -14,7 +14,7 @@ import {
   type CommandCandidate,
 } from "./MessageComposer";
 import { SessionSwitcher } from "./SessionSwitcher";
-import { ComposerBotSettings } from "./ComposerBotSettings";
+import { ComposerModelPopover } from "./ComposerModelPopover";
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
@@ -862,10 +862,12 @@ export function ChannelView({ channel, onBack }: Props) {
               value={selectedSessionId}
               onChange={setSelectedSessionId}
             />
-            {/* Settings for the @mentioned bot(s); with no live mention, fall
-                back to the channel's bots so the controls are always reachable
-                (each bot's row self-hides when it advertises nothing). */}
-            <ComposerBotSettings
+            {/* Model/mode + config for the @mentioned bot(s); with no live
+                mention, fall back to the channel's bots so the controls are
+                always reachable. Collapsed behind a "Model" button — click to
+                open the popover (each bot's row self-hides when it advertises
+                nothing). */}
+            <ComposerModelPopover
               channelId={channel.channel_id}
               bots={
                 mentionedBots.length > 0
