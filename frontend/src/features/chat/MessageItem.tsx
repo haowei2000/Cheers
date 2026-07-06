@@ -1,5 +1,5 @@
 import { memo, useContext, useState } from "react";
-import { Square, Reply, Copy, Forward, CheckSquare, Check } from "lucide-react";
+import { Square, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -20,6 +20,8 @@ export interface MessageActionHandlers {
   onForward: (m: Message) => void;
   /** Toggle this message in the multi-select set (entering select mode if off). */
   onToggleSelect: (m: Message) => void;
+  /** Re-send a message whose send failed (client-only `_status: "failed"`). */
+  onRetry?: (m: Message) => void;
 }
 
 interface Props {
@@ -93,6 +95,41 @@ function ActionBar({ message, actions }: { message: Message; actions: MessageAct
       >
         <CheckSquare className="w-3.5 h-3.5" />
       </button>
+    </div>
+  );
+}
+
+/** Delivery status shown under an own message that isn't server-confirmed yet:
+ *  a spinner while a retry is in flight, or a "Failed to send · Retry" affordance. */
+function SendStatus({
+  message,
+  onRetry,
+}: {
+  message: Message;
+  onRetry?: (m: Message) => void;
+}) {
+  if (message._status === "sending") {
+    return (
+      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-500">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Sending…
+      </div>
+    );
+  }
+  return (
+    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-red-400">
+      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      <span>Failed to send</span>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={() => onRetry(message)}
+          className="inline-flex items-center gap-0.5 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+        >
+          <RotateCw className="w-3 h-3" />
+          Retry
+        </button>
+      )}
     </div>
   );
 }
@@ -192,7 +229,8 @@ export const MessageItem = memo(function MessageItem({
   const isBot = message.sender_type === "bot";
 
   const active = message._streaming || message.is_partial;
-  const showActions = actions && !active && !selectMode;
+  // A failed/sending placeholder isn't a real server message — no reply/forward/select.
+  const showActions = actions && !active && !selectMode && !message._status;
   const selectable = Boolean(actions && selectMode);
   const selected = Boolean(selectedProp);
   const rowSelectProps = selectable
@@ -227,6 +265,9 @@ export const MessageItem = memo(function MessageItem({
         <div className="flex-1 min-w-0">
           <ReplyQuote message={message} repliedTo={repliedTo} nameOf={nameOf} />
           <MessageBody message={message} channelId={channelId} isBot={isBot} />
+          {message._status && (
+            <SendStatus message={message} onRetry={actions?.onRetry} />
+          )}
           {isBot && channelId && !message._streaming && !message.is_partial && (
             <BotTracePanel
               key={`trace-${message.msg_id}`}
@@ -283,6 +324,9 @@ export const MessageItem = memo(function MessageItem({
         {/* Body */}
         <ReplyQuote message={message} repliedTo={repliedTo} nameOf={nameOf} />
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
+        {message._status && (
+          <SendStatus message={message} onRetry={actions?.onRetry} />
+        )}
         {isBot && channelId && !message._streaming && !message.is_partial && (
           <BotTracePanel
             key={`trace-${message.msg_id}`}

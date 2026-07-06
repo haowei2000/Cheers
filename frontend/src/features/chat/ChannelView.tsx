@@ -490,14 +490,67 @@ export function ChannelView({ channel, onBack }: Props) {
     fileIds: string[]
   ) {
     if (!channel) return;
-    await sendMessage(channel.channel_id, content, {
+    const sendParams: NonNullable<Message["_sendParams"]> = {
+      content,
       ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
       ...(fileIds.length ? { file_ids: fileIds } : {}),
       ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
       ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
-    });
+    };
     setReplyTo(null);
+    try {
+      const { content: body, ...opts } = sendParams;
+      await sendMessage(channel.channel_id, body, opts);
+    } catch {
+      // Don't lose the message: drop a client-only "failed" bubble into the
+      // timeline (the composer already cleared the draft) so it stays visible
+      // with its content and a Retry button. Never persisted / sent to the server.
+      const failed: Message = {
+        msg_id: `local-failed-${crypto.randomUUID()}`,
+        sender_id: user?.user_id ?? "",
+        sender_type: "user",
+        sender_name: user?.display_name ?? user?.username,
+        content,
+        created_at: new Date().toISOString(),
+        ...(fileIds.length ? { file_ids: fileIds } : {}),
+        _status: "failed",
+        _sendParams: sendParams,
+      };
+      setMessages((prev) => sortMessages([...prev, failed]));
+    }
   }
+
+  // Retry a failed send: flip the placeholder to "sending", replay the original
+  // arguments verbatim, then drop the placeholder on success (the confirmed row
+  // is upserted from the response, and the WS echo dedups by msg_id).
+  const retryMessage = useCallback(
+    async (failed: Message) => {
+      if (!channel || !failed._sendParams) return;
+      const { content, ...opts } = failed._sendParams;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.msg_id === failed.msg_id ? { ...m, _status: "sending" } : m
+        )
+      );
+      try {
+        const sent = await sendMessage(channel.channel_id, content, opts);
+        setMessages((prev) =>
+          upsertMessage(
+            prev.filter((m) => m.msg_id !== failed.msg_id),
+            sent
+          )
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.msg_id === failed.msg_id ? { ...m, _status: "failed" } : m
+          )
+        );
+        toast.error("Still couldn't send — check your connection");
+      }
+    },
+    [channel]
+  );
 
   // ── Message actions: reply / copy / forward / multi-select ────────────────
   const displayName = useCallback(
@@ -555,8 +608,9 @@ export function ChannelView({ channel, onBack }: Props) {
           return next;
         });
       },
+      onRetry: retryMessage,
     }),
-    [buildForwardContent]
+    [buildForwardContent, retryMessage]
   );
 
   const clearSelection = () => {
