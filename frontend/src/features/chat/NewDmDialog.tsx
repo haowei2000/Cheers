@@ -10,7 +10,14 @@ import type { BotItem } from "@/types";
 // Start a DM: pick a user (search) or a bot. find-or-create on the backend → the dm
 // channel is upserted into the store and selected (it opens in the normal chat view,
 // since a DM is just a type='dm' channel).
-export function NewDmDialog({ onClose }: { onClose: () => void }) {
+export function NewDmDialog({
+  onClose,
+  onPicked,
+}: {
+  onClose: () => void;
+  /** Notified after the dm channel is selected (mobile pushes the chat screen). */
+  onPicked?: () => void;
+}) {
   const upsertChannel = useChatStore((s) => s.upsertChannel);
   const selectChannel = useChatStore((s) => s.selectChannel);
   const [q, setQ] = useState("");
@@ -45,6 +52,7 @@ export function NewDmDialog({ onClose }: { onClose: () => void }) {
       const dm = await createDm(target);
       upsertChannel({ ...dm, peer_name: name }); // label the nameless dm channel
       selectChannel(dm.channel_id);
+      onPicked?.();
       onClose();
     } finally {
       setBusy(false);

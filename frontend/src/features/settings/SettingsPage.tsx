@@ -53,8 +53,9 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
     }
   }
 
+  // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-base md:text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
   return (
     <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
@@ -241,22 +242,24 @@ export default function SettingsPage() {
   const items = NAV.filter((n) => !n.adminOnly || isAdmin);
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
+    // h-full + internal scroll: the app root is overflow-hidden, so the page must own
+    // its scrolling (min-h-screen alone would clip anything taller than the viewport,
+    // and h-screen=100vh overflows the 100dvh root on mobile browsers).
+    <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
       {/* Header */}
-      <div className="shrink-0 border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
+      <div className="border-b border-zinc-800 px-6 max-md:px-4 py-4 flex items-center gap-4">
         <button
           type="button"
           onClick={() => navigate(-1)}
           title="Back"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors"
+          className="text-zinc-500 hover:text-zinc-200 transition-colors p-2 -m-2 rounded-lg"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold">Settings</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-      <div className="max-w-5xl mx-auto p-6 flex flex-col sm:flex-row gap-6">
+      <div className="max-w-5xl mx-auto p-6 max-md:p-4 max-md:pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-col sm:flex-row gap-6">
         {/* Nav rail */}
         <nav className="flex sm:flex-col gap-1 sm:w-48 sm:shrink-0 overflow-x-auto">
           {items.map(({ id, label, icon: Icon }) => {
@@ -266,7 +269,7 @@ export default function SettingsPage() {
                 key={id}
                 type="button"
                 onClick={() => setSection(id)}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 max-md:py-2.5 shrink-0 text-sm font-medium whitespace-nowrap transition-colors ${
                   active
                     ? "bg-zinc-800 text-zinc-100"
                     : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
@@ -291,7 +294,7 @@ export default function SettingsPage() {
               <ProfileEditCard />
 
               <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 mt-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                       User ID
@@ -353,7 +356,6 @@ export default function SettingsPage() {
             </section>
           )}
         </div>
-      </div>
       </div>
     </div>
   );

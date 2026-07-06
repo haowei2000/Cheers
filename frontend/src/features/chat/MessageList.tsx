@@ -104,7 +104,7 @@ export function MessageList({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto py-2"
+      className="flex-1 overflow-y-auto overscroll-contain py-2"
     >
       {loading && (
         <div className="flex justify-center py-4">

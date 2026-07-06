@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
+import { ArrowLeft, Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers, markChannelRead } from "@/api/channels";
@@ -25,6 +25,7 @@ import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { useAuthStore } from "@/stores/authStore";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { Message, Channel, PermissionContentData } from "@/types";
 
 // In-flight bot placeholders arrive with `channel_seq: null`; they are the
@@ -59,10 +60,13 @@ function mergeMessages(msgs: Message[], incoming: Message[]): Message[] {
 
 interface Props {
   channel: Channel | null;
+  /** Mobile stacked navigation: renders a back button that pops to the channel list. */
+  onBack?: () => void;
 }
 
-export function ChannelView({ channel }: Props) {
+export function ChannelView({ channel, onBack }: Props) {
   const user = useAuthStore((s) => s.user);
+  const isMobile = useIsMobile();
   const patchChannel = useChatStore((s) => s.patchChannel);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -580,7 +584,9 @@ export function ChannelView({ channel }: Props) {
   const WB_W = 560;
   const GAP = 12;
   const boardExtent = vbOpen ? (wbOpen ? WB_W + GAP : GAP) + VB_W : wbOpen ? WB_W : 0;
-  const reservedRight = boardExtent > 0 ? boardExtent + GAP : 0;
+  // Phones: the panels overlay the chat as full-screen sheets instead of docking
+  // into their own column — reserving side space would crush the chat to zero.
+  const reservedRight = !isMobile && boardExtent > 0 ? boardExtent + GAP : 0;
 
   if (!channel) {
     return (
@@ -599,21 +605,31 @@ export function ChannelView({ channel }: Props) {
       {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
-      <div className="relative z-30 flex items-center gap-3 px-4 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
-        <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-        <span className="font-semibold text-zinc-100 text-sm">
+      <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+        {onBack && (
+          <button
+            onClick={onBack}
+            title="Back to channels"
+            aria-label="Back to channels"
+            className="md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
+        <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
+        <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
           {channel.name}
         </span>
         {channel.purpose && (
-          <>
+          <div className="hidden md:flex items-center gap-3 min-w-0">
             <div className="w-px h-4 bg-zinc-700" />
             <span className="text-xs text-zinc-500 truncate">
               {channel.purpose}
             </span>
-          </>
+          </div>
         )}
         <div className="flex-1" />
-        <div className="flex items-center gap-3 text-xs text-zinc-500">
+        <div className="hidden md:flex items-center gap-3 text-xs text-zinc-500">
           {onlineCount > 0 && (
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -650,7 +666,7 @@ export function ChannelView({ channel }: Props) {
             setFilesOpen(true);
           }}
           title="Channel files"
-          className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+          className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
         >
           <Paperclip className="w-4 h-4" />
         </button>
@@ -660,14 +676,14 @@ export function ChannelView({ channel }: Props) {
             setWsOpen(true);
           }}
           title="Remote workspace"
-          className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+          className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
         >
           <FolderTree className="w-4 h-4" />
         </button>
         <button
           onClick={() => setVbOpen((v) => !v)}
           title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-          className={`flex items-center justify-center w-7 h-7 rounded hover:bg-zinc-800 ${
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
             vbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
           }`}
         >
@@ -679,7 +695,7 @@ export function ChannelView({ channel }: Props) {
             setWbOpen(true);
           }}
           title="Workbench — file workspace"
-          className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+          className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
         >
           <PanelRight className="w-4 h-4" />
         </button>
@@ -687,7 +703,7 @@ export function ChannelView({ channel }: Props) {
           <button
             onClick={() => setSettingsOpen(true)}
             title="Channel settings"
-            className="flex items-center justify-center w-7 h-7 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+            className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
           >
             <Settings className="w-4 h-4" />
           </button>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare } from "lucide-react";
+import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare, Menu } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel, Workspace } from "@/types";
@@ -21,7 +21,7 @@ function Section({ label, children, defaultOpen = true, onAdd }: SectionProps) {
     <div className="mb-1">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-1 px-2 py-1 text-xs font-semibold text-zinc-500 hover:text-zinc-300 uppercase tracking-wider transition-colors group"
+        className="w-full flex items-center gap-1 px-2 py-1 max-md:py-2 text-xs font-semibold text-zinc-500 hover:text-zinc-300 uppercase tracking-wider transition-colors group"
       >
         {open ? (
           <ChevronDown className="w-3 h-3" />
@@ -36,7 +36,8 @@ function Section({ label, children, defaultOpen = true, onAdd }: SectionProps) {
               onAdd();
             }}
             title="Add"
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-zinc-700 transition-all cursor-pointer"
+            // Hover-revealed on desktop; always visible (with a bigger tap area) on touch.
+            className="opacity-0 group-hover:opacity-100 max-md:opacity-100 p-0.5 max-md:p-1.5 max-md:-my-1 rounded hover:bg-zinc-700 transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
           </span>
@@ -58,7 +59,8 @@ function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-2 px-3 py-1 rounded-md text-sm transition-colors text-left",
+        // max-md:py-3 → ~44px touch rows on phones; desktop keeps the compact py-1.
+        "w-full flex items-center gap-2 px-3 py-1 max-md:py-3 rounded-md text-sm transition-colors text-left",
         selected
           ? "bg-zinc-700/70 text-zinc-50 font-medium"
           : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
@@ -77,9 +79,13 @@ function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
 
 interface Props {
   workspace?: Workspace;
+  /** Mobile: opens the workspace/nav drawer (renders a hamburger in the header). */
+  onOpenNav?: () => void;
+  /** Mobile: notified after a channel is picked so the layout can push the chat screen. */
+  onChannelSelected?: () => void;
 }
 
-export function Sidebar({ workspace }: Props) {
+export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
   const { channels, selectedChannelId, selectChannel, selectedWorkspaceId } =
     useChatStore();
   const [dmOpen, setDmOpen] = useState(false);
@@ -97,10 +103,26 @@ export function Sidebar({ workspace }: Props) {
   const privateChannels = channels.filter((c) => c.type === "private");
   const dms = channels.filter((c) => c.type === "dm");
 
+  // Selecting a channel also notifies the mobile layout (push the chat screen).
+  const pick = (id: string) => {
+    selectChannel(id);
+    onChannelSelected?.();
+  };
+
   return (
-    <div className="w-60 bg-sidebar flex flex-col border-r border-zinc-800/60 flex-shrink-0">
+    <div className="w-60 max-md:w-full max-md:flex-1 max-md:min-w-0 bg-sidebar flex flex-col border-r max-md:border-r-0 border-zinc-800/60 flex-shrink-0">
       {/* Workspace header */}
       <div className="h-12 flex items-center px-3 border-b border-zinc-800/60 flex-shrink-0">
+        {onOpenNav && (
+          <button
+            onClick={onOpenNav}
+            title="Workspaces & navigation"
+            aria-label="Open navigation"
+            className="w-11 h-11 -ml-2 mr-0.5 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <button
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
           title={canOpenSettings ? "Workspace settings" : undefined}
@@ -116,14 +138,14 @@ export function Sidebar({ workspace }: Props) {
       </div>
 
       {/* Channel list */}
-      <div className="flex-1 overflow-y-auto py-3 px-2">
+      <div className="flex-1 overflow-y-auto overscroll-contain py-3 px-2 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <Section label="Channels" onAdd={() => setChannelOpen(true)}>
           {publicChannels.map((ch) => (
             <ChannelItem
               key={ch.channel_id}
               channel={ch}
               selected={selectedChannelId === ch.channel_id}
-              onClick={() => selectChannel(ch.channel_id)}
+              onClick={() => pick(ch.channel_id)}
             />
           ))}
         </Section>
@@ -135,7 +157,7 @@ export function Sidebar({ workspace }: Props) {
                 key={ch.channel_id}
                 channel={ch}
                 selected={selectedChannelId === ch.channel_id}
-                onClick={() => selectChannel(ch.channel_id)}
+                onClick={() => pick(ch.channel_id)}
               />
             ))}
           </Section>
@@ -148,9 +170,9 @@ export function Sidebar({ workspace }: Props) {
             {dms.map((ch) => (
               <button
                 key={ch.channel_id}
-                onClick={() => selectChannel(ch.channel_id)}
+                onClick={() => pick(ch.channel_id)}
                 className={cn(
-                  "w-full flex items-center gap-2 px-3 py-1 rounded-md text-sm transition-colors text-left",
+                  "w-full flex items-center gap-2 px-3 py-1 max-md:py-3 rounded-md text-sm transition-colors text-left",
                   selectedChannelId === ch.channel_id
                     ? "bg-zinc-700/70 text-zinc-50 font-medium"
                     : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
@@ -172,11 +194,14 @@ export function Sidebar({ workspace }: Props) {
           </div>
         )}
       </div>
-      {dmOpen && <NewDmDialog onClose={() => setDmOpen(false)} />}
+      {dmOpen && (
+        <NewDmDialog onClose={() => setDmOpen(false)} onPicked={onChannelSelected} />
+      )}
       {channelOpen && selectedWorkspaceId && (
         <NewChannelDialog
           workspaceId={selectedWorkspaceId}
           onClose={() => setChannelOpen(false)}
+          onPicked={onChannelSelected}
         />
       )}
       {wsSettingsOpen && workspace && (

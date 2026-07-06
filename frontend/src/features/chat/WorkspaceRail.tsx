@@ -31,7 +31,7 @@ function RailButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="group relative w-10 h-10 flex items-center justify-center"
+      className="group relative w-10 h-10 max-md:w-11 max-md:h-11 flex items-center justify-center"
     >
       <div
         className={cn(
@@ -69,7 +69,14 @@ function WorkspaceButton({
   );
 }
 
-export function WorkspaceRail() {
+export function WorkspaceRail({
+  onAction,
+}: {
+  /** Mobile drawer mode: called after a workspace pick / navigation so the layout
+   *  can close the drawer. Buttons that open a dialog do NOT fire it (the dialog
+   *  renders inside the drawer and would be unmounted). */
+  onAction?: () => void;
+} = {}) {
   const navigate = useNavigate();
   const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
     useChatStore();
@@ -105,19 +112,23 @@ export function WorkspaceRail() {
   }
 
   return (
-    <div className="w-14 bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40">
+    <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {/* Personal workspace — the user's home (DMs + private space), the most important
           one, so it takes the prominent top slot. Selectable; falls back to a static brand
           mark until it's loaded. */}
       <RailButton
         selected={personalSelected}
-        onClick={() => personalWorkspace && selectWorkspace(personalWorkspace.workspace_id)}
+        onClick={() => {
+          if (!personalWorkspace) return;
+          selectWorkspace(personalWorkspace.workspace_id);
+          onAction?.();
+        }}
         disabled={!personalWorkspace}
         title={personalWorkspace ? "Personal (DMs / personal space)" : "Cheers"}
       >
         <div
           className={cn(
-            "w-10 h-10 bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 transition-all duration-150",
+            "w-10 h-10 max-md:w-11 max-md:h-11 bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 transition-all duration-150",
             personalSelected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
           )}
         >
@@ -128,7 +139,7 @@ export function WorkspaceRail() {
       <div className="w-8 h-px bg-zinc-700/60 my-1" />
 
       {/* Team workspaces (personal is the top slot, never listed here) */}
-      <div className="flex flex-col items-center gap-2 flex-1">
+      <div className="flex flex-col items-center gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {workspaces
           .filter(
             (ws) =>
@@ -140,14 +151,17 @@ export function WorkspaceRail() {
             key={ws.workspace_id}
             workspace={ws}
             selected={selectedWorkspaceId === ws.workspace_id}
-            onClick={() => selectWorkspace(ws.workspace_id)}
+            onClick={() => {
+              selectWorkspace(ws.workspace_id);
+              onAction?.();
+            }}
           />
         ))}
 
         <button
           title="Add workspace"
           onClick={() => setWsOpen(true)}
-          className="w-10 h-10 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-600 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors"
+          className="w-10 h-10 max-md:w-11 max-md:h-11 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-600 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
         </button>
@@ -159,7 +173,7 @@ export function WorkspaceRail() {
           <button
             onClick={() => setInvitesOpen(true)}
             title="Workspace invites"
-            className="relative w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+            className="relative w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
           >
             <Mail className="w-4 h-4" />
             <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center">
@@ -169,17 +183,23 @@ export function WorkspaceRail() {
         )}
 
         <button
-          onClick={() => navigate("/friends")}
+          onClick={() => {
+            onAction?.();
+            navigate("/friends");
+          }}
           title="Friends"
-          className="w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <Users className="w-4 h-4" />
         </button>
 
         <button
-          onClick={() => navigate("/settings")}
+          onClick={() => {
+            onAction?.();
+            navigate("/settings");
+          }}
           title="Settings"
-          className="w-8 h-8 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <Settings className="w-4 h-4" />
         </button>
@@ -187,7 +207,7 @@ export function WorkspaceRail() {
         <button
           onClick={handleLogout}
           title="Sign out"
-          className="w-8 h-8 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <LogOut className="w-4 h-4" />
         </button>

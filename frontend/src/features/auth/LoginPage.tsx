@@ -36,8 +36,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    // h-full + internal scroll (the app root is overflow-hidden); my-auto centers the
+    // card when it fits and lets it scroll when the on-screen keyboard shrinks the
+    // viewport, instead of clipping the top.
+    <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
+      <div className="w-full max-w-sm my-auto">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-teal-500/20 overflow-hidden">
