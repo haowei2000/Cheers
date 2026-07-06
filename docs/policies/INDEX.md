@@ -25,6 +25,7 @@ This is the consolidated documentation entrypoint for the repository.
 - [ACP connection model](arch/ACP_CONNECTION_MODEL.md)
 - [ACP integration](arch/ACP_INTEGRATION.md)
 - [Agent Bridge resource model](arch/AGENT_BRIDGE_RESOURCE.md)
+- [ACP connector `config.toml` reference](../arch/CONNECTOR_TOML_CONFIG.md)
 - [Bot config layering](arch/BOT_CONFIG_LAYERING.md)
 - [Bot permission model](arch/BOT_PERMISSION.md)
 - [Built-in agents](arch/BUILTIN_AGENT.md)

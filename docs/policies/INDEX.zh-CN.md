@@ -25,6 +25,7 @@
 - [ACP 连接模型](arch/ACP_CONNECTION_MODEL.md)
 - [ACP 集成模型](arch/ACP_INTEGRATION.md)
 - [Agent Bridge 资源模型](arch/AGENT_BRIDGE_RESOURCE.md)
+- [ACP 连接器 `config.toml` 参考](../arch/CONNECTOR_TOML_CONFIG.zh-CN.md)
 - [Bot 配置分层](arch/BOT_CONFIG_LAYERING.md)
 - [Bot 权限模型](arch/BOT_PERMISSION.md)
 - [内置 Agent 说明](arch/BUILTIN_AGENT.md)
