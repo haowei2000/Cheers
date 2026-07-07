@@ -92,9 +92,13 @@ export default function ChatLayout() {
     if (isMobile && wasPushed && !chatPushed) refreshChannels();
   }, [isMobile, chatPushed, refreshChannels]);
 
-  const selectedWorkspace = workspaces.find(
-    (w) => w.workspace_id === selectedWorkspaceId
-  );
+  // The personal workspace is fetched separately (listWorkspaces excludes it), so
+  // resolve it from personalWorkspace — otherwise Sidebar gets no workspace, treats
+  // it as non-personal, and drops the Direct Messages section (+ its "New DM" button).
+  const selectedWorkspace =
+    personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id
+      ? personalWorkspace
+      : workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
   const selectedChannel =
     channels.find((c) => c.channel_id === selectedChannelId) ?? null;
 
