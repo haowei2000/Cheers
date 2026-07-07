@@ -437,6 +437,76 @@ pub async fn install_script(
     )
 }
 
+/// Allowlisted release-asset names the gateway will proxy — exactly the
+/// 2 products × 2 OS × 2 arches the release-connector workflow publishes.
+/// Anything else 404s, so the endpoint can't be used as an open proxy.
+fn is_known_connector_asset(name: &str) -> bool {
+    let Some(rest) = name
+        .strip_prefix("cce-acp-connector-")
+        .or_else(|| name.strip_prefix("cheers-mcp-server-"))
+    else {
+        return false;
+    };
+    matches!(
+        rest,
+        "darwin-amd64" | "darwin-arm64" | "linux-amd64" | "linux-arm64"
+    )
+}
+
+static DOWNLOAD_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+/// GET /api/v1/connector/download/{asset} — PUBLIC. Same-origin proxy for the
+/// prebuilt connector release binaries. A host onboarding a bot has already
+/// proven it can reach this gateway (install.sh came from here), but GitHub may
+/// be unreachable from it (firewalled networks) — while the gateway itself can
+/// reach GitHub fine. So install.sh tries this URL first and the gateway
+/// STREAMS the asset through (a redirect to GitHub would defeat the point).
+/// Repo/version come from CHEERS_CONNECTOR_RELEASE_REPO / _VERSION (default:
+/// this repo's latest release). No secrets, no auth — the assets are public.
+pub async fn connector_download(
+    State(state): State<AppState>,
+    Path(asset): Path<String>,
+) -> Result<axum::response::Response, AppError> {
+    if !is_known_connector_asset(&asset) {
+        return Err(AppError::NotFound);
+    }
+    let repo = &state.config.connector_release_repo;
+    let url = match &state.config.connector_release_version {
+        Some(v) => {
+            format!("https://github.com/{repo}/releases/download/connector-v{v}/{asset}")
+        }
+        None => format!("https://github.com/{repo}/releases/latest/download/{asset}"),
+    };
+    let client = DOWNLOAD_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    });
+    let upstream = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("connector release fetch failed: {e}")))?;
+    if !upstream.status().is_success() {
+        return Err(AppError::Internal(format!(
+            "connector release fetch returned HTTP {} for {asset}",
+            upstream.status()
+        )));
+    }
+    let mut resp = axum::response::Response::builder()
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{asset}\""),
+        );
+    if let Some(len) = upstream.content_length() {
+        resp = resp.header(header::CONTENT_LENGTH, len);
+    }
+    resp.body(axum::body::Body::from_stream(upstream.bytes_stream()))
+        .map_err(|e| AppError::Internal(format!("stream response: {e}")))
+}
+
 /// Natural-language prompt handed to a user's own agent (mode 1). `{INSTALL_URL}`
 /// is filled server-side; `{ENROLL_CODE}` is filled client-side from a minted
 /// code so the secret never rides in this GET. Mode 1 is honestly mode 2 driven
@@ -447,9 +517,11 @@ const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat work
 
    CHEERS_ENROLL_CODE='{ENROLL_CODE}' bash <(curl -fsSL {INSTALL_URL})
 
-2. The script finds `cce-acp-connector` on PATH, or downloads the prebuilt binary for this platform from the GitHub release (https://github.com/haowei2000/Cheers/releases). If neither works (unsupported platform or no access to the release), build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
+2. The script finds `cce-acp-connector` on PATH, or downloads the prebuilt binary — first from this Cheers server itself (no GitHub access needed), then from the GitHub release (https://github.com/haowei2000/Cheers/releases). Only if no downloaded binary runs on this platform, build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
 
-3. Make sure the connector keeps running in the BACKGROUND after this task ends (the install script sets up a launchd/systemd unit for this). If it only runs while you are active, the bot will go offline the moment your turn finishes.
+3. The bot's agent adapter (e.g. `claude-agent-acp` for Claude) must be installed too — the script auto-installs it via npm when missing (needs node/npm). If the script reports the adapter missing, install it (`npm install -g @agentclientprotocol/claude-agent-acp`) and run the finish command the script printed — do NOT re-run the one-liner, the code is single-use.
+
+4. Make sure the connector keeps running in the BACKGROUND after this task ends (the install script sets up a launchd/systemd unit for this). If it only runs while you are active, the bot will go offline the moment your turn finishes.
 
 The code is single-use and expires in ~15 minutes. Do not echo it back or save it anywhere except by running the command above."#;
 

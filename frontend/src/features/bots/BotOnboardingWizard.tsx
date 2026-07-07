@@ -37,9 +37,13 @@ type Mode = "manual" | "script" | "agent";
 /** Where prebuilt connector binaries are published (release-connector workflow).
  * Keep in sync with the default in server/assets/install.sh. */
 const CONNECTOR_RELEASES_REPO = "haowei2000/Cheers";
+/** Same-origin download (gateway proxies the GitHub release): works from hosts
+ * that can reach this server but not GitHub. GitHub stays the fallback. */
 const CONNECTOR_DOWNLOAD_CMD = `os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
+  "${window.location.origin}/api/v1/connector/download/cce-acp-connector-$os-$arch" \\
+  || curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
   "https://github.com/${CONNECTOR_RELEASES_REPO}/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"`;

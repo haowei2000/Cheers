@@ -62,6 +62,13 @@ pub struct Config {
     /// so onboarding-generated configs point somewhere actually reachable.
     pub connector_public_base: Option<String>,
 
+    /// GitHub `owner/repo` whose Releases hold the prebuilt connector binaries that
+    /// GET /api/v1/connector/download/{asset} proxies (same-origin download for
+    /// hosts that can reach this gateway but not GitHub).
+    pub connector_release_repo: String,
+    /// Pin the proxied connector release (e.g. `0.1.24`); unset proxies `latest`.
+    pub connector_release_version: Option<String>,
+
     /// Base URL of the Gotenberg document-conversion service (e.g.
     /// `http://cheers-gotenberg:3000`). When unset, office→PDF preview conversion
     /// is disabled and the conversion worker is not started.
@@ -160,6 +167,13 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             connector_public_base: env::var("CHEERS_CONNECTOR_PUBLIC_BASE")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "haowei2000/Cheers".into()),
+            connector_release_version: env::var("CHEERS_CONNECTOR_RELEASE_VERSION")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
 

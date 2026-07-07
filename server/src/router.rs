@@ -521,6 +521,12 @@ fn build_public_routes() -> Router<AppState> {
         // Public, no secrets: the mode-2 connector installer, served with the
         // API base baked in (reachable via the existing nginx /api proxy).
         .route("/api/v1/install.sh", get(api::enrollment::install_script))
+        // Public: same-origin proxy for the prebuilt connector binaries — for hosts
+        // that can reach this gateway but not GitHub (install.sh tries this first).
+        .route(
+            "/api/v1/connector/download/:asset",
+            get(api::enrollment::connector_download),
+        )
         // Bot self-status: authenticated by the bot's Agent Bridge token (Bearer),
         // not a user JWT — the connector calls this to write the bot's own status
         // (ad-hoc or after a scheduled `status_update_prompt` run). No JWT layer.
