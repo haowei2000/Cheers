@@ -12,6 +12,9 @@ export interface LensProps {
 
 export interface Lens {
   id: string;
+  // never calls onChange (machine-written data, humans only view) — hosts hide Save,
+  // so a stale snapshot can't be written back over a concurrent agent write
+  viewOnly?: boolean;
   render: (props: LensProps) => ReactNode;
 }
 

@@ -1,0 +1,86 @@
+{
+  "id": "research-lab",
+  "title": "Research Lab",
+  "pin": ["prompts/lab-conventions.md"],
+  "views": [
+    {
+      "id": "papers",
+      "title": "Literature",
+      "file": "research/papers.json",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "title", "label": "Title" },
+          { "key": "authors", "label": "Authors" },
+          { "key": "venue", "label": "Venue" },
+          { "key": "year", "label": "Year" },
+          { "key": "status", "label": "Status", "options": ["To read", "Reading", "Read", "Cited"] },
+          { "key": "relevance", "label": "Relevance" }
+        ]
+      }
+    },
+    {
+      "id": "runs",
+      "title": "Runs",
+      "file": "experiments/runs.json",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "id", "label": "Run" },
+          { "key": "config", "label": "Config" },
+          { "key": "status", "label": "Status", "options": ["Queued", "Running", "Done", "Failed"] },
+          { "key": "metric", "label": "Key metric" },
+          { "key": "artifact", "label": "Artifact" }
+        ]
+      }
+    },
+    { "id": "metrics", "title": "Metrics", "file": "experiments/metrics.json", "lens": "chart" },
+    { "id": "board", "title": "Board", "file": "experiments/board.json", "lens": "kanban" },
+    {
+      "id": "findings",
+      "title": "Findings",
+      "file": "research/findings.json",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "claim", "label": "Claim" },
+          { "key": "evidence", "label": "Evidence" },
+          { "key": "confidence", "label": "Confidence", "options": ["Low", "Medium", "High"] },
+          { "key": "source", "label": "Source" }
+        ]
+      }
+    },
+    { "id": "ideas", "title": "Ideas", "file": "research/ideas.md", "lens": "markdown" },
+    { "id": "draft", "title": "Draft", "file": "draft/paper.md", "lens": "markdown" }
+  ],
+  "seed": {
+    "research/papers.json": [
+      {
+        "title": "Attention Is All You Need",
+        "authors": "Vaswani et al.",
+        "venue": "NeurIPS",
+        "year": "2017",
+        "status": "Read",
+        "relevance": "Transformer baseline"
+      }
+    ],
+    "experiments/runs.json": [],
+    "experiments/metrics.json": {
+      "xLabel": "step",
+      "yLabel": "value",
+      "series": []
+    },
+    "experiments/board.json": {
+      "columns": [
+        { "name": "Backlog", "items": ["Reproduce baseline"] },
+        { "name": "Running", "items": [] },
+        { "name": "Analyzed", "items": [] },
+        { "name": "Done", "items": [] }
+      ]
+    },
+    "research/findings.json": [],
+    "research/ideas.md": "# Ideas\n\nOne idea per section: hypothesis, why it might work, how to test it.\n",
+    "draft/paper.md": "# (working title)\n\n## Abstract\n\n## 1. Introduction\n\n## 2. Method\n\n## 3. Experiments\n\n## 4. Related work\n\n## 5. Conclusion\n",
+    "prompts/lab-conventions.md": "You are a research collaborator in this channel. The channel's shared memory is a file tree you read/edit with the desk_* tools. YOU run experiments in your OWN environment; the platform never runs code — sync results back as files/attachments.\n\nConventions:\n- `research/papers.json` (table): append a row per paper. Never invent citations; if unsure, set relevance to \"unverified\".\n- Experiments: write spec+code under `experiments/exp-XXX/`, add a row to `experiments/runs.json` and a card to `experiments/board.json` BEFORE running. Move the card to \"Running\", then \"Analyzed\"/\"Done\".\n- After a run: update the run's row (status, key metric, artifact name), append the metric curve to `experiments/metrics.json` (one series per metric, points as [step, value]), and deliver plots/logs as attachments with inbox_deliver (or inbox_stage for large files).\n- `research/findings.json`: record claim -> evidence -> confidence -> source. Use \"High\" only when a delivered artifact backs it.\n- `draft/paper.md`: edit sections in place; never rewrite the whole file at once.\n- HUMAN-GATED (propose in chat, wait for a human): choosing the research question, launching an experiment, submitting the draft.\n"
+  }
+}

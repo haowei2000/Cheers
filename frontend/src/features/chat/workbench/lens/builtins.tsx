@@ -150,6 +150,222 @@ function MarkdownLens({ data, onChange }: LensProps) {
   );
 }
 
+// ── chart: { xLabel?, yLabel?, series: [{ name, points: [[x, y], …] }] } ─────
+// Metric curves (loss/acc vs step): agents append points via fs tools, humans watch.
+// View-only — the data is machine-written, so no in-chart editing. Series colors are a
+// fixed-order palette validated for the zinc-950 surface (contrast ≥3:1, CVD ΔE 23.6);
+// identity is never color-alone: ≥2 series get a legend, ≤4 also get direct end-labels.
+interface ChartPoint {
+  x: number;
+  y: number;
+}
+interface ChartData {
+  xLabel?: string;
+  yLabel?: string;
+  series?: { name?: string; points?: unknown }[];
+}
+const CHART_COLORS = ["#3987e5", "#199e70", "#c98500", "#9085e9", "#e66767", "#008300", "#d55181", "#d95926"];
+const CW = 640;
+const CH = 300;
+const PAD = { l: 48, r: 88, t: 14, b: 30 };
+
+function parseSeries(d: ChartData | null): { name: string; pts: ChartPoint[] }[] {
+  if (!d || !Array.isArray(d.series)) return [];
+  return d.series
+    .map((s, i) => ({
+      name: typeof s?.name === "string" && s.name ? s.name : `series ${i + 1}`,
+      pts: (Array.isArray(s?.points) ? (s.points as unknown[]) : [])
+        // isFinite, not typeof: JSON.parse("1e999") yields Infinity, which would poison
+        // the shared y-range and blank every series' scale into NaN
+        .map((p) => (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: p[0] as number, y: p[1] as number } : null))
+        .filter((p): p is ChartPoint => p !== null),
+    }))
+    .filter((s) => s.pts.length > 0);
+}
+
+function niceTicks(min: number, max: number, count = 4): number[] {
+  const raw = (max - min) / count;
+  if (!Number.isFinite(raw) || raw <= 0) return [];
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
+  const first = Math.ceil(min / step) * step;
+  const out: number[] = [];
+  // index-based stepping with a hard bound: at large magnitudes `v += step` can be
+  // float-absorbed (v never advances) — the naive loop then never terminates
+  for (let i = 0, prev = NaN; i < count * 4; i++) {
+    const v = first + i * step;
+    if (v > max + step / 1e6) break;
+    if (v !== prev) out.push(v);
+    prev = v;
+  }
+  return out;
+}
+
+// `step` (the tick spacing) picks the decimals, so sub-1e-4 spans still label distinctly
+function fmtNum(v: number, step?: number): string {
+  if (Math.abs(v) >= 1e6) return v.toExponential(1).replace("e+", "e");
+  if (Math.abs(v) >= 10000) return `${Number((v / 1000).toFixed(1))}k`;
+  if (step !== undefined && step > 0 && Number.isFinite(step)) {
+    // Number() strips trailing zeros so labels stay inside the axis gutter
+    return String(Number(v.toFixed(Math.max(0, Math.min(8, -Math.floor(Math.log10(step)))))));
+  }
+  return String(Number(v.toPrecision(6)));
+}
+
+function ChartLens({ data }: LensProps) {
+  const d = data as ChartData | null;
+  const series = parseSeries(d);
+  const [hoverX, setHoverX] = useState<number | null>(null);
+  if (series.length === 0) {
+    return (
+      <div className="p-3 text-zinc-600 text-xs">
+        Empty — this file holds metric curves: {'{ "series": [{ "name": "loss", "points": [[step, value], …] }] }'}
+      </div>
+    );
+  }
+
+  const allX = series.flatMap((s) => s.pts.map((p) => p.x));
+  const allY = series.flatMap((s) => s.pts.map((p) => p.y));
+  let x0 = Math.min(...allX);
+  let x1 = Math.max(...allX);
+  let y0 = Math.min(...allY);
+  let y1 = Math.max(...allY);
+  if (x1 === x0) {
+    // magnitude-relative: a fixed ±0.5 is float-absorbed at large |x| (range stays
+    // zero-width and every coordinate divides to NaN)
+    const xPad = Math.max(0.5, Math.abs(x1) * 1e-9);
+    (x0 -= xPad), (x1 += xPad);
+  }
+  const yPad = (y1 - y0) * 0.08 || Math.abs(y1) * 0.1 || 0.5;
+  (y0 -= yPad), (y1 += yPad);
+  const sx = (x: number) => PAD.l + ((x - x0) / (x1 - x0)) * (CW - PAD.l - PAD.r);
+  const sy = (y: number) => CH - PAD.b - ((y - y0) / (y1 - y0)) * (CH - PAD.t - PAD.b);
+  const color = (i: number) => CHART_COLORS[i % CHART_COLORS.length];
+  const yTicks = niceTicks(y0, y1);
+  const xTicks = niceTicks(x0, x1, 5);
+  const yStep = yTicks.length > 1 ? yTicks[1] - yTicks[0] : undefined;
+  const xStep = xTicks.length > 1 ? xTicks[1] - xTicks[0] : undefined;
+
+  // direct end-labels (≤4 series), nudged apart so close line-ends stay readable
+  const endLabels =
+    series.length <= 4
+      ? series
+          .map((s, i) => ({ name: s.name, i, y: sy(s.pts[s.pts.length - 1].y) }))
+          .sort((a, b) => a.y - b.y)
+      : [];
+  for (let i = 1; i < endLabels.length; i++)
+    if (endLabels[i].y - endLabels[i - 1].y < 12) endLabels[i].y = endLabels[i - 1].y + 12;
+
+  // hover: snap the crosshair to the nearest sampled x, tooltip shows each series there
+  const xsUnion = [...new Set(allX)].sort((a, b) => a - b);
+  const hx = hoverX === null ? null : xsUnion.reduce((b, x) => (Math.abs(x - hoverX) < Math.abs(b - hoverX) ? x : b), xsUnion[0]);
+  const hoverRows =
+    hx === null
+      ? []
+      : series.map((s, i) => {
+          const p = s.pts.reduce((b, q) => (Math.abs(q.x - hx) < Math.abs(b.x - hx) ? q : b), s.pts[0]);
+          return { name: s.name, i, p };
+        });
+  // width estimate covers the header row too, and CJK glyphs count double (~10px vs ~6px)
+  const wchars = (s: string) => [...s].reduce((n, ch) => n + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0);
+  const tipW = 20 + 6 * Math.max(...series.map((s) => wchars(s.name) + 8), wchars(d?.xLabel ?? "x") + 10, 10);
+  const tipFlip = hx !== null && sx(hx) + tipW + 12 > CW - PAD.r;
+  // clamp into the viewBox: a flipped tooltip for a long series name would otherwise
+  // translate negative and get clipped by the svg's overflow
+  const tipX = hx === null ? 0 : Math.max(2, Math.min(CW - tipW - 2, tipFlip ? sx(hx) - tipW - 10 : sx(hx) + 10));
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * CW;
+    setHoverX(px < PAD.l || px > CW - PAD.r ? null : x0 + ((px - PAD.l) / (CW - PAD.l - PAD.r)) * (x1 - x0));
+  };
+
+  return (
+    <div className="p-2 h-full overflow-auto text-xs">
+      {series.length >= 2 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pb-1">
+          {series.map((s, i) => (
+            <span key={`${s.name}${i}`} className="flex items-center gap-1.5 text-zinc-300">
+              <span className="inline-block w-2 h-2 rounded-sm" style={{ background: color(i) }} />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
+      <svg viewBox={`0 0 ${CW} ${CH}`} className="w-full select-none" onMouseMove={onMove} onMouseLeave={() => setHoverX(null)}>
+        {yTicks.map((t) => (
+          <g key={`y${t}`}>
+            <line x1={PAD.l} y1={sy(t)} x2={CW - PAD.r} y2={sy(t)} stroke="#27272a" strokeWidth="1" />
+            <text x={PAD.l - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle" fontSize="10" fill="#71717a" style={{ fontVariantNumeric: "tabular-nums" }}>
+              {fmtNum(t, yStep)}
+            </text>
+          </g>
+        ))}
+        {xTicks.map((t) => (
+          <text key={`x${t}`} x={sx(t)} y={CH - PAD.b + 14} textAnchor="middle" fontSize="10" fill="#71717a" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {fmtNum(t, xStep)}
+          </text>
+        ))}
+        <line x1={PAD.l} y1={CH - PAD.b} x2={CW - PAD.r} y2={CH - PAD.b} stroke="#3f3f46" strokeWidth="1" />
+        {d?.yLabel && (
+          <text x={PAD.l} y={PAD.t - 3} fontSize="10" fill="#71717a">
+            {d.yLabel}
+          </text>
+        )}
+        {d?.xLabel && (
+          <text x={CW - PAD.r} y={CH - 4} textAnchor="end" fontSize="10" fill="#71717a">
+            {d.xLabel}
+          </text>
+        )}
+        {series.map((s, i) =>
+          s.pts.length === 1 ? (
+            // a 1-point polyline draws nothing — mark the lone sample instead
+            <circle key={`l${i}`} cx={sx(s.pts[0].x)} cy={sy(s.pts[0].y)} r="4" fill={color(i)} />
+          ) : (
+            <polyline
+              key={`l${i}`}
+              points={s.pts.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ")}
+              fill="none"
+              stroke={color(i)}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )
+        )}
+        {endLabels.map((l) => (
+          <text key={`e${l.i}`} x={CW - PAD.r + 6} y={l.y} dominantBaseline="middle" fontSize="10" fill="#d4d4d8">
+            {l.name}
+          </text>
+        ))}
+        {hx !== null && (
+          <g>
+            <line x1={sx(hx)} y1={PAD.t} x2={sx(hx)} y2={CH - PAD.b} stroke="#52525b" strokeWidth="1" strokeDasharray="3 3" />
+            {hoverRows.map((r) => (
+              <circle key={`h${r.i}`} cx={sx(r.p.x)} cy={sy(r.p.y)} r="4" fill={color(r.i)} stroke="#09090b" strokeWidth="2" />
+            ))}
+            <g transform={`translate(${tipX}, ${PAD.t + 4})`}>
+              <rect width={tipW} height={16 + hoverRows.length * 14} rx="4" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
+              <text x="8" y="12" fontSize="10" fill="#71717a" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {d?.xLabel ?? "x"} {fmtNum(hx)}
+              </text>
+              {hoverRows.map((r, j) => (
+                <g key={`t${r.i}`} transform={`translate(8, ${26 + j * 14})`}>
+                  <rect width="8" height="8" y="-8" rx="2" fill={color(r.i)} />
+                  <text x="12" fontSize="10" fill="#d4d4d8" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {r.name} {fmtNum(r.p.y)}
+                  </text>
+                </g>
+              ))}
+            </g>
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
+
 registerLens({ id: "table", render: (p) => <TableLens {...p} /> });
 registerLens({ id: "kanban", render: (p) => <KanbanLens {...p} /> });
 registerLens({ id: "markdown", render: (p) => <MarkdownLens {...p} /> });
+registerLens({ id: "chart", viewOnly: true, render: (p) => <ChartLens {...p} /> });

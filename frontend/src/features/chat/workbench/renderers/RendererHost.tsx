@@ -1,6 +1,6 @@
-import type { PanelContext } from "../panelRegistry";
+import type { WorkbenchContext } from "../context";
 import type { ViewDef } from "../manifest";
-import { viewToPanel } from "../lens/LensPanel";
+import { LensPanel } from "../lens/LensPanel";
 import { SandboxRenderer } from "../sandbox/SandboxRenderer";
 import type { RendererDesc } from "./registry";
 
@@ -17,7 +17,7 @@ const CHANNEL_READ_WHITELIST = new Set([
   "channel.messages.index",
 ]);
 
-// Mount the chosen renderer over one file. Built-in => reuse the compiled lens (via a
+// Mount the chosen renderer over one file. Built-in => the compiled lens (via a
 // synthetic view); plugin => the sandboxed render/save host. Both render exactly the
 // one `path`; neither learns anything about how the other works.
 export function RendererHost({
@@ -26,10 +26,10 @@ export function RendererHost({
   renderer,
   config,
 }: {
-  ctx: PanelContext;
+  ctx: WorkbenchContext;
   path: string;
   renderer: RendererDesc;
-  config?: unknown; // built-in lens config (e.g. table columns), from a template's view
+  config?: unknown; // built-in lens config (e.g. table columns), from .workbench.json configs
 }) {
   if (renderer.source === "plugin") {
     const plugin = ctx.plugins.find((p) => p.plugin_id === renderer.pluginId);
@@ -55,7 +55,7 @@ export function RendererHost({
       />
     );
   }
-  // built-in lens: a synthetic view feeds the existing LensPanel (load → lens → save).
+  // built-in lens: a synthetic view feeds the LensPanel host (load → lens → save)
   const view: ViewDef = {
     id: `render:${renderer.id}:${path}`,
     title: renderer.title,
@@ -63,5 +63,5 @@ export function RendererHost({
     lens: renderer.lensId ?? "markdown",
     config,
   };
-  return <>{viewToPanel(view).render(ctx)}</>;
+  return <LensPanel fs={ctx.fs} view={view} reloadTick={ctx.filesTick} />;
 }

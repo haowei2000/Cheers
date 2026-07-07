@@ -1,6 +1,11 @@
 import { ResourceError } from "../hooks/useChatRealtime";
 import type { FsClient } from "./fsClient";
 import { getLens } from "./lens/registry";
+// side effect: register the built-in lenses. validateManifest gates every view on
+// getLens(), so validation must be self-sufficient wherever it's imported — without
+// this, a surface that doesn't also import the builtins (e.g. the Settings template
+// manager loaded directly) rejects EVERY template as "unknown lens".
+import "./lens/builtins";
 
 // A template = a declarative MANIFEST (pure data). Because it's data — not code —
 // a manifest can be loaded at runtime (compiled-in OR dropped into the workspace),
@@ -18,6 +23,11 @@ export interface TemplateManifest {
   title: string;
   views: ViewDef[];
   seed?: Record<string, unknown>; // path -> initial value (object => JSON, string => text)
+  // Paths pinned into `.workbench.json.pinned` on activation — their bodies are injected
+  // into every bot prompt (the semantic layer). This is how a scenario's convention file
+  // reaches the agent without a human pinning it by hand. Keep these files SMALL: pinned
+  // bodies ride every prompt and count toward the connector's max_prompt_bytes.
+  pin?: string[];
 }
 
 // Validate an untrusted manifest (e.g. loaded from a workspace file) before use.
@@ -26,6 +36,7 @@ export function validateManifest(m: unknown): m is TemplateManifest {
   if (!m || typeof m !== "object") return false;
   const o = m as Record<string, unknown>;
   if (typeof o.id !== "string" || typeof o.title !== "string" || !Array.isArray(o.views)) return false;
+  if (o.pin !== undefined && !(Array.isArray(o.pin) && (o.pin as unknown[]).every((p) => typeof p === "string"))) return false;
   return (o.views as unknown[]).every((v) => {
     if (!v || typeof v !== "object") return false;
     const vv = v as Record<string, unknown>;

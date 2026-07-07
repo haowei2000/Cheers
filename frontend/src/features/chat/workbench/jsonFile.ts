@@ -91,6 +91,15 @@ export function useFileEditor(fs: FsClient, path: string) {
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
+  // Path switch: blank the buffer synchronously so consumers never see the PREVIOUS
+  // file's content under the new selection (renderer matching, raw view) while the
+  // async load below is still in flight.
+  useEffect(() => {
+    setContent("");
+    setVersion(null);
+    setDirty(false);
+  }, [path]);
+
   const load = useCallback(async () => {
     if (!path) return;
     setStatus(null);

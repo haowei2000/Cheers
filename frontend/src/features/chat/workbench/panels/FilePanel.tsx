@@ -7,17 +7,19 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   Save,
   Trash2,
   X,
 } from "lucide-react";
-import { registerPanel, type PanelContext } from "../panelRegistry";
+import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
-import { candidatesFor, getRenderer } from "../renderers/registry";
+import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 
 // Export bridge: a context file is TEXT, so "download" = save its content as a blob
@@ -80,15 +82,19 @@ function buildTree(entries: FsEntry[]): TreeNode[] {
   return roots;
 }
 
-// The File plugin: browse the channel workspace (context_files) as a folder tree, and
-// open a file with a chosen RENDERER (default "Raw" = plain textarea; or a built-in lens /
-// installed renderer plugin). The renderer choice is a per-file binding (path -> renderer
-// id) persisted in .workbench.json. Raw content is rendered ONLY inside a <textarea>
-// (inert text — no HTML execution), so stored content cannot XSS co-channel users.
-function FilePanel({ ctx }: { ctx: PanelContext }) {
-  const { fs, plugins, bindings, setBinding, views, toggleView, pinned, togglePin } = ctx;
+// The file browser IS the workbench body: browse the channel workspace (context_files)
+// as a folder tree; a selected file has exactly three controls — PIN (inject into every
+// bot prompt), PREVIEW (render with the bound or best content-matching renderer; a
+// switcher appears when several match), RAW (plain <textarea> editor, also the fallback
+// when nothing matches). Raw content is rendered ONLY inside a <textarea> (inert text —
+// no HTML execution), so stored content cannot XSS co-channel users.
+export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
+  const { fs, plugins, bindings, setBinding, configs, pinned, togglePin } = ctx;
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // "auto" = preview when a renderer matches, raw otherwise; user toggle overrides
+  // for the currently selected file (resets on selection change).
+  const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
   const [status, setStatus] = useState<string | null>(null);
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
   // (default is expanded). `creatingIn` = the folder prefix a new file is being typed
@@ -97,12 +103,17 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
   const [creatingIn, setCreatingIn] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  // The tree column is collapsible so a preview (table/chart/kanban) can take the
+  // drawer's full width — the price of tree-flanks-everything is otherwise ~40%.
+  const [treeOpen, setTreeOpen] = useState(true);
 
   const tree = useMemo(() => buildTree(entries), [entries]);
 
   // The selected file's content/edit/save (optimistic lock + conflict reload) is the shared
   // useFileEditor hook; FilePanel only adds the browser (tree / create / delete / pick).
   const editor = useFileEditor(fs, selected ?? "");
+
+  useEffect(() => setMode("auto"), [selected]);
 
   const refresh = useCallback(async () => {
     try {
@@ -119,9 +130,8 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
 
   // Live-push: the Desk ("files" board) changed on the server (a bot finished writing).
   // Re-pull the tree and reload a clean open file in place, but NEVER clobber unsaved
-  // edits — a dirty buffer only gets a non-destructive "changed on server" hint. The tick
-  // rides on ctx (typed loosely: PanelContext is the shared registry contract).
-  const filesTick = (ctx as { filesTick?: number }).filesTick ?? 0;
+  // edits — a dirty buffer only gets a non-destructive "changed on server" hint.
+  const filesTick = ctx.filesTick ?? 0;
   const editorRef = useRef(editor);
   editorRef.current = editor;
   const seenFilesTick = useRef(filesTick);
@@ -149,7 +159,7 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
   }, []);
 
   // Deep-link: auto-select a file the user clicked elsewhere (e.g. a Desk ref in a
-  // bot reply), expanding its folders so it's visible.
+  // bot reply, or a just-activated scenario's first file), expanding its folders.
   useEffect(() => {
     if (ctx.openTarget) {
       setSelected(ctx.openTarget);
@@ -325,30 +335,43 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
 
   return (
     <div className="flex h-full text-sm">
-      {/* file tree */}
-      <div className="w-52 flex-shrink-0 border-r border-zinc-800 flex flex-col">
-        <div className="flex items-center gap-1 px-2 h-8 border-b border-zinc-800 flex-shrink-0">
-          <button
-            onClick={() => beginCreate("")}
-            className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100"
-          >
-            <Plus className="w-3.5 h-3.5" /> New
-          </button>
-          <div className="flex-1" />
-          <button onClick={() => void refresh()} title="Refresh">
-            <RefreshCw className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
-          </button>
+      {/* file tree (collapsible — previews get the full drawer width when hidden) */}
+      {treeOpen ? (
+        <div className="w-52 flex-shrink-0 border-r border-zinc-800 flex flex-col">
+          <div className="flex items-center gap-1 px-2 h-8 border-b border-zinc-800 flex-shrink-0">
+            <button
+              onClick={() => beginCreate("")}
+              className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              <Plus className="w-3.5 h-3.5" /> New
+            </button>
+            <div className="flex-1" />
+            <button onClick={() => void refresh()} title="Refresh">
+              <RefreshCw className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
+            </button>
+            <button onClick={() => setTreeOpen(false)} title="Hide file tree">
+              <PanelLeftClose className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto py-1">
+            {creatingIn === "" && createInput(0)}
+            {tree.length === 0 && creatingIn === null && (
+              <div className="px-2 py-3 text-xs text-zinc-600">No files</div>
+            )}
+            {renderNodes(tree, 0)}
+          </div>
         </div>
-        <div className="flex-1 overflow-auto py-1">
-          {creatingIn === "" && createInput(0)}
-          {tree.length === 0 && creatingIn === null && (
-            <div className="px-2 py-3 text-xs text-zinc-600">No files</div>
-          )}
-          {renderNodes(tree, 0)}
-        </div>
-      </div>
+      ) : (
+        <button
+          onClick={() => setTreeOpen(true)}
+          title="Show file tree"
+          className="w-6 flex-shrink-0 border-r border-zinc-800 flex items-start justify-center pt-2 text-zinc-500 hover:text-zinc-200"
+        >
+          <PanelLeftOpen className="w-3.5 h-3.5" />
+        </button>
+      )}
 
-      {/* editor */}
+      {/* selected file: preview (matching renderer) or raw (textarea fallback) */}
       <div className="flex-1 flex flex-col min-w-0">
         {selected === null ? (
           <div className="flex-1 flex items-center justify-center text-zinc-600 text-xs gap-2">
@@ -356,32 +379,63 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
           </div>
         ) : (
           (() => {
-            // content-aware: only renderers that ACCEPT this file's content are offered
+            // content-aware: only renderers that ACCEPT this file's content are offered.
+            // The user's explicit binding (if resolvable) leads; otherwise best match.
             const candidates = candidatesFor(selected, editor.content, plugins);
-            const boundId = bindings[selected];
-            const renderer = boundId ? getRenderer(boundId, plugins) : undefined;
+            const bound = bindings[selected] ? getRenderer(bindings[selected], plugins) : undefined;
+            const options = [bound, ...candidates.filter((c) => c.id !== bound?.id)].filter(
+              (r): r is RendererDesc => !!r
+            );
+            const previewRenderer = options[0];
+            // no matching renderer => raw, whatever the toggle says — header (Save,
+            // dirty dot) and body must agree on which mode is actually showing
+            const effMode = mode !== "raw" && previewRenderer ? "preview" : "raw";
             return (
               <>
                 <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
                   <span className="text-xs text-zinc-300 truncate">{selected}</span>
-                  {!renderer && editor.dirty && <span className="text-[10px] text-amber-500">●</span>}
+                  {effMode === "raw" && editor.dirty && <span className="text-[10px] text-amber-500">●</span>}
                   <div className="flex-1" />
-                  {/* renderer picker: default Raw (plain textarea), or a lens / plugin renderer */}
-                  <select
-                    value={boundId ?? ""}
-                    onChange={(e) => setBinding(selected, e.target.value || null)}
-                    title="Renderer used to open this file (default: raw text)"
-                    className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[120px]"
-                  >
-                    <option value="">Raw</option>
-                    {/* most-specific first; plugin source shown so same-named ones differ */}
-                    {candidates.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.title}
-                        {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
+                  <div className="flex rounded overflow-hidden border border-zinc-700 text-[11px] flex-shrink-0">
+                    <button
+                      onClick={() => setMode("preview")}
+                      disabled={!previewRenderer}
+                      title={previewRenderer ? `Preview with ${previewRenderer.title}` : "No matching renderer — raw only"}
+                      className={`px-2 py-0.5 disabled:opacity-40 ${
+                        effMode === "preview" ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      Preview
+                    </button>
+                    <button
+                      onClick={() => setMode("raw")}
+                      className={`px-2 py-0.5 ${
+                        effMode === "raw" ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      Raw
+                    </button>
+                  </div>
+                  {/* renderer picker: Auto = clear the binding, follow the best content
+                      match. Shown whenever there is a binding to clear OR a real choice —
+                      so a stale/wrong binding always has a UI way out. */}
+                  {effMode === "preview" && (bound || options.length > 1) && (
+                    <select
+                      value={bound?.id ?? ""}
+                      onChange={(e) => setBinding(selected, e.target.value || null)}
+                      title="Renderer for Preview (Auto = best content match)"
+                      className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[110px]"
+                    >
+                      <option value="">Auto</option>
+                      {options.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.title}
+                          {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {/* export bridge: download this context file as a real file */}
                   <button
                     onClick={() => downloadText(selected, editor.content)}
@@ -392,19 +446,7 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
                   </button>
                   {/* pin this file's content into every bot prompt (toggle) */}
                   <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
-                  {/* surface this file as a workbench tab (toggle), persisted in views */}
-                  <button
-                    onClick={() => toggleView(selected)}
-                    title={views.some((v) => v.path === selected) ? "Remove from top tabs" : "Show this file as a top tab"}
-                    className={`text-xs ${
-                      views.some((v) => v.path === selected)
-                        ? "text-amber-400"
-                        : "text-zinc-500 hover:text-zinc-300"
-                    }`}
-                  >
-                    {views.some((v) => v.path === selected) ? "✓ Tab" : "Set as tab"}
-                  </button>
-                  {!renderer && (
+                  {effMode === "raw" && (
                     <button
                       onClick={() => void onSave()}
                       disabled={!editor.dirty}
@@ -414,10 +456,10 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
                     </button>
                   )}
                 </div>
-                {renderer ? (
+                {effMode === "preview" && previewRenderer ? (
                   // the chosen renderer owns load/edit/save for this one file
                   <div className="flex-1 min-h-0 overflow-hidden">
-                    <RendererHost ctx={ctx} path={selected} renderer={renderer} />
+                    <RendererHost ctx={ctx} path={selected} renderer={previewRenderer} config={configs[selected]} />
                   </div>
                 ) : (
                   // textarea = inert text rendering; never dangerouslySetInnerHTML
@@ -441,11 +483,3 @@ function FilePanel({ ctx }: { ctx: PanelContext }) {
     </div>
   );
 }
-
-registerPanel({
-  id: "files",
-  title: "Files",
-  render: (ctx) => <FilePanel ctx={ctx} />,
-});
-
-export default FilePanel;

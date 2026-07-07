@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Package, X } from "lucide-react";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
-import { getPanels, type PanelContext } from "./panelRegistry";
+import { errMsg } from "./jsonFile";
+import type { WorkbenchContext } from "./context";
 import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegistry";
 import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
-import { viewToTab } from "./renderers/ViewTab";
+import { FilePanel } from "./panels/FilePanel";
 import { listGlobalTemplates } from "./templatesApi";
 import { listPlugins, type PluginMeta } from "./sandbox/api";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
-import "./panels/FilePanel";
 import "./environments";
 
 interface Props {
@@ -17,9 +17,9 @@ interface Props {
   onClose: () => void;
   channelId: string;
   sendResourceReq: SendResourceReq;
-  /** Deep-link: open the File panel focused on this path (e.g. a clicked Desk ref). */
+  /** Deep-link: open the browser focused on this path (e.g. a clicked Desk ref). */
   openFilePath?: string;
-  /** Live-push tick for the Desk ("files" board): bump → the File panel re-pulls the
+  /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the
    *  tree and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;
 }
@@ -29,10 +29,10 @@ interface WbConfig {
   _doc?: string;
   environment?: string | null;
   pinned?: string[];
-  /** path -> renderer id: which renderer opens a file (File panel renderer picker). */
+  /** path -> renderer id: which renderer Preview uses for a file. */
   bindings?: Record<string, string>;
-  /** Files surfaced as workbench tabs, in order. */
-  views?: { path: string; title?: string; renderer?: string; config?: unknown }[];
+  /** path -> lens config (e.g. table columns); written create-only by scenario activation. */
+  configs?: Record<string, unknown>;
 }
 
 // Regenerated into `.workbench.json._doc` on every write, so anyone (human or AI) opening
@@ -40,34 +40,75 @@ interface WbConfig {
 // rewrites this file, so only fields (like this one) survive; see docs/arch/WORKBENCH.md.
 const WB_DOC =
   "Workbench config (per-channel, maintained by the workbench UI, hand-editable). " +
-  "views = curated files shown as top tabs [{path,title}], rendered with each file's bound renderer from bindings (raw text if unbound); " +
-  "bindings = file path → renderer id; pinned = files injected into every bot prompt. " +
-  "Files themselves are pure content — type and rendering are decided by this config, never written into the file.";
+  "The workbench is file-centric: pick a file, Preview renders it, Raw edits it. " +
+  "bindings = file path → renderer id Preview uses (unbound: best content match, else raw); " +
+  "configs = file path → lens config (e.g. table columns), written by scenario activation; " +
+  "pinned = files injected into every bot prompt. " +
+  "Files themselves are pure content — how a file renders is decided by this config, never written into the file.";
 
-// Right-side per-channel workbench. Scenarios come from three places:
+// Known-keys parse + one-time migration: the retired `views` tab list carried each
+// scenario view's renderer/config — collapse those into bindings/configs (create-only,
+// an explicit binding wins) so pre-refactor channels keep their table/kanban previews.
+// The migrated result persists on the next write; the `views` key itself retires.
+function parseCfg(content: string): WbConfig {
+  const raw = JSON.parse(content) as WbConfig & {
+    views?: { path?: string; renderer?: string; config?: unknown }[];
+  };
+  const cfg: WbConfig = {
+    _doc: raw._doc,
+    environment: raw.environment,
+    pinned: raw.pinned,
+    bindings: raw.bindings,
+    configs: raw.configs,
+  };
+  if (raw.views?.length) {
+    const b = { ...(cfg.bindings ?? {}) };
+    const c = { ...(cfg.configs ?? {}) };
+    for (const v of raw.views) {
+      if (!v?.path || !v.renderer) continue;
+      if (!b[v.path]) b[v.path] = v.renderer;
+      if (v.config !== undefined && c[v.path] === undefined) c[v.path] = v.config;
+    }
+    cfg.bindings = b;
+    cfg.configs = c;
+  }
+  return cfg;
+}
+
+// Right-side per-channel workbench: a scenario picker over ONE file browser (no tabs).
+// Scenarios come from three places:
 //  - GLOBAL templates (DATA, admin-installed, lens-rendered) — shared by every channel
 //  - SESSION templates (DATA, temporarily uploaded here, this browser session only)
-//  - SERVER-LEVEL plugins (CODE, admin-installed, sandboxed iframe)
-// plus the always-on File panel. Installing global templates / plugins lives in
-// Settings → Workbench extensions (admin); the drawer only CONSUMES them, and offers
-// a no-persistence temporary upload to anyone.
+//  - SERVER-LEVEL plugins (CODE, admin-installed, sandboxed iframe renderers)
+// Installing global templates / plugins lives in Settings → Workbench extensions (admin);
+// the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone.
 export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
   const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
   const [serverPlugins, setServerPlugins] = useState<PluginMeta[]>([]);
-  const [active, setActive] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  /** Drag-over highlight — deliberately separate from `busy` (which gates controls). */
+  const [dragOver, setDragOver] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [pinMenu, setPinMenu] = useState(false);
+  /** Focus request for the browser: a Desk-ref deep link (openFilePath) or the last
+   *  activated scenario's first file — whichever happened most recently wins. */
+  const [focus, setFocus] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (openFilePath) setFocus(openFilePath);
+  }, [openFilePath]);
+  // Never leak a focus/selection across channels.
+  useEffect(() => setFocus(null), [channelId]);
 
   useEffect(() => {
     if (!open) return;
     let alive = true;
     fs.read(WORKBENCH_CONFIG_PATH)
-      .then((f) => alive && setCfg(JSON.parse(f.content) as WbConfig))
+      .then((f) => alive && setCfg(parseCfg(f.content)))
       .catch(() => alive && setCfg({}));
     listGlobalTemplates()
       .then((t) => alive && setGlobalTemplates(t))
@@ -117,16 +158,45 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
     [cfg, bindings, writeCfg]
   );
 
-  const views = useMemo(() => cfg.views ?? [], [cfg.views]);
-  const toggleView = useCallback(
-    (path: string, title?: string) => {
-      const exists = views.some((v) => v.path === path);
-      const next = exists
-        ? views.filter((v) => v.path !== path)
-        : [...views, { path, title: title || path.split("/").pop() || path }];
-      void writeCfg({ ...cfg, views: next });
+  const configs = useMemo(() => cfg.configs ?? {}, [cfg.configs]);
+
+  // Activate a scenario: seed its starter files, bind each declarative view's lens (+
+  // config) to its file — create-only, a user's explicit binding is never overwritten —
+  // and merge its `pin` list into cfg.pinned so the scenario's convention files reach
+  // every bot prompt with no manual step. Then focus the browser on the first file.
+  const activate = useCallback(
+    async (manifest: TemplateManifest): Promise<boolean> => {
+      setBusy(true);
+      try {
+        await seedManifest(fs, manifest);
+        // Merge against the freshest PERSISTED config, not the render-time snapshot: the
+        // mount read may still be in flight (or hold another channel's config), and
+        // clobbering existing pins/bindings on that race is worse than a re-read.
+        let base = cfg;
+        try {
+          base = parseCfg((await fs.read(WORKBENCH_CONFIG_PATH)).content);
+        } catch {
+          /* no config file yet — keep the in-memory snapshot */
+        }
+        const nextBindings = { ...(base.bindings ?? {}) };
+        const nextConfigs = { ...(base.configs ?? {}) };
+        for (const v of manifest.views) {
+          if (!nextBindings[v.file]) nextBindings[v.file] = `builtin:${v.lens}`;
+          if (v.config !== undefined && nextConfigs[v.file] === undefined) nextConfigs[v.file] = v.config;
+        }
+        const next: WbConfig = { ...base, environment: manifest.id, bindings: nextBindings, configs: nextConfigs };
+        if (manifest.pin?.length) next.pinned = [...new Set([...(base.pinned ?? []), ...manifest.pin])];
+        await writeCfg(next);
+        setFocus(manifest.views[0]?.file ?? null);
+        return true;
+      } catch (e) {
+        setNotice(errMsg(e)); // surface mid-seed failures (permission, size limit, dropped WS)
+        return false;
+      } finally {
+        setBusy(false);
+      }
     },
-    [cfg, views, writeCfg]
+    [fs, cfg, writeCfg]
   );
 
   // Temporary upload: validate a manifest, keep it in THIS session only (never persisted,
@@ -149,25 +219,18 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       }
       const m = parsed;
       setSessionTemplates((prev) => [m, ...prev.filter((x) => x.id !== m.id)]);
-      setBusy(true);
       void (async () => {
-        try {
-          await seedManifest(fs, m);
-          await writeCfg({ ...cfg, environment: m.id });
-          setActive(m.views[0]?.id ?? "");
+        if (await activate(m))
           setNotice(`Loaded temporarily: ${m.title} (this session only; to share globally go to Settings → Workbench extensions)`);
-        } finally {
-          setBusy(false);
-        }
       })();
     },
-    [fs, cfg, writeCfg]
+    [activate]
   );
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      setBusy(false);
+      setDragOver(false);
       const file = e.dataTransfer.files?.[0];
       if (file && file.name.endsWith(".json")) void file.text().then(loadTemporary);
       else setNotice("Drop a .json template file");
@@ -194,16 +257,33 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
   const sessionIds = useMemo(() => new Set(sessionTemplates.map((t) => t.id)), [sessionTemplates]);
 
   const selectedId = cfg.environment ?? null;
-  // Tabs come ONLY from .workbench.json views now (+ the always-on Files panel). The old
-  // parallel sources — a template's lens views, a sandbox plugin's panels — are retired;
-  // a template instead migrates its views into .workbench.json on activation (below).
-  const panels = useMemo(
-    () => [...getPanels(), ...views.map(viewToTab)],
-    [views]
+
+  const switchScenario = useCallback(
+    async (id: string | null) => {
+      const manifest = allEnvs.find((e) => e.id === id);
+      if (manifest) {
+        await activate(manifest);
+        return;
+      }
+      setBusy(true);
+      try {
+        // back to General: keep bindings/pins — merged against the freshest persisted
+        // config (same reasoning as activate), not the render-time snapshot
+        let base = cfg;
+        try {
+          base = parseCfg((await fs.read(WORKBENCH_CONFIG_PATH)).content);
+        } catch {
+          /* no config file yet */
+        }
+        await writeCfg({ ...base, environment: id });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [allEnvs, activate, cfg, fs, writeCfg]
   );
-  // `filesTick` rides on ctx as an extra field (PanelContext is defined in the shared
-  // panelRegistry, so we widen the type here rather than change that contract).
-  const ctx: PanelContext & { filesTick?: number } = useMemo(
+
+  const ctx: WorkbenchContext = useMemo(
     () => ({
       channelId,
       fs,
@@ -213,46 +293,12 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       plugins: serverPlugins,
       bindings,
       setBinding,
-      views,
-      toggleView,
-      openTarget: openFilePath ?? null,
+      configs,
+      openTarget: focus,
       filesTick,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, views, toggleView, openFilePath, filesTick]
+    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, configs, focus, filesTick]
   );
-
-  // Deep-link: when opened with a target Desk path, focus the always-on File panel.
-  useEffect(() => {
-    if (open && openFilePath) setActive("files");
-  }, [open, openFilePath]);
-  const activePanel = panels.find((p) => p.id === active) ?? panels[0];
-
-  const switchScenario = useCallback(
-    async (id: string | null) => {
-      setBusy(true);
-      try {
-        const manifest = allEnvs.find((e) => e.id === id);
-        let nextViews = views;
-        if (manifest) {
-          await seedManifest(fs, manifest); // seed the scenario's starter files
-          // migrate the template's declarative views into .workbench.json (additive,
-          // idempotent): each {file,lens,config} becomes a tab bound to a built-in lens.
-          const have = new Set(views.map((v) => v.path));
-          const add = manifest.views
-            .filter((v) => !have.has(v.file))
-            .map((v) => ({ path: v.file, title: v.title, renderer: `builtin:${v.lens}`, config: v.config }));
-          nextViews = [...views, ...add];
-        }
-        await writeCfg({ ...cfg, environment: id, views: nextViews });
-        setActive(`view:${manifest?.views[0]?.file ?? ""}`);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [fs, cfg, allEnvs, views, writeCfg]
-  );
-
-  const nothingInstalled = allEnvs.length === 0;
 
   return (
     <>
@@ -261,15 +307,15 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       <aside
         onDragOver={(e) => {
           e.preventDefault();
-          setBusy(true);
+          setDragOver(true);
         }}
-        onDragLeave={() => setBusy(false)}
+        onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         // Desktop: docked 560px column under the header (dvh == vh there). Mobile: a
         // full-screen sheet — top-0, full width/height, safe-area padded — so panels
         // are never crushed into a sliver next to the chat.
         className={`fixed top-12 right-0 h-[calc(100dvh-3rem)] w-[560px] max-w-[94vw] max-md:top-0 max-md:h-[100dvh] max-md:w-full max-md:max-w-none max-md:border-l-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] bg-zinc-900 border-l z-40 flex flex-col transition-transform duration-200 ${
-          busy ? "border-amber-500/60" : "border-zinc-800"
+          dragOver || busy ? "border-amber-500/60" : "border-zinc-800"
         } ${open ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0">
@@ -277,8 +323,9 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           <select
             value={selectedId ?? ""}
             onChange={(e) => void switchScenario(e.target.value || null)}
+            disabled={busy}
             title="Scenario / template"
-            className="bg-zinc-800 text-zinc-300 text-xs rounded px-1 py-0.5 outline-none max-w-[160px]"
+            className="bg-zinc-800 text-zinc-300 text-xs rounded px-1 py-0.5 outline-none max-w-[160px] disabled:opacity-50"
           >
             <option value="">General</option>
             {allEnvs.map((e) => (
@@ -287,13 +334,12 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
                 {e.title}
               </option>
             ))}
-            {/* Plugins are no longer scenarios — they're renderers picked per-file in the
-                File panel. The scenario dropdown lists data templates only. */}
           </select>
           <button
             onClick={() => fileRef.current?.click()}
+            disabled={busy}
             title="Load a temporary template: pick a manifest .json, this session only (install globally in Settings → Workbench extensions)"
-            className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100"
+            className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
           >
             <Clock className="w-3.5 h-3.5" /> Temp template
           </button>
@@ -348,40 +394,23 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           </div>
         )}
 
-        <div className="flex items-center gap-1 px-2 h-8 border-b border-zinc-800 flex-shrink-0 overflow-x-auto">
-          {panels.map((p) => (
+        {allEnvs.length === 0 && selectedId === null && (
+          <div className="px-3 py-1.5 text-[11px] text-zinc-500 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
+            <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
+            <span className="flex-1">
+              No scenarios yet — drop a .json template here, use "Temp template", or
+            </span>
             <button
-              key={p.id}
-              onClick={() => setActive(p.id)}
-              className={`px-2 py-0.5 rounded text-xs whitespace-nowrap ${
-                activePanel?.id === p.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-              }`}
+              onClick={() => loadTemporary(JSON.stringify(researchExample))}
+              className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700 flex-shrink-0"
             >
-              {p.title}
+              Try it now: Research
             </button>
-          ))}
-        </div>
+          </div>
+        )}
 
-        <div className="flex-1 min-h-0 overflow-hidden">
-          {nothingInstalled && selectedId === null ? (
-            <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-500 text-xs p-6 text-center">
-              <Package className="w-8 h-8 text-zinc-700" />
-              <div>
-                No scenarios yet. Global templates and plugins are installed by an admin in
-                Settings → Workbench extensions; you can also drop a .json file here or click
-                "Temp template" above to try one for this session only.
-              </div>
-              <button
-                onClick={() => loadTemporary(JSON.stringify(researchExample))}
-                className="mt-1 px-3 py-1 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-              >
-                Try it now: Research
-              </button>
-            </div>
-          ) : (
-            open && activePanel?.render(ctx)
-          )}
-        </div>
+        {/* the body IS the file browser: select a file → pin / preview / raw */}
+        <div className="flex-1 min-h-0 overflow-hidden">{open && <FilePanel ctx={ctx} />}</div>
       </aside>
     </>
   );
