@@ -10,7 +10,10 @@ use serde_json::{json, Value};
 use sqlx::{error::DatabaseError, Row};
 use uuid::Uuid;
 
-use crate::{api::middleware::Claims, app_state::AppState, errors::AppError};
+use crate::{
+    api::middleware::Claims, app_state::AppState, errors::AppError,
+    gateway::realtime::frame::WireFrame,
+};
 
 fn is_admin(claims: &Claims) -> bool {
     matches!(claims.role.as_str(), "system_admin" | "admin")
@@ -140,7 +143,68 @@ pub async fn update_me(
     .execute(&state.db)
     .await?;
 
+    // Push the fresh profile to every channel this user is in so open clients update
+    // the member's card live (no channel-switch/reload needed). Only when something
+    // card-visible actually changed; best-effort (never fails the edit).
+    if display_name.provided
+        || bio.provided
+        || avatar_url.provided
+        || status_text.provided
+        || status_emoji.provided
+    {
+        broadcast_member_update(&state, &claims.sub).await;
+    }
+
     get_me(State(state), Extension(claims)).await
+}
+
+/// Broadcast a user's current profile (name/avatar/bio/status) to every channel they
+/// belong to, as a `member_updated` frame, so browsers viewing those channels refresh
+/// the member's hovercard in place. Bots don't need this — their `channel.members`
+/// resource is a live DB read, so they always see the latest on their next read.
+///
+/// Best-effort: any DB or send hiccup is swallowed (the profile edit already
+/// succeeded; a missed live update self-heals on the next member-list fetch).
+pub async fn broadcast_member_update(state: &AppState, user_id: &str) {
+    let row = match sqlx::query(
+        "SELECT display_name, avatar_url, bio, status_text, status_emoji
+         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some(r)) => r,
+        _ => return,
+    };
+    let profile = json!({
+        "member_id": user_id,
+        "member_type": "user",
+        "display_name": row.try_get::<Option<String>, _>("display_name").ok().flatten(),
+        "avatar_url": row.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+        "bio": row.try_get::<Option<String>, _>("bio").ok().flatten(),
+        "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
+        "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+    });
+
+    let channels: Vec<String> = sqlx::query_scalar(
+        "SELECT channel_id::text FROM channel_memberships
+         WHERE member_id = $1 AND member_type = 'user'",
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for cid in channels {
+        let Ok(channel_uuid) = Uuid::parse_str(&cid) else {
+            continue;
+        };
+        let mut data = profile.clone();
+        data["channel_id"] = json!(cid);
+        let frame = WireFrame::channel(channel_uuid, "member_updated", data);
+        state.fanout.broadcast_channel(channel_uuid, frame).await;
+    }
 }
 
 #[derive(Deserialize)]
