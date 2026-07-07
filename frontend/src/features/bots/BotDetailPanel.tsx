@@ -470,8 +470,8 @@ function BotStatusEditor({
         </button>
       </div>
       <p className="text-[11px] text-zinc-600 leading-snug">
-        Runs the status prompt via the normal prompt path (needs the bot online and a
-        shared channel/DM). Owner/admin only.
+        Runs the status prompt via the normal prompt path (needs the bot online; opens a
+        DM with it automatically if you don't have one). Owner/admin only.
       </p>
     </div>
   );
