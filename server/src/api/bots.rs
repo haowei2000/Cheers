@@ -924,8 +924,10 @@ const DEFAULT_STATUS_REFRESH_PROMPT: &str =
 
 /// POST /api/v1/bots/:bot_id/status/refresh — owner/admin asks the agent to refresh
 /// its own status NOW. Posts the bot's configured `status_update_prompt` (mentioning
-/// the bot) into a channel the caller shares with it, so the normal prompt path runs
-/// the agent — which then writes its status via `/self-status`. Reuses the
+/// the bot) into a **DM** the caller shares with it, so the normal prompt path runs
+/// the agent — which then writes its status via `/self-status`. A DM (not any shared
+/// group channel) is required so the prompt — which `list_bots` redacts from
+/// non-managers — is never made visible to other human members. Reuses the
 /// `session/prompt` INITIATE gate (the panel is already owner/admin-only); no
 /// connector changes needed.
 pub async fn refresh_bot_status(
@@ -953,16 +955,19 @@ pub async fn refresh_bot_status(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_STATUS_REFRESH_PROMPT.to_string());
 
-    // A channel the caller AND the bot both belong to: create_message needs the caller
-    // to be a member, and mention-triggering needs the bot to be one. Prefer a DM so the
-    // prompt/response stay out of a shared room.
+    // A DM the caller AND the bot both belong to: create_message needs the caller to be
+    // a member, and mention-triggering needs the bot to be one. We REQUIRE a DM (not any
+    // shared channel) — posting the configured `status_update_prompt` into a group room
+    // would expose it to other human members, contradicting the manager-only redaction
+    // `list_bots` applies to that same field. If no DM exists yet, ask the owner to open
+    // one rather than leaking the prompt.
     let channel_id: Option<String> = sqlx::query_scalar(
         "SELECT c.channel_id::text FROM channels c
          JOIN channel_memberships cu
            ON cu.channel_id = c.channel_id AND cu.member_id = $1 AND cu.member_type = 'user'
          JOIN channel_memberships cb
            ON cb.channel_id = c.channel_id AND cb.member_id = $2 AND cb.member_type = 'bot'
-         ORDER BY (c.type = 'dm') DESC
+         WHERE c.type = 'dm'
          LIMIT 1",
     )
     .bind(&claims.sub)
@@ -973,9 +978,44 @@ pub async fn refresh_bot_status(
         .and_then(|c| Uuid::parse_str(&c).ok())
         .ok_or_else(|| {
             AppError::BadRequest(
-                "no shared channel with this bot — open a DM or add it to a channel first".into(),
+                "no DM with this bot — open a direct message with it first, then refresh".into(),
             )
         })?;
+
+    // INITIATE(prompt) gate. `create_message` posts the prompt but *silently skips*
+    // waking the bot when this event is denied (it `continue`s the dispatch loop and
+    // still returns Ok) — which would make this endpoint report a false success while
+    // the agent never runs. Check the same gate `send_message` uses up front and fail
+    // loudly instead. Fail-open on a rules error, matching create_message/cancel_message.
+    let caller_role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string());
+    let may_prompt = crate::domain::acp_policy::allows(
+        &state.db,
+        &bot_id,
+        &channel_id.to_string(),
+        &claims.sub,
+        &caller_role,
+        "session/prompt",
+        crate::domain::bot_event_policy::Capability::Initiate,
+    )
+    .await
+    .unwrap_or(true);
+    if !may_prompt {
+        return Err(AppError::Forbidden(
+            "not authorized to prompt this bot here — status refresh needs the ACP prompt permission"
+                .into(),
+        ));
+    }
 
     let dto = messages::create_message(
         &state.db,

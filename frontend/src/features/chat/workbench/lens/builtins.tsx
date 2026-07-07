@@ -201,12 +201,19 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return out;
 }
 
-// `step` (the tick spacing) picks the decimals, so sub-1e-4 spans still label distinctly
+// `step` (the tick spacing) picks the decimals, so adjacent ticks always render as
+// distinct labels — at every magnitude. The compact k/M suffixes derive their decimals
+// from `step` scaled into the same unit; without that, ticks 50 apart near 10_000 both
+// collapse to "10.1k". `step` is absent for tooltip values, which fall back to 1 decimal.
 function fmtNum(v: number, step?: number): string {
-  if (Math.abs(v) >= 1e6) return v.toExponential(1).replace("e+", "e");
-  if (Math.abs(v) >= 10000) return `${Number((v / 1000).toFixed(1))}k`;
-  if (step !== undefined && step > 0 && Number.isFinite(step)) {
-    // Number() strips trailing zeros so labels stay inside the axis gutter
+  const hasStep = step !== undefined && step > 0 && Number.isFinite(step);
+  // decimals needed to tell ticks `step` apart once values are divided by `scale`
+  const decimalsForScale = (scale: number) =>
+    hasStep ? Math.max(0, Math.min(8, -Math.floor(Math.log10(step / scale)))) : 1;
+  // Number() strips trailing zeros so labels stay inside the axis gutter
+  if (Math.abs(v) >= 1e6) return `${Number((v / 1e6).toFixed(decimalsForScale(1e6)))}M`;
+  if (Math.abs(v) >= 10000) return `${Number((v / 1000).toFixed(decimalsForScale(1000)))}k`;
+  if (hasStep) {
     return String(Number(v.toFixed(Math.max(0, Math.min(8, -Math.floor(Math.log10(step)))))));
   }
   return String(Number(v.toPrecision(6)));
@@ -224,12 +231,23 @@ function ChartLens({ data }: LensProps) {
     );
   }
 
-  const allX = series.flatMap((s) => s.pts.map((p) => p.x));
-  const allY = series.flatMap((s) => s.pts.map((p) => p.y));
-  let x0 = Math.min(...allX);
-  let x1 = Math.max(...allX);
-  let y0 = Math.min(...allY);
-  let y1 = Math.max(...allY);
+  // Single pass over every point for bounds + the x-union (a long training run is ~100k
+  // points; `Math.min(...arr)` spreads each point as a call argument and throws RangeError
+  // past V8's ~125k arg cap — the array-literal spread at `xsUnion` below has no such cap).
+  const allX: number[] = [];
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const s of series) {
+    for (const p of s.pts) {
+      allX.push(p.x);
+      if (p.x < x0) x0 = p.x;
+      if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y;
+      if (p.y > y1) y1 = p.y;
+    }
+  }
   if (x1 === x0) {
     // magnitude-relative: a fixed ±0.5 is float-absorbed at large |x| (range stays
     // zero-width and every coordinate divides to NaN)
