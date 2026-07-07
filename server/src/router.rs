@@ -289,6 +289,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bots::get_bot_status),
         )
         .route(
+            "/api/v1/bots/:bot_id/status/refresh",
+            post(api::bots::refresh_bot_status),
+        )
+        .route(
             "/api/v1/bots/:bot_id/connection-events",
             get(api::bots::list_connection_events),
         )

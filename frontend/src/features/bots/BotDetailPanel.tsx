@@ -13,7 +13,7 @@ import {
   Info,
   Trash2,
 } from "lucide-react";
-import { disableBot, enableBot, deleteBot, updateBotProfile } from "@/api/bots";
+import { disableBot, enableBot, deleteBot, updateBotProfile, refreshBotStatus } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { addChannelMember } from "@/api/channels";
@@ -319,6 +319,21 @@ function BotStatusEditor({
     bot.status_update_interval_minutes != null ? String(bot.status_update_interval_minutes) : "60"
   );
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Trigger the agent to update its own status NOW (runs status_update_prompt via the
+  // normal prompt path → the bot writes /self-status → the card updates live).
+  async function refreshNow() {
+    setRefreshing(true);
+    try {
+      await refreshBotStatus(bot.bot_id);
+      toast.success("Asked the bot to update its status");
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function save() {
     if (auto && !prompt.trim()) {
@@ -435,14 +450,29 @@ function BotStatusEditor({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => void save()}
-        disabled={busy}
-        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-      >
-        {busy ? "Saving…" : "Save"}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={busy}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void refreshNow()}
+          disabled={refreshing}
+          title="Ask the agent to update its own status now"
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+        >
+          {refreshing ? "Asking…" : "Update status now"}
+        </button>
+      </div>
+      <p className="text-[11px] text-zinc-600 leading-snug">
+        Runs the status prompt via the normal prompt path (needs the bot online and a
+        shared channel/DM). Owner/admin only.
+      </p>
     </div>
   );
 }
