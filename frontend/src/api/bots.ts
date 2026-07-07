@@ -76,6 +76,14 @@ export async function issueBotToken(botId: string): Promise<IssuedToken> {
   return apiJson<IssuedToken>(`/bots/${botId}/token`, { method: "POST" });
 }
 
+/** POST /bots/:id/status/refresh — owner/admin triggers the agent to update its own
+ *  status now (runs the bot's status_update_prompt via the normal prompt path). */
+export async function refreshBotStatus(
+  botId: string
+): Promise<{ ok: boolean; channel_id: string; msg_id: string }> {
+  return apiJson(`/bots/${botId}/status/refresh`, { method: "POST" });
+}
+
 export interface BotStatus {
   bot_id: string;
   /** Admin kill-switch flag (distinct from live connectivity). */
