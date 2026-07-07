@@ -5,7 +5,8 @@ import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { changePassword, logout as logoutApi } from "@/api/auth";
 import { getMe, updateMe } from "@/api/users";
-import { Avatar } from "@/components/ui/avatar";
+import { uploadUserAvatar } from "@/api/avatars";
+import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
 import { BotsManager } from "@/features/bots/BotsManager";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
@@ -113,6 +114,7 @@ function ProfileEditCard() {
   const [statusEmoji, setStatusEmoji] = useState("");
   const [statusText, setStatusText] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -125,6 +127,7 @@ function ProfileEditCard() {
         setStatusEmoji(me.status_emoji ?? "");
         setStatusText(me.status_text ?? "");
         setBio(me.bio ?? "");
+        setAvatarUrl(me.avatar_url ?? null);
         // Hydrate the store so the rest of the app sees the full profile.
         if (token) setAuth({ ...(user ?? { user_id: me.user_id, display_name: null }), ...me }, token);
       })
@@ -155,13 +158,27 @@ function ProfileEditCard() {
     }
   }
 
+  async function handleAvatarUpload(file: File) {
+    const url = await uploadUserAvatar(file);
+    setAvatarUrl(url);
+    // Hydrate the store so the avatar updates everywhere it's shown.
+    if (token) setAuth({ ...(user ?? { user_id: "", display_name: null }), avatar_url: url }, token);
+    return url;
+  }
+
   const inputCls =
     "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
 
   return (
     <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 space-y-4">
       <div className="flex items-center gap-4">
-        <Avatar name={displayName || user?.username} id={user?.user_id} size="lg" />
+        <AvatarUpload
+          name={displayName || user?.username}
+          id={user?.user_id}
+          src={avatarUrl}
+          size="lg"
+          onUpload={handleAvatarUpload}
+        />
         <div className="min-w-0">
           <p className="font-semibold text-zinc-100 truncate">
             {statusEmoji && <span className="mr-1">{statusEmoji}</span>}

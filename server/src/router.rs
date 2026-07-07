@@ -344,6 +344,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/files", post(api::files::upload_file))
         .route("/api/v1/files/presign", post(api::files::request_presign))
+        // Avatar upload (authed; serving is public — see build_public_routes).
+        .route(
+            "/api/v1/users/me/avatar",
+            post(api::avatars::upload_user_avatar),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/avatar",
+            post(api::avatars::upload_bot_avatar),
+        )
         .route(
             "/api/v1/files/:file_id/confirm",
             post(api::files::confirm_upload),
@@ -514,6 +523,16 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/bots/:bot_id/self-status",
             post(api::bots::bot_self_status),
+        )
+        // Avatar images: public so an `<img src>` (no auth header) resolves. The
+        // path is uuid-versioned + validated; the bytes aren't sensitive.
+        .route(
+            "/api/v1/users/:user_id/avatar/:file",
+            get(api::avatars::get_user_avatar),
+        )
+        .route(
+            "/api/v1/bots/:bot_id/avatar/:file",
+            get(api::avatars::get_bot_avatar),
         )
 }
 

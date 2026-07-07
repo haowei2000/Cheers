@@ -14,6 +14,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { disableBot, enableBot, deleteBot, updateBotProfile } from "@/api/bots";
+import { uploadBotAvatar } from "@/api/avatars";
+import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
@@ -345,9 +347,26 @@ function BotStatusEditor({
   const inputCls =
     "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500/60";
 
+  async function handleAvatarUpload(file: File) {
+    const url = await uploadBotAvatar(bot.bot_id, file);
+    onChanged(); // refetch so avatar_url updates wherever the bot is shown
+    return url;
+  }
+
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
       <p className="text-xs font-semibold text-zinc-400">Status & information</p>
+
+      <div className="flex items-center gap-3">
+        <AvatarUpload
+          name={bot.display_name || bot.username}
+          id={bot.bot_id}
+          src={bot.avatar_url}
+          size="md"
+          onUpload={handleAvatarUpload}
+        />
+        <span className="text-[11px] text-zinc-500">Click the avatar to upload an image (PNG/JPEG/WebP/GIF, ≤5 MB)</span>
+      </div>
 
       <div className="flex gap-2">
         <input
