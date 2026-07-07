@@ -406,9 +406,13 @@ from the MVP. If wanted later, trigger the agent from an external cron hitting a
    template" in the Workbench drawer.
 2. ✅ **MVP-1 (the two FE items):** (a) §6.2 `chart` lens (the template ships **with**
    the `metrics` view); (b) §6.1 auto-pin — activation arms the convention. Frontend-only.
-3. **MVP-2 (live agent, the §4.1 loop):** connect a **Codex** bot via
-   `packages/cheers-acp-connector-rs` using `examples/cheers-daemon.codex.toml` (§4.2);
-   run ingest → experiment → metrics/plots → draft end-to-end.
+3. ✅ **MVP-2 (live agent — verified 2026-07-07):** a live **Codex** bot (`codex-acp`
+   via `packages/cheers-acp-connector-rs`, `examples/cheers-daemon.codex.toml`) ran the
+   ingest half of the loop end-to-end against the kind stack — received the dispatch with
+   the pinned convention, used the cheers `desk_*` MCP tools to read + append rows to
+   `research/papers.json`, and posted a summary. The pinned convention demonstrably
+   reached Codex (it declined to invent citations, per the convention). Run-book §10 is
+   the verified procedure. Experiment/metrics/draft halves are the natural next runs.
 4. **Phase 2 (optional):** knowledge-graph sandbox plugin (§6.3); a reviewer bot for
    cross-model review of results; timeline view.
 
@@ -430,29 +434,56 @@ from the MVP. If wanted later, trigger the agent from an external cron hitting a
 
 ---
 
-## 10. Run-book (MVP demo)
+## 10. Run-book (verified 2026-07-07, live kind stack + real Codex)
 
-1. **Start the stack** (kind + Helm, see `CLAUDE.md`): UI at <http://localhost:30080>
-   (`admin` / `admin12345`).
-2. **Create a channel**, open the **Workbench** drawer (channel header).
-3. **Load the scenario**: click **Temp template** and pick
-   `frontend/src/features/chat/workbench/examples/research-lab.json` (or drag the file
-   onto the drawer). This seeds the file tree, binds each file to its lens (select
-   `research/papers.json` in the browser → it previews as a table; `experiments/metrics.json`
-   → chart), and **auto-pins** `prompts/lab-conventions.md` (📌 appears in the drawer
-   header). Every file offers Pin / Preview / Raw. To share the scenario with all
-   channels instead, an admin installs it as a global template in Settings → Workbench
-   extensions.
-4. **Connect the Codex bot** (MVP-2): create a bot (Bots → onboarding wizard,
-   agent type **codex**), export its token, then on the agent host:
-   `cce-acp-connector start --config cheers-daemon.codex.toml` (start from
-   `packages/cheers-acp-connector-rs/examples/cheers-daemon.codex.toml`; requires
-   `codex-acp` on PATH — its absence is the #1 "bot never comes online" cause). Invite
-   the bot into the channel.
-5. **Run the loop** (§4): ask the bot to survey a topic → watch `Literature` fill;
-   approve an experiment in chat → watch `Runs`/`Board`/`Metrics` update and plots
-   arrive as attachments; ask for a draft section → `Draft` tab.
-6. **Verify the pin reached the agent**: the bot's first reply should follow the
-   conventions (e.g. it appends to `research/papers.json` rather than pasting a paper
-   list into chat). Server-side, `load_pinned_context` injects
-   `[Pinned: prompts/lab-conventions.md]` into every task frame.
+Prereqs on the agent host: `codex-acp` on `PATH` (`@agentclientprotocol/codex-acp`) and
+Codex authenticated (subscription auth via `~/.codex/auth.json` — then `HOME` is enough,
+no `OPENAI_API_KEY` needed). A missing `codex-acp` binary is the #1 "bot never comes
+online" cause.
+
+1. **Start the stack** (kind + Helm, see `CLAUDE.md`). For the dev inner loop, port-forward
+   the gateway (`kubectl port-forward -n cheers svc/cheers-gateway 8000:8000`) and run Vite
+   (`npm --prefix frontend run dev`) — the UI is at <http://localhost:5173> (`admin` /
+   `admin12345`); the NodePort build is at <http://localhost:30080>.
+2. **Bot + channel + membership.** Reuse or create a `codex`-type bot (Bots → onboarding
+   wizard), then issue its bridge token and put it in a channel. Headless equivalents:
+   ```bash
+   TOKEN=$(curl -s -X POST :8000/api/v1/auth/login -H 'Content-Type: application/json' \
+     -d '{"login":"admin","password":"admin12345"}' | jq -r .access_token)
+   curl -s -X POST :8000/api/v1/bots/<BOT_ID>/token -H "Authorization: Bearer $TOKEN"   # → agb_…
+   curl -s -X POST :8000/api/v1/channels -H "Authorization: Bearer $TOKEN" \
+     -d '{"workspace_id":"<WS_ID>","name":"research-lab"}'                              # workspace_id is required
+   curl -s -X POST :8000/api/v1/channels/<CH_ID>/members -H "Authorization: Bearer $TOKEN" \
+     -d '{"member_id":"<BOT_ID>","member_type":"bot","role":"member"}'
+   ```
+3. **Start the connector** (the bot goes online within ~1s):
+   ```bash
+   export CHEERS_CODEX_BOT_TOKEN=agb_…            # from step 2
+   mkdir -p ~/.cheers/workspace
+   cd packages/cheers-acp-connector-rs
+   cargo run --bin cce-acp-connector -- run --config examples/cheers-daemon.codex.toml --name codex
+   ```
+4. **Activate the scenario** in the channel: Workbench drawer → **Temp template** → pick
+   `frontend/src/features/chat/workbench/examples/research-lab.json` (or drag it on). This
+   seeds the tree, binds each file to its lens (select `research/papers.json` → previews as
+   a table; `experiments/metrics.json` → chart), and **auto-pins** `prompts/lab-conventions.md`
+   (📌 in the drawer header). To share it across channels, an admin installs it as a global
+   template in Settings → Workbench extensions.
+5. **Drive the loop.** `@Codex survey 2–3 papers on <topic>; use your desk tools to append
+   rows to research/papers.json, then post a summary. Follow the channel conventions.`
+   Watch the `papers.json` table fill live.
+6. **Approvals (if `auto_allow=false` in the toml).** Codex's native "agent" mode requests
+   permission before its first tool call → the request surfaces as an in-channel **approval
+   card**. Approve as the bot owner in the UI, or headless:
+   ```bash
+   curl -s -X POST :8000/api/v1/channels/<CH_ID>/permissions/<REQUEST_ID>/resolve \
+     -H "Authorization: Bearer $TOKEN" -d '{"option_id":"allow_session"}'
+   ```
+   (option ids: `allow_once` / `allow_session` / `allow_always` / `decline`.) To skip
+   approvals entirely, set `policy.permission.auto_allow = true` in the toml, or run Codex
+   in `agent-full-access` mode (it self-approves and emits no card).
+7. **Verify the pin reached the agent.** The reply should follow the conventions — in the
+   verified run Codex declined to invent citations and marked relevance/status per the
+   convention, appending real papers (RAG / REALM / FiD) to `research/papers.json` rather
+   than pasting a list into chat. Server-side, `load_pinned_context` injects
+   `[Pinned: prompts/lab-conventions.md]` into every task frame (agent-agnostic — §4.2).
