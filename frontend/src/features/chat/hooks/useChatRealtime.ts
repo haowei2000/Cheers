@@ -50,6 +50,17 @@ interface Callbacks {
     status: string,
     summary: string | null
   ) => void;
+  /** A member edited their profile (name/avatar/bio/status) — patch that member's
+   *  card in place so the hovercard reflects it without a channel-switch/reload.
+   *  Only the provided fields are meaningful; `member_id` always identifies who. */
+  onMemberUpdated?: (member: {
+    member_id: string;
+    display_name?: string | null;
+    avatar_url?: string | null;
+    bio?: string | null;
+    status_text?: string | null;
+    status_emoji?: string | null;
+  }) => void;
 }
 
 const BASE_DELAY = 1000;
@@ -237,6 +248,13 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
             d.file_id,
             d.status ?? "done",
             d.summary ?? null
+          );
+        }
+      } else if (type === "member_updated") {
+        const d = data as { member_id?: string };
+        if (d.member_id) {
+          cbsRef.current.onMemberUpdated?.(
+            data as { member_id: string } & Record<string, unknown>
           );
         }
       }

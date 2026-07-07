@@ -398,6 +398,32 @@ export function ChannelView({ channel, onBack }: Props) {
         seq: (prev?.seq ?? 0) + 1,
       })),
     onFileTranscribed: handleFileTranscribed,
+    // A member edited their profile → patch their row in place so the hovercard
+    // (which reads from `memberById`) reflects the new avatar/bio/status live.
+    // Only overwrite fields the frame actually carries (undefined = unchanged).
+    onMemberUpdated: (m) =>
+      setMembers((prev) =>
+        prev.map((row) =>
+          row.member_id === m.member_id
+            ? {
+                ...row,
+                ...(m.display_name !== undefined && {
+                  display_name: m.display_name ?? undefined,
+                }),
+                ...(m.avatar_url !== undefined && {
+                  avatar_url: m.avatar_url ?? undefined,
+                }),
+                ...(m.bio !== undefined && { bio: m.bio ?? undefined }),
+                ...(m.status_text !== undefined && {
+                  status_text: m.status_text ?? undefined,
+                }),
+                ...(m.status_emoji !== undefined && {
+                  status_emoji: m.status_emoji ?? undefined,
+                }),
+              }
+            : row
+        )
+      ),
     }
   );
   // Keep a stable ref so loadCommands can reach the latest resource client

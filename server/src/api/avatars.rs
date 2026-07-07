@@ -105,6 +105,8 @@ pub async fn upload_user_avatar(
         .bind(&claims.sub)
         .execute(&state.db)
         .await?;
+    // New avatar → refresh the member's card live in every channel they're in.
+    crate::api::users::broadcast_member_update(&state, &claims.sub).await;
     Ok(Json(json!({ "avatar_url": url })))
 }
 
