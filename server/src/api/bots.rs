@@ -955,32 +955,15 @@ pub async fn refresh_bot_status(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_STATUS_REFRESH_PROMPT.to_string());
 
-    // A DM the caller AND the bot both belong to: create_message needs the caller to be
-    // a member, and mention-triggering needs the bot to be one. We REQUIRE a DM (not any
-    // shared channel) — posting the configured `status_update_prompt` into a group room
-    // would expose it to other human members, contradicting the manager-only redaction
-    // `list_bots` applies to that same field. If no DM exists yet, ask the owner to open
-    // one rather than leaking the prompt.
-    let channel_id: Option<String> = sqlx::query_scalar(
-        "SELECT c.channel_id::text FROM channels c
-         JOIN channel_memberships cu
-           ON cu.channel_id = c.channel_id AND cu.member_id = $1 AND cu.member_type = 'user'
-         JOIN channel_memberships cb
-           ON cb.channel_id = c.channel_id AND cb.member_id = $2 AND cb.member_type = 'bot'
-         WHERE c.type = 'dm'
-         LIMIT 1",
-    )
-    .bind(&claims.sub)
-    .bind(&bot_id)
-    .fetch_optional(&state.db)
-    .await?;
-    let channel_id = channel_id
-        .and_then(|c| Uuid::parse_str(&c).ok())
-        .ok_or_else(|| {
-            AppError::BadRequest(
-                "no DM with this bot — open a direct message with it first, then refresh".into(),
-            )
-        })?;
+    // Post into the caller's DM with the bot: create_message needs the caller to be a
+    // member, mention-triggering needs the bot to be one, and a DM is private to just the
+    // two of them — posting the configured `status_update_prompt` into a group room would
+    // leak it to other human members, contradicting the manager-only redaction `list_bots`
+    // applies to that same field. Auto-create the DM if it doesn't exist yet (find-or-create,
+    // race-safe via dm_key, same path `/channels/dm` uses) so the owner can refresh without
+    // first opening one by hand.
+    let channel_id =
+        crate::domain::dms::find_or_create_dm(&state.db, caller, &bot_id, true).await?;
 
     // INITIATE(prompt) gate. `create_message` posts the prompt but *silently skips*
     // waking the bot when this event is denied (it `continue`s the dispatch loop and
