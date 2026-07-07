@@ -98,7 +98,21 @@ pub async fn update_me(
     let status_text = PatchField::read(obj, "status_text");
     let status_emoji = PatchField::read(obj, "status_emoji");
 
-    // Length guards (columns are VARCHAR(140)/(32); reject early with a clean 400).
+    // Length guards: reject early with a clean 400 instead of overflowing a column
+    // (display_name is VARCHAR(255) → a 500) or fanning an unbounded field out to every
+    // channel member via the member_updated broadcast below (bio is TEXT).
+    if display_name
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 255)
+    {
+        return Err(AppError::BadRequest(
+            "display_name too long (≤255 chars)".into(),
+        ));
+    }
+    if bio.value.as_deref().is_some_and(|s| s.chars().count() > 4000) {
+        return Err(AppError::BadRequest("bio too long (≤4000 chars)".into()));
+    }
     if status_text
         .value
         .as_deref()

@@ -65,12 +65,21 @@ export function ProfileCardProvider({
     setState({ member, rect: anchor.getBoundingClientRect() });
   };
 
+  // Keep an open card live: `state.member` is a snapshot captured at open time, so a
+  // `member_updated` frame that patches the `members` map (avatar/bio/status) would
+  // otherwise not reach an already-open card. Prefer the current row from the map;
+  // fall back to the snapshot for a member no longer in it (e.g. a former member
+  // opened via `openById`'s fallback).
+  const liveMember = state
+    ? members.get(state.member.member_id) ?? state.member
+    : null;
+
   return (
     <ProfileCtx.Provider value={{ open, openById }}>
       {children}
-      {state && (
+      {state && liveMember && (
         <ProfileCard
-          member={state.member}
+          member={liveMember}
           rect={state.rect}
           onClose={() => setState(null)}
         />
