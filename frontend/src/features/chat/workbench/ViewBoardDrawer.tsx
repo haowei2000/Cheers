@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
 import { getViewBoards, type ViewBoardContext } from "./viewBoard";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
@@ -42,7 +43,10 @@ const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restor
 interface SessionOpt {
   session_id: string;
   bot_id: string;
+  bot_name?: string | null;
   is_primary: boolean;
+  cwd?: string | null;
+  created_at?: string | null;
 }
 
 export function ViewBoardDrawer({
@@ -94,13 +98,25 @@ export function ViewBoardDrawer({
       try {
         const res = (await sendResourceReq("channel.sessions.read", {
           channel_id: channelId,
-        })) as { sessions?: SessionOpt[] };
+        })) as {
+          sessions?: Array<{
+            session_id: string;
+            bot_id: string;
+            bot_name?: string | null;
+            is_primary: boolean;
+            created_at?: string | null;
+            workspace?: { cwd?: string | null };
+          }>;
+        };
         if (alive) {
           setSessions(
             (res.sessions ?? []).map((s) => ({
               session_id: s.session_id,
               bot_id: s.bot_id,
+              bot_name: s.bot_name ?? null,
               is_primary: s.is_primary,
+              cwd: s.workspace?.cwd ?? null,
+              created_at: s.created_at ?? null,
             }))
           );
         }
@@ -228,7 +244,13 @@ export function ViewBoardDrawer({
                     value={s.session_id}
                     title={`bot ${s.bot_id} · session ${s.session_id}`}
                   >
-                    {s.bot_id.slice(0, 6)} · {s.is_primary ? "primary" : "other"} {s.session_id.slice(0, 8)}
+                    {s.bot_name || s.bot_id.slice(0, 6)} ·{" "}
+                    {sessionTag({
+                      is_primary: s.is_primary,
+                      session_id: s.session_id,
+                      cwd: s.cwd,
+                      when: s.created_at,
+                    })}
                   </option>
                 ))}
               </select>

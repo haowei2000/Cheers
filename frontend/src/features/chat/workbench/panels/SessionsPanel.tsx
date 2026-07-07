@@ -24,6 +24,7 @@ import {
 import { listChannelMembers } from "@/api/channels";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Dialog } from "@/components/ui/dialog";
+import { cwdBasename } from "@/features/chat/sessionLabel";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
 
 interface SessionRow {
@@ -135,6 +136,9 @@ function SessionCard({
   }
 
   const botLabel = s.bot_name || s.bot_id.slice(0, 8);
+  // A readable name for this session: "primary", else the working-dir basename (coding
+  // sessions), else "other" — the created-time column below disambiguates the rest.
+  const tag = s.is_primary ? "primary" : cwdBasename(cwd) ?? "other";
 
   return (
     <div
@@ -151,11 +155,12 @@ function SessionCard({
           {botLabel}
         </span>
         <span
-          className={`text-[10px] px-1 py-0.5 rounded shrink-0 ${
-            s.is_primary ? "bg-zinc-700 text-zinc-200" : "bg-zinc-800 text-zinc-500"
+          title={!s.is_primary && cwd ? cwd : undefined}
+          className={`text-[10px] px-1 py-0.5 rounded shrink-0 max-w-[120px] truncate ${
+            s.is_primary ? "bg-zinc-700 text-zinc-200" : "bg-zinc-800 text-zinc-400"
           }`}
         >
-          {s.is_primary ? "primary" : "other"}
+          {tag}
         </span>
         <div className="flex-1" />
         <span className="inline-flex items-center gap-1 text-zinc-400 shrink-0">

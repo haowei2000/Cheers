@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { Layers, ArrowRight } from "lucide-react";
 import { listChannelBotSessions, type SessionInfo } from "@/api/sessionControl";
+import { sessionTag } from "@/features/chat/sessionLabel";
 
 export interface SwitcherBot {
   botId: string;
@@ -76,7 +77,11 @@ export function SessionSwitcher({
         if (s) {
           return {
             bot: g.bot,
-            label: s.is_primary ? "primary" : `other · ${sessionId.slice(0, 8)}`,
+            label: sessionTag({
+              is_primary: s.is_primary,
+              session_id: s.session_id,
+              when: s.last_used_at,
+            }),
           };
         }
       }
@@ -137,9 +142,11 @@ export function SessionSwitcher({
             <optgroup key={g.bot.botId} label={g.bot.name}>
               {g.sessions.map((s) => (
                 <option key={s.session_id} value={s.session_id} title={s.session_id}>
-                  {s.is_primary
-                    ? `primary (${s.status})`
-                    : `other · ${s.session_id.slice(0, 8)} (${s.status})`}
+                  {`${sessionTag({
+                    is_primary: s.is_primary,
+                    session_id: s.session_id,
+                    when: s.last_used_at,
+                  })} (${s.status})`}
                 </option>
               ))}
             </optgroup>
