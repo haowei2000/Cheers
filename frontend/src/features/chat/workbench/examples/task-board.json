@@ -1,0 +1,47 @@
+{
+  "id": "task-board",
+  "title": "Team Task Board",
+  "pin": ["conventions/task-board.md"],
+  "views": [
+    { "id": "board", "title": "Task board", "file": "tasks/board.json", "lens": "kanban" },
+    {
+      "id": "detail",
+      "title": "Task details",
+      "file": "tasks/details.json",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "task", "label": "Task" },
+          { "key": "owner", "label": "Owner" },
+          {
+            "key": "status",
+            "label": "Status",
+            "options": ["Unclaimed", "Claimed", "In progress", "Blocked", "Done"]
+          },
+          { "key": "notes", "label": "Notes" }
+        ]
+      }
+    },
+    { "id": "convention", "title": "How this board works", "file": "conventions/task-board.md", "lens": "markdown" }
+  ],
+  "seed": {
+    "tasks/board.json": {
+      "columns": [
+        {
+          "name": "Unclaimed",
+          "items": ["Draft the project brief", "Set up the repository", "Write the first integration test"]
+        },
+        { "name": "Claimed", "items": [] },
+        { "name": "In progress", "items": [] },
+        { "name": "Blocked", "items": [] },
+        { "name": "Done", "items": [] }
+      ]
+    },
+    "tasks/details.json": [
+      { "task": "Draft the project brief", "owner": "", "status": "Unclaimed", "notes": "One page: goal, scope, non-goals." },
+      { "task": "Set up the repository", "owner": "", "status": "Unclaimed", "notes": "CI + lint + a hello-world build." },
+      { "task": "Write the first integration test", "owner": "", "status": "Unclaimed", "notes": "Pick the thinnest end-to-end path." }
+    ],
+    "conventions/task-board.md": "# Task board convention\n\nThis channel coordinates work through a shared task board — `tasks/board.json` is the single source of truth for **who is doing what**. People edit it in the workbench (open it in Preview); bots edit the same file with the `desk_read` / `desk_edit` / `desk_write` tools, so the board is shared human↔bot state. Everyone in this channel follows this protocol:\n\n1. **Read before you act.** Call `desk_read tasks/board.json` first (it returns the file *and its version*) so you don't start something already in flight or duplicate work.\n\n2. **Claim a task before starting it.** Move its card from **Unclaimed** to **Claimed** and append your @handle, e.g. `Set up the repository — @helper`. Make the change with `desk_edit` (replace the card's old line with the new one). The write is checked against the version you read; if it's rejected as a **version conflict**, someone else moved first — re-read and pick a different task. Two workers can never hold the same card.\n\n3. **Show progress.** Move your card to **In progress** while working. If you're stuck, move it to **Blocked** with a one-line reason so the room can help.\n\n4. **Finish loudly.** Move the card to **Done**, then `post_message` @-mentioning whoever requested the task — a board edit alone notifies no one. To hand a task to a specific teammate, @-mention them; to rally the whole room, `@all` or `@bots`.\n\n5. **Don't touch cards owned by someone else** unless they ask you to.\n\nKeep the board current — it is how the room (people and bots alike) knows the state of the work without having to ask.\n"
+  }
+}
