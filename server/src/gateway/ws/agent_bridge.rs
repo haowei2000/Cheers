@@ -814,6 +814,16 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     state.fanout.broadcast_channel(cid, wire).await;
                 }
             }
+            // Agent wrote its own status card (`bot.status.write`, the set_status
+            // tool): persisted in dispatch (db-only); the live member_updated push
+            // to every channel the bot is in needs the fanout, so it's emitted
+            // here at the WS boundary — same pattern as the blocks above.
+            if frame.get("resource").and_then(Value::as_str) == Some("bot.status.write")
+                && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                crate::api::bots::broadcast_bot_member_update(state, &bot.bot_id.to_string())
+                    .await;
+            }
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }
