@@ -1,8 +1,10 @@
 // Audit — a ViewBoard focused on the channel's permission/approval decisions
 // (replaces the old generic Activity feed). Sourced from the REST audit log
-// (listApprovalAudit → /channels/{id}/permissions/audit), latest-first. Self-fetching
-// (no resource verb): re-fetches on the "audit" board tick, which ChannelView bumps when
-// a permission resolves. All ids/values render as inert text.
+// (listApprovalAudit → /channels/{id}/permissions/audit), latest-first, plus
+// `channel.members` (id -> name) so "who approved" reads as a name, not a raw
+// uuid — same pattern as ActivityPanel. Self-fetching (no resource verb):
+// re-fetches on the "audit" board tick, which ChannelView bumps when a
+// permission resolves. All ids/values render as inert text.
 import { useCallback, useEffect, useState } from "react";
 import { ShieldCheck, Check, X, Clock, ShieldQuestion } from "lucide-react";
 import { listApprovalAudit, type AuditEvent } from "@/api/approval";
@@ -12,6 +14,13 @@ import {
   ViewBoardShell,
   type ViewBoardContext,
 } from "../viewBoard";
+
+interface Member {
+  member_id: string;
+  member_type: "user" | "bot";
+  display_name?: string | null;
+  username?: string | null;
+}
 
 function fmtTime(iso?: string | null): string {
   if (!iso) return "";
@@ -86,7 +95,7 @@ function meta(e: AuditEvent): { Icon: typeof Check; tone: string; label: string;
   };
 }
 
-function AuditRow({ e }: { e: AuditEvent }) {
+function AuditRow({ e, nameOf }: { e: AuditEvent; nameOf: (id?: string | null) => string }) {
   const { Icon, tone, label, raw } = meta(e);
   const summary = detailSummary(e.detail);
   return (
@@ -96,13 +105,19 @@ function AuditRow({ e }: { e: AuditEvent }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className={`text-xs font-medium ${tone}`} title={raw || undefined}>{label}</span>
-            {e.bot_id && <span className="text-[10px] text-zinc-500 font-mono">bot {short(e.bot_id)}</span>}
+            {e.bot_id && <span className="text-[10px] text-zinc-500">{nameOf(e.bot_id)}</span>}
             <div className="flex-1" />
             <span className="text-[10px] text-zinc-600 tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>
           </div>
           {summary && <div className="text-[11px] font-mono text-zinc-500 truncate mt-0.5">{summary}</div>}
-          {e.actor_id && (
-            <div className="text-[10px] text-zinc-600 mt-0.5">by {short(e.actor_id)}</div>
+          {(e.actor_id || e.target_user_id) && (
+            <div className="text-[10px] text-zinc-600 mt-0.5">
+              {e.actor_id && <span>by {nameOf(e.actor_id)}</span>}
+              {e.actor_id && e.target_user_id && e.target_user_id !== e.actor_id && <span> · </span>}
+              {e.target_user_id && e.target_user_id !== e.actor_id && (
+                <span>for {nameOf(e.target_user_id)}</span>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -112,19 +127,21 @@ function AuditRow({ e }: { e: AuditEvent }) {
 
 function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const res = await listApprovalAudit(ctx.channelId);
-      setEvents(res.events ?? []);
-    } catch {
-      setEvents([]);
-    } finally {
-      setLoading(false);
+    const [auditRes, membersRes] = await Promise.allSettled([
+      listApprovalAudit(ctx.channelId),
+      ctx.sendResourceReq("channel.members", { channel_id: ctx.channelId }),
+    ]);
+    setEvents(auditRes.status === "fulfilled" ? auditRes.value.events ?? [] : []);
+    if (membersRes.status === "fulfilled") {
+      setMembers((membersRes.value as { members?: Member[] })?.members ?? []);
     }
-  }, [ctx.channelId]);
+    setLoading(false);
+  }, [ctx.channelId, ctx.sendResourceReq]);
 
   useEffect(() => {
     void load();
@@ -133,6 +150,15 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   // Live-push: ChannelView bumps the "audit" tick when a permission resolves.
   // Deferred while the board is kept-alive but hidden; catches up on reveal.
   useBoardTickRefetch(ctx, "audit", load);
+
+  const nameOf = useCallback(
+    (id?: string | null): string => {
+      if (!id) return "";
+      const m = members.find((mem) => mem.member_id === id);
+      return m ? m.display_name || m.username || short(id) : short(id);
+    },
+    [members]
+  );
 
   return (
     <ViewBoardShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
@@ -146,7 +172,7 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
       ) : (
         <ul className="text-xs divide-y divide-zinc-900">
           {events.map((e, i) => (
-            <AuditRow key={`${e.request_id ?? e.event_type}-${e.created_at}-${i}`} e={e} />
+            <AuditRow key={`${e.request_id ?? e.event_type}-${e.created_at}-${i}`} e={e} nameOf={nameOf} />
           ))}
         </ul>
       )}
