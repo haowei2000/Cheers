@@ -554,7 +554,7 @@ fn json_rpc_error(code: i64, message: &str) -> Value {
 fn tool_definitions() -> Vec<Value> {
     vec![
         tool("get_channel_info", "Get channel info", "Metadata for a channel: name, type, workspace.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
-        tool("list_members", "List channel members", "Users and bots that are members of the channel. Each member includes their member_id, display_name, username, info (a short self-description / bio), and current status (status_emoji + status_text, with status_updated_at). Use this to learn who is in the room, what they do, and what they're currently up to.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("list_members", "List channel members", "Users and bots that are members of the channel. Each member includes their member_id, display_name, username, info (a short self-description / bio), current status (status_emoji + status_text, with status_updated_at), and is_self (true for YOUR OWN row — use it to recognise yourself and avoid @mentioning yourself). Use this to learn who is in the room, what they do, and what they're currently up to.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("read_messages", "Read recent messages", "Read channel messages by pagination cursor or channel_seq cursor.", object_schema(vec![
             channel_id_prop(),
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
@@ -592,7 +592,7 @@ fn tool_definitions() -> Vec<Value> {
             channel_id_prop(),
             string_prop("text", "Message body (markdown)."),
             array_string_prop("mention_ids", "Members to @mention by member_id (uuid, from list_members). Preferred over mention_names for delegating to a specific bot — exact, no name collisions."),
-            array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs (ambiguous names may fail); prefer mention_ids when you have the id."),
+            array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs (ambiguous names may fail); prefer mention_ids when you have the id. Also accepts group tokens: \"all\"/\"everyone\"/\"here\" (whole channel), \"bots\" (all bots), \"humans\"/\"users\" (all people) — each expands to every matching member. Use group tokens sparingly: @-mentioning bots triggers them, and a channel-wide fan-out is rate-limited."),
             string_prop("reply_to_msg_id", "msg_id to reply to (threaded reply)."),
         ], vec!["channel_id", "text"]), false, false),
         tool("set_status", "Update your own status card", "Set YOUR OWN status shown on your member card in every channel you're in: a short status_text (≤140 chars — what you're working on / your current state) plus an optional status_emoji, and optionally refresh your info line (the short self-description members see via list_members). Applied immediately and pushed live to viewers. Use this when asked to update your status, or when you start/finish notable work. This tool is the ONLY way to update your card — replying in chat does not change it.", object_schema(vec![

@@ -29,6 +29,9 @@ export interface Channel {
   purpose?: string | null;
   auto_assist?: boolean;
   unread_count?: number;
+  /** Of the unread messages, how many @mention me — drives the distinct
+   * "mentioned here" sidebar badge (from GET /channels). */
+  mention_count?: number;
   /** For type='dm': the other participant's name (from GET /channels/dm). */
   peer_name?: string;
   my_role?: string | null;
@@ -151,6 +154,7 @@ export interface Message {
   _sendParams?: {
     content: string;
     mention_ids?: string[];
+    mention_names?: string[];
     file_ids?: string[];
     reply_to_msg_id?: string;
     session_id?: string;

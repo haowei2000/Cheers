@@ -41,6 +41,11 @@ pub struct CreateMessageParams {
     pub reply_to_msg_id: Option<Uuid>,
     pub file_ids: Vec<String>,
     pub mention_ids: Vec<Uuid>,
+    /// @mentions by username / display_name / group token (`@all`, `@bots`,
+    /// `@humans`, `@here`). Resolved server-side via the same
+    /// [`mentions::resolve_mention_names`] path bots use, so humans and bots
+    /// share one group-mention protocol. Merged with `mention_ids` (deduped).
+    pub mention_names: Vec<String>,
     /// Target a specific "other" session (else the channel's primary). Must be a
     /// session bound to this channel; it determines which bot is prompted.
     pub session_id: Option<Uuid>,
@@ -91,10 +96,27 @@ pub async fn create_message(
             .and_then(|r| r.try_get("display_name").ok());
 
     // ── 3. 先落库（写后投递：INSERT 成功才广播）────────────────────────
-    let mentions = mentions::validate_mention_ids(db, params.channel_id, &params.mention_ids)
+    // Names first (group tokens like @all/@bots expand here — the same path bots
+    // use via post_message), then the explicit ids, merged & deduped. A human
+    // @all is a deliberate one-shot fan-out (no amplification), bounded by the
+    // GROUP_MENTION_CAP in resolve_mention_names — no per-channel budget here
+    // (that guards *amplifying* bot→bot chains, and would wrongly throttle normal
+    // 1:1 human↔bot chat).
+    let mut mentions = mentions::resolve_mention_names(db, params.channel_id, &params.mention_names)
         .await
         .map_err(mention_parse_error_to_app)?;
-    debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mention ids validated");
+    let id_mentions = mentions::validate_mention_ids(db, params.channel_id, &params.mention_ids)
+        .await
+        .map_err(mention_parse_error_to_app)?;
+    for m in id_mentions {
+        if !mentions
+            .iter()
+            .any(|x| x.member_id == m.member_id && x.member_type == m.member_type)
+        {
+            mentions.push(m);
+        }
+    }
+    debug!(channel_id = %params.channel_id, mentions = mentions.len(), "mentions resolved (names + ids)");
     let msg_id = Uuid::new_v4();
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
@@ -210,6 +232,22 @@ pub async fn create_message(
     // 产生一个必然失败的回合。消息本身照常入库。
     let bots = filter_writable_bots(db, params.channel_id, bots).await;
     info!(message_id = %msg_id, matched_bots = bots.len(), "resolved bot triggers");
+
+    // Root a bot@bot chain at this user message so the whole cascade it spawns is
+    // cancelable as one unit (DECENTRALIZED_MESH §8) — only when it actually
+    // triggers a bot (no dead rows for pure human chat).
+    let chain_id: Option<String> = if bots.is_empty() {
+        None
+    } else {
+        match crate::domain::task_chains::start_chain(db, params.channel_id, msg_id, msg_id).await
+        {
+            Ok(cid) => Some(cid.to_string()),
+            Err(e) => {
+                warn!(channel_id = %params.channel_id, err = %e, "start_chain failed; cascade will be un-cancelable");
+                None
+            }
+        }
+    };
     // Sender's channel role (for the INITIATE matrix); default 'member'.
     let sender_role: String = sqlx::query(
         "SELECT role FROM channel_memberships
@@ -299,6 +337,7 @@ pub async fn create_message(
                 depth: 0,
                 provider_session_key,
                 session_id: resolved_session_id,
+                chain_id: chain_id.clone(),
             },
         )
         .await;

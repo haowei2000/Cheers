@@ -163,6 +163,7 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
                 reply_to_msg_id: None,
                 file_ids: vec![],
                 mention_ids: vec![],
+                mention_names: vec![],
                 session_id: None, // 默认 = 频道 primary session（本测试不针对 other session）
             },
         )
@@ -235,6 +236,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
             reply_to_msg_id: Some(bot_msg),
             file_ids: vec![],
             mention_ids: vec![],
+            mention_names: vec![],
             session_id: None,
         },
     )
@@ -265,6 +267,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
             reply_to_msg_id: Some(user_msg.parse().unwrap()),
             file_ids: vec![],
             mention_ids: vec![],
+            mention_names: vec![],
             session_id: None,
         },
     )
@@ -322,6 +325,7 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
         depth: 0,
         provider_session_key: "cheers:test".into(),
         session_id: None,
+        chain_id: None,
     };
 
     // 两个并发 dispatch 抢同一占位。
@@ -407,6 +411,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
             depth: 0,
             provider_session_key: "cheers:test".into(),
             session_id: None,
+            chain_id: None,
         },
     )
     .await;
@@ -1571,6 +1576,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
                 reply_to_msg_id: None,
                 file_ids: vec![],
                 mention_ids: vec![],
+                mention_names: vec![],
                 session_id: None,
             },
         )
@@ -1653,6 +1659,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
                 reply_to_msg_id: None,
                 file_ids: vec![],
                 mention_ids: vec![],
+                mention_names: vec![],
                 session_id: None,
             },
         )
@@ -1972,6 +1979,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
             reply_to_msg_id: None,
             file_ids: vec![],
             mention_ids: vec![bot],
+            mention_names: vec![],
             session_id: None,
         },
     )
@@ -2006,6 +2014,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
             reply_to_msg_id: None,
             file_ids: vec![],
             mention_ids: vec![bot],
+            mention_names: vec![],
             session_id: None,
         },
     )
@@ -2093,4 +2102,539 @@ async fn bot_leaves_channel_via_resource(db: PgPool) {
     .await;
     assert_eq!(r["ok"], false, "DM 不可退出: {r}");
     assert_eq!(r["code"], "INVALID_PARAMS");
+}
+
+// ── 多 agent 协作：is_self / 群体 @ 展开 / @me 反查 ────────────────────────────
+//
+// Locks the SQL paths added for multi-agent collaboration (findings 1/3a/3b):
+//  - `channel.members` tags the caller's own row `is_self`
+//  - `resolve_mention_names` expands group tokens (@all/@bots/@humans/@here)
+//  - a bot's group `@bots` post triggers every OTHER bot (author self-excluded)
+//  - the @me `mention_count` reverse-lookup on `message_mentions`, gated on
+//    `last_read_at` — mirrors the `api::channels::list_channels` subquery, which
+//    can't be called directly here without a full `AppState`.
+
+/// `channel.members` marks exactly the caller's own row with `is_self`, for both
+/// a bot and a user principal (regression against the connector/agent being
+/// unable to recognise itself in the roster).
+#[sqlx::test]
+async fn members_marks_caller_is_self(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let bot_a = seed_bot(&db).await;
+    add_member(&db, ch, bot_a, "bot").await;
+    let bot_b = seed_bot(&db).await;
+    add_member(&db, ch, bot_b, "bot").await;
+    let cid = ch.to_string();
+
+    // Bot A's own row is is_self; everyone else is not.
+    let r = dispatch(
+        &db,
+        Principal::bot(bot_a),
+        &req("channel.members", serde_json::json!({ "channel_id": cid })),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "{r}");
+    let members = r["data"]["members"].as_array().expect("members array");
+    assert_eq!(members.len(), 3);
+    for m in members {
+        let id = m["member_id"].as_str().unwrap();
+        let is_self = m["is_self"].as_bool().expect("is_self present on every row");
+        assert_eq!(
+            is_self,
+            id == bot_a.to_string(),
+            "only bot_a is is_self for bot_a's call (row {id})"
+        );
+    }
+
+    // Same channel, user principal → the user's row is the one flagged is_self.
+    let r2 = dispatch(
+        &db,
+        Principal::user(user),
+        &req("channel.members", serde_json::json!({ "channel_id": cid })),
+    )
+    .await;
+    let members2 = r2["data"]["members"].as_array().unwrap();
+    for m in members2 {
+        let id = m["member_id"].as_str().unwrap();
+        let is_self = m["is_self"].as_bool().unwrap();
+        assert_eq!(
+            is_self,
+            id == user.to_string(),
+            "only the user is is_self for the user's call (row {id})"
+        );
+    }
+}
+
+/// Group tokens expand to the right member set: `@all`/`@everyone`/`@here` =
+/// whole channel, `@bots` = bots, `@humans`/`@users` = people — case-insensitive
+/// and tolerating a leading `@`. A real member name still resolves to that one
+/// member, and an explicit name already covered by `@all` is not double-counted.
+#[sqlx::test]
+async fn resolve_group_mention_tokens_expand_by_scope(db: PgPool) {
+    use server::domain::mentions::{resolve_mention_names, MemberType, Mention};
+
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_named_user(&db, "alice", "Alice").await;
+    add_member(&db, ch, user, "user").await;
+    let bot_a = seed_named_bot(&db, "scout", "Scout", None).await;
+    add_member(&db, ch, bot_a, "bot").await;
+    let bot_b = seed_named_bot(&db, "helper", "Helper", None).await;
+    add_member(&db, ch, bot_b, "bot").await;
+
+    let ids = |ms: &[Mention]| {
+        let mut v: Vec<String> = ms.iter().map(|m| m.member_id.to_string()).collect();
+        v.sort();
+        v
+    };
+    let sorted = |v: Vec<Uuid>| {
+        let mut s: Vec<String> = v.into_iter().map(|u| u.to_string()).collect();
+        s.sort();
+        s
+    };
+
+    // @all / @everyone / @here (case-insensitive, leading @ ok) = all three.
+    for tok in ["all", "everyone", "@ALL", " @here "] {
+        let ms = resolve_mention_names(&db, ch, &[tok.to_string()])
+            .await
+            .unwrap();
+        assert_eq!(
+            ids(&ms),
+            sorted(vec![user, bot_a, bot_b]),
+            "token {tok:?} = whole channel"
+        );
+    }
+    // @bots = only bots.
+    let bots = resolve_mention_names(&db, ch, &["bots".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(ids(&bots), sorted(vec![bot_a, bot_b]));
+    assert!(bots.iter().all(|m| m.member_type == MemberType::Bot));
+    // @humans / @users = only people.
+    for tok in ["humans", "users"] {
+        let people = resolve_mention_names(&db, ch, &[tok.to_string()])
+            .await
+            .unwrap();
+        assert_eq!(ids(&people), sorted(vec![user]), "token {tok:?} = people only");
+    }
+    // A real member name is not a group token → resolves to that one member.
+    let one = resolve_mention_names(&db, ch, &["Helper".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(ids(&one), sorted(vec![bot_b]));
+    // @all + an explicit name already in it dedups (push_unique). Use the exact
+    // display_name — seed_named_bot suffixes the username with a unique id.
+    let mixed = resolve_mention_names(&db, ch, &["all".to_string(), "Scout".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(
+        ids(&mixed),
+        sorted(vec![user, bot_a, bot_b]),
+        "a name already covered by @all is not double-counted"
+    );
+}
+
+/// A bot posting `@bots` triggers every OTHER bot in the channel (the author is
+/// self-excluded), proving the group token flows through the real create path
+/// (`channel.messages.create`) and the WS-boundary trigger
+/// (`broadcast_and_trigger_created_message`) — bounded by the per-channel
+/// dispatch budget (well under its cap for this burst).
+#[sqlx::test]
+async fn group_bots_mention_triggers_all_other_bots(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let author = seed_bot(&db).await;
+    add_member(&db, ch, author, "bot").await;
+    let bot_b = seed_bot(&db).await;
+    add_member(&db, ch, bot_b, "bot").await;
+    let bot_c = seed_bot(&db).await;
+    add_member(&db, ch, bot_c, "bot").await;
+    let cid = ch.to_string();
+
+    // Author bot posts a message @-mentioning the group token "bots".
+    let created = dispatch(
+        &db,
+        Principal::bot(author),
+        &req(
+            "channel.messages.create",
+            serde_json::json!({ "channel_id": cid, "text": "team, sync up", "mention_names": ["bots"] }),
+        ),
+    )
+    .await;
+    assert_eq!(created["ok"], true, "{created}");
+    // All three bots are recorded as mentions on the message.
+    let mentions = created["data"]["mentions"].as_array().expect("mentions");
+    assert_eq!(mentions.len(), 3, "@bots expands to all three bot members");
+
+    // Fan-out + trigger (the WS-boundary side effect): author is self-excluded,
+    // so exactly the two OTHER bots are dispatched.
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let counter = Arc::new(CountingBotLocator::default());
+    let bot_locator: Arc<dyn BotLocator> = counter.clone();
+    stream::broadcast_and_trigger_created_message(
+        &registry,
+        &fanout,
+        &db,
+        &bot_locator,
+        author,
+        &created["data"],
+    )
+    .await;
+    assert_eq!(
+        counter.dispatched.load(Ordering::SeqCst),
+        2,
+        "@bots triggers every bot except the author"
+    );
+}
+
+/// The @me `mention_count` reverse-lookup counts unread messages that mention me
+/// and were not sent by me, and resets once `last_read_at` advances. Mirrors the
+/// subquery in `api::channels::list_channels` (which needs a full `AppState` to
+/// invoke directly), locking the same semantics against regressions.
+#[sqlx::test]
+async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let me = seed_user(&db).await;
+    add_member(&db, ch, me, "user").await;
+    let bob = seed_user(&db).await;
+    add_member(&db, ch, bob, "user").await;
+
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let locator: Arc<dyn BotLocator> = Arc::new(CountingBotLocator::default());
+
+    // Bob posts one message that @mentions me, then one plain message.
+    messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &locator,
+        CreateMessageParams {
+            user_id: bob,
+            channel_id: ch,
+            content: "hey look at this".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![me],
+            mention_names: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &locator,
+        CreateMessageParams {
+            user_id: bob,
+            channel_id: ch,
+            content: "plain follow-up".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![],
+            mention_names: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Reverse-lookup mirroring api::channels::list_channels' mention_count
+    // subquery: message_mentions by member, unread (created_at > last_read_at,
+    // NULL → epoch), not self-sent.
+    let mention_count_sql = "
+        SELECT count(*) FROM messages m
+        JOIN message_mentions mm ON mm.msg_id = m.msg_id
+             AND mm.member_id = $2 AND mm.member_type = 'user'
+        JOIN channel_memberships cm ON cm.channel_id = m.channel_id
+             AND cm.member_id = $2 AND cm.member_type = 'user'
+        WHERE m.channel_id = $1 AND m.is_partial = FALSE AND m.sender_id <> $2
+          AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)";
+    let count: i64 = sqlx::query_scalar(mention_count_sql)
+        .bind(ch.to_string())
+        .bind(me.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "exactly the @me message is counted (the plain one is not)"
+    );
+
+    // Advancing my last_read_at (what opening the channel does) clears it.
+    sqlx::query(
+        "UPDATE channel_memberships SET last_read_at = NOW()
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(ch.to_string())
+    .bind(me.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    let after: i64 = sqlx::query_scalar(mention_count_sql)
+        .bind(ch.to_string())
+        .bind(me.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(after, 0, "advancing last_read_at clears the @me count");
+}
+
+/// A human posting `@bots` (a group token via `mention_names` on the human
+/// `create_message` path) triggers every bot in the channel — group tokens
+/// resolve server-side on the human path too, so people and bots share one
+/// group-mention protocol (P3).
+#[sqlx::test]
+async fn human_group_bots_mention_triggers_all_bots(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let bot_a = seed_bot(&db).await;
+    add_member(&db, ch, bot_a, "bot").await;
+    let bot_b = seed_bot(&db).await;
+    add_member(&db, ch, bot_b, "bot").await;
+
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let counter = Arc::new(CountingBotLocator::default());
+    let bot_locator: Arc<dyn BotLocator> = counter.clone();
+
+    let dto = messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &bot_locator,
+        CreateMessageParams {
+            user_id: user,
+            channel_id: ch,
+            content: "@bots standup please".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![],
+            mention_names: vec!["bots".to_string()],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Both bots are recorded as mentions and both are triggered — a human author
+    // is not a bot, so there is no self-exclusion.
+    assert_eq!(dto.mentions.len(), 2, "@bots expands to both bot members");
+    assert_eq!(
+        counter.dispatched.load(Ordering::SeqCst),
+        2,
+        "human @bots triggers every bot"
+    );
+}
+
+// ── P4: bot@bot chain tracking + cancel (DECENTRALIZED_MESH §8) ────────────────
+
+use server::domain::task_chains;
+
+/// A user @mention that triggers a bot starts an ACTIVE chain rooted at the user
+/// message, and the bot's placeholder is tagged with that chain_id — the link a
+/// whole-cascade ⏹ and the dispatch gate hang off.
+#[sqlx::test]
+async fn user_trigger_starts_chain_and_tags_placeholder(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let locator: Arc<dyn BotLocator> = Arc::new(CountingBotLocator::default());
+
+    messages::create_message(
+        &db,
+        &fanout,
+        &registry,
+        &locator,
+        CreateMessageParams {
+            user_id: user,
+            channel_id: ch,
+            content: "@bot please help".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![bot],
+            mention_names: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // The bot's in-flight placeholder carries a chain_id…
+    let chain_id: Option<String> = sqlx::query_scalar(
+        "SELECT chain_id FROM messages
+         WHERE channel_id = $1 AND sender_type = 'bot' AND is_partial = TRUE",
+    )
+    .bind(ch.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let chain_id = chain_id.expect("bot placeholder should carry a chain_id");
+
+    // …and that chain exists and is active.
+    let status: String = sqlx::query_scalar("SELECT status FROM task_chains WHERE chain_id = $1")
+        .bind(&chain_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(status, "active");
+    assert!(task_chains::is_active(&db, &chain_id).await);
+}
+
+/// Cancelling a chain flips it to `cancelled`, returns its in-flight bots, and the
+/// dispatch gate then blocks every downstream hop. A second cancel is idempotent.
+#[sqlx::test]
+async fn cancel_chain_blocks_downstream_and_is_idempotent(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    let bot_a = seed_bot(&db).await;
+    add_member(&db, ch, bot_a, "bot").await;
+    let bot_b = seed_bot(&db).await;
+    add_member(&db, ch, bot_b, "bot").await;
+
+    let root = Uuid::new_v4();
+    let chain = task_chains::start_chain(&db, ch, root, root)
+        .await
+        .unwrap()
+        .to_string();
+
+    // An in-flight placeholder for bot A, tagged with the chain.
+    let a_placeholder = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
+         VALUES ($1, $2, 'bot', $3, '', TRUE, 1, $4)",
+    )
+    .bind(a_placeholder.to_string())
+    .bind(ch.to_string())
+    .bind(bot_a.to_string())
+    .bind(&chain)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    // Cancel → status cancelled, returns A's in-flight placeholder, gate closes.
+    let inflight = task_chains::cancel_chain(&db, &chain, user).await.unwrap();
+    assert_eq!(inflight, vec![(a_placeholder, bot_a)], "cancel returns in-flight bots");
+    assert!(!task_chains::is_active(&db, &chain).await, "gate is closed after cancel");
+
+    // A downstream hop on this (now cancelled) chain is dropped by the gate.
+    let counter = Arc::new(CountingBotLocator::default());
+    let bot_locator: Arc<dyn BotLocator> = counter.clone();
+    server::domain::chains::trigger_bot_replies(
+        &db,
+        &fanout(),
+        &StreamRegistry::new(),
+        &bot_locator,
+        ch,
+        Uuid::new_v4(),
+        1,
+        0,
+        bot_a,
+        &[server::domain::mentions::Mention {
+            member_id: bot_b,
+            member_type: server::domain::mentions::MemberType::Bot,
+        }],
+        Some(&chain),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        counter.dispatched.load(Ordering::SeqCst),
+        0,
+        "cancelled chain gates all downstream dispatch"
+    );
+
+    // Idempotent: a second cancel changes nothing and returns empty.
+    assert!(
+        task_chains::cancel_chain(&db, &chain, user)
+            .await
+            .unwrap()
+            .is_empty(),
+        "second cancel is a no-op"
+    );
+}
+
+/// A bot's proactive post_message inherits the chain of the bot's in-flight task,
+/// so a multi-hop post_message cascade stays on ONE cancelable chain instead of
+/// starting a fresh chain per hop.
+#[sqlx::test]
+async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot_a = seed_bot(&db).await;
+    add_member(&db, ch, bot_a, "bot").await;
+    let bot_b = seed_bot(&db).await;
+    add_member(&db, ch, bot_b, "bot").await;
+
+    let root = Uuid::new_v4();
+    let chain = task_chains::start_chain(&db, ch, root, root)
+        .await
+        .unwrap()
+        .to_string();
+
+    // Bot A is "running": its in-flight task placeholder is tagged with the chain.
+    let a_task = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO messages (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
+         VALUES ($1, $2, 'bot', $3, '', TRUE, 0, $4)",
+    )
+    .bind(a_task.to_string())
+    .bind(ch.to_string())
+    .bind(bot_a.to_string())
+    .bind(&chain)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    // A proactively posts a message @-mentioning B (the WS-boundary side effect).
+    let a_post = Uuid::new_v4();
+    let counter = Arc::new(CountingBotLocator::default());
+    let bot_locator: Arc<dyn BotLocator> = counter.clone();
+    stream::broadcast_and_trigger_created_message(
+        &StreamRegistry::new(),
+        &fanout(),
+        &db,
+        &bot_locator,
+        bot_a,
+        &serde_json::json!({
+            "msg_id": a_post, "channel_id": ch, "channel_seq": 7,
+            "mentions": [{ "member_id": bot_b, "member_type": "bot" }],
+        }),
+    )
+    .await;
+
+    assert_eq!(counter.dispatched.load(Ordering::SeqCst), 1, "B is triggered");
+    // B's placeholder inherits A's chain (not a fresh one).
+    let b_chain: Option<String> = sqlx::query_scalar(
+        "SELECT chain_id FROM messages WHERE sender_id = $1 AND is_partial = TRUE",
+    )
+    .bind(bot_b.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        b_chain.as_deref(),
+        Some(chain.as_str()),
+        "downstream hop shares the author bot's chain"
+    );
 }
