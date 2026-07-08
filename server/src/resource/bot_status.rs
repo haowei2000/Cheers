@@ -31,6 +31,27 @@ pub async fn handle_write(
         ));
     }
 
+    // ── policy seam (audit item 9) ──────────────────────────────────────────
+    // This is the single per-caller gate for the resource-verb write path: the
+    // Principal is already resolved to exactly this bot. A future per-caller
+    // policy check (e.g. an ACP capability gate, or an admin kill-switch on
+    // self-status writes) would slot in HERE, before persistence — no global
+    // dispatch refactor needed. Today the only gate is the throttle below.
+
+    // Rate-limit per bot (audit item 2), same 5s floor as the REST /self-status
+    // path (shared limiter keyed by bot_id) so a runaway agent can't storm the
+    // member_updated broadcast. THROTTLED is the resource-layer twin of HTTP 429.
+    let bot_id = principal.principal_id.to_string();
+    if crate::infra::ratelimit::bot_status_limiter()
+        .check(&bot_id)
+        .is_err()
+    {
+        return Err(resource_error(
+            "THROTTLED",
+            "status writes are rate-limited (min 5s between updates)",
+        ));
+    }
+
     let norm = |key: &str| {
         params
             .get(key)
@@ -46,30 +67,18 @@ pub async fn handle_write(
     let info_provided = params.get("info").is_some_and(|v| !v.is_null());
     let info = norm("info");
 
-    // Same cap as the REST /self-status path.
-    if status_text
-        .as_deref()
-        .is_some_and(|s| s.chars().count() > 140)
-    {
-        return Err(resource_error(
-            "INVALID_PARAMS",
-            "status_text too long (≤140 chars)",
-        ));
-    }
-
-    crate::api::bots::persist_bot_self_status(
-        db,
-        &principal.principal_id.to_string(),
-        &status_text,
-        &status_emoji,
-        info_provided,
-        &info,
-    )
-    .await
-    .map_err(db_err("bot.status.write"))?;
+    // Input caps (status_text ≤140, status_emoji ≤32, info/description ≤1000 chars)
+    // live inside persist_bot_self_status — the choke point shared with the REST
+    // /self-status path (audit item 1) — so both write paths validate identically.
+    crate::api::bots::persist_bot_self_status(db, &bot_id, &status_text, &status_emoji, info_provided, &info)
+        .await
+        .map_err(|e| match e {
+            crate::api::bots::PersistStatusError::Invalid(msg) => resource_error("INVALID_PARAMS", msg),
+            crate::api::bots::PersistStatusError::Db(e) => db_err("bot.status.write")(e),
+        })?;
 
     Ok(json!({
-        "bot_id": principal.principal_id.to_string(),
+        "bot_id": bot_id,
         "status_text": status_text,
         "status_emoji": status_emoji,
         "updated": true,

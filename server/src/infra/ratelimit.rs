@@ -72,6 +72,55 @@ impl FixedWindowLimiter {
     }
 }
 
+/// Minimum-interval limiter: enforces a floor on how often a given `key` may act,
+/// independent of the fixed-window brute-force limiters above. Unlike
+/// [`FixedWindowLimiter`] (which counts failures), every *successful* call here
+/// records "now" and the next call within `interval` is rejected. Used to keep a
+/// bot from spamming status writes (audit item 2). Per-process, best-effort.
+pub struct MinIntervalLimiter {
+    last: DashMap<String, Instant>,
+    interval: Duration,
+}
+
+impl MinIntervalLimiter {
+    fn new(interval: Duration) -> Self {
+        Self {
+            last: DashMap::new(),
+            interval,
+        }
+    }
+
+    /// If `key` acted less than `interval` ago, return the seconds until it may
+    /// act again (for a `Retry-After` hint). Otherwise record "now" and allow it.
+    pub fn check(&self, key: &str) -> Result<(), u64> {
+        let now = Instant::now();
+        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
+        if self.last.len() > 100_000 {
+            self.last.clear();
+        }
+        // Copy the Instant out and drop the read guard BEFORE `insert` — holding a
+        // DashMap ref across a write on the same shard would deadlock.
+        let prev = self.last.get(key).map(|r| *r);
+        if let Some(prev) = prev {
+            let elapsed = now.saturating_duration_since(prev);
+            if elapsed < self.interval {
+                return Err((self.interval - elapsed).as_secs().max(1));
+            }
+        }
+        self.last.insert(key.to_string(), now);
+        Ok(())
+    }
+}
+
+/// Process-global bot self-status write limiter: at most one write per bot every
+/// 5 seconds, keyed by `bot_id`. Guards both write paths (REST `/self-status` and
+/// the `bot.status.write` resource verb) so a misbehaving agent can't fan a
+/// `member_updated` broadcast storm across every channel it's in (audit item 2).
+pub fn bot_status_limiter() -> &'static MinIntervalLimiter {
+    static LIMITER: OnceLock<MinIntervalLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| MinIntervalLimiter::new(Duration::from_secs(5)))
+}
+
 /// Process-global login limiter: at most 10 failed attempts per 5-minute window
 /// per client. Tuned so a human fumbling their password is never affected while
 /// scripted brute-force is throttled to ~120 guesses/hour per source.
