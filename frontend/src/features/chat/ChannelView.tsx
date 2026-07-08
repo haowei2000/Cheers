@@ -420,6 +420,9 @@ export function ChannelView({ channel, onBack }: Props) {
                 ...(m.status_emoji !== undefined && {
                   status_emoji: m.status_emoji ?? undefined,
                 }),
+                ...(m.status_updated_at !== undefined && {
+                  status_updated_at: m.status_updated_at ?? undefined,
+                }),
               }
             : row
         )
