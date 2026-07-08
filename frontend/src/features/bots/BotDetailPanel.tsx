@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Bot,
@@ -313,6 +313,15 @@ function BotStatusEditor({
   const [statusEmoji, setStatusEmoji] = useState(bot.status_emoji ?? "");
   const [statusText, setStatusText] = useState(bot.status_text ?? "");
   const [description, setDescription] = useState(bot.description ?? "");
+  // Re-seed the drafts when a refetch brings new values — e.g. the agent just
+  // wrote its status via set_status after "Update status now". Without this the
+  // inputs keep showing the stale pre-refresh text (useState seeds only once),
+  // and a later Save would silently overwrite the agent's fresh status.
+  useEffect(() => {
+    setStatusEmoji(bot.status_emoji ?? "");
+    setStatusText(bot.status_text ?? "");
+    setDescription(bot.description ?? "");
+  }, [bot.status_emoji, bot.status_text, bot.description]);
   const [auto, setAuto] = useState(bot.status_auto_update ?? false);
   const [prompt, setPrompt] = useState(bot.status_update_prompt ?? "");
   const [interval, setIntervalMin] = useState(
@@ -321,13 +330,28 @@ function BotStatusEditor({
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Trigger the agent to update its own status NOW (runs status_update_prompt via the
-  // normal prompt path → the bot writes /self-status → the card updates live).
+  // Trigger the agent to update its own status NOW (runs status_update_prompt via
+  // the normal prompt path → the agent writes back via its set_status tool → the
+  // card updates live in channels). This management page has no channel WS, so
+  // after asking we re-pull the profile a few times (bounded) — the agent needs
+  // seconds to run the prompt, and without this the new status/info only shows
+  // up after a manual reload (the reported bug).
+  const refetchTimers = useRef<number[]>([]);
+  useEffect(
+    () => () => {
+      refetchTimers.current.forEach(clearTimeout);
+    },
+    []
+  );
   async function refreshNow() {
     setRefreshing(true);
     try {
       await refreshBotStatus(bot.bot_id);
       toast.success("Asked the bot to update its status");
+      refetchTimers.current.forEach(clearTimeout);
+      refetchTimers.current = [5000, 15000, 30000].map((ms) =>
+        window.setTimeout(onChanged, ms)
+      );
     } catch (e) {
       onError(String(e));
     } finally {

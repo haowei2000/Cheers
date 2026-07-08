@@ -839,21 +839,14 @@ pub async fn bot_self_status(
     }
 
     let description_provided = body.description.is_some();
-    sqlx::query(
-        "UPDATE bot_accounts SET
-            status_text = $2,
-            status_emoji = $3,
-            description = CASE WHEN $4 THEN $5 ELSE description END,
-            status_updated_at = NOW(),
-            status_last_auto_update_at = NOW()
-         WHERE bot_id = $1",
+    persist_bot_self_status(
+        &state.db,
+        &bot_id,
+        &status_text,
+        &status_emoji,
+        description_provided,
+        &description,
     )
-    .bind(&bot_id)
-    .bind(&status_text)
-    .bind(&status_emoji)
-    .bind(description_provided)
-    .bind(&description)
-    .execute(&state.db)
     .await?;
 
     // Push the new status to channel viewers so the bot's member card updates live
@@ -866,6 +859,39 @@ pub async fn bot_self_status(
         "status_emoji": status_emoji,
         "updated": true,
     })))
+}
+
+/// Shared persistence for a bot writing its OWN status — used by both write paths:
+/// the REST `POST /bots/{id}/self-status` (connector-authed by bot token) and the
+/// `bot.status.write` resource verb (the agent's `set_status` MCP tool, authed by
+/// the Agent Bridge connection). One UPDATE, so the two paths can't drift. Inputs
+/// are already normalized (trimmed, empty→None); `description_provided=false`
+/// keeps the current description. Bumps both status clocks.
+pub(crate) async fn persist_bot_self_status(
+    db: &sqlx::PgPool,
+    bot_id: &str,
+    status_text: &Option<String>,
+    status_emoji: &Option<String>,
+    description_provided: bool,
+    description: &Option<String>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE bot_accounts SET
+            status_text = $2,
+            status_emoji = $3,
+            description = CASE WHEN $4 THEN $5 ELSE description END,
+            status_updated_at = NOW(),
+            status_last_auto_update_at = NOW()
+         WHERE bot_id = $1",
+    )
+    .bind(bot_id)
+    .bind(status_text)
+    .bind(status_emoji)
+    .bind(description_provided)
+    .bind(description)
+    .execute(db)
+    .await
+    .map(|_| ())
 }
 
 /// Broadcast a bot's current card (name/avatar/description/status) to every channel
@@ -917,10 +943,14 @@ pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
 }
 
 /// Fallback when a bot has no `status_update_prompt` configured, so the manual
-/// refresh button works out of the box.
+/// refresh button works out of the box. Names the `set_status` MCP tool explicitly:
+/// that is the agent's ONLY write path for its own card (the REST /self-status
+/// endpoint needs the bot token, which agents never see) — a prompt that doesn't
+/// name the tool gets a chat reply and no card update.
 const DEFAULT_STATUS_REFRESH_PROMPT: &str =
-    "Update your status: set a short status line (and optional emoji) reflecting what \
-     you're currently working on by calling your self-status endpoint.";
+    "Update your status: call your `set_status` tool with a short status_text (and \
+     optional status_emoji) reflecting what you're currently working on. If your \
+     info line is stale, refresh it too via the same tool.";
 
 /// POST /api/v1/bots/:bot_id/status/refresh — owner/admin asks the agent to refresh
 /// its own status NOW. Posts the bot's configured `status_update_prompt` (mentioning

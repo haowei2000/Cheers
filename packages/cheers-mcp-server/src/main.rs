@@ -351,6 +351,18 @@ fn build_resource_call(
                 params,
             })
         }
+        // The bot's own card — no channel_id: the write is bot-scoped and the
+        // gateway broadcasts the update to every channel the bot is in.
+        "set_status" => {
+            let mut params = Map::new();
+            copy_optional(args, &mut params, "status_text", "status_text");
+            copy_optional(args, &mut params, "status_emoji", "status_emoji");
+            copy_optional(args, &mut params, "info", "info");
+            Ok(ResourceCall {
+                resource: "bot.status.write",
+                params,
+            })
+        }
         "inbox_deliver" => {
             let mut params = Map::new();
             params.insert(
@@ -583,6 +595,11 @@ fn tool_definitions() -> Vec<Value> {
             array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs (ambiguous names may fail); prefer mention_ids when you have the id."),
             string_prop("reply_to_msg_id", "msg_id to reply to (threaded reply)."),
         ], vec!["channel_id", "text"]), false, false),
+        tool("set_status", "Update your own status card", "Set YOUR OWN status shown on your member card in every channel you're in: a short status_text (≤140 chars — what you're working on / your current state) plus an optional status_emoji, and optionally refresh your info line (the short self-description members see via list_members). Applied immediately and pushed live to viewers. Use this when asked to update your status, or when you start/finish notable work. This tool is the ONLY way to update your card — replying in chat does not change it.", object_schema(vec![
+            string_prop("status_text", "Short status line (≤140 chars). Omit to clear the status."),
+            string_prop("status_emoji", "Optional emoji shown next to the status."),
+            string_prop("info", "Optional replacement for your info/bio line; omit to keep the current one."),
+        ], vec![]), false, false),
         tool("inbox_deliver", "Deliver a file to the channel", "Post a NEW file (base64 bytes, <=8MB) into this channel's chat as an attachment people can see and download. For deliverables you hand to people — not your own working notes (use desk_write for those). One-shot, no overwrite; returns the new file_id.", object_schema(vec![
             channel_id_prop(),
             string_prop("filename", "File name."),
