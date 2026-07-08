@@ -27,6 +27,11 @@ pub struct SendMessageRequest {
     pub file_ids: Vec<String>,
     #[serde(default)]
     pub mention_ids: Vec<Uuid>,
+    /// @mentions by name or group token (`@all`/`@bots`/`@humans`/`@here`),
+    /// resolved server-side. Lets a human group-mention the room, mirroring the
+    /// bot `post_message` path.
+    #[serde(default)]
+    pub mention_names: Vec<String>,
     /// Optional: route the prompt to a specific "other" session in this channel
     /// (else the channel's primary session).
     #[serde(default)]
@@ -83,6 +88,7 @@ pub async fn send_message(
             reply_to_msg_id: body.reply_to_msg_id,
             file_ids: body.file_ids,
             mention_ids: body.mention_ids,
+            mention_names: body.mention_names,
             session_id: body.session_id,
         },
     )
@@ -190,9 +196,9 @@ pub async fn cancel_message(
         .map_err(|_| AppError::Unauthorized("invalid user_id".into()))?;
     ensure_channel_member(&state, channel_id, user_id, &claims.role).await?;
 
-    // 找到还在运行的占位消息，取出 bot_id
-    let bot_id = sqlx::query(
-        "SELECT sender_id FROM messages
+    // 找到还在运行的占位消息，取出 bot_id + chain_id（后者用于整链取消）。
+    let clicked = sqlx::query(
+        "SELECT sender_id, chain_id FROM messages
          WHERE msg_id = $1 AND channel_id = $2
            AND is_partial = TRUE AND sender_type = 'bot'",
     )
@@ -200,9 +206,16 @@ pub async fn cancel_message(
     .bind(channel_id.to_string())
     .fetch_optional(&state.db)
     .await?
-    .and_then(|row| row.try_get::<String, _>("sender_id").ok())
-    .and_then(|raw| raw.parse::<Uuid>().ok())
     .ok_or(AppError::NotFound)?;
+    let bot_id = clicked
+        .try_get::<String, _>("sender_id")
+        .ok()
+        .and_then(|raw| raw.parse::<Uuid>().ok())
+        .ok_or(AppError::NotFound)?;
+    let chain_id = clicked
+        .try_get::<Option<String>, _>("chain_id")
+        .ok()
+        .flatten();
 
     // INITIATE(cancel) gate (docs/arch/ACP_EVENT_TAXONOMY.md): may this user cancel
     // the bot's running turn here? Default-allow for members; an owner can deny it
@@ -236,12 +249,38 @@ pub async fn cancel_message(
         ));
     }
 
-    let frame = serde_json::json!({
-        "type": "cancel",
-        "msg_id": msg_id,
-        "reason": "user_cancelled",
-    });
-    let delivered = state.bot_locator.dispatch_task(bot_id, frame).await;
+    // Chain-aware ⏹ (DECENTRALIZED_MESH §8): if this bot turn is part of a
+    // bot@bot cascade, stop the WHOLE chain — flip the chain to `cancelled` (the
+    // authoritative dispatch gate then blocks every un-launched hop) and fan the
+    // existing per-msg cancel frame out to every still-in-flight bot in it.
+    // Otherwise cancel just this one bot's turn (unchanged behavior).
+    let (targets, reason): (Vec<(Uuid, Uuid)>, &str) = match &chain_id {
+        Some(cid) => {
+            let mut inflight = crate::domain::task_chains::cancel_chain(&state.db, cid, user_id)
+                .await
+                .unwrap_or_default();
+            // A just-cancelled active chain always includes the clicked placeholder;
+            // if the chain was already terminal (idempotent → empty), still cancel
+            // the clicked bot so a double-click isn't a no-op.
+            if inflight.is_empty() {
+                inflight.push((msg_id, bot_id));
+            }
+            (inflight, "chain_cancelled")
+        }
+        None => (vec![(msg_id, bot_id)], "user_cancelled"),
+    };
+
+    let mut delivered = false;
+    for (placeholder, target_bot) in &targets {
+        let frame = serde_json::json!({
+            "type": "cancel",
+            "msg_id": placeholder,
+            "reason": reason,
+        });
+        if state.bot_locator.dispatch_task(*target_bot, frame).await {
+            delivered = true;
+        }
+    }
 
     Ok(Json(CancelMessageResponse {
         msg_id: msg_id.to_string(),

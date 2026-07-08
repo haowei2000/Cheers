@@ -19,6 +19,7 @@ pub mod plan_store;
 pub mod seed;
 pub mod sessions;
 pub mod stt_settings;
+pub mod task_chains;
 pub mod trace;
 pub mod usage_store;
 pub mod workbench_plugins;

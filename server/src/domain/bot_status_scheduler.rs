@@ -151,6 +151,7 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
             reply_to_msg_id: None,
             file_ids: vec![],
             mention_ids: vec![bot_uuid],
+            mention_names: vec![],
             session_id: None,
         },
     )

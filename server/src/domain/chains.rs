@@ -46,10 +46,24 @@ pub async fn trigger_bot_replies(
     current_depth: i32,
     author_bot_id: Uuid,
     mentions: &[Mention],
+    chain_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     // 深度上限：到顶后不再触发下一跳（调用方无需自己 guard）。
     if current_depth >= MAX_BOT_REPLY_DEPTH {
         return Ok(());
+    }
+
+    // 权威派发闸门（§8）：整条链一旦被用户 ⏹ 取消，后续所有跳都不再启动——
+    // 即便取消广播漏掉了某个离线 bot，这里也拦得住（no placeholder, no dispatch）。
+    if let Some(cid) = chain_id {
+        if !crate::domain::task_chains::is_active(db, cid).await {
+            tracing::info!(
+                chain_id = %cid,
+                channel_id = %channel_id,
+                "bot@bot chain not active; dropping downstream hops (dispatch gate)"
+            );
+            return Ok(());
+        }
     }
 
     // 自 @ 过滤：作者 bot 不会被自己消息里的 @ 再次唤醒。
@@ -63,6 +77,21 @@ pub async fn trigger_bot_replies(
     let next_depth = current_depth.saturating_add(1);
 
     for bot_id in bots {
+        // Per-channel dispatch budget. The proactive `send` / `post_message`
+        // paths reset `current_depth` to 0 (they carry no task depth), so the
+        // MAX_BOT_REPLY_DEPTH cap alone can't stop a proactive-send ping-pong;
+        // and a single group `@all`/`@bots` can fan out to every bot at once.
+        // This budget bounds both: a burst passes, sustained loops throttle and
+        // log. Checked per target so one over-budget channel can't starve others.
+        if !crate::infra::ratelimit::bot_dispatch_limiter().try_hit(&channel_id.to_string()) {
+            tracing::warn!(
+                channel_id = %channel_id,
+                initiator_bot = %author_bot_id,
+                "bot@bot dispatch budget exceeded for this channel; skipping remaining triggers this window (loop guard / @all fan-out cap)"
+            );
+            break;
+        }
+
         // INITIATE 门禁：目标 bot(bot_id) 是否允许被“发起方 bot”(author_bot_id) 触发？
         // 复用事件权限中枢——发起方视为 role="bot" 的 subject，其 bot_id 落在 user 维度，
         // 便于按“某个具体 bot”或“所有 bot”授权/拒绝。默认放行；规则出错时 fail-open。
@@ -126,6 +155,9 @@ pub async fn trigger_bot_replies(
                 depth: next_depth,
                 provider_session_key,
                 session_id: session.ok().map(|s| s.session_id),
+                // Every hop inherits the cascade's chain_id, so the whole thing is
+                // cancelable as one unit and the gate above blocks it once cancelled.
+                chain_id: chain_id.map(ToString::to_string),
             },
         )
         .await
