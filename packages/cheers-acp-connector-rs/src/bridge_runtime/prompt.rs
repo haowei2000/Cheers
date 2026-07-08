@@ -77,6 +77,7 @@ pub(super) fn agent_capability_summary(initialize: &Value) -> Value {
 /// could read.
 pub(super) fn build_prompt(
     task: &TaskCommand,
+    identity: &BotIdentity,
     policy: &PromptPolicy,
     channel_name: Option<&str>,
     send_images: bool,
@@ -84,13 +85,7 @@ pub(super) fn build_prompt(
 ) -> Vec<Value> {
     let mut parts = vec![
         CHEERS_ACP_OUTPUT_CONTRACT.to_string(),
-        format!(
-            "Cheers channel context: channel_id={}{}",
-            task.channel_id,
-            channel_name
-                .map(|n| format!(", channel_name=\"{n}\""))
-                .unwrap_or_default(),
-        ),
+        identity_context_line(identity, task, channel_name),
     ];
     // Pinned convention/prompt blocks — sent every request (the semantic layer).
     for block in &task.pinned {
@@ -98,12 +93,7 @@ pub(super) fn build_prompt(
             parts.push(block.clone());
         }
     }
-    if let Some(text) = task
-        .trigger_message
-        .as_ref()
-        .and_then(extract_trigger_text)
-        .filter(|value| !value.trim().is_empty())
-    {
+    if let Some(text) = trigger_block(task) {
         parts.push(text);
     }
     // Image/audio attachments become real ACP content blocks only when the agent
@@ -142,6 +132,60 @@ pub(super) fn build_prompt(
     })];
     blocks.append(&mut media_blocks);
     blocks
+}
+
+/// The first context line every prompt carries: who the agent *is* in this
+/// channel. The gateway sends the bot's handle in the control `hello`, but the
+/// connector used to drop it — so a bot never knew which @-handle it answers to,
+/// couldn't recognise itself in `list_members`, and couldn't follow "@ the
+/// requester when you're done" conventions. Keeps the `channel_id=…` /
+/// `channel_name="…"` tokens the platform and tests key off.
+fn identity_context_line(
+    identity: &BotIdentity,
+    task: &TaskCommand,
+    channel_name: Option<&str>,
+) -> String {
+    let channel = channel_name
+        .map(|n| format!(", channel_name=\"{n}\""))
+        .unwrap_or_default();
+    format!(
+        "You are {label} (@{handle}), a bot participant in this Cheers channel. \
+People and other bots address you by @-mentioning @{handle}. \
+Channel context: channel_id={cid}{channel}",
+        label = identity.label(),
+        handle = identity.username,
+        cid = task.channel_id,
+    )
+}
+
+/// The triggering message, attributed to its sender, plus — when another bot set
+/// this run off — the convention for closing the loop back to that bot.
+///
+/// Two facts drive the wording: (1) the platform already fills `sender_name`
+/// into `trigger_message`, it was just dropped by [`extract_trigger_text`], so a
+/// bot never knew *who* was talking to it; (2) a bot's plain reply carries no
+/// @mention (the connector sends `mention_ids: []` on `done`), so the only way a
+/// hand-off actually wakes the requesting bot is a proactive `post_message` back
+/// to it. Spell both out. Returns `None` when there is no usable trigger text.
+fn trigger_block(task: &TaskCommand) -> Option<String> {
+    let message = task.trigger_message.as_ref()?;
+    let text = extract_trigger_text(message).filter(|value| !value.trim().is_empty())?;
+    let sender = message
+        .get("sender_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
+    let from_bot = task.trigger.as_deref() == Some("bot_message");
+    let prefix = match sender {
+        Some(name) if from_bot => format!(
+            "The bot {name} sent you the following. When your work is done and {name} \
+needs the result, call the post_message tool with mention_names=[\"{name}\"] so it is \
+notified — a plain reply does not reach another bot.\n\n"
+        ),
+        Some(name) => format!("Message from {name}:\n\n"),
+        None => String::new(),
+    };
+    Some(format!("{prefix}{text}"))
 }
 
 pub(super) const CHEERS_ACP_OUTPUT_CONTRACT: &str = "You are replying inside Cheers. Stream useful answer text through the ACP session; generated files should be returned as explicit file/resource updates when the runtime supports them.";
