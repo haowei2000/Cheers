@@ -82,7 +82,12 @@ BIN="${CHEERS_CONNECTOR_BIN:-}"
 if [ -z "$BIN" ]; then
   BIN="$(command -v cce-acp-connector 2>/dev/null || true)"
 fi
-# Not on PATH → fetch a prebuilt release binary for this OS/arch.
+# Not on PATH → fetch a prebuilt binary. SAME-ORIGIN first: this host provably
+# reaches the gateway (install.sh came from it) while GitHub may be firewalled;
+# the gateway proxies the release asset through. GitHub is the fallback. A
+# downloaded binary must pass a RUN CHECK before we accept it — a binary built
+# against a newer glibc "downloads fine" and then crash-loops the keep-alive
+# service (seen in the wild: GLIBC_2.39 binary on Ubuntu 22.04 / glibc 2.35).
 if [ -z "$BIN" ]; then
   REPO="${CHEERS_CONNECTOR_REPO:-haowei2000/Cheers}"
   VER="${CHEERS_CONNECTOR_VERSION:-latest}"
@@ -92,21 +97,31 @@ if [ -z "$BIN" ]; then
   if [ -n "$os" ] && [ -n "$arch" ]; then
     ASSET="cce-acp-connector-$os-$arch"
     if [ "$VER" = "latest" ]; then
-      URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+      GH_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
     else
-      URL="https://github.com/$REPO/releases/download/connector-v$VER/$ASSET"
+      GH_URL="https://github.com/$REPO/releases/download/connector-v$VER/$ASSET"
     fi
     DEST="$CONFIG_DIR/bin/cce-acp-connector"
     mkdir -p "$CONFIG_DIR/bin"
-    info "downloading connector binary ($os/$arch) from $REPO …"
-    if curl -fsSL "$URL" -o "$DEST" && [ -s "$DEST" ]; then
-      chmod +x "$DEST"
-      BIN="$DEST"
-      info "installed connector → $BIN"
-    else
-      rm -f "$DEST"
-      info "no prebuilt binary for $os/$arch (will fall back to build instructions)"
-    fi
+    for SRC in "$API_BASE/connector/download/$ASSET" "$GH_URL"; do
+      info "downloading connector binary ($os/$arch) from $SRC …"
+      if curl -fsSL "$SRC" -o "$DEST" && [ -s "$DEST" ]; then
+        chmod +x "$DEST"
+        # Run check: --help must exit 0. Captures the loader error (e.g.
+        # "version GLIBC_2.39 not found") so the failure is explainable.
+        if RUN_ERR="$("$DEST" --help </dev/null 2>&1 >/dev/null)"; then
+          BIN="$DEST"
+          info "installed connector → $BIN"
+          break
+        else
+          info "downloaded binary does not run here (${RUN_ERR:-unknown error}) — trying next source"
+          rm -f "$DEST"
+        fi
+      else
+        rm -f "$DEST"
+      fi
+    done
+    [ -n "$BIN" ] || info "no usable prebuilt binary for $os/$arch (will fall back to build instructions)"
   fi
 fi
 
@@ -120,18 +135,20 @@ if [ -n "$BIN" ] && [ -n "${os:-}" ] && [ -n "${arch:-}" ]; then
   if [ ! -x "$MCP_DEST" ]; then
     MCP_ASSET="cheers-mcp-server-$os-$arch"
     if [ "$VER" = "latest" ]; then
-      MCP_URL="https://github.com/$REPO/releases/latest/download/$MCP_ASSET"
+      MCP_GH_URL="https://github.com/$REPO/releases/latest/download/$MCP_ASSET"
     else
-      MCP_URL="https://github.com/$REPO/releases/download/connector-v$VER/$MCP_ASSET"
+      MCP_GH_URL="https://github.com/$REPO/releases/download/connector-v$VER/$MCP_ASSET"
     fi
-    info "downloading cheers MCP server ($os/$arch) from $REPO …"
-    if curl -fsSL "$MCP_URL" -o "$MCP_DEST" && [ -s "$MCP_DEST" ]; then
-      chmod +x "$MCP_DEST"
-      info "installed MCP server → $MCP_DEST"
-    else
+    for MCP_SRC in "$API_BASE/connector/download/$MCP_ASSET" "$MCP_GH_URL"; do
+      info "downloading cheers MCP server ($os/$arch) from $MCP_SRC …"
+      if curl -fsSL "$MCP_SRC" -o "$MCP_DEST" && [ -s "$MCP_DEST" ]; then
+        chmod +x "$MCP_DEST"
+        info "installed MCP server → $MCP_DEST"
+        break
+      fi
       rm -f "$MCP_DEST"
-      info "WARNING: no prebuilt cheers-mcp-server for $os/$arch — agent sessions will lack cheers MCP tools (set CHEERS_MCP_SERVER_BIN to a locally built binary to fix)"
-    fi
+    done
+    [ -x "$MCP_DEST" ] || info "WARNING: no prebuilt cheers-mcp-server for $os/$arch — agent sessions will lack cheers MCP tools (set CHEERS_MCP_SERVER_BIN to a locally built binary to fix)"
   fi
 fi
 if [ -z "$BIN" ]; then
@@ -148,9 +165,50 @@ EOF
 fi
 info "connector binary: $BIN"
 
-# ── 5. keep-alive service (default on) ────────────────────────────────────────
+# ── 4c. the ACP agent adapter the config references must exist ────────────────
+# The generated config spawns an agent adapter (adapter.command — e.g.
+# `claude-agent-acp` for agent_type=claude). It is NOT shipped with the
+# connector, and a keep-alive unit whose adapter is missing just crash-loops.
+# Resolve it to an ABSOLUTE path in the config (launchd/systemd don't see a
+# login-shell PATH), auto-installing the known npm adapter when possible;
+# otherwise skip the keep-alive install and say exactly how to finish.
+ADAPTER="$(sed -n 's/^command[[:space:]]*=[[:space:]]*"\(.*\)".*$/\1/p' "$CONFIG_FILE" | head -1)"
+ADAPTER_OK=1
+case "$ADAPTER" in
+  "") : ;; # no adapter line (unusual config) — nothing to check
+  /*) [ -x "$ADAPTER" ] || ADAPTER_OK=0 ;;
+  *)
+    ADAPTER_ABS="$(command -v "$ADAPTER" 2>/dev/null || true)"
+    if [ -z "$ADAPTER_ABS" ] && [ "$ADAPTER" = "claude-agent-acp" ] && command -v npm >/dev/null 2>&1; then
+      info "agent adapter '$ADAPTER' not found — installing @agentclientprotocol/claude-agent-acp (npm -g) …"
+      npm install -g @agentclientprotocol/claude-agent-acp >/dev/null 2>&1 || true
+      ADAPTER_ABS="$(command -v claude-agent-acp 2>/dev/null || true)"
+    fi
+    if [ -n "$ADAPTER_ABS" ]; then
+      sed -i.cheers-bak "s|^command[[:space:]]*=[[:space:]]*\"$ADAPTER\"|command = \"$ADAPTER_ABS\"|" "$CONFIG_FILE" \
+        && rm -f "$CONFIG_FILE.cheers-bak"
+      info "agent adapter: $ADAPTER_ABS (absolute path baked into the config)"
+    else
+      ADAPTER_OK=0
+    fi
+    ;;
+esac
+if [ "$ADAPTER_OK" = "0" ]; then
+  cat >&2 <<EOF
+
+  The agent adapter '$ADAPTER' referenced by the config is not installed, so the
+  keep-alive service is NOT being enabled (it would only crash-loop). To finish:
+    1. install the adapter, e.g. for Claude:  npm install -g @agentclientprotocol/claude-agent-acp
+    2. put its ABSOLUTE path into $CONFIG_FILE (adapter.command), then:
+       systemctl --user enable --now cheers-connector-$ACCOUNT_ID.service   # linux
+       # (macOS: launchctl load ~/Library/LaunchAgents/com.cheers.connector.$ACCOUNT_ID.plist)
+  Config + token are already in place — no new enrollment code is needed.
+EOF
+fi
+
+# ── 5. keep-alive service (default on; skipped while the adapter is missing) ──
 START_BY_HAND=1
-if [ "${CHEERS_INSTALL_DAEMON:-1}" = "1" ]; then
+if [ "${CHEERS_INSTALL_DAEMON:-1}" = "1" ] && [ "$ADAPTER_OK" = "1" ]; then
   OS="$(uname -s)"
   if [ "$OS" = "Darwin" ]; then
     LABEL="com.cheers.connector.$ACCOUNT_ID"
@@ -200,6 +258,11 @@ EOF
 fi
 
 # ── 6. fallback start + status ────────────────────────────────────────────────
+if [ "$ADAPTER_OK" = "0" ]; then
+  # Starting now would only crash — the finish steps were printed above.
+  printf '\n\033[1;33m! incomplete.\033[0m bot "%s" (%s) installed but NOT started — install the agent adapter, then start the service.\n' "$ACCOUNT_ID" "$AGENT_TYPE"
+  exit 1
+fi
 if [ "$START_BY_HAND" = "1" ]; then
   "$BIN" start --config "$CONFIG_FILE" --name "$ACCOUNT_ID" || true
 fi

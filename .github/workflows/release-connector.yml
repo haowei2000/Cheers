@@ -3,6 +3,13 @@ name: release-connector
 # Publish prebuilt `cce-acp-connector` binaries so non-developers can onboard an
 # agent without a Rust toolchain (install.sh downloads these). Trigger by pushing a
 # tag like `connector-v0.1.22`, or run manually.
+#
+# Linux assets are MUSL-STATIC on purpose: a gnu build inherits the runner's glibc
+# (ubuntu-latest = 24.04 → GLIBC_2.39), which refuses to run on the older distros
+# real bot hosts use (seen in the wild: Ubuntu 22.04 / glibc 2.35 → the binary
+# downloads fine, then crash-loops). Static musl runs on any distro. The linux
+# targets build via `cross` (docker images with the musl toolchains, handles
+# ring's C code); macOS keeps plain cargo.
 on:
   push:
     tags: ["connector-v*"]
@@ -30,15 +37,15 @@ jobs:
             asset: cce-acp-connector-darwin-amd64
             asset_mcp: cheers-mcp-server-darwin-amd64
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
             asset: cce-acp-connector-linux-amd64
             asset_mcp: cheers-mcp-server-linux-amd64
+            use_cross: true
           - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-musl
             asset: cce-acp-connector-linux-arm64
             asset_mcp: cheers-mcp-server-linux-arm64
-            linker: aarch64-linux-gnu-gcc
-            apt: gcc-aarch64-linux-gnu
+            use_cross: true
     steps:
       - uses: actions/checkout@v4
 
@@ -47,23 +54,38 @@ jobs:
           rustup update stable --no-self-update
           rustup target add ${{ matrix.target }}
 
-      - name: Install cross linker (Linux arm64)
-        if: matrix.apt
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.apt }}
-          echo "CARGO_TARGET_$(echo '${{ matrix.target }}' | tr 'a-z-' 'A-Z_')_LINKER=${{ matrix.linker }}" >> "$GITHUB_ENV"
+      - name: Install cross (Linux musl builds)
+        if: matrix.use_cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
 
       - name: Build
         working-directory: packages/cheers-acp-connector-rs
-        run: cargo build --release --locked --bin cce-acp-connector --target ${{ matrix.target }}
+        run: ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --locked --bin cce-acp-connector --target ${{ matrix.target }}
 
       # The connector injects this stdio MCP server into every agent session
       # (policy.mcp.inject_cheers) and resolves it next to its own executable, so
       # the release must ship both binaries or installed bots get no cheers tools.
       - name: Build MCP server
         working-directory: packages/cheers-mcp-server
-        run: cargo build --release --locked --bin cheers-mcp-server --target ${{ matrix.target }}
+        run: ${{ matrix.use_cross && 'cross' || 'cargo' }} build --release --locked --bin cheers-mcp-server --target ${{ matrix.target }}
+
+      # Guard the reason these are musl: a dynamically-linked linux asset would
+      # reintroduce the glibc-version trap this workflow exists to avoid.
+      - name: Verify static + runnable (Linux)
+        if: matrix.use_cross
+        run: |
+          for bin in \
+            "packages/cheers-acp-connector-rs/target/${{ matrix.target }}/release/cce-acp-connector" \
+            "packages/cheers-mcp-server/target/${{ matrix.target }}/release/cheers-mcp-server"; do
+            file "$bin"
+            file "$bin" | grep -Eq "statically linked|static-pie linked" || { echo "::error::$bin is not statically linked"; exit 1; }
+          done
+          # amd64 runner can execute the amd64 binary — real smoke test.
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            "packages/cheers-acp-connector-rs/target/${{ matrix.target }}/release/cce-acp-connector" --help >/dev/null
+          fi
 
       - name: Stage assets
         run: |
