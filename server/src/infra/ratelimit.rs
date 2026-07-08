@@ -70,6 +70,33 @@ impl FixedWindowLimiter {
     pub fn reset(&self, key: &str) {
         self.hits.remove(key);
     }
+
+    /// Count one event for `key` and report whether it stayed within budget.
+    /// Returns `true` if this event is allowed (window count was below `max`),
+    /// `false` if it exceeds the budget. Unlike [`record_failure`] +
+    /// [`retry_after`], the check-and-increment is atomic under the entry lock,
+    /// so it is safe as a generic per-key event budget (e.g. per-channel bot
+    /// dispatch fan-out) where concurrent callers race on the same key.
+    pub fn try_hit(&self, key: &str) -> bool {
+        let now = Instant::now();
+        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
+        if self.hits.len() > 100_000 {
+            self.hits.clear();
+        }
+        let mut e = self.hits.entry(key.to_string()).or_insert_with(|| Window {
+            count: 0,
+            reset_at: now + self.window,
+        });
+        if now >= e.reset_at {
+            e.count = 0;
+            e.reset_at = now + self.window;
+        }
+        if e.count >= self.max {
+            return false;
+        }
+        e.count = e.count.saturating_add(1);
+        true
+    }
 }
 
 /// Minimum-interval limiter: enforces a floor on how often a given `key` may act,
@@ -137,6 +164,20 @@ impl MinIntervalLimiter {
 pub fn bot_status_limiter() -> &'static MinIntervalLimiter {
     static LIMITER: OnceLock<MinIntervalLimiter> = OnceLock::new();
     LIMITER.get_or_init(|| MinIntervalLimiter::new(Duration::from_secs(5)))
+}
+
+/// Process-global bot@bot dispatch budget, keyed by `channel_id`: at most 30
+/// bot triggers per 60-second window per channel. Every bot@bot fan-out path
+/// (reply chains, proactive `send`, `post_message`, and group `@all`/`@bots`
+/// expansion) funnels through `trigger_bot_replies`, so this one budget bounds
+/// both runaway callback loops — the proactive-send paths reset the per-message
+/// depth counter to 0, so the depth cap alone can't stop a ping-pong — and the
+/// wide fan-out a single `@all` in a bot-heavy channel would otherwise unleash.
+/// A burst of ~30 (e.g. `@all` to 30 bots) passes; sustained loops throttle to
+/// 30/min and log. Per-process; a multi-replica deploy should move it to Redis.
+pub fn bot_dispatch_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(30, Duration::from_secs(60)))
 }
 
 /// Process-global login limiter: at most 10 failed attempts per 5-minute window
@@ -282,5 +323,19 @@ mod tests {
         let lim = MinIntervalLimiter::new(Duration::from_secs(5));
         assert!(lim.check("k").is_ok());
         assert!(lim.check("k").is_err(), "check must consume the interval");
+    }
+
+    /// `try_hit` allows up to `max` events per key per window, then denies —
+    /// the per-channel bot-dispatch budget that bounds callback loops and @all
+    /// fan-out. Keys are independent.
+    #[test]
+    fn try_hit_allows_up_to_max_then_denies_per_key() {
+        let lim = FixedWindowLimiter::new(3, Duration::from_secs(60));
+        assert!(lim.try_hit("chan-a"), "1st hit within budget");
+        assert!(lim.try_hit("chan-a"), "2nd hit within budget");
+        assert!(lim.try_hit("chan-a"), "3rd hit within budget");
+        assert!(!lim.try_hit("chan-a"), "4th hit exceeds the budget");
+        // A different channel has its own independent budget.
+        assert!(lim.try_hit("chan-b"), "a distinct key is not affected");
     }
 }
