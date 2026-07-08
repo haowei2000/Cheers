@@ -41,9 +41,11 @@ pub async fn handle_write(
     // Rate-limit per bot (audit item 2), same 5s floor as the REST /self-status
     // path (shared limiter keyed by bot_id) so a runaway agent can't storm the
     // member_updated broadcast. THROTTLED is the resource-layer twin of HTTP 429.
+    // `peek` only — committed (`record`) after a successful persist below, so an
+    // over-cap payload rejected with INVALID_PARAMS doesn't burn the 5s budget.
     let bot_id = principal.principal_id.to_string();
     if crate::infra::ratelimit::bot_status_limiter()
-        .check(&bot_id)
+        .peek(&bot_id)
         .is_err()
     {
         return Err(resource_error(
@@ -76,6 +78,9 @@ pub async fn handle_write(
             crate::api::bots::PersistStatusError::Invalid(msg) => resource_error("INVALID_PARAMS", msg),
             crate::api::bots::PersistStatusError::Db(e) => db_err("bot.status.write")(e),
         })?;
+
+    // Persist succeeded — commit the rate-limit interval (see `peek` above).
+    crate::infra::ratelimit::bot_status_limiter().record(&bot_id);
 
     Ok(json!({
         "bot_id": bot_id,

@@ -814,7 +814,10 @@ pub async fn bot_self_status(
     // Rate-limit per bot (audit item 2): min 5s between writes, so a runaway
     // connector can't fan a `member_updated` broadcast storm. Keyed by bot_id and
     // checked after auth so an unauthenticated probe never touches the limiter.
-    if let Err(retry_after_secs) = crate::infra::ratelimit::bot_status_limiter().check(&bot_id) {
+    // `peek` only — the interval is committed (`record`) after a *successful*
+    // persist, so an over-cap payload that 400s doesn't burn the 5s budget and
+    // leave the corrected retry throttled.
+    if let Err(retry_after_secs) = crate::infra::ratelimit::bot_status_limiter().peek(&bot_id) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
 
@@ -853,6 +856,9 @@ pub async fn bot_self_status(
         PersistStatusError::Invalid(msg) => AppError::BadRequest(msg),
         PersistStatusError::Db(e) => AppError::Db(e),
     })?;
+
+    // Persist succeeded — now commit the rate-limit interval (see `peek` above).
+    crate::infra::ratelimit::bot_status_limiter().record(&bot_id);
 
     // Push the new status to channel viewers so the bot's member card updates live
     // (mirrors what update_me does for users — a bot is a member too).

@@ -91,15 +91,14 @@ impl MinIntervalLimiter {
     }
 
     /// If `key` acted less than `interval` ago, return the seconds until it may
-    /// act again (for a `Retry-After` hint). Otherwise record "now" and allow it.
-    pub fn check(&self, key: &str) -> Result<(), u64> {
+    /// act again (for a `Retry-After` hint). Otherwise `Ok(())` — but does NOT
+    /// record the attempt. Pair with [`record`](Self::record) AFTER the guarded
+    /// action actually succeeds, so a rejected/invalid write (e.g. an over-cap
+    /// status the persist layer 400s) doesn't consume the caller's interval and
+    /// leave a corrected retry throttled.
+    pub fn peek(&self, key: &str) -> Result<(), u64> {
         let now = Instant::now();
-        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
-        if self.last.len() > 100_000 {
-            self.last.clear();
-        }
-        // Copy the Instant out and drop the read guard BEFORE `insert` — holding a
-        // DashMap ref across a write on the same shard would deadlock.
+        // Copy the Instant out and drop the read guard before returning.
         let prev = self.last.get(key).map(|r| *r);
         if let Some(prev) = prev {
             let elapsed = now.saturating_duration_since(prev);
@@ -107,7 +106,26 @@ impl MinIntervalLimiter {
                 return Err((self.interval - elapsed).as_secs().max(1));
             }
         }
-        self.last.insert(key.to_string(), now);
+        Ok(())
+    }
+
+    /// Record that `key` just acted (set its "last" to now). Call this only after
+    /// the guarded action succeeds — see [`peek`](Self::peek).
+    pub fn record(&self, key: &str) {
+        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
+        if self.last.len() > 100_000 {
+            self.last.clear();
+        }
+        self.last.insert(key.to_string(), Instant::now());
+    }
+
+    /// Convenience for callers gating a cheap, always-succeeding action: peek and,
+    /// if allowed, record in one call. Write paths that can reject their payload
+    /// should instead `peek` up front and `record` only after success.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn check(&self, key: &str) -> Result<(), u64> {
+        self.peek(key)?;
+        self.record(key);
         Ok(())
     }
 }
@@ -237,5 +255,32 @@ mod tests {
     fn no_signal_yields_fixed_bucket() {
         assert_eq!(client_key(&HeaderMap::new(), None, true), "unknown");
         assert_eq!(client_key(&HeaderMap::new(), None, false), "unknown");
+    }
+
+    /// The B1 contract: `peek` never consumes the interval — only `record` does.
+    /// A write that peeks OK but is then rejected (invalid payload) must not burn
+    /// the caller's budget, so the corrected retry isn't throttled.
+    #[test]
+    fn min_interval_peek_does_not_consume() {
+        let lim = MinIntervalLimiter::new(Duration::from_secs(5));
+        assert!(lim.peek("bot").is_ok());
+        assert!(
+            lim.peek("bot").is_ok(),
+            "a repeated peek must still pass — peek must not start the clock"
+        );
+        // Only an explicit record starts the interval.
+        lim.record("bot");
+        assert!(
+            lim.peek("bot").is_err(),
+            "after record, a peek within the interval is throttled"
+        );
+    }
+
+    /// `check` = peek + record: the first call passes, an immediate second is throttled.
+    #[test]
+    fn min_interval_check_consumes() {
+        let lim = MinIntervalLimiter::new(Duration::from_secs(5));
+        assert!(lim.check("k").is_ok());
+        assert!(lim.check("k").is_err(), "check must consume the interval");
     }
 }

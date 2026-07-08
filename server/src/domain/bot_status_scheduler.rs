@@ -85,6 +85,48 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
     // even if the owner never opened one by hand.
     let channel_id = crate::domain::dms::find_or_create_dm(&state.db, owner_uuid, bot_id, true).await?;
 
+    // INITIATE(prompt) gate — the same one `api::bots::refresh_bot_status` checks.
+    // `create_message` silently skips waking the bot when this event is denied (it
+    // `continue`s the dispatch loop and still returns Ok), so posting anyway would
+    // be a no-op that never wakes the agent — AND bumping the clock below would then
+    // suppress the retry for a whole interval. Gate up front: when denied, skip both
+    // the post and the clock bump so the bot is re-evaluated next tick (a permission
+    // change takes effect on its own). Fail-open on a rules error, matching the
+    // manual path and create_message.
+    let owner_role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .bind(owner)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| {
+        use sqlx::Row;
+        r.try_get::<Option<String>, _>("role").ok().flatten()
+    })
+    .unwrap_or_else(|| "member".to_string());
+    let may_prompt = crate::domain::acp_policy::allows(
+        &state.db,
+        bot_id,
+        &channel_id.to_string(),
+        owner,
+        &owner_role,
+        "session/prompt",
+        crate::domain::bot_event_policy::Capability::Initiate,
+    )
+    .await
+    .unwrap_or(true);
+    if !may_prompt {
+        tracing::debug!(
+            bot_id = %bot_id,
+            "scheduled status refresh skipped: prompting this bot is not permitted by policy"
+        );
+        return Ok(());
+    }
+
     let configured: Option<String> =
         sqlx::query_scalar("SELECT status_update_prompt FROM bot_accounts WHERE bot_id = $1")
             .bind(bot_id)
