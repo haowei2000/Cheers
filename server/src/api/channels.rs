@@ -24,6 +24,12 @@ pub struct ChannelDto {
     /// 0 for queries that don't compute it (create/get/update single-channel).
     #[serde(default)]
     pub unread_count: i64,
+    /// Of those unread messages, how many @mention the caller — the "you were
+    /// mentioned here" signal for a distinct sidebar badge. Reverse lookup on
+    /// `message_mentions` (the `ix_message_mentions_member` index). 0 for queries
+    /// that don't compute it.
+    #[serde(default)]
+    pub mention_count: i64,
     /// The owning workspace's name — populated ONLY by the `guest=true` listing,
     /// where the caller isn't a workspace member and the sidebar needs a label
     /// for the "shared with you" section. Absent everywhere else.
@@ -95,6 +101,7 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         allow_member_invites: row.try_get("allow_member_invites").unwrap_or(true),
         allow_bot_adds: row.try_get("allow_bot_adds").unwrap_or(true),
         unread_count: row.try_get("unread_count").unwrap_or(0),
+        mention_count: row.try_get("mention_count").unwrap_or(0),
         // Only the guest-scope query selects this column (labels the "shared with
         // you" section); every other query leaves it absent → None.
         workspace_name: row.try_get("workspace_name").ok(),
@@ -184,7 +191,16 @@ pub async fn list_channels(
                           AND m.is_partial = FALSE
                           AND m.sender_id <> $1
                           AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                    ), 0) AS unread_count
+                    ), 0) AS unread_count,
+                    COALESCE((
+                        SELECT count(*) FROM messages m
+                        JOIN message_mentions mm ON mm.msg_id = m.msg_id
+                             AND mm.member_id = $1 AND mm.member_type = 'user'
+                        WHERE m.channel_id = c.channel_id
+                          AND m.is_partial = FALSE
+                          AND m.sender_id <> $1
+                          AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                    ), 0) AS mention_count
              FROM channels c
              JOIN channel_memberships cm ON cm.channel_id = c.channel_id
                     AND cm.member_id = $1 AND cm.member_type = 'user'
@@ -212,7 +228,16 @@ pub async fn list_channels(
                       AND m.is_partial = FALSE
                       AND m.sender_id <> $1
                       AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                ), 0) AS unread_count
+                ), 0) AS unread_count,
+                COALESCE((
+                    SELECT count(*) FROM messages m
+                    JOIN message_mentions mm ON mm.msg_id = m.msg_id
+                         AND mm.member_id = $1 AND mm.member_type = 'user'
+                    WHERE m.channel_id = c.channel_id
+                      AND m.is_partial = FALSE
+                      AND m.sender_id <> $1
+                      AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                ), 0) AS mention_count
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1

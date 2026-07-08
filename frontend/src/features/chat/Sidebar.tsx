@@ -68,11 +68,21 @@ function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
     >
       <Hash className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
       <span className="truncate">{channel.name}</span>
-      {(channel.unread_count ?? 0) > 0 && (
+      {/* A mention badge (rose "@N") outranks the plain unread pill: being
+          @mentioned is a stronger signal than an unread message, so when both
+          apply we show the mention. */}
+      {(channel.mention_count ?? 0) > 0 ? (
+        <span
+          title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
+          className="ml-auto text-[10px] font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+        >
+          @{channel.mention_count}
+        </span>
+      ) : (channel.unread_count ?? 0) > 0 ? (
         <span className="ml-auto text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
           {channel.unread_count}
         </span>
-      )}
+      ) : null}
     </button>
   );
 }

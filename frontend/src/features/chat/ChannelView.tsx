@@ -176,11 +176,13 @@ export function ChannelView({ channel, onBack }: Props) {
       .finally(() => setLoading(false));
   }, [channel?.channel_id]);
 
-  // Opening a channel marks it read: clear the badge optimistically, then stamp
-  // last_read_at server-side so list_channels stops counting it.
+  // Opening a channel marks it read: clear the unread + mention badges
+  // optimistically, then stamp last_read_at server-side so list_channels stops
+  // counting either (both are gated on last_read_at).
   useEffect(() => {
     if (!channel) return;
-    if ((channel.unread_count ?? 0) > 0) patchChannel(channel.channel_id, { unread_count: 0 });
+    if ((channel.unread_count ?? 0) > 0 || (channel.mention_count ?? 0) > 0)
+      patchChannel(channel.channel_id, { unread_count: 0, mention_count: 0 });
     markChannelRead(channel.channel_id).catch(() => {});
   }, [channel?.channel_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -531,12 +533,14 @@ export function ChannelView({ channel, onBack }: Props) {
   async function handleSend(
     content: string,
     mentionIds: string[],
-    fileIds: string[]
+    fileIds: string[],
+    mentionNames: string[] = []
   ) {
     if (!channel) return;
     const sendParams: NonNullable<Message["_sendParams"]> = {
       content,
       ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
+      ...(mentionNames.length ? { mention_names: mentionNames } : {}),
       ...(fileIds.length ? { file_ids: fileIds } : {}),
       ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
       ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),

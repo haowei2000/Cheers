@@ -74,8 +74,108 @@ pub async fn validate_mention_ids(
     Ok(mentions)
 }
 
+/// Group-mention scope: a reserved `mention_names` token that expands to many
+/// channel members instead of resolving to one. Expansion produces concrete
+/// `(member_id, member_type)` rows — the `message_mentions` /
+/// `channel_memberships` CHECK constraints only allow `user`/`bot`, so there is
+/// no synthetic "group" member type on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupScope {
+    /// `@all` / `@everyone` / `@here`: every member (users + bots).
+    All,
+    /// `@bots`: every bot member.
+    Bots,
+    /// `@humans` / `@users`: every human member.
+    Humans,
+}
+
+/// Map a `mention_names` entry to a [`GroupScope`] when it is a reserved group
+/// token (case-insensitive, tolerates a leading `@`). `@here` currently aliases
+/// `@all`: there is no queryable presence signal at message-write time, so it
+/// cannot yet mean "online members only" — documented, not silently wrong. A
+/// token always wins over a member who happens to share the name (rare; e.g. a
+/// member literally named "bots").
+fn group_mention_scope(name: &str) -> Option<GroupScope> {
+    match name
+        .trim()
+        .trim_start_matches('@')
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "all" | "everyone" | "here" => Some(GroupScope::All),
+        "bots" => Some(GroupScope::Bots),
+        "humans" | "users" => Some(GroupScope::Humans),
+        _ => None,
+    }
+}
+
+/// Expand a group token into the matching channel members. Capped at
+/// [`GROUP_MENTION_CAP`] rows so a group mention in a very large channel can't
+/// balloon the `message_mentions` insert; a truncated expansion is logged so the
+/// cap is never silent. Downstream self-@ filtering (see `chains::mentioned_bots`)
+/// keeps a bot's own `@all` from re-triggering itself, so the author is included
+/// here rather than special-cased.
+async fn expand_group_mention(
+    db: &PgPool,
+    channel_id: Uuid,
+    scope: GroupScope,
+) -> Result<Vec<Mention>, MentionParseError> {
+    let type_filter = match scope {
+        GroupScope::All => None,
+        GroupScope::Bots => Some("bot"),
+        GroupScope::Humans => Some("user"),
+    };
+    let rows = sqlx::query(
+        "SELECT member_id, member_type FROM channel_memberships
+         WHERE channel_id = $1 AND ($2::text IS NULL OR member_type = $2)
+         LIMIT $3",
+    )
+    .bind(channel_id.to_string())
+    .bind(type_filter)
+    .bind(GROUP_MENTION_CAP + 1)
+    .fetch_all(db)
+    .await?;
+
+    if rows.len() as i64 > GROUP_MENTION_CAP {
+        tracing::warn!(
+            channel_id = %channel_id,
+            scope = ?scope,
+            cap = GROUP_MENTION_CAP,
+            "group mention expansion hit the member cap; some members were not mentioned"
+        );
+    }
+
+    let mut mentions = Vec::new();
+    for row in rows.iter().take(GROUP_MENTION_CAP as usize) {
+        let Some(member_id) = row
+            .try_get::<String, _>("member_id")
+            .ok()
+            .and_then(|s| s.parse().ok())
+        else {
+            continue;
+        };
+        let member_type = match row.try_get::<String, _>("member_type").as_deref() {
+            Ok("bot") => MemberType::Bot,
+            Ok("user") => MemberType::User,
+            _ => continue,
+        };
+        push_unique(&mut mentions, member_id, member_type);
+    }
+    Ok(mentions)
+}
+
+/// Max members a single group token expands to (per token). Bounds the
+/// `message_mentions` insert; the per-channel bot-dispatch budget
+/// (`ratelimit::bot_dispatch_limiter`) separately bounds how many of those are
+/// actually triggered.
+const GROUP_MENTION_CAP: i64 = 500;
+
 /// 按 username / display_name 查找频道成员，返回解析结果。
 /// 用于 LLM agent 通过 MCP 传 `mention_names` 的场景。
+///
+/// Reserved group tokens (`@all`/`@everyone`/`@here`, `@bots`, `@humans`/`@users`)
+/// expand to every matching member instead of resolving to one; see
+/// [`group_mention_scope`].
 pub async fn resolve_mention_names(
     db: &PgPool,
     channel_id: Uuid,
@@ -83,6 +183,12 @@ pub async fn resolve_mention_names(
 ) -> Result<Vec<Mention>, MentionParseError> {
     let mut mentions = Vec::new();
     for name in names {
+        if let Some(scope) = group_mention_scope(name) {
+            for mention in expand_group_mention(db, channel_id, scope).await? {
+                push_unique(&mut mentions, mention.member_id, mention.member_type);
+            }
+            continue;
+        }
         let row = sqlx::query(
             "SELECT cm.member_id, cm.member_type
              FROM channel_memberships cm
@@ -201,5 +307,27 @@ mod tests {
         push_unique(&mut v, Uuid::new_v4(), MemberType::User);
         push_unique(&mut v, Uuid::new_v4(), MemberType::User);
         assert_eq!(v.len(), 2);
+    }
+
+    /// Group tokens map to the right scope, case-insensitively and tolerating a
+    /// leading `@`; `@here` aliases `@all`.
+    #[test]
+    fn group_scope_recognizes_reserved_tokens() {
+        for token in ["all", "everyone", "here", "ALL", "@Everyone", " @HERE "] {
+            assert_eq!(group_mention_scope(token), Some(GroupScope::All), "{token}");
+        }
+        assert_eq!(group_mention_scope("bots"), Some(GroupScope::Bots));
+        assert_eq!(group_mention_scope("@Bots"), Some(GroupScope::Bots));
+        assert_eq!(group_mention_scope("humans"), Some(GroupScope::Humans));
+        assert_eq!(group_mention_scope("users"), Some(GroupScope::Humans));
+    }
+
+    /// An ordinary member name is not a group token — it falls through to the
+    /// single-member lookup.
+    #[test]
+    fn group_scope_ignores_ordinary_names() {
+        for name in ["helper", "Alice", "bot", "human", "all-stars", ""] {
+            assert_eq!(group_mention_scope(name), None, "{name}");
+        }
     }
 }

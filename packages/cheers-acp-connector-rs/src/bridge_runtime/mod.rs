@@ -115,6 +115,15 @@ impl AccountRuntime {
         );
         let bridge = BridgeSession::connect(bridge_config.clone(), bridge_ready.clone()).await?;
         let initial_connector_config = bridge.control_hello().connector_config.clone();
+        // Capture the bot's own identity from the hello before `spawn_bridge_io`
+        // consumes the session — it's injected into every prompt (see build_prompt).
+        let identity = {
+            let hello = bridge.control_hello();
+            BotIdentity {
+                username: hello.bot_username.clone(),
+                display_name: hello.bot_display_name.clone(),
+            }
+        };
         let security = bridge.data_hello().acp_security.clone();
         // Extract channel_id → channel_name map from membership snapshot
         // before it's consumed by spawn_bridge_io.
@@ -168,6 +177,7 @@ impl AccountRuntime {
         let context = Arc::new(RuntimeContext {
             account_id: self.account_id,
             config: self.config,
+            identity,
             state: self.state,
             adapter,
             loopback,
@@ -449,6 +459,9 @@ fn parse_name_status(raw: &str) -> Vec<Value> {
 struct RuntimeContext {
     account_id: String,
     config: AccountConfig,
+    /// Who this connector is signed in as (from the control hello); injected
+    /// into every prompt so the agent knows its own @-handle.
+    identity: BotIdentity,
     state: Arc<Mutex<SessionStateStore>>,
     adapter: Arc<Mutex<AcpAdapterKind>>,
     loopback: LoopbackHandle,
@@ -527,6 +540,7 @@ impl RuntimeContext {
                 placeholder_msg_id,
                 provider_session_key,
                 session_id,
+                trigger,
                 trigger_message,
                 attachments,
                 pinned,
@@ -540,6 +554,7 @@ impl RuntimeContext {
                     msg_id: placeholder_msg_id,
                     provider_session_key,
                     session_id,
+                    trigger,
                     trigger_message,
                     attachments,
                     pinned,
@@ -1767,6 +1782,7 @@ impl RuntimeContext {
         };
         let prompt = build_prompt(
             &task,
+            &self.identity,
             &self.config.policy.prompt,
             channel_name.as_deref(),
             send_images,
@@ -2043,6 +2059,7 @@ impl RuntimeContext {
                     msg_id: session.id.clone(),
                     provider_session_key: session.provider_session_key.clone(),
                     session_id: Some(session.id.clone()),
+                    trigger: None,
                     trigger_message: None,
                     attachments: Vec::new(),
                     pinned: Vec::new(),
@@ -2565,6 +2582,11 @@ struct TaskCommand {
     msg_id: String,
     provider_session_key: String,
     session_id: Option<String>,
+    /// How this run was set off: `"user_message"` for a human trigger,
+    /// `"bot_message"` when another bot @mentioned this one. `None` for
+    /// synthesized tasks (e.g. session control). Drives the prompt's hand-off
+    /// convention. Mirrors the Backend's `trigger` on the task frame.
+    trigger: Option<String>,
     trigger_message: Option<Value>,
     attachments: Vec<AttachmentInfo>,
     /// Pinned convention/prompt blocks, prepended to the prompt every request.
@@ -2576,6 +2598,30 @@ struct TaskCommand {
     /// This session's ACP `additionalDirectories`. Re-validated against
     /// `allowed_roots`; out-of-policy entries are dropped.
     additional_dirs: Vec<String>,
+}
+
+/// The bot this connector is authenticated as, learned from the control `hello`
+/// frame. Threaded into every prompt so the agent knows which @-handle it
+/// answers to — the gateway advertised it all along, the connector just dropped
+/// it in [`spawn_bridge_io`]'s destructure.
+#[derive(Debug, Clone)]
+struct BotIdentity {
+    /// The @-handle other members mention the bot by.
+    username: String,
+    /// Friendly name, when the bot set one; falls back to `username`.
+    display_name: Option<String>,
+}
+
+impl BotIdentity {
+    /// How to refer to the bot as "you": its display name when set, else the
+    /// @-handle.
+    fn label(&self) -> &str {
+        self.display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or(self.username.as_str())
+    }
 }
 
 enum RuntimeInput {
@@ -2616,6 +2662,7 @@ mod tests {
             msg_id: "msg-1".to_string(),
             provider_session_key: "provider".to_string(),
             session_id: None,
+            trigger: None,
             trigger_message: Some(json!({"text": "@bot summarize"})),
             attachments: vec![AttachmentInfo {
                 file_id: Some("file-1".to_string()),
@@ -2635,6 +2682,7 @@ mod tests {
         };
         let prompt = build_prompt(
             &task,
+            &test_identity(),
             &test_prompt_policy(true),
             Some("#general"),
             false,
@@ -2673,6 +2721,7 @@ mod tests {
             msg_id: "msg-1".to_string(),
             provider_session_key: "provider".to_string(),
             session_id: None,
+            trigger: None,
             trigger_message: Some(json!({"text": "@bot look"})),
             attachments: vec![image_attachment()],
             pinned: Vec::new(),
@@ -2687,6 +2736,7 @@ mod tests {
         // no redundant text summary line for that image.
         let prompt = build_prompt(
             &image_task(),
+            &test_identity(),
             &test_prompt_policy(true),
             Some("#c"),
             true,
@@ -2713,6 +2763,7 @@ mod tests {
         // degrades to a text summary line so the agent still knows it exists.
         let prompt = build_prompt(
             &image_task(),
+            &test_identity(),
             &test_prompt_policy(true),
             Some("#c"),
             false,
@@ -2723,6 +2774,13 @@ mod tests {
             "no image block may be sent when the agent can't read images"
         );
         assert!(prompt[0]["text"].as_str().unwrap().contains("shot.png"));
+    }
+
+    fn test_identity() -> BotIdentity {
+        BotIdentity {
+            username: "helperbot".to_string(),
+            display_name: Some("Helper".to_string()),
+        }
     }
 
     fn test_prompt_policy(allow_attachments: bool) -> PromptPolicy {
@@ -2869,6 +2927,7 @@ mod tests {
             msg_id: "msg-1".to_string(),
             provider_session_key: "default:testbot".to_string(),
             session_id: None,
+            trigger: None,
             trigger_message: Some(json!({"text": "@testbot hello"})),
             attachments: Vec::new(),
             pinned: Vec::new(),
@@ -2877,6 +2936,7 @@ mod tests {
         };
         let prompt = build_prompt(
             &task,
+            &test_identity(),
             &test_prompt_policy(true),
             Some("#general"),
             false,
@@ -2905,13 +2965,21 @@ mod tests {
             msg_id: "msg-1".to_string(),
             provider_session_key: "default:testbot".to_string(),
             session_id: None,
+            trigger: None,
             trigger_message: None,
             attachments: Vec::new(),
             pinned: Vec::new(),
             cwd: None,
             additional_dirs: Vec::new(),
         };
-        let prompt = build_prompt(&task, &test_prompt_policy(false), None, false, false);
+        let prompt = build_prompt(
+            &task,
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
         let text = prompt[0]["text"].as_str().expect("text block");
         assert!(
             text.contains("channel_id=chan-1"),
@@ -2922,5 +2990,95 @@ mod tests {
             !text.contains("channel_name="),
             "channel_name must not appear when not available"
         );
+    }
+
+    fn identity_task(trigger: Option<&str>, trigger_message: Option<Value>) -> TaskCommand {
+        TaskCommand {
+            task_id: "t".to_string(),
+            channel_id: "c".to_string(),
+            msg_id: "m".to_string(),
+            provider_session_key: "p".to_string(),
+            session_id: None,
+            trigger: trigger.map(ToString::to_string),
+            trigger_message,
+            attachments: Vec::new(),
+            pinned: Vec::new(),
+            cwd: None,
+            additional_dirs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn prompt_injects_bot_identity_handle() {
+        // The agent must be told its own @-handle so it can recognise itself and
+        // be addressed — regression against the connector dropping the hello id.
+        let prompt = build_prompt(
+            &identity_task(None, None),
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(
+            text.contains("You are Helper (@helperbot)"),
+            "identity line must name the bot's display name and @-handle"
+        );
+        assert!(text.contains("@-mentioning @helperbot"));
+    }
+
+    #[test]
+    fn bot_message_trigger_adds_callback_convention() {
+        // A bot-triggered run tells the agent who set it off and how to notify
+        // that bot back — a plain reply carries no mention, so it must post_message.
+        let prompt = build_prompt(
+            &identity_task(
+                Some("bot_message"),
+                Some(json!({"text": "please summarize", "sender_name": "Scout"})),
+            ),
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(
+            text.contains("The bot Scout sent you"),
+            "must attribute a bot trigger to the initiating bot"
+        );
+        assert!(
+            text.contains("mention_names=[\"Scout\"]"),
+            "must tell the agent how to notify the initiating bot on completion"
+        );
+        assert!(text.contains("please summarize"));
+    }
+
+    #[test]
+    fn user_message_trigger_attributes_sender_without_callback() {
+        // A human trigger is attributed by name but carries no bot-callback
+        // convention (the sender is a person, not a bot to @ back).
+        let prompt = build_prompt(
+            &identity_task(
+                Some("user_message"),
+                Some(json!({"text": "hi there", "sender_name": "Ada"})),
+            ),
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(
+            text.contains("Message from Ada:"),
+            "a human sender is attributed by name"
+        );
+        assert!(
+            !text.contains("mention_names"),
+            "no bot-callback convention for a human trigger"
+        );
+        assert!(text.contains("hi there"));
     }
 }

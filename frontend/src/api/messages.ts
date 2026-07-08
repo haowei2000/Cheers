@@ -33,6 +33,8 @@ export async function sendMessage(
   opts: {
     file_ids?: string[];
     mention_ids?: string[];
+    /** Group tokens (@all/@bots/@humans/@here) or names, resolved server-side. */
+    mention_names?: string[];
     reply_to_msg_id?: string;
     // Route the prompt to a specific session in this channel (a bot's "other" or
     // primary session). Omit to use mention-based routing → the channel primary.

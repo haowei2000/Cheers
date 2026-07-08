@@ -31,12 +31,27 @@ export type { CommandCandidate } from "./CommandPalette";
 
 export interface MentionCandidate {
   id: string;
-  type: "user" | "bot";
+  /** "group" = a group token (@all/@bots/…) sent as a mention_name, not an id. */
+  type: "user" | "bot" | "group";
   label: string;
   sublabel?: string;
   /** Bots: whether the agent accepts audio prompts (unknown → false, fail-safe). */
   canReceiveAudio?: boolean;
 }
+
+// Group @-mention tokens the server expands to real members (findings 3a). Their
+// `id` IS the token sent in `mention_names`; the label drives the "@label" text.
+// `@here` currently aliases `@all` (no write-time presence signal yet).
+const GROUP_MENTIONS: MentionCandidate[] = [
+  { id: "all", type: "group", label: "all", sublabel: "Everyone in the channel" },
+  { id: "bots", type: "group", label: "bots", sublabel: "All bots — triggers each" },
+  { id: "humans", type: "group", label: "humans", sublabel: "All people" },
+  { id: "here", type: "group", label: "here", sublabel: "Everyone (currently same as @all)" },
+];
+
+// Picker ordering: bots (primary @target) → group tokens → people.
+const mentionRank = (c: MentionCandidate): number =>
+  c.type === "bot" ? 0 : c.type === "group" ? 1 : 2;
 
 interface Props {
   channelId?: string;
@@ -53,7 +68,8 @@ interface Props {
   onSend: (
     content: string,
     mentionIds: string[],
-    fileIds: string[]
+    fileIds: string[],
+    mentionNames: string[]
   ) => Promise<void>;
 }
 
@@ -178,9 +194,15 @@ export function MessageComposer({
     setPicker({ kind, at: pos, query: token, index: 0 });
   }, []);
 
+  // Group tokens (@all/@bots/…) join the real members in the picker so a human
+  // can group-mention the room, just like a bot does via post_message.
+  const mentionPool = useMemo(
+    () => [...GROUP_MENTIONS, ...mentionables],
+    [mentionables]
+  );
   const filteredMentions =
     picker?.kind === "mention"
-      ? mentionables
+      ? mentionPool
           .filter((c) => {
             const q = picker.query.toLowerCase();
             return (
@@ -188,8 +210,8 @@ export function MessageComposer({
               (c.sublabel?.toLowerCase().includes(q) ?? false)
             );
           })
-          // bots first — they are the demo's primary @target
-          .sort((a, b) => (a.type === b.type ? 0 : a.type === "bot" ? -1 : 1))
+          // bots first (primary @target), then group tokens, then people.
+          .sort((a, b) => mentionRank(a) - mentionRank(b))
           .slice(0, 8)
       : [];
 
@@ -324,11 +346,15 @@ export function MessageComposer({
       }
     }
     setVoiceWarning(null);
-    // Only keep mentions whose "@label" token still survives in the text.
+    // Only keep mentions whose "@label" token still survives in the text, then
+    // split them: real members → mention_ids, group tokens → mention_names (the
+    // server expands @all/@bots/… into concrete members).
+    const survivors = picked.filter((p) => typed.includes(`@${p.label}`));
     const ids = Array.from(
-      new Set(
-        picked.filter((p) => typed.includes(`@${p.label}`)).map((p) => p.id)
-      )
+      new Set(survivors.filter((p) => p.type !== "group").map((p) => p.id))
+    );
+    const names = Array.from(
+      new Set(survivors.filter((p) => p.type === "group").map((p) => p.id))
     );
     setSending(true);
     setText("");
@@ -338,7 +364,7 @@ export function MessageComposer({
     setTranscribedIds(new Set());
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     try {
-      await onSend(content, ids, fileIds);
+      await onSend(content, ids, fileIds, names);
     } finally {
       setSending(false);
       textareaRef.current?.focus();
