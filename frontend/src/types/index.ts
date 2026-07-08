@@ -169,6 +169,9 @@ export interface MemberItem {
   /** Short presence line (Slack-style custom status). */
   status_text?: string | null;
   status_emoji?: string | null;
+  /** When the status was last written (RFC 3339). Powers "updated 3m ago"; carried
+   *  in channel.members and the member_updated frame. */
+  status_updated_at?: string | null;
   /** Users: live browser connection subscribed to this channel; bots: connector liveness. */
   is_online?: boolean | null;
   /** Bots only: connector-reported "agent accepts audio prompts" (policy AND

@@ -18,8 +18,21 @@ export interface ProfileData {
   bio?: string | null;
   status_text?: string | null;
   status_emoji?: string | null;
+  /** When the status was last written (RFC 3339) — powers "updated 3m ago". */
+  status_updated_at?: string | null;
   role?: string | null;
   is_online?: boolean | null;
+}
+
+/** Compact "updated 3m ago" for a status line. Empty string for a missing/bad date. */
+function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86_400)}d ago`;
 }
 
 interface Ctx {
@@ -163,6 +176,13 @@ function ProfileCard({
               {member.status_text}
             </p>
           )}
+          {member.status_updated_at &&
+            (member.status_emoji || member.status_text) &&
+            relativeTime(member.status_updated_at) && (
+              <p className="mt-0.5 text-[10px] text-zinc-500">
+                updated {relativeTime(member.status_updated_at)}
+              </p>
+            )}
         </div>
       </div>
 

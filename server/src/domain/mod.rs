@@ -6,6 +6,7 @@ pub mod approval;
 pub mod auth;
 pub mod bot_event_policy;
 pub mod bot_events;
+pub mod bot_status_scheduler;
 pub mod chains;
 pub mod channel_seq;
 pub mod commands_store;

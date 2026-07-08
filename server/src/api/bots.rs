@@ -811,6 +811,16 @@ pub async fn bot_self_status(
         ));
     }
 
+    // Rate-limit per bot (audit item 2): min 5s between writes, so a runaway
+    // connector can't fan a `member_updated` broadcast storm. Keyed by bot_id and
+    // checked after auth so an unauthenticated probe never touches the limiter.
+    // `peek` only — the interval is committed (`record`) after a *successful*
+    // persist, so an over-cap payload that 400s doesn't burn the 5s budget and
+    // leave the corrected retry throttled.
+    if let Err(retry_after_secs) = crate::infra::ratelimit::bot_status_limiter().peek(&bot_id) {
+        return Err(AppError::TooManyRequests { retry_after_secs });
+    }
+
     let status_text = body
         .status_text
         .as_deref()
@@ -829,15 +839,9 @@ pub async fn bot_self_status(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    if status_text
-        .as_deref()
-        .is_some_and(|s| s.chars().count() > 140)
-    {
-        return Err(AppError::BadRequest(
-            "status_text too long (≤140 chars)".into(),
-        ));
-    }
-
+    // Input caps (status_text ≤140, status_emoji ≤32, description ≤1000 chars) are
+    // enforced inside persist_bot_self_status — the single choke point shared with
+    // the resource verb (audit item 1) — so both write paths validate identically.
     let description_provided = body.description.is_some();
     persist_bot_self_status(
         &state.db,
@@ -847,7 +851,14 @@ pub async fn bot_self_status(
         description_provided,
         &description,
     )
-    .await?;
+    .await
+    .map_err(|e| match e {
+        PersistStatusError::Invalid(msg) => AppError::BadRequest(msg),
+        PersistStatusError::Db(e) => AppError::Db(e),
+    })?;
+
+    // Persist succeeded — now commit the rate-limit interval (see `peek` above).
+    crate::infra::ratelimit::bot_status_limiter().record(&bot_id);
 
     // Push the new status to channel viewers so the bot's member card updates live
     // (mirrors what update_me does for users — a bot is a member too).
@@ -861,12 +872,26 @@ pub async fn bot_self_status(
     })))
 }
 
+/// Failure of the shared bot-self-status persistence path: either an input-cap
+/// violation (caller-fixable → 400 / INVALID_PARAMS) or a DB error. Splitting the
+/// two lets each write path map them to its own transport error cleanly.
+pub(crate) enum PersistStatusError {
+    /// An input exceeded its character cap; the string is the caller-facing message.
+    Invalid(String),
+    Db(sqlx::Error),
+}
+
 /// Shared persistence for a bot writing its OWN status — used by both write paths:
 /// the REST `POST /bots/{id}/self-status` (connector-authed by bot token) and the
 /// `bot.status.write` resource verb (the agent's `set_status` MCP tool, authed by
 /// the Agent Bridge connection). One UPDATE, so the two paths can't drift. Inputs
 /// are already normalized (trimmed, empty→None); `description_provided=false`
 /// keeps the current description. Bumps both status clocks.
+///
+/// Input caps are enforced HERE (audit item 1) so every self-status write — REST
+/// and resource verb alike — sees the same limits: `status_text` ≤140,
+/// `status_emoji` ≤32, `description` ≤1000, counted in chars (not bytes). This is
+/// the single choke point, so the two paths can't drift on validation either.
 pub(crate) async fn persist_bot_self_status(
     db: &sqlx::PgPool,
     bot_id: &str,
@@ -874,7 +899,31 @@ pub(crate) async fn persist_bot_self_status(
     status_emoji: &Option<String>,
     description_provided: bool,
     description: &Option<String>,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), PersistStatusError> {
+    if status_text
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 140)
+    {
+        return Err(PersistStatusError::Invalid(
+            "status_text too long (≤140 chars)".into(),
+        ));
+    }
+    if status_emoji
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 32)
+    {
+        return Err(PersistStatusError::Invalid(
+            "status_emoji too long (≤32 chars)".into(),
+        ));
+    }
+    if description
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 1000)
+    {
+        return Err(PersistStatusError::Invalid(
+            "description too long (≤1000 chars)".into(),
+        ));
+    }
     sqlx::query(
         "UPDATE bot_accounts SET
             status_text = $2,
@@ -892,6 +941,7 @@ pub(crate) async fn persist_bot_self_status(
     .execute(db)
     .await
     .map(|_| ())
+    .map_err(PersistStatusError::Db)
 }
 
 /// Broadcast a bot's current card (name/avatar/description/status) to every channel
@@ -900,7 +950,7 @@ pub(crate) async fn persist_bot_self_status(
 /// member card is its `description`. Never fails the caller.
 pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
     let row = match sqlx::query(
-        "SELECT display_name, avatar_url, description, status_text, status_emoji
+        "SELECT display_name, avatar_url, description, status_text, status_emoji, status_updated_at
          FROM bot_accounts WHERE bot_id = $1",
     )
     .bind(bot_id)
@@ -918,6 +968,12 @@ pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
         "bio": row.try_get::<Option<String>, _>("description").ok().flatten(),
         "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
         "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+        // RFC3339 so the hovercard can render "updated x ago" (audit item 5).
+        "status_updated_at": row
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
+            .ok()
+            .flatten()
+            .map(|t| t.to_rfc3339()),
     });
 
     let channels: Vec<String> = sqlx::query_scalar(

@@ -56,8 +56,8 @@ export function BotsManager() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const [b, c] = await Promise.all([listBots(), listChannels()]);
       setBots(b);
@@ -65,9 +65,14 @@ export function BotsManager() {
     } catch (e) {
       setError(String(e));
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
+
+  // Background "live while open" refetch (item 8): no spinner, no error banner churn.
+  const pollRefresh = useCallback(() => {
+    void refresh({ silent: true });
+  }, [refresh]);
 
   useEffect(() => {
     refresh();
@@ -108,7 +113,7 @@ export function BotsManager() {
         </button>
         <button
           type="button"
-          onClick={refresh}
+          onClick={() => void refresh()}
           className="text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
@@ -147,6 +152,7 @@ export function BotsManager() {
                 onIssue={onIssue}
                 onError={setError}
                 onChanged={refresh}
+                onPoll={pollRefresh}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-zinc-800 p-10 text-center text-sm text-zinc-600">
