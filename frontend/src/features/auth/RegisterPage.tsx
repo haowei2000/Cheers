@@ -1,10 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { register } from "@/api/auth";
+import { register, requestRegisterCode } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -13,12 +15,39 @@ export default function RegisterPage() {
     username: "",
     display_name: "",
     email: "",
+    code: "",
     password: "",
     confirm: "",
   });
   const [loading, setLoading] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [cooldown, setCooldown] = useState(0); // seconds until "resend" is allowed
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // Tick down the resend cooldown once a code has been sent.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function sendCode() {
+    if (!EMAIL_RE.test(form.email.trim())) {
+      toast.error("Enter a valid email first");
+      return;
+    }
+    setSendingCode(true);
+    try {
+      await requestRegisterCode(form.email.trim());
+      toast.success("Verification code sent — check your inbox");
+      setCooldown(60);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't send code");
+    } finally {
+      setSendingCode(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -26,8 +55,12 @@ export default function RegisterPage() {
       toast.error("A username and an 8+ character password are required");
       return;
     }
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) {
+    if (!EMAIL_RE.test(form.email.trim())) {
       toast.error("A valid email is required");
+      return;
+    }
+    if (!form.code.trim()) {
+      toast.error("Enter the verification code we emailed you");
       return;
     }
     if (form.password !== form.confirm) {
@@ -40,6 +73,7 @@ export default function RegisterPage() {
         username: form.username.trim(),
         password: form.password,
         email: form.email.trim(),
+        code: form.code.trim(),
         display_name: form.display_name.trim() || undefined,
       });
       setAuth(
@@ -90,12 +124,34 @@ export default function RegisterPage() {
           </div>
           <div className="space-y-1.5">
             <label className={labelCls}>Email</label>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                autoComplete="email"
+                value={form.email}
+                onChange={set("email")}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 whitespace-nowrap"
+                loading={sendingCode}
+                disabled={cooldown > 0 || !form.email.trim()}
+                onClick={sendCode}
+              >
+                {cooldown > 0 ? `Resend ${cooldown}s` : "Send code"}
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className={labelCls}>Verification code</label>
             <Input
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              value={form.email}
-              onChange={set("email")}
+              type="text"
+              placeholder="8-character code"
+              className="font-mono tracking-widest uppercase"
+              value={form.code}
+              onChange={set("code")}
             />
           </div>
           <div className="space-y-1.5">
@@ -123,7 +179,12 @@ export default function RegisterPage() {
             type="submit"
             className="w-full mt-2"
             loading={loading}
-            disabled={!form.username.trim() || !form.email.trim() || !form.password}
+            disabled={
+              !form.username.trim() ||
+              !form.email.trim() ||
+              !form.code.trim() ||
+              !form.password
+            }
           >
             Create account
           </Button>

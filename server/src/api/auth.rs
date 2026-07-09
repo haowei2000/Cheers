@@ -94,11 +94,77 @@ pub async fn login(
 }
 
 #[derive(Deserialize)]
+pub struct RegisterCodeRequest {
+    pub email: String,
+}
+
+/// POST /api/v1/auth/register/request-code (public) — email a one-time verification
+/// code the caller must then present to `POST /auth/register`. Gated by
+/// `config.open_registration` and rate-limited (shares the sign-up limiter, so code
+/// requests + the final register call together can't be script-flooded). Unlike
+/// forgot-password, this DOES reject an already-registered email: `register` would
+/// fail on it anyway, so a clear signal here beats a confusing failure at the last
+/// step (and self-service sign-up already reveals taken emails via that 409).
+pub async fn register_request_code(
+    State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+    headers: HeaderMap,
+    Json(body): Json<RegisterCodeRequest>,
+) -> Result<Json<Value>, AppError> {
+    if !state.config.open_registration {
+        return Err(AppError::Forbidden(
+            "self-service registration is disabled on this instance".into(),
+        ));
+    }
+    let limiter = crate::infra::ratelimit::register_limiter();
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
+    if let Some(retry_after_secs) = limiter.retry_after(&key) {
+        return Err(AppError::TooManyRequests { retry_after_secs });
+    }
+    limiter.record_failure(&key); // every code request counts toward the anti-spam cap
+
+    let email = body.email.trim().to_lowercase();
+    if !looks_like_email(&email) {
+        return Err(AppError::BadRequest("a valid email is required".into()));
+    }
+    // Don't mint a verification code for an address that already has an account.
+    let taken = sqlx::query(
+        "SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
+    )
+    .bind(&email)
+    .fetch_optional(&state.db)
+    .await?;
+    if taken.is_some() {
+        return Err(AppError::Conflict("that email is already registered".into()));
+    }
+
+    let code = crate::infra::crypto::generate_email_code();
+    let expires = chrono::Utc::now() + chrono::Duration::minutes(15);
+    sqlx::query(
+        "INSERT INTO email_codes (email, code, purpose, expires_at)
+         VALUES ($1, $2, 'register', $3)",
+    )
+    .bind(&email)
+    .bind(&code)
+    .bind(expires)
+    .execute(&state.db)
+    .await?;
+    crate::infra::email::send_registration_code(&state.config, &email, &code).await;
+
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
-    #[serde(default)]
-    pub email: Option<String>,
+    pub email: String,
+    /// One-time verification code from `POST /auth/register/request-code`.
+    pub code: String,
     #[serde(default)]
     pub display_name: Option<String>,
 }
@@ -141,17 +207,29 @@ pub async fn register(
         ));
     }
     // Email is REQUIRED for self-service sign-up (so password reset always works).
-    let email = body
-        .email
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .to_lowercase();
+    let email = body.email.trim().to_lowercase();
     if email.is_empty() {
         return Err(AppError::BadRequest("email is required".into()));
     }
     if !looks_like_email(&email) {
         return Err(AppError::BadRequest("a valid email is required".into()));
+    }
+    // Prove ownership of the email: consume a code minted by request-code above.
+    let code = body.code.trim().to_uppercase(); // codes use an uppercase alphabet
+    let valid = sqlx::query(
+        "SELECT 1 AS ok FROM email_codes
+         WHERE email = $1 AND code = $2 AND purpose = 'register'
+           AND used = FALSE AND expires_at > NOW()
+         LIMIT 1",
+    )
+    .bind(&email)
+    .bind(&code)
+    .fetch_optional(&state.db)
+    .await?;
+    if valid.is_none() {
+        return Err(AppError::BadRequest(
+            "invalid or expired verification code".into(),
+        ));
     }
     let display_name = body
         .display_name
@@ -182,6 +260,15 @@ pub async fn register(
         }
         return Err(AppError::Db(e));
     }
+
+    // Burn this + any other live register codes for the email (single-use).
+    sqlx::query(
+        "UPDATE email_codes SET used = TRUE
+         WHERE email = $1 AND purpose = 'register' AND used = FALSE",
+    )
+    .bind(&email)
+    .execute(&state.db)
+    .await?;
 
     // Auto-login: a fresh account starts at token_version 0.
     let token = auth::create_access_token(&state.config, user_id, "member", 0)?;

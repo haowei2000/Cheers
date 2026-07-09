@@ -82,11 +82,15 @@ pub struct Config {
     /// private key — set this to survive JWT key rotation without re-entering secrets.
     pub secret_store_key: Option<String>,
 
-    // SMTP（可选，不配置则不发邮件）
-    pub smtp_host: Option<String>,
-    pub smtp_port: u16,
-    pub smtp_username: Option<String>,
-    pub smtp_password: Option<String>,
+    // 邮件（Brevo 事务性邮件 HTTP API；不配置则验证码回退打印到日志）
+    /// Brevo (ex-Sendinblue) API key for the transactional email endpoint
+    /// (`BREVO_API_KEY`, `xkeysib-…`). Unset → codes are logged (dev delivery).
+    pub brevo_api_key: Option<String>,
+    /// Verified sender address for outbound mail (`EMAIL_FROM_EMAIL`, e.g.
+    /// `noreply@mail.example.com`). Required alongside `brevo_api_key` to send.
+    pub email_from_email: Option<String>,
+    /// Display name on outbound mail (`EMAIL_FROM_NAME`, default `Cheers`).
+    pub email_from_name: String,
 
     /// Whether public self-service sign-up (`POST /auth/register`) is enabled.
     /// Default **false** (secure by default: accounts come from the seeded admin
@@ -189,13 +193,16 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
 
-            smtp_host: env::var("SMTP_HOST").ok(),
-            smtp_port: env::var("SMTP_PORT")
-                .unwrap_or_else(|_| "587".into())
-                .parse()
-                .unwrap_or(587),
-            smtp_username: env::var("SMTP_USERNAME").ok(),
-            smtp_password: env::var("SMTP_PASSWORD").ok(),
+            brevo_api_key: env::var("BREVO_API_KEY")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            email_from_email: env::var("EMAIL_FROM_EMAIL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            email_from_name: env::var("EMAIL_FROM_NAME")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "Cheers".into()),
 
             open_registration: env_flag("OPEN_REGISTRATION", false),
 
