@@ -131,13 +131,15 @@ pub async fn register_request_code(
     if !looks_like_email(&email) {
         return Err(AppError::BadRequest("a valid email is required".into()));
     }
-    // Don't mint a verification code for an address that already has an account.
-    let taken = sqlx::query(
-        "SELECT 1 AS ok FROM users WHERE lower(email) = $1 AND is_deleted = FALSE LIMIT 1",
-    )
-    .bind(&email)
-    .fetch_optional(&state.db)
-    .await?;
+    // Don't mint a verification code for an address that can't complete sign-up.
+    // The `users.email` UNIQUE constraint spans soft-deleted rows (delete_user only
+    // flips is_deleted), so `register`'s INSERT would 409 on any email already on
+    // file — deleted or not. Mirror that here (no is_deleted filter) instead of
+    // handing out a code that leads to a dead-end conflict.
+    let taken = sqlx::query("SELECT 1 AS ok FROM users WHERE lower(email) = $1 LIMIT 1")
+        .bind(&email)
+        .fetch_optional(&state.db)
+        .await?;
     if taken.is_some() {
         return Err(AppError::Conflict("that email is already registered".into()));
     }
