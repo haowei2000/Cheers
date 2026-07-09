@@ -27,6 +27,10 @@ export interface ViewBoardContext {
   /** False when the board is kept mounted but hidden (its tab isn't active). Boards
    *  defer tick-driven refetches while hidden and catch up on reveal. */
   visible?: boolean;
+  /** Jump the chat to a message (scroll + flash). Lightweight/best-effort: only
+   *  works when the message is in the currently loaded window — otherwise a no-op.
+   *  Boards use it to make history items (activity rows, audit cards) clickable. */
+  onJumpToMessage?: (msgId: string) => void;
 }
 
 /** Tick-driven refetch that (a) skips the mount (useResourceQuery / the board's own
