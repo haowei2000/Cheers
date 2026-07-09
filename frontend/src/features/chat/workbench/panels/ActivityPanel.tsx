@@ -1,35 +1,38 @@
-// Activity — an INTERACTION LANE diagram of the channel (sequence-diagram style):
-// each member owns a vertical column (a lifeline), and every @mention or reply is a
-// horizontal arrow from the sender's column to the target's column, ordered by time
-// (newest at top). One message that @mentions several members draws several arrows
-// (one-to-many); a reply draws an arrow to the replied message's author. Color =
-// mention vs reply. Sourced from `channel.activity.read` (messages) + `channel.members`
-// (id -> name). All ids/names are agent-authored and render as inert SVG text. A
-// multi-select member filter (the "Filter members" dropdown, or clicking a column
-// header) narrows the lanes to interactions that touch ANY of the selected members —
-// so you can isolate one person or compare a few.
-import { useCallback, useEffect, useMemo, useState } from "react";
+// Activity — the channel's HISTORY FEED (Claude/Codex session-review style):
+// a chronological, day-grouped timeline of everything that happened, newest
+// first. Each row is one event with the actor's avatar, a one-line excerpt and
+// badges for what kind of interaction it was (@mentions, reply, files, message
+// type); operation events (workspace writes, member changes) render as compact
+// system rows. Clicking a message row jumps the chat to that message
+// (ctx.onJumpToMessage — best-effort: scroll + flash when loaded, toast hint
+// otherwise). Sourced from `channel.activity.read` (messages ∪ operations) +
+// REST listChannelMembers (id -> name + avatar_url). The multi-select member
+// filter narrows the feed to events that touch ANY selected member. All
+// ids/names/content are agent-authored and render as inert text.
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
-  Bot,
+  AtSign,
   Cog,
-  User,
+  CornerUpLeft,
   Filter,
+  Paperclip,
   Search,
   Check,
   ChevronDown,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { formatDayLabel, sameDay } from "@/lib/format";
+import { listChannelMembers } from "@/api/channels";
+import type { MemberItem } from "@/types";
+import { Avatar } from "@/components/ui/avatar";
 import {
   registerComponentViewBoard,
   useBoardTickRefetch,
   ViewBoardShell,
   type ViewBoardContext,
 } from "../viewBoard";
-
-type ActorType = "user" | "bot" | "system";
 
 interface Mention {
   member_id: string;
@@ -49,8 +52,10 @@ interface MessageData {
 }
 
 interface OperationData {
-  actor_type?: ActorType;
+  op_type?: string;
+  actor_type?: "user" | "bot" | "system";
   actor_id?: string | null;
+  target_ref?: string | null;
   created_at?: string;
 }
 
@@ -61,82 +66,8 @@ interface ActivityEvent {
   data: MessageData & OperationData;
 }
 
-interface Member {
-  member_id: string;
-  member_type: "user" | "bot";
-  display_name?: string | null;
-  username?: string | null;
-}
-
-interface MemberInfo {
-  name: string;
-  type: "user" | "bot";
-}
-
-type EdgeType = "mention" | "reply";
-/** One directed interaction = one arrow (one row) in the lane diagram. */
-interface Interaction {
-  source: string;
-  target: string;
-  type: EdgeType;
-  ts?: string | null;
-}
-
-const MENTION = "rgb(129 140 248)"; // indigo-400
-const REPLY = "rgb(52 211 153)"; // emerald-400
-const MAX_ROWS = 80; // cap the number of lanes so a busy channel stays readable
-
-// Lane-diagram geometry.
-const MARGIN_X = 48;
-const COL_GAP = 96;
-const HEADER_H = 34;
-const ROW_H = 22;
-
 function short(id?: string | null): string {
   return typeof id === "string" && id ? id.slice(0, 8) : "";
-}
-
-function actorStyle(type: ActorType): { Icon: LucideIcon; dot: string } {
-  if (type === "bot") return { Icon: Bot, dot: "bg-violet-400" };
-  if (type === "system") return { Icon: Cog, dot: "bg-zinc-500" };
-  return { Icon: User, dot: "bg-sky-400" };
-}
-
-/** Flatten events into directed interactions (newest first). Each @mention and each
- *  reply becomes one arrow. `involved` = every member that sends or receives one. */
-function buildInteractions(events: ActivityEvent[]): {
-  involved: Set<string>;
-  rows: Interaction[];
-} {
-  // msg_id -> author, so a reply can resolve to whom it replied to.
-  const author = new Map<string, string>();
-  for (const e of events) {
-    if (e.event_type === "message" && e.data.msg_id && e.data.sender_id) {
-      author.set(e.data.msg_id, e.data.sender_id);
-    }
-  }
-  const rows: Interaction[] = [];
-  const involved = new Set<string>();
-  const push = (
-    source?: string | null,
-    target?: string | null,
-    type?: EdgeType,
-    ts?: string | null
-  ) => {
-    if (!source || !target || !type || source === target) return;
-    rows.push({ source, target, type, ts });
-    involved.add(source);
-    involved.add(target);
-  };
-  // Events arrive newest-first (desc), so `rows` inherits that order.
-  for (const e of events) {
-    if (e.event_type !== "message") continue;
-    const a = e.data.sender_id;
-    const ts = e.data.created_at ?? e.created_at;
-    for (const m of e.data.mentions ?? []) push(a, m.member_id, "mention", ts);
-    if (e.data.reply_to_msg_id) push(a, author.get(e.data.reply_to_msg_id), "reply", ts);
-  }
-  return { involved, rows };
 }
 
 function fmtTime(ts?: string | null): string {
@@ -146,191 +77,170 @@ function fmtTime(ts?: string | null): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function InteractionGraph({
-  members,
-  memberMap,
-  involved,
-  rows: allRows,
-  selected,
-  onToggle,
+/** One readable line of a message: file tags stripped, whitespace collapsed. */
+function excerpt(content?: string): string {
+  if (!content) return "";
+  const t = content.replace(/<#file:[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  return t.length > 140 ? `${t.slice(0, 140)}…` : t;
+}
+
+const humanize = (id: string) => id.replaceAll("_", " ").replaceAll(".", " · ");
+
+type MemberLookup = (id?: string | null) => MemberItem | undefined;
+
+function nameOf(member: MemberItem | undefined, id?: string | null): string {
+  return member?.display_name || member?.username || short(id) || "unknown";
+}
+
+/** Tiny inline badge (mention target / reply / files / msg type). */
+function Badge({
+  className,
+  children,
+  title,
 }: {
-  members: Member[];
-  memberMap: Map<string, MemberInfo>;
-  involved: Set<string>;
-  rows: Interaction[];
-  selected: Set<string>;
-  onToggle: (id: string) => void;
+  className?: string;
+  children: ReactNode;
+  title?: string;
 }) {
-  // Columns = involved members, in stable member order — one lane per person.
-  const cols = useMemo(
-    () => members.map((m) => m.member_id).filter((id) => involved.has(id)),
-    [members, involved]
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] leading-4 whitespace-nowrap",
+        className
+      )}
+    >
+      {children}
+    </span>
   );
+}
 
-  // The selected members filter the lanes down to interactions that touch ANY of them
-  // (union) — empty selection shows everyone.
-  const rows = useMemo(() => {
-    const r = selected.size
-      ? allRows.filter((x) => selected.has(x.source) || selected.has(x.target))
-      : allRows;
-    return r.slice(0, MAX_ROWS);
-  }, [allRows, selected]);
-
-  // Columns still touched by the (possibly filtered) rows — others dim out.
-  const activeCols = useMemo(() => {
-    const s = new Set<string>();
-    for (const r of rows) {
-      s.add(r.source);
-      s.add(r.target);
-    }
-    return s;
-  }, [rows]);
-
-  const colX = useMemo(() => {
-    const m = new Map<string, number>();
-    cols.forEach((id, i) => m.set(id, MARGIN_X + i * COL_GAP));
-    return m;
-  }, [cols]);
-
-  if (cols.length < 2 || allRows.length === 0) {
-    return (
-      <div className="px-3 py-10 text-center text-xs text-zinc-600">
-        No @mentions or replies yet — interactions will draw as lanes here.
-      </div>
-    );
-  }
-
-  const W = MARGIN_X * 2 + COL_GAP * Math.max(0, cols.length - 1);
-  const H = HEADER_H + rows.length * ROW_H + 10;
-  const laneTop = HEADER_H - 4;
-  const laneBottom = H - 6;
+function MessageRow({
+  e,
+  memberOf,
+  onJump,
+}: {
+  e: ActivityEvent;
+  memberOf: MemberLookup;
+  onJump?: (msgId: string) => void;
+}) {
+  const d = e.data;
+  const sender = memberOf(d.sender_id);
+  const name = nameOf(sender, d.sender_id);
+  const line = excerpt(d.content);
+  const files = d.file_ids?.length ?? 0;
+  const mentions = d.mentions ?? [];
+  const clickable = Boolean(d.msg_id && onJump);
+  // Only badge NOTEWORTHY message types — "text" and "normal" are both just
+  // plain messages (users send "text", bots send "normal").
+  const specialType =
+    d.msg_type && d.msg_type !== "text" && d.msg_type !== "normal" ? d.msg_type : null;
 
   return (
-    <div className="p-2">
-      <div className="overflow-x-auto">
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="mx-auto block">
-          <defs>
-            <marker id="arw-mention" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 z" fill={MENTION} />
-            </marker>
-            <marker id="arw-reply" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 z" fill={REPLY} />
-            </marker>
-          </defs>
-
-          {/* Lifelines — one vertical lane per member. */}
-          {cols.map((id) => {
-            const x = colX.get(id)!;
-            const on = activeCols.has(id);
-            return (
-              <line
-                key={`lane-${id}`}
-                x1={x}
-                y1={laneTop}
-                x2={x}
-                y2={laneBottom}
-                stroke={selected.has(id) ? "rgb(82 82 91)" : "rgb(39 39 42)"}
-                strokeWidth={1}
-                strokeDasharray="2 3"
-                opacity={on ? 1 : 0.4}
-              />
-            );
-          })}
-
-          {/* Column headers (dot + name), clickable to filter. */}
-          {cols.map((id) => {
-            const x = colX.get(id)!;
-            const info = memberMap.get(id);
-            const isBot = info?.type === "bot";
-            const on = activeCols.has(id);
-            const sel = selected.has(id);
-            const label = (info?.name ?? short(id)).slice(0, 11);
-            return (
-              <g
-                key={`hd-${id}`}
-                onClick={() => onToggle(id)}
-                style={{ cursor: "pointer" }}
-                opacity={on ? 1 : 0.35}
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={() => d.msg_id && onJump?.(d.msg_id)}
+      title={clickable ? "Jump to this message" : undefined}
+      className={cn(
+        "w-full text-left px-3 py-1.5 flex items-start gap-2 rounded-md transition-colors",
+        clickable && "hover:bg-zinc-800/50 cursor-pointer"
+      )}
+    >
+      <Avatar
+        name={name}
+        src={sender?.avatar_url ?? undefined}
+        id={d.sender_id}
+        size="xs"
+        className="mt-0.5 !w-5 !h-5 !text-[9px]"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[11px] font-medium text-zinc-300 truncate">{name}</span>
+          {d.sender_type === "bot" && (
+            <span className="text-[9px] uppercase tracking-wide text-violet-400/70 flex-shrink-0">
+              bot
+            </span>
+          )}
+          <div className="flex-1" />
+          <span className="text-[10px] text-zinc-600 tabular-nums whitespace-nowrap">
+            {fmtTime(d.created_at ?? e.created_at)}
+          </span>
+        </div>
+        {line && (
+          <div className="text-[11px] text-zinc-500 truncate mt-px">{line}</div>
+        )}
+        {(mentions.length > 0 || d.reply_to_msg_id || files > 0 || specialType) && (
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            {d.reply_to_msg_id && (
+              <Badge className="bg-emerald-500/10 text-emerald-300/90" title="Reply">
+                <CornerUpLeft className="w-2.5 h-2.5" />
+                reply
+              </Badge>
+            )}
+            {mentions.map((m) => (
+              <Badge
+                key={m.member_id}
+                className="bg-indigo-500/10 text-indigo-300/90"
+                title={`@${nameOf(memberOf(m.member_id), m.member_id)}`}
               >
-                <circle
-                  cx={x}
-                  cy={9}
-                  r={4}
-                  fill={isBot ? "rgb(196 181 253)" : "rgb(125 211 252)"}
-                  stroke={sel ? "white" : "rgb(24 24 27)"}
-                  strokeWidth={sel ? 1.5 : 1}
-                />
-                <text
-                  x={x}
-                  y={24}
-                  textAnchor="middle"
-                  fontSize="9"
-                  fontWeight={sel ? 600 : 400}
-                  fill={sel ? "rgb(228 228 231)" : "rgb(161 161 170)"}
-                >
-                  {label}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Interaction arrows — one row per @mention / reply, newest at top. */}
-          {rows.map((r, i) => {
-            const sx = colX.get(r.source);
-            const tx = colX.get(r.target);
-            if (sx == null || tx == null) return null;
-            const y = HEADER_H + i * ROW_H + ROW_H / 2;
-            const dir = tx >= sx ? 1 : -1;
-            const x2 = tx - dir * 4; // stop just short of the target lifeline
-            const color = r.type === "mention" ? MENTION : REPLY;
-            const sName = memberMap.get(r.source)?.name ?? short(r.source);
-            const tName = memberMap.get(r.target)?.name ?? short(r.target);
-            const t = fmtTime(r.ts);
-            return (
-              <g key={i}>
-                <title>{`${sName} → ${tName} · ${r.type}${t ? ` · ${t}` : ""}`}</title>
-                <line
-                  x1={sx}
-                  y1={y}
-                  x2={x2}
-                  y2={y}
-                  stroke={color}
-                  strokeWidth={1.6}
-                  strokeOpacity={0.85}
-                  markerEnd={`url(#arw-${r.type})`}
-                />
-                <circle cx={sx} cy={y} r={2.4} fill={color} />
-              </g>
-            );
-          })}
-        </svg>
+                <AtSign className="w-2.5 h-2.5" />
+                {nameOf(memberOf(m.member_id), m.member_id)}
+              </Badge>
+            ))}
+            {files > 0 && (
+              <Badge className="bg-zinc-700/40 text-zinc-400" title={`${files} file(s)`}>
+                <Paperclip className="w-2.5 h-2.5" />
+                {files}
+              </Badge>
+            )}
+            {specialType && (
+              <Badge className="bg-amber-500/10 text-amber-300/90">{specialType}</Badge>
+            )}
+          </div>
+        )}
       </div>
+    </button>
+  );
+}
 
-      <div className="mt-1.5 flex items-center justify-center gap-4 text-[10px] text-zinc-500">
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-[2px] rounded" style={{ background: MENTION }} />
-          @mention
+/** Operation events (workspace writes, member changes…) — compact system rows;
+ *  no msg_id, so not clickable. */
+function OperationRow({ e, memberOf }: { e: ActivityEvent; memberOf: MemberLookup }) {
+  const d = e.data;
+  const actor = memberOf(d.actor_id);
+  const name = d.actor_id ? nameOf(actor, d.actor_id) : "system";
+  return (
+    <div className="px-3 py-1 flex items-center gap-2">
+      {d.actor_id ? (
+        <Avatar
+          name={name}
+          src={actor?.avatar_url ?? undefined}
+          id={d.actor_id}
+          size="xs"
+          className="!w-4 !h-4 !text-[8px]"
+        />
+      ) : (
+        <span className="w-4 h-4 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0">
+          <Cog className="w-2.5 h-2.5 text-zinc-500" />
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-[2px] rounded" style={{ background: REPLY }} />
-          reply
-        </span>
-        <span className="text-zinc-600">
-          ·{" "}
-          {selected.size
-            ? `showing ${selected.size} member${selected.size > 1 ? "s" : ""}`
-            : "newest on top · click a column to filter"}
-        </span>
-      </div>
+      )}
+      <span className="min-w-0 flex-1 text-[10px] text-zinc-500 truncate">
+        <span className="text-zinc-400">{name}</span> · {humanize(d.op_type ?? "operation")}
+        {d.target_ref && <span className="font-mono text-zinc-600"> · {d.target_ref}</span>}
+      </span>
+      <span className="text-[10px] text-zinc-600 tabular-nums whitespace-nowrap">
+        {fmtTime(d.created_at ?? e.created_at)}
+      </span>
     </div>
   );
 }
 
 function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
   const [events, setEvents] = useState<ActivityEvent[] | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(false);
-  // Multi-select member filter: the set of member_ids whose interactions to show.
+  // Multi-select member filter: the set of member_ids whose events to show.
   // Empty = show everyone.
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
@@ -352,16 +262,14 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
         limit: 200,
         desc: true,
       }),
-      ctx.sendResourceReq("channel.members", { channel_id: ctx.channelId }),
+      listChannelMembers(ctx.channelId),
     ]);
     setEvents(
       activityRes.status === "fulfilled"
         ? ((activityRes.value as { events?: ActivityEvent[] })?.events ?? [])
         : []
     );
-    if (membersRes.status === "fulfilled") {
-      setMembers((membersRes.value as { members?: Member[] })?.members ?? []);
-    }
+    if (membersRes.status === "fulfilled") setMembers(membersRes.value ?? []);
     setLoading(false);
   }, [ctx.channelId, ctx.sendResourceReq]);
 
@@ -373,21 +281,26 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
   // Deferred while the board is kept-alive but hidden; catches up on reveal.
   useBoardTickRefetch(ctx, "activity", load);
 
-  const memberMap = useMemo(() => {
-    const m = new Map<string, MemberInfo>();
-    for (const mem of members) {
-      m.set(mem.member_id, {
-        name: mem.display_name || mem.username || short(mem.member_id),
-        type: mem.member_type,
-      });
-    }
+  const byId = useMemo(() => {
+    const m = new Map<string, MemberItem>();
+    for (const mem of members) m.set(mem.member_id, mem);
     return m;
   }, [members]);
+  const memberOf: MemberLookup = useCallback((id) => (id ? byId.get(id) : undefined), [byId]);
 
-  const { involved, rows } = useMemo(
-    () => buildInteractions(events ?? []),
-    [events]
-  );
+  // The member filter keeps events that TOUCH any selected member: as sender /
+  // operation actor, as an @mention target, or (for replies) implicitly via the
+  // sender side — reply targets aren't resolvable without the replied message.
+  const shownEvents = useMemo(() => {
+    const all = events ?? [];
+    if (!selected.size) return all;
+    return all.filter((e) => {
+      const d = e.data;
+      if (d.sender_id && selected.has(d.sender_id)) return true;
+      if (d.actor_id && selected.has(d.actor_id)) return true;
+      return (d.mentions ?? []).some((m) => selected.has(m.member_id));
+    });
+  }, [events, selected]);
 
   return (
     <ViewBoardShell title="Activity" icon={Activity} loading={loading} onRefresh={() => void load()}>
@@ -395,6 +308,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
         <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-zinc-900">
           <MemberFilter
             members={members}
+            memberOf={memberOf}
             selected={selected}
             onToggle={toggleMember}
             onClear={clearSelection}
@@ -403,22 +317,19 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
             <div className="flex items-center gap-1 overflow-x-auto">
               {members
                 .filter((mem) => selected.has(mem.member_id))
-                .map((mem) => {
-                  const style = actorStyle(mem.member_type);
-                  return (
-                    <FilterChip
-                      key={mem.member_id}
-                      active
-                      onClick={() => toggleMember(mem.member_id)}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-                      <span className="truncate max-w-[80px]">
-                        {mem.display_name || mem.username || short(mem.member_id)}
-                      </span>
-                      <X className="w-2.5 h-2.5 opacity-60" />
-                    </FilterChip>
-                  );
-                })}
+                .map((mem) => (
+                  <FilterChip key={mem.member_id} active onClick={() => toggleMember(mem.member_id)}>
+                    <Avatar
+                      name={nameOf(mem, mem.member_id)}
+                      src={mem.avatar_url ?? undefined}
+                      id={mem.member_id}
+                      size="xs"
+                      className="!w-3.5 !h-3.5 !text-[7px]"
+                    />
+                    <span className="truncate max-w-[80px]">{nameOf(mem, mem.member_id)}</span>
+                    <X className="w-2.5 h-2.5 opacity-60" />
+                  </FilterChip>
+                ))}
               <button
                 onClick={clearSelection}
                 className="flex-shrink-0 px-1.5 text-[10px] text-zinc-500 hover:text-zinc-300"
@@ -432,15 +343,37 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
 
       {events == null ? (
         <div className="px-3 py-6 text-xs text-zinc-600">Loading…</div>
+      ) : shownEvents.length === 0 ? (
+        <div className="px-3 py-10 text-center text-xs text-zinc-600">
+          No activity yet — messages and operations will appear here.
+        </div>
       ) : (
-        <InteractionGraph
-          members={members}
-          memberMap={memberMap}
-          involved={involved}
-          rows={rows}
-          selected={selected}
-          onToggle={toggleMember}
-        />
+        <div className="py-1.5">
+          {shownEvents.map((e, i) => {
+            const prev = shownEvents[i - 1];
+            const ts = e.data.created_at ?? e.created_at ?? undefined;
+            const prevTs = prev ? prev.data.created_at ?? prev.created_at ?? undefined : undefined;
+            // Newest-first feed: a day label opens each new (older) day group.
+            const showDay = !prev || !sameDay(ts, prevTs);
+            return (
+              <div key={`${e.event_type}-${e.channel_seq}`}>
+                {showDay && ts && (
+                  <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+                    <span className="text-[10px] font-medium text-zinc-500">
+                      {formatDayLabel(ts)}
+                    </span>
+                    <div className="flex-1 h-px bg-zinc-800/70" />
+                  </div>
+                )}
+                {e.event_type === "message" ? (
+                  <MessageRow e={e} memberOf={memberOf} onJump={ctx.onJumpToMessage} />
+                ) : (
+                  <OperationRow e={e} memberOf={memberOf} />
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </ViewBoardShell>
   );
@@ -453,7 +386,7 @@ function FilterChip({
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
@@ -469,18 +402,19 @@ function FilterChip({
   );
 }
 
-/** Searchable multi-select of channel members. Replaces the old single-select chip row:
- *  with a large roster, scanning a horizontal chip strip to find one person is slow, so
- *  this is a "Filter members" button opening a searchable checkbox list. Selection lives
- *  in the parent (a Set of member_ids); the active picks also render as removable chips
- *  next to the button. Outside-click / Escape dismiss, same pattern as ComposerModelPopover. */
+/** Searchable multi-select of channel members ("Filter members" button opening a
+ *  searchable checkbox list). Selection lives in the parent (a Set of member_ids);
+ *  active picks also render as removable chips next to the button. Outside-click /
+ *  Escape dismiss, same pattern as ComposerModelPopover. */
 function MemberFilter({
   members,
+  memberOf,
   selected,
   onToggle,
   onClear,
 }: {
-  members: Member[];
+  members: MemberItem[];
+  memberOf: MemberLookup;
   selected: Set<string>;
   onToggle: (id: string) => void;
   onClear: () => void;
@@ -559,7 +493,6 @@ function MemberFilter({
               </div>
             ) : (
               shown.map((mem) => {
-                const style = actorStyle(mem.member_type);
                 const on = selected.has(mem.member_id);
                 return (
                   <button
@@ -576,7 +509,13 @@ function MemberFilter({
                     >
                       {on && <Check className="w-2.5 h-2.5 text-white" />}
                     </span>
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${style.dot}`} />
+                    <Avatar
+                      name={nameOf(memberOf(mem.member_id), mem.member_id)}
+                      src={mem.avatar_url ?? undefined}
+                      id={mem.member_id}
+                      size="xs"
+                      className="!w-4 !h-4 !text-[8px]"
+                    />
                     <span className="flex-1 truncate text-xs text-zinc-300">
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Package, X } from "lucide-react";
+import { Clock, Maximize2, Minimize2, Package, X } from "lucide-react";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { useWindowDrag } from "@/hooks/useWindowDrag";
+import { ResizeGrip } from "@/components/ui/resize-grip";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
@@ -283,6 +286,25 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
     [allEnvs, activate, cfg, fs, writeCfg]
   );
 
+  // Draggable/resizable floating window (desktop only; mobile is a full-screen
+  // sheet). Minimized = just the title bar (position kept, size shed).
+  const isMobile = useIsMobile();
+  const windowDrag = useWindowDrag("cheers.float.workbench", !isMobile);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("cheers.float.workbench.min") === "1"
+  );
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem("cheers.float.workbench.min", c ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !c;
+    });
+  };
+  const minimized = collapsed && !isMobile;
+
   const ctx: WorkbenchContext = useMemo(
     () => ({
       channelId,
@@ -302,24 +324,45 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
 
   return (
     <>
-      {/* Non-modal docked panel below the channel header (top-12), so the header
-          toggles stay clickable and the ViewBoard can be open at the same time. */}
+      {/* Non-modal FLOATING window (ViewBoard-style chrome): no backdrop, so the
+          chat + composer stay usable; draggable by its title bar; clicking raises
+          it above the other floating windows. */}
       <aside
+        ref={windowDrag.ref}
+        onPointerDownCapture={windowDrag.toFront}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        // Desktop: docked 560px column under the header (dvh == vh there). Mobile: a
+        // Desktop: floating 560px rounded card below the header. Mobile: a
         // full-screen sheet — top-0, full width/height, safe-area padded — so panels
         // are never crushed into a sliver next to the chat.
-        className={`fixed top-12 right-0 h-[calc(100dvh-3rem)] w-[560px] max-w-[94vw] max-md:top-0 max-md:h-[100dvh] max-md:w-full max-md:max-w-none max-md:border-l-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] bg-zinc-900 border-l z-40 flex flex-col transition-transform duration-200 ${
-          dragOver || busy ? "border-amber-500/60" : "border-zinc-800"
-        } ${open ? "translate-x-0" : "translate-x-full"}`}
+        style={
+          minimized
+            ? windowDrag.posStyle
+            : windowDrag.pos && !windowDrag.size
+              ? { ...windowDrag.style, height: `calc(100dvh - ${windowDrag.pos.y + 12}px)` }
+              : windowDrag.style
+        }
+        className={`fixed top-14 right-3 max-w-[94vw] rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm max-md:top-0 max-md:right-0 max-md:h-[100dvh] max-md:w-full max-md:max-w-none max-md:rounded-none max-md:ring-0 max-md:border-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] bg-zinc-900/95 flex flex-col transition-[opacity,transform] duration-200 ${
+          minimized ? "w-[300px]" : "h-[calc(100dvh-9.5rem)] w-[560px]"
+        } ${
+          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+        } ${
+          open
+            ? "opacity-100 translate-x-0 pointer-events-auto"
+            : "opacity-0 translate-x-4 pointer-events-none"
+        }`}
       >
-        <div className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0">
+        <div
+          {...windowDrag.handleProps}
+          className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none"
+        >
           <span className="text-sm font-semibold text-zinc-100">Workbench</span>
+          {!minimized && (
+          <>
           <select
             value={selectedId ?? ""}
             onChange={(e) => void switchScenario(e.target.value || null)}
@@ -343,7 +386,6 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           >
             <Clock className="w-3.5 h-3.5" /> Temp template
           </button>
-          <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
           {pinned.length > 0 && (
             <div className="relative">
               <button
@@ -379,13 +421,23 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
               )}
             </div>
           )}
+          </>
+          )}
+          <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
           <div className="flex-1" />
+          <button
+            onClick={toggleCollapsed}
+            title={minimized ? "Expand" : "Minimize"}
+            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 max-md:hidden"
+          >
+            {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+          </button>
           <button onClick={onClose} title="Close">
             <X className="w-4 h-4 text-zinc-500 hover:text-zinc-200" />
           </button>
         </div>
 
-        {notice && (
+        {!minimized && notice && (
           <div className="px-3 py-1 text-[11px] text-amber-400/90 bg-amber-500/5 border-b border-zinc-800 flex items-center gap-2">
             <span className="flex-1">{notice}</span>
             <button onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
@@ -394,7 +446,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           </div>
         )}
 
-        {allEnvs.length === 0 && selectedId === null && (
+        {!minimized && allEnvs.length === 0 && selectedId === null && (
           <div className="px-3 py-1.5 text-[11px] text-zinc-500 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
             <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
             <span className="flex-1">
@@ -409,8 +461,12 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           </div>
         )}
 
-        {/* the body IS the file browser: select a file → pin / preview / raw */}
-        <div className="flex-1 min-h-0 overflow-hidden">{open && <FilePanel ctx={ctx} />}</div>
+        {/* the body IS the file browser: select a file → pin / preview / raw.
+            Kept mounted while minimized (hidden) so tree/selection state survives. */}
+        <div className={minimized ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>
+          {open && <FilePanel ctx={ctx} />}
+        </div>
+        {!minimized && <ResizeGrip resizeProps={windowDrag.resizeProps} />}
       </aside>
     </>
   );

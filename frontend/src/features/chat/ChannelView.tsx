@@ -26,7 +26,6 @@ import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { useAuthStore } from "@/stores/authStore";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import type { Message, Channel, PermissionContentData, MemberItem } from "@/types";
 
 // In-flight bot placeholders arrive with `channel_seq: null`; they are the
@@ -67,7 +66,6 @@ interface Props {
 
 export function ChannelView({ channel, onBack }: Props) {
   const user = useAuthStore((s) => s.user);
-  const isMobile = useIsMobile();
   const patchChannel = useChatStore((s) => s.patchChannel);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -475,6 +473,14 @@ export function ChannelView({ channel, onBack }: Props) {
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
   const [wbTarget, setWbTarget] = useState<string | undefined>(undefined);
   const [refError, setRefError] = useState<string | null>(null);
+  // Jump-to-message request from ViewBoard history items (activity rows, audit
+  // cards). `nonce` lets a repeat click on the same row re-trigger the scroll.
+  // Best-effort: MessageList only scrolls when the message is loaded.
+  const [focusMsg, setFocusMsg] = useState<{ msgId: string; nonce: number } | null>(null);
+  const jumpToMessage = useCallback(
+    (msgId: string) => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 })),
+    []
+  );
 
   // Resolve a clicked file reference by PROVENANCE and TAKE THE USER TO where it
   // lives — the channel files view (inbox), the workbench File panel (desk), or the
@@ -679,17 +685,6 @@ export function ChannelView({ channel, onBack }: Props) {
     }
   }
 
-  // Reserve room on the right for open instrument panels so they get their OWN column
-  // instead of floating over the chat + composer. Widths mirror the drawers (ViewBoard
-  // 420 @ right-3, Workbench 560 @ right-0); GAP keeps a seam between chat and panel.
-  const VB_W = vbMinimal ? 280 : 420;
-  const WB_W = 560;
-  const GAP = 12;
-  const boardExtent = vbOpen ? (wbOpen ? WB_W + GAP : GAP) + VB_W : wbOpen ? WB_W : 0;
-  // Phones: the panels overlay the chat as full-screen sheets instead of docking
-  // into their own column — reserving side space would crush the chat to zero.
-  const reservedRight = !isMobile && boardExtent > 0 ? boardExtent + GAP : 0;
-
   if (!channel) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm flex-col gap-3">
@@ -701,10 +696,9 @@ export function ChannelView({ channel, onBack }: Props) {
 
   return (
     <ProfileCardProvider members={memberById}>
-    <div
-      className="flex flex-col h-full transition-[padding] duration-200"
-      style={{ paddingRight: reservedRight }}
-    >
+    {/* Instrument windows FLOAT over the chat (no reserved column), so opening
+        them never squeezes the message list or the composer. */}
+    <div className="flex flex-col h-full">
       {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
@@ -766,20 +760,24 @@ export function ChannelView({ channel, onBack }: Props) {
         <button
           onClick={() => {
             setFilesFocus(undefined);
-            setFilesOpen(true);
+            setFilesOpen((v) => !v);
           }}
           title="Channel files"
-          className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+            filesOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
+          }`}
         >
           <Paperclip className="w-4 h-4" />
         </button>
         <button
           onClick={() => {
             setWsInit({});
-            setWsOpen(true);
+            setWsOpen((v) => !v);
           }}
           title="Remote workspace"
-          className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+            wsOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
+          }`}
         >
           <FolderTree className="w-4 h-4" />
         </button>
@@ -795,10 +793,12 @@ export function ChannelView({ channel, onBack }: Props) {
         <button
           onClick={() => {
             setWbTarget(undefined);
-            setWbOpen(true);
+            setWbOpen((v) => !v);
           }}
           title="Workbench — file workspace"
-          className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+            wbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
+          }`}
         >
           <PanelRight className="w-4 h-4" />
         </button>
@@ -831,6 +831,7 @@ export function ChannelView({ channel, onBack }: Props) {
             actions={messageActions}
             selectMode={selectMode}
             selectedIds={selectedIds}
+            focusMsg={focusMsg}
           />
         </ResolveRefContext.Provider>
       )}
@@ -950,6 +951,7 @@ export function ChannelView({ channel, onBack }: Props) {
         shiftedForWorkbench={wbOpen}
         minimal={vbMinimal}
         onToggleMinimal={() => setVbMinimal((m) => !m)}
+        onJumpToMessage={jumpToMessage}
       />
       {filesOpen && (
         <ChannelFilesDialog

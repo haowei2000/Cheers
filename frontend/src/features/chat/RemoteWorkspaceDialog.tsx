@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dialog } from "@/components/ui/dialog";
+import { FloatingPanel } from "@/components/ui/floating-panel";
 import {
   ArrowUp,
+  FolderTree,
   Download,
   FileText,
   Folder,
@@ -700,11 +701,16 @@ export function RemoteWorkspaceDialog({
   const canWrite = selectedBot?.can_write === true;
 
   return (
-    <Dialog
+    <FloatingPanel
       title="Remote workspace"
+      icon={FolderTree}
       onClose={onClose}
-      maxWidth="max-w-5xl"
-      fullScreenOnMobile
+      storageKey="cheers.float.workspace"
+      className="w-[1024px]"
+      defaultPosClassName="top-16 left-1/2 -translate-x-1/2"
+      // Mobile: the panes stack and stretch (max-md:flex-1 inside) — the body must
+      // be a non-scrolling flex column there, same as Dialog's fullScreenOnMobile.
+      bodyClassName="max-md:flex max-md:flex-col max-md:overflow-hidden"
     >
       {/* Bot picker */}
       <div className="flex items-center gap-2 mb-2 text-xs flex-wrap max-md:flex-shrink-0">
@@ -1313,6 +1319,6 @@ export function RemoteWorkspaceDialog({
           </div>
         </div>
       )}
-    </Dialog>
+    </FloatingPanel>
   );
 }
