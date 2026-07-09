@@ -500,7 +500,12 @@ fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login))
-        // Public self-service sign-up (gated by config.open_registration).
+        // Public self-service sign-up (gated by config.open_registration): request an
+        // email verification code, then register with it.
+        .route(
+            "/api/v1/auth/register/request-code",
+            post(api::auth::register_request_code),
+        )
         .route("/api/v1/auth/register", post(api::auth::register))
         // Public password-reset flow: request a one-time code, then set a new password.
         .route(

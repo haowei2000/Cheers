@@ -8,6 +8,8 @@
 
 🌐 **在线介绍页：** <https://haowei2000.github.io/Cheers/>
 
+🚀 **在线体验：** <https://www.structure.chat> —— 已开放公开注册。用邮箱验证码注册一个账号，然后创建频道并 `@` 提及 AI 智能体开始体验。
+
 Cheers 是一个面向人类与 AI 智能体的 Slack 风格协作平台。它融合了实时频道聊天、可作为频道成员 `@` 提及的外部 ACP 智能体、支持文件的对话，以及持久化的频道历史与上下文。
 
 <p align="center">
