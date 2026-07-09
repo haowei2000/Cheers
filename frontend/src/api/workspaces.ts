@@ -10,13 +10,6 @@ export interface WorkspaceMember {
   status: string;
 }
 
-export interface WorkspaceInvite {
-  workspace_id: string;
-  name: string;
-  role: string;
-  invited_by?: string | null;
-}
-
 export async function listWorkspaces(): Promise<Workspace[]> {
   return apiJson<Workspace[]>("/workspaces");
 }
@@ -53,18 +46,8 @@ export async function listWorkspaceMembers(
   return apiJson<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
 }
 
-/** Add a member directly (active immediately). Admin only. */
-export async function addWorkspaceMember(
-  workspaceId: string,
-  member: { identifier: string; role?: string }
-): Promise<void> {
-  await apiJson(`/workspaces/${workspaceId}/members`, {
-    method: "POST",
-    body: JSON.stringify(member),
-  });
-}
-
-/** Invite a member — creates a pending row the invitee must accept. Admin only. */
+/** Invite a member — creates a pending row the invitee must accept. Admin only.
+ *  (There is no consent-free "add directly" — every membership goes through this.) */
 export async function inviteWorkspaceMember(
   workspaceId: string,
   member: { identifier: string; role?: string }
@@ -105,11 +88,6 @@ export async function removeWorkspaceMember(
   await apiJson(`/workspaces/${workspaceId}/members/${userId}`, {
     method: "DELETE",
   });
-}
-
-/** The caller's pending workspace invites. */
-export async function listMyInvites(): Promise<WorkspaceInvite[]> {
-  return apiJson<WorkspaceInvite[]>("/workspaces/invites");
 }
 
 /** Change a member's workspace role (admin only; refuses to demote the last owner). */

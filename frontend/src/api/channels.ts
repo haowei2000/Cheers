@@ -137,3 +137,13 @@ export async function setChannelMemberRole(
 export async function leaveChannel(channelId: string): Promise<void> {
   await apiJson(`/channels/${channelId}/leave`, { method: "POST" });
 }
+
+/** Accept a pending channel invite — materializes the caller's membership. */
+export async function acceptChannelInvite(channelId: string): Promise<void> {
+  await apiJson(`/channels/${channelId}/accept`, { method: "POST" });
+}
+
+/** Decline a pending channel invite. */
+export async function declineChannelInvite(channelId: string): Promise<void> {
+  await apiJson(`/channels/${channelId}/decline`, { method: "POST" });
+}

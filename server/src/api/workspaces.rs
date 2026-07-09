@@ -380,50 +380,33 @@ async fn resolve_user_id(state: &AppState, identifier: &str) -> Result<String, A
     Ok(row.try_get("user_id").unwrap_or_default())
 }
 
-pub async fn add_workspace_member(
-    State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
-    Path(workspace_id): Path<String>,
-    Json(body): Json<InviteMemberRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    ensure_workspace_admin(
-        &state,
-        &workspace_id,
-        &current_user_id(&claims),
-        &claims.role,
-    )
-    .await?;
-    let role = body.role.unwrap_or_else(|| "member".into());
-    if !matches!(role.as_str(), "owner" | "admin" | "member") {
-        return Err(AppError::BadRequest(
-            "role must be owner, admin, or member".into(),
-        ));
-    }
-    if role == "owner" && !caller_workspace_is_owner(&state, &workspace_id, &claims).await? {
-        return Err(AppError::Forbidden(
-            "only an owner or a system admin can add a member as owner".into(),
-        ));
-    }
-    let user_id = resolve_user_id(&state, body.identifier.trim()).await?;
-    sqlx::query(
-        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
-         VALUES ($1, $2, $3, 'active')
-         ON CONFLICT (workspace_id, user_id)
-            DO UPDATE SET role = EXCLUDED.role, status = 'active'",
-    )
-    .bind(&workspace_id)
-    .bind(&user_id)
-    .bind(&role)
-    .execute(&state.db)
-    .await?;
-    Ok(Json(
-        serde_json::json!({"workspace_id": workspace_id, "user_id": user_id, "role": role, "status": "active"}),
-    ))
+/// Best-effort display name for a user (falls back to username; None if unknown).
+async fn user_display_name(state: &AppState, user_id: &str) -> Option<String> {
+    sqlx::query("SELECT COALESCE(display_name, username) AS name FROM users WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.try_get::<Option<String>, _>("name").ok().flatten())
 }
 
-/// POST /api/v1/workspaces/{workspace_id}/invite — admin invites a user, who must
-/// then accept. Unlike `add_workspace_member`, this creates a *pending* row that
-/// does not grant access until the invitee accepts (see `accept_invite`).
+/// Workspace name — used to label an invite notification.
+async fn workspace_name(state: &AppState, workspace_id: &str) -> String {
+    sqlx::query("SELECT name FROM workspaces WHERE workspace_id = $1")
+        .bind(workspace_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.try_get::<String, _>("name").ok())
+        .unwrap_or_default()
+}
+
+/// POST /api/v1/workspaces/{workspace_id}/invite — an admin invites a user, who must
+/// then accept. Creates a *pending* row that grants no access until accepted (see
+/// `accept_invite`). Every membership now flows through this path — there is no
+/// consent-free "add directly" anymore.
 pub async fn invite_workspace_member(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -463,6 +446,23 @@ pub async fn invite_workspace_member(
     .execute(&state.db)
     .await?;
     let already_member = res.rows_affected() == 0;
+    if !already_member {
+        // Live push to the invitee's notification center (best-effort; durable in DB).
+        let inviter = user_display_name(&state, &current_user_id(&claims)).await;
+        let ws_name = workspace_name(&state, &workspace_id).await;
+        crate::api::notifications::push_notification(
+            &state,
+            &user_id,
+            serde_json::json!({
+                "kind": "workspace_invite",
+                "workspace_id": workspace_id,
+                "title": ws_name,
+                "invited_by": inviter,
+                "role": role,
+            }),
+        )
+        .await;
+    }
     Ok(Json(serde_json::json!({
         "workspace_id": workspace_id,
         "user_id": user_id,

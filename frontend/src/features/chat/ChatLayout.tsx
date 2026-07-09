@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listChannels, listDms } from "@/api/channels";
+import toast from "react-hot-toast";
 import { useChatStore } from "@/stores/chatStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useUserSocket } from "./hooks/useUserSocket";
+import type { NotificationItem } from "@/api/notifications";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
 import { ChannelView } from "./ChannelView";
@@ -23,6 +27,23 @@ export default function ChatLayout() {
   const isMobile = useIsMobile();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Notification center bootstrap: hydrate the inbox once, then keep it live over a
+  // user-scoped socket (invites arrive even with no channel open). Kept here because
+  // ChatLayout is always mounted, whereas the rail (which shows the bell) is not on
+  // mobile. See useUserSocket / NotificationCenter.
+  const refreshNotifications = useNotificationStore((s) => s.refresh);
+  const upsertNotification = useNotificationStore((s) => s.upsert);
+  useEffect(() => {
+    void refreshNotifications();
+  }, [refreshNotifications]);
+  useUserSocket((raw) => {
+    const n = raw as NotificationItem | null;
+    if (!n || (n.kind !== "workspace_invite" && n.kind !== "channel_invite")) return;
+    upsertNotification(n);
+    const where = n.kind === "channel_invite" ? `#${n.title}` : n.title;
+    toast(`${n.invited_by ?? "Someone"} invited you to ${where}`, { icon: "🔔" });
+  });
   // Mobile stacked navigation (Telegram-style): the conversation screen is "pushed"
   // over the list by writing `{ chat: true }` into the history entry's state, so the
   // browser/hardware Back button pops back to the list naturally.

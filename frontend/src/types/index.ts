@@ -160,6 +160,8 @@ export interface Message {
 export interface MemberItem {
   member_id: string;
   member_type: string;
+  /** 'active' (joined) or 'pending' (invited, not yet accepted). */
+  status?: string;
   role?: string;
   username?: string;
   display_name?: string;

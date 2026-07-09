@@ -107,7 +107,9 @@ export function ChannelSettingsDialog({
         member_id: it.member_id,
         member_type: it.member_type,
       });
-      toast.success(`Added ${it.display_name || it.username || it.member_id.slice(0, 8)}`);
+      const who = it.display_name || it.username || it.member_id.slice(0, 8);
+      // Users must accept (pending); bots are bound immediately.
+      toast.success(it.member_type === "bot" ? `Added ${who}` : `Invited ${who}`);
       setQuery("");
       setResults([]);
       await refreshMembers();
@@ -227,8 +229,14 @@ export function ChannelSettingsDialog({
                     {m.member_type === "bot" && (
                       <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
                     )}
+                    {m.status === "pending" && (
+                      <span className="ml-1.5 text-[10px] text-amber-400/90 border border-amber-500/40 rounded px-1 py-0.5">
+                        Pending
+                      </span>
+                    )}
                   </p>
                   {canManage &&
+                  m.status !== "pending" &&
                   (m.member_type === "user" || m.member_type === "bot") &&
                   m.member_id !== me?.user_id ? (
                     <select
@@ -269,7 +277,7 @@ export function ChannelSettingsDialog({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search users or bots to add…"
+                  placeholder="Invite workspace members or bots…"
                   className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
                 />
               </div>

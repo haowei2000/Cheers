@@ -1,8 +1,8 @@
 //! 频道邀请候选搜索（人机统一的邀请入口）。
 //!
 //! 一个查询同时返回可邀请的用户和 bot，供前端统一邀请选择器使用：
-//! - 用户：目标频道所在 workspace 的 active 成员 ∪ 调用者的已通过好友
-//!   （沿用「无全站姓名目录」的隐私决策——不暴露不相关用户）。
+//! - 用户：目标频道所在 workspace 的 active 成员（workspace-first 模型：频道邀请
+//!   只能面向本 workspace 成员，故不再并入好友）。
 //! - bot：未禁用，且调用者按 SESSION_WORKDIR_ROOTSET 的 AND-gate 有权邀请
 //!   （平台管理员 / bot owner / 持有该 bot 在此频道的 `cheers/session_create`
 //!   INITIATE 授权，fail-closed）。
@@ -59,47 +59,39 @@ pub async fn search_invitable(
     }
     let pattern = format!("%{}%", escape_like_pattern(query));
 
-    let mut items = search_users(db, caller.user_id, channel_id, &pattern).await?;
+    let mut items = search_users(db, channel_id, &pattern).await?;
     items.extend(search_bots(db, bot_locator, caller, channel_id, &pattern).await?);
     Ok(items)
 }
 
-/// 用户候选：workspace active 成员 ∪ 调用者已通过好友，按名字子串匹配。
+/// 用户候选：目标频道所在 workspace 的 active 成员，按名字子串匹配。
+/// `already_member` 同时覆盖现有成员与已发出的待接受邀请，前端一并置灰。
 async fn search_users(
     db: &PgPool,
-    caller_user_id: &str,
     channel_id: &str,
     pattern: &str,
 ) -> Result<Vec<InvitableItem>, AppError> {
     let rows = sqlx::query(
         "SELECT u.user_id, u.username, u.display_name, u.avatar_url,
-                EXISTS(
+                (EXISTS(
                     SELECT 1 FROM channel_memberships cm
                     WHERE cm.channel_id = $1 AND cm.member_id = u.user_id
                       AND cm.member_type = 'user'
-                ) AS already_member
+                ) OR EXISTS(
+                    SELECT 1 FROM channel_invites ci
+                    WHERE ci.channel_id = $1 AND ci.user_id = u.user_id
+                )) AS already_member
          FROM users u
+         JOIN workspace_memberships wm
+                ON wm.user_id = u.user_id AND wm.status = 'active'
+         JOIN channels c
+                ON c.workspace_id = wm.workspace_id AND c.channel_id = $1
          WHERE u.is_deleted = FALSE
-           AND (u.username ILIKE $3 OR u.display_name ILIKE $3)
-           AND (
-               EXISTS (
-                   SELECT 1 FROM workspace_memberships wm
-                   JOIN channels c ON c.workspace_id = wm.workspace_id
-                   WHERE c.channel_id = $1 AND wm.user_id = u.user_id
-                     AND wm.status = 'active'
-               )
-               OR EXISTS (
-                   SELECT 1 FROM friendships f
-                   WHERE f.status = 'accepted'
-                     AND ((f.user_id = $2 AND f.friend_id = u.user_id)
-                       OR (f.friend_id = $2 AND f.user_id = u.user_id))
-               )
-           )
+           AND (u.username ILIKE $2 OR u.display_name ILIKE $2)
          ORDER BY u.username
-         LIMIT $4",
+         LIMIT $3",
     )
     .bind(channel_id)
-    .bind(caller_user_id)
     .bind(pattern)
     .bind(PER_KIND_LIMIT)
     .fetch_all(db)
