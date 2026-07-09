@@ -83,7 +83,7 @@ export function MembersPopover({
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-zinc-800/60 transition-colors"
                 >
                   <div className="relative">
-                    <Avatar name={name} id={m.member_id} size="sm" />
+                    <Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="sm" />
                     {m.is_online != null && (
                       <span
                         title={m.is_online ? "online" : "offline"}

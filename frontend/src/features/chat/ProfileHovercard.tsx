@@ -45,6 +45,8 @@ interface Ctx {
     id: string,
     fallback?: Partial<ProfileData>
   ) => void;
+  /** Look a member up in the provider's live map (e.g. for an avatar_url). */
+  memberOf: (id: string) => ProfileData | undefined;
 }
 
 const ProfileCtx = createContext<Ctx | null>(null);
@@ -88,7 +90,7 @@ export function ProfileCardProvider({
     : null;
 
   return (
-    <ProfileCtx.Provider value={{ open, openById }}>
+    <ProfileCtx.Provider value={{ open, openById, memberOf: (id) => members.get(id) }}>
       {children}
       {state && liveMember && (
         <ProfileCard

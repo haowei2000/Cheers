@@ -312,7 +312,14 @@ export const MessageItem = memo(function MessageItem({
         className="mt-0.5 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
         title="View profile"
       >
-        <Avatar name={name} src={undefined} id={message.sender_id} size="sm" />
+        {/* avatar_url resolves via the profile-card member map (live-updated);
+            fallback is the brand glyph for known agents, then initials. */}
+        <Avatar
+          name={name}
+          src={profileCard?.memberOf(message.sender_id)?.avatar_url ?? undefined}
+          id={message.sender_id}
+          size="sm"
+        />
       </button>
 
       <div className={cn("flex-1 min-w-0", isOwn && "flex flex-col items-end")}>

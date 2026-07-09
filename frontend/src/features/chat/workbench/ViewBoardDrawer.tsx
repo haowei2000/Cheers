@@ -273,7 +273,7 @@ export function ViewBoardDrawer({
                     value={s.session_id}
                     title={`bot ${s.bot_id} · session ${s.session_id}`}
                   >
-                    {s.bot_name || s.bot_id.slice(0, 6)} ·{" "}
+                    {s.bot_name || s.bot_id.slice(0, 8)} ·{" "}
                     {sessionTag({
                       is_primary: s.is_primary,
                       session_id: s.session_id,

@@ -11,7 +11,9 @@
 // to the owning bot (needs a write verb + drag handles here).
 import { useMemo } from "react";
 import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
-import { registerViewBoard, channelSessionParams } from "../viewBoard";
+import { Avatar } from "@/components/ui/avatar";
+import { registerViewBoard, channelSessionParams, type ViewBoardContext } from "../viewBoard";
+import { useMembersIndex, memberLabel, type MembersIndex } from "../useMembersIndex";
 
 interface PlanEntry {
   content: string;
@@ -53,7 +55,7 @@ function StatusIcon({ group }: { group: string }) {
   return <Circle className="w-3.5 h-3.5 flex-shrink-0 text-zinc-600" />;
 }
 
-function PlanCard({ plan }: { plan: BotPlan }) {
+function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
   const grouped = useMemo(() => {
     const buckets: Record<string, PlanEntry[]> = {
       in_progress: [],
@@ -72,9 +74,16 @@ function PlanCard({ plan }: { plan: BotPlan }) {
     <div className="border border-zinc-800 rounded-md mb-3 overflow-hidden">
       <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-2">
-          <ClipboardList className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
+          {/* Card is titled by the bot's avatar + name (raw id in the tooltip). */}
+          <Avatar
+            name={memberLabel(members, plan.bot_id)}
+            src={members.get(plan.bot_id)?.avatar_url ?? undefined}
+            id={plan.bot_id}
+            size="xs"
+            className="!w-4 !h-4 !text-[8px]"
+          />
           <span className="text-xs text-zinc-200 font-medium truncate" title={plan.bot_id}>
-            {plan.bot_id.slice(0, 8)}
+            {memberLabel(members, plan.bot_id)}
           </span>
           {plan.session_id ? (
             <span className="text-[10px] text-zinc-600 truncate" title={plan.session_id}>
@@ -134,7 +143,8 @@ function PlanCard({ plan }: { plan: BotPlan }) {
   );
 }
 
-function PlanBody({ data }: { data: PlanReadResponse }) {
+function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext }) {
+  const members = useMembersIndex(ctx.channelId);
   const plans = data.plans ?? [];
   if (plans.length === 0) {
     return (
@@ -150,7 +160,7 @@ function PlanBody({ data }: { data: PlanReadResponse }) {
   return (
     <div className="p-3">
       {plans.map((p) => (
-        <PlanCard key={`${p.bot_id}:${p.session_id}`} plan={p} />
+        <PlanCard key={`${p.bot_id}:${p.session_id}`} plan={p} members={members} />
       ))}
     </div>
   );
@@ -163,5 +173,5 @@ registerViewBoard<PlanReadResponse>({
   verb: "channel.plan.read",
   sessionScoped: true,
   makeParams: channelSessionParams,
-  render: (data) => <PlanBody data={data} />,
+  render: (data, ctx) => <PlanBody data={data} ctx={ctx} />,
 });
