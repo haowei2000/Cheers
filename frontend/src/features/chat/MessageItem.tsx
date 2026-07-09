@@ -312,7 +312,14 @@ export const MessageItem = memo(function MessageItem({
         className="mt-0.5 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
         title="View profile"
       >
-        <Avatar name={name} src={undefined} id={message.sender_id} size="sm" />
+        {/* avatar_url resolves via the profile-card member map (live-updated);
+            fallback is the brand glyph for known agents, then initials. */}
+        <Avatar
+          name={name}
+          src={profileCard?.memberOf(message.sender_id)?.avatar_url ?? undefined}
+          id={message.sender_id}
+          size="sm"
+        />
       </button>
 
       <div className={cn("flex-1 min-w-0", isOwn && "flex flex-col items-end")}>
@@ -363,6 +370,11 @@ export const MessageItem = memo(function MessageItem({
  * `session/cancel` (POST …/messages/:id/cancel); the gateway gates it as an
  * INITIATE event (members allowed by default). We attach it to the bot's own
  * reply bubble rather than the composer, so each turn is cancelled in place.
+ *
+ * When the turn is part of a bot@bot cascade, the gateway stops the WHOLE chain
+ * (DECENTRALIZED_MESH §8): it marks the chain cancelled so the dispatch gate
+ * blocks any un-launched hops, and fans the cancel out to every in-flight bot in
+ * it — one ⏹ halts the runaway, not just this bubble.
  */
 function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) {
   const [stopping, setStopping] = useState(false);
@@ -393,7 +405,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         }
       }}
       className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60 hover:text-zinc-100 disabled:opacity-50"
-      title="Stop the agent's current turn"
+      title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3 h-3" fill="currentColor" />
       {stopping ? "Stopping…" : "Stop"}

@@ -28,6 +28,11 @@ pub struct DispatchParams {
     pub depth: i32,
     pub provider_session_key: String,
     pub session_id: Option<Uuid>,
+    /// The bot@bot chain this hop belongs to (DECENTRALIZED_MESH §8). Stamped onto
+    /// the placeholder so the whole cascade is cancelable as one unit and the
+    /// dispatch gate can block hops of a cancelled chain. `None` for un-tracked
+    /// dispatch (a targeted session, or a message that triggers no bot).
+    pub chain_id: Option<String>,
 }
 
 /// 派发结果。
@@ -63,6 +68,7 @@ pub async fn dispatch(
         params.channel_id,
         params.bot_id,
         params.depth,
+        params.chain_id.as_deref(),
     )
     .await
     {
@@ -184,17 +190,19 @@ async fn create_placeholder(
     channel_id: Uuid,
     bot_id: Uuid,
     depth: i32,
+    chain_id: Option<&str>,
 ) -> Result<bool, String> {
     let result = sqlx::query(
         "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth)
-         VALUES ($1, $2, 'bot', $3, '', TRUE, $4)
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
+         VALUES ($1, $2, 'bot', $3, '', TRUE, $4, $5)
          ON CONFLICT (msg_id) DO NOTHING",
     )
     .bind(placeholder_id.to_string())
     .bind(channel_id.to_string())
     .bind(bot_id.to_string())
     .bind(depth)
+    .bind(chain_id)
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;

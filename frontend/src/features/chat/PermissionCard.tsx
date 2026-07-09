@@ -6,6 +6,7 @@ import {
   listApprovers,
 } from "@/api/approval";
 import { getGitDiff } from "@/api/workspace";
+import { useProfileCard } from "./ProfileHovercard";
 import { DiffView } from "./DiffView";
 import { looksLikeGitCommit } from "./workspaceLink";
 import type { Message, PermissionContentData, PermissionOption } from "@/types";
@@ -66,6 +67,11 @@ function previewRawInput(raw: unknown): string | null {
 export function PermissionCard({ message, channelId, currentUserId }: Props) {
   const data = (message.content_data ?? {}) as PermissionContentData;
   const botId = message.sender_id;
+  // Resolve "who approved" to a member name (falls back to the short id).
+  const profileCard = useProfileCard();
+  const resolverMember = data.resolved_by ? profileCard?.memberOf(data.resolved_by) : undefined;
+  const resolverName =
+    resolverMember?.display_name || resolverMember?.username || data.resolved_by?.slice(0, 8);
   const requestId = data.request_id ?? "";
   const options = useMemo(() => data.options ?? [], [data.options]);
   const resolved = data.resolved === true;
@@ -223,7 +229,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         )}
         {data.resolved_by && (
           <span className="text-zinc-600 whitespace-nowrap" title={data.resolved_by}>
-            · {data.resolved_by.slice(0, 8)}
+            · {resolverName}
           </span>
         )}
         {undelivered && (

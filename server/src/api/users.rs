@@ -98,7 +98,21 @@ pub async fn update_me(
     let status_text = PatchField::read(obj, "status_text");
     let status_emoji = PatchField::read(obj, "status_emoji");
 
-    // Length guards (columns are VARCHAR(140)/(32); reject early with a clean 400).
+    // Length guards: reject early with a clean 400 instead of overflowing a column
+    // (display_name is VARCHAR(255) → a 500) or fanning an unbounded field out to every
+    // channel member via the member_updated broadcast below (bio is TEXT).
+    if display_name
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 255)
+    {
+        return Err(AppError::BadRequest(
+            "display_name too long (≤255 chars)".into(),
+        ));
+    }
+    if bio.value.as_deref().is_some_and(|s| s.chars().count() > 4000) {
+        return Err(AppError::BadRequest("bio too long (≤4000 chars)".into()));
+    }
     if status_text
         .value
         .as_deref()
@@ -167,7 +181,7 @@ pub async fn update_me(
 /// succeeded; a missed live update self-heals on the next member-list fetch).
 pub async fn broadcast_member_update(state: &AppState, user_id: &str) {
     let row = match sqlx::query(
-        "SELECT display_name, avatar_url, bio, status_text, status_emoji
+        "SELECT display_name, avatar_url, bio, status_text, status_emoji, status_updated_at
          FROM users WHERE user_id = $1 AND is_deleted = FALSE",
     )
     .bind(user_id)
@@ -185,6 +199,13 @@ pub async fn broadcast_member_update(state: &AppState, user_id: &str) {
         "bio": row.try_get::<Option<String>, _>("bio").ok().flatten(),
         "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
         "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+        // RFC3339 so a user's member card / hovercard can render "updated x ago"
+        // live — the same field the bot broadcast emits (audit item 5).
+        "status_updated_at": row
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
+            .ok()
+            .flatten()
+            .map(|t| t.to_rfc3339()),
     });
 
     let channels: Vec<String> = sqlx::query_scalar(

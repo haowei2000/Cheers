@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
 import type { Message, PermissionContentData } from "@/types";
@@ -27,6 +28,10 @@ interface Props {
   actions?: MessageActionHandlers;
   selectMode?: boolean;
   selectedIds?: ReadonlySet<string>;
+  /** Jump request from outside (ViewBoard history items): scroll the message into
+   *  view and flash it. `nonce` distinguishes repeat jumps to the same message.
+   *  Best-effort — silently ignored when the message isn't in the loaded window. */
+  focusMsg?: { msgId: string; nonce: number } | null;
 }
 
 export function MessageList({
@@ -40,10 +45,31 @@ export function MessageList({
   actions,
   selectMode,
   selectedIds,
+  focusMsg,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+  // Transient flash for a jumped-to message (cleared after the highlight fades).
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // External jump (ViewBoard history rows): scroll to the anchored row + flash.
+  // Best-effort — if the message isn't in the loaded window there is no anchor
+  // and the jump is a silent no-op (lightweight by design).
+  useEffect(() => {
+    if (!focusMsg) return;
+    const el = containerRef.current?.querySelector(
+      `[data-msg-id="${CSS.escape(focusMsg.msgId)}"]`
+    );
+    if (!el) {
+      toast("Message isn't loaded — scroll up to load older history", { icon: "🔍" });
+      return;
+    }
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    setHighlightId(focusMsg.msgId);
+    const t = setTimeout(() => setHighlightId(null), 1800);
+    return () => clearTimeout(t);
+  }, [focusMsg]);
 
   // Resolved approvals are folded into each bot turn's trace, not shown as their own rows.
   const visible = useMemo(
@@ -133,20 +159,29 @@ export function MessageList({
                 <div className="flex-1 h-px bg-zinc-800" />
               </div>
             )}
-            <MessageItem
-              message={msg}
-              isConsecutive={!!isConsecutive}
-              currentUserId={currentUserId}
-              channelId={channelId}
-              senderName={senderNames?.get(msg.sender_id)}
-              actions={actions}
-              selectMode={selectMode}
-              selected={selectedIds?.has(msg.msg_id) ?? false}
-              repliedTo={
-                msg.reply_to_msg_id ? byId.get(msg.reply_to_msg_id) ?? null : null
+            <div
+              data-msg-id={msg.msg_id}
+              className={
+                msg.msg_id === highlightId
+                  ? "rounded-lg bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
+                  : "transition-colors duration-700"
               }
-              nameOf={nameOf}
-            />
+            >
+              <MessageItem
+                message={msg}
+                isConsecutive={!!isConsecutive}
+                currentUserId={currentUserId}
+                channelId={channelId}
+                senderName={senderNames?.get(msg.sender_id)}
+                actions={actions}
+                selectMode={selectMode}
+                selected={selectedIds?.has(msg.msg_id) ?? false}
+                repliedTo={
+                  msg.reply_to_msg_id ? byId.get(msg.reply_to_msg_id) ?? null : null
+                }
+                nameOf={nameOf}
+              />
+            </div>
           </div>
         );
       })}

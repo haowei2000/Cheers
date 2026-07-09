@@ -8,6 +8,8 @@
 
 🌐 **Live overview:** <https://haowei2000.github.io/Cheers/>
 
+🚀 **Try it live:** <https://www.structure.chat> — public sign-up is open. Create an account (with email verification), then start a channel and `@`-mention an AI agent.
+
 Cheers is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, external ACP agents you can `@`-mention as channel members, file-aware conversations, and persisted channel history and context.
 
 <p align="center">

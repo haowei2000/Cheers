@@ -223,7 +223,7 @@ pub async fn handle_done(
              is_partial = FALSE,
              file_ids = COALESCE($3::jsonb, file_ids)
          WHERE msg_id = $4 AND is_partial = TRUE AND channel_seq IS NULL
-         RETURNING channel_id, channel_seq, depth, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id",
+         RETURNING channel_id, channel_seq, depth, file_ids, msg_type, in_reply_to_msg_id AS reply_to_msg_id, chain_id",
     )
     .bind(channel_seq)
     .bind(content)
@@ -263,6 +263,12 @@ pub async fn handle_done(
         .try_get::<Option<String>, _>("reply_to_msg_id")
         .ok()
         .flatten();
+    // The chain this reply belongs to — propagated to any next hop so the whole
+    // bot@bot cascade shares one cancelable chain (§8).
+    let chain_id = details
+        .try_get::<Option<String>, _>("chain_id")
+        .ok()
+        .flatten();
 
     // Resolve attachment metadata (incl. staged files, with status) so the live
     // frame renders attachments immediately — e.g. a staged file as a clickable
@@ -296,6 +302,7 @@ pub async fn handle_done(
     registry.remove(msg_id);
 
     // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
+    // chain_id 从本条回复继承，下一跳共享同一条可取消链（§8 gate 也在内部）。
     if let Err(e) = chains::trigger_bot_replies(
         db,
         fanout,
@@ -307,6 +314,7 @@ pub async fn handle_done(
         depth,
         bot_id,
         &mentions,
+        chain_id.as_deref(),
     )
     .await
     {
@@ -570,6 +578,9 @@ pub async fn handle_send(
     // 主动 send 里的 @bot 也要能派活。视作 depth=0（与用户发消息触发对等），
     // 后续 done 链再逐跳 +1 受 MAX_BOT_REPLY_DEPTH 约束。自 @ 过滤与 INITIATE
     // 门禁在 trigger_bot_replies 内部统一处理。
+    // chain：主动 send 拿不到当前任务上下文，best-effort 继承发送 bot 进行中任务
+    // 的链（让多跳 post_message 级联共享同一条可取消链），无则新起一条（§8）。
+    let chain_id = chain_for_proactive_send(db, channel_id, bot_id, msg_id, &mentions).await;
     if let Err(e) = chains::trigger_bot_replies(
         db,
         fanout,
@@ -581,6 +592,7 @@ pub async fn handle_send(
         0,
         bot_id,
         &mentions,
+        chain_id.as_deref(),
     )
     .await
     {
@@ -588,6 +600,30 @@ pub async fn handle_send(
     }
 
     Ok(msg_id)
+}
+
+/// Chain assignment for a bot's proactive send / post_message. There is no task
+/// context on this path (same gap as the depth reset), so we best-effort inherit
+/// the chain of the bot's in-flight task — keeping a multi-hop post_message
+/// cascade on ONE cancelable chain — and only root a fresh chain when the bot
+/// isn't already in one AND the message actually triggers a bot (no dead rows).
+async fn chain_for_proactive_send(
+    db: &PgPool,
+    channel_id: Uuid,
+    author_bot_id: Uuid,
+    msg_id: Uuid,
+    mentions: &[mentions::Mention],
+) -> Option<String> {
+    if mentions.is_empty() {
+        return None;
+    }
+    match crate::domain::task_chains::chain_of_active_bot_task(db, channel_id, author_bot_id).await {
+        Ok(Some(cid)) => Some(cid),
+        _ => crate::domain::task_chains::start_chain(db, channel_id, msg_id, msg_id)
+            .await
+            .ok()
+            .map(|c| c.to_string()),
+    }
 }
 
 /// `channel.messages.create`（bot 主动 post_message 走的 resource 路径）落库后的副作用：
@@ -631,6 +667,10 @@ pub async fn broadcast_and_trigger_created_message(
     let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
         return;
     };
+    // Same proactive-send chain assignment as handle_send: inherit the author
+    // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
+    // else root a new one (§8).
+    let chain_id = chain_for_proactive_send(db, channel_id, author_bot_id, msg_id, &mentions).await;
     if let Err(e) = chains::trigger_bot_replies(
         db,
         fanout,
@@ -642,6 +682,7 @@ pub async fn broadcast_and_trigger_created_message(
         0,
         author_bot_id,
         &mentions,
+        chain_id.as_deref(),
     )
     .await
     {

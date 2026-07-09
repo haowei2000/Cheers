@@ -60,6 +60,7 @@ interface Callbacks {
     bio?: string | null;
     status_text?: string | null;
     status_emoji?: string | null;
+    status_updated_at?: string | null;
   }) => void;
 }
 

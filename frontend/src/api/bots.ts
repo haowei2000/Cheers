@@ -97,6 +97,12 @@ export interface BotStatus {
   last_disconnected_at?: string | null;
   /** Owner/admin-only count of un-redeemed enrollment codes; null otherwise. */
   live_enrollment_codes?: number | null;
+  /** Current status line (mirrors the profile) — lets a poller detect a fresh write. */
+  status_text?: string | null;
+  status_emoji?: string | null;
+  /** When the status was last written (RFC 3339); newer than a captured "before"
+   *  value means the agent has responded to a manual refresh. */
+  status_updated_at?: string | null;
 }
 
 export async function getBotStatus(botId: string): Promise<BotStatus> {

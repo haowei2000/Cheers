@@ -10,7 +10,9 @@
 // channel's cumulative cost crosses a cap) lives in shared dispatch, not this read
 // panel; wire it where turns are admitted, not in the dashboard.
 import { Coins, Gauge } from "lucide-react";
-import { registerViewBoard, channelSessionParams } from "../viewBoard";
+import { Avatar } from "@/components/ui/avatar";
+import { registerViewBoard, channelSessionParams, type ViewBoardContext } from "../viewBoard";
+import { useMembersIndex, memberLabel } from "../useMembersIndex";
 
 interface BotUsage {
   bot_id: string;
@@ -43,7 +45,9 @@ function fmtUsd(n: number | null | undefined): string {
   });
 }
 
-function UsageBody({ data }: { data: UsageRead }) {
+function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
+  // bot_id → member, so the Bot column reads as avatar + name, not a raw uuid.
+  const members = useMembersIndex(ctx.channelId);
   const bots = data.bots ?? [];
   if (bots.length === 0) {
     return (
@@ -72,9 +76,19 @@ function UsageBody({ data }: { data: UsageRead }) {
             key={`${b.bot_id}:${b.session_id ?? "—"}`}
             className="border-b border-zinc-900 hover:bg-zinc-800/40 text-zinc-300"
           >
-            {/* bot_id / session_id are opaque ids: short form shown, full id in the tooltip */}
-            <td className="px-3 py-1.5 font-mono text-zinc-200 truncate max-w-[110px]" title={b.bot_id}>
-              {b.bot_id.slice(0, 8)}
+            {/* Bot reads as avatar + name (full id in the tooltip); session_id is an
+                opaque technical id: short mono form + tooltip. */}
+            <td className="px-3 py-1.5 text-zinc-200 max-w-[130px]" title={b.bot_id}>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <Avatar
+                  name={memberLabel(members, b.bot_id)}
+                  src={members.get(b.bot_id)?.avatar_url ?? undefined}
+                  id={b.bot_id}
+                  size="xs"
+                  className="!w-4 !h-4 !text-[8px]"
+                />
+                <span className="truncate">{memberLabel(members, b.bot_id)}</span>
+              </span>
             </td>
             <td
               className="px-2 py-1.5 font-mono text-zinc-500 truncate max-w-[90px]"
@@ -115,5 +129,5 @@ registerViewBoard<UsageRead>({
   verb: "channel.usage.read",
   sessionScoped: true,
   makeParams: channelSessionParams,
-  render: (data) => <UsageBody data={data} />,
+  render: (data, ctx) => <UsageBody data={data} ctx={ctx} />,
 });

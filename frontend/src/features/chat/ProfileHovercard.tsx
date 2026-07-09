@@ -18,8 +18,21 @@ export interface ProfileData {
   bio?: string | null;
   status_text?: string | null;
   status_emoji?: string | null;
+  /** When the status was last written (RFC 3339) — powers "updated 3m ago". */
+  status_updated_at?: string | null;
   role?: string | null;
   is_online?: boolean | null;
+}
+
+/** Compact "updated 3m ago" for a status line. Empty string for a missing/bad date. */
+function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86_400)}d ago`;
 }
 
 interface Ctx {
@@ -32,6 +45,8 @@ interface Ctx {
     id: string,
     fallback?: Partial<ProfileData>
   ) => void;
+  /** Look a member up in the provider's live map (e.g. for an avatar_url). */
+  memberOf: (id: string) => ProfileData | undefined;
 }
 
 const ProfileCtx = createContext<Ctx | null>(null);
@@ -65,12 +80,21 @@ export function ProfileCardProvider({
     setState({ member, rect: anchor.getBoundingClientRect() });
   };
 
+  // Keep an open card live: `state.member` is a snapshot captured at open time, so a
+  // `member_updated` frame that patches the `members` map (avatar/bio/status) would
+  // otherwise not reach an already-open card. Prefer the current row from the map;
+  // fall back to the snapshot for a member no longer in it (e.g. a former member
+  // opened via `openById`'s fallback).
+  const liveMember = state
+    ? members.get(state.member.member_id) ?? state.member
+    : null;
+
   return (
-    <ProfileCtx.Provider value={{ open, openById }}>
+    <ProfileCtx.Provider value={{ open, openById, memberOf: (id) => members.get(id) }}>
       {children}
-      {state && (
+      {state && liveMember && (
         <ProfileCard
-          member={state.member}
+          member={liveMember}
           rect={state.rect}
           onClose={() => setState(null)}
         />
@@ -154,6 +178,13 @@ function ProfileCard({
               {member.status_text}
             </p>
           )}
+          {member.status_updated_at &&
+            (member.status_emoji || member.status_text) &&
+            relativeTime(member.status_updated_at) && (
+              <p className="mt-0.5 text-[10px] text-zinc-500">
+                updated {relativeTime(member.status_updated_at)}
+              </p>
+            )}
         </div>
       </div>
 

@@ -143,6 +143,11 @@ async fn main() -> anyhow::Result<()> {
         config.conversion_poll_interval_secs,
     );
 
+    // Scheduled bot self-status refresh (audit item 6). The connector was
+    // historically meant to run this loop but ships no implementation, so the
+    // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).
+    tokio::spawn(server::domain::bot_status_scheduler::run(state.clone()));
+
     let app = router::build(state);
 
     let addr = format!("0.0.0.0:{}", config.port);

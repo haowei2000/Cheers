@@ -811,6 +811,16 @@ pub async fn bot_self_status(
         ));
     }
 
+    // Rate-limit per bot (audit item 2): min 5s between writes, so a runaway
+    // connector can't fan a `member_updated` broadcast storm. Keyed by bot_id and
+    // checked after auth so an unauthenticated probe never touches the limiter.
+    // `peek` only — the interval is committed (`record`) after a *successful*
+    // persist, so an over-cap payload that 400s doesn't burn the 5s budget and
+    // leave the corrected retry throttled.
+    if let Err(retry_after_secs) = crate::infra::ratelimit::bot_status_limiter().peek(&bot_id) {
+        return Err(AppError::TooManyRequests { retry_after_secs });
+    }
+
     let status_text = body
         .status_text
         .as_deref()
@@ -829,32 +839,26 @@ pub async fn bot_self_status(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    if status_text
-        .as_deref()
-        .is_some_and(|s| s.chars().count() > 140)
-    {
-        return Err(AppError::BadRequest(
-            "status_text too long (≤140 chars)".into(),
-        ));
-    }
-
+    // Input caps (status_text ≤140, status_emoji ≤32, description ≤1000 chars) are
+    // enforced inside persist_bot_self_status — the single choke point shared with
+    // the resource verb (audit item 1) — so both write paths validate identically.
     let description_provided = body.description.is_some();
-    sqlx::query(
-        "UPDATE bot_accounts SET
-            status_text = $2,
-            status_emoji = $3,
-            description = CASE WHEN $4 THEN $5 ELSE description END,
-            status_updated_at = NOW(),
-            status_last_auto_update_at = NOW()
-         WHERE bot_id = $1",
+    persist_bot_self_status(
+        &state.db,
+        &bot_id,
+        &status_text,
+        &status_emoji,
+        description_provided,
+        &description,
     )
-    .bind(&bot_id)
-    .bind(&status_text)
-    .bind(&status_emoji)
-    .bind(description_provided)
-    .bind(&description)
-    .execute(&state.db)
-    .await?;
+    .await
+    .map_err(|e| match e {
+        PersistStatusError::Invalid(msg) => AppError::BadRequest(msg),
+        PersistStatusError::Db(e) => AppError::Db(e),
+    })?;
+
+    // Persist succeeded — now commit the rate-limit interval (see `peek` above).
+    crate::infra::ratelimit::bot_status_limiter().record(&bot_id);
 
     // Push the new status to channel viewers so the bot's member card updates live
     // (mirrors what update_me does for users — a bot is a member too).
@@ -868,13 +872,85 @@ pub async fn bot_self_status(
     })))
 }
 
+/// Failure of the shared bot-self-status persistence path: either an input-cap
+/// violation (caller-fixable → 400 / INVALID_PARAMS) or a DB error. Splitting the
+/// two lets each write path map them to its own transport error cleanly.
+pub(crate) enum PersistStatusError {
+    /// An input exceeded its character cap; the string is the caller-facing message.
+    Invalid(String),
+    Db(sqlx::Error),
+}
+
+/// Shared persistence for a bot writing its OWN status — used by both write paths:
+/// the REST `POST /bots/{id}/self-status` (connector-authed by bot token) and the
+/// `bot.status.write` resource verb (the agent's `set_status` MCP tool, authed by
+/// the Agent Bridge connection). One UPDATE, so the two paths can't drift. Inputs
+/// are already normalized (trimmed, empty→None); `description_provided=false`
+/// keeps the current description. Bumps both status clocks.
+///
+/// Input caps are enforced HERE (audit item 1) so every self-status write — REST
+/// and resource verb alike — sees the same limits: `status_text` ≤140,
+/// `status_emoji` ≤32, `description` ≤1000, counted in chars (not bytes). This is
+/// the single choke point, so the two paths can't drift on validation either.
+pub(crate) async fn persist_bot_self_status(
+    db: &sqlx::PgPool,
+    bot_id: &str,
+    status_text: &Option<String>,
+    status_emoji: &Option<String>,
+    description_provided: bool,
+    description: &Option<String>,
+) -> Result<(), PersistStatusError> {
+    if status_text
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 140)
+    {
+        return Err(PersistStatusError::Invalid(
+            "status_text too long (≤140 chars)".into(),
+        ));
+    }
+    if status_emoji
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 32)
+    {
+        return Err(PersistStatusError::Invalid(
+            "status_emoji too long (≤32 chars)".into(),
+        ));
+    }
+    if description
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 1000)
+    {
+        return Err(PersistStatusError::Invalid(
+            "description too long (≤1000 chars)".into(),
+        ));
+    }
+    sqlx::query(
+        "UPDATE bot_accounts SET
+            status_text = $2,
+            status_emoji = $3,
+            description = CASE WHEN $4 THEN $5 ELSE description END,
+            status_updated_at = NOW(),
+            status_last_auto_update_at = NOW()
+         WHERE bot_id = $1",
+    )
+    .bind(bot_id)
+    .bind(status_text)
+    .bind(status_emoji)
+    .bind(description_provided)
+    .bind(description)
+    .execute(db)
+    .await
+    .map(|_| ())
+    .map_err(PersistStatusError::Db)
+}
+
 /// Broadcast a bot's current card (name/avatar/description/status) to every channel
 /// it's in, as a `member_updated` frame — the bot-side analogue of
 /// [`crate::api::users::broadcast_member_update`]. Best-effort; a bot's `bio` on the
 /// member card is its `description`. Never fails the caller.
 pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
     let row = match sqlx::query(
-        "SELECT display_name, avatar_url, description, status_text, status_emoji
+        "SELECT display_name, avatar_url, description, status_text, status_emoji, status_updated_at
          FROM bot_accounts WHERE bot_id = $1",
     )
     .bind(bot_id)
@@ -892,6 +968,12 @@ pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
         "bio": row.try_get::<Option<String>, _>("description").ok().flatten(),
         "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
         "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
+        // RFC3339 so the hovercard can render "updated x ago" (audit item 5).
+        "status_updated_at": row
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at")
+            .ok()
+            .flatten()
+            .map(|t| t.to_rfc3339()),
     });
 
     let channels: Vec<String> = sqlx::query_scalar(
@@ -917,15 +999,21 @@ pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
 }
 
 /// Fallback when a bot has no `status_update_prompt` configured, so the manual
-/// refresh button works out of the box.
+/// refresh button works out of the box. Names the `set_status` MCP tool explicitly:
+/// that is the agent's ONLY write path for its own card (the REST /self-status
+/// endpoint needs the bot token, which agents never see) — a prompt that doesn't
+/// name the tool gets a chat reply and no card update.
 const DEFAULT_STATUS_REFRESH_PROMPT: &str =
-    "Update your status: set a short status line (and optional emoji) reflecting what \
-     you're currently working on by calling your self-status endpoint.";
+    "Update your status: call your `set_status` tool with a short status_text (and \
+     optional status_emoji) reflecting what you're currently working on. If your \
+     info line is stale, refresh it too via the same tool.";
 
 /// POST /api/v1/bots/:bot_id/status/refresh — owner/admin asks the agent to refresh
 /// its own status NOW. Posts the bot's configured `status_update_prompt` (mentioning
-/// the bot) into a channel the caller shares with it, so the normal prompt path runs
-/// the agent — which then writes its status via `/self-status`. Reuses the
+/// the bot) into a **DM** the caller shares with it, so the normal prompt path runs
+/// the agent — which then writes its status via `/self-status`. A DM (not any shared
+/// group channel) is required so the prompt — which `list_bots` redacts from
+/// non-managers — is never made visible to other human members. Reuses the
 /// `session/prompt` INITIATE gate (the panel is already owner/admin-only); no
 /// connector changes needed.
 pub async fn refresh_bot_status(
@@ -953,29 +1041,50 @@ pub async fn refresh_bot_status(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_STATUS_REFRESH_PROMPT.to_string());
 
-    // A channel the caller AND the bot both belong to: create_message needs the caller
-    // to be a member, and mention-triggering needs the bot to be one. Prefer a DM so the
-    // prompt/response stay out of a shared room.
-    let channel_id: Option<String> = sqlx::query_scalar(
-        "SELECT c.channel_id::text FROM channels c
-         JOIN channel_memberships cu
-           ON cu.channel_id = c.channel_id AND cu.member_id = $1 AND cu.member_type = 'user'
-         JOIN channel_memberships cb
-           ON cb.channel_id = c.channel_id AND cb.member_id = $2 AND cb.member_type = 'bot'
-         ORDER BY (c.type = 'dm') DESC
-         LIMIT 1",
+    // Post into the caller's DM with the bot: create_message needs the caller to be a
+    // member, mention-triggering needs the bot to be one, and a DM is private to just the
+    // two of them — posting the configured `status_update_prompt` into a group room would
+    // leak it to other human members, contradicting the manager-only redaction `list_bots`
+    // applies to that same field. Auto-create the DM if it doesn't exist yet (find-or-create,
+    // race-safe via dm_key, same path `/channels/dm` uses) so the owner can refresh without
+    // first opening one by hand.
+    let channel_id =
+        crate::domain::dms::find_or_create_dm(&state.db, caller, &bot_id, true).await?;
+
+    // INITIATE(prompt) gate. `create_message` posts the prompt but *silently skips*
+    // waking the bot when this event is denied (it `continue`s the dispatch loop and
+    // still returns Ok) — which would make this endpoint report a false success while
+    // the agent never runs. Check the same gate `send_message` uses up front and fail
+    // loudly instead. Fail-open on a rules error, matching create_message/cancel_message.
+    let caller_role: String = sqlx::query(
+        "SELECT role FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = $2 AND member_type = 'user'",
     )
+    .bind(channel_id.to_string())
     .bind(&claims.sub)
-    .bind(&bot_id)
     .fetch_optional(&state.db)
-    .await?;
-    let channel_id = channel_id
-        .and_then(|c| Uuid::parse_str(&c).ok())
-        .ok_or_else(|| {
-            AppError::BadRequest(
-                "no shared channel with this bot — open a DM or add it to a channel first".into(),
-            )
-        })?;
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
+    .unwrap_or_else(|| "member".to_string());
+    let may_prompt = crate::domain::acp_policy::allows(
+        &state.db,
+        &bot_id,
+        &channel_id.to_string(),
+        &claims.sub,
+        &caller_role,
+        "session/prompt",
+        crate::domain::bot_event_policy::Capability::Initiate,
+    )
+    .await
+    .unwrap_or(true);
+    if !may_prompt {
+        return Err(AppError::Forbidden(
+            "not authorized to prompt this bot here — status refresh needs the ACP prompt permission"
+                .into(),
+        ));
+    }
 
     let dto = messages::create_message(
         &state.db,
@@ -990,6 +1099,7 @@ pub async fn refresh_bot_status(
             reply_to_msg_id: None,
             file_ids: vec![],
             mention_ids: vec![bot_uuid],
+            mention_names: vec![],
             session_id: None,
         },
     )

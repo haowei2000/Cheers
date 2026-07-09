@@ -814,6 +814,52 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                     state.fanout.broadcast_channel(cid, wire).await;
                 }
             }
+            // Agent wrote its own status card (`bot.status.write`, the set_status
+            // tool): persisted in dispatch (db-only); the live member_updated push
+            // to every channel the bot is in needs the fanout, so it's emitted
+            // here at the WS boundary — same pattern as the blocks above.
+            if frame.get("resource").and_then(Value::as_str) == Some("bot.status.write")
+                && resp.get("ok").and_then(Value::as_bool) == Some(true)
+            {
+                crate::api::bots::broadcast_bot_member_update(state, &bot.bot_id.to_string())
+                    .await;
+                // Traceability (audit items 3 + 9): record the self-status write to
+                // acp_event_log so status changes are auditable alongside every other
+                // ACP event. Summary ONLY — which fields were set and their char
+                // lengths, NEVER the text itself. channel_id is NULL (a self-card write
+                // isn't channel-scoped); session_id rides the frame if present.
+                // Best-effort: a log-write failure must never disrupt the live agent.
+                let params = frame.get("params");
+                let field_len = |key: &str| {
+                    params
+                        .and_then(|p| p.get(key))
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.chars().count())
+                };
+                let audit_payload = json!({
+                    "status_text_len": field_len("status_text"),
+                    "status_emoji_len": field_len("status_emoji"),
+                    "info_len": field_len("info"),
+                });
+                if let Err(err) = sqlx::query(
+                    "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
+                )
+                .bind(Uuid::new_v4().to_string())
+                .bind(bot.bot_id.to_string())
+                .bind(Option::<&str>::None)
+                .bind(frame.get("session_id").and_then(Value::as_str))
+                .bind("bot.status.write")
+                .bind("cheers")
+                .bind(audit_payload.to_string())
+                .execute(&state.db)
+                .await
+                {
+                    tracing::warn!(bot_id = %bot.bot_id, error = %err, "bot.status.write audit log write failed");
+                }
+            }
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }

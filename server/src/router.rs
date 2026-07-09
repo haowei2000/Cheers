@@ -513,7 +513,12 @@ fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login))
-        // Public self-service sign-up (gated by config.open_registration).
+        // Public self-service sign-up (gated by config.open_registration): request an
+        // email verification code, then register with it.
+        .route(
+            "/api/v1/auth/register/request-code",
+            post(api::auth::register_request_code),
+        )
         .route("/api/v1/auth/register", post(api::auth::register))
         // Public password-reset flow: request a one-time code, then set a new password.
         .route(
@@ -534,6 +539,12 @@ fn build_public_routes() -> Router<AppState> {
         // Public, no secrets: the mode-2 connector installer, served with the
         // API base baked in (reachable via the existing nginx /api proxy).
         .route("/api/v1/install.sh", get(api::enrollment::install_script))
+        // Public: same-origin proxy for the prebuilt connector binaries — for hosts
+        // that can reach this gateway but not GitHub (install.sh tries this first).
+        .route(
+            "/api/v1/connector/download/:asset",
+            get(api::enrollment::connector_download),
+        )
         // Bot self-status: authenticated by the bot's Agent Bridge token (Bearer),
         // not a user JWT — the connector calls this to write the bot's own status
         // (ad-hoc or after a scheduled `status_update_prompt` run). No JWT layer.

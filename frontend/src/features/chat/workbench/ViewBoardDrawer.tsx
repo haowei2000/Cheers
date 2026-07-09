@@ -2,11 +2,14 @@
 // SEPARATE from the file-based Workbench. Rendered as a floating, rounded card anchored
 // to the TOP-RIGHT (Codex "Environment" popover style) rather than a full-height edge
 // drawer, so it reads as a lightweight instrument overlay. Non-modal (no backdrop) so it
-// can stay open alongside the Workbench: when both are open it floats to the LEFT of the
-// Workbench (shiftedForWorkbench) so neither overlaps.
+// can stay open alongside the Workbench; both are draggable (useWindowDrag), so
+// overlapping windows are resolved by the user, and a click brings a window to the front.
 import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useWindowDrag } from "@/hooks/useWindowDrag";
+import { ResizeGrip } from "@/components/ui/resize-grip";
+import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
 import { getViewBoards, type ViewBoardContext } from "./viewBoard";
 import { ViewBoardMinimized } from "./ViewBoardMinimized";
@@ -27,22 +30,29 @@ interface Props {
   selectedSessionId?: string | null;
   /** Live-push ticks (board id → counter) from the WS board_signal stream. */
   boardTick?: Record<string, number>;
-  /** When the Workbench drawer is also open, float to its left so both show. */
+  /** Default-position nicety: while the ViewBoard has never been dragged, float it
+   *  to the LEFT of the (also right-anchored) Workbench so both show. A dragged
+   *  position always wins. */
   shiftedForWorkbench?: boolean;
   /** Minimal mode: a compact content-height card in a narrower column (vs the full
    *  full-height column). Still keeps its own column; toggled from the header. */
   minimal?: boolean;
   onToggleMinimal?: () => void;
+  /** Best-effort "jump the chat to this message" (scroll + flash when loaded). */
+  onJumpToMessage?: (msgId: string) => void;
 }
 
 const WORKBENCH_WIDTH = 560; // keep in sync with WorkbenchDrawer's w-[560px]
-const EDGE_GAP = 12; // inset from the right edge (and from the Workbench when shifted)
+const EDGE_GAP = 12; // inset from the right edge (default, pre-drag position)
 const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
 
 interface SessionOpt {
   session_id: string;
   bot_id: string;
+  bot_name?: string | null;
   is_primary: boolean;
+  cwd?: string | null;
+  created_at?: string | null;
 }
 
 export function ViewBoardDrawer({
@@ -54,6 +64,7 @@ export function ViewBoardDrawer({
   shiftedForWorkbench,
   minimal,
   onToggleMinimal,
+  onJumpToMessage,
 }: Props) {
   const boards = getViewBoards();
   const [active, setActive] = useState<string>(
@@ -94,13 +105,25 @@ export function ViewBoardDrawer({
       try {
         const res = (await sendResourceReq("channel.sessions.read", {
           channel_id: channelId,
-        })) as { sessions?: SessionOpt[] };
+        })) as {
+          sessions?: Array<{
+            session_id: string;
+            bot_id: string;
+            bot_name?: string | null;
+            is_primary: boolean;
+            created_at?: string | null;
+            workspace?: { cwd?: string | null };
+          }>;
+        };
         if (alive) {
           setSessions(
             (res.sessions ?? []).map((s) => ({
               session_id: s.session_id,
               bot_id: s.bot_id,
+              bot_name: s.bot_name ?? null,
               is_primary: s.is_primary,
+              cwd: s.workspace?.cwd ?? null,
+              created_at: s.created_at ?? null,
             }))
           );
         }
@@ -119,39 +142,61 @@ export function ViewBoardDrawer({
       sendResourceReq,
       selectedSessionId: scope || null,
       boardTick,
+      onJumpToMessage,
     }),
-    [channelId, sendResourceReq, scope, boardTick]
+    [channelId, sendResourceReq, scope, boardTick, onJumpToMessage]
   );
 
-  // Mobile: the card spans the full width (left/right insets via classes below), so the
-  // desktop-only "shift left of the Workbench" offset must not apply — it would push the
-  // card off-screen on a phone.
+  // Mobile: the card spans the full width (left/right insets via classes below);
+  // dragging is desktop-only.
   const isMobile = useIsMobile();
+  const windowDrag = useWindowDrag("cheers.float.viewboard", !isMobile);
 
   return (
-    // Rounded, elevated instrument card docked top-right (Codex-style chrome). The chat
-    // reserves its width (ChannelView.reservedRight) so it sits in its OWN column rather
-    // than floating over the chat + composer. Expanded = a full-height 420 column with the
-    // full boards; minimal = a compact content-height 280 glance card (ViewBoardMinimized).
-    // Slides off to the right when closed.
+    // Rounded, elevated FLOATING instrument card (Codex-style chrome), draggable by
+    // its title bar — it floats over the chat without reserving a column, so the
+    // composer keeps its full width. Expanded = a full-height 420 window with the
+    // full boards; minimal = a compact content-height 280 glance card
+    // (ViewBoardMinimized). Slides off to the right when closed.
     <aside
-      className={`fixed top-14 z-40 flex max-w-[94vw] flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40 backdrop-blur-sm transition-all duration-200 max-md:left-2 max-md:w-auto max-md:max-w-none ${
+      ref={windowDrag.ref}
+      onPointerDownCapture={windowDrag.toFront}
+      className={`fixed top-14 flex max-w-[94vw] flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40 backdrop-blur-sm transition-[opacity,transform] duration-200 max-md:left-2 max-md:w-auto max-md:max-w-none ${
         minimal
           ? "w-[280px] max-h-[calc(100dvh-4.5rem)]"
-          : "w-[420px] bottom-3 max-md:bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
+          : // Desktop default height stops ~6rem short of the bottom so the window
+            // never sits on the composer line; mobile keeps the bottom anchor.
+            "w-[420px] h-[calc(100dvh-9.5rem)] max-md:h-auto max-md:bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
       } ${
         open
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
       }`}
-      style={{
-        right:
-          !isMobile && shiftedForWorkbench && open
-            ? WORKBENCH_WIDTH + EDGE_GAP
-            : EDGE_GAP,
-      }}
+      style={
+        // Minimal ignores any resized size (posStyle) — it is a fixed compact
+        // glance card. Expanded uses the full geometry; when dragged but NOT
+        // resized, size the window explicitly from its new top edge (the
+        // bottom anchor is overridden by bottom: auto).
+        windowDrag.pos
+          ? minimal
+            ? { ...windowDrag.posStyle, maxHeight: `calc(100dvh - ${windowDrag.pos.y + 12}px)` }
+            : {
+                ...windowDrag.style,
+                ...(windowDrag.size ? {} : { height: `calc(100dvh - ${windowDrag.pos.y + 12}px)` }),
+              }
+          : {
+              ...(minimal ? windowDrag.posStyle : windowDrag.style),
+              right:
+                !isMobile && shiftedForWorkbench && open
+                  ? WORKBENCH_WIDTH + EDGE_GAP * 2
+                  : EDGE_GAP,
+            }
+      }
     >
-      <div className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0">
+      <div
+        {...windowDrag.handleProps}
+        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
+      >
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           ViewBoard
@@ -228,7 +273,13 @@ export function ViewBoardDrawer({
                     value={s.session_id}
                     title={`bot ${s.bot_id} · session ${s.session_id}`}
                   >
-                    {s.bot_id.slice(0, 6)} · {s.is_primary ? "primary" : "other"} {s.session_id.slice(0, 8)}
+                    {s.bot_name || s.bot_id.slice(0, 8)} ·{" "}
+                    {sessionTag({
+                      is_primary: s.is_primary,
+                      session_id: s.session_id,
+                      cwd: s.cwd,
+                      when: s.created_at,
+                    })}
                   </option>
                 ))}
               </select>
@@ -252,6 +303,8 @@ export function ViewBoardDrawer({
           </div>
         </>
       )}
+      {/* Resizable in expanded mode; minimal stays a fixed compact glance card. */}
+      {!minimal && <ResizeGrip resizeProps={windowDrag.resizeProps} />}
     </aside>
   );
 }

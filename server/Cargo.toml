@@ -77,7 +77,7 @@ aes-gcm = "0.10"
 
 # ── S3 ────────────────────────────────────────────────────────────────────────
 aws-sdk-s3 = "1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart", "stream"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

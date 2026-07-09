@@ -6,6 +6,8 @@
 //! any time. Every approval-related event is appended to `approval_audit` —
 //! that audit trail is the core of this feature.
 
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -179,11 +181,22 @@ pub async fn record_audit(db: &PgPool, ev: AuditEvent) -> Result<(), sqlx::Error
 }
 
 /// Read the audit log for a channel, newest first.
+///
+/// A permission's `requested` row (carries the content: title/tool) and its
+/// terminal `resolved`/`timeout` row (carries who acted + the decision) are two
+/// separate INSERTs sharing one `request_id` — merge them into a single entry
+/// here so callers see one complete record ("who approved what") instead of two
+/// half-populated rows. `access_requested`/`access_granted`/`access_revoked` are
+/// a different fact (approver-rights changes) and stay standalone even if they
+/// happen to reference the same `request_id`.
 pub async fn list_audit(
     db: &PgPool,
     channel_id: Uuid,
     limit: i64,
 ) -> Result<Vec<Value>, sqlx::Error> {
+    const MERGEABLE: [&str; 3] = ["requested", "resolved", "timeout"];
+    // Over-fetch: a resolved/timed-out request writes two rows that collapse
+    // into one below, so ask for headroom to still return `limit` entries.
     let rows = sqlx::query(
         "SELECT event_type, bot_id, request_id, msg_id, actor_id, target_user_id,
                 decision, option_id, detail, created_at
@@ -193,27 +206,58 @@ pub async fn list_audit(
          LIMIT $2",
     )
     .bind(channel_id.to_string())
-    .bind(limit)
+    .bind(limit.saturating_mul(2))
     .fetch_all(db)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| {
-            json!({
-                "event_type": r.try_get::<String, _>("event_type").unwrap_or_default(),
-                "bot_id": r.try_get::<Option<String>, _>("bot_id").ok().flatten(),
-                "request_id": r.try_get::<Option<String>, _>("request_id").ok().flatten(),
-                "msg_id": r.try_get::<Option<String>, _>("msg_id").ok().flatten(),
-                "actor_id": r.try_get::<Option<String>, _>("actor_id").ok().flatten(),
-                "target_user_id": r.try_get::<Option<String>, _>("target_user_id").ok().flatten(),
-                "decision": r.try_get::<Option<String>, _>("decision").ok().flatten(),
-                "option_id": r.try_get::<Option<String>, _>("option_id").ok().flatten(),
-                "detail": r.try_get::<Option<Value>, _>("detail").ok().flatten(),
-                "created_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                    .map(|t| t.to_rfc3339()).unwrap_or_default(),
-            })
-        })
-        .collect())
+
+    let mut merged: Vec<Value> = Vec::new();
+    let mut index_by_request: HashMap<String, usize> = HashMap::new();
+
+    for r in rows {
+        let event_type: String = r.try_get("event_type").unwrap_or_default();
+        let request_id: Option<String> = r.try_get::<Option<String>, _>("request_id").ok().flatten();
+        let bot_id: Option<String> = r.try_get::<Option<String>, _>("bot_id").ok().flatten();
+        let detail: Option<Value> = r.try_get::<Option<Value>, _>("detail").ok().flatten();
+
+        if MERGEABLE.contains(&event_type.as_str()) {
+            if let Some(rid) = &request_id {
+                if let Some(&idx) = index_by_request.get(rid) {
+                    // Rows arrive newest-first, so a repeat request_id here is the
+                    // earlier sibling of the resolved/timeout row we already
+                    // recorded. Only `requested` carries the permission content
+                    // (title/tool) — a terminal row's own `detail` (e.g. timeout's
+                    // `{via}`) is auxiliary, not content, so the `requested` row's
+                    // detail always wins once seen. Either way, drop the duplicate.
+                    if event_type == "requested" {
+                        if let Some(existing) = merged[idx].as_object_mut() {
+                            existing.insert("detail".into(), detail.unwrap_or(Value::Null));
+                            if existing.get("bot_id").is_none_or(Value::is_null) {
+                                existing.insert("bot_id".into(), json!(bot_id));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                index_by_request.insert(rid.clone(), merged.len());
+            }
+        }
+
+        merged.push(json!({
+            "event_type": event_type,
+            "bot_id": bot_id,
+            "request_id": request_id,
+            "msg_id": r.try_get::<Option<String>, _>("msg_id").ok().flatten(),
+            "actor_id": r.try_get::<Option<String>, _>("actor_id").ok().flatten(),
+            "target_user_id": r.try_get::<Option<String>, _>("target_user_id").ok().flatten(),
+            "decision": r.try_get::<Option<String>, _>("decision").ok().flatten(),
+            "option_id": r.try_get::<Option<String>, _>("option_id").ok().flatten(),
+            "detail": detail,
+            "created_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                .map(|t| t.to_rfc3339()).unwrap_or_default(),
+        }));
+    }
+    merged.truncate(limit.max(0) as usize);
+    Ok(merged)
 }
 
 /// A pending ACP permission message, looked up by its ACP `request_id`.

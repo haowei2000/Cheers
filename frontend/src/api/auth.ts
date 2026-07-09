@@ -18,11 +18,22 @@ export async function login(credentials: {
   });
 }
 
-/** Self-service sign-up. Creates a `member` account and returns a token (auto-login). */
+/** Request a one-time email verification code for self-service sign-up. Rejects an
+ *  email that's already registered (409). */
+export async function requestRegisterCode(email: string): Promise<{ ok: boolean }> {
+  return apiJson("/auth/register/request-code", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Self-service sign-up. Requires the verification code from `requestRegisterCode`.
+ *  Creates a `member` account and returns a token (auto-login). */
 export async function register(input: {
   username: string;
   password: string;
-  email?: string;
+  email: string;
+  code: string;
   display_name?: string;
 }): Promise<LoginResponse> {
   return apiJson<LoginResponse>("/auth/register", {

@@ -46,19 +46,31 @@ pub async fn handle(db: &PgPool, principal: &Principal, params: &Value) -> Resou
     .await
     .map_err(super::db_err("members.list: select channel memberships"))?;
 
+    // The caller's own membership row, so an agent can pick itself out of the
+    // roster (e.g. "am I already in this channel", "don't @ myself"). A bot never
+    // knew which row was "me" otherwise — member_ids are opaque UUIDs to it.
+    let self_id = principal.principal_id.to_string();
+    let self_type = principal.principal_type.as_member_type();
+
     let members: Vec<Value> = rows
         .iter()
-        .map(|r| serde_json::json!({
-            "member_id": r.try_get::<String, _>("member_id").unwrap_or_default(),
-            "member_type": r.try_get::<String, _>("member_type").unwrap_or_default(),
-            "display_name": r.try_get::<Option<String>, _>("display_name").unwrap_or(None),
-            "username": r.try_get::<Option<String>, _>("username").unwrap_or(None),
-            "info": r.try_get::<Option<String>, _>("info").unwrap_or(None),
-            "status_text": r.try_get::<Option<String>, _>("status_text").unwrap_or(None),
-            "status_emoji": r.try_get::<Option<String>, _>("status_emoji").unwrap_or(None),
-            "status_updated_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at").unwrap_or(None),
-            "joined_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("joined_at").unwrap_or(None),
-        }))
+        .map(|r| {
+            let member_id = r.try_get::<String, _>("member_id").unwrap_or_default();
+            let member_type = r.try_get::<String, _>("member_type").unwrap_or_default();
+            let is_self = member_id == self_id && member_type == self_type;
+            serde_json::json!({
+                "member_id": member_id,
+                "member_type": member_type,
+                "is_self": is_self,
+                "display_name": r.try_get::<Option<String>, _>("display_name").unwrap_or(None),
+                "username": r.try_get::<Option<String>, _>("username").unwrap_or(None),
+                "info": r.try_get::<Option<String>, _>("info").unwrap_or(None),
+                "status_text": r.try_get::<Option<String>, _>("status_text").unwrap_or(None),
+                "status_emoji": r.try_get::<Option<String>, _>("status_emoji").unwrap_or(None),
+                "status_updated_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("status_updated_at").unwrap_or(None),
+                "joined_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("joined_at").unwrap_or(None),
+            })
+        })
         .collect();
 
     Ok(serde_json::json!({

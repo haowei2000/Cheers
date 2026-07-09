@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod bot_status;
 pub mod channel_info;
 pub mod commands;
 pub mod context;
@@ -101,6 +102,9 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 
         // ── 写操作（频道成员 role 可写）────────────────────────────────
         "channel.messages.create" => messages::handle_create(db, &principal, &params).await,
+        // Agent writes its OWN status card (set_status tool); live broadcast is
+        // emitted at the WS boundary (agent_bridge), which holds the fanout.
+        "bot.status.write" => bot_status::handle_write(db, &principal, &params).await,
         "channel.leave" => members::handle_leave(db, &principal, &params).await,
         "channel.files.create" => files::handle_create(db, &principal, &params).await,
         "channel.files.stage" => files::handle_stage(db, &principal, &params).await,

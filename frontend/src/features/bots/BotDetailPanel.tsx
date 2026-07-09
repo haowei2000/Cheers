@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Bot,
@@ -13,7 +13,14 @@ import {
   Info,
   Trash2,
 } from "lucide-react";
-import { disableBot, enableBot, deleteBot, updateBotProfile, refreshBotStatus } from "@/api/bots";
+import {
+  disableBot,
+  enableBot,
+  deleteBot,
+  updateBotProfile,
+  refreshBotStatus,
+  getBotStatus,
+} from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { addChannelMember } from "@/api/channels";
@@ -64,14 +71,46 @@ export function BotDetailPanel({
   onIssue,
   onError,
   onChanged,
+  onPoll,
 }: {
   bot: BotItem;
   channels: Channel[];
   onIssue: (botId: string) => void;
   onError: (msg: string) => void;
   onChanged: () => void;
+  /** Silent background refetch for "live while open" (item 8) — no spinner. */
+  onPoll: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
+
+  // A manual "Update status now" lifecycle (item 4) is actively polling. While
+  // true, the live-while-open poll below stands down so the two don't overlap.
+  const refreshLifecycleActive = useRef(false);
+
+  // "Live while open" (item 8): no new websocket — just a bounded background
+  // refetch so status set elsewhere (another admin, the bot, the scheduler)
+  // shows up. Poll every ~20s and on window focus / tab becoming visible.
+  // Paused while the manual refresh lifecycle is mid-poll, and skipped while
+  // the tab is hidden. Cleaned up on unmount / bot change.
+  useEffect(() => {
+    const tick = () => {
+      if (refreshLifecycleActive.current) return;
+      if (document.visibilityState === "hidden") return;
+      onPoll();
+    };
+    const id = window.setInterval(tick, 20_000);
+    const onFocus = () => tick();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [bot.bot_id, onPoll]);
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900">
@@ -132,7 +171,14 @@ export function BotDetailPanel({
 
       <div className="p-4">
         {tab === "overview" && (
-          <BotOverview bot={bot} channels={channels} onIssue={onIssue} onError={onError} onChanged={onChanged} />
+          <BotOverview
+            bot={bot}
+            channels={channels}
+            onIssue={onIssue}
+            onError={onError}
+            onChanged={onChanged}
+            lifecycleActiveRef={refreshLifecycleActive}
+          />
         )}
         {tab === "permissions" && (
           <div className="space-y-4">
@@ -157,12 +203,14 @@ function BotOverview({
   onIssue,
   onError,
   onChanged,
+  lifecycleActiveRef,
 }: {
   bot: BotItem;
   channels: Channel[];
   onIssue: (botId: string) => void;
   onError: (msg: string) => void;
   onChanged: () => void;
+  lifecycleActiveRef: React.MutableRefObject<boolean>;
 }) {
   const [channelId, setChannelId] = useState("");
   const [added, setAdded] = useState(false);
@@ -229,7 +277,14 @@ function BotOverview({
         <CopyButton value={bot.bot_id} label="" />
       </div>
 
-      {bot.can_manage && <BotStatusEditor bot={bot} onError={onError} onChanged={onChanged} />}
+      {bot.can_manage && (
+        <BotStatusEditor
+          bot={bot}
+          onError={onError}
+          onChanged={onChanged}
+          lifecycleActiveRef={lifecycleActiveRef}
+        />
+      )}
 
       <div className="flex items-center gap-2">
         <select
@@ -305,34 +360,104 @@ function BotStatusEditor({
   bot,
   onError,
   onChanged,
+  lifecycleActiveRef,
 }: {
   bot: BotItem;
   onError: (msg: string) => void;
   onChanged: () => void;
+  lifecycleActiveRef: React.MutableRefObject<boolean>;
 }) {
   const [statusEmoji, setStatusEmoji] = useState(bot.status_emoji ?? "");
   const [statusText, setStatusText] = useState(bot.status_text ?? "");
   const [description, setDescription] = useState(bot.description ?? "");
+  // Re-seed the drafts when a refetch brings new values — e.g. the agent just
+  // wrote its status via set_status after "Update status now". Without this the
+  // inputs keep showing the stale pre-refresh text (useState seeds only once),
+  // and a later Save would silently overwrite the agent's fresh status.
+  useEffect(() => {
+    setStatusEmoji(bot.status_emoji ?? "");
+    setStatusText(bot.status_text ?? "");
+    setDescription(bot.description ?? "");
+  }, [bot.status_emoji, bot.status_text, bot.description]);
   const [auto, setAuto] = useState(bot.status_auto_update ?? false);
   const [prompt, setPrompt] = useState(bot.status_update_prompt ?? "");
   const [interval, setIntervalMin] = useState(
     bot.status_update_interval_minutes != null ? String(bot.status_update_interval_minutes) : "60"
   );
   const [busy, setBusy] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
-  // Trigger the agent to update its own status NOW (runs status_update_prompt via the
-  // normal prompt path → the bot writes /self-status → the card updates live).
+  // Manual "Update status now" completion lifecycle (item 4). Instead of blind
+  // 5/15/30s reloads, we ask the agent then POLL the bot's status every ~4s for
+  // up to ~60s, watching for status_updated_at to advance past the value we
+  // captured at click time. Newer → re-pull + a transient "✓ status updated".
+  // 60s with no change → a soft "still working" note (not an error). The button
+  // shows "Waiting for the agent…" throughout.
+  type RefreshPhase = "idle" | "waiting" | "done" | "timeout";
+  const [refreshPhase, setRefreshPhase] = useState<RefreshPhase>("idle");
+  // All pending timeouts (poll ticks + the transient-state auto-clear) live here
+  // so unmount / bot change tears every one down.
+  const timersRef = useRef<number[]>([]);
+  const clearTimers = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  };
+  useEffect(
+    () => () => {
+      clearTimers();
+      lifecycleActiveRef.current = false;
+    },
+    [bot.bot_id, lifecycleActiveRef]
+  );
+
+  const POLL_INTERVAL_MS = 4000;
+  const POLL_BUDGET_MS = 60_000;
+  const TRANSIENT_MS = 5000;
+
   async function refreshNow() {
-    setRefreshing(true);
+    if (refreshPhase === "waiting") return;
+    // "before" anchor — a status write is detected when the server reports a
+    // strictly newer timestamp than this. Captured before we ask the agent.
+    const before = bot.status_updated_at ? Date.parse(bot.status_updated_at) : 0;
+    clearTimers();
+    setRefreshPhase("waiting");
     try {
       await refreshBotStatus(bot.bot_id);
       toast.success("Asked the bot to update its status");
     } catch (e) {
       onError(String(e));
-    } finally {
-      setRefreshing(false);
+      setRefreshPhase("idle");
+      return;
     }
+
+    lifecycleActiveRef.current = true;
+    const deadline = Date.now() + POLL_BUDGET_MS;
+    const finish = (phase: "done" | "timeout") => {
+      lifecycleActiveRef.current = false;
+      setRefreshPhase(phase);
+      // Auto-clear the transient state back to idle.
+      timersRef.current.push(
+        window.setTimeout(() => setRefreshPhase("idle"), TRANSIENT_MS)
+      );
+    };
+    const poll = async () => {
+      try {
+        const st = await getBotStatus(bot.bot_id);
+        const updated = st.status_updated_at ? Date.parse(st.status_updated_at) : 0;
+        if (updated > before) {
+          onChanged(); // re-pull the full profile → drafts re-seed below
+          finish("done");
+          return;
+        }
+      } catch {
+        // Transient read error — keep polling until the budget runs out.
+      }
+      if (Date.now() >= deadline) {
+        finish("timeout");
+        return;
+      }
+      timersRef.current.push(window.setTimeout(poll, POLL_INTERVAL_MS));
+    };
+    timersRef.current.push(window.setTimeout(poll, POLL_INTERVAL_MS));
   }
 
   async function save() {
@@ -462,16 +587,26 @@ function BotStatusEditor({
         <button
           type="button"
           onClick={() => void refreshNow()}
-          disabled={refreshing}
+          disabled={refreshPhase === "waiting"}
           title="Ask the agent to update its own status now"
           className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 transition-colors"
         >
-          {refreshing ? "Asking…" : "Update status now"}
+          {refreshPhase === "waiting"
+            ? "Waiting for the agent…"
+            : refreshPhase === "done"
+              ? "✓ status updated"
+              : "Update status now"}
         </button>
       </div>
+      {refreshPhase === "timeout" && (
+        <p className="text-[11px] text-amber-500/80 leading-snug">
+          The agent hasn't responded yet — it may still be working. Its status will update
+          here on its own once it writes back.
+        </p>
+      )}
       <p className="text-[11px] text-zinc-600 leading-snug">
-        Runs the status prompt via the normal prompt path (needs the bot online and a
-        shared channel/DM). Owner/admin only.
+        Runs the status prompt via the normal prompt path (needs the bot online; opens a
+        DM with it automatically if you don't have one). Owner/admin only.
       </p>
     </div>
   );
