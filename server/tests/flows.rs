@@ -1809,7 +1809,7 @@ async fn seed_named_bot(db: &PgPool, username: &str, display: &str, owner: Optio
 }
 
 /// invitable 搜索的可见范围：
-/// - 用户候选 = 频道 workspace 的 active 成员 ∪ 调用者已通过好友；无关用户不可见。
+/// - 用户候选 = 频道 workspace 的 active 成员（workspace-first：非成员即使是好友也不可见）。
 /// - bot 候选 = 调用者 own 的 ∪ 有 session_create INITIATE 授权的；他人 bot、禁用 bot 不可见。
 /// - 已在频道内的候选带 already_member 标记。
 #[sqlx::test]
@@ -1819,7 +1819,7 @@ async fn invitable_search_scopes_users_and_bots(db: PgPool) {
     let caller = seed_user(&db).await;
     add_member_role(&db, ch, caller, "user", "owner").await;
 
-    // 用户候选：workspace 成员 wanda；好友 fred；无关 randy。
+    // 用户候选：workspace 成员 wanda；好友但非成员 fred（workspace-first 下不可见）；无关 randy。
     let wanda = seed_named_user(&db, "wanda", "Wanda Findable").await;
     sqlx::query(
         "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
@@ -1888,7 +1888,10 @@ async fn invitable_search_scopes_users_and_bots(db: PgPool) {
         ids.contains(&wanda.to_string().as_str()),
         "workspace 成员应可见"
     );
-    assert!(ids.contains(&fred.to_string().as_str()), "好友应可见");
+    assert!(
+        !ids.contains(&fred.to_string().as_str()),
+        "好友但非 workspace 成员：workspace-first 下不可见"
+    );
     assert!(
         !items
             .iter()

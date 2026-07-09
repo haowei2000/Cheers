@@ -539,6 +539,27 @@ pub async fn decline_invite(
     Ok(Json(serde_json::json!({"declined": true})))
 }
 
+/// Cut a user's pending channel invites within a workspace when they leave / are
+/// removed from it — a pending invite must not outlive workspace membership
+/// (workspace-first), or it becomes a back-door to guest access at accept time.
+/// Mirrors `channels::remove_channel_member`'s invite cleanup.
+async fn purge_channel_invites_in_workspace(
+    state: &AppState,
+    workspace_id: &str,
+    user_id: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "DELETE FROM channel_invites
+         WHERE user_id = $1
+           AND channel_id IN (SELECT channel_id FROM channels WHERE workspace_id = $2)",
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
 pub async fn remove_workspace_member(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -556,6 +577,7 @@ pub async fn remove_workspace_member(
         .bind(&user_id)
         .execute(&state.db)
         .await?;
+    purge_channel_invites_in_workspace(&state, &workspace_id, &user_id).await?;
     Ok(Json(serde_json::json!({"removed": true})))
 }
 
@@ -639,6 +661,7 @@ pub async fn leave_workspace(
             .execute(&state.db)
             .await?;
     }
+    purge_channel_invites_in_workspace(&state, &workspace_id, &me).await?;
     Ok(Json(serde_json::json!({ "left": true })))
 }
 

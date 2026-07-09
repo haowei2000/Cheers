@@ -930,6 +930,30 @@ pub async fn accept_channel_invite(
         ),
         None => return Err(AppError::NotFound),
     };
+    // Workspace-first invariant re-checked at accept time: you may only JOIN a
+    // channel if you are STILL an active member of its workspace. A user invited
+    // while active, then removed from / having left the workspace before answering,
+    // must not sneak in via a stale invite. We commit the DELETE anyway (consume the
+    // now-invalid invite so it stops showing in their inbox) and then reject.
+    let still_ws_member: bool = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM workspace_memberships wm
+            JOIN channels c ON c.workspace_id = wm.workspace_id
+            WHERE c.channel_id = $1 AND wm.user_id = $2 AND wm.status = 'active'
+        ) AS ok",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .fetch_one(&mut *tx)
+    .await?
+    .try_get::<bool, _>("ok")
+    .unwrap_or(false);
+    if !still_ws_member {
+        tx.commit().await?;
+        return Err(AppError::Forbidden(
+            "you are no longer a member of this channel's workspace".into(),
+        ));
+    }
     let added_by = invited_by.unwrap_or_else(|| claims.sub.clone());
     sqlx::query(
         "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
