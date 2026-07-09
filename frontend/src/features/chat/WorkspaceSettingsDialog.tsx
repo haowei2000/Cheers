@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import {
   listWorkspaceMembers,
-  addWorkspaceMember,
   inviteWorkspaceMember,
   removeWorkspaceMember,
   searchWorkspaceInvitable,
@@ -98,18 +97,15 @@ export function WorkspaceSettingsDialog({
     }
   }
 
-  async function add(u: WorkspaceInvitable, invite: boolean) {
+  // Every membership requires the invitee's consent — there is no consent-free
+  // "add directly" path anymore. This sends a pending invite they must accept.
+  async function invite(u: WorkspaceInvitable) {
     try {
-      if (invite) {
-        const res = await inviteWorkspaceMember(workspace.workspace_id, {
-          identifier: u.user_id,
-          role,
-        });
-        toast.success(res.status === "exists" ? "Already a member" : "Invite sent");
-      } else {
-        await addWorkspaceMember(workspace.workspace_id, { identifier: u.user_id, role });
-        toast.success(`Added ${u.display_name || u.username}`);
-      }
+      const res = await inviteWorkspaceMember(workspace.workspace_id, {
+        identifier: u.user_id,
+        role,
+      });
+      toast.success(res.status === "exists" ? "Already a member" : "Invite sent");
       setQuery("");
       setResults([]);
       await refreshMembers();
@@ -277,22 +273,13 @@ export function WorkspaceSettingsDialog({
                             {u.membership === "pending" ? "Invited" : "Member"}
                           </span>
                         ) : (
-                          <>
-                            <button
-                              onClick={() => void add(u, true)}
-                              title="Send an invite the user must accept"
-                              className="text-xs text-indigo-400 hover:text-indigo-300"
-                            >
-                              Invite
-                            </button>
-                            <button
-                              onClick={() => void add(u, false)}
-                              title="Add the user without an invite"
-                              className="text-xs text-zinc-400 hover:text-zinc-200"
-                            >
-                              Add directly
-                            </button>
-                          </>
+                          <button
+                            onClick={() => void invite(u)}
+                            title="Send an invite the user must accept"
+                            className="text-xs text-indigo-400 hover:text-indigo-300"
+                          >
+                            Invite
+                          </button>
                         )}
                       </div>
                     ))}
