@@ -897,12 +897,17 @@ export function RemoteWorkspaceDialog({
       storageKey="cheers.float.workspace"
       className="w-[1024px]"
       defaultPosClassName="top-16 left-1/2 -translate-x-1/2"
-      // Mobile: the panes stack and stretch (max-md:flex-1 inside) — the body must
-      // be a non-scrolling flex column there, same as Dialog's fullScreenOnMobile.
-      bodyClassName="max-md:flex max-md:flex-col max-md:overflow-hidden"
+      // Desktop: laid out in the channel's work area (widest card — it hosts a
+      // side-by-side tree + editor; shrinks when the lane gets crowded).
+      // Mobile: full-screen sheet via FloatingPanel.
+      docked
+      dockedClassName="w-[1024px] shrink min-w-[480px]"
+      // The panes stack (mobile) or sit side-by-side (docked) and stretch — the
+      // body must be a non-scrolling flex column in both cases.
+      bodyClassName="flex flex-col overflow-hidden"
     >
       {/* Bot picker */}
-      <div className="flex items-center gap-2 mb-2 text-xs flex-wrap max-md:flex-shrink-0">
+      <div className="flex items-center gap-2 mb-2 text-xs flex-wrap flex-shrink-0">
         <span className="text-zinc-500">Bot</span>
         <select
           value={botId ?? ""}
@@ -980,7 +985,7 @@ export function RemoteWorkspaceDialog({
 
       {/* Git branch badge — quiet, only when the current dir resolves to a repo. */}
       {botId && git && (
-        <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-400">
+        <div className="flex items-center gap-2 mb-2 text-[11px] text-zinc-400 flex-shrink-0">
           <GitBranch className="w-3 h-3 text-zinc-500 shrink-0" />
           <span
             className="text-zinc-300 font-mono truncate"
@@ -1007,7 +1012,7 @@ export function RemoteWorkspaceDialog({
       {/* Workspace presence — who ELSE is viewing this bot's workspace right now, so
           co-editing is visible before conflicts happen. */}
       {botId && viewers.length > 0 && (
-        <div className="flex items-center flex-wrap gap-1.5 mb-2 text-[11px]">
+        <div className="flex items-center flex-wrap gap-1.5 mb-2 text-[11px] flex-shrink-0">
           <span className="text-zinc-600 shrink-0">Viewing</span>
           {viewers.map((v) => {
             const name = memberNames?.get(v.user_id) || v.user_id.slice(0, 8);
@@ -1039,10 +1044,10 @@ export function RemoteWorkspaceDialog({
           Select an online bot to browse the workspace on its machine.
         </div>
       ) : (
-        // Desktop: side-by-side tree + editor at a fixed height. Mobile: the dialog is a
-        // full-screen sheet (fullScreenOnMobile), so stack the panes vertically and let
-        // this body fill the remaining height; each pane keeps its own internal scroll.
-        <div className="flex gap-3 h-[62vh] max-md:h-auto max-md:flex-1 max-md:min-h-0 max-md:flex-col">
+        // Desktop (docked): side-by-side tree + editor filling the column height.
+        // Mobile: a full-screen sheet, so stack the panes vertically. Either way the
+        // panes fill the remaining body height and keep their own internal scroll.
+        <div className="flex gap-3 flex-1 min-h-0 max-md:flex-col">
           {/* Tree pane */}
           <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}

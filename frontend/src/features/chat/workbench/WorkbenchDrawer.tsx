@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Maximize2, Minimize2, Package, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { useWindowDrag } from "@/hooks/useWindowDrag";
-import { ResizeGrip } from "@/components/ui/resize-grip";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
@@ -286,10 +284,11 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
     [allEnvs, activate, cfg, fs, writeCfg]
   );
 
-  // Draggable/resizable floating window (desktop only; mobile is a full-screen
-  // sheet). Minimized = just the title bar (position kept, size shed).
+  // Desktop: the same rounded card, laid out in the channel's work area (real
+  // layout space, no drag/float). Minimized = just the title bar (a compact
+  // content-height chip in the lane). Mobile: a full-screen sheet so panels are
+  // never crushed into a sliver.
   const isMobile = useIsMobile();
-  const windowDrag = useWindowDrag("cheers.float.workbench", !isMobile);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("cheers.float.workbench.min") === "1"
   );
@@ -322,44 +321,33 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
     [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, configs, focus, filesTick]
   );
 
+  // Desktop: the original card chrome, placed in the work area — hidden (but
+  // mounted) while closed so the browser tree/selection state survives.
+  // Mobile: the original full-screen overlay sheet.
+  const shellClass = isMobile
+    ? // z-40: above the z-30 channel header (which otherwise paints over and
+      // tap-blocks this sheet's own title bar) but below true modals (z-50) —
+      // the band the floating window used to get inline from useWindowDrag.
+      `fixed inset-0 z-40 flex flex-col bg-zinc-900/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] transition-[opacity,transform] duration-200 ${
+        open
+          ? "opacity-100 translate-x-0 pointer-events-auto"
+          : "opacity-0 translate-x-4 pointer-events-none"
+      }`
+    : `${open ? "flex" : "hidden"} min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors ${
+        minimized ? "w-[300px] shrink min-w-[10rem] self-start" : "w-[560px] shrink min-w-[380px]"
+      } ${dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"}`;
+
   return (
-    <>
-      {/* Non-modal FLOATING window (ViewBoard-style chrome): no backdrop, so the
-          chat + composer stay usable; draggable by its title bar; clicking raises
-          it above the other floating windows. */}
       <aside
-        ref={windowDrag.ref}
-        onPointerDownCapture={windowDrag.toFront}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        // Desktop: floating 560px rounded card below the header. Mobile: a
-        // full-screen sheet — top-0, full width/height, safe-area padded — so panels
-        // are never crushed into a sliver next to the chat.
-        style={
-          minimized
-            ? windowDrag.posStyle
-            : windowDrag.pos && !windowDrag.size
-              ? { ...windowDrag.style, height: `calc(100dvh - ${windowDrag.pos.y + 12}px)` }
-              : windowDrag.style
-        }
-        className={`fixed top-14 right-3 max-w-[94vw] rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm max-md:top-0 max-md:right-0 max-md:h-[100dvh] max-md:w-full max-md:max-w-none max-md:rounded-none max-md:ring-0 max-md:border-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] bg-zinc-900/95 flex flex-col transition-[opacity,transform] duration-200 ${
-          minimized ? "w-[300px]" : "h-[calc(100dvh-9.5rem)] w-[560px]"
-        } ${
-          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
-        } ${
-          open
-            ? "opacity-100 translate-x-0 pointer-events-auto"
-            : "opacity-0 translate-x-4 pointer-events-none"
-        }`}
+        className={shellClass}
       >
-        <div
-          {...windowDrag.handleProps}
-          className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none"
-        >
+        <div className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none">
           <span className="text-sm font-semibold text-zinc-100">Workbench</span>
           {!minimized && (
           <>
@@ -466,8 +454,6 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
         <div className={minimized ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>
           {open && <FilePanel ctx={ctx} />}
         </div>
-        {!minimized && <ResizeGrip resizeProps={windowDrag.resizeProps} />}
       </aside>
-    </>
   );
 }
