@@ -152,9 +152,11 @@ export function RemoteWorkspaceDialog({
   currentUserId?: string;
   /** user_id → display name, to label the viewer chips (falls back to a short id). */
   memberNames?: Map<string, string>;
-  /** Live-push tick for the "workspace" board (the agent finished a turn on its
-   *  machine): bump → refetch the current directory + a clean (non-dirty) open file. */
-  workspaceTick?: number;
+  /** Live-push tick for the "workspace" board (an agent finished a turn on its
+   *  machine): `seq` bump → refetch the current directory + a clean (non-dirty)
+   *  open file. `botId` is the emitting bot, so the dialog ignores turns of bots
+   *  it isn't browsing (null = unknown emitter → refetch conservatively). */
+  workspaceTick?: { seq: number; botId: string | null };
   /** Live-watch signal: the agent touched file(s) on a specific bot's machine. The
    *  dialog registers a watch while open and reacts only to signals for ITS `botId`.
    *  `seq` bumps per signal so repeats (same paths) still trigger a refetch. */
@@ -169,6 +171,10 @@ export function RemoteWorkspaceDialog({
   const [botId, setBotId] = useState<string | null>(initialBotId ?? null);
   const [cwd, setCwd] = useState("");
   const [entries, setEntries] = useState<WorkspaceEntry[] | null>(null);
+  // The canonical browse root the listing came from — the base the live-watch
+  // signal's root-relative paths are expressed against (`workspace_signal.root`
+  // is this same canonical string, so equality means "same path basis").
+  const [treeRoot, setTreeRoot] = useState<string | null>(null);
   const [file, setFile] = useState<WorkspaceFile | null>(null);
   const [edit, setEdit] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -193,7 +199,7 @@ export function RemoteWorkspaceDialog({
   const [root, setRoot] = useState<string | null>(null);
 
   // ── Read-only git visibility for the current directory's repo (supplementary) ──
-  // Cleared silently when the dir isn't a git repo (E_NOT_A_REPO / HTTP 409) or git
+  // Cleared silently when the dir isn't a git repo (`repo: false` answer) or git
   // ops are unavailable — never routed into `err`, so a non-repo browse stays quiet.
   const [git, setGit] = useState<GitStatus | null>(null);
   // Left pane: the file tree ("files"), the dirty-file list ("changes"), or the
@@ -228,6 +234,47 @@ export function RemoteWorkspaceDialog({
   const showCache = useRef(new Map<string, string>()); // `${bot}:${hash}:${path}` → diff
   const commitFilesCache = useRef(new Map<string, GitCommitFile[]>()); // `${bot}:${hash}`
 
+  // ── Stale-response guard ────────────────────────────────────────────────────
+  // Monotonic epoch: every browse-context change bumps it; every loader captures it
+  // at call time and DROPS its response if the epoch moved on. Without this a slow
+  // tree/file fetch lands after the user navigated away and "yanks" the view back.
+  const epochRef = useRef(0);
+  // Debounced live-refetch bookkeeping (armed by scheduleLiveRefetch below).
+  const refetchTimer = useRef<number | null>(null);
+  const pendingFull = useRef(false);
+  const pendingPaths = useRef<string[]>([]);
+  const cancelLiveRefetch = useCallback(() => {
+    if (refetchTimer.current != null) {
+      window.clearTimeout(refetchTimer.current);
+      refetchTimer.current = null;
+    }
+    pendingFull.current = false;
+    pendingPaths.current = [];
+  }, []);
+  useEffect(() => {
+    epochRef.current++;
+    // The pending live refetch belongs to the PREVIOUS browse context — its timer
+    // closure holds loaders bound to the old bot/root/scope. Drop it; the new
+    // context re-registers its own watch and re-arms on the next signal.
+    cancelLiveRefetch();
+    // In-flight foreground work was superseded: its epoch-guarded finally will NOT
+    // clear the transient flags, so reset them here or the spinner sticks forever.
+    setBusy(false);
+    setDiffBusy(false);
+    setLogBusy(false);
+  }, [botId, root, effectiveSessionId, cancelLiveRefetch]);
+  // Latest loadGitStatus, callable from loadDir without a dependency cycle (loadDir
+  // is declared first); assigned right after loadGitStatus's definition.
+  const loadGitStatusRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Latest-value mirror for the debounced live refetch: the timer fires up to 400ms
+  // after scheduling, so it must read the browse state CURRENT at fire time, not the
+  // values captured when the signal arrived (a stale `dirty` here would clobber an
+  // edit the user started mid-window). Also keeps scheduleLiveRefetch dependency-
+  // free, so the signal effects don't re-subscribe every render.
+  const liveRef = useRef({ cwd, file, dirty, leftView, diff, git, treeRoot });
+  liveRef.current = { cwd, file, dirty, leftView, diff, git, treeRoot };
+
   useEffect(() => {
     let alive = true;
     listWorkspaceBots(channelId)
@@ -249,68 +296,125 @@ export function RemoteWorkspaceDialog({
   // The explicitly selected browse root (undefined = connector's default choice).
   const rootParam = root ?? undefined;
 
+  // `background` = a live-refresh re-pull: update the listing in place WITHOUT
+  // closing the open file, flashing the busy spinner, or surfacing a transient
+  // error — a failed background pull just keeps the (stale) view. Returns the
+  // cleaned error message on failure (null on success) so a caller that OWNS
+  // error semantics (manual refreshAll) can still surface a swallowed failure.
   const loadDir = useCallback(
-    async (path: string) => {
-      if (!botId) return;
-      setBusy(true);
-      setErr(null);
-      setFile(null);
-      setEtag(null);
-      setConflict(null);
+    async (path: string, opts?: { background?: boolean }): Promise<string | null> => {
+      if (!botId) return null;
+      const bg = opts?.background === true;
+      // Foreground navigation opens a new epoch (superseding everything in flight);
+      // a background re-pull rides the current one and yields to any newer action.
+      const ep = bg ? epochRef.current : ++epochRef.current;
+      if (!bg) {
+        // Any queued live refetch targeted the directory being navigated away from.
+        cancelLiveRefetch();
+        setBusy(true);
+        setErr(null);
+        setFile(null);
+        setEtag(null);
+        setConflict(null);
+      }
       try {
         const t = await getWorkspaceTree(channelId, botId, path, rootParam, effectiveSessionId);
+        if (ep !== epochRef.current) return null;
+        // A background pull was ISSUED against liveRef's cwd — if a foreground
+        // navigation committed a different directory while it was in flight, its
+        // result targets the wrong dir (the epoch alone can't catch this: the
+        // background call may have captured the post-bump epoch).
+        if (bg && liveRef.current.cwd !== path) return null;
         setEntries(t.entries);
         setCwd(t.path);
+        setTreeRoot(t.root);
+        // When the canonical path doesn't change (initial listing, manual refresh),
+        // the cwd-keyed git-status effect won't re-fire — and its mount-time fetch
+        // was superseded by this very navigation's epoch bump. Re-pull explicitly.
+        if (!bg && t.path === liveRef.current.cwd) void loadGitStatusRef.current?.();
+        return null;
       } catch (e) {
-        setErr(cleanErr(e));
+        if (!bg && ep === epochRef.current) setErr(cleanErr(e));
+        return cleanErr(e);
       } finally {
-        setBusy(false);
+        if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, rootParam, effectiveSessionId]
+    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch]
   );
 
+  // `background` = a live-refresh of an already-open CLEAN file: swap the content
+  // in place — no busy flash, no error surfacing, and the right pane (an open diff)
+  // is left alone instead of being reset to the editor.
   const openFile = useCallback(
-    async (path: string) => {
+    async (path: string, opts?: { background?: boolean }) => {
       if (!botId) return;
-      setBusy(true);
-      setErr(null);
+      const bg = opts?.background === true;
+      const ep = bg ? epochRef.current : ++epochRef.current;
+      if (!bg) {
+        setBusy(true);
+        setErr(null);
+      }
       try {
         const f = await getWorkspaceFile(channelId, botId, path, rootParam, effectiveSessionId);
+        if (ep !== epochRef.current) return;
+        if (bg) {
+          // A background re-read was ISSUED for the then-open file — drop it if the
+          // user opened a different file meanwhile (the epoch alone can't catch a
+          // request issued after the bump), or STARTED editing (their buffer wins).
+          if (liveRef.current.file?.path !== path) return;
+          if (liveRef.current.dirty) return;
+        }
         setFile(f);
         setEdit(f.content ?? "");
         setEtag(f.etag);
         setDirty(false);
         setConflict(null);
-        setDiff(null); // opening a file returns the right pane to the editor
+        if (!bg) setDiff(null); // opening a file returns the right pane to the editor
       } catch (e) {
-        // A directory clicked via deep-link: fall back to listing it.
+        if (ep !== epochRef.current) return;
         if (String(e).includes("E_IS_DIR")) {
-          await loadDir(path);
-        } else {
+          if (bg) {
+            // The open file became a directory on the machine: a background refresh
+            // must never NAVIGATE the user — just close the now-invalid file pane.
+            if (liveRef.current.file?.path === path && !liveRef.current.dirty) {
+              setFile(null);
+              setEtag(null);
+              setConflict(null);
+            }
+          } else {
+            // A directory clicked via deep-link: fall back to listing it.
+            await loadDir(path, opts);
+          }
+        } else if (!bg) {
           setErr(cleanErr(e));
         }
       } finally {
-        setBusy(false);
+        if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
     [channelId, botId, loadDir, rootParam, effectiveSessionId]
   );
 
-  // Fetch git state for the *current directory's* repo. Supplementary: any failure
-  // (not-a-repo 409 / git disabled 403 / offline) clears it silently — the dialog's
-  // `err` stays reserved for the browse itself.
+  // Fetch git state for the *current directory's* repo. Supplementary: a non-repo
+  // dir answers `repo: false` (data, not an error), and any real failure (git
+  // disabled 403 / offline) clears it silently — the dialog's `err` stays reserved
+  // for the browse itself.
   const loadGitStatus = useCallback(async () => {
     if (!botId) {
       setGit(null);
       return;
     }
+    const ep = epochRef.current;
     try {
-      setGit(await getGitStatus(channelId, botId, cwd, rootParam, effectiveSessionId));
+      const s = await getGitStatus(channelId, botId, cwd, rootParam, effectiveSessionId);
+      if (ep !== epochRef.current) return;
+      setGit(s.repo === false ? null : s);
     } catch {
-      setGit(null);
+      if (ep === epochRef.current) setGit(null);
     }
   }, [channelId, botId, cwd, rootParam, effectiveSessionId]);
+  loadGitStatusRef.current = loadGitStatus;
 
   // Workspace policy metadata for the selected bot + scope (best-effort; backs the
   // root picker and the git-availability hint). An explicit root that fell out of
@@ -353,15 +457,17 @@ export function RemoteWorkspaceDialog({
   const openDiff = useCallback(
     async (path: string, staged: boolean) => {
       if (!botId) return;
+      const ep = epochRef.current;
       setDiffBusy(true);
       setErr(null);
       try {
         const d = await getGitDiff(channelId, botId, path, staged, rootParam, effectiveSessionId);
+        if (ep !== epochRef.current) return;
         setDiff({ kind: "file", path, staged, text: d.diff });
       } catch (e) {
-        setErr(cleanErr(e));
+        if (ep === epochRef.current) setErr(cleanErr(e));
       } finally {
-        setDiffBusy(false);
+        if (ep === epochRef.current) setDiffBusy(false);
       }
     },
     [channelId, botId, rootParam, effectiveSessionId]
@@ -388,6 +494,7 @@ export function RemoteWorkspaceDialog({
         });
         return;
       }
+      const ep = epochRef.current;
       setDiffBusy(true);
       setErr(null);
       try {
@@ -403,13 +510,16 @@ export function RemoteWorkspaceDialog({
         ]);
         const text = cachedText ?? s?.diff ?? "";
         const files = cachedFiles ?? cf?.files ?? null;
+        // The cache write is epoch-independent (commits are immutable) — only the
+        // visible pane application yields to a newer browse context.
         showCache.current.set(showKey, text);
         if (files) commitFilesCache.current.set(filesKey, files);
+        if (ep !== epochRef.current) return;
         setDiff({ kind: "commit", hash: c.hash, subject: c.subject, text, files, path });
       } catch (e) {
-        setErr(cleanErr(e));
+        if (ep === epochRef.current) setErr(cleanErr(e));
       } finally {
-        setDiffBusy(false);
+        if (ep === epochRef.current) setDiffBusy(false);
       }
     },
     [channelId, botId, rootParam, effectiveSessionId]
@@ -421,22 +531,27 @@ export function RemoteWorkspaceDialog({
       setLog(null);
       return;
     }
+    const ep = epochRef.current;
     setLogBusy(true);
     try {
       const r = await getGitLog(channelId, botId, cwd, LOG_PAGE, rootParam, effectiveSessionId);
+      if (ep !== epochRef.current) return;
       setLog(r.commits);
       setLogDone(r.commits.length < LOG_PAGE);
     } catch {
-      setLog([]);
-      setLogDone(true);
+      if (ep === epochRef.current) {
+        setLog([]);
+        setLogDone(true);
+      }
     } finally {
-      setLogBusy(false);
+      if (ep === epochRef.current) setLogBusy(false);
     }
   }, [channelId, botId, cwd, rootParam, effectiveSessionId]);
 
   // Append the next page (git log --skip=<loaded so far>). A short page ends paging.
   const loadMoreLog = useCallback(async () => {
     if (!botId || log === null || logBusy || logDone) return;
+    const ep = epochRef.current;
     setLogBusy(true);
     try {
       const r = await getGitLog(
@@ -448,14 +563,15 @@ export function RemoteWorkspaceDialog({
         effectiveSessionId,
         log.length
       );
+      if (ep !== epochRef.current) return;
       // Dedup on hash: a commit landing between pages shifts --skip windows.
       const seen = new Set(log.map((c) => c.hash));
       setLog([...log, ...r.commits.filter((c) => !seen.has(c.hash))]);
       setLogDone(r.commits.length < LOG_PAGE);
     } catch {
-      setLogDone(true);
+      if (ep === epochRef.current) setLogDone(true);
     } finally {
-      setLogBusy(false);
+      if (ep === epochRef.current) setLogBusy(false);
     }
   }, [channelId, botId, cwd, rootParam, effectiveSessionId, log, logBusy, logDone]);
 
@@ -465,31 +581,82 @@ export function RemoteWorkspaceDialog({
     if (leftView === "history" && git) void loadLog();
   }, [leftView, git, loadLog]);
 
-  // Refresh the current dir + git status together; re-fetch a live (file) diff and the
-  // history if open. Commit diffs are immutable, so they are left as-is.
-  const refreshAll = useCallback(() => {
-    void loadDir(cwd);
-    void loadGitStatus();
-    if (leftView === "history") void loadLog();
-    if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
-  }, [loadDir, cwd, loadGitStatus, leftView, loadLog, diff, openDiff]);
+  // Manual Refresh: re-pull the current dir + git status, a live (file) diff, the
+  // history if open, and a CLEAN open file. Uses the background loaders so refreshing
+  // never closes the open file or drops unsaved edits — but it is an EXPLICIT user
+  // action, so unlike a live refetch it owns visible outcome semantics: the header
+  // spinner while running, a stale error cleared up front, and a failed primary
+  // (listing) pull surfaced. Epoch-guarded so a navigation started mid-refresh
+  // keeps ownership of the busy/err flags.
+  const refreshAll = useCallback(async () => {
+    const ep = epochRef.current;
+    setBusy(true);
+    setErr(null);
+    try {
+      const [dirErr] = await Promise.all([
+        loadDir(cwd, { background: true }),
+        loadGitStatus(),
+        leftView === "history" ? loadLog() : Promise.resolve(),
+        file && !dirty ? openFile(file.path, { background: true }) : Promise.resolve(),
+        diff?.kind === "file" ? openDiff(diff.path, diff.staged) : Promise.resolve(),
+      ]);
+      if (dirErr && ep === epochRef.current) setErr(dirErr);
+    } finally {
+      if (ep === epochRef.current) setBusy(false);
+    }
+  }, [loadDir, cwd, loadGitStatus, leftView, loadLog, file, dirty, openFile, diff, openDiff]);
 
   // Debounced live refetch, shared by the board tick and the live-watch signal. An
   // agent touching many files fans MANY signals in quick succession; each refetch is
-  // up to 5 parallel requests (tree/status/log/file/diff), so coalesce bursts into
-  // one trailing refetch instead of a request wave per signal.
-  const refetchTimer = useRef<number | null>(null);
-  const scheduleLiveRefetch = useCallback(() => {
-    if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
-    refetchTimer.current = window.setTimeout(() => {
-      refetchTimer.current = null;
-      void loadDir(cwd);
-      void loadGitStatus();
-      if (leftView === "history") void loadLog();
-      if (file && !dirty) void openFile(file.path);
-      if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
-    }, 400);
-  }, [loadDir, cwd, loadGitStatus, leftView, loadLog, file, dirty, openFile, diff, openDiff]);
+  // up to 5 parallel requests (tree/status/log/file/diff), so bursts coalesce into
+  // one trailing refetch. Signal paths accumulate across the debounce window and the
+  // fire SCOPES the work to what actually changed: the listing re-pulls only when a
+  // change sits directly in the current directory, the open file re-reads only when
+  // it itself changed. A board tick (no paths), an unknown/mismatched root, or a
+  // missed signal falls back to a FULL refetch. All browse state is read from
+  // liveRef at fire time — never from values captured at schedule time. (The timer
+  // + pending refs live next to epochRef above: a browse-context switch cancels
+  // the whole pending refetch.)
+  const scheduleLiveRefetch = useCallback(
+    (hint?: { paths: string[]; root: string }) => {
+      const { treeRoot } = liveRef.current;
+      if (!hint || !treeRoot || hint.root !== treeRoot) pendingFull.current = true;
+      else pendingPaths.current.push(...hint.paths);
+      if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
+      refetchTimer.current = window.setTimeout(() => {
+        refetchTimer.current = null;
+        const { cwd, file, dirty, leftView, diff, git } = liveRef.current;
+        const full = pendingFull.current;
+        const paths = pendingPaths.current;
+        pendingFull.current = false;
+        pendingPaths.current = [];
+        // The connector emits OS-native separators (backslashes on a Windows host),
+        // and tree/file paths share that basis — normalize BOTH sides so the match
+        // works everywhere. Worst case (a literal backslash in a Unix filename) is
+        // a spurious extra refetch, never a missed one.
+        const norm = (p: string) => p.replace(/\\/g, "/");
+        // Root-relative parent of a root-relative path ("" for a top-level entry) —
+        // the same basis as `cwd` (the tree's canonical `path`).
+        const parentOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
+        const cwdN = norm(cwd);
+        const fileN = file != null ? norm(file.path) : null;
+        const listingHit = full || paths.some((p) => parentOf(norm(p)) === cwdN);
+        const fileHit = full || (fileN != null && paths.some((p) => norm(p) === fileN));
+        if (listingHit) void loadDir(cwd, { background: true });
+        // Git decorations can move on ANY change inside the repo (not just in cwd) —
+        // re-pull whenever a repo is showing. A non-repo dir re-probes only on a full
+        // refetch (a finished turn may have `git init`ed it); scoped signal fires
+        // stop re-asking a question whose answer can't have changed.
+        if (full || git) void loadGitStatus();
+        if (leftView === "history" && (full || git)) void loadLog();
+        if (fileHit && file && !dirty) void openFile(file.path, { background: true });
+        // A live diff's paths are repo-relative (a different basis than the signal's
+        // root-relative paths), so it can't be scoped — refresh it unconditionally.
+        if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
+      }, 400);
+    },
+    [loadDir, loadGitStatus, loadLog, openFile, openDiff]
+  );
   useEffect(
     () => () => {
       if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
@@ -538,6 +705,7 @@ export function RemoteWorkspaceDialog({
   const toggleScoped = useCallback(() => {
     setScoped((s) => !s);
     setEntries(null);
+    setTreeRoot(null);
     setFile(null);
     setEtag(null);
     setConflict(null);
@@ -553,6 +721,7 @@ export function RemoteWorkspaceDialog({
   const selectRoot = useCallback((r: string | null) => {
     setRoot(r);
     setEntries(null);
+    setTreeRoot(null);
     setFile(null);
     setEtag(null);
     setConflict(null);
@@ -563,17 +732,22 @@ export function RemoteWorkspaceDialog({
     setLogDone(false);
   }, []);
 
-  // Live-push: the "workspace" board ticked → the agent changed files on this bot's
-  // machine. Debounce-refetch the current directory; the open file is refetched only
-  // if it's clean, so a dirty buffer is never clobbered. Only acts on a genuine tick
-  // change (not on mount).
-  // NOTE: the board tick carries no bot_id through the onBoardSignal seam, so this reacts
-  // to any "workspace" tick for the channel; the refetch is non-destructive.
-  const seenWsTick = useRef(workspaceTick);
+  // Live-push: the "workspace" board ticked → an agent finished a turn and may have
+  // changed files on its machine. Debounce-refetch (full: a tick carries no paths);
+  // the open file is refetched only if it's clean, so a dirty buffer is never
+  // clobbered. Only acts on a genuine tick change (not on mount), and only for the
+  // bot being browsed — another bot's turn can't churn this view.
+  const seenWsTick = useRef(workspaceTick?.seq);
   useEffect(() => {
-    if (workspaceTick === undefined || workspaceTick === seenWsTick.current) return;
-    seenWsTick.current = workspaceTick;
+    if (!workspaceTick || workspaceTick.seq === seenWsTick.current) return;
+    // The tick cell is last-value-wins: React can coalesce two bots' back-to-back
+    // ticks into one observed update (a seq JUMP). The swallowed tick may have been
+    // OUR bot's, so a jump refetches even when the visible tick is another bot's.
+    const missed =
+      seenWsTick.current != null && workspaceTick.seq > seenWsTick.current + 1;
+    seenWsTick.current = workspaceTick.seq;
     if (!botId) return;
+    if (workspaceTick.botId && workspaceTick.botId !== botId && !missed) return;
     scheduleLiveRefetch();
   }, [workspaceTick, botId, scheduleLiveRefetch]);
 
@@ -616,17 +790,27 @@ export function RemoteWorkspaceDialog({
 
   // ── Refresh on a live-watch signal ────────────────────────────────────────
   // A `workspace_signal` for THIS bot arrived (the agent changed files on its machine):
-  // debounce-refetch the listing + git status, the open history/live diff, and a CLEAN
-  // open file. A dirty buffer is NEVER clobbered (the safe-writes conflict UI still
-  // guards Save). Routed by bot_id; the `seq` guard consumes each signal exactly once;
-  // the shared debounce coalesces a burst of signals into one trailing refetch.
+  // debounce-refetch, scoped by the signal's changed paths (see scheduleLiveRefetch).
+  // A dirty buffer is NEVER clobbered (the safe-writes conflict UI still guards Save).
+  // Routed by bot_id; the `seq` guard consumes each signal exactly once.
   const seenSignalSeq = useRef(workspaceSignal?.seq);
   useEffect(() => {
     if (!workspaceSignal || workspaceSignal.seq === seenSignalSeq.current) return;
+    // React can coalesce rapid signal state updates, so this effect may observe a
+    // seq JUMP — the intermediate signals' paths are lost; refetch fully. The
+    // swallowed signal may have been OUR bot's even when the visible one isn't,
+    // so a jump refetches regardless of the visible signal's bot.
+    const missed =
+      seenSignalSeq.current != null && workspaceSignal.seq > seenSignalSeq.current + 1;
     seenSignalSeq.current = workspaceSignal.seq;
-    // Not for the bot we're browsing (or none selected): consume + ignore.
-    if (!botId || workspaceSignal.botId !== botId) return;
-    scheduleLiveRefetch();
+    if (!botId) return;
+    if (workspaceSignal.botId !== botId) {
+      if (missed) scheduleLiveRefetch();
+      return;
+    }
+    scheduleLiveRefetch(
+      missed ? undefined : { paths: workspaceSignal.paths, root: workspaceSignal.root }
+    );
   }, [workspaceSignal, botId, scheduleLiveRefetch]);
 
   // ── Workspace presence (broadcast our own focus) ──────────────────────────
@@ -639,7 +823,7 @@ export function RemoteWorkspaceDialog({
   useEffect(() => {
     if (!sendPresenceFocus || !botId) return;
     const path = file?.path ?? cwd ?? "";
-    const key = botId + " " + path;
+    const key = botId + "\u0000" + path;
     if (lastFocusRef.current === key) return;
     lastFocusRef.current = key;
     sendPresenceFocus(channelId, { bot_id: botId, path: path || undefined });
@@ -668,6 +852,9 @@ export function RemoteWorkspaceDialog({
   // against the SAME root set the user is browsing.
   const doSave = async (ifEtag: string | undefined) => {
     if (!file || !botId) return;
+    // The write itself completes on the machine either way; the epoch guard only
+    // keeps the RESULT from landing on a different file/context the user moved to.
+    const ep = epochRef.current;
     setBusy(true);
     setErr(null);
     try {
@@ -680,17 +867,19 @@ export function RemoteWorkspaceDialog({
         effectiveSessionId,
         ifEtag
       );
+      if (ep !== epochRef.current) return;
       setEtag(newEtag);
       setDirty(false);
       setConflict(null);
     } catch (e) {
+      if (ep !== epochRef.current) return;
       if (e instanceof WorkspaceConflictError) {
         setConflict({ currentEtag: e.currentEtag, sizeBytes: e.sizeBytes });
       } else {
         setErr(cleanErr(e));
       }
     } finally {
-      setBusy(false);
+      if (ep === epochRef.current) setBusy(false);
     }
   };
 
@@ -720,6 +909,8 @@ export function RemoteWorkspaceDialog({
           onChange={(e) => {
             setBotId(e.target.value || null);
             setEntries(null);
+            setCwd("");
+            setTreeRoot(null);
             setFile(null);
             setEtag(null);
             setConflict(null);
@@ -925,7 +1116,7 @@ export function RemoteWorkspaceDialog({
                   </button>
                   <div className="flex-1" />
                   {diffBusy && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
-                  <button onClick={refreshAll} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
+                  <button onClick={() => void refreshAll()} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1069,7 +1260,7 @@ export function RemoteWorkspaceDialog({
                       <GitCompare className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  <button onClick={refreshAll} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
+                  <button onClick={() => void refreshAll()} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </div>

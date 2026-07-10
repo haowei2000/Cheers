@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { register, requestRegisterCode } from "@/api/auth";
+import { acceptInviteLink } from "@/api/invites";
 import { useAuthStore } from "@/stores/authStore";
+import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -10,6 +12,12 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Invite-link token (from /invite/:token): lets sign-up through even when the
+  // instance has open registration disabled, then auto-joins the workspace.
+  const inviteToken = params.get("invite") ?? "";
+  const selectWorkspace = useChatStore((s) => s.selectWorkspace);
+  const selectChannel = useChatStore((s) => s.selectChannel);
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({
     username: "",
@@ -39,7 +47,7 @@ export default function RegisterPage() {
     }
     setSendingCode(true);
     try {
-      await requestRegisterCode(form.email.trim());
+      await requestRegisterCode(form.email.trim(), inviteToken || undefined);
       toast.success("Verification code sent — check your inbox");
       setCooldown(60);
     } catch (err) {
@@ -75,6 +83,7 @@ export default function RegisterPage() {
         email: form.email.trim(),
         code: form.code.trim(),
         display_name: form.display_name.trim() || undefined,
+        invite_token: inviteToken || undefined,
       });
       setAuth(
         {
@@ -85,6 +94,20 @@ export default function RegisterPage() {
         },
         res.access_token
       );
+      if (inviteToken) {
+        // Redeem the invite with the fresh session so the new account lands in
+        // the workspace. If the link died in the meantime, the landing page
+        // explains why — the account itself is already created.
+        try {
+          const joined = await acceptInviteLink(inviteToken);
+          toast.success("Welcome — you've joined the workspace 🎉");
+          selectWorkspace(joined.workspace_id);
+          if (joined.channel_joined && joined.channel_id) selectChannel(joined.channel_id);
+        } catch {
+          navigate(`/invite/${inviteToken}`, { replace: true });
+          return;
+        }
+      }
       navigate("/chat", { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign-up failed");
@@ -100,7 +123,11 @@ export default function RegisterPage() {
         <div className="flex flex-col items-center mb-8">
           <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
           <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Create your account</h1>
-          <p className="text-zinc-500 text-sm mt-1">Join Cheers in a few seconds.</p>
+          <p className="text-zinc-500 text-sm mt-1">
+            {inviteToken
+              ? "You've been invited — your new account will join the workspace automatically."
+              : "Join Cheers in a few seconds."}
+          </p>
         </div>
 
         <form

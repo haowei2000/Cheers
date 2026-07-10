@@ -393,8 +393,13 @@ export function ChannelView({ channel, onBack }: Props) {
       setWorkspaceFocus(focus ?? []);
     },
     onBotTrace: handleBotTrace,
-    onBoardSignal: (board) =>
-      setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 })),
+    onBoardSignal: (board, botId) => {
+      // "workspace" ticks live in their own bot-scoped cell (no ViewBoard consumes
+      // a plain workspace count); everything else feeds the per-board counters.
+      if (board === "workspace")
+        setWorkspaceTick((prev) => ({ seq: (prev?.seq ?? 0) + 1, botId: botId ?? null }));
+      else setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 }));
+    },
     // Live-watch: an agent touched files on its machine. Stash the bot-scoped signal
     // (bumping `seq` so repeat signals for the same paths still re-trigger); the open
     // workspace dialog filters by its own `botId` and refetches. See RemoteWorkspaceDialog.
@@ -465,6 +470,11 @@ export function ChannelView({ channel, onBack }: Props) {
   // Live-push: per-board tick bumped by board_signal frames (and new messages for
   // "activity"); the ViewBoards re-fetch when their tick changes — no manual refresh.
   const [boardTick, setBoardTick] = useState<Record<string, number>>({});
+  // "workspace" ticks additionally carry the emitting bot (turn-complete signal), so
+  // the workspace dialog can ignore turns finished by bots it isn't browsing.
+  const [workspaceTick, setWorkspaceTick] = useState<
+    { seq: number; botId: string | null } | undefined
+  >(undefined);
   // Live-watch: latest bot-scoped workspace change signal (from `workspace_signal`).
   // `seq` monotonically bumps so the dialog re-reacts even to repeat signals for the
   // same paths; the dialog routes on `botId` (a channel may span several machines).
@@ -1050,9 +1060,10 @@ export function ChannelView({ channel, onBack }: Props) {
           // Default the browse to the composer's active session ("" = Auto → no
           // session scope → the dialog shows the bot's full allowed roots).
           sessionId={selectedSessionId || undefined}
-          // "workspace" board tick (agent finished a turn) → the dialog refetches
-          // its current dir + a clean open file. See onBoardSignal → boardTick above.
-          workspaceTick={boardTick.workspace}
+          // "workspace" board tick (an agent finished a turn; carries the emitting
+          // bot) → the dialog refetches its current dir + a clean open file, but
+          // only when the tick's bot is the one being browsed.
+          workspaceTick={workspaceTick}
           // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
           // dialog registers a watch while open and refetches when a signal for ITS bot
           // arrives. See onWorkspaceSignal → workspaceSignal above.

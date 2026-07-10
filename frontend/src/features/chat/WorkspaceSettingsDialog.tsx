@@ -18,6 +18,7 @@ import {
 } from "@/api/workspaces";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
+import { InviteLinksSection } from "./InviteLinksSection";
 import type { Workspace } from "@/types";
 
 const ROLES = ["member", "admin", "owner"] as const;
@@ -293,6 +294,8 @@ export function WorkspaceSettingsDialog({
                 )}
               </div>
             </div>
+
+            <InviteLinksSection workspaceId={workspace.workspace_id} />
 
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
               <div>

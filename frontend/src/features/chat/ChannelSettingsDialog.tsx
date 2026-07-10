@@ -21,6 +21,7 @@ const CHANNEL_ROLES = ["owner", "admin", "member", "readonly"] as const;
 const BOT_ROLES = ["member", "readonly"] as const;
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
+import { InviteLinksSection } from "./InviteLinksSection";
 import type { Channel, MemberItem } from "@/types";
 
 // Channel admin panel: rename/purpose, member list (add/remove members — users
@@ -325,6 +326,16 @@ export function ChannelSettingsDialog({
             </div>
           )}
         </div>
+
+        {/* Shareable invite links — public channels only (a link joiner enters the
+            workspace + this channel). The section hides itself for non-workspace-
+            admins, since links admit people into the whole workspace. */}
+        {canManage && channel.type === "public" && channel.workspace_id && (
+          <InviteLinksSection
+            workspaceId={channel.workspace_id}
+            channelId={channel.channel_id}
+          />
+        )}
 
         {/* Danger zone */}
         {canManage && (

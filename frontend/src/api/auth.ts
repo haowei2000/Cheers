@@ -19,11 +19,15 @@ export async function login(credentials: {
 }
 
 /** Request a one-time email verification code for self-service sign-up. Rejects an
- *  email that's already registered (409). */
-export async function requestRegisterCode(email: string): Promise<{ ok: boolean }> {
+ *  email that's already registered (409). A live invite-link token substitutes for
+ *  open registration when the instance has sign-ups disabled. */
+export async function requestRegisterCode(
+  email: string,
+  inviteToken?: string
+): Promise<{ ok: boolean }> {
   return apiJson("/auth/register/request-code", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, invite_token: inviteToken }),
   });
 }
 
@@ -35,6 +39,8 @@ export async function register(input: {
   email: string;
   code: string;
   display_name?: string;
+  /** Invite-link token — lets sign-up through when open registration is off. */
+  invite_token?: string;
 }): Promise<LoginResponse> {
   return apiJson<LoginResponse>("/auth/register", {
     method: "POST",

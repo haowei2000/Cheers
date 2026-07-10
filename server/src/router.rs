@@ -161,6 +161,20 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces/:workspace_id/leave",
             post(api::workspaces::leave_workspace),
         )
+        // Shareable invite links: mint/list/revoke = workspace admin; accept = any
+        // authenticated user (possession of the token is the authorization).
+        .route(
+            "/api/v1/workspaces/:workspace_id/invite-links",
+            get(api::invite_links::list_invite_links).post(api::invite_links::create_invite_link),
+        )
+        .route(
+            "/api/v1/workspaces/:workspace_id/invite-links/:link_id",
+            delete(api::invite_links::revoke_invite_link),
+        )
+        .route(
+            "/api/v1/invite-links/:token/accept",
+            post(api::invite_links::accept_invite_link),
+        )
         .route(
             "/api/v1/channels",
             get(api::channels::list_channels).post(api::channels::create_channel),
@@ -541,6 +555,13 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/enrollment/redeem",
             post(api::enrollment::redeem_enrollment_code),
+        )
+        // Public invite-link preview for the landing page: the visitor usually has
+        // no account yet. Read-only + rate-limited; workspace details come back
+        // only while the link is live.
+        .route(
+            "/api/v1/invite-links/:token",
+            get(api::invite_links::preview_invite_link),
         )
         // Public, no secrets: the mode-2 connector installer, served with the
         // API base baked in (reachable via the existing nginx /api proxy).

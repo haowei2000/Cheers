@@ -65,7 +65,7 @@ fn current_user_id(claims: &Claims) -> String {
     claims.sub.clone()
 }
 
-async fn ensure_workspace_admin(
+pub(crate) async fn ensure_workspace_admin(
     state: &AppState,
     workspace_id: &str,
     user_id: &str,
