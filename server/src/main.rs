@@ -26,8 +26,13 @@ use server::{gateway, infra, router, AppState, Config};
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(
+            // `cheers=info` covers the custom `cheers::*` targets (e.g. the
+            // dev-mode email delivery that logs verification codes when Brevo
+            // is unconfigured) — they sit outside the `server` module tree, so
+            // without it the documented "grep the logs for the code" path is
+            // silently filtered out.
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "server=debug,sqlx=warn,redis=warn".into()),
+                .unwrap_or_else(|_| "server=debug,cheers=info,sqlx=warn,redis=warn".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

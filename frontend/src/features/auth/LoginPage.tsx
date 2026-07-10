@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { login } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
@@ -8,6 +8,12 @@ import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Post-login destination (e.g. an invite landing page that bounced here).
+  // Same-app paths only — an absolute URL would be an open redirect.
+  const rawRedirect = params.get("redirect") ?? "";
+  const redirect =
+    rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/chat";
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({ login: "", password: "" });
   const [loading, setLoading] = useState(false);
@@ -27,7 +33,7 @@ export default function LoginPage() {
         },
         res.access_token
       );
-      navigate("/chat", { replace: true });
+      navigate(redirect, { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
     } finally {

@@ -7,6 +7,7 @@ const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
 const RegisterPage = lazy(() => import("@/features/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("@/features/auth/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("@/features/auth/ResetPasswordPage"));
+const InvitePage = lazy(() => import("@/features/invite/InvitePage"));
 const ChatLayout = lazy(() => import("@/features/chat/ChatLayout"));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage"));
 const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
@@ -33,6 +34,8 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot" element={<ForgotPasswordPage />} />
         <Route path="/reset" element={<ResetPasswordPage />} />
+        {/* Public: the landing page itself routes signed-out visitors to auth. */}
+        <Route path="/invite/:token" element={<InvitePage />} />
         <Route
           path="/chat/*"
           element={
