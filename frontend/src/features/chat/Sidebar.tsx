@@ -67,7 +67,11 @@ function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
       )}
     >
       <Hash className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-      <span className="truncate">{channel.name}</span>
+      {/* Joinable-but-not-joined public channels (Slack model) render dimmed;
+          clicking one opens the join prompt instead of the chat. */}
+      <span className={cn("truncate", channel.is_member === false && "opacity-50")}>
+        {channel.name}
+      </span>
       {/* A mention badge (rose "@N") outranks the plain unread pill: being
           @mentioned is a stronger signal than an unread message, so when both
           apply we show the mention. */}

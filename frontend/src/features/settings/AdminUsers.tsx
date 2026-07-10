@@ -117,7 +117,7 @@ export function AdminUsers() {
               </div>
               {u.is_suspended ? (
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   disabled={busy === u.user_id}
                   onClick={() => void act(u, "unsuspend")}
@@ -127,7 +127,7 @@ export function AdminUsers() {
                 </Button>
               ) : (
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   disabled={busy === u.user_id}
                   onClick={() => void act(u, "suspend")}

@@ -252,7 +252,7 @@ export function FileTile({ file }: { file: FileInfo }) {
           type="button"
           onClick={() => setOpen(true)}
           title={file.original_filename || file.file_id}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 transition-colors max-w-[240px]"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700/70 transition-colors max-w-[240px]"
         >
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>

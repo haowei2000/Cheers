@@ -121,6 +121,11 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces/invites",
             get(api::workspaces::list_my_invites),
         )
+        // Notification center: the caller's pending invites (workspace + channel).
+        .route(
+            "/api/v1/notifications",
+            get(api::notifications::list_notifications),
+        )
         .route(
             "/api/v1/workspaces/:workspace_id",
             patch(api::workspaces::update_workspace).delete(api::workspaces::delete_workspace),
@@ -139,8 +144,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/workspaces/:workspace_id/members",
-            get(api::workspaces::list_workspace_members)
-                .post(api::workspaces::add_workspace_member),
+            get(api::workspaces::list_workspace_members),
         )
         // 邀请候选搜索：好友按名字模糊匹配 ∪ 任何人按完整用户名/邮箱精确匹配
         // （沿用无全站姓名目录的隐私决策；/friends/search 只认 UUID，不适用于此）
@@ -188,6 +192,21 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/channels/:channel_id/leave",
             post(api::channels::leave_channel),
+        )
+        // Self-serve join for public channels (Slack model) — active workspace
+        // members only; private channels stay invite-only.
+        .route(
+            "/api/v1/channels/:channel_id/join",
+            post(api::channels::join_channel),
+        )
+        // Consent flow for a channel invite (the invitee acts on their own invite).
+        .route(
+            "/api/v1/channels/:channel_id/accept",
+            post(api::channels::accept_channel_invite),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/decline",
+            post(api::channels::decline_channel_invite),
         )
         .route(
             "/api/v1/channels/:channel_id/messages",

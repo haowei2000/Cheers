@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { ArrowLeft, Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
-import { listChannelMembers, markChannelRead } from "@/api/channels";
+import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { MembersPopover } from "./MembersPopover";
@@ -67,6 +67,12 @@ interface Props {
 export function ChannelView({ channel, onBack }: Props) {
   const user = useAuthStore((s) => s.user);
   const patchChannel = useChatStore((s) => s.patchChannel);
+  // Public channel the caller can see (as a workspace member) but hasn't joined
+  // yet — everything membership-gated (history, members, realtime, composer) is
+  // skipped and a join prompt renders instead. Joining patches the store, which
+  // flips this off and lets the normal effects run.
+  const isPreview = !!channel && channel.type !== "dm" && channel.is_member === false;
+  const [joining, setJoining] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -159,7 +165,7 @@ export function ChannelView({ channel, onBack }: Props) {
 
   // Initial history load (backend returns ascending: oldest first).
   useEffect(() => {
-    if (!channel) {
+    if (!channel || isPreview) {
       setMessages([]);
       return;
     }
@@ -172,21 +178,21 @@ export function ChannelView({ channel, onBack }: Props) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [channel?.channel_id]);
+  }, [channel?.channel_id, isPreview]);
 
   // Opening a channel marks it read: clear the unread + mention badges
   // optimistically, then stamp last_read_at server-side so list_channels stops
   // counting either (both are gated on last_read_at).
   useEffect(() => {
-    if (!channel) return;
+    if (!channel || isPreview) return;
     if ((channel.unread_count ?? 0) > 0 || (channel.mention_count ?? 0) > 0)
       patchChannel(channel.channel_id, { unread_count: 0, mention_count: 0 });
     markChannelRead(channel.channel_id).catch(() => {});
-  }, [channel?.channel_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [channel?.channel_id, isPreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mention candidates = channel members (users + bots).
   useEffect(() => {
-    if (!channel) {
+    if (!channel || isPreview) {
       setMentionables([]);
       setMembers([]);
       return;
@@ -212,7 +218,7 @@ export function ChannelView({ channel, onBack }: Props) {
         setMembers([]);
         setMentionables([]);
       });
-  }, [channel?.channel_id]);
+  }, [channel?.channel_id, isPreview]);
 
   // id → member profile, so a message avatar/name click can open the hovercard
   // even though the message itself carries no bio/status.
@@ -337,7 +343,7 @@ export function ChannelView({ channel, onBack }: Props) {
     ((resource: string, params: Record<string, unknown>) => Promise<unknown>) | null
   >(null);
   const loadCommands = useCallback(async () => {
-    if (!channel) return;
+    if (!channel || isPreview) return;
     const send = sendResourceReqRef.current;
     if (!send) return;
     try {
@@ -361,7 +367,7 @@ export function ChannelView({ channel, onBack }: Props) {
     } catch {
       /* best-effort; the composer just won't offer "/" commands */
     }
-  }, [channel, botLabels]);
+  }, [channel, isPreview, botLabels]);
 
   // Realtime "ready" → self-heal the message stream AND refresh the palette
   // (a bot may have advertised new commands while we were away).
@@ -371,7 +377,9 @@ export function ChannelView({ channel, onBack }: Props) {
   }, [catchUp, loadCommands]);
 
   const { sendResourceReq, sendPresenceFocus } = useChatRealtime(
-    channel?.channel_id ?? null,
+    // Preview (not yet a member) → don't subscribe; the gateway gates realtime
+    // frames on channel membership anyway.
+    !channel || isPreview ? null : channel.channel_id,
     {
     onMessage: handleMessage,
     onStreamDelta: handleStreamDelta,
@@ -694,6 +702,64 @@ export function ChannelView({ channel, onBack }: Props) {
     );
   }
 
+  // Public channel the caller hasn't joined: a join prompt instead of the chat.
+  // No history/members/composer — those are membership-gated server-side.
+  if (isPreview) {
+    const handleJoin = async () => {
+      setJoining(true);
+      try {
+        await joinChannel(channel.channel_id);
+        // Store patch flips is_member → the normal effects load the channel.
+        patchChannel(channel.channel_id, { is_member: true });
+        toast.success(`Joined #${channel.name}`);
+      } catch {
+        toast.error("Couldn't join the channel — please try again");
+      } finally {
+        setJoining(false);
+      }
+    };
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+          {onBack && (
+            <button
+              onClick={onBack}
+              title="Back to channels"
+              aria-label="Back to channels"
+              className="md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
+          <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
+            {channel.name}
+          </span>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+          <Hash className="w-10 h-10 text-zinc-700" />
+          <div className="text-zinc-100 font-semibold text-lg">#{channel.name}</div>
+          {channel.purpose && (
+            <p className="text-sm text-zinc-500 max-w-md">{channel.purpose}</p>
+          )}
+          <p className="text-sm text-zinc-500">
+            You&apos;re not a member of this channel yet. Join to read and send
+            messages.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleJoin()}
+            disabled={joining}
+            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 px-4 py-2 text-sm font-medium text-white"
+          >
+            {joining && <Loader2 className="w-4 h-4 animate-spin" />}
+            Join channel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ProfileCardProvider members={memberById}>
     {/* Instrument windows FLOAT over the chat (no reserved column), so opening
@@ -848,7 +914,7 @@ export function ChannelView({ channel, onBack }: Props) {
             type="button"
             disabled={selectedIds.size === 0}
             onClick={() => void copySelected()}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
           >
             <Copy className="w-3.5 h-3.5" />
             Copy
@@ -862,7 +928,7 @@ export function ChannelView({ channel, onBack }: Props) {
                 count: selectedMessages.length,
               })
             }
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
           >
             <Forward className="w-3.5 h-3.5" />
             Forward
