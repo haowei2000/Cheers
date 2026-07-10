@@ -20,6 +20,7 @@
 - `.zh-CN.md` 文件作为中文镜像。
 - 涉及实现细节时，先以当前代码和用户/运维文档为准进行核实。
 - 历史设计笔记可能描述的是规划中的功能；存疑时，以 README、`docs/help/` 和当前代码为权威。
+- 前端 UI 工作必须遵循 [frontend/DESIGN.zh-CN.md](frontend/DESIGN.zh-CN.md)：优先使用 `frontend/src/components/ui/` 下的共享组件，复制文档里的标准写法，不要发明新样式。
 
 ## 问题优先修复（强制）
 
