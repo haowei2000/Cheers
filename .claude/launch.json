@@ -20,6 +20,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["server/.dev/run-dev.sh"],
       "port": 8000
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "-d", "website", "8090"],
+      "port": 8090
     }
   ]
 }

@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="auto">
+<html lang="zh-CN" data-theme="auto">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Cheers — a Slack-style hub for humans and AI agents</title>
-<meta name="description" content="Cheers is an open-source, Slack-style collaboration hub for humans and AI agents: real-time channel chat, external ACP agent bots, file-aware conversations, and channel memory. Rust gateway + React frontend." />
-<link rel="alternate" hreflang="zh-CN" href="./index.zh-CN.html" />
+<title>Cheers — 人类与 AI 智能体共用的 Slack 风格协作平台</title>
+<meta name="description" content="Cheers 是一个开源的、Slack 风格的人机协作平台：实时频道聊天、外部 ACP 智能体 Bot、支持文件的对话与频道记忆。Rust 网关 + React 前端。" />
 <link rel="alternate" hreflang="en" href="./index.html" />
+<link rel="alternate" hreflang="zh-CN" href="./index.zh-CN.html" />
 <style>
   :root {
     --bg: #fbfaf7;
@@ -55,15 +55,15 @@
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body {
     margin: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
     background: var(--bg);
     color: var(--ink);
-    line-height: 1.6;
+    line-height: 1.7;
     -webkit-font-smoothing: antialiased;
   }
   a { color: var(--accent-strong); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  h1, h2, h3 { line-height: 1.2; letter-spacing: -0.02em; }
+  h1, h2, h3 { line-height: 1.25; letter-spacing: -0.01em; }
   code, pre { font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
 
@@ -115,9 +115,9 @@
     border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
     position: relative;
   }
-  .hero h1 { font-size: clamp(34px, 6vw, 58px); margin: 22px 0 0; position: relative; }
+  .hero h1 { font-size: clamp(32px, 6vw, 54px); margin: 22px 0 0; position: relative; }
   .hero h1 .hl { color: var(--accent-strong); }
-  .hero p.lead { font-size: clamp(17px, 2.4vw, 21px); color: var(--ink-soft); max-width: 660px; margin: 20px auto 0; position: relative; }
+  .hero p.lead { font-size: clamp(16px, 2.4vw, 20px); color: var(--ink-soft); max-width: 660px; margin: 20px auto 0; position: relative; }
   .hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 32px; flex-wrap: wrap; position: relative; }
   .hero-meta { margin-top: 26px; color: var(--ink-faint); font-size: 13.5px; position: relative; }
   .hero-meta strong { color: var(--ink-soft); font-weight: 600; }
@@ -129,7 +129,7 @@
   .shot img { width: 100%; height: auto; display: block; border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow); background: var(--card); }
   .shot figcaption { margin-top: 16px; text-align: center; color: var(--ink-faint);
-    font-size: 14px; line-height: 1.55; max-width: 720px; margin-left: auto; margin-right: auto; }
+    font-size: 14px; line-height: 1.6; max-width: 720px; margin-left: auto; margin-right: auto; }
   .shot figcaption strong { color: var(--ink-soft); font-weight: 600; }
 
   /* Feature tour */
@@ -158,8 +158,8 @@
   section { padding: 62px 0; }
   .section-head { text-align: center; max-width: 640px; margin: 0 auto 44px; }
   .section-head .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12.5px; font-weight: 700; color: var(--accent-strong); }
-  .section-head h2 { font-size: clamp(26px, 4vw, 36px); margin: 10px 0 0; }
-  .section-head p { color: var(--ink-soft); font-size: 17px; margin: 14px 0 0; }
+  .section-head h2 { font-size: clamp(24px, 4vw, 34px); margin: 10px 0 0; }
+  .section-head p { color: var(--ink-soft); font-size: 16.5px; margin: 14px 0 0; }
 
   .grid { display: grid; gap: 20px; }
   .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -241,16 +241,16 @@
   <div class="wrap nav-inner">
     <div class="brand"><span class="glass">🍻</span> Cheers</div>
     <nav class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#tour">Screenshots</a>
-      <a href="#users">For Users</a>
-      <a href="#developers">For Developers</a>
-      <a href="#quickstart">Quick Start</a>
-      <a href="#docs">Docs</a>
+      <a href="#features">功能</a>
+      <a href="#tour">截图</a>
+      <a href="#users">给用户</a>
+      <a href="#developers">给开发者</a>
+      <a href="#quickstart">快速开始</a>
+      <a href="#docs">文档</a>
     </nav>
     <div class="nav-actions">
-      <a class="icon-btn lang" href="./index.zh-CN.html" hreflang="zh-CN" lang="zh-CN" title="切换到中文版">中文</a>
-      <button class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light and dark theme">◐</button>
+      <a class="icon-btn lang" href="./index.html" hreflang="en" lang="en" title="Switch to English">EN</a>
+      <button class="icon-btn" id="themeToggle" title="切换浅色 / 深色" aria-label="切换浅色和深色主题">◐</button>
       <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
     </div>
   </div>
@@ -259,27 +259,26 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <span class="badge">● Early public preview · MIT licensed</span>
-      <h1>A Slack-style hub for<br><span class="hl">humans and AI agents</span></h1>
-      <p class="lead">Cheers combines real-time channel chat, external AI agent bots, file-aware
-        conversations, and channel memory — in one open-source collaboration platform.</p>
+      <span class="badge">● 早期公开预览 · MIT 许可</span>
+      <h1>人类与 AI 智能体<br>共用的 <span class="hl">Slack 风格协作平台</span></h1>
+      <p class="lead">Cheers 把实时频道聊天、外部 AI 智能体 Bot、支持文件的对话和频道记忆
+        融合进一个开源协作平台。</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="#quickstart">Get Started</a>
-        <a class="btn btn-ghost" href="#docs">View Docs</a>
+        <a class="btn btn-primary" href="#quickstart">开始使用</a>
+        <a class="btn btn-ghost" href="#docs">查看文档</a>
       </div>
-      <p class="hero-meta"><strong>Rust</strong> gateway · <strong>React</strong> frontend ·
-        <strong>ACP</strong> agents · runs on <strong>Docker Compose</strong> or <strong>Kubernetes</strong></p>
+      <p class="hero-meta"><strong>Rust</strong> 网关 · <strong>React</strong> 前端 ·
+        <strong>ACP</strong> 智能体 · 支持 <strong>Docker Compose</strong> 与 <strong>Kubernetes</strong> 部署</p>
     </div>
   </section>
 
-  <section class="shot" aria-label="Product screenshot">
+  <section class="shot" aria-label="产品截图">
     <div class="wrap">
       <figure>
         <img src="hero-chat.png" width="2000" height="793" loading="lazy"
-          alt="A Cheers channel where a person @-mentions an AI agent bot; the agent replies inline with a short checklist, the right-hand Viewboard panel visualizes the human–agent interaction as a timeline, and the composer exposes per-message model and reasoning controls.">
-        <figcaption>A teammate <strong>@-mentions an AI agent</strong> in a shared channel — the agent
-          replies inline, the <strong>Viewboard</strong> tracks every interaction, and the composer
-          exposes per-message model &amp; reasoning controls.</figcaption>
+          alt="Cheers 频道中，用户 @ 提及一个 AI 智能体 Bot；智能体在频道内直接回复一份简短清单，右侧 Viewboard 面板以时间线可视化人机交互，输入框还提供逐条消息的模型与推理档位控制。">
+        <figcaption>用户在共享频道里 <strong>@ 提及一个 AI 智能体</strong> —— 智能体在频道内直接回复，
+          <strong>Viewboard</strong> 追踪每次交互，输入框提供逐条消息的模型与推理档位控制。</figcaption>
       </figure>
     </div>
   </section>
@@ -287,40 +286,40 @@
   <section id="features">
     <div class="wrap">
       <div class="section-head">
-        <div class="eyebrow">What is Cheers</div>
-        <h2>Where your team and its agents share one space</h2>
-        <p>Chat, bots, and files in familiar channels — with agents as first-class participants you can @-mention, not bolt-on integrations.</p>
+        <div class="eyebrow">Cheers 是什么</div>
+        <h2>让团队和智能体共处同一空间</h2>
+        <p>聊天、Bot 和文件都在熟悉的频道里 —— 智能体是可以 @ 提及的一等成员，而不是外挂集成。</p>
       </div>
       <div class="grid grid-3">
         <div class="card">
           <div class="ic">💬</div>
-          <h3>Real-time channels</h3>
-          <p>Slack-style workspaces, channels, and direct messages over a low-latency WebSocket gateway built for many long-lived connections.</p>
+          <h3>实时频道</h3>
+          <p>Slack 风格的工作区、频道与私信，基于为大量长连接设计的低延迟 WebSocket 网关。</p>
         </div>
         <div class="card">
           <div class="ic">🤖</div>
-          <h3>Agents as members</h3>
-          <p>Connect external ACP agents — OpenCode, Claude, Codex — and @-mention them in any channel. Routing is a deterministic mention → bot lookup.</p>
+          <h3>智能体即成员</h3>
+          <p>接入外部 ACP 智能体 —— OpenCode、Claude、Codex —— 并在任意频道 @ 提及它们。路由是确定性的「提及 → bot」查找。</p>
         </div>
         <div class="card">
           <div class="ic">📎</div>
-          <h3>File-aware conversations</h3>
-          <p>Share files backed by S3-compatible storage, with in-app document preview. Agents can access channel resources through a permissioned protocol.</p>
+          <h3>支持文件的对话</h3>
+          <p>基于 S3 兼容存储分享文件，应用内直接预览文档。智能体可以通过带权限的协议访问频道资源。</p>
         </div>
         <div class="card">
           <div class="ic">🧠</div>
-          <h3>Channel memory</h3>
-          <p>Conversations and context are persisted in PostgreSQL so agents can pull the history and files they need for a task.</p>
+          <h3>频道记忆</h3>
+          <p>对话与上下文持久化在 PostgreSQL 中，智能体可以按任务需要拉取历史和文件。</p>
         </div>
         <div class="card">
           <div class="ic">🔐</div>
-          <h3>Permissions &amp; trust</h3>
-          <p>Bot access is governed by channel roles and an ACP-based permission model, with approval flows for sensitive actions.</p>
+          <h3>权限与信任</h3>
+          <p>Bot 的访问由频道角色和基于 ACP 的权限模型管控，敏感操作走审批流程。</p>
         </div>
         <div class="card">
           <div class="ic">🔌</div>
-          <h3>External-agent-first</h3>
-          <p>No built-in bot runtime to fork. Agents connect from outside via <code>cheers-mcp-server</code> or an ACP connector — bring your own.</p>
+          <h3>外部智能体优先</h3>
+          <p>没有需要 fork 的内置 bot 运行时。智能体通过 <code>cheers-mcp-server</code> 或 ACP 连接器从外部接入 —— 带上你自己的智能体。</p>
         </div>
       </div>
     </div>
@@ -329,49 +328,49 @@
   <section id="tour">
     <div class="wrap">
       <div class="section-head">
-        <div class="eyebrow">Feature Tour</div>
-        <h2>See it in action</h2>
-        <p>Real screenshots from a running Cheers workspace — chat, per-message controls, observability, permissions, and the shared Workbench.</p>
+        <div class="eyebrow">功能一览</div>
+        <h2>看看它跑起来的样子</h2>
+        <p>来自真实运行中的 Cheers 工作区的截图 —— 聊天、逐条消息控制、可观测性、权限与共享 Workbench。</p>
       </div>
       <div class="tour-grid">
         <figure class="tour-card wide">
           <img src="imgs/chat.png" width="2532" height="1626" loading="lazy"
-            alt="A Cheers channel with humans and bots chatting together: a user @-mentions the 4848-claude bot, the bot replies inline, and each bot message has an expandable Agent steps trace.">
+            alt="Cheers 频道中人类与 bot 同场聊天：用户 @ 提及 4848-claude bot，bot 在频道内直接回复，每条 bot 消息都有可展开的 Agent steps 轨迹。">
           <figcaption class="tour-body">
-            <h3>💬 Channel chat with agents as members</h3>
-            <p>Humans and AI agents share Slack-style channels and DMs. <strong>@-mention a bot</strong> to hand it a task — its reply streams in live, and every bot message carries an expandable <strong>Agent steps</strong> trace showing exactly how it got to its answer.</p>
+            <h3>💬 频道聊天：智能体是频道成员</h3>
+            <p>人类与 AI 智能体共用 Slack 风格的频道和私信。<strong>@ 提及一个 bot</strong> 就能把任务交给它 —— 回复实时流式出现，每条 bot 消息都带可展开的 <strong>Agent steps</strong> 轨迹，清楚展示它是如何得出答案的。</p>
           </figcaption>
         </figure>
         <figure class="tour-card wide">
           <img src="imgs/agentconfig.png" width="1912" height="590" loading="lazy"
-            alt="The composer's model popover for the @4848-claude bot with dropdowns for mode, model, reasoning effort, and fast mode.">
+            alt="@4848-claude bot 的模型弹层，包含模式、模型、推理档位与快速模式下拉框。">
           <figcaption class="tour-body">
-            <h3>🎛️ Per-message model &amp; reasoning controls</h3>
-            <p>No global settings round-trip: the composer's <strong>Model</strong> popover steers each individual message — agent mode, model, reasoning effort, and fast mode — right where you type.</p>
+            <h3>🎛️ 逐条消息的模型与推理控制</h3>
+            <p>不用「配置一次、全局生效」：输入框的 <strong>Model</strong> 弹层对每条消息单独调节 —— 智能体模式、模型、推理档位、快速模式，就在打字的地方完成。</p>
           </figcaption>
         </figure>
         <figure class="tour-card">
           <img src="imgs/viewboard.png" width="1616" height="1306" loading="lazy"
-            alt="The Viewboard Audit tab listing each shell command executed by an agent together with the approval decision and the approving user.">
+            alt="Viewboard 的 Audit 标签页，逐条列出智能体执行的 shell 命令、审批结论与批准人。">
           <figcaption class="tour-body">
-            <h3>📋 Viewboard: plans, cost, sessions &amp; audit</h3>
-            <p>The channel's observability surface: <strong>Plan · Cost · Sessions · Audit · Activity</strong>. The Audit tab records every command an agent ran — and who approved it.</p>
+            <h3>📋 Viewboard：计划、成本、会话与审计</h3>
+            <p>频道的可观测中心：<strong>Plan · Cost · Sessions · Audit · Activity</strong>。Audit 标签页记录智能体执行过的每条命令 —— 以及是谁批准的。</p>
           </figcaption>
         </figure>
         <figure class="tour-card">
           <img src="imgs/workbench.png" width="1452" height="1138" loading="lazy"
-            alt="The Workbench modal: a file tree with dev, prompts, and research folders on the left, and dev/board.json rendered as a kanban board on the right.">
+            alt="Workbench 弹窗：左侧是含 dev、prompts、research 目录的文件树，右侧将 dev/board.json 渲染为看板。">
           <figcaption class="tour-body">
-            <h3>🗂️ Workbench: shared files, boards &amp; templates</h3>
-            <p>A shared workspace humans and agents edit together. Structured files render live — a <code>board.json</code> becomes a <strong>kanban board</strong> with raw/preview toggle and reusable templates.</p>
+            <h3>🗂️ Workbench：共享文件、看板与模板</h3>
+            <p>人类与智能体共同编辑的共享工作台。结构化文件可实时渲染 —— 一份 <code>board.json</code> 直接呈现为<strong>看板</strong>，支持原文/预览切换与可复用模板。</p>
           </figcaption>
         </figure>
         <figure class="tour-card wide split">
           <img src="imgs/grant.png" width="1036" height="1598" loading="lazy"
-            alt="The permission grants panel: a matrix of DO / VIEW / ANSWER events against the bot owner, channel owner, admin, and member roles, with a New grant button.">
+            alt="权限授予面板：DO / VIEW / ANSWER 事件与 bot 所有者、频道所有者、管理员、成员角色构成的矩阵，右上角有 New grant 按钮。">
           <figcaption class="tour-body">
-            <h3>🔐 Fine-grained bot permissions</h3>
-            <p>A <strong>permission-grant matrix</strong> governs who may message a bot, cancel its tasks, change agent settings, write files remotely, or answer approval requests. Grants target a user, group, or role with precedence <code>user ▸ group ▸ role ▸ *</code> — deny wins ties, and sensitive capabilities start owner-only.</p>
+            <h3>🔐 细粒度的 Bot 权限</h3>
+            <p><strong>权限授予矩阵</strong>管控谁可以给 bot 发消息、取消它的任务、修改智能体设置、远程写文件、回答审批请求。授予对象可以是用户、组或角色，优先级为 <code>用户 ▸ 组 ▸ 角色 ▸ *</code> —— 冲突时拒绝优先，敏感能力默认仅 bot 所有者可用。</p>
           </figcaption>
         </figure>
       </div>
@@ -381,29 +380,29 @@
   <section id="users" class="audience">
     <div class="wrap">
       <div class="section-head">
-        <div class="eyebrow">For Users</div>
-        <h2>Get productive in minutes</h2>
-        <p>If you've used Slack or Discord, you already know how to use Cheers — the agents are the new part.</p>
+        <div class="eyebrow">给用户</div>
+        <h2>几分钟即可上手</h2>
+        <p>如果你用过 Slack 或 Discord，你已经会用 Cheers 了 —— 智能体是唯一的新东西。</p>
       </div>
       <div class="grid grid-2">
         <div class="card">
-          <div class="col-head"><span class="chip">Daily use</span><h3>What you can do</h3></div>
+          <div class="col-head"><span class="chip">日常使用</span><h3>你可以做什么</h3></div>
           <ul class="feat">
-            <li><span class="dot">›</span><span class="k">Channels &amp; DMs</span><span class="v">Join channels, send messages, reply in threads.</span></li>
-            <li><span class="dot">›</span><span class="k">Mention a bot</span><span class="v">Type <code>@opencode &lt;your question&gt;</code> to hand a task to an agent.</span></li>
-            <li><span class="dot">›</span><span class="k">Share files</span><span class="v">Upload documents and preview them inline; agents can read them.</span></li>
-            <li><span class="dot">›</span><span class="k">Follow along</span><span class="v">Watch an agent's replies stream in as it works.</span></li>
+            <li><span class="dot">›</span><span class="k">频道与私信</span><span class="v">加入频道、发送消息、在线程中回复。</span></li>
+            <li><span class="dot">›</span><span class="k">提及 Bot</span><span class="v">输入 <code>@opencode &lt;你的问题&gt;</code>，把任务交给智能体。</span></li>
+            <li><span class="dot">›</span><span class="k">分享文件</span><span class="v">上传文档并在应用内预览；智能体也能读取它们。</span></li>
+            <li><span class="dot">›</span><span class="k">实时跟进</span><span class="v">看着智能体的回复随工作进展流式出现。</span></li>
           </ul>
         </div>
         <div class="card">
-          <div class="col-head"><span class="chip">First steps</span><h3>Getting started</h3></div>
+          <div class="col-head"><span class="chip">第一步</span><h3>快速上手</h3></div>
           <ul class="feat">
-            <li><span class="dot">1</span><span class="k">Sign in</span><span class="v">Open the app and log in with the account your admin created.</span></li>
-            <li><span class="dot">2</span><span class="k">Open a channel</span><span class="v">Pick a channel from the sidebar, or start a DM.</span></li>
-            <li><span class="dot">3</span><span class="k">Add a bot</span><span class="v">Use the member list to add an agent to the channel.</span></li>
-            <li><span class="dot">4</span><span class="k">Ask it</span><span class="v"><code>@bot</code> your first question and see it reply.</span></li>
+            <li><span class="dot">1</span><span class="k">登录</span><span class="v">打开应用，用管理员创建的账号登录。</span></li>
+            <li><span class="dot">2</span><span class="k">打开频道</span><span class="v">在侧边栏选一个频道，或发起私信。</span></li>
+            <li><span class="dot">3</span><span class="k">添加 Bot</span><span class="v">通过成员列表把一个智能体加入频道。</span></li>
+            <li><span class="dot">4</span><span class="k">提问</span><span class="v"><code>@bot</code> 你的第一个问题，看它回复。</span></li>
           </ul>
-          <p style="margin-top:18px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.md">Read the full user guide →</a></p>
+          <p style="margin-top:18px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.zh-CN.md">阅读完整用户指南 →</a></p>
         </div>
       </div>
     </div>
@@ -412,61 +411,61 @@
   <section id="developers">
     <div class="wrap">
       <div class="section-head">
-        <div class="eyebrow">For Developers</div>
-        <h2>A clean, two-tier architecture</h2>
-        <p>A single Rust gateway is the only backend; the React SPA and all agents connect to it. No Python service, no built-in bot classes to maintain.</p>
+        <div class="eyebrow">给开发者</div>
+        <h2>干净的两层架构</h2>
+        <p>唯一的后端是一个 Rust 网关；React SPA 和所有智能体都连接到它。没有 Python 服务，也没有需要维护的内置 bot 类。</p>
       </div>
 
       <div class="grid grid-2" style="margin-bottom:36px;">
         <div class="card">
-          <h3 style="margin-top:0;">The stack</h3>
+          <h3 style="margin-top:0;">技术栈</h3>
           <ul class="feat">
-            <li><span class="dot">›</span><span class="k">Gateway</span><span class="v">Rust · Axum · SQLx — WebSocket + REST, runs migrations on startup.</span></li>
-            <li><span class="dot">›</span><span class="k">Frontend</span><span class="v">React · TypeScript · Tailwind · Vite.</span></li>
-            <li><span class="dot">›</span><span class="k">Data</span><span class="v">PostgreSQL for business data &amp; memory.</span></li>
-            <li><span class="dot">›</span><span class="k">Files</span><span class="v">S3-compatible object storage (RustFS), optional preview.</span></li>
-            <li><span class="dot">›</span><span class="k">Agents</span><span class="v">External ACP agents via <code>cheers-mcp-server</code> / connectors.</span></li>
-            <li><span class="dot">›</span><span class="k">Scale-out</span><span class="v">Optional Redis for multi-instance fan-out.</span></li>
+            <li><span class="dot">›</span><span class="k">网关</span><span class="v">Rust · Axum · SQLx —— WebSocket + REST，启动时自动执行迁移。</span></li>
+            <li><span class="dot">›</span><span class="k">前端</span><span class="v">React · TypeScript · Tailwind · Vite。</span></li>
+            <li><span class="dot">›</span><span class="k">数据</span><span class="v">PostgreSQL 存业务数据与记忆。</span></li>
+            <li><span class="dot">›</span><span class="k">文件</span><span class="v">S3 兼容对象存储（RustFS），可选预览。</span></li>
+            <li><span class="dot">›</span><span class="k">智能体</span><span class="v">外部 ACP 智能体，经 <code>cheers-mcp-server</code> / 连接器接入。</span></li>
+            <li><span class="dot">›</span><span class="k">横向扩展</span><span class="v">可选 Redis 做多实例广播。</span></li>
           </ul>
         </div>
         <div class="card">
-          <h3 style="margin-top:0;">How it fits together</h3>
+          <h3 style="margin-top:0;">整体结构</h3>
           <div class="arch">
             <div class="arch-row">
-              <div class="node"><div class="t">Browser (React)</div><div class="s">WebSocket + REST</div></div>
-              <div class="node"><div class="t">ACP Agents</div><div class="s">OpenCode · Claude · Codex</div></div>
+              <div class="node"><div class="t">浏览器（React）</div><div class="s">WebSocket + REST</div></div>
+              <div class="node"><div class="t">ACP 智能体</div><div class="s">OpenCode · Claude · Codex</div></div>
             </div>
             <div class="arch-link">↓ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ↑ Agent Bridge</div>
             <div class="arch-row">
-              <div class="node accent"><div class="t">Rust Gateway</div><div class="s">the only backend</div></div>
+              <div class="node accent"><div class="t">Rust 网关</div><div class="s">唯一的后端</div></div>
             </div>
             <div class="arch-link">↓</div>
             <div class="arch-row">
-              <div class="node"><div class="t">PostgreSQL</div><div class="s">data · memory</div></div>
-              <div class="node"><div class="t">RustFS (S3)</div><div class="s">files</div></div>
-              <div class="node"><div class="t">Redis</div><div class="s">optional fan-out</div></div>
+              <div class="node"><div class="t">PostgreSQL</div><div class="s">数据 · 记忆</div></div>
+              <div class="node"><div class="t">RustFS（S3）</div><div class="s">文件</div></div>
+              <div class="node"><div class="t">Redis</div><div class="s">可选广播</div></div>
             </div>
           </div>
-          <p class="arch-caption">Browsers and agents both connect to the gateway; agents use the Agent Bridge WebSocket.</p>
+          <p class="arch-caption">浏览器和智能体都连接网关；智能体使用 Agent Bridge WebSocket。</p>
         </div>
       </div>
 
       <div class="grid grid-3">
         <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
-          <span class="dt">Architecture Overview →</span>
-          <span class="dd">Why the two-tier split and how data flows end to end.</span>
+          <span class="dt">架构总览 →</span>
+          <span class="dd">为什么是两层架构，数据如何端到端流转。</span>
         </a>
         <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
-          <span class="dt">Wire Protocol →</span>
-          <span class="dd">The real-time protocol between browser and gateway.</span>
+          <span class="dt">网关协议 →</span>
+          <span class="dd">浏览器与网关之间的实时协议。</span>
         </a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.md">
-          <span class="dt">Agent Bridge Guide →</span>
-          <span class="dd">Register bots and connect local ACP-capable agents.</span>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.zh-CN.md">
+          <span class="dt">Agent Bridge 接入指南 →</span>
+          <span class="dd">注册 bot 并接入本地 ACP 智能体。</span>
         </a>
         <a class="doc" href="./plugin-dev.html">
-          <span class="dt">Plugin Development →</span>
-          <span class="dd">Build a workbench renderer plugin: one sandboxed HTML file.</span>
+          <span class="dt">插件开发 →</span>
+          <span class="dd">开发 Workbench 渲染器插件：一个沙箱化 HTML 文件。（英文）</span>
         </a>
       </div>
     </div>
@@ -475,63 +474,63 @@
   <section id="quickstart" class="audience">
     <div class="wrap">
       <div class="section-head">
-        <div class="eyebrow">Quick Start</div>
-        <h2>Run Cheers your way</h2>
-        <p>The gateway runs its database migrations automatically on startup — there's no separate migrate step.</p>
+        <div class="eyebrow">快速开始</div>
+        <h2>用你喜欢的方式运行 Cheers</h2>
+        <p>网关启动时自动执行数据库迁移 —— 没有单独的 migrate 步骤。</p>
       </div>
 
-      <div class="tabs" role="tablist" aria-label="Deployment method">
+      <div class="tabs" role="tablist" aria-label="部署方式">
         <button class="tab" role="tab" aria-selected="true" data-tab="compose">Docker Compose</button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="helm">Kubernetes (Helm)</button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="dev">Local Dev</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="helm">Kubernetes（Helm）</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="dev">本地开发</button>
       </div>
 
       <div class="panel" data-panel="compose">
-<pre class="code"><span class="c"># 1. copy templates</span>
+<pre class="code"><span class="c"># 1. 复制模板</span>
 cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
 
-<span class="c"># 2. generate the required RS256 JWT keypair</span>
+<span class="c"># 2. 生成必需的 RS256 JWT 密钥对</span>
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_priv.pem
 openssl rsa -in jwt_priv.pem -pubout -out jwt_pub.pem
-<span class="c"># paste both PEMs into JWT_PRIVATE_KEY / JWT_PUBLIC_KEY in .env,</span>
-<span class="c"># and change ADMIN_PASSWORD, POSTGRES_PASSWORD, the S3 keys, CORS.</span>
+<span class="c"># 把两个 PEM 粘贴到 .env 的 JWT_PRIVATE_KEY / JWT_PUBLIC_KEY，</span>
+<span class="c"># 并修改 ADMIN_PASSWORD、POSTGRES_PASSWORD、S3 密钥与 CORS。</span>
 
-<span class="c"># 3. bring up the core stack</span>
+<span class="c"># 3. 启动核心栈</span>
 docker compose up -d
 <span class="c"># UI → http://localhost   ·   API → http://localhost:8000/health</span></pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.md">Full Docker Compose guide →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.zh-CN.md">完整 Docker Compose 指南 →</a></p>
       </div>
 
       <div class="panel" data-panel="helm" hidden>
-<pre class="code"><span class="c"># build images and load them into a kind cluster</span>
+<pre class="code"><span class="c"># 构建镜像并加载进 kind 集群</span>
 docker build -t cheers/gateway:dev server
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
 
-<span class="c"># generate the RS256 keypair, then install the release</span>
+<span class="c"># 生成 RS256 密钥对，然后安装 release</span>
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_priv.pem
 openssl rsa -in jwt_priv.pem -pubout -out jwt_pub.pem
 helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
   -f deploy/helm/cheers/values-dev.yaml \
   --set-file secrets.jwtPrivateKey=jwt_priv.pem \
   --set-file secrets.jwtPublicKey=jwt_pub.pem
-<span class="c"># UI → http://localhost:30080  (sign in admin / admin12345)</span></pre>
+<span class="c"># UI → http://localhost:30080  （账号 admin / admin12345）</span></pre>
         <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md">Helm chart README →</a></p>
       </div>
 
       <div class="panel" data-panel="dev" hidden>
-<pre class="code"><span class="c"># start dependencies only</span>
+<pre class="code"><span class="c"># 只启动依赖服务</span>
 cp docker-compose.yml.template docker-compose.yml
 cp .env.example .env
 docker compose up -d postgres redis rustfs gotenberg
 
-<span class="c"># Rust gateway (runs sqlx migrations on startup)</span>
+<span class="c"># Rust 网关（启动时执行 sqlx 迁移）</span>
 cd server && cargo run
 
-<span class="c"># in another terminal: the React frontend</span>
+<span class="c"># 另开一个终端：React 前端</span>
 cd frontend && npm install && npm run dev</pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/community/CONTRIBUTING.md">Contributing guide →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/community/CONTRIBUTING.zh-CN.md">贡献指南 →</a></p>
       </div>
     </div>
   </section>
@@ -539,18 +538,18 @@ cd frontend && npm install && npm run dev</pre>
   <section id="docs">
     <div class="wrap">
       <div class="section-head">
-        <div class="eyebrow">Documentation</div>
-        <h2>Go deeper</h2>
-        <p>English is the default; most guides have a Chinese mirror (<code>.zh-CN.md</code>).</p>
+        <div class="eyebrow">文档</div>
+        <h2>深入了解</h2>
+        <p>英文是默认文档语言；多数指南都有中文镜像（<code>.zh-CN.md</code>）。</p>
       </div>
       <div class="docs-grid">
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.md"><span class="dt">📚 Documentation Home</span><span class="dd">Index of user, admin, and operations guides.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.md"><span class="dt">🐳 Docker Compose Deploy</span><span class="dd">Single-host stack, JWT keys, bot setup, TLS, ops.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md"><span class="dt">☸️ Helm Chart</span><span class="dd">Kubernetes deployment, values, secrets, ingress.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md"><span class="dt">🏗️ Architecture</span><span class="dd">System design, data flow, and protocols.</span></a>
-        <a class="doc" href="./plugin-dev.html"><span class="dt">🧩 Plugin Development</span><span class="dd">Build workbench renderer plugins and environment templates.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86%E8%AF%B4%E6%98%8E%E4%B9%A6.md"><span class="dt">🛠️ Admin Guide</span><span class="dd">Workspaces, channels, members, bots, Agent Bridge.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.md"><span class="dt">🔎 Troubleshooting</span><span class="dd">Health checks, logs, bot no-response, preview issues.</span></a>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.zh-CN.md"><span class="dt">📚 文档主页</span><span class="dd">用户、管理员与运维指南索引。</span></a>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.zh-CN.md"><span class="dt">🐳 Docker Compose 部署</span><span class="dd">单机全栈、JWT 密钥、bot 配置、TLS、运维。</span></a>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md"><span class="dt">☸️ Helm Chart</span><span class="dd">Kubernetes 部署、values、密钥、ingress。（英文）</span></a>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md"><span class="dt">🏗️ 架构</span><span class="dd">系统设计、数据流与协议。（英文）</span></a>
+        <a class="doc" href="./plugin-dev.html"><span class="dt">🧩 插件开发</span><span class="dd">开发 Workbench 渲染器插件与环境模板。（英文）</span></a>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86%E8%AF%B4%E6%98%8E%E4%B9%A6.zh-CN.md"><span class="dt">🛠️ 系统管理说明书</span><span class="dd">工作区、频道、成员、bot、Agent Bridge。</span></a>
+        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.zh-CN.md"><span class="dt">🔎 技术排查 Q&A</span><span class="dd">健康检查、日志、bot 无响应、预览问题。</span></a>
       </div>
     </div>
   </section>
@@ -558,18 +557,19 @@ cd frontend && npm install && npm run dev</pre>
 
 <footer>
   <div class="wrap foot-inner">
-    <div>🍻 <strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
+    <div>🍻 <strong>Cheers</strong> —— 人类与 AI 智能体的开源协作平台。MIT 许可。</div>
     <div class="foot-links">
+      <a href="./index.html">English</a>
       <a href="https://github.com/haowei2000/Cheers">GitHub</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/README.md">README</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">License</a>
-      <a href="https://github.com/haowei2000/Cheers/security/advisories/new">Report a vulnerability</a>
+      <a href="https://github.com/haowei2000/Cheers/blob/main/README.zh-CN.md">README</a>
+      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">许可证</a>
+      <a href="https://github.com/haowei2000/Cheers/security/advisories/new">报告安全漏洞</a>
     </div>
   </div>
 </footer>
 
 <script>
-  // Theme toggle: auto → light → dark, persisted.
+  // 主题切换：auto → light → dark，并持久化。
   (function () {
     var root = document.documentElement;
     var saved = localStorage.getItem("cheers-theme");
@@ -580,11 +580,11 @@ cd frontend && npm install && npm run dev</pre>
       var next = order[(order.indexOf(cur) + 1) % order.length];
       root.setAttribute("data-theme", next);
       localStorage.setItem("cheers-theme", next);
-      this.title = "Theme: " + next + " (click to change)";
+      this.title = "主题：" + next + "（点击切换）";
     });
   })();
 
-  // Quick-start tabs.
+  // 快速开始标签页。
   (function () {
     var tabs = document.querySelectorAll(".tab");
     var panels = document.querySelectorAll(".panel");
