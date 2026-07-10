@@ -36,9 +36,17 @@ Rules of engagement:
 | App background | `#09090b` (body) / `bg-zinc-950` |
 | Workspace rail | `bg-rail` (`#0f0f11`) |
 | Sidebar | `bg-sidebar` (`#18181b`) |
-| Cards, dialogs, popovers | `bg-zinc-900`, border `border-zinc-800` |
+| Cards, dialogs, popovers | `bg-zinc-900` — no border; separation comes from surface contrast + shadow |
 | Fields, chips, soft buttons | `bg-zinc-800` (or `/60` for chips) |
+| Inset fields inside dialogs | `bg-zinc-950` |
 | Hover on soft surfaces | `bg-zinc-700` |
+
+**Elevation principle — borderless everywhere.** Layers separate by surface
+contrast and shadow, never by box outlines: `border border-*` is banned on
+buttons, fields, cards, chips and popovers alike. 1px *dividers* between
+stacked regions (`border-b border-zinc-800`) and underline *indicators*
+(tabs) remain. Rings appear only as **states**: focus (`ring-indigo-500`)
+and error (`ring-red-500`).
 
 ### Typography
 
@@ -56,7 +64,8 @@ Rules of engagement:
 ### Shape & states
 
 - Radius: chips/inputs/buttons `rounded-md`(sm)/`rounded-lg`(md) · cards & popovers `rounded-xl` · pills `rounded-full`
-- Focus: `focus:ring-2 focus:ring-indigo-500` (fields add `focus:border-transparent`; buttons use `focus-visible:`) — **never** a bare `focus:border-indigo-*` substitute
+- Focus: `focus:ring-2 focus:ring-indigo-500` (buttons use `focus-visible:`) — **never** a bare `focus:border-indigo-*` substitute
+- Error: `ring-1 ring-red-500/70` on the field — a state ring, not a resting border
 - Disabled: `disabled:opacity-50` everywhere
 - Transitions: `transition-colors` on every interactive element
 
@@ -93,8 +102,8 @@ lucide icon at `w-3.5`–`w-4 text-zinc-500` and a transparent inner input.
 Used by NewChannelDialog, NewDmDialog, ChannelSettingsDialog member search:
 
 ```tsx
-<div className="flex items-center gap-2 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2
-                focus-within:border-indigo-500 transition-colors">
+<div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2
+                focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
   <Search className="w-4 h-4 text-zinc-500" />
   <input className="flex-1 bg-transparent text-sm text-zinc-200 outline-none
                     placeholder:text-zinc-600" placeholder="…" />
@@ -107,9 +116,9 @@ positioned icon. Used by AdminUsers filter, FriendsPage lookup:
 ```tsx
 <div className="relative">
   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-  <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800
+  <input className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950
                     text-base md:text-sm text-zinc-100 placeholder:text-zinc-600
-                    focus:outline-none focus:border-indigo-500 transition-colors" />
+                    focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" />
 </div>
 ```
 
@@ -128,24 +137,29 @@ standalone on a `zinc-950` page it is `bg-zinc-900`.
 
 ### 2.3 Text fields
 
-Use `<Input>` for single-line text. Selects/textareas mirror it until a
-shared component exists:
+Use `<Input>` for single-line text. Fields are **borderless filled boxes** —
+the fill is the affordance, the ring is the state. Selects/textareas mirror
+the same recipe until a shared component exists:
 
 ```tsx
-// select / textarea canon
-className="rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100
-           focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
+// field canon (input / select / textarea) — no border
+className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600
+           focus:outline-none focus:ring-2 focus:ring-indigo-500
            disabled:opacity-50"
+// error state: add ring-1 ring-red-500/70
 ```
 
 ### 2.4 Overlay surfaces
 
+All overlay surfaces are borderless — the dimmed backdrop (modals) or the
+shadow (popovers, windows) provides the separation:
+
 | Surface | Recipe |
 |---|---|
-| Modal (use `<Dialog>`) | backdrop `bg-black/50`, card `rounded-xl border border-zinc-800 bg-zinc-900 p-4` |
-| Anchored popover | `rounded-xl border border-zinc-800 bg-zinc-900 shadow-xl` |
+| Modal (use `<Dialog>`) | backdrop `bg-black/50`, card `rounded-xl bg-zinc-900 p-4` — no shadow needed |
+| Anchored popover | `rounded-xl bg-zinc-900 shadow-xl shadow-black/40` |
 | Autocomplete / menu list | same as popover, `rounded-lg` acceptable for compact lists |
-| Draggable window (use `<FloatingPanel>`) | `rounded-xl border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40` |
+| Draggable window (use `<FloatingPanel>`) | `rounded-xl bg-zinc-900/95 backdrop-blur-sm shadow-2xl shadow-black/50` |
 
 `shadow-2xl` is reserved for draggable windows; anchored popovers use
 `shadow-xl`.
@@ -169,7 +183,8 @@ chip switches to `bg-indigo-600/15 text-indigo-200`.
 
 `w-2 h-2 rounded-full ring-2 ring-zinc-900` overlaid bottom-right of the
 avatar; `bg-emerald-500` online / `bg-zinc-600` offline. One size, one ring
-style — don't mix `border` and `ring` variants.
+style — don't mix `border` and `ring` variants. (This ring is the avatar
+cut-out mask, not a decorative border.)
 
 ### 2.8 Tabs — two styles only
 
@@ -244,7 +259,7 @@ Reject in review:
 
 - [ ] `gray-*` / `slate-*` / `neutral-*` / `stone-*` anywhere
 - [ ] `rose-*` for errors (rose is mention-only)
-- [ ] borders on buttons (`border border-*` + `<button>`)
+- [ ] box borders anywhere — `border border-*` on buttons, fields, cards, chips or popovers (1px `border-b` dividers between regions are fine)
 - [ ] hand-rolled `bg-indigo-600` primary buttons
 - [ ] `focus:border-*` instead of a focus ring
 - [ ] `outline-none` without a replacement focus affordance
