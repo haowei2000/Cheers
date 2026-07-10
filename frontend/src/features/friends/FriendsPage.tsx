@@ -411,7 +411,7 @@ function BlockedTab() {
         >
           <button
             onClick={() => unblock(u)}
-            className="text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
           >
             Unblock
           </button>

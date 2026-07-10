@@ -260,7 +260,7 @@ export function BotOnboardingWizard({
                 className={`rounded-lg px-3 py-1.5 ${
                   pick === "create"
                     ? "bg-indigo-600 text-white"
-                    : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                 }`}
               >
                 New bot
@@ -272,7 +272,7 @@ export function BotOnboardingWizard({
                 className={`rounded-lg px-3 py-1.5 disabled:opacity-40 ${
                   pick === "existing"
                     ? "bg-indigo-600 text-white"
-                    : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                 }`}
               >
                 Existing bot
@@ -459,7 +459,7 @@ function ModeCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-left hover:border-indigo-500/50 hover:bg-zinc-800/50 transition-colors"
+      className="flex items-start gap-3 rounded-xl bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors"
     >
       <div className="w-9 h-9 rounded-lg bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
         {icon}
@@ -517,7 +517,7 @@ function ManualPanel({
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
@@ -695,7 +695,7 @@ function ScriptPanel({
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </button>
@@ -821,7 +821,7 @@ function AgentPanel({
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+                className="inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </button>

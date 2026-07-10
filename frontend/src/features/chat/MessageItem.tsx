@@ -78,7 +78,7 @@ function ActionBar({ message, actions }: { message: Message; actions: MessageAct
   const btn =
     "flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-700/70";
   return (
-    <div className="absolute -top-3 right-4 z-10 hidden group-hover:flex items-center gap-0.5 rounded-lg border border-zinc-700 bg-zinc-800/95 px-1 py-0.5 shadow-lg">
+    <div className="absolute -top-3 right-4 z-10 hidden group-hover:flex items-center gap-0.5 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg">
       <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
         <Reply className="w-3.5 h-3.5" />
       </button>
@@ -404,7 +404,7 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
           setStopping(false);
         }
       }}
-      className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/60 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60 hover:text-zinc-100 disabled:opacity-50"
+      className="inline-flex items-center gap-1 rounded-md bg-zinc-800/80 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3 h-3" fill="currentColor" />

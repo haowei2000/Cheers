@@ -470,7 +470,7 @@ export function MessageComposer({
           {attachments.map((a) => (
             <span
               key={a.file_id}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
             >
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
               <span
@@ -538,7 +538,7 @@ export function MessageComposer({
               type="button"
               onClick={() => void submit(true)}
               disabled={transcribing}
-              className="rounded border border-amber-700/60 px-2 py-1 text-amber-200 hover:bg-amber-900/40 disabled:opacity-50"
+              className="rounded bg-amber-900/40 px-2 py-1 text-amber-200 hover:bg-amber-900/60 disabled:opacity-50"
             >
               Send anyway
             </button>

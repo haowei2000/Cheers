@@ -348,7 +348,7 @@ export function ChannelSettingsDialog({
               <p className="text-sm font-medium text-zinc-200">Leave channel</p>
               <p className="text-xs text-zinc-500 mt-0.5">Remove yourself from this channel.</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => void leave()}>
+            <Button variant="secondary" size="sm" onClick={() => void leave()}>
               <LogOut className="w-3.5 h-3.5" />
               Leave
             </Button>

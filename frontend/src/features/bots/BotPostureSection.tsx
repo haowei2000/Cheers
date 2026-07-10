@@ -187,7 +187,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()}
                 onClick={submitManualConfig}
                 title="Apply this config override"
-                className="rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200 hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-md bg-indigo-500/15 px-3 py-1 text-xs text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Set
               </button>

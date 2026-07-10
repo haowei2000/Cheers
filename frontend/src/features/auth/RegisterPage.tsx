@@ -134,7 +134,7 @@ export default function RegisterPage() {
               />
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 className="shrink-0 whitespace-nowrap"
                 loading={sendingCode}
                 disabled={cooldown > 0 || !form.email.trim()}

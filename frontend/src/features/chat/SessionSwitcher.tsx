@@ -118,10 +118,10 @@ export function SessionSwitcher({
     <div className="inline-flex items-center gap-2">
       <label
         className={
-          "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] " +
+          "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] " +
           (selected
-            ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200"
-            : "border-zinc-700 bg-zinc-800/60 text-zinc-400")
+            ? "bg-indigo-600/15 text-indigo-200"
+            : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800")
         }
       >
         <Layers

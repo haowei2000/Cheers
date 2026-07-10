@@ -262,7 +262,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         <button
           disabled={busy || requested}
           onClick={onRequestAccess}
-          className="shrink-0 h-7 px-2.5 text-xs rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+          className="shrink-0 h-7 px-2.5 text-xs rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
         >
           {requested ? "Requested" : "Request access"}
         </button>
@@ -329,7 +329,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
                 type="button"
                 onClick={onToggleStagedDiff}
                 title="Preview what this commit will include (git diff --staged)"
-                className="inline-flex items-center gap-1.5 h-6 px-2 text-[11px] rounded border border-zinc-800 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+                className="inline-flex items-center gap-1.5 h-6 px-2 text-[11px] rounded bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
               >
                 <span className="text-zinc-600">±</span>
                 {diffOpen ? "Hide staged diff" : "View staged diff"}
