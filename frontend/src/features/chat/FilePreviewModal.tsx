@@ -232,7 +232,7 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this file"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-800"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-700"
         >
           <Download className="h-3.5 w-3.5" /> Download
         </button>

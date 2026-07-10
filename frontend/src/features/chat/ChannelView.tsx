@@ -848,7 +848,7 @@ export function ChannelView({ channel, onBack }: Props) {
             type="button"
             disabled={selectedIds.size === 0}
             onClick={() => void copySelected()}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
           >
             <Copy className="w-3.5 h-3.5" />
             Copy
@@ -862,7 +862,7 @@ export function ChannelView({ channel, onBack }: Props) {
                 count: selectedMessages.length,
               })
             }
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
           >
             <Forward className="w-3.5 h-3.5" />
             Forward

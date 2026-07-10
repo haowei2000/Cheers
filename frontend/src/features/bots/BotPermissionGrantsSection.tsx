@@ -404,7 +404,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             <button
               type="button"
               onClick={resetDraft}
-              className="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-800"
+              className="rounded-md bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
             >
               Cancel
             </button>

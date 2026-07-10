@@ -55,10 +55,10 @@ export function ComposerModelPopover({
         title="Model & bot settings"
         aria-expanded={open}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] transition-colors",
+          "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] transition-colors",
           open
-            ? "border-indigo-500/50 bg-indigo-600/10 text-indigo-200"
-            : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:text-zinc-200"
+            ? "bg-indigo-600/15 text-indigo-200"
+            : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
         )}
       >
         <SlidersHorizontal className="w-3.5 h-3.5" />

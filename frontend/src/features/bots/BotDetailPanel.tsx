@@ -303,7 +303,7 @@ function BotOverview({
           type="button"
           onClick={add}
           disabled={!channelId || busy}
-          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+          className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40 transition-colors"
         >
           {added ? "Added ✓" : "Add"}
         </button>
@@ -314,7 +314,7 @@ function BotOverview({
           <button
             type="button"
             onClick={() => onIssue(bot.bot_id)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
           >
             <KeyRound className="w-3.5 h-3.5" />
             Issue token
@@ -324,10 +324,10 @@ function BotOverview({
             type="button"
             onClick={toggleDisabled}
             disabled={toggling}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
               bot.is_disabled
-                ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                : "border-red-900/60 text-red-300 hover:bg-red-950/40"
+                ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                : "bg-red-950/40 text-red-300 hover:bg-red-950/70"
             }`}
           >
             {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
@@ -338,7 +338,7 @@ function BotOverview({
             onClick={remove}
             disabled={toggling}
             title="Permanently delete this bot"
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-red-900/60 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/40 disabled:opacity-40 transition-colors"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-red-950/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Delete
@@ -589,7 +589,7 @@ function BotStatusEditor({
           onClick={() => void refreshNow()}
           disabled={refreshPhase === "waiting"}
           title="Ask the agent to update its own status now"
-          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+          className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors"
         >
           {refreshPhase === "waiting"
             ? "Waiting for the agent…"

@@ -397,7 +397,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   {effMode === "raw" && editor.dirty && <span className="text-[10px] text-amber-500">●</span>}
                   <div className="flex-1" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
-                  <div className="flex rounded overflow-hidden border border-zinc-700 text-[11px] flex-shrink-0">
+                  <div className="flex rounded overflow-hidden bg-zinc-800 text-[11px] flex-shrink-0">
                     <button
                       onClick={() => setMode("preview")}
                       disabled={!previewRenderer}

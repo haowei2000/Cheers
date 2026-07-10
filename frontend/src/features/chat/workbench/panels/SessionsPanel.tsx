@@ -306,7 +306,7 @@ function SessionCard({
                     type="button"
                     disabled={busy}
                     onClick={saveDirs}
-                    className="rounded border border-indigo-500/40 bg-indigo-600/15 px-1.5 py-0.5 text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
+                    className="rounded bg-indigo-600/15 px-1.5 py-0.5 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
                   >
                     Save roots
                   </button>
@@ -468,7 +468,7 @@ function NewSessionDialog({
             type="button"
             disabled={busy || !botId}
             onClick={() => void create()}
-            className="inline-flex items-center gap-1 rounded-lg border border-indigo-500/40 bg-indigo-600/15 px-3 py-1.5 text-xs text-indigo-200 hover:bg-indigo-600/25 disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600/15 px-3 py-1.5 text-xs text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
           >
             <Plus className="w-3 h-3" />
             {busy ? "Creating…" : "Create"}
@@ -569,7 +569,7 @@ function SessionsBody({
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="inline-flex items-center gap-1 rounded border border-indigo-500/40 bg-indigo-600/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-600/25"
+            className="inline-flex items-center gap-1 rounded bg-indigo-600/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-600/30"
           >
             <Plus className="w-3 h-3" />
             New session
