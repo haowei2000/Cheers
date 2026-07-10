@@ -59,7 +59,7 @@ export function MembersPopover({
 
   return (
     <>
-      <div className="absolute right-0 top-9 z-50 w-72 rounded-xl border border-zinc-800 bg-zinc-900 shadow-xl overflow-hidden">
+      <div className="absolute right-0 top-9 z-50 w-72 rounded-xl bg-zinc-900 shadow-xl shadow-black/40 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-950/60">
           <Users className="w-3.5 h-3.5 text-zinc-500" />
           <span className="text-xs font-medium text-zinc-300">
@@ -87,7 +87,7 @@ export function MembersPopover({
                     {m.is_online != null && (
                       <span
                         title={m.is_online ? "online" : "offline"}
-                        className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-zinc-900 ${
+                        className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 ${
                           m.is_online ? "bg-emerald-500" : "bg-zinc-600"
                         }`}
                       />

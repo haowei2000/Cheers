@@ -24,6 +24,8 @@ import {
   ChevronDown,
   X,
 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SurfaceSpinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
 import { avatarColor } from "@/lib/format";
 import { listChannelMembers } from "@/api/channels";
@@ -223,7 +225,7 @@ function RailRow({
       onMouseLeave={onLeave}
       className={cn(
         "w-full text-left flex items-center gap-2.5 rounded-md px-2 py-1 transition-colors",
-        active ? "bg-indigo-500/15 ring-1 ring-inset ring-indigo-500/40" : "hover:bg-zinc-800/40"
+        active ? "bg-indigo-600/15" : "hover:bg-zinc-800/40"
       )}
     >
       <Marker marker={item.marker} />
@@ -239,7 +241,7 @@ function RailTooltip({ rect, item, memberOf }: { rect: DOMRect; item: RailItem; 
   return (
     <div
       style={{ position: "fixed", left: Math.round(rect.right + 8), top: Math.round(rect.top - 4), zIndex: 60 }}
-      className="w-52 max-w-[calc(100vw-1rem)] rounded-lg border border-zinc-700 bg-zinc-800 shadow-xl p-2.5 pointer-events-none"
+      className="w-52 max-w-[calc(100vw-1rem)] rounded-lg bg-zinc-800 shadow-xl shadow-black/40 p-2.5 pointer-events-none"
     >
       <div className="flex items-center gap-2 mb-1">
         <Avatar
@@ -249,7 +251,7 @@ function RailTooltip({ rect, item, memberOf }: { rect: DOMRect; item: RailItem; 
           size="xs"
           className="!w-4 !h-4 !text-[8px]"
         />
-        <span className="text-[12px] font-medium text-zinc-100 truncate">{item.tip.name}</span>
+        <span className="text-xs font-medium text-zinc-100 truncate">{item.tip.name}</span>
         {item.tip.time && <span className="ml-auto text-[10px] text-zinc-500 flex-shrink-0">{item.tip.time}</span>}
       </div>
       {item.tip.summary && <div className="text-[11px] text-zinc-400 leading-snug">{item.tip.summary}</div>}
@@ -308,7 +310,7 @@ function EpisodeDetail({
   const mentioned = firstMention ? memberOf(firstMention.member_id) : dom;
 
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div className="rounded-lg overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 bg-zinc-900/50 border-b border-zinc-800">
         <Avatar
           name={nameOf(trigger ?? dom, ep.triggerActorId ?? ep.dominantActorId)}
@@ -317,7 +319,7 @@ function EpisodeDetail({
           size="xs"
           className="!w-5 !h-5 !text-[9px]"
         />
-        <span className="text-[12px] text-zinc-200 min-w-0 truncate">
+        <span className="text-xs text-zinc-200 min-w-0 truncate">
           <span className="font-medium">
             {nameOf(trigger ?? dom, ep.triggerActorId ?? ep.dominantActorId)}
           </span>
@@ -388,7 +390,7 @@ function EpisodeDetail({
                     <span className="text-[10px] text-emerald-400/80">approval</span>
                   )}
                   {n.fileCount > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-[9px] text-zinc-500">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500">
                       <Paperclip className="w-2.5 h-2.5" />
                       {n.fileCount}
                     </span>
@@ -403,7 +405,7 @@ function EpisodeDetail({
                     {n.mentions.map((m) => (
                       <span
                         key={m.member_id}
-                        className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[9px] bg-indigo-500/10 text-indigo-300/90"
+                        className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[10px] bg-indigo-500/10 text-indigo-300/90"
                       >
                         <AtSign className="w-2.5 h-2.5" />
                         {nameOf(memberOf(m.member_id), m.member_id)}
@@ -512,18 +514,30 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
     <ViewBoardShell title="Activity" icon={Activity} loading={loading} onRefresh={() => void load()}>
       <div className="flex flex-col h-full min-h-0">
         {events == null ? (
-          <div className="flex-1 px-3 py-6 text-xs text-zinc-600">Loading…</div>
+          <div className="flex-1">
+            <SurfaceSpinner />
+          </div>
         ) : episodes.length === 0 ? (
-          <div className="flex-1 px-3 py-10 text-center text-xs text-zinc-600">
-            {selected.size || lens === "highlights"
-              ? "No activity matches this view."
-              : "No activity yet — messages and operations will appear here."}
+          <div className="flex-1">
+            <EmptyState
+              icon={Activity}
+              title={
+                selected.size || lens === "highlights"
+                  ? "No activity matches this view."
+                  : "No activity yet"
+              }
+              hint={
+                selected.size || lens === "highlights"
+                  ? undefined
+                  : "Messages and operations will appear here."
+              }
+            />
           </div>
         ) : (
           <div className="grid grid-cols-[minmax(112px,38%)_1fr] flex-1 min-h-0" onMouseLeave={onLeave}>
             {/* Rail — the whole channel, one short node per row. */}
             <div className="overflow-y-auto border-r border-zinc-900 p-1.5 space-y-0.5">
-              <div className="px-1 pb-1 text-[9px] uppercase tracking-wide text-zinc-600">
+              <div className="px-1 pb-1 text-[10px] uppercase tracking-wide text-zinc-600">
                 rail · whole channel
               </div>
               {railItems.map((item) => (
@@ -687,7 +701,7 @@ function MemberFilter({
       {open && (
         <div
           className={cn(
-            "absolute right-0 z-50 w-60 max-w-[calc(100vw-2rem)] rounded-xl border border-zinc-800 bg-zinc-900 shadow-xl",
+            "absolute right-0 z-50 w-60 max-w-[calc(100vw-2rem)] rounded-xl bg-zinc-900 shadow-xl shadow-black/40",
             openUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
           )}
         >
@@ -733,7 +747,7 @@ function MemberFilter({
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>
                     {mem.member_type === "bot" && (
-                      <span className="text-[9px] uppercase tracking-wide text-zinc-600 flex-shrink-0">bot</span>
+                      <span className="text-[10px] uppercase tracking-wide text-zinc-600 flex-shrink-0">bot</span>
                     )}
                   </button>
                 );

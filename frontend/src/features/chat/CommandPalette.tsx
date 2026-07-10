@@ -29,7 +29,7 @@ interface Props {
  */
 export function CommandPalette({ commands, activeIndex, onSelect }: Props) {
   return (
-    <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-10">
+    <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-10">
       {commands.map((c, i) => (
         <button
           key={`${c.botId}/${c.name}`}

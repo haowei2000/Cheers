@@ -97,7 +97,7 @@ function KanbanLens({ data, onChange }: LensProps) {
     <div className="p-2 text-xs flex gap-2 items-start overflow-auto h-full">
       {cols.length === 0 && <div className="p-3 text-zinc-600">Empty board</div>}
       {cols.map((c, ci) => (
-        <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded border border-zinc-800">
+        <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded ">
           <div className="px-2 py-1 text-zinc-300 border-b border-zinc-800">
             {c.name} <span className="text-zinc-600">{c.items.length}</span>
           </div>

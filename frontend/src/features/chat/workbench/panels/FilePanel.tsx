@@ -293,7 +293,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
               ) : (
                 <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
               )}
-              <Folder className="w-3.5 h-3.5 flex-shrink-0 text-sky-500/70" />
+              <Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />
               <span className="truncate flex-1">{node.name}</span>
               <button
                 title="New file in this folder"
@@ -394,7 +394,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
               <>
                 <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
                   <span className="text-xs text-zinc-300 truncate">{selected}</span>
-                  {effMode === "raw" && editor.dirty && <span className="text-[10px] text-amber-500">●</span>}
+                  {effMode === "raw" && editor.dirty && <span className="text-[10px] text-amber-400">●</span>}
                   <div className="flex-1" />
                   {/* the per-file mode: Preview (renderer) / Raw (textarea) */}
                   <div className="flex rounded overflow-hidden bg-zinc-800 text-[11px] flex-shrink-0">

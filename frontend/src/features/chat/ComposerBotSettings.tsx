@@ -127,7 +127,7 @@ function BotInlineSettings({
   }
 
   const selBase = "rounded border px-1 py-0.5 text-[11px] outline-none";
-  const selOn = `${selBase} bg-zinc-900 border-zinc-600 text-zinc-200 focus:border-indigo-500/60 disabled:opacity-50`;
+  const selOn = `${selBase} bg-zinc-800 border-zinc-600 text-zinc-200 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50`;
   // Read-only look: muted, no caret, not-allowed cursor — "you can see it, not change it".
   const selOff = `${selBase} bg-zinc-900/30 border-zinc-800 text-zinc-400 cursor-not-allowed appearance-none`;
 

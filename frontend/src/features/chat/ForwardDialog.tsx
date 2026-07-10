@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Forward, Hash, MessageCircle, Search, X } from "lucide-react";
+import { Forward, Hash, MessageCircle, Search } from "lucide-react";
 import toast from "react-hot-toast";
+import { Dialog } from "@/components/ui/dialog";
 import { listChannels, listDms } from "@/api/channels";
 import { sendMessage } from "@/api/messages";
 import type { Channel } from "@/types";
@@ -85,69 +86,55 @@ export function ForwardDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800">
+    <Dialog
+      title={
+        <span className="flex items-center gap-1.5">
           <Forward className="w-4 h-4 text-indigo-400" />
-          <span className="text-sm font-medium text-zinc-100">
-            Forward {messageCount > 1 ? `${messageCount} messages` : "message"}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-auto text-zinc-500 hover:text-zinc-200"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-3 border-b border-zinc-800">
-          <div className="flex items-center gap-2 rounded-lg bg-zinc-800 border border-zinc-700 px-2.5 py-1.5">
-            <Search className="w-3.5 h-3.5 text-zinc-500" />
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search channels and DMs…"
-              className="flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
-            />
-          </div>
-        </div>
-
-        <div className="max-h-80 overflow-y-auto py-1">
-          {targets === null ? (
-            <p className="px-4 py-4 text-xs text-zinc-600">Loading…</p>
-          ) : filtered.length === 0 ? (
-            <p className="px-4 py-4 text-xs text-zinc-600">No matching destination</p>
-          ) : (
-            filtered.map((c) => (
-              <button
-                key={c.channel_id}
-                type="button"
-                disabled={sending !== null}
-                onClick={() => void forwardTo(c)}
-                className="w-full flex items-center gap-2.5 px-4 py-2 text-left hover:bg-zinc-800 disabled:opacity-50"
-              >
-                {c.type === "dm" ? (
-                  <MessageCircle className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                ) : (
-                  <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                )}
-                <span className="text-sm text-zinc-200 truncate">{labelOf(c)}</span>
-                {sending === c.channel_id && (
-                  <span className="ml-auto text-[11px] text-zinc-500">Sending…</span>
-                )}
-              </button>
-            ))
-          )}
-        </div>
+          Forward {messageCount > 1 ? `${messageCount} messages` : "message"}
+        </span>
+      }
+      onClose={onClose}
+    >
+      <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+        <Search className="w-3.5 h-3.5 text-zinc-500" />
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search channels and DMs…"
+          className="flex-1 bg-transparent text-base md:text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
+        />
       </div>
-    </div>
+
+      <div className="max-h-80 overflow-y-auto">
+        {targets === null ? (
+          <p className="px-2.5 py-4 text-xs text-zinc-600 text-center">Loading…</p>
+        ) : filtered.length === 0 ? (
+          <p className="px-2.5 py-4 text-xs text-zinc-600 text-center">
+            No matching destination
+          </p>
+        ) : (
+          filtered.map((c) => (
+            <button
+              key={c.channel_id}
+              type="button"
+              disabled={sending !== null}
+              onClick={() => void forwardTo(c)}
+              className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {c.type === "dm" ? (
+                <MessageCircle className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              ) : (
+                <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              )}
+              <span className="text-sm text-zinc-200 truncate">{labelOf(c)}</span>
+              {sending === c.channel_id && (
+                <span className="ml-auto text-[11px] text-zinc-500">Sending…</span>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+    </Dialog>
   );
 }

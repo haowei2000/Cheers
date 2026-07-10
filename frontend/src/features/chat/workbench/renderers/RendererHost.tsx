@@ -34,7 +34,7 @@ export function RendererHost({
   if (renderer.source === "plugin") {
     const plugin = ctx.plugins.find((p) => p.plugin_id === renderer.pluginId);
     if (!plugin) {
-      return <div className="p-3 text-amber-500 text-xs">Renderer plugin not installed: {renderer.pluginId}</div>;
+      return <div className="p-3 text-amber-400 text-xs">Renderer plugin not installed: {renderer.pluginId}</div>;
     }
     // whitelisted, channel-scoped reader handed to the plugin (host API)
     const readChannel = (resource: string, params: Record<string, unknown>) => {

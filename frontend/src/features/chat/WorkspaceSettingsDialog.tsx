@@ -174,7 +174,7 @@ export function WorkspaceSettingsDialog({
               value={name}
               disabled={!canManage}
               onChange={(e) => setName(e.target.value)}
-              className="flex-1 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500 disabled:opacity-60"
+              className="flex-1 rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             />
             {canManage && (
               <Button size="sm" loading={savingMeta} onClick={() => void saveMeta()}>
@@ -190,7 +190,7 @@ export function WorkspaceSettingsDialog({
               <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
                 Members ({members.length})
               </label>
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800 divide-y divide-zinc-800/60">
+              <div className="max-h-48 overflow-y-auto rounded-lg bg-zinc-950/40 divide-y divide-zinc-800/60">
                 {members.map((m) => (
                   <div key={m.user_id} className="flex items-center gap-2 px-3 py-2">
                     <Avatar name={m.display_name || m.username} id={m.user_id} size="sm" />
@@ -205,7 +205,7 @@ export function WorkspaceSettingsDialog({
                         <select
                           value={m.role}
                           onChange={(e) => void changeRole(m, e.target.value)}
-                          className="mt-0.5 bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 outline-none"
+                          className="mt-0.5 bg-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                           {ROLES.map((r) => (
                             <option key={r} value={r}>
@@ -234,7 +234,7 @@ export function WorkspaceSettingsDialog({
               </div>
 
               <div className="relative">
-                <div className="flex items-center gap-2 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2">
+                <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
                   <UserPlus className="w-4 h-4 text-zinc-500" />
                   <input
                     value={query}
@@ -245,7 +245,7 @@ export function WorkspaceSettingsDialog({
                   <select
                     value={role}
                     onChange={(e) => setRole(e.target.value as (typeof ROLES)[number])}
-                    className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-300 outline-none"
+                    className="bg-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>
@@ -255,7 +255,7 @@ export function WorkspaceSettingsDialog({
                   </select>
                 </div>
                 {(results.length > 0 || searching || query.trim().length >= 2) && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 shadow-lg max-h-44 overflow-y-auto">
+                  <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
                     {searching && (
                       <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
                     )}
@@ -269,7 +269,7 @@ export function WorkspaceSettingsDialog({
                           {u.display_name || u.username}
                         </span>
                         {u.membership ? (
-                          <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
+                          <span className="text-[10px] text-zinc-500 rounded px-1 py-0.5">
                             {u.membership === "pending" ? "Invited" : "Member"}
                           </span>
                         ) : (

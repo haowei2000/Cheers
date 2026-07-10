@@ -7,6 +7,7 @@ import {
 } from "@/api/bots";
 import { listChannels } from "@/api/channels";
 import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { BotOnboardingWizard } from "./BotOnboardingWizard";
 import { BotDetailPanel, CopyButton } from "./BotDetailPanel";
 import type { BotItem, Channel } from "@/types";
@@ -103,14 +104,14 @@ export function BotsManager() {
       <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
-        <button
-          type="button"
+        <Button
+          size="sm"
+          className="ml-auto normal-case tracking-normal"
           onClick={() => setWizardOpen(true)}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium normal-case tracking-normal text-white hover:bg-indigo-500"
         >
           <Wand2 className="w-3.5 h-3.5" />
           Add bot
-        </button>
+        </Button>
         <button
           type="button"
           onClick={() => void refresh()}
@@ -155,7 +156,7 @@ export function BotsManager() {
                 onPoll={pollRefresh}
               />
             ) : (
-              <div className="rounded-xl border border-dashed border-zinc-800 p-10 text-center text-sm text-zinc-600">
+              <div className="rounded-xl bg-zinc-900/60 p-10 text-center text-sm text-zinc-600">
                 Select a bot to manage it.
               </div>
             )}
@@ -177,7 +178,7 @@ export function BotsManager() {
           <p className="text-xs text-amber-400">
             {issued.note ?? "Store this token now — shown only once."}
           </p>
-          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+          <div className="rounded-lg bg-zinc-950 p-3">
             <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between">

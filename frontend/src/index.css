@@ -127,7 +127,6 @@ button:not(:disabled) {
 
 .prose pre {
   background: #18181b;
-  border: 1px solid #27272a;
   border-radius: 8px;
   padding: 1em;
   overflow-x: auto;

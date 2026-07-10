@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { Spinner as LoadingIcon } from "@/components/ui/spinner";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -13,7 +14,7 @@ const FriendsPage = lazy(() => import("@/features/friends/FriendsPage"));
 function Spinner() {
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-      <div className="w-6 h-6 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin" />
+      <LoadingIcon size={24} className="text-zinc-600" />
     </div>
   );
 }

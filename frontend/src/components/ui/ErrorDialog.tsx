@@ -1,8 +1,10 @@
 import { AlertCircle } from "lucide-react";
 import { Dialog } from "./dialog";
+import { Button } from "./button";
 
-// The shared error popup. Use this (not an ad-hoc toast) whenever an action fails
-// and the user needs a clear, dismissible explanation.
+// The shared error popup for BLOCKING failures — when the user must read and
+// acknowledge before continuing (e.g. their message was rejected). Routine
+// operation failures use `toast.error` instead; that is the app-wide default.
 export function ErrorDialog({
   message,
   title = "Something went wrong",
@@ -25,12 +27,9 @@ export function ErrorDialog({
     >
       <p className="text-sm text-zinc-300 whitespace-pre-wrap break-words">{message}</p>
       <div className="flex justify-end pt-1">
-        <button
-          onClick={onClose}
-          className="px-3 py-1.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-        >
+        <Button variant="secondary" size="sm" onClick={onClose}>
           Got it
-        </button>
+        </Button>
       </div>
     </Dialog>
   );

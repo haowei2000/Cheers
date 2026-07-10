@@ -69,7 +69,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
   return (
     <div className="space-y-3">
       {posture && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
+        <div className="rounded-xl bg-zinc-950/40 p-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-zinc-300">Agent posture</span>
             {posture.allowed_modes.length > 0 ? (
@@ -77,7 +77,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 value={posture.permission_mode ?? ""}
                 disabled={busy}
                 onChange={(e) => changePosture(e.target.value)}
-                className="rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+                className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               >
                 {posture.permission_mode == null && <option value="">(unset)</option>}
                 {posture.allowed_modes.map((m) => (
@@ -113,7 +113,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
       )}
 
       {/* Session config options (model / reasoning level / …) the agent advertised. */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="rounded-xl bg-zinc-950/40 p-3">
         <p className="text-xs font-medium text-zinc-300">Session config options</p>
         {configOptions && configOptions.advertised.length > 0 ? (
           <div className="mt-2 space-y-2">
@@ -126,7 +126,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                     value={current}
                     disabled={busy}
                     onChange={(e) => changeConfigOption(opt.id, e.target.value)}
-                    className="rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+                    className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                   >
                     {opt.options.map((v) => (
                       <option key={v.value} value={v.value}>
@@ -173,14 +173,14 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 disabled={busy}
                 onChange={(e) => setManualConfigId(e.target.value)}
                 placeholder="config id"
-                className="min-w-0 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+                className="min-w-0 rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               />
               <input
                 value={manualConfigValue}
                 disabled={busy}
                 onChange={(e) => setManualConfigValue(e.target.value)}
                 placeholder="value"
-                className="min-w-0 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40"
+                className="min-w-0 rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               />
               <button
                 type="button"

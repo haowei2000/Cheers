@@ -147,7 +147,7 @@ function ProfileCard({
     <div
       data-profile-card
       style={{ position: "fixed", width: CARD_W, ...pos }}
-      className="z-[60] rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl overflow-hidden"
+      className="z-[60] rounded-xl bg-zinc-900 shadow-xl shadow-black/40 overflow-hidden"
     >
       <div className="flex items-start gap-3 p-3">
         <div className="relative flex-shrink-0">
@@ -155,7 +155,7 @@ function ProfileCard({
           {member.is_online != null && (
             <span
               className={
-                "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-zinc-900 " +
+                "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 " +
                 (member.is_online ? "bg-emerald-500" : "bg-zinc-600")
               }
               title={member.is_online ? "Online" : "Offline"}

@@ -85,12 +85,12 @@ export function AdminUsers() {
 
       <CreateUserForm onCreated={() => load(filter)} />
 
-      <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 mt-4 space-y-3">
+      <div className="bg-zinc-900 rounded-2xl p-6 mt-4 space-y-3">
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter by name / username / email…"
-          className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500"
+          className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         <div className="divide-y divide-zinc-800/60">
           {users.map((u) => (
@@ -100,7 +100,7 @@ export function AdminUsers() {
                 <p className="text-sm text-zinc-200 truncate flex items-center gap-2">
                   {u.display_name || u.username}
                   {u.role !== "member" && (
-                    <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300">
+                    <span className="text-[10px] text-zinc-500">
                       {u.role}
                     </span>
                   )}
@@ -194,9 +194,9 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
   }
 
   const inputCls =
-    "rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+    "rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
-    <form onSubmit={submit} className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+    <form onSubmit={submit} className="bg-zinc-900 rounded-2xl p-6">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-3">
         <UserPlus className="w-4 h-4 text-indigo-400" /> Add user
       </p>
@@ -233,13 +233,9 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
           <option value="admin">admin</option>
         </select>
         <div className="flex items-end">
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-          >
+          <Button type="submit" disabled={busy}>
             {busy ? "Creating…" : "Create user"}
-          </button>
+          </Button>
         </div>
       </div>
     </form>

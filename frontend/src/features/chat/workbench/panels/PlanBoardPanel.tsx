@@ -71,7 +71,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div className="border border-zinc-800 rounded-md mb-3 overflow-hidden">
+    <div className="rounded-md mb-3 overflow-hidden">
       <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/40">
         <div className="flex items-center gap-2">
           {/* Card is titled by the bot's avatar + name (raw id in the tooltip). */}

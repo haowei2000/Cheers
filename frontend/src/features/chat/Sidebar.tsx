@@ -62,7 +62,7 @@ function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
         // max-md:py-3 → ~44px touch rows on phones; desktop keeps the compact py-1.
         "w-full flex items-center gap-2 px-3 py-1 max-md:py-3 rounded-md text-sm transition-colors text-left",
         selected
-          ? "bg-zinc-700/70 text-zinc-50 font-medium"
+          ? "bg-zinc-800 text-zinc-100 font-medium"
           : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
       )}
     >
@@ -188,7 +188,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 className={cn(
                   "w-full flex items-center gap-2 px-3 py-1 max-md:py-3 rounded-md text-sm transition-colors text-left",
                   selectedChannelId === ch.channel_id
-                    ? "bg-zinc-700/70 text-zinc-50 font-medium"
+                    ? "bg-zinc-800 text-zinc-100 font-medium"
                     : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
                 )}
               >

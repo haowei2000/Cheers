@@ -853,7 +853,7 @@ export function RemoteWorkspaceDialog({
         // this body fill the remaining height; each pane keeps its own internal scroll.
         <div className="flex gap-3 h-[62vh] max-md:h-auto max-md:flex-1 max-md:min-h-0 max-md:flex-col">
           {/* Tree pane */}
-          <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none border border-zinc-800 rounded overflow-hidden flex flex-col">
+          <div className="w-1/3 min-w-[200px] max-md:w-full max-md:min-w-0 max-md:h-2/5 max-md:flex-none rounded overflow-hidden flex flex-col">
             {/* Files / Changes / History switch — the latter two only for a git repo. */}
             {git && (
               <div className="flex items-center border-b border-zinc-800 text-[11px]">
@@ -1124,7 +1124,7 @@ export function RemoteWorkspaceDialog({
           </div>
 
           {/* Viewer / editor / diff pane */}
-          <div className="flex-1 min-h-0 border border-zinc-800 rounded overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 rounded overflow-hidden flex flex-col">
             {diff !== null ? (
               <>
                 <div className="flex items-center gap-2 px-2 py-1.5 border-b border-zinc-800 text-xs">
