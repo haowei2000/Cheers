@@ -29,6 +29,7 @@ import {
   type EnrollmentGuidance,
   type IssuedToken,
 } from "@/api/bots";
+import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
@@ -198,7 +199,7 @@ export function BotOnboardingWizard({
       setBot(resolved);
       setStep(1);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -206,12 +207,11 @@ export function BotOnboardingWizard({
 
   async function genConfig() {
     if (!bot) return;
-    setError(null);
     setBusy(true);
     try {
       setConfig(await getConnectorConfig(bot.bot_id, agentType));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -219,12 +219,11 @@ export function BotOnboardingWizard({
 
   async function genToken() {
     if (!bot) return;
-    setError(null);
     setBusy(true);
     try {
       setToken(await issueBotToken(bot.bot_id));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -284,7 +283,7 @@ export function BotOnboardingWizard({
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-zinc-500 block mb-1">
+                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                       Username
                     </label>
                     <input
@@ -295,7 +294,7 @@ export function BotOnboardingWizard({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-500 block mb-1">
+                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                       Display name
                     </label>
                     <input
@@ -309,7 +308,7 @@ export function BotOnboardingWizard({
               </div>
             ) : (
               <div>
-                <label className="text-xs text-zinc-500 block mb-1">Bot</label>
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">Bot</label>
                 <select
                   value={existingId}
                   onChange={(e) => setExistingId(e.target.value)}
@@ -325,7 +324,7 @@ export function BotOnboardingWizard({
             )}
 
             <div>
-              <label className="text-xs text-zinc-500 block mb-1">
+              <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                 Agent type
               </label>
               <select
@@ -631,7 +630,6 @@ function ScriptPanel({
 }) {
   const [code, setCode] = useState<EnrollmentCode | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const installUrl = `${window.location.origin}/api/v1/install.sh`;
   const command = code
@@ -639,25 +637,23 @@ function ScriptPanel({
     : "";
 
   async function mint() {
-    setError(null);
     setBusy(true);
     try {
       setCode(await mintEnrollmentCode(bot.bot_id, agentType));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
   }
 
   async function revoke() {
-    setError(null);
     setBusy(true);
     try {
       await revokeEnrollmentCodes(bot.bot_id);
       setCode(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -671,7 +667,6 @@ function ScriptPanel({
         redeem a one-time code, write the config + 0600 token, install a
         keep-alive service, and start.
       </p>
-      {error && <p className="text-xs text-red-400 break-words">{error}</p>}
 
       <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
@@ -744,13 +739,15 @@ function AgentPanel({
 }) {
   const [code, setCode] = useState<EnrollmentCode | null>(null);
   const [guidance, setGuidance] = useState<EnrollmentGuidance | null>(null);
+  // Persistent, not a toast: without the template, step 2 can never render, so
+  // the failure must stay visible in the panel (StrictMode also double-runs this).
+  const [guidanceError, setGuidanceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getEnrollmentGuidance()
       .then(setGuidance)
-      .catch((e) => setError(String(e)));
+      .catch((e) => setGuidanceError(String(e)));
   }, []);
 
   const prompt =
@@ -759,25 +756,23 @@ function AgentPanel({
       : "";
 
   async function mint() {
-    setError(null);
     setBusy(true);
     try {
       setCode(await mintEnrollmentCode(bot.bot_id, agentType));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
   }
 
   async function revoke() {
-    setError(null);
     setBusy(true);
     try {
       await revokeEnrollmentCodes(bot.bot_id);
       setCode(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -792,7 +787,11 @@ function AgentPanel({
         <span className="text-zinc-300">@{bot.username}</span> goes offline when
         the agent's turn ends.
       </p>
-      {error && <p className="text-xs text-red-400 break-words">{error}</p>}
+      {guidanceError && (
+        <p className="text-xs text-red-400 break-words">
+          Failed to load the agent prompt template: {guidanceError}
+        </p>
+      )}
 
       <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">

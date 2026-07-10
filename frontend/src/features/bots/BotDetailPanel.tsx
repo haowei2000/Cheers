@@ -386,6 +386,7 @@ function BotStatusEditor({
     bot.status_update_interval_minutes != null ? String(bot.status_update_interval_minutes) : "60"
   );
   const [busy, setBusy] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
   // Manual "Update status now" completion lifecycle (item 4). Instead of blind
   // 5/15/30s reloads, we ask the agent then POLL the bot's status every ~4s for
@@ -463,9 +464,11 @@ function BotStatusEditor({
 
   async function save() {
     if (auto && !prompt.trim()) {
-      onError("A prompt is required to enable scheduled self-update");
+      // Validation stays inline next to the form; onError is the API-failure path.
+      setPromptError("A prompt is required to enable scheduled self-update");
       return;
     }
+    setPromptError(null);
     setBusy(true);
     try {
       await updateBotProfile(bot.bot_id, {
@@ -576,6 +579,7 @@ function BotStatusEditor({
         </div>
       )}
 
+      {promptError && <p className="text-xs text-red-400">{promptError}</p>}
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => void save()} disabled={busy}>
           {busy ? "Saving…" : "Save"}
