@@ -29,7 +29,9 @@ import {
   type EnrollmentGuidance,
   type IssuedToken,
 } from "@/api/bots";
+import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
 
 type Mode = "manual" | "script" | "agent";
@@ -197,7 +199,7 @@ export function BotOnboardingWizard({
       setBot(resolved);
       setStep(1);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -205,12 +207,11 @@ export function BotOnboardingWizard({
 
   async function genConfig() {
     if (!bot) return;
-    setError(null);
     setBusy(true);
     try {
       setConfig(await getConnectorConfig(bot.bot_id, agentType));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -218,12 +219,11 @@ export function BotOnboardingWizard({
 
   async function genToken() {
     if (!bot) return;
-    setError(null);
     setBusy(true);
     try {
       setToken(await issueBotToken(bot.bot_id));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -283,36 +283,36 @@ export function BotOnboardingWizard({
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-zinc-500 block mb-1">
+                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                       Username
                     </label>
                     <input
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       placeholder="codex-main"
-                      className="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60"
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-500 block mb-1">
+                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                       Display name
                     </label>
                     <input
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder="Codex"
-                      className="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60"
+                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
               </div>
             ) : (
               <div>
-                <label className="text-xs text-zinc-500 block mb-1">Bot</label>
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">Bot</label>
                 <select
                   value={existingId}
                   onChange={(e) => setExistingId(e.target.value)}
-                  className="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60"
+                  className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {bots.map((b) => (
                     <option key={b.bot_id} value={b.bot_id}>
@@ -324,13 +324,13 @@ export function BotOnboardingWizard({
             )}
 
             <div>
-              <label className="text-xs text-zinc-500 block mb-1">
+              <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
                 Agent type
               </label>
               <select
                 value={agentType}
                 onChange={(e) => setAgentType(e.target.value as AgentType)}
-                className="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60"
+                className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {AGENTS.map((a) => (
                   <option key={a.value} value={a.value}>
@@ -341,15 +341,10 @@ export function BotOnboardingWizard({
             </div>
 
             <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={resolveBotAndAdvance}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
-              >
+              <Button onClick={resolveBotAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 Continue
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -424,16 +419,14 @@ export function BotOnboardingWizard({
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Modes
               </button>
-              <button
-                type="button"
+              <Button
                 onClick={() => {
                   onDone();
                   onClose();
                 }}
-                className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
               >
                 Done
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -508,7 +501,7 @@ function ManualPanel({
       </p>
 
       {/* 1. config */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             1. Connector config
@@ -526,7 +519,7 @@ function ManualPanel({
         {config && (
           <>
             <ReachabilityNote reachability={config.reachability} />
-            <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3 max-h-48 overflow-y-auto">
+            <div className="rounded-lg bg-zinc-950 p-3 max-h-48 overflow-y-auto">
               <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
                 {config.config_toml}
               </pre>
@@ -554,27 +547,22 @@ function ManualPanel({
       </div>
 
       {/* 2. token */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             2. One-time token
           </span>
-          <button
-            type="button"
-            onClick={onGenToken}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
-          >
+          <Button size="sm" onClick={onGenToken} disabled={busy}>
             <KeyRound className="w-3.5 h-3.5" />
             {token ? "Rotate token" : "Issue token"}
-          </button>
+          </Button>
         </div>
         {token && (
           <>
             <p className="text-xs text-amber-400">
               {token.note ?? "Shown once. Rotating replaces any previous token."}
             </p>
-            <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+            <div className="rounded-lg bg-zinc-950 p-3">
               <code className="text-xs text-emerald-300 break-all">
                 {token.token}
               </code>
@@ -590,9 +578,9 @@ function ManualPanel({
       </div>
 
       {/* 3. run */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <span className="text-xs font-semibold text-zinc-300">3. Start it</span>
-        <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+        <div className="rounded-lg bg-zinc-950 p-3">
           <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
 {`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
 # (save the config + token from above into the paths shown)
@@ -604,7 +592,7 @@ cce-acp-connector status --name ${accountId}`}
           <p className="text-xs text-zinc-600">
             Need the connector binary? Download the prebuilt release (no Rust toolchain needed):
           </p>
-          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+          <div className="rounded-lg bg-zinc-950 p-3">
             <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
               {CONNECTOR_DOWNLOAD_CMD}
             </pre>
@@ -642,7 +630,6 @@ function ScriptPanel({
 }) {
   const [code, setCode] = useState<EnrollmentCode | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const installUrl = `${window.location.origin}/api/v1/install.sh`;
   const command = code
@@ -650,25 +637,23 @@ function ScriptPanel({
     : "";
 
   async function mint() {
-    setError(null);
     setBusy(true);
     try {
       setCode(await mintEnrollmentCode(bot.bot_id, agentType));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
   }
 
   async function revoke() {
-    setError(null);
     setBusy(true);
     try {
       await revokeEnrollmentCodes(bot.bot_id);
       setCode(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -682,9 +667,8 @@ function ScriptPanel({
         redeem a one-time code, write the config + 0600 token, install a
         keep-alive service, and start.
       </p>
-      {error && <p className="text-xs text-red-400 break-words">{error}</p>}
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             1. Mint a one-time code
@@ -700,19 +684,14 @@ function ScriptPanel({
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </button>
             )}
-            <button
-              type="button"
-              onClick={mint}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
-            >
+            <Button size="sm" onClick={mint} disabled={busy}>
               {busy ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Ticket className="w-3.5 h-3.5" />
               )}
               {code ? "New code" : "Mint code"}
-            </button>
+            </Button>
           </div>
         </div>
         {code && (
@@ -724,11 +703,11 @@ function ScriptPanel({
       </div>
 
       {code && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+        <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
           <span className="text-xs font-semibold text-zinc-300">
             2. Run on the agent's machine
           </span>
-          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3">
+          <div className="rounded-lg bg-zinc-950 p-3">
             <pre className="text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all">
               {command}
             </pre>
@@ -760,13 +739,15 @@ function AgentPanel({
 }) {
   const [code, setCode] = useState<EnrollmentCode | null>(null);
   const [guidance, setGuidance] = useState<EnrollmentGuidance | null>(null);
+  // Persistent, not a toast: without the template, step 2 can never render, so
+  // the failure must stay visible in the panel (StrictMode also double-runs this).
+  const [guidanceError, setGuidanceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getEnrollmentGuidance()
       .then(setGuidance)
-      .catch((e) => setError(String(e)));
+      .catch((e) => setGuidanceError(String(e)));
   }, []);
 
   const prompt =
@@ -775,25 +756,23 @@ function AgentPanel({
       : "";
 
   async function mint() {
-    setError(null);
     setBusy(true);
     try {
       setCode(await mintEnrollmentCode(bot.bot_id, agentType));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
   }
 
   async function revoke() {
-    setError(null);
     setBusy(true);
     try {
       await revokeEnrollmentCodes(bot.bot_id);
       setCode(null);
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -808,9 +787,13 @@ function AgentPanel({
         <span className="text-zinc-300">@{bot.username}</span> goes offline when
         the agent's turn ends.
       </p>
-      {error && <p className="text-xs text-red-400 break-words">{error}</p>}
+      {guidanceError && (
+        <p className="text-xs text-red-400 break-words">
+          Failed to load the agent prompt template: {guidanceError}
+        </p>
+      )}
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             1. Mint a one-time code
@@ -826,19 +809,14 @@ function AgentPanel({
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
               </button>
             )}
-            <button
-              type="button"
-              onClick={mint}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
-            >
+            <Button size="sm" onClick={mint} disabled={busy}>
               {busy ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Ticket className="w-3.5 h-3.5" />
               )}
               {code ? "New code" : "Mint code"}
-            </button>
+            </Button>
           </div>
         </div>
         {code && (
@@ -849,11 +827,11 @@ function AgentPanel({
       </div>
 
       {code && guidance && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+        <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
           <span className="text-xs font-semibold text-zinc-300">
             2. Paste this to your agent
           </span>
-          <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-3 max-h-56 overflow-y-auto">
+          <div className="rounded-lg bg-zinc-950 p-3 max-h-56 overflow-y-auto">
             <pre className="text-[11px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
               {prompt}
             </pre>

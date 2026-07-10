@@ -38,7 +38,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-lg border border-zinc-700 bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-500">
+      <div className="h-32 w-32 rounded-lg bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-500">
         Loading image…
       </div>
     );
@@ -47,7 +47,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
     <img
       src={src}
       alt={file.original_filename || "image"}
-      className="max-h-48 max-w-[240px] rounded-lg border border-zinc-700 object-cover hover:opacity-90 transition-opacity"
+      className="max-h-48 max-w-[240px] rounded-lg object-cover hover:opacity-90 transition-opacity"
     />
   );
 }
@@ -77,7 +77,7 @@ function AudioTile({ file }: { file: FileInfo }) {
   }, [file.file_id]);
 
   return (
-    <div className="flex max-w-[320px] flex-col gap-1 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-2">
+    <div className="flex max-w-[320px] flex-col gap-1 rounded-lg bg-zinc-800/60 px-2.5 py-2">
       <div className="flex items-center gap-1.5 text-xs text-zinc-200">
         <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
         <span className="truncate" title={file.original_filename || file.file_id}>
@@ -219,7 +219,7 @@ function StagedFileTile({ file }: { file: FileInfo }) {
       className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-600 bg-zinc-800/40 px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors max-w-[240px] disabled:cursor-wait"
     >
       {phase === "realizing" ? (
-        <Loader2 className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 animate-spin" />
+        <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />
       ) : (
         <FileText className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
       )}
@@ -290,7 +290,7 @@ export function FileGrid({
           <div
             key={f.file_id}
             ref={focused ? focusRef : undefined}
-            className={focused ? "rounded-lg ring-2 ring-sky-500/70 ring-offset-2 ring-offset-zinc-900" : undefined}
+            className={focused ? "rounded-lg ring-2 ring-indigo-500/70 ring-offset-2 ring-offset-zinc-900" : undefined}
           >
             <FileTile file={f} />
           </div>

@@ -36,7 +36,7 @@ export default function ResetPasswordPage() {
     }
   }
 
-  const labelCls = "text-xs font-medium text-zinc-400 uppercase tracking-wide";
+  const labelCls = "text-xs font-medium text-zinc-500 uppercase tracking-wide";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
       <div className="w-full max-w-sm my-auto">
@@ -48,7 +48,7 @@ export default function ResetPasswordPage() {
 
         <form
           onSubmit={submit}
-          className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800 shadow-xl space-y-4"
+          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
         >
           <div className="space-y-1.5">
             <label className={labelCls}>Email</label>

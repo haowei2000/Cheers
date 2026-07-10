@@ -43,7 +43,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm my-auto">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-teal-500/20 overflow-hidden">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20 overflow-hidden">
             <img
               src="/cheers-icon.svg"
               alt=""
@@ -60,10 +60,10 @@ export default function LoginPage() {
         {/* Card */}
         <form
           onSubmit={handleSubmit}
-          className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800 shadow-xl space-y-4"
+          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
         >
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
               Username or Email
             </label>
             <Input
@@ -77,7 +77,7 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
               Password
             </label>
             <Input

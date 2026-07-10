@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
           <p className="text-zinc-500 text-sm mt-1">We'll email you a one-time code.</p>
         </div>
 
-        <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800 shadow-xl">
+        <div className="bg-zinc-900 rounded-2xl p-6 shadow-xl">
           {sent ? (
             <div className="space-y-4">
               <p className="text-sm text-zinc-400">
@@ -56,7 +56,7 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
                   Email
                 </label>
                 <Input

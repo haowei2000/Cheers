@@ -217,7 +217,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       <div className="flex items-center gap-2 py-0.5 text-xs">
         <span
           className={cn(
-            expired ? "text-zinc-500" : ok ? "text-zinc-400" : "text-rose-400/70"
+            expired ? "text-zinc-500" : ok ? "text-zinc-400" : "text-red-400/70"
           )}
         >
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
@@ -245,7 +245,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   }
 
   const shell =
-    "max-w-md rounded-lg border border-zinc-800 bg-zinc-900/50 overflow-hidden";
+    "max-w-md rounded-lg bg-zinc-900/50 overflow-hidden";
 
   // ── Pending, not an approver: quiet waiting line ──────────────────────────
   if (!amApprover) {
@@ -319,7 +319,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
           <p className="text-[10px] uppercase tracking-wide text-zinc-600 mb-1.5">
             Command
           </p>
-          <pre className="m-0 text-xs font-mono text-zinc-300 bg-black/40 border border-zinc-800 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
+          <pre className="m-0 text-xs font-mono text-zinc-300 bg-black/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
             {command}
           </pre>
           {impact && <p className="text-xs text-zinc-500 mt-2">{impact}</p>}
@@ -336,7 +336,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
                 {diffLoading && <span className="text-zinc-600">…</span>}
               </button>
               {diffOpen && (
-                <div className="mt-2 rounded border border-zinc-800 bg-black/30 overflow-hidden">
+                <div className="mt-2 rounded bg-black/30 overflow-hidden">
                   {diffLoading ? (
                     <div className="px-3 py-3 text-[11px] text-zinc-600">
                       Loading staged diff…
@@ -382,7 +382,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
               <span className="min-w-0">
                 <span
                   className={cn(
-                    "block text-[13px] font-medium leading-tight",
+                    "block text-sm font-medium leading-tight",
                     sel ? "text-zinc-100" : "text-zinc-300"
                   )}
                 >
@@ -418,7 +418,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         </button>
       </footer>
 
-      {error && <p className="text-xs text-rose-400 px-3 pb-2">{error}</p>}
+      {error && <p className="text-xs text-red-400 px-3 pb-2">{error}</p>}
     </div>
   );
 }

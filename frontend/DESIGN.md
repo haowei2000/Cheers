@@ -28,6 +28,7 @@ Rules of engagement:
 | Success / online | `emerald` | Dots `emerald-500`, text `emerald-400` |
 | Warning | `amber-400` | Text at `-400`; soft fills `amber-900/40` |
 | Grayscale | `zinc` only | Never `gray`, `slate`, `neutral`, `stone` |
+| Categorical (data-coding) | any tinted hue | Badges that encode *identity*, not state — e.g. permission-capability tags (sky/violet), per-bot activity markers, avatar palette, syntax highlighting. Keep them to tinted badges/marks; never use them for interactive chrome, focus rings or buttons. |
 
 ### Surfaces (dark theme, back to front)
 

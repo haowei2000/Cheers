@@ -829,7 +829,7 @@ export function ChannelView({ channel, onBack }: Props) {
             setFilesOpen((v) => !v);
           }}
           title="Channel files"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
             filesOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
           }`}
         >
@@ -841,7 +841,7 @@ export function ChannelView({ channel, onBack }: Props) {
             setWsOpen((v) => !v);
           }}
           title="Remote workspace"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
             wsOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
           }`}
         >
@@ -850,7 +850,7 @@ export function ChannelView({ channel, onBack }: Props) {
         <button
           onClick={() => setVbOpen((v) => !v)}
           title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
             vbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
           }`}
         >
@@ -862,7 +862,7 @@ export function ChannelView({ channel, onBack }: Props) {
             setWbOpen((v) => !v);
           }}
           title="Workbench — file workspace"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded hover:bg-zinc-800 flex-shrink-0 ${
+          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
             wbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
           }`}
         >
@@ -872,7 +872,7 @@ export function ChannelView({ channel, onBack }: Props) {
           <button
             onClick={() => setSettingsOpen(true)}
             title="Channel settings"
-            className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+            className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
           >
             <Settings className="w-4 h-4" />
           </button>

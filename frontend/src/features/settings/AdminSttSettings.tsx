@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
 import { AudioLines, FlaskConical, Loader2 } from "lucide-react";
 import { useIsAdmin } from "@/stores/authStore";
@@ -74,7 +75,7 @@ export function AdminSttSettings() {
   }
 
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+    "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
   return (
     <section>
@@ -83,7 +84,7 @@ export function AdminSttSettings() {
         Speech-to-text
       </h2>
 
-      <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+      <div className="bg-zinc-900 rounded-2xl p-6">
         <p className="text-xs text-zinc-500 mb-4">
           Voice messages and audio files are sent by the gateway to the OpenAI-compatible
           transcription service configured here
@@ -155,7 +156,7 @@ export function AdminSttSettings() {
                   type="checkbox"
                   checked={clearKey}
                   onChange={(e) => setClearKey(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-rose-500"
+                  className="h-3.5 w-3.5 accent-red-500"
                 />
                 Clear the saved key
               </label>
@@ -163,14 +164,11 @@ export function AdminSttSettings() {
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={() => void save()}
-              disabled={busy !== null}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-            >
+            <Button onClick={() => void save()} disabled={busy !== null}>
               {busy === "save" ? "Saving…" : "Save"}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => void test()}
               disabled={busy !== null || !loaded?.configured}
               title={
@@ -178,7 +176,6 @@ export function AdminSttSettings() {
                   ? "Send a short test clip using the saved settings"
                   : "Save the settings before testing"
               }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors"
             >
               {busy === "test" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -186,12 +183,12 @@ export function AdminSttSettings() {
                 <FlaskConical className="h-3.5 w-3.5" />
               )}
               Test connection
-            </button>
+            </Button>
           </div>
 
           {testResult && (
             <p
-              className={`text-xs ${testResult.startsWith("✓") ? "text-emerald-400" : "text-rose-400"}`}
+              className={`text-xs ${testResult.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}
             >
               {testResult}
             </p>

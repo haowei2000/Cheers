@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SurfaceSpinner } from "@/components/ui/spinner";
 import { listChannelFiles } from "@/api/files";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import type { FileInfo } from "@/types";
@@ -42,11 +44,13 @@ export function ChannelFilesDialog({
       defaultPosClassName="top-16 left-[max(1.5rem,20%)]"
     >
       {files === null ? (
-        <div className="py-8 text-center text-xs text-zinc-500">Loading…</div>
+        <SurfaceSpinner />
       ) : files.length === 0 ? (
-        <div className="py-8 text-center text-xs text-zinc-600">
-          No files in this channel yet. Upload with 📎 in the composer.
-        </div>
+        <EmptyState
+          icon={Paperclip}
+          title="No files in this channel yet"
+          hint="Upload with the paperclip in the composer."
+        />
       ) : (
         <FileGrid files={files} focusFileId={focusFileId} />
       )}

@@ -95,10 +95,8 @@ export function WorkbenchManager() {
 
       {(error || notice) && (
         <div
-          className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-            error
-              ? "border-red-500/30 bg-red-500/5 text-red-400"
-              : "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
+          className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+            error ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"
           }`}
         >
           <span className="flex-1">{error ?? notice}</span>
@@ -109,14 +107,14 @@ export function WorkbenchManager() {
             }}
             className="text-zinc-500 hover:text-zinc-300"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {/* Plugins — CODE (sandboxed) */}
-        <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-5 space-y-3">
+        <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Puzzle className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-semibold text-zinc-100">Plugins (code / sandboxed)</h3>
@@ -148,7 +146,7 @@ export function WorkbenchManager() {
             {plugins.map((p) => (
               <li
                 key={p.plugin_id}
-                className="flex items-center gap-2 rounded-lg bg-zinc-950/60 border border-zinc-800 px-2.5 py-1.5"
+                className="flex items-center gap-2 rounded-lg bg-zinc-950/60 px-2.5 py-1.5"
               >
                 <Puzzle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{p.title}</span>
@@ -169,7 +167,7 @@ export function WorkbenchManager() {
         </div>
 
         {/* Templates — DATA (inert) */}
-        <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-5 space-y-3">
+        <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-indigo-400" />
             <h3 className="text-sm font-semibold text-zinc-100">Global templates (data)</h3>
@@ -203,7 +201,7 @@ export function WorkbenchManager() {
             {templates.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center gap-2 rounded-lg bg-zinc-950/60 border border-zinc-800 px-2.5 py-1.5"
+                className="flex items-center gap-2 rounded-lg bg-zinc-950/60 px-2.5 py-1.5"
               >
                 <Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{t.title}</span>

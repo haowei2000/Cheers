@@ -391,12 +391,12 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
               <button
                 onClick={() => setPinMenu((o) => !o)}
                 title="Pinned files (click to manage / unpin)"
-                className="text-[11px] text-amber-500/80 hover:text-amber-400"
+                className="text-[11px] text-amber-400/80 hover:text-amber-300"
               >
                 📌 {pinned.length}
               </button>
               {pinMenu && (
-                <div className="absolute left-0 top-6 z-50 w-64 rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl">
+                <div className="absolute left-0 top-6 z-50 w-64 rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/40">
                   <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
                     Pinned (injected into every prompt)
                   </div>
@@ -428,12 +428,12 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
           <button
             onClick={toggleCollapsed}
             title={minimized ? "Expand" : "Minimize"}
-            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 max-md:hidden"
+            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
           >
             {minimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </button>
           <button onClick={onClose} title="Close">
-            <X className="w-4 h-4 text-zinc-500 hover:text-zinc-200" />
+            <X className="w-4 h-4 text-zinc-500 hover:text-zinc-300" />
           </button>
         </div>
 

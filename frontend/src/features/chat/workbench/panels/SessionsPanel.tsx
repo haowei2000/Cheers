@@ -23,6 +23,7 @@ import {
 } from "@/api/sessionControl";
 import { listChannelMembers } from "@/api/channels";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
+import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { cwdBasename } from "@/features/chat/sessionLabel";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
@@ -73,7 +74,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40";
+  "rounded bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -299,7 +300,7 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  className="w-full rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 font-mono text-[10px] text-zinc-200 outline-none focus:border-indigo-500/60"
+                  className="w-full rounded bg-zinc-800 px-1 py-0.5 font-mono text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -394,12 +395,12 @@ function NewSessionDialog({
     <Dialog title="New session" onClose={onClose} maxWidth="max-w-sm">
       <div className="space-y-3">
         <label className="block space-y-1">
-          <span className="text-xs text-zinc-500">Bot</span>
+          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Bot</span>
           <select
             value={botId}
             disabled={busy}
             onChange={(e) => setBotId(e.target.value)}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-sm text-zinc-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {bots.map((b) => (
               <option key={b.id} value={b.id}>
@@ -409,7 +410,7 @@ function NewSessionDialog({
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-xs text-zinc-500">Working directory (optional, absolute path)</span>
+          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Working directory (optional)</span>
           <input
             type="text"
             value={cwd}
@@ -418,7 +419,7 @@ function NewSessionDialog({
             list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void create()}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
@@ -445,34 +446,25 @@ function NewSessionDialog({
           )}
         </label>
         <label className="block space-y-1">
-          <span className="text-xs text-zinc-500">Extra roots (optional, one absolute path per line)</span>
+          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Extra roots (optional)</span>
           <textarea
             value={dirs}
             disabled={busy}
             rows={2}
             placeholder={"/abs/extra-root"}
             onChange={(e) => setDirs(e.target.value)}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
+          <span className="block text-[10px] text-zinc-600">One absolute path per line.</span>
         </label>
         <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
-          >
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy || !botId}
-            onClick={() => void create()}
-            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600/15 px-3 py-1.5 text-xs text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
-          >
-            <Plus className="w-3 h-3" />
+          </Button>
+          <Button size="sm" disabled={busy || !botId} onClick={() => void create()}>
+            <Plus className="w-3.5 h-3.5" />
             {busy ? "Creating…" : "Create"}
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>

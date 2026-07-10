@@ -3,6 +3,7 @@ import { Hash, Lock } from "lucide-react";
 import { createChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
 // Create a channel in the given workspace, then add it to the store and select it
@@ -45,7 +46,7 @@ export function NewChannelDialog({
   return (
     <Dialog title="New channel" onClose={onClose}>
       <div className="space-y-3">
-        <div className="flex items-center gap-2 rounded-lg bg-zinc-950 border border-zinc-800 px-2">
+        <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
           <Hash className="w-3.5 h-3.5 text-zinc-500" />
           <input
             autoFocus
@@ -80,19 +81,12 @@ export function NewChannelDialog({
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 transition-colors"
-          >
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            disabled={!name.trim() || busy}
-            onClick={() => void submit()}
-            className="px-4 py-1.5 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-          >
+          </Button>
+          <Button disabled={!name.trim() || busy} onClick={() => void submit()}>
             Create
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>

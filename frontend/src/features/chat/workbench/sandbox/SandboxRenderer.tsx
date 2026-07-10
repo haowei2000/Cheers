@@ -114,7 +114,7 @@ export function SandboxRenderer({
     return () => window.removeEventListener("message", handler);
   }, [fs, plugin.plugin_id, rendererId, path, readChannel]);
 
-  if (err) return <div className="p-3 text-amber-500 text-xs">Failed to load renderer: {err}</div>;
+  if (err) return <div className="p-3 text-amber-400 text-xs">Failed to load renderer: {err}</div>;
   if (bundle === null) return <div className="p-3 text-zinc-500 text-xs">Loading renderer…</div>;
   return (
     <div className="relative w-full h-full">
@@ -129,7 +129,7 @@ export function SandboxRenderer({
         style={unsupported !== null ? { display: "none" } : undefined}
       />
       {unsupported !== null && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-amber-500 bg-zinc-950">
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-amber-400 bg-zinc-950">
           This renderer can't render this file{unsupported ? `: ${unsupported}` : ""}. Pick another
           renderer from the top-right dropdown, or choose "Raw".
         </div>

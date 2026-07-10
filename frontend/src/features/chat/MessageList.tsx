@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Spinner } from "@/components/ui/spinner";
 import toast from "react-hot-toast";
 import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
@@ -134,7 +135,7 @@ export function MessageList({
     >
       {loading && (
         <div className="flex justify-center py-4">
-          <div className="w-5 h-5 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin" />
+          <Spinner size={20} className="text-zinc-600" />
         </div>
       )}
 

@@ -40,7 +40,7 @@ export function LensPanel({ fs, view, reloadTick }: { fs: FsClient; view: ViewDe
         {lens ? (
           lens.render({ data, config: view.config, onChange })
         ) : (
-          <div className="p-3 text-amber-500">Unknown lens: {view.lens}</div>
+          <div className="p-3 text-amber-400">Unknown lens: {view.lens}</div>
         )}
       </div>
       {(status || !lens?.viewOnly) && (

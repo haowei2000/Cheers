@@ -174,7 +174,7 @@ export function ChannelSettingsDialog({
             value={name}
             disabled={!canManage}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500 disabled:opacity-60"
+            className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
             Purpose
@@ -184,7 +184,7 @@ export function ChannelSettingsDialog({
             disabled={!canManage}
             placeholder="(Optional) what this channel is for…"
             onChange={(e) => setPurpose(e.target.value)}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500 disabled:opacity-60"
+            className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           {canManage && (
             <div className="flex justify-end">
@@ -200,7 +200,7 @@ export function ChannelSettingsDialog({
           <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
             Members ({members.length})
           </label>
-          <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800 divide-y divide-zinc-800/60">
+          <div className="max-h-48 overflow-y-auto rounded-lg bg-zinc-950/40 divide-y divide-zinc-800/60">
             {members.map((m) => (
               <div key={m.member_id} className="flex items-center gap-2 px-3 py-2">
                 <span className="relative flex-shrink-0">
@@ -230,7 +230,7 @@ export function ChannelSettingsDialog({
                       <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
                     )}
                     {m.status === "pending" && (
-                      <span className="ml-1.5 text-[10px] text-amber-400/90 border border-amber-500/40 rounded px-1 py-0.5">
+                      <span className="ml-1.5 text-[10px] text-amber-400/90">
                         Pending
                       </span>
                     )}
@@ -242,7 +242,7 @@ export function ChannelSettingsDialog({
                     <select
                       value={m.role ?? "member"}
                       onChange={(e) => void changeRole(m, e.target.value)}
-                      className="mt-0.5 bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 outline-none"
+                      className="mt-0.5 bg-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       {(m.member_type === "bot" ? BOT_ROLES : CHANNEL_ROLES).map((r) => (
                         <option key={r} value={r}>
@@ -272,7 +272,7 @@ export function ChannelSettingsDialog({
 
           {canManage && (
             <div className="relative">
-              <div className="flex items-center gap-2 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2">
+              <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
                 <UserPlus className="w-4 h-4 text-zinc-500" />
                 <input
                   value={query}
@@ -282,7 +282,7 @@ export function ChannelSettingsDialog({
                 />
               </div>
               {(results.length > 0 || searching) && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 shadow-lg max-h-44 overflow-y-auto">
+                <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
                   {searching && (
                     <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
                   )}

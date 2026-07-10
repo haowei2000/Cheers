@@ -34,7 +34,7 @@ function eventMeta(e: TraceEntry): { Icon: LucideIcon; tone: string; label: stri
       const ok = (e.decision ?? "").startsWith("allow");
       return ok
         ? { Icon: Check, tone: "text-zinc-500", label: "Approved" }
-        : { Icon: X, tone: "text-rose-400/70", label: "Denied" };
+        : { Icon: X, tone: "text-red-400/70", label: "Denied" };
     }
     if (ak === "expired" || ak === "rejected") {
       return { Icon: X, tone: "text-zinc-600", label: ak === "expired" ? "Expired" : "Rejected" };
@@ -56,7 +56,7 @@ function eventMeta(e: TraceEntry): { Icon: LucideIcon; tone: string; label: stri
       return { Icon: Zap, tone: "text-zinc-500", label: "Start" };
     case "prompt_failed":
     case "terminal_ack_failed":
-      return { Icon: XCircle, tone: "text-rose-400/70", label: "Failed" };
+      return { Icon: XCircle, tone: "text-red-400/70", label: "Failed" };
     default:
       return { Icon: Clock, tone: "text-zinc-600", label: e.phase || "Event" };
   }
@@ -178,7 +178,7 @@ export function BotTracePanel({ channelId, msgId }: Props) {
       )}
 
       {expanded && error && !loading && (
-        <div className="mt-1 px-2.5 flex items-center gap-2 text-[11px] text-rose-400">
+        <div className="mt-1 px-2.5 flex items-center gap-2 text-[11px] text-red-400">
           <span>Failed to load steps.</span>
           <button
             type="button"
