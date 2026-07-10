@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import toast from "react-hot-toast";
 import { Bot, KeyRound, RefreshCw, CircleDot, Ban, Wand2 } from "lucide-react";
 import {
   listBots,
@@ -52,7 +53,7 @@ export function BotsManager() {
   const [bots, setBots] = useState<BotItem[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [issued, setIssued] = useState<IssuedToken | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
@@ -63,8 +64,13 @@ export function BotsManager() {
       const [b, c] = await Promise.all([listBots(), listChannels()]);
       setBots(b);
       setChannels(c);
+      setLoadFailed(false);
     } catch (e) {
-      setError(String(e));
+      // Background polls stay quiet — a transient blip shouldn't toast.
+      if (!opts?.silent) {
+        setLoadFailed(true);
+        toast.error(String(e));
+      }
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -89,11 +95,10 @@ export function BotsManager() {
   }, [bots, selectedId]);
 
   async function onIssue(botId: string) {
-    setError(null);
     try {
       setIssued(await issueBotToken(botId));
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     }
   }
 
@@ -122,13 +127,17 @@ export function BotsManager() {
         </button>
       </h2>
 
-      {error && <p className="text-xs text-red-400 px-1 break-words mb-3">{error}</p>}
-
       {bots.length === 0 && !loading ? (
-        <p className="text-sm text-zinc-600 px-1">
-          No bots yet. Click <span className="text-zinc-400">Add bot</span> to register one and
-          connect it with the Rust ACP connector.
-        </p>
+        loadFailed ? (
+          <p className="text-sm text-red-400 px-1">
+            Couldn't load bots — check the gateway connection, then press refresh.
+          </p>
+        ) : (
+          <p className="text-sm text-zinc-600 px-1">
+            No bots yet. Click <span className="text-zinc-400">Add bot</span> to register one and
+            connect it with the Rust ACP connector.
+          </p>
+        )
       ) : (
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Master: bot list */}
@@ -151,7 +160,7 @@ export function BotsManager() {
                 bot={selected}
                 channels={channels}
                 onIssue={onIssue}
-                onError={setError}
+                onError={(m) => toast.error(m)}
                 onChanged={refresh}
                 onPoll={pollRefresh}
               />
