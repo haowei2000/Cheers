@@ -1,5 +1,7 @@
 # Frontend Rebuild Architecture
 
+> **Language**: English | [中文](FRONTEND_REBUILD_ARCHITECTURE.zh-CN.md)
+
 > Status: finalized decision
 > Date: 2026-06-02
 > Scope: Cheers browser frontend rebuild

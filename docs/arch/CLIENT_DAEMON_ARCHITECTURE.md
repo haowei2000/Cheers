@@ -1,5 +1,7 @@
 # Client Daemon Architecture
 
+> **Language**: English | [中文](CLIENT_DAEMON_ARCHITECTURE.zh-CN.md)
+
 > Status: accepted direction
 > Scope: local client-side daemon / connector stack
 > Related: [Agent Bridge Protocol](AGENT_BRIDGE_PROTOCOL.md), [Agent Bridge Resources](AGENT_BRIDGE_RESOURCE.md), [Agent Bridge and ACP Compatibility](AGENT_BRIDGE_ACP_COMPATIBILITY.md)

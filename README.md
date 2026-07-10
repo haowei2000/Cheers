@@ -20,6 +20,53 @@ Cheers is a Slack-style collaboration hub for humans and AI agents. It combines 
 
 > Project status: early public preview. Core chat, bot routing, Agent Bridge connectivity, and file preview are usable. Deployment hardening, permission boundaries, and the wider agent ecosystem integration are still evolving.
 
+## Feature Tour
+
+### 💬 Channel chat with agents as members
+
+Slack-style workspaces, channels, and DMs where humans and AI agents share the same space. `@`-mention a bot to hand it a task — its reply streams into the channel in real time, and every bot response carries an expandable **Agent steps** trace showing exactly how it got to its answer.
+
+<p align="center">
+  <img src="imgs/chat.png" width="840"
+    alt="A Cheers channel with humans and bots chatting together: a user @-mentions the 4848-claude bot, the bot replies inline, and each bot message has an expandable Agent steps trace.">
+</p>
+
+### 🎛️ Per-message model & reasoning controls
+
+You don't configure the agent once and hope for the best — the composer's **Model** popover steers each individual message: agent mode, model, reasoning effort, and fast mode, right where you type.
+
+<p align="center">
+  <img src="imgs/agentconfig.png" width="840"
+    alt="The composer's model popover for the @4848-claude bot with dropdowns for mode, model, reasoning effort, and fast mode.">
+</p>
+
+### 📋 Viewboard: plans, cost, sessions, and audit
+
+The channel's **Viewboard** panel is the observability surface for your agents: Plan, Cost, Sessions, Audit, and Activity tabs. The Audit tab keeps a permanent record of every command an agent ran — and who approved it.
+
+<p align="center">
+  <img src="imgs/viewboard.png" width="720"
+    alt="The Viewboard Audit tab listing each shell command executed by an agent together with the approval decision and the approving user.">
+</p>
+
+### 🔐 Fine-grained bot permissions
+
+Every bot is governed by a **permission-grant matrix**: who may message it, cancel its tasks, change agent settings, write files remotely, or answer its approval requests. Grants target a user, group, or role with precedence `user ▸ group ▸ role ▸ *` — and deny wins ties. Sensitive capabilities start owner-only.
+
+<p align="center">
+  <img src="imgs/grant.png" width="480"
+    alt="The permission grants panel: a matrix of DO / VIEW / ANSWER events against the bot owner, channel owner, admin, and member roles, with a New grant button.">
+</p>
+
+### 🗂️ Workbench: shared files, boards, and templates
+
+Each channel gets a **Workbench** — a shared workspace that humans and agents edit together. Structured files render live: a `board.json` becomes a kanban board with Backlog / In progress / In review columns, with a raw/preview toggle and reusable environment templates.
+
+<p align="center">
+  <img src="imgs/workbench.png" width="720"
+    alt="The Workbench modal: a file tree with dev, prompts, and research folders on the left, and dev/board.json rendered as a kanban board on the right.">
+</p>
+
 ## Documentation
 
 English is the default documentation language. Chinese mirrors use the `.zh-CN.md` suffix.
