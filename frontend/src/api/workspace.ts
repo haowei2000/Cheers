@@ -217,8 +217,11 @@ export async function unwatchWorkspace(
 
 /* ── Read-only git visibility for the bot's remote working directory ──────────
  * These proxy to the connector's read-only git ops (`git status/diff/log`); they
- * never mutate the repo. A 409 means the path exists but isn't a git repo, or the
- * connector host has no `git`; a 403 means the connector disabled git ops.        */
+ * never mutate the repo. On diff/log/show, a 409 means the path exists but isn't
+ * a git repo, or the connector host has no `git`; a 403 means the connector
+ * disabled git ops. `status` answers the non-repo case as data (`repo: false`)
+ * instead of a 409 — it is re-polled on every live refresh, and a plain folder
+ * is a normal thing to browse.                                                    */
 
 /** One changed path from `git status --porcelain=v2` (best-effort parsed). */
 export interface GitStatusEntry {
@@ -228,6 +231,8 @@ export interface GitStatusEntry {
 }
 
 export interface GitStatus {
+  /** Discriminant vs `GitStatusUnavailable` — absent (or true) ⇒ a real repo. */
+  repo?: true;
   /** Raw `git status --porcelain=v2 --branch` stdout (authoritative). */
   raw: string;
   branch: string | null;
@@ -236,6 +241,14 @@ export interface GitStatus {
   ahead: number | null;
   behind: number | null;
   entries: GitStatusEntry[];
+}
+
+/** `git/status` answer for a directory that is not inside a git repo (or whose
+ *  connector host has no usable `git`) — a normal browse state, not an error. */
+export interface GitStatusUnavailable {
+  repo: false;
+  /** The connector's typed reason, e.g. "E_NOT_A_REPO: not a git repository". */
+  reason?: string;
 }
 
 export interface GitDiff {
@@ -262,11 +275,13 @@ export async function getGitStatus(
   path = "",
   root?: string,
   sessionId?: string
-): Promise<GitStatus> {
+): Promise<GitStatus | GitStatusUnavailable> {
   const qs = new URLSearchParams({ bot_id: botId, path });
   if (root) qs.set("root", root);
   if (sessionId) qs.set("session_id", sessionId);
-  return apiJson<GitStatus>(`/channels/${channelId}/workspace/git/status?${qs}`);
+  return apiJson<GitStatus | GitStatusUnavailable>(
+    `/channels/${channelId}/workspace/git/status?${qs}`
+  );
 }
 
 export async function getGitDiff(

@@ -782,7 +782,7 @@ pub async fn get_git_status(
 ) -> Result<Json<Value>, AppError> {
     ensure_access(&state, &claims, channel_id, q.bot_id).await?;
     let roots = browse_roots(&state, q.bot_id, q.session_id).await;
-    let data = workspace_call(
+    let data = match workspace_call(
         &state,
         q.bot_id,
         "git_status",
@@ -792,7 +792,22 @@ pub async fn get_git_status(
         None,
         &roots,
     )
-    .await?;
+    .await
+    {
+        Ok(d) => d,
+        // A non-repo directory (or a connector host without git) is a NORMAL state
+        // for this endpoint — the workspace dialog re-polls it on every live refresh,
+        // so answering with 409 turns routine browsing into an error stream. Answer
+        // as data instead; git/diff|log|show keep the 409 (user-initiated, git UI
+        // only shows on a repo). Matched on the "CODE: message" prefix that
+        // workspace_call formats into the Conflict payload.
+        Err(AppError::Conflict(msg))
+            if msg.starts_with("E_NOT_A_REPO") || msg.starts_with("E_GIT_UNAVAILABLE") =>
+        {
+            json!({ "repo": false, "reason": msg })
+        }
+        Err(e) => return Err(e),
+    };
     Ok(Json(data))
 }
 

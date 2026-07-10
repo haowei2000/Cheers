@@ -32,8 +32,10 @@ interface Callbacks {
   onBotTrace?: (msgId: string | null, title: string | null) => void;
   /** ViewBoard live-push: a board's underlying data changed → re-pull that board.
    *  `board` is e.g. "plan" | "cost" | "commands" (gateway board_signal) or
-   *  "activity" (synthesized here on each new message). */
-  onBoardSignal?: (board: string) => void;
+   *  "activity" (synthesized here on each new message). `botId` is the emitting
+   *  bot when the frame carries one (the "workspace" turn-complete tick does),
+   *  letting bot-scoped consumers ignore other bots' ticks; null when absent. */
+  onBoardSignal?: (board: string, botId?: string | null) => void;
   /** Live-watch: the agent changed file(s) under a watched dir on ITS machine.
    *  Carries `bot_id` (route by it — a channel can have several bots on different
    *  machines), the workspace `root`, and the changed `paths`. Recipients re-fetch
@@ -224,7 +226,8 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         };
         cbsRef.current.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
       } else if (type === "board_signal") {
-        cbsRef.current.onBoardSignal?.((data as { board?: string }).board ?? "");
+        const d = data as { board?: string; bot_id?: string };
+        cbsRef.current.onBoardSignal?.(d.board ?? "", d.bot_id ?? null);
       } else if (type === "workspace_signal") {
         const d = data as {
           bot_id?: string;
