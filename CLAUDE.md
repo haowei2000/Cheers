@@ -20,6 +20,7 @@ This is the English default edition prepared for the open-source documentation s
 - Use the `.zh-CN.md` file as the Chinese mirror.
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
+- Frontend UI work must follow [frontend/DESIGN.md](frontend/DESIGN.md): use the shared components in `frontend/src/components/ui/`, and copy the documented canonical recipes instead of inventing new styles.
 
 ## Problem-First Fixing (Required)
 
