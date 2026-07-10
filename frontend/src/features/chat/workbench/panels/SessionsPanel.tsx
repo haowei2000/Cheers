@@ -73,7 +73,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 text-[10px] text-zinc-200 outline-none focus:border-indigo-500/60 disabled:opacity-40";
+  "rounded bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -299,7 +299,7 @@ function SessionCard({
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  className="w-full rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 font-mono text-[10px] text-zinc-200 outline-none focus:border-indigo-500/60"
+                  className="w-full rounded bg-zinc-800 px-1 py-0.5 font-mono text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -399,7 +399,7 @@ function NewSessionDialog({
             value={botId}
             disabled={busy}
             onChange={(e) => setBotId(e.target.value)}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 text-sm text-zinc-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {bots.map((b) => (
               <option key={b.id} value={b.id}>
@@ -418,7 +418,7 @@ function NewSessionDialog({
             list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void create()}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
           <datalist id="ws-allowed-roots">
@@ -452,7 +452,7 @@ function NewSessionDialog({
             rows={2}
             placeholder={"/abs/extra-root"}
             onChange={(e) => setDirs(e.target.value)}
-            className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </label>
         <div className="flex justify-end gap-2 pt-1">

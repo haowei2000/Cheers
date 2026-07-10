@@ -423,7 +423,7 @@ export function MessageComposer({
     // above the on-screen keyboard.
     <div className="px-4 pb-4 pt-2 relative max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
-        <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl z-10">
+        <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-10">
           {filteredMentions.map((c, i) => (
             <button
               key={c.id}
@@ -516,13 +516,13 @@ export function MessageComposer({
       )}
 
       {voiceWarning && (
-        <div className="mb-2 rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        <div className="mb-2 rounded-lg bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
           <p className="flex items-center gap-1.5">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
             {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
           </p>
           {voiceWarning.error && (
-            <p className="mt-1 text-rose-300">{voiceWarning.error}</p>
+            <p className="mt-1 text-red-300">{voiceWarning.error}</p>
           )}
           <div className="mt-1.5 flex items-center gap-2">
             <button
@@ -581,7 +581,7 @@ export function MessageComposer({
             <Paperclip className="w-4 h-4" />
           </button>
           {attachMenuOpen && (
-            <div className="absolute bottom-full left-0 mb-1.5 w-48 overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl z-20">
+            <div className="absolute bottom-full left-0 mb-1.5 w-48 overflow-hidden rounded-lg bg-zinc-900 py-1 shadow-xl shadow-black/40 z-20">
               <button
                 type="button"
                 onClick={() => {

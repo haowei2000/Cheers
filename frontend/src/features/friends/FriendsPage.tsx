@@ -13,6 +13,7 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   listFriends,
   removeFriend,
@@ -55,7 +56,7 @@ export default function FriendsPage() {
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <h1 className="text-base font-semibold">Friends</h1>
+        <h1 className="text-lg font-semibold">Friends</h1>
       </header>
 
       <div className="flex-1 overflow-y-auto overscroll-contain">
@@ -67,7 +68,7 @@ export default function FriendsPage() {
             <TabBtn active={tab === "requests"} onClick={() => setTab("requests")}>
               Requests
               {incomingCount > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500/90 text-[10px] font-medium text-white">
+                <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.5 rounded-full bg-rose-600 text-[10px] font-bold text-white">
                   {incomingCount}
                 </span>
               )}
@@ -333,16 +334,12 @@ function AddTab() {
             onKeyDown={(e) => e.key === "Enter" && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
             // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-base md:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-600 focus:focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
           />
         </div>
-        <button
-          onClick={lookup}
-          disabled={busy || !id.trim()}
-          className="px-3 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-        >
+        <Button onClick={lookup} disabled={busy || !id.trim()}>
           {busy ? "…" : "Look up"}
-        </button>
+        </Button>
       </div>
       {result === null ? (
         <Empty>Enter a user ID and press Look up.</Empty>

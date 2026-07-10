@@ -3,6 +3,7 @@ import { Check, Loader2 } from "lucide-react";
 import { listChannelFiles } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { FileTypeIcon } from "./fileIcon";
 import { formatBytes } from "./fileUtils";
 
@@ -109,21 +110,12 @@ export function ExistingFilePicker({
       )}
 
       <div className="flex items-center justify-end gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
-        >
+        <Button variant="ghost" size="sm" onClick={onClose}>
           Cancel
-        </button>
-        <button
-          type="button"
-          onClick={confirm}
-          disabled={selected.size === 0}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
-        >
+        </Button>
+        <Button size="sm" onClick={confirm} disabled={selected.size === 0}>
           Add{selected.size > 0 ? ` (${selected.size})` : ""}
-        </button>
+        </Button>
       </div>
     </Dialog>
   );

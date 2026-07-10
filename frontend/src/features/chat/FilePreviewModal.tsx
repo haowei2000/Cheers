@@ -42,7 +42,7 @@ function Centered({ children, tone = "muted" }: { children: React.ReactNode; ton
   return (
     <div
       className={`flex items-center justify-center gap-2 py-12 text-sm ${
-        tone === "error" ? "text-rose-400" : "text-zinc-400"
+        tone === "error" ? "text-red-400" : "text-zinc-400"
       }`}
     >
       {children}
@@ -105,7 +105,7 @@ function TextBody({ file }: { file: FileInfo }) {
     html = escapeHtml(text);
   }
   return (
-    <pre className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm leading-relaxed">
+    <pre className="max-h-[70vh] overflow-auto rounded-lg bg-zinc-900 p-4 text-sm leading-relaxed">
       <code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />
     </pre>
   );

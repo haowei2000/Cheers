@@ -29,7 +29,7 @@ function CodeBlock({
   }
 
   return (
-    <pre className="rounded-lg bg-zinc-900 border border-zinc-800 p-4 overflow-x-auto my-2">
+    <pre className="rounded-lg bg-zinc-900 p-4 overflow-x-auto my-2">
       <code
         className={cn("hljs text-sm leading-relaxed", language && `language-${language}`)}
         dangerouslySetInnerHTML={{ __html: highlighted }}
@@ -61,7 +61,7 @@ export function MarkdownRenderer({ content, className }: Props) {
                 type="button"
                 onClick={() => onPath(text)}
                 title="Open in the remote workspace"
-                className="bg-zinc-800 px-1 py-0.5 rounded text-sm text-sky-400 hover:text-sky-300 hover:underline"
+                className="bg-zinc-800 px-1 py-0.5 rounded text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
               >
                 {children} ↗
               </button>

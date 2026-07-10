@@ -150,8 +150,8 @@ function tone(e: AuditEvent): Tone {
   if (d.startsWith("reject") || d.startsWith("deny") || et.includes("reject") || et.includes("deny") || et === "access_revoked")
     return {
       Icon: X,
-      text: "text-rose-400",
-      border: "border-l-rose-500",
+      text: "text-red-400",
+      border: "border-l-red-500",
       label: (e.decision && (DECISION_LABEL[d] ?? humanize(e.decision))) || "Denied",
       raw,
     };
@@ -249,12 +249,12 @@ function AuditRow({
                 type="button"
                 onClick={() => onJump(e.msg_id!)}
                 title="Jump to this message"
-                className="block w-full text-left text-[12px] text-zinc-200 font-medium leading-snug break-words hover:text-indigo-300 transition-colors"
+                className="block w-full text-left text-xs text-zinc-200 font-medium leading-snug break-words hover:text-indigo-300 transition-colors"
               >
                 {content || t.label}
               </button>
             ) : (
-              <div className="text-[12px] text-zinc-200 font-medium leading-snug break-words">
+              <div className="text-xs text-zinc-200 font-medium leading-snug break-words">
                 {content || t.label}
               </div>
             )}
@@ -297,7 +297,7 @@ function AuditRow({
         )}
 
         {open && (
-          <div className="mt-1.5 space-y-1 rounded bg-zinc-950/50 px-2.5 py-2 border border-zinc-800/60">
+          <div className="mt-1.5 space-y-1 rounded bg-zinc-950/50 px-2.5 py-2 ">
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>

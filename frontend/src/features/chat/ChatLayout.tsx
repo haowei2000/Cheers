@@ -141,7 +141,7 @@ export default function ChatLayout() {
             {navOpen && (
               <div className="fixed inset-0 z-50 flex">
                 <div
-                  className="absolute inset-0 bg-black/60"
+                  className="absolute inset-0 bg-black/50"
                   onClick={() => setNavOpen(false)}
                   aria-hidden
                 />

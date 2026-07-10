@@ -56,9 +56,9 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
 
   // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-base md:text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+    "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
   return (
-    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6">
+    <div className="bg-zinc-900 rounded-2xl p-6">
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <KeyRound className="w-4 h-4 text-indigo-400" /> Change password
       </p>
@@ -92,13 +92,9 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
           className={inputCls}
         />
         <div>
-          <button
-            onClick={() => void submit()}
-            disabled={busy || !current || !next}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-          >
+          <Button onClick={() => void submit()} disabled={busy || !current || !next}>
             {busy ? "Saving…" : "Update password"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -167,10 +163,10 @@ function ProfileEditCard() {
   }
 
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60";
+    "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
   return (
-    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 space-y-4">
+    <div className="bg-zinc-900 rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-4">
         <AvatarUpload
           name={displayName || user?.username}
@@ -236,13 +232,9 @@ function ProfileEditCard() {
       </div>
 
       <div>
-        <button
-          onClick={() => void save()}
-          disabled={busy || !loaded}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-        >
+        <Button onClick={() => void save()} disabled={busy || !loaded}>
           {busy ? "Saving…" : "Save profile"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -289,7 +281,7 @@ export default function SettingsPage() {
                 className={`flex items-center gap-2.5 rounded-lg px-3 py-2 max-md:py-2.5 shrink-0 text-sm font-medium whitespace-nowrap transition-colors ${
                   active
                     ? "bg-zinc-800 text-zinc-100"
-                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -310,7 +302,7 @@ export default function SettingsPage() {
 
               <ProfileEditCard />
 
-              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 mt-4">
+              <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
@@ -348,7 +340,7 @@ export default function SettingsPage() {
 
               <ChangePasswordCard onRotated={(token) => setToken(token)} />
 
-              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 mt-4">
+              <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-zinc-200">Sign out</p>

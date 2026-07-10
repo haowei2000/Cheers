@@ -33,11 +33,12 @@ export function Dialog({
     >
       <div
         className={cn(
-          `w-full ${maxWidth} rounded-xl border border-zinc-800 bg-zinc-900 p-4 space-y-3`,
+          // Borderless (DESIGN.md §2.4): the dimmed backdrop provides the separation.
+          `w-full ${maxWidth} rounded-xl bg-zinc-900 p-4 space-y-3`,
           "max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain",
-          "max-md:max-w-none max-md:rounded-b-none max-md:border-x-0 max-md:border-b-0 max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
+          "max-md:max-w-none max-md:rounded-b-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]",
           fullScreenOnMobile
-            ? "max-md:h-full max-md:max-h-none max-md:rounded-none max-md:border-t-0 max-md:flex max-md:flex-col max-md:overflow-hidden max-md:pt-[max(1rem,env(safe-area-inset-top))]"
+            ? "max-md:h-full max-md:max-h-none max-md:rounded-none max-md:flex max-md:flex-col max-md:overflow-hidden max-md:pt-[max(1rem,env(safe-area-inset-top))]"
             : "max-md:max-h-[92dvh]"
         )}
         onClick={(e) => e.stopPropagation()}

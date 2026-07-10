@@ -69,7 +69,7 @@ export function ComposerModelPopover({
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[240px] max-w-[420px] rounded-xl border border-zinc-800 bg-zinc-900 p-2 shadow-xl">
+        <div className="absolute bottom-full left-0 mb-2 z-50 min-w-[240px] max-w-[420px] rounded-xl bg-zinc-900 p-2 shadow-xl shadow-black/40">
           {bots.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
               <ComposerBotSettings

@@ -146,7 +146,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+    <div className="rounded-xl bg-zinc-950/40 p-3 space-y-3">
       <div className="flex items-center gap-2">
         <div>
           <p className="text-xs font-medium text-zinc-300">Permission grants</p>
@@ -173,7 +173,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           bot-wide scope, so members-can-cancel-by-default etc. is visible, not just
           the explicit overrides below. */}
       {access.effective && access.effective.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
+        <div className="overflow-hidden rounded-lg ">
           <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-900/40">
             <p className="text-[11px] font-medium text-zinc-300">Effective defaults · Bot-wide</p>
             <span className="text-[10px] text-zinc-600">
@@ -286,13 +286,13 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
       {/* New-grant form */}
       {creating && (
-        <div className="rounded-lg border border-indigo-900/60 bg-indigo-950/20 p-2.5 space-y-2">
-          <div className="text-[11px] uppercase tracking-wider text-zinc-400">New grant</div>
+        <div className="rounded-lg bg-indigo-950/30 p-2.5 space-y-2">
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">New grant</div>
           <div className="flex flex-wrap items-center gap-1.5">
             <select
               value={perm}
               onChange={(e) => setPerm(e.target.value)}
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
             >
               <option value="">permission…</option>
               {CAP_ORDER.map((cap) => {
@@ -319,7 +319,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                 setScope(e.target.value);
                 setSubject("");
               }}
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
             >
               {scopeOptions.map((o) => (
                 <option key={o.val} value={o.val}>
@@ -330,7 +330,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             <select
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
             >
               <option value="">domain…</option>
               <optgroup label="Roles">
@@ -358,7 +358,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
             <select
               value={decision}
               onChange={(e) => setDecision(e.target.value as "allow" | "deny")}
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
             >
               <option value="allow">allow</option>
               <option value="deny">deny</option>
@@ -367,7 +367,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               value={expiry}
               onChange={(e) => setExpiry(e.target.value)}
               title="Time-box the rule: past the expiry it stops applying (listed as expired until deleted)"
-              className="rounded-md bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
             >
               <option value="">permanent</option>
               <option value="3600">for 1 hour</option>
@@ -429,7 +429,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           user, role, or group.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-800 divide-y divide-zinc-800/70">
+        <div className="overflow-hidden rounded-lg divide-y divide-zinc-800/70">
           {grants.map((r) => (
             <div
               key={`${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_kind}:${r.subject_id}`}
@@ -460,7 +460,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               </span>
               {r.expired ? (
                 <span
-                  className="rounded px-1 py-0.5 text-[10px] border border-zinc-700 text-zinc-500"
+                  className="rounded px-1 py-0.5 text-[10px] text-zinc-500"
                   title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
                 >
                   expired

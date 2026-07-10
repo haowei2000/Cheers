@@ -66,12 +66,13 @@ export function FloatingPanel({
       onPointerDownCapture={drag.toFront}
       style={style}
       className={cn(
-        "fixed flex flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40 backdrop-blur-sm",
+        // Borderless (DESIGN.md §2.4): shadow-2xl is the draggable-window elevation.
+        "fixed flex flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm",
         // Height cap leaves the composer line clear at the default top-16 spawn
         // (16 top offset + cap ≈ 6rem short of the bottom).
         "max-w-[94vw] max-h-[calc(100dvh-10rem)]",
         // Mobile: full-screen sheet — position/size overrides beat the defaults.
-        "max-md:inset-0 max-md:max-w-none max-md:max-h-none max-md:w-auto max-md:rounded-none max-md:border-0 max-md:translate-x-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]",
+        "max-md:inset-0 max-md:max-w-none max-md:max-h-none max-md:w-auto max-md:rounded-none max-md:translate-x-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]",
         !drag.pos && defaultPosClassName,
         collapsed && !isMobile ? "w-[300px]" : className
       )}
@@ -89,14 +90,14 @@ export function FloatingPanel({
         <button
           onClick={toggleCollapsed}
           title={collapsed ? "Expand" : "Minimize"}
-          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 max-md:hidden"
+          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
         >
           {collapsed ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
         </button>
         <button
           onClick={onClose}
           title="Close"
-          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
         >
           <X className="w-4 h-4" />
         </button>

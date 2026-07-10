@@ -161,7 +161,7 @@ export function ViewBoardDrawer({
     <aside
       ref={windowDrag.ref}
       onPointerDownCapture={windowDrag.toFront}
-      className={`fixed top-14 flex max-w-[94vw] flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 shadow-2xl ring-1 ring-black/40 backdrop-blur-sm transition-[opacity,transform] duration-200 max-md:left-2 max-md:w-auto max-md:max-w-none ${
+      className={`fixed top-14 flex max-w-[94vw] flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm transition-[opacity,transform] duration-200 max-md:left-2 max-md:w-auto max-md:max-w-none ${
         minimal
           ? "w-[280px] max-h-[calc(100dvh-4.5rem)]"
           : // Desktop default height stops ~6rem short of the bottom so the window
@@ -206,7 +206,7 @@ export function ViewBoardDrawer({
           <button
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
-            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
           >
             {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </button>
@@ -214,7 +214,7 @@ export function ViewBoardDrawer({
         <button
           onClick={onClose}
           title="Close"
-          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
         >
           <X className="w-4 h-4" />
         </button>
@@ -264,7 +264,7 @@ export function ViewBoardDrawer({
               <select
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-200 outline-none focus:border-indigo-500/60"
+                className="min-w-0 flex-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">All sessions</option>
                 {sessions.map((s) => (

@@ -23,6 +23,7 @@ import {
 } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
+import { Button } from "@/components/ui/button";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
@@ -113,7 +114,7 @@ export function BotDetailPanel({
   }, [bot.bot_id, onPoll]);
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900">
+    <div className="rounded-xl bg-zinc-900">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-zinc-800">
         <div className="w-10 h-10 rounded-lg bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
@@ -290,7 +291,7 @@ function BotOverview({
         <select
           value={channelId}
           onChange={(e) => setChannelId(e.target.value)}
-          className="flex-1 min-w-0 rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-300 outline-none focus:border-indigo-500/60"
+          className="flex-1 min-w-0 rounded-lg bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="">Add to channel…</option>
           {channels.map((c) => (
@@ -485,7 +486,7 @@ function BotStatusEditor({
   }
 
   const inputCls =
-    "w-full rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500/60";
+    "w-full rounded-lg bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
   async function handleAvatarUpload(file: File) {
     const url = await uploadBotAvatar(bot.bot_id, file);
@@ -494,7 +495,7 @@ function BotStatusEditor({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+    <div className="rounded-lg bg-zinc-950/40 p-3 space-y-3">
       <p className="text-xs font-semibold text-zinc-400">Status & information</p>
 
       <div className="flex items-center gap-3">
@@ -576,14 +577,9 @@ function BotStatusEditor({
       )}
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={busy}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-        >
+        <Button size="sm" onClick={() => void save()} disabled={busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </Button>
         <button
           type="button"
           onClick={() => void refreshNow()}
@@ -599,7 +595,7 @@ function BotStatusEditor({
         </button>
       </div>
       {refreshPhase === "timeout" && (
-        <p className="text-[11px] text-amber-500/80 leading-snug">
+        <p className="text-[11px] text-amber-400/80 leading-snug">
           The agent hasn't responded yet — it may still be working. Its status will update
           here on its own once it writes back.
         </p>

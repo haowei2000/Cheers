@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createWorkspace } from "@/api/workspaces";
 import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 // Create a team workspace, add it to the rail, and switch to it.
 export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
@@ -34,22 +35,15 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void submit()}
           placeholder="Workspace name…"
-          className="w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-indigo-500"
+          className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         <div className="flex justify-end gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 transition-colors"
-          >
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            disabled={!name.trim() || busy}
-            onClick={() => void submit()}
-            className="px-4 py-1.5 rounded-lg bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-          >
+          </Button>
+          <Button disabled={!name.trim() || busy} onClick={() => void submit()}>
             Create
-          </button>
+          </Button>
         </div>
       </div>
     </Dialog>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Bell } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -75,7 +76,7 @@ export function NotificationCenter() {
       >
         <Bell className="w-4 h-4" />
         {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center">
             {count}
           </span>
         )}
@@ -85,16 +86,18 @@ export function NotificationCenter() {
         <Dialog title="Notifications" onClose={() => setOpen(false)}>
           <div className="space-y-2">
             {items.length === 0 && (
-              <p className="text-sm text-zinc-500 py-4 text-center">
-                No notifications.
-              </p>
+              <EmptyState
+                icon={Bell}
+                title="No notifications"
+                hint="Channel invites and alerts appear here."
+              />
             )}
             {items.map((n) => {
               const key = notificationKey(n);
               return (
                 <div
                   key={key}
-                  className="flex items-center gap-3 rounded-lg border border-zinc-800 px-3 py-2"
+                  className="flex items-center gap-3 rounded-lg bg-zinc-800/40 px-3 py-2"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-zinc-200 truncate">

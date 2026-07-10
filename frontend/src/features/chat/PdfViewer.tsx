@@ -72,7 +72,7 @@ export function PdfViewer({ path }: { path: string }) {
         </div>
       )}
       {state === "error" && (
-        <div className="py-12 text-center text-sm text-rose-400">Failed to load the PDF — try downloading the original.</div>
+        <div className="py-12 text-center text-sm text-red-400">Failed to load the PDF — try downloading the original.</div>
       )}
       <div
         ref={hostRef}
