@@ -12,6 +12,7 @@ This is the English default edition prepared for the open-source documentation s
 - Message composer and Bot mentions
 - File upload and preview
 - Member and Bot management entry points
+- Shareable invite links (join a workspace via URL; works for unregistered visitors too — screenshots in [images/invite-links/](images/invite-links/))
 - Memory and context panels
 
 ## Current Guidance

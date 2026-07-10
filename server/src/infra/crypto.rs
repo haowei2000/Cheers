@@ -38,6 +38,17 @@ fn generate_prefixed_secret(prefix: &str) -> String {
     format!("{prefix}{}", hex::encode(bytes))
 }
 
+/// Workspace invite-link token 前缀（Cheers INVite）。
+pub const INVITE_LINK_PREFIX: &str = "cinv_";
+
+/// 生成 invite-link token：`cinv_<128-bit hex>`。16 字节（而非 32）让分享出去的
+/// URL 更短，仍然不可枚举；与 enrollment code 不同，它明文入库（见 0044 迁移头注）。
+pub fn generate_invite_link_token() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
+    format!("{INVITE_LINK_PREFIX}{}", hex::encode(bytes))
+}
+
 // ── Secrets at rest (AES-256-GCM) ────────────────────────────────────────────
 //
 // Admin-entered third-party API keys (e.g. the STT endpoint key) live in

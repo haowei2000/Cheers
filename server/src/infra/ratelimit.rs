@@ -197,6 +197,16 @@ pub fn enrollment_redeem_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(20, Duration::from_secs(300)))
 }
 
+/// Throttle public invite-link lookups per client. `GET /invite-links/:token` is
+/// unauthenticated and DB-touching; the 128-bit token is brute-force-infeasible,
+/// but this caps guessed-token floods so they can't pin the DB. Every lookup
+/// counts (there is no "success reset" — a link preview is idempotent).
+/// 30 per 5-minute window per client is far above any legitimate page-load rate.
+pub fn invite_link_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(30, Duration::from_secs(300)))
+}
+
 /// Throttle password-reset requests + code guesses per client (forgot/reset). Caps
 /// both email-spam and reset-code brute-force: 10 per 5-minute window per source.
 pub fn password_reset_limiter() -> &'static FixedWindowLimiter {

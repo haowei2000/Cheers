@@ -8,6 +8,7 @@ pub mod channels;
 pub mod enrollment;
 pub mod files;
 pub mod friends;
+pub mod invite_links;
 pub mod mcp;
 pub mod messages;
 pub mod middleware;

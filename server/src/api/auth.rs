@@ -96,6 +96,33 @@ pub async fn login(
 #[derive(Deserialize)]
 pub struct RegisterCodeRequest {
     pub email: String,
+    /// Shareable invite-link token: when live, it substitutes for
+    /// `config.open_registration` (the link IS the sign-up authorization).
+    #[serde(default)]
+    pub invite_token: Option<String>,
+}
+
+/// Sign-up gate shared by request-code + register: open registration, or a live
+/// invite-link token. The token is only CHECKED here — its use is consumed later
+/// by `accept_invite_link`, once the account exists and actually joins.
+async fn ensure_may_register(
+    state: &AppState,
+    invite_token: Option<&str>,
+) -> Result<(), AppError> {
+    if state.config.open_registration {
+        return Ok(());
+    }
+    let live = match invite_token.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => crate::api::invite_links::token_is_live(&state.db, t).await?,
+        None => false,
+    };
+    if live {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(
+        "self-service registration is disabled on this instance (a valid invite link is required)"
+            .into(),
+    ))
 }
 
 /// POST /api/v1/auth/register/request-code (public) — email a one-time verification
@@ -111,11 +138,7 @@ pub async fn register_request_code(
     headers: HeaderMap,
     Json(body): Json<RegisterCodeRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if !state.config.open_registration {
-        return Err(AppError::Forbidden(
-            "self-service registration is disabled on this instance".into(),
-        ));
-    }
+    ensure_may_register(&state, body.invite_token.as_deref()).await?;
     let limiter = crate::infra::ratelimit::register_limiter();
     let key = crate::infra::ratelimit::client_key(
         &headers,
@@ -169,6 +192,11 @@ pub struct RegisterRequest {
     pub code: String,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Shareable invite-link token — see `RegisterCodeRequest::invite_token`.
+    /// The client redeems it via `POST /invite-links/{token}/accept` right after
+    /// this call's auto-login, so the new account lands in the workspace.
+    #[serde(default)]
+    pub invite_token: Option<String>,
 }
 
 /// POST /api/v1/auth/register (public) — self-service sign-up. Creates a `member`
@@ -181,11 +209,7 @@ pub async fn register(
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
-    if !state.config.open_registration {
-        return Err(AppError::Forbidden(
-            "self-service registration is disabled on this instance".into(),
-        ));
-    }
+    ensure_may_register(&state, body.invite_token.as_deref()).await?;
     let limiter = crate::infra::ratelimit::register_limiter();
     let key = crate::infra::ratelimit::client_key(
         &headers,

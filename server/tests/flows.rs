@@ -2641,3 +2641,113 @@ async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
         "downstream hop shares the author bot's chain"
     );
 }
+
+// ── Invite links(0044):token_is_live 生命周期 + 原子占用 ───────────────────
+
+async fn seed_invite_link(
+    db: &PgPool,
+    ws: Uuid,
+    creator: Uuid,
+    token: &str,
+    max_uses: Option<i32>,
+    expires_in: Option<chrono::Duration>,
+) -> String {
+    let link_id = Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO invite_links (link_id, token, workspace_id, created_by, expires_at, max_uses)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(&link_id)
+    .bind(token)
+    .bind(ws.to_string())
+    .bind(creator.to_string())
+    .bind(expires_in.map(|d| chrono::Utc::now() + d))
+    .bind(max_uses)
+    .execute(db)
+    .await
+    .unwrap();
+    link_id
+}
+
+/// 一条链接在 撤销 / 过期 / 用尽 任一条件下都不再 live —— 这是注册旁路
+/// (`ensure_may_register`)和落地页的共用判定,必须与消费口径一致。
+#[sqlx::test(migrations = "./migrations")]
+async fn invite_link_liveness_lifecycle(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let creator = seed_user(&db).await;
+
+    // Live:无过期、无次数上限。
+    seed_invite_link(&db, ws, creator, "cinv_live", None, None).await;
+    assert!(server::api::invite_links::token_is_live(&db, "cinv_live")
+        .await
+        .unwrap());
+
+    // 未知 token → not live。
+    assert!(!server::api::invite_links::token_is_live(&db, "cinv_missing")
+        .await
+        .unwrap());
+
+    // 已过期 → not live。
+    seed_invite_link(
+        &db,
+        ws,
+        creator,
+        "cinv_expired",
+        None,
+        Some(chrono::Duration::hours(-1)),
+    )
+    .await;
+    assert!(!server::api::invite_links::token_is_live(&db, "cinv_expired")
+        .await
+        .unwrap());
+
+    // 用尽(use_count == max_uses)→ not live。
+    seed_invite_link(&db, ws, creator, "cinv_spent", Some(1), None).await;
+    sqlx::query("UPDATE invite_links SET use_count = 1 WHERE token = 'cinv_spent'")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(!server::api::invite_links::token_is_live(&db, "cinv_spent")
+        .await
+        .unwrap());
+
+    // 撤销 → not live。
+    seed_invite_link(&db, ws, creator, "cinv_revoked", None, None).await;
+    sqlx::query("UPDATE invite_links SET revoked = TRUE WHERE token = 'cinv_revoked'")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(!server::api::invite_links::token_is_live(&db, "cinv_revoked")
+        .await
+        .unwrap());
+}
+
+/// accept 的「占用一次使用」是条件 UPDATE:max_uses=1 时第二次占用必须 0 行 ——
+/// 并发抢最后一个名额只能有一人成功(与 handler 内的语句逐字一致)。
+#[sqlx::test(migrations = "./migrations")]
+async fn invite_link_use_reservation_is_atomic(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let creator = seed_user(&db).await;
+    let link_id = seed_invite_link(&db, ws, creator, "cinv_one", Some(1), None).await;
+
+    let reserve = "UPDATE invite_links SET use_count = use_count + 1
+         WHERE link_id = $1 AND NOT revoked
+           AND (expires_at IS NULL OR expires_at > NOW())
+           AND (max_uses IS NULL OR use_count < max_uses)";
+
+    let first = sqlx::query(reserve)
+        .bind(&link_id)
+        .execute(&db)
+        .await
+        .unwrap()
+        .rows_affected();
+    assert_eq!(first, 1, "first taker reserves the only use");
+
+    let second = sqlx::query(reserve)
+        .bind(&link_id)
+        .execute(&db)
+        .await
+        .unwrap()
+        .rows_affected();
+    assert_eq!(second, 0, "budget exhausted — second taker must be refused");
+}
