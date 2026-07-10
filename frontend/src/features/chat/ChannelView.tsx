@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { ArrowLeft, Hash, Users, Loader2, PanelRight, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
+import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
@@ -62,9 +62,13 @@ interface Props {
   channel: Channel | null;
   /** Mobile stacked navigation: renders a back button that pops to the channel list. */
   onBack?: () => void;
+  /** Desktop: whether the channel sidebar is expanded (drives the toggle icon). */
+  sidebarOpen?: boolean;
+  /** Desktop: collapse/expand the channel sidebar (renders a header toggle). */
+  onToggleSidebar?: () => void;
 }
 
-export function ChannelView({ channel, onBack }: Props) {
+export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: Props) {
   const user = useAuthStore((s) => s.user);
   const patchChannel = useChatStore((s) => s.patchChannel);
   // Public channel the caller can see (as a workspace member) but hasn't joined
@@ -703,9 +707,30 @@ export function ChannelView({ channel, onBack }: Props) {
     }
   }
 
+  // Desktop sidebar collapse toggle — lives in the channel header (and floats in
+  // the empty state, so an expanded toggle is always reachable while collapsed).
+  const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
+  const sidebarToggle = onToggleSidebar ? (
+    <button
+      onClick={onToggleSidebar}
+      title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${isMac ? "⌘B" : "Ctrl+B"})`}
+      aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+      className="max-md:hidden flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0 transition-colors"
+    >
+      {sidebarOpen ? (
+        <PanelLeftClose className="w-4 h-4" />
+      ) : (
+        <PanelLeftOpen className="w-4 h-4" />
+      )}
+    </button>
+  ) : null;
+
   if (!channel) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm flex-col gap-3">
+      <div className="relative flex-1 flex items-center justify-center text-zinc-600 text-sm flex-col gap-3">
+        {sidebarToggle && (
+          <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
+        )}
         <Hash className="w-10 h-10 text-zinc-700" />
         <span>Select a channel to start chatting</span>
       </div>
@@ -731,6 +756,7 @@ export function ChannelView({ channel, onBack }: Props) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+          {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
           {onBack && (
             <button
               onClick={onBack}
@@ -770,15 +796,20 @@ export function ChannelView({ channel, onBack }: Props) {
     );
   }
 
+  const anyWorkOpen = vbOpen || wbOpen || wsOpen;
+
   return (
     <ProfileCardProvider members={memberById}>
-    {/* Instrument windows FLOAT over the chat (no reserved column), so opening
-        them never squeezes the message list or the composer. */}
+    {/* Desktop: instrument panels DOCK into a dedicated work area on the right,
+        which reserves real layout space. The chat column is always width-capped:
+        centered while the work area is closed, docked against it when open.
+        Mobile: the panels stay full/near-full-screen overlay sheets. */}
     <div className="flex flex-col h-full">
       {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
       <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+        {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
         {onBack && (
           <button
             onClick={onBack}
@@ -889,6 +920,16 @@ export function ChannelView({ channel, onBack }: Props) {
         )}
       </div>
 
+      <div className="flex-1 min-h-0 flex">
+      {/* Chat region — the capped column inside centers or right-docks. The
+          md floor keeps the chat usable however crowded the dock gets (the
+          dock scrolls horizontally past that point instead). */}
+      <div className="flex-1 min-w-0 md:min-w-[24rem] flex flex-col">
+      <div
+        className={`flex flex-col h-full w-full min-w-0 md:max-w-[52rem] ${
+          anyWorkOpen ? "md:ml-auto" : "md:mx-auto"
+        }`}
+      >
       {/* Messages */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
@@ -1007,28 +1048,69 @@ export function ChannelView({ channel, onBack }: Props) {
         onMentionsChange={setMentionedBots}
         onSend={handleSend}
       />
+      </div>
+      </div>
 
-      <WorkbenchDrawer
-        open={wbOpen}
-        onClose={() => setWbOpen(false)}
-        channelId={channel.channel_id}
-        sendResourceReq={sendResourceReq}
-        openFilePath={wbTarget}
-        filesTick={boardTick.files}
-      />
+      {/* Work area — a dedicated lane on the right where the instrument cards
+          (unchanged chrome) are laid out side by side instead of floating over
+          the chat. Cards shrink from their preferred width toward their minimum
+          before the lane scrolls; the chat column always keeps its floor. On
+          mobile the wrapper is display:contents — the panels stay overlay
+          sheets there. */}
+      <aside
+        className={`max-md:contents flex min-w-0 min-h-0 ${
+          anyWorkOpen ? "md:gap-3 md:p-3 md:overflow-x-auto" : ""
+        }`}
+      >
+        {wsOpen && (
+          <RemoteWorkspaceDialog
+            channelId={channel.channel_id}
+            onClose={() => setWsOpen(false)}
+            initialBotId={wsInit.botId}
+            initialPath={wsInit.path}
+            // Default the browse to the composer's active session ("" = Auto → no
+            // session scope → the dialog shows the bot's full allowed roots).
+            sessionId={selectedSessionId || undefined}
+            // "workspace" board tick (an agent finished a turn; carries the emitting
+            // bot) → the dialog refetches its current dir + a clean open file, but
+            // only when the tick's bot is the one being browsed.
+            workspaceTick={workspaceTick}
+            // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
+            // dialog registers a watch while open and refetches when a signal for ITS bot
+            // arrives. See onWorkspaceSignal → workspaceSignal above.
+            workspaceSignal={workspaceSignal}
+            // Workspace presence: broadcast our own focus + render who ELSE is viewing this
+            // bot's workspace. `focus` is the parsed presence list; names resolve via the
+            // channel member map; currentUserId filters ourselves out of the chips.
+            sendPresenceFocus={sendPresenceFocus}
+            workspaceFocus={workspaceFocus}
+            currentUserId={user?.user_id}
+            memberNames={memberNames}
+          />
+        )}
 
-      <ViewBoardDrawer
-        open={vbOpen}
-        onClose={() => setVbOpen(false)}
-        channelId={channel.channel_id}
-        sendResourceReq={sendResourceReq}
-        selectedSessionId={selectedSessionId}
-        boardTick={boardTick}
-        shiftedForWorkbench={wbOpen}
-        minimal={vbMinimal}
-        onToggleMinimal={() => setVbMinimal((m) => !m)}
-        onJumpToMessage={jumpToMessage}
-      />
+        <ViewBoardDrawer
+          open={vbOpen}
+          onClose={() => setVbOpen(false)}
+          channelId={channel.channel_id}
+          sendResourceReq={sendResourceReq}
+          selectedSessionId={selectedSessionId}
+          boardTick={boardTick}
+          minimal={vbMinimal}
+          onToggleMinimal={() => setVbMinimal((m) => !m)}
+          onJumpToMessage={jumpToMessage}
+        />
+
+        <WorkbenchDrawer
+          open={wbOpen}
+          onClose={() => setWbOpen(false)}
+          channelId={channel.channel_id}
+          sendResourceReq={sendResourceReq}
+          openFilePath={wbTarget}
+          filesTick={boardTick.files}
+        />
+      </aside>
+      </div>
       {filesOpen && (
         <ChannelFilesDialog
           channelId={channel.channel_id}
@@ -1051,32 +1133,6 @@ export function ChannelView({ channel, onBack }: Props) {
         />
       )}
       {refError && <ErrorDialog message={refError} onClose={() => setRefError(null)} />}
-      {wsOpen && (
-        <RemoteWorkspaceDialog
-          channelId={channel.channel_id}
-          onClose={() => setWsOpen(false)}
-          initialBotId={wsInit.botId}
-          initialPath={wsInit.path}
-          // Default the browse to the composer's active session ("" = Auto → no
-          // session scope → the dialog shows the bot's full allowed roots).
-          sessionId={selectedSessionId || undefined}
-          // "workspace" board tick (an agent finished a turn; carries the emitting
-          // bot) → the dialog refetches its current dir + a clean open file, but
-          // only when the tick's bot is the one being browsed.
-          workspaceTick={workspaceTick}
-          // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
-          // dialog registers a watch while open and refetches when a signal for ITS bot
-          // arrives. See onWorkspaceSignal → workspaceSignal above.
-          workspaceSignal={workspaceSignal}
-          // Workspace presence: broadcast our own focus + render who ELSE is viewing this
-          // bot's workspace. `focus` is the parsed presence list; names resolve via the
-          // channel member map; currentUserId filters ourselves out of the chips.
-          sendPresenceFocus={sendPresenceFocus}
-          workspaceFocus={workspaceFocus}
-          currentUserId={user?.user_id}
-          memberNames={memberNames}
-        />
-      )}
     </div>
     </ProfileCardProvider>
   );

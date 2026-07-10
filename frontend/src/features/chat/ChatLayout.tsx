@@ -86,6 +86,45 @@ export default function ChatLayout() {
     refreshChannels();
   }, [refreshChannels]);
 
+  // Desktop: collapsible channel sidebar (the workspace rail always stays). The
+  // preference survives reloads; ⌘/Ctrl+B mirrors the header toggle button.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => localStorage.getItem("cheers.sidebar.open") !== "0"
+  );
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((o) => {
+      try {
+        localStorage.setItem("cheers.sidebar.open", o ? "0" : "1");
+      } catch {
+        /* ignore */
+      }
+      return !o;
+    });
+  }, []);
+  useEffect(() => {
+    // Desktop-only chrome: on mobile the shortcut would do nothing visible but
+    // still persist a hidden-sidebar preference for the next desktop session.
+    if (isMobile) return;
+    const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
+    const onKey = (e: KeyboardEvent) => {
+      // Platform-appropriate modifier ONLY: on macOS Ctrl+B is native
+      // move-cursor-back in text fields — never intercept it there.
+      const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+      if (!mod || e.shiftKey || e.altKey || e.key.toLowerCase() !== "b") return;
+      // Don't steal the keystroke from editable targets (composer, dialogs).
+      const t = e.target;
+      if (
+        t instanceof HTMLElement &&
+        (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
+      )
+        return;
+      e.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isMobile, toggleSidebar]);
+
   // Mobile: picking a channel pushes the conversation screen.
   const openChatScreen = useCallback(() => {
     setNavOpen(false);
@@ -159,9 +198,17 @@ export default function ChatLayout() {
   return (
     <div className="flex h-full bg-zinc-950">
       <WorkspaceRail />
-      <Sidebar workspace={selectedWorkspace} />
+      {/* CSS-hidden (not unmounted) so sidebar-hosted dialogs (New DM / New
+          channel / workspace settings) and their drafts survive a toggle. */}
+      <div className={sidebarOpen ? "contents" : "hidden"}>
+        <Sidebar workspace={selectedWorkspace} />
+      </div>
       <main className="flex-1 min-w-0 flex flex-col">
-        <ChannelView channel={selectedChannel} />
+        <ChannelView
+          channel={selectedChannel}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={toggleSidebar}
+        />
       </main>
     </div>
   );

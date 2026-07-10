@@ -1,14 +1,11 @@
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
-// SEPARATE from the file-based Workbench. Rendered as a floating, rounded card anchored
-// to the TOP-RIGHT (Codex "Environment" popover style) rather than a full-height edge
-// drawer, so it reads as a lightweight instrument overlay. Non-modal (no backdrop) so it
-// can stay open alongside the Workbench; both are draggable (useWindowDrag), so
-// overlapping windows are resolved by the user, and a click brings a window to the front.
+// SEPARATE from the file-based Workbench. On desktop it DOCKS into the channel's
+// work area (a real layout column on the right, beside the Workbench and the
+// Remote workspace) so it never covers the chat — the chat column narrows and
+// docks against it instead. On mobile it stays a near-full-screen overlay sheet.
 import { useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { useWindowDrag } from "@/hooks/useWindowDrag";
-import { ResizeGrip } from "@/components/ui/resize-grip";
 import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
 import { getViewBoards, type ViewBoardContext } from "./viewBoard";
@@ -30,20 +27,14 @@ interface Props {
   selectedSessionId?: string | null;
   /** Live-push ticks (board id → counter) from the WS board_signal stream. */
   boardTick?: Record<string, number>;
-  /** Default-position nicety: while the ViewBoard has never been dragged, float it
-   *  to the LEFT of the (also right-anchored) Workbench so both show. A dragged
-   *  position always wins. */
-  shiftedForWorkbench?: boolean;
-  /** Minimal mode: a compact content-height card in a narrower column (vs the full
-   *  full-height column). Still keeps its own column; toggled from the header. */
+  /** Minimal mode: a compact glance list in a narrower dock column (vs the full
+   *  boards in the regular column). Toggled from the header. */
   minimal?: boolean;
   onToggleMinimal?: () => void;
   /** Best-effort "jump the chat to this message" (scroll + flash when loaded). */
   onJumpToMessage?: (msgId: string) => void;
 }
 
-const WORKBENCH_WIDTH = 560; // keep in sync with WorkbenchDrawer's w-[560px]
-const EDGE_GAP = 12; // inset from the right edge (default, pre-drag position)
 const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
 
 interface SessionOpt {
@@ -61,7 +52,6 @@ export function ViewBoardDrawer({
   channelId,
   sendResourceReq,
   boardTick,
-  shiftedForWorkbench,
   minimal,
   onToggleMinimal,
   onJumpToMessage,
@@ -147,56 +137,37 @@ export function ViewBoardDrawer({
     [channelId, sendResourceReq, scope, boardTick, onJumpToMessage]
   );
 
-  // Mobile: the card spans the full width (left/right insets via classes below);
-  // dragging is desktop-only.
   const isMobile = useIsMobile();
-  const windowDrag = useWindowDrag("cheers.float.viewboard", !isMobile);
 
-  return (
-    // Rounded, elevated FLOATING instrument card (Codex-style chrome), draggable by
-    // its title bar — it floats over the chat without reserving a column, so the
-    // composer keeps its full width. Expanded = a full-height 420 window with the
-    // full boards; minimal = a compact content-height 280 glance card
-    // (ViewBoardMinimized). Slides off to the right when closed.
-    <aside
-      ref={windowDrag.ref}
-      onPointerDownCapture={windowDrag.toFront}
-      className={`fixed top-14 flex max-w-[94vw] flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm transition-[opacity,transform] duration-200 max-md:left-2 max-md:w-auto max-md:max-w-none ${
+  // The card itself is UNCHANGED (rounded elevated instrument card). What changed
+  // is its placement: on desktop it is laid out inside the channel's dedicated
+  // work area (a real layout region beside the chat) instead of floating over
+  // the messages. Expanded stretches the lane's height and shrinks from its
+  // preferred width when the lane gets crowded; minimal stays a compact
+  // content-height glance card. Closed keeps it mounted (hidden) so board
+  // state survives. Mobile keeps the original overlay-sheet behavior.
+  const shellClass = isMobile
+    ? // z-40: above the chat chrome (z-30 header, z-10/z-20 composer popups,
+      // sticky DiffView headers) but below true modals (z-50) — the band the
+      // floating windows used to get inline from useWindowDrag.
+      `fixed top-14 left-2 right-3 z-40 flex flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm transition-[opacity,transform] duration-200 ${
         minimal
-          ? "w-[280px] max-h-[calc(100dvh-4.5rem)]"
-          : // Desktop default height stops ~6rem short of the bottom so the window
-            // never sits on the composer line; mobile keeps the bottom anchor.
-            "w-[420px] h-[calc(100dvh-9.5rem)] max-md:h-auto max-md:bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
+          ? "max-h-[calc(100dvh-4.5rem)]"
+          : "bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
       } ${
         open
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
-      }`}
-      style={
-        // Minimal ignores any resized size (posStyle) — it is a fixed compact
-        // glance card. Expanded uses the full geometry; when dragged but NOT
-        // resized, size the window explicitly from its new top edge (the
-        // bottom anchor is overridden by bottom: auto).
-        windowDrag.pos
-          ? minimal
-            ? { ...windowDrag.posStyle, maxHeight: `calc(100dvh - ${windowDrag.pos.y + 12}px)` }
-            : {
-                ...windowDrag.style,
-                ...(windowDrag.size ? {} : { height: `calc(100dvh - ${windowDrag.pos.y + 12}px)` }),
-              }
-          : {
-              ...(minimal ? windowDrag.posStyle : windowDrag.style),
-              right:
-                !isMobile && shiftedForWorkbench && open
-                  ? WORKBENCH_WIDTH + EDGE_GAP * 2
-                  : EDGE_GAP,
-            }
-      }
-    >
-      <div
-        {...windowDrag.handleProps}
-        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
-      >
+      }`
+    : `${open ? "flex" : "hidden"} min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm ${
+        minimal
+          ? "w-[280px] shrink min-w-[13rem] self-start max-h-full"
+          : "w-[420px] shrink min-w-[320px]"
+      }`;
+
+  return (
+    <aside className={shellClass}>
+      <div className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none">
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           ViewBoard
@@ -303,8 +274,6 @@ export function ViewBoardDrawer({
           </div>
         </>
       )}
-      {/* Resizable in expanded mode; minimal stays a fixed compact glance card. */}
-      {!minimal && <ResizeGrip resizeProps={windowDrag.resizeProps} />}
     </aside>
   );
 }
