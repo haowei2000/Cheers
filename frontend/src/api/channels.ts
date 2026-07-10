@@ -138,6 +138,12 @@ export async function leaveChannel(channelId: string): Promise<void> {
   await apiJson(`/channels/${channelId}/leave`, { method: "POST" });
 }
 
+/** Self-serve join for a PUBLIC channel — active workspace members only.
+ * Private channels stay invite-only (accept/decline below). */
+export async function joinChannel(channelId: string): Promise<void> {
+  await apiJson(`/channels/${channelId}/join`, { method: "POST" });
+}
+
 /** Accept a pending channel invite — materializes the caller's membership. */
 export async function acceptChannelInvite(channelId: string): Promise<void> {
   await apiJson(`/channels/${channelId}/accept`, { method: "POST" });

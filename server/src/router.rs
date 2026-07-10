@@ -193,6 +193,12 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/leave",
             post(api::channels::leave_channel),
         )
+        // Self-serve join for public channels (Slack model) — active workspace
+        // members only; private channels stay invite-only.
+        .route(
+            "/api/v1/channels/:channel_id/join",
+            post(api::channels::join_channel),
+        )
         // Consent flow for a channel invite (the invitee acts on their own invite).
         .route(
             "/api/v1/channels/:channel_id/accept",

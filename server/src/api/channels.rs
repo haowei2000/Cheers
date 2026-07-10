@@ -35,6 +35,11 @@ pub struct ChannelDto {
     /// for the "shared with you" section. Absent everywhere else.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_name: Option<String>,
+    /// Whether the caller has a `channel_memberships` row. Workspace members see
+    /// public channels they haven't joined yet (Slack model) — those come back
+    /// `false` so the client renders a join prompt instead of the composer.
+    /// Queries that only ever return the caller's own channels leave it `true`.
+    pub is_member: bool,
 }
 
 #[derive(Deserialize)]
@@ -105,6 +110,9 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         // Only the guest-scope query selects this column (labels the "shared with
         // you" section); every other query leaves it absent → None.
         workspace_name: row.try_get("workspace_name").ok(),
+        // Only the workspace-scoped listing computes this; the other queries are
+        // membership-gated (or membership-joined) already, so absent → true.
+        is_member: row.try_get("is_member").unwrap_or(true),
     }
 }
 
@@ -219,17 +227,23 @@ pub async fn list_channels(
     // Scope to one workspace when `?workspace_id=` is given (the sidebar always
     // passes it). The handler previously ignored the param entirely, leaking
     // every workspace's channels into whichever one you had selected.
+    //
+    // Visibility (Slack model): channels you belong to, plus PUBLIC channels of
+    // workspaces you're an active member of (joinable via POST /channels/:id/join).
+    // Private channels never show to non-members. Unread/mention counts are only
+    // meaningful for members — non-members get 0, not "every message ever".
     let rows = sqlx::query(
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
-                COALESCE((
+                (cm.member_id IS NOT NULL) AS is_member,
+                CASE WHEN cm.member_id IS NULL THEN 0 ELSE COALESCE((
                     SELECT count(*) FROM messages m
                     WHERE m.channel_id = c.channel_id
                       AND m.is_partial = FALSE
                       AND m.sender_id <> $1
                       AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                ), 0) AS unread_count,
-                COALESCE((
+                ), 0) END AS unread_count,
+                CASE WHEN cm.member_id IS NULL THEN 0 ELSE COALESCE((
                     SELECT count(*) FROM messages m
                     JOIN message_mentions mm ON mm.msg_id = m.msg_id
                          AND mm.member_id = $1 AND mm.member_type = 'user'
@@ -237,13 +251,14 @@ pub async fn list_channels(
                       AND m.is_partial = FALSE
                       AND m.sender_id <> $1
                       AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                ), 0) AS mention_count
+                ), 0) END AS mention_count
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1
                 AND wm.status = 'active'
          WHERE c.type != 'dm'
-           AND (cm.member_id IS NOT NULL OR wm.user_id IS NOT NULL)
+           AND (cm.member_id IS NOT NULL
+                OR (wm.user_id IS NOT NULL AND c.type = 'public'))
            AND ($2::text IS NULL OR c.workspace_id = $2)
          ORDER BY c.created_at DESC",
     )
@@ -1000,6 +1015,83 @@ pub async fn accept_channel_invite(
     Ok(Json(
         json!({"channel_id": channel_id, "status": "active", "role": role}),
     ))
+}
+
+/// POST /api/v1/channels/{channel_id}/join — self-serve join for PUBLIC channels
+/// (Slack model): any ACTIVE member of the channel's workspace may join without
+/// waiting for an invite. Private channels and DMs keep the consent-based invite
+/// path as the only way in. Idempotent — joining a channel you're already in is
+/// a no-op success.
+pub async fn join_channel(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let channel = sqlx::query("SELECT type, workspace_id FROM channels WHERE channel_id = $1")
+        .bind(&channel_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let channel_type: String = channel.try_get("type").unwrap_or_default();
+    let workspace_id: String = channel.try_get("workspace_id").unwrap_or_default();
+    if channel_type != "public" {
+        return Err(AppError::Forbidden(
+            "only public channels can be joined without an invite".into(),
+        ));
+    }
+    // Workspace-first invariant: self-join is a workspace-member privilege, checked
+    // at join time (mirrors accept_channel_invite's re-check).
+    let ws_member: bool = sqlx::query(
+        "SELECT EXISTS(
+            SELECT 1 FROM workspace_memberships
+            WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'
+        ) AS ok",
+    )
+    .bind(&workspace_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db)
+    .await?
+    .try_get::<bool, _>("ok")
+    .unwrap_or(false);
+    if !ws_member {
+        return Err(AppError::Forbidden(
+            "you must be an active member of this channel's workspace".into(),
+        ));
+    }
+    let mut tx = state.db.begin().await?;
+    // Self-join always starts at 'member'; an invite-carried role never applies here.
+    let inserted = sqlx::query(
+        "INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by)
+         VALUES ($1, $2, 'user', 'member', $2)
+         ON CONFLICT (channel_id, member_id) DO NOTHING",
+    )
+    .bind(&channel_id)
+    .bind(&claims.sub)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    // A pending invite to this channel is now moot — consume it so it stops
+    // showing in the invitee's inbox and the member list's pending section.
+    sqlx::query("DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2")
+        .bind(&channel_id)
+        .bind(&claims.sub)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+
+    // New member → refresh presence for everyone already in the channel.
+    if inserted > 0 {
+        if let Ok(cid) = Uuid::parse_str(&channel_id) {
+            crate::gateway::presence::broadcast_presence(&state, cid).await;
+        }
+    }
+    Ok(Json(json!({
+        "channel_id": channel_id,
+        "member_id": claims.sub,
+        "member_type": "user",
+        "role": "member",
+        "status": "active",
+    })))
 }
 
 /// POST /api/v1/channels/{channel_id}/decline — decline a pending channel invite.

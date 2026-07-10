@@ -36,6 +36,9 @@ export interface Channel {
   peer_name?: string;
   my_role?: string | null;
   can_manage?: boolean;
+  /** False for public channels the caller sees as a workspace member but hasn't
+   * joined yet (Slack model) — render a join prompt instead of the composer. */
+  is_member?: boolean;
 }
 
 export interface DM {
