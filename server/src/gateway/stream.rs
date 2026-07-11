@@ -206,6 +206,9 @@ pub async fn handle_delta(
 /// （acquire_scope_session + dispatch 的 S3 拉取 + base64）耗时可达数百 ms；若 inline
 /// await，会 head-of-line 阻塞该 connector 上多路复用的所有其他流。此时源消息已落库、
 /// 终态帧已广播、ack 已发出——链的排序不属于协议契约，故安全后台化。
+/// Returns the spawned task's handle. Production callers drop it (fire-and-forget —
+/// that IS the point: don't block the read loop). Tests can `.await` it to observe the
+/// otherwise-async trigger deterministically.
 #[allow(clippy::too_many_arguments)]
 fn spawn_trigger_bot_replies(
     db: &PgPool,
@@ -219,7 +222,7 @@ fn spawn_trigger_bot_replies(
     author_bot_id: Uuid,
     mentions: Vec<mentions::Mention>,
     chain_id: Option<String>,
-) {
+) -> tokio::task::JoinHandle<()> {
     let db = db.clone();
     let fanout = fanout.clone();
     let registry = registry.clone();
@@ -242,7 +245,7 @@ fn spawn_trigger_bot_replies(
         {
             tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
         }
-    });
+    })
 }
 
 /// 处理 bot 发来的 done 帧。
@@ -691,6 +694,9 @@ async fn chain_for_proactive_send(
 /// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
 /// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
 /// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
+/// Returns the bot@bot trigger's spawned task handle (or `None` when nothing is
+/// triggered). Production drops it (fire-and-forget); tests `.await` it to observe the
+/// trigger deterministically.
 pub async fn broadcast_and_trigger_created_message(
     registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
@@ -698,7 +704,7 @@ pub async fn broadcast_and_trigger_created_message(
     bot_locator: &Arc<dyn BotLocator>,
     author_bot_id: Uuid,
     created: &Value,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
     let (Some(msg_id), Some(channel_id)) = (
         created
             .get("msg_id")
@@ -709,7 +715,7 @@ pub async fn broadcast_and_trigger_created_message(
             .and_then(Value::as_str)
             .and_then(|s| s.parse::<Uuid>().ok()),
     ) else {
-        return;
+        return None;
     };
 
     // 1) live 广播：DTO 原样投递，前端与 handle_send 的 "message" 帧同形（多余字段无害）。
@@ -719,20 +725,20 @@ pub async fn broadcast_and_trigger_created_message(
     // 2) bot@bot 触发：从 DTO 的 mentions 还原 Vec<Mention>，depth=0（与用户发消息对等）。
     let mentions = dto_mentions(created);
     if mentions.is_empty() {
-        return;
+        return None;
     }
     let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
-        return;
+        return None;
     };
     // Same proactive-send chain assignment as handle_send: inherit the author
     // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
     // else root a new one (§8).
     let chain_id = chain_for_proactive_send(db, channel_id, author_bot_id, msg_id, &mentions).await;
     // spawn：同 handle_done / handle_send，避免下一跳 dispatch 阻塞 connector 读循环。
-    spawn_trigger_bot_replies(
+    Some(spawn_trigger_bot_replies(
         db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, 0, author_bot_id,
         mentions, chain_id,
-    );
+    ))
 }
 
 /// 从 `MessageDto` JSON 的 `mentions` 数组还原 [`mentions::Mention`]（丢弃无法解析的项）。

@@ -2283,7 +2283,9 @@ async fn group_bots_mention_triggers_all_other_bots(db: PgPool) {
     let registry = StreamRegistry::new();
     let counter = Arc::new(CountingBotLocator::default());
     let bot_locator: Arc<dyn BotLocator> = counter.clone();
-    stream::broadcast_and_trigger_created_message(
+    // The trigger is spawned off the caller (so it can't stall the WS read loop);
+    // await the returned handle to observe it deterministically.
+    if let Some(h) = stream::broadcast_and_trigger_created_message(
         &registry,
         &fanout,
         &db,
@@ -2291,7 +2293,10 @@ async fn group_bots_mention_triggers_all_other_bots(db: PgPool) {
         author,
         &created["data"],
     )
-    .await;
+    .await
+    {
+        h.await.unwrap();
+    }
     assert_eq!(
         counter.dispatched.load(Ordering::SeqCst),
         2,
@@ -2618,7 +2623,8 @@ async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
     let a_post = Uuid::new_v4();
     let counter = Arc::new(CountingBotLocator::default());
     let bot_locator: Arc<dyn BotLocator> = counter.clone();
-    stream::broadcast_and_trigger_created_message(
+    // Await the spawned trigger handle so the assertions below see its effects.
+    if let Some(h) = stream::broadcast_and_trigger_created_message(
         &StreamRegistry::new(),
         &fanout(),
         &db,
@@ -2629,7 +2635,10 @@ async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
             "mentions": [{ "member_id": bot_b, "member_type": "bot" }],
         }),
     )
-    .await;
+    .await
+    {
+        h.await.unwrap();
+    }
 
     assert_eq!(counter.dispatched.load(Ordering::SeqCst), 1, "B is triggered");
     // B's placeholder inherits A's chain (not a fresh one).

@@ -764,7 +764,9 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 && resp.get("ok").and_then(Value::as_bool) == Some(true)
             {
                 if let Some(created) = resp.get("data") {
-                    broadcast_and_trigger_created_message(
+                    // Fire-and-forget: the returned trigger handle is intentionally
+                    // dropped so the next bot@bot hop runs off this read loop.
+                    let _ = broadcast_and_trigger_created_message(
                         &state.stream_registry,
                         &state.fanout,
                         &state.db,
