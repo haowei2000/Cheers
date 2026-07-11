@@ -18,6 +18,36 @@ Rules of engagement:
 
 ## 1. Tokens
 
+### Appearance: dark-only (deliberate)
+
+Cheers ships a **single dark appearance** — this is a product decision, not an
+oversight. `index.css` sets `color-scheme: dark`; there is no light token set
+and no in-app appearance switch. The audience (developers running an
+agent-console chat tool) works dark, and a second theme would double the
+token-maintenance surface for little value. The trade-off we accept: users
+whose OS is set to light still get a dark app. If that ever changes, the
+migration is "lift every `zinc-*` literal into CSS variables + add a
+`prefers-color-scheme` default + a System/Light/Dark setting" — do it as its
+own PR, not piecemeal.
+
+### Text contrast floor (non-negotiable)
+
+Every color that paints **meaningful text** must clear **WCAG AA 4.5:1**
+against its surface (3:1 only for large text ≥18px, or ≥14px bold). On our
+zinc surfaces that makes **`zinc-400` the floor for muted/secondary text**
+(`zinc-400` on `zinc-900` ≈ 6.9:1). The dimmer tiers are for pixels that carry
+no text meaning:
+
+| Use | Token | Why |
+|---|---|---|
+| Meaningful text — labels, hints, timestamps, placeholders, section headers, code comments, chart axis text | `zinc-400` floor (brighter for primary: `zinc-100/200/300`) | must reach 4.5:1 |
+| Functional icons (search, chevron, close) | `zinc-500` acceptable (icons need only 3:1) — but never on `zinc-800` fills where it dips to 3.08:1 | non-text 3:1 floor |
+| Purely decorative marks — separators (`·`), large empty-state hero glyphs | `zinc-600/700` OK (decorative, information is carried elsewhere) | exempt |
+
+**`zinc-500` is never a text color for content, and `zinc-600`/`zinc-700` are
+never a text color at all** (they fail even 3:1). Placeholders count as
+meaningful text → `zinc-400`.
+
 ### Color semantics
 
 | Role | Token | Notes |
@@ -56,10 +86,10 @@ and error (`ring-red-500`).
 | Page H1 | `text-lg font-semibold` |
 | Dialog / panel title | `text-sm font-semibold text-zinc-100` |
 | Body | `text-sm text-zinc-200/300` |
-| Form label | `text-xs font-medium text-zinc-500 uppercase tracking-wide` |
-| Section header | `text-xs font-semibold text-zinc-500 uppercase tracking-wider` |
-| In-panel group label | `text-[10px] uppercase tracking-wide text-zinc-500` |
-| Hint / helper | `text-xs text-zinc-500` (dimmer: `zinc-600`) |
+| Form label | `text-xs font-medium text-zinc-400 uppercase tracking-wide` |
+| Section header | `text-xs font-semibold text-zinc-400 uppercase tracking-wider` |
+| In-panel group label | `text-[10px] uppercase tracking-wide text-zinc-400` |
+| Hint / helper | `text-xs text-zinc-400` — this is the muted-text floor; there is no dimmer text tier (see §1 contrast floor) |
 | Mini scale (dense panels) | `text-[11px]` / `text-[10px]` — floor is 10px |
 
 ### Shape & states
@@ -193,10 +223,10 @@ cut-out mask, not a decorative border.)
   container `flex gap-1 border-b border-zinc-800`; item
   `px-3 py-2 text-sm border-b-2 -mb-px transition-colors` with active
   `border-indigo-500 text-zinc-100`, inactive
-  `border-transparent text-zinc-500 hover:text-zinc-300`.
+  `border-transparent text-zinc-400 hover:text-zinc-200`.
 - **Pill tabs** (dense panel toolbars — ViewBoard):
   `rounded-md px-2 py-1 text-xs` with active `bg-zinc-800 text-zinc-100`,
-  inactive `text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300`.
+  inactive `text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200`.
 
 Don't introduce a third style; segmented controls reuse the pill recipe
 inside a `bg-zinc-800` container.
@@ -207,13 +237,13 @@ Canon is the Plan panel: centered, icon + primary + secondary line.
 
 ```tsx
 <div className="flex flex-col items-center justify-center py-8 text-center">
-  <SomeIcon className="w-5 h-5 text-zinc-600 mb-2" />
-  <p className="text-xs text-zinc-500">Nothing here yet</p>
-  <p className="text-[11px] text-zinc-600 mt-0.5">It appears when …</p>
+  <SomeIcon className="w-5 h-5 text-zinc-500 mb-2" />   {/* decorative glyph: zinc-500 ok */}
+  <p className="text-xs text-zinc-400">Nothing here yet</p>       {/* primary line: meaningful text */}
+  <p className="text-[11px] text-zinc-400 mt-0.5">It appears when …</p>  {/* secondary line: still meaningful */}
 </div>
 ```
 
-Compact lists may use the one-liner `text-xs text-zinc-600 py-4 text-center`.
+Compact lists may use the one-liner `text-xs text-zinc-400 py-4 text-center`.
 
 ### 2.10 Loading
 
@@ -259,6 +289,10 @@ The full audit that produced this doc: visual-consistency reports
 Reject in review:
 
 - [ ] `gray-*` / `slate-*` / `neutral-*` / `stone-*` anywhere
+- [ ] `text-zinc-500` on meaningful text — it's below 4.5:1 on every surface; use `zinc-400`, and reserve `zinc-500` for functional icons (§1 contrast floor)
+- [ ] `text-zinc-600` / `text-zinc-700` as a text color — decorative marks (separators, hero glyphs) only
+- [ ] any interactive element with a hit area below 44×44px (pad the target even when the glyph is smaller)
+- [ ] icon-only button without an `aria-label`; `outline-none` without a replacement focus ring; a clickable `<div>` where a `<button>` belongs
 - [ ] `rose-*` for errors (rose is mention-only)
 - [ ] box borders anywhere — `border border-*` on buttons, fields, cards, chips or popovers (1px `border-b` dividers between regions are fine)
 - [ ] hand-rolled `bg-indigo-600` primary buttons

@@ -171,7 +171,7 @@ function ProfileCard({
               </span>
             )}
           </div>
-          {handle && <p className="text-xs text-zinc-500 truncate">{handle}</p>}
+          {handle && <p className="text-xs text-zinc-400 truncate">{handle}</p>}
           {(member.status_emoji || member.status_text) && (
             <p className="mt-1 text-xs text-zinc-300 truncate">
               {member.status_emoji && <span className="mr-1">{member.status_emoji}</span>}
@@ -181,7 +181,7 @@ function ProfileCard({
           {member.status_updated_at &&
             (member.status_emoji || member.status_text) &&
             relativeTime(member.status_updated_at) && (
-              <p className="mt-0.5 text-[10px] text-zinc-500">
+              <p className="mt-0.5 text-[10px] text-zinc-400">
                 updated {relativeTime(member.status_updated_at)}
               </p>
             )}
@@ -197,7 +197,7 @@ function ProfileCard({
       )}
       {member.role && member.role !== "member" && (
         <div className="border-t border-zinc-800 px-3 py-1.5">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-400">
             {member.role}
           </span>
         </div>

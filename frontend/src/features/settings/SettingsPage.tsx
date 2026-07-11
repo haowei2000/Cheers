@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
@@ -62,35 +62,60 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
       <p className="text-sm font-medium text-zinc-200 flex items-center gap-2 mb-1">
         <KeyRound className="w-4 h-4 text-indigo-400" /> Change password
       </p>
-      <p className="text-xs text-zinc-500 mb-4">
+      <p className="text-xs text-zinc-400 mb-4">
         Updating your password signs out every other device.
       </p>
       <div className="grid gap-3 max-w-sm">
-        <input
-          type="password"
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          placeholder="Current password"
-          autoComplete="current-password"
-          className={inputCls}
-        />
-        <input
-          type="password"
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-          placeholder="New password (min 8 characters)"
-          autoComplete="new-password"
-          className={inputCls}
-        />
-        <input
-          type="password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void submit()}
-          placeholder="Confirm new password"
-          autoComplete="new-password"
-          className={inputCls}
-        />
+        <div className="space-y-1.5">
+          <label
+            htmlFor="cp-current"
+            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+          >
+            Current password
+          </label>
+          <input
+            id="cp-current"
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+            className={inputCls}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label
+            htmlFor="cp-new"
+            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+          >
+            New password
+          </label>
+          <input
+            id="cp-new"
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            placeholder="At least 8 characters"
+            autoComplete="new-password"
+            className={inputCls}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label
+            htmlFor="cp-confirm"
+            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+          >
+            Confirm new password
+          </label>
+          <input
+            id="cp-confirm"
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void submit()}
+            autoComplete="new-password"
+            className={inputCls}
+          />
+        </div>
         <div>
           <Button onClick={() => void submit()} disabled={busy || !current || !next}>
             {busy ? "Saving…" : "Update password"}
@@ -112,10 +137,13 @@ function ProfileEditCard() {
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    setLoadError(false);
     void getMe()
       .then((me) => {
         if (!alive) return;
@@ -126,15 +154,19 @@ function ProfileEditCard() {
         setAvatarUrl(me.avatar_url ?? null);
         // Hydrate the store so the rest of the app sees the full profile.
         if (token) setAuth({ ...(user ?? { user_id: me.user_id, display_name: null }), ...me }, token);
+        // Only enable Save once the real profile is in the form — a blank
+        // form saved over a failed load would wipe the user's details.
+        setLoaded(true);
       })
-      .catch(() => {})
-      .finally(() => alive && setLoaded(true));
-    // Load once on mount; store writes here must not retrigger it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      .catch(() => {
+        if (alive) setLoadError(true);
+      });
     return () => {
       alive = false;
     };
-  }, []);
+    // Re-runs when the user retries; store writes here must not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
 
   async function save() {
     setBusy(true);
@@ -165,6 +197,25 @@ function ProfileEditCard() {
   const inputCls =
     "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
 
+  // Load failed: don't render the editable form. Saving an empty form over a
+  // profile that never hydrated would silently wipe the user's real details.
+  if (loadError) {
+    return (
+      <div className="bg-zinc-900 rounded-2xl p-6">
+        <p className="text-sm font-medium text-zinc-200">Couldn't load your profile</p>
+        <p className="text-xs text-zinc-400 mt-1">
+          Editing is disabled until it loads so your saved details aren't
+          overwritten. Check your connection and try again.
+        </p>
+        <div className="mt-4">
+          <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-zinc-900 rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-4">
@@ -180,14 +231,14 @@ function ProfileEditCard() {
             {statusEmoji && <span className="mr-1">{statusEmoji}</span>}
             {displayName || user?.username || "Unknown"}
           </p>
-          <p className="text-sm text-zinc-500 truncate">
+          <p className="text-sm text-zinc-400 truncate">
             {statusText || `@${user?.username ?? user?.user_id?.slice(0, 8)}`}
           </p>
         </div>
       </div>
 
       <div className="grid gap-3">
-        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+        <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
           Display name
           <input
             value={displayName}
@@ -198,7 +249,7 @@ function ProfileEditCard() {
         </label>
 
         <div>
-          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Status</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Status</label>
           <div className="flex gap-2 mt-1">
             <input
               value={statusEmoji}
@@ -219,7 +270,7 @@ function ProfileEditCard() {
           </div>
         </div>
 
-        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+        <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
           Bio
           <textarea
             value={bio}
@@ -246,9 +297,17 @@ export default function SettingsPage() {
   const logout = useAuthStore((s) => s.logout);
   const setToken = useAuthStore((s) => s.setToken);
   const isAdmin = useIsAdmin();
-  const [section, setSection] = useState<SectionId>("profile");
+  const params = useParams();
 
   const items = NAV.filter((n) => !n.adminOnly || isAdmin);
+
+  // Section lives in the URL (/settings/:section) so reload restores it, each
+  // section is deep-linkable, and Back steps between sections. Fall back to the
+  // first section for an unknown or admin-gated path.
+  const requested = (params["*"] ?? "").split("/")[0];
+  const section: SectionId = items.some((n) => n.id === requested)
+    ? (requested as SectionId)
+    : "profile";
 
   return (
     // h-full + internal scroll: the app root is overflow-hidden, so the page must own
@@ -277,7 +336,8 @@ export default function SettingsPage() {
               <button
                 key={id}
                 type="button"
-                onClick={() => setSection(id)}
+                onClick={() => navigate(`/settings/${id}`)}
+                aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-2.5 rounded-lg px-3 py-2 max-md:py-2.5 shrink-0 text-sm font-medium whitespace-nowrap transition-colors ${
                   active
                     ? "bg-zinc-800 text-zinc-100"
@@ -295,7 +355,7 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0">
           {section === "profile" && (
             <section>
-              <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <User className="w-3.5 h-3.5" />
                 Profile
               </h2>
@@ -305,7 +365,7 @@ export default function SettingsPage() {
               <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       User ID
                     </label>
                     <code className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded block truncate">
@@ -313,7 +373,7 @@ export default function SettingsPage() {
                     </code>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Role
                     </label>
                     <span className="text-xs text-zinc-400 capitalize">
@@ -334,7 +394,7 @@ export default function SettingsPage() {
 
           {section === "account" && (
             <section>
-              <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">
+              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                 Account
               </h2>
 
@@ -344,7 +404,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-zinc-200">Sign out</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-zinc-400 mt-0.5">
                       Revokes this session on the server and returns you to the login page.
                     </p>
                   </div>

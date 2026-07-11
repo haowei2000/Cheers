@@ -79,13 +79,13 @@ export function AdminSttSettings() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <AudioLines className="w-3.5 h-3.5" />
         Speech-to-text
       </h2>
 
       <div className="bg-zinc-900 rounded-2xl p-6">
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-zinc-400 mb-4">
           Voice messages and audio files are sent by the gateway to the OpenAI-compatible
           transcription service configured here
           (<code className="text-zinc-400">/audio/transcriptions</code>). Transcripts are shown
@@ -105,7 +105,7 @@ export function AdminSttSettings() {
           </label>
 
           <div>
-            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Endpoint (base URL including /v1)
             </label>
             <input
@@ -117,7 +117,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               Model
             </label>
             <input
@@ -129,7 +129,7 @@ export function AdminSttSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+            <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
               API key{" "}
               {loaded?.api_key_set && !clearKey && (
                 <span className="normal-case text-zinc-400">
@@ -151,7 +151,7 @@ export function AdminSttSettings() {
               className={`${inputCls} disabled:opacity-40`}
             />
             {loaded?.api_key_set && (
-              <label className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+              <label className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
                 <input
                   type="checkbox"
                   checked={clearKey}

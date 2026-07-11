@@ -30,8 +30,42 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [cooldown, setCooldown] = useState(0); // seconds until "resend" is allowed
-  const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
+  // Per-field client-validation messages shown inline under the offending field,
+  // so people fix the problem while the context is fresh (HIG: validate on blur).
+  // Server-side failures still surface via toast.
+  const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({});
+  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => {
     setForm((f) => ({ ...f, [k]: e.target.value }));
+    // Clear a field's error the moment the user edits it — the red ring shouldn't
+    // linger while they're mid-correction. Editing the password also clears a stale
+    // "Passwords don't match" on confirm, since it may now match again.
+    setErrors((prev) => {
+      if (!prev[k] && !(k === "password" && prev.confirm)) return prev;
+      const nextErrors = { ...prev, [k]: undefined };
+      if (k === "password") nextErrors.confirm = undefined;
+      return nextErrors;
+    });
+  };
+
+  // Validate the cheap-to-fix fields on blur. Only flag non-empty values —
+  // emptiness is already gated by the disabled submit button, so an error on an
+  // untouched-but-blurred field would be premature.
+  const validateEmail = () => {
+    const v = form.email.trim();
+    setErrors((e) => ({ ...e, email: v && !EMAIL_RE.test(v) ? "Enter a valid email address" : undefined }));
+  };
+  const validatePassword = () => {
+    setErrors((e) => ({
+      ...e,
+      password: form.password && form.password.length < 8 ? "Use at least 8 characters" : undefined,
+    }));
+  };
+  const validateConfirm = () => {
+    setErrors((e) => ({
+      ...e,
+      confirm: form.confirm && form.confirm !== form.password ? "Passwords don't match" : undefined,
+    }));
+  };
 
   // Tick down the resend cooldown once a code has been sent.
   useEffect(() => {
@@ -59,22 +93,24 @@ export default function RegisterPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!form.username.trim() || form.password.length < 8) {
-      toast.error("A username and an 8+ character password are required");
+    // Client-side checks anchor to the offending field inline rather than firing a
+    // detached toast, so the message sits where the fix happens.
+    const email = form.email.trim();
+    const nextErrors: Partial<Record<keyof typeof form, string>> = {};
+    if (!email || !EMAIL_RE.test(email)) nextErrors.email = "Enter a valid email address";
+    if (form.password.length < 8) nextErrors.password = "Use at least 8 characters";
+    if (form.password !== form.confirm) nextErrors.confirm = "Passwords don't match";
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...nextErrors }));
       return;
     }
-    if (!EMAIL_RE.test(form.email.trim())) {
-      toast.error("A valid email is required");
+    // Username + code presence is already enforced by the disabled submit button;
+    // this stays as a defensive backstop.
+    if (!form.username.trim() || !form.code.trim()) {
+      toast.error("Enter your username and the verification code we emailed you");
       return;
     }
-    if (!form.code.trim()) {
-      toast.error("Enter the verification code we emailed you");
-      return;
-    }
-    if (form.password !== form.confirm) {
-      toast.error("Passwords don't match");
-      return;
-    }
+    setErrors({});
     setLoading(true);
     try {
       const res = await register({
@@ -116,14 +152,14 @@ export default function RegisterPage() {
     }
   }
 
-  const labelCls = "text-xs font-medium text-zinc-500 uppercase tracking-wide";
+  const labelCls = "text-xs font-medium text-zinc-400 uppercase tracking-wide";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
       <div className="w-full max-w-sm my-auto">
         <div className="flex flex-col items-center mb-8">
           <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
           <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Create your account</h1>
-          <p className="text-zinc-500 text-sm mt-1">
+          <p className="text-zinc-400 text-sm mt-1">
             {inviteToken
               ? "You've been invited — your new account will join the workspace automatically."
               : "Join Cheers in a few seconds."}
@@ -158,6 +194,10 @@ export default function RegisterPage() {
                 autoComplete="email"
                 value={form.email}
                 onChange={set("email")}
+                onBlur={validateEmail}
+                error={!!errors.email}
+                aria-invalid={!!errors.email}
+                aria-describedby={errors.email ? "email-error" : undefined}
               />
               <Button
                 type="button"
@@ -170,6 +210,11 @@ export default function RegisterPage() {
                 {cooldown > 0 ? `Resend ${cooldown}s` : "Send code"}
               </Button>
             </div>
+            {errors.email && (
+              <p id="email-error" role="alert" className="text-xs text-red-400">
+                {errors.email}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className={labelCls}>Verification code</label>
@@ -189,7 +234,16 @@ export default function RegisterPage() {
               autoComplete="new-password"
               value={form.password}
               onChange={set("password")}
+              onBlur={validatePassword}
+              error={!!errors.password}
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? "password-error" : undefined}
             />
+            {errors.password && (
+              <p id="password-error" role="alert" className="text-xs text-red-400">
+                {errors.password}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className={labelCls}>Confirm password</label>
@@ -199,7 +253,16 @@ export default function RegisterPage() {
               autoComplete="new-password"
               value={form.confirm}
               onChange={set("confirm")}
+              onBlur={validateConfirm}
+              error={!!errors.confirm}
+              aria-invalid={!!errors.confirm}
+              aria-describedby={errors.confirm ? "confirm-error" : undefined}
             />
+            {errors.confirm && (
+              <p id="confirm-error" role="alert" className="text-xs text-red-400">
+                {errors.confirm}
+              </p>
+            )}
           </div>
 
           <Button
@@ -216,7 +279,7 @@ export default function RegisterPage() {
             Create account
           </Button>
 
-          <p className="text-center text-xs text-zinc-500">
+          <p className="text-center text-xs text-zinc-400">
             Already have an account?{" "}
             <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
               Sign in

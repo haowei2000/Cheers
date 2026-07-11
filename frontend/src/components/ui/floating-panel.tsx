@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Maximize2, Minimize2, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -64,6 +64,24 @@ export function FloatingPanel({
       return !c;
     });
   };
+
+  // On mobile the panel renders as a full-screen sheet that covers the app —
+  // modal-like — so it earns the same Esc-to-dismiss as Dialog. The desktop
+  // window is non-modal (chat stays usable behind it) and keeps close-button
+  // only. Skip defaultPrevented so a nested popover/menu still claims its own Esc.
+  useEffect(() => {
+    if (!isMobile) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        // Claim this Escape so, with several sheets/menus mounted, only the first
+        // to handle it closes — the rest see defaultPrevented and stand down.
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isMobile, onClose]);
 
   // Collapsed keeps the dragged position but sheds the resized width/height.
   const style: CSSProperties = collapsed && !isMobile ? drag.posStyle : drag.style;

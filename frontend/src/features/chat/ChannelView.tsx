@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
-import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
+import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
 import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
@@ -19,6 +19,7 @@ import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
+import { Button } from "@/components/ui/button";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 const ChannelFilesDialog = lazy(() =>
@@ -87,6 +88,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [joining, setJoining] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  // Distinguishes a failed initial history load from a genuinely empty channel —
+  // without it a network/server failure renders the "No messages yet" empty state.
+  const [loadError, setLoadError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [mentionables, setMentionables] = useState<MentionCandidate[]>([]);
@@ -190,21 +194,31 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     lastSeqRef.current = max;
   }, [messages]);
 
-  // Initial history load (backend returns ascending: oldest first).
-  useEffect(() => {
-    if (!channel || isPreview) {
-      setMessages([]);
-      return;
-    }
+  // Initial history load (backend returns ascending: oldest first). A failure
+  // sets loadError so the render shows a retryable error region instead of the
+  // "No messages yet" empty state (a failed fetch must not masquerade as empty).
+  const loadHistory = useCallback(() => {
+    if (!channel || isPreview) return;
     setLoading(true);
+    setLoadError(false);
     setMessages([]);
     listMessages(channel.channel_id, { limit: 50 })
       .then((res) => {
         setMessages(sortMessages(res.messages ?? res.data ?? []));
         setHasMore(res.meta?.has_more_before ?? false);
       })
-      .catch(() => {})
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
+  }, [channel, isPreview]);
+
+  useEffect(() => {
+    if (!channel || isPreview) {
+      setMessages([]);
+      setLoadError(false);
+      return;
+    }
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.channel_id, isPreview]);
 
   // Opening a channel marks it read: clear the unread + mention badges
@@ -266,6 +280,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       });
       setMessages((prev) => mergeMessages(prev, res.messages ?? res.data ?? []));
       setHasMore(res.meta?.has_more_before ?? false);
+    } catch {
+      // hasMore stays true, so scrolling up again retries this page. Stable id so a
+      // momentum-scroll at the top that re-fires loadMore collapses to one toast.
+      toast.error("Couldn't load older messages — scroll up to try again", {
+        id: "load-older-failed",
+      });
     } finally {
       setLoadingMore(false);
     }
@@ -827,7 +847,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
   if (!channel) {
     return (
-      <div className="relative flex-1 flex items-center justify-center text-zinc-600 text-sm flex-col gap-3">
+      <div className="relative flex-1 flex items-center justify-center text-zinc-400 text-sm flex-col gap-3">
         {sidebarToggle && (
           <div className="absolute top-2.5 left-3">{sidebarToggle}</div>
         )}
@@ -876,9 +896,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           <Hash className="w-10 h-10 text-zinc-700" />
           <div className="text-zinc-100 font-semibold text-lg">#{channel.name}</div>
           {channel.purpose && (
-            <p className="text-sm text-zinc-500 max-w-md">{channel.purpose}</p>
+            <p className="text-sm text-zinc-400 max-w-md">{channel.purpose}</p>
           )}
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-zinc-400">
             You&apos;re not a member of this channel yet. Join to read and send
             messages.
           </p>
@@ -927,13 +947,13 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         {channel.purpose && (
           <div className="hidden md:flex items-center gap-3 min-w-0">
             <div className="w-px h-4 bg-zinc-700" />
-            <span className="text-xs text-zinc-500 truncate">
+            <span className="text-xs text-zinc-400 truncate">
               {channel.purpose}
             </span>
           </div>
         )}
         <div className="flex-1" />
-        <div className="hidden md:flex items-center gap-3 text-xs text-zinc-500">
+        <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
           {onlineCount > 0 && (
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -1035,6 +1055,19 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
         </div>
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center"
+        >
+          <AlertCircle className="w-8 h-8 text-zinc-700" />
+          <p className="text-sm text-zinc-400 max-w-xs">
+            Couldn&apos;t load messages. Check your connection and try again.
+          </p>
+          <Button variant="secondary" size="sm" onClick={loadHistory}>
+            Retry
+          </Button>
+        </div>
       ) : (
         <ResolveRefContext.Provider value={resolveAndOpenRef}>
           <MessageList
@@ -1059,7 +1092,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           <span className="text-zinc-300 font-medium">
             {selectedIds.size} selected
           </span>
-          <span className="text-zinc-600">· click messages to toggle</span>
+          <span className="text-zinc-400">· click messages to toggle</span>
           <div className="flex-1" />
           <button
             type="button"
@@ -1087,7 +1120,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           <button
             type="button"
             onClick={clearSelection}
-            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-500 hover:text-zinc-200"
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-400 hover:text-zinc-200"
           >
             <X className="w-3.5 h-3.5" />
             Cancel
@@ -1099,9 +1132,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       {replyTo && !selectMode && (
         <div className="flex items-center gap-2 px-4 py-1.5 border-t border-zinc-800 bg-zinc-900/60 text-xs">
           <Reply className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-          <span className="text-zinc-500 flex-shrink-0">Replying to</span>
+          <span className="text-zinc-400 flex-shrink-0">Replying to</span>
           <span className="text-zinc-300 font-medium flex-shrink-0">{displayName(replyTo)}</span>
-          <span className="text-zinc-600 truncate italic">
+          <span className="text-zinc-400 truncate italic">
             {(replyTo.content ?? "").replace(/<#file:[^>]+>/g, "").trim().slice(0, 120)}
           </span>
           <button

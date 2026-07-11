@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listChannels, listDms } from "@/api/channels";
 import toast from "react-hot-toast";
+import { Button } from "@/components/ui/button";
 import { useChatStore } from "@/stores/chatStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -52,8 +53,12 @@ export default function ChatLayout() {
   const [navOpen, setNavOpen] = useState(false);
 
   // Load workspaces + the personal workspace on mount. The personal workspace is the
-  // user's home (DMs + private space), so it's the default selection.
-  useEffect(() => {
+  // user's home (DMs + private space), so it's the default selection. On failure we
+  // raise bootstrapFailed and show a retry panel in the main area instead of the
+  // pristine empty states — an unreachable gateway must never look like a brand-new
+  // account (mirrors BotsManager's loadFailed pattern).
+  const [bootstrapFailed, setBootstrapFailed] = useState(false);
+  const loadWorkspaces = useCallback(() => {
     Promise.all([listWorkspaces(), getPersonalWorkspace().catch(() => null)])
       .then(([ws, personal]) => {
         setWorkspaces(ws);
@@ -61,8 +66,18 @@ export default function ChatLayout() {
         if (!selectedWorkspaceId) {
           selectWorkspace(personal?.workspace_id ?? ws[0]?.workspace_id ?? null);
         }
+        setBootstrapFailed(false);
       })
-      .catch(() => {});
+      .catch(() => {
+        setBootstrapFailed(true);
+        toast.error(
+          "Couldn't load your workspaces — check the gateway connection, then retry."
+        );
+      });
+  }, [selectedWorkspaceId, setWorkspaces, setPersonalWorkspace, selectWorkspace]);
+  useEffect(() => {
+    loadWorkspaces();
+    // Run once on mount; the Retry button re-invokes loadWorkspaces directly.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load channels when the workspace changes. DMs are consolidated into the
@@ -79,7 +94,9 @@ export default function ChatLayout() {
       isPersonal ? listDms().catch(() => []) : Promise.resolve([]),
     ])
       .then(([chs, dms]) => setChannels([...chs, ...dms]))
-      .catch(() => {});
+      .catch(() => {
+        toast.error("Couldn't load channels — check the gateway connection.");
+      });
   }, [selectedWorkspaceId, personalWorkspace, setChannels]);
 
   useEffect(() => {
@@ -162,6 +179,19 @@ export default function ChatLayout() {
   const selectedChannel =
     channels.find((c) => c.channel_id === selectedChannelId) ?? null;
 
+  // Shown in the main area when the mount-time load failed, so a dead gateway
+  // surfaces a reason + retry instead of silent empty states.
+  const bootstrapErrorPanel = (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="max-w-xs text-sm text-red-400">
+        Couldn't load your workspaces. Check the gateway connection, then retry.
+      </p>
+      <Button size="sm" onClick={loadWorkspaces}>
+        Retry
+      </Button>
+    </div>
+  );
+
   if (isMobile) {
     const showChat = chatPushed && !!selectedChannel;
     return (
@@ -170,6 +200,8 @@ export default function ChatLayout() {
           <main className="flex-1 min-w-0 flex flex-col">
             <ChannelView channel={selectedChannel} onBack={closeChatScreen} />
           </main>
+        ) : bootstrapFailed ? (
+          <main className="flex-1 min-w-0 flex flex-col">{bootstrapErrorPanel}</main>
         ) : (
           <>
             <Sidebar
@@ -204,11 +236,15 @@ export default function ChatLayout() {
         <Sidebar workspace={selectedWorkspace} />
       </div>
       <main className="flex-1 min-w-0 flex flex-col">
-        <ChannelView
-          channel={selectedChannel}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={toggleSidebar}
-        />
+        {bootstrapFailed ? (
+          bootstrapErrorPanel
+        ) : (
+          <ChannelView
+            channel={selectedChannel}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={toggleSidebar}
+          />
+        )}
       </main>
     </div>
   );

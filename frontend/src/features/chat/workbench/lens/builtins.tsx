@@ -19,7 +19,7 @@ function TableLens({ data, config, onChange }: LensProps) {
     <div className="p-2 text-xs overflow-auto h-full">
       <table className="w-full border-collapse">
         <thead>
-          <tr className="text-zinc-500 text-left">
+          <tr className="text-zinc-400 text-left">
             {columns.map((c) => (
               <th key={c.key} className="p-1 font-normal">{c.label}</th>
             ))}
@@ -51,7 +51,7 @@ function TableLens({ data, config, onChange }: LensProps) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length + 1} className="p-3 text-zinc-600">Empty — click "Add row" below</td>
+              <td colSpan={columns.length + 1} className="p-3 text-zinc-400">Empty — click "Add row" below</td>
             </tr>
           )}
         </tbody>
@@ -95,20 +95,20 @@ function KanbanLens({ data, onChange }: LensProps) {
 
   return (
     <div className="p-2 text-xs flex gap-2 items-start overflow-auto h-full">
-      {cols.length === 0 && <div className="p-3 text-zinc-600">Empty board</div>}
+      {cols.length === 0 && <div className="p-3 text-zinc-400">Empty board</div>}
       {cols.map((c, ci) => (
         <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded ">
           <div className="px-2 py-1 text-zinc-300 border-b border-zinc-800">
-            {c.name} <span className="text-zinc-600">{c.items.length}</span>
+            {c.name} <span className="text-zinc-400">{c.items.length}</span>
           </div>
           <div className="p-1 space-y-1">
             {c.items.map((it, ii) => (
               <div key={ii} className="group bg-zinc-800/70 rounded px-1.5 py-1 text-zinc-200 flex items-center gap-1">
-                <button onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-20">
+                <button onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
                   <ChevronLeft className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
                 </button>
                 <span className="flex-1 break-words">{it}</span>
-                <button onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-20">
+                <button onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
                   <ChevronRight className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
                 </button>
                 <button onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
@@ -122,7 +122,7 @@ function KanbanLens({ data, onChange }: LensProps) {
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && addItem(ci)}
                 placeholder="+ Task"
-                className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-600"
+                className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-400"
               />
               <button onClick={() => addItem(ci)} title="Add task">
                 <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
@@ -225,7 +225,7 @@ function ChartLens({ data }: LensProps) {
   const [hoverX, setHoverX] = useState<number | null>(null);
   if (series.length === 0) {
     return (
-      <div className="p-3 text-zinc-600 text-xs">
+      <div className="p-3 text-zinc-400 text-xs">
         Empty — this file holds metric curves: {'{ "series": [{ "name": "loss", "points": [[step, value], …] }] }'}
       </div>
     );
@@ -314,24 +314,24 @@ function ChartLens({ data }: LensProps) {
         {yTicks.map((t) => (
           <g key={`y${t}`}>
             <line x1={PAD.l} y1={sy(t)} x2={CW - PAD.r} y2={sy(t)} stroke="#27272a" strokeWidth="1" />
-            <text x={PAD.l - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle" fontSize="10" fill="#71717a" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <text x={PAD.l - 6} y={sy(t)} textAnchor="end" dominantBaseline="middle" fontSize="10" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
               {fmtNum(t, yStep)}
             </text>
           </g>
         ))}
         {xTicks.map((t) => (
-          <text key={`x${t}`} x={sx(t)} y={CH - PAD.b + 14} textAnchor="middle" fontSize="10" fill="#71717a" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <text key={`x${t}`} x={sx(t)} y={CH - PAD.b + 14} textAnchor="middle" fontSize="10" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
             {fmtNum(t, xStep)}
           </text>
         ))}
         <line x1={PAD.l} y1={CH - PAD.b} x2={CW - PAD.r} y2={CH - PAD.b} stroke="#3f3f46" strokeWidth="1" />
         {d?.yLabel && (
-          <text x={PAD.l} y={PAD.t - 3} fontSize="10" fill="#71717a">
+          <text x={PAD.l} y={PAD.t - 3} fontSize="10" fill="#a1a1aa">
             {d.yLabel}
           </text>
         )}
         {d?.xLabel && (
-          <text x={CW - PAD.r} y={CH - 4} textAnchor="end" fontSize="10" fill="#71717a">
+          <text x={CW - PAD.r} y={CH - 4} textAnchor="end" fontSize="10" fill="#a1a1aa">
             {d.xLabel}
           </text>
         )}
@@ -364,7 +364,7 @@ function ChartLens({ data }: LensProps) {
             ))}
             <g transform={`translate(${tipX}, ${PAD.t + 4})`}>
               <rect width={tipW} height={16 + hoverRows.length * 14} rx="4" fill="#18181b" stroke="#3f3f46" strokeWidth="1" />
-              <text x="8" y="12" fontSize="10" fill="#71717a" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <text x="8" y="12" fontSize="10" fill="#a1a1aa" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {d?.xLabel ?? "x"} {fmtNum(hx)}
               </text>
               {hoverRows.map((r, j) => (

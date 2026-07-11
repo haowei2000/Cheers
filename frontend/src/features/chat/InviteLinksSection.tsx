@@ -116,10 +116,10 @@ export function InviteLinksSection({
 
   return (
     <div className="space-y-2">
-      <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+      <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
         Invite links
       </label>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-zinc-400">
         Anyone with a link can join{channelId ? " and lands in this channel" : ""} — no
         account needed yet. Revoke a link to stop it working.
       </p>
@@ -155,7 +155,7 @@ export function InviteLinksSection({
                   <p className="text-xs font-mono text-zinc-300 truncate">
                     {inviteUrl(l.token)}
                   </p>
-                  <p className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+                  <p className="text-[11px] text-zinc-400 flex items-center gap-1.5">
                     {l.channel_name && !channelId && (
                       <span className="inline-flex items-center gap-0.5">
                         <Hash className="w-3 h-3" />

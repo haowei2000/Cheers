@@ -51,7 +51,7 @@ function SystemMessage({ message }: { message: Message }) {
   return (
     <div className="flex items-center gap-3 py-1 px-4">
       <div className="flex-1 h-px bg-zinc-800" />
-      <span className="text-xs text-zinc-500 whitespace-nowrap">
+      <span className="text-xs text-zinc-400 whitespace-nowrap">
         {message.content}
       </span>
       <div className="flex-1 h-px bg-zinc-800" />
@@ -76,9 +76,9 @@ async function copyMessage(message: Message) {
 /** Hover toolbar: reply · copy · forward · select. Hidden while streaming. */
 function ActionBar({ message, actions }: { message: Message; actions: MessageActionHandlers }) {
   const btn =
-    "flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-700/70";
+    "flex items-center justify-center w-7 h-7 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/70";
   return (
-    <div className="absolute -top-3 right-4 z-10 hidden group-hover:flex items-center gap-0.5 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg">
+    <div className="absolute -top-3 right-4 z-10 flex opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity">
       <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
         <Reply className="w-3.5 h-3.5" />
       </button>
@@ -111,14 +111,14 @@ function SendStatus({
 }) {
   if (message._status === "sending") {
     return (
-      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-500">
+      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-400">
         <Loader2 className="w-3 h-3 animate-spin" />
         Sending…
       </div>
     );
   }
   return (
-    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-red-400">
+    <div role="alert" className="mt-0.5 flex items-center gap-1.5 text-[11px] text-red-400">
       <AlertCircle className="w-3 h-3 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
@@ -152,7 +152,7 @@ function ReplyQuote({
     : "original message not in view";
   const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
   return (
-    <div className="flex items-center gap-1.5 mb-0.5 pl-2 border-l-2 border-zinc-700 text-[11px] text-zinc-500 max-w-full">
+    <div className="flex items-center gap-1.5 mb-0.5 pl-2 border-l-2 border-zinc-700 text-[11px] text-zinc-400 max-w-full">
       <Reply className="w-3 h-3 flex-shrink-0 rotate-180" />
       {who && <span className="font-medium text-zinc-400 flex-shrink-0">{who}</span>}
       <span className="truncate italic">{excerpt}</span>
@@ -194,7 +194,7 @@ export const MessageItem = memo(function MessageItem({
       <div className="px-4 py-0.5 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
-        <span className="text-zinc-600 italic text-sm">
+        <span className="text-zinc-400 italic text-sm">
           This message was deleted
         </span>
       </div>
@@ -253,8 +253,17 @@ export const MessageItem = memo(function MessageItem({
           if ((e.target as HTMLElement).closest("button, a")) return;
           actions?.onToggleSelect(message);
         },
+        onKeyDown: (e: React.KeyboardEvent) => {
+          // The row is announced as role="checkbox"; make it keyboard-operable —
+          // Space/Enter toggles it. Ignore keys bubbling from inner controls.
+          if (e.key !== " " && e.key !== "Enter") return;
+          if ((e.target as HTMLElement).closest("button, a")) return;
+          e.preventDefault();
+          actions?.onToggleSelect(message);
+        },
         role: "checkbox" as const,
         "aria-checked": selected,
+        tabIndex: 0,
       }
     : {};
 
@@ -270,7 +279,7 @@ export const MessageItem = memo(function MessageItem({
       >
         {selectable && <SelectBox selected={selected} />}
         <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
-          <span className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity select-none">
+          <span className="text-[11px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity select-none">
             {formatTime(message.created_at)}
           </span>
         </div>
@@ -341,7 +350,7 @@ export const MessageItem = memo(function MessageItem({
               BOT
             </span>
           )}
-          <span className="text-[11px] text-zinc-600 tabular-nums">
+          <span className="text-[11px] text-zinc-400 tabular-nums">
             {formatTime(message.created_at)}
           </span>
         </div>
@@ -442,12 +451,12 @@ function MessageBody({
     return (
       <div className="flex items-center gap-2 py-1">
         <div className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:0ms]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:150ms]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:300ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:150ms]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
         </div>
         {message._trace && (
-          <span className="text-xs text-zinc-500 italic truncate">
+          <span className="text-xs text-zinc-400 italic truncate">
             {message._trace}
           </span>
         )}
@@ -484,10 +493,10 @@ function MessageBody({
           </p>
         ))}
       {message._streaming && (
-        <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink ml-0.5 align-text-bottom" />
+        <span className="inline-block w-0.5 h-4 bg-zinc-400 animate-blink motion-reduce:animate-none ml-0.5 align-text-bottom" />
       )}
       {active && message._trace && (
-        <p className="text-xs text-zinc-500 italic mt-0.5">{message._trace}</p>
+        <p className="text-xs text-zinc-400 italic mt-0.5">{message._trace}</p>
       )}
       {active && isBot && channelId && (
         <div className="mt-1">

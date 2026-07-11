@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import toast from "react-hot-toast";
-import { Bot, KeyRound, RefreshCw, CircleDot, Ban, Wand2 } from "lucide-react";
+import { Bot, KeyRound, RefreshCw, Circle, CircleDot, Ban, Wand2 } from "lucide-react";
 import {
   listBots,
   issueBotToken,
@@ -36,13 +36,27 @@ function BotRow({
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium truncate">{bot.display_name || bot.username}</p>
-        <p className="text-[11px] text-zinc-500 truncate">@{bot.username}</p>
+        <p className="text-[11px] text-zinc-400 truncate">@{bot.username}</p>
       </div>
+      {/* Status is carried by shape (filled=online vs outline=offline) + an accessible
+          name, never by hue alone (HIG "never a single channel"). */}
       {bot.is_disabled ? (
-        <Ban className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+        <Ban
+          className="w-3.5 h-3.5 text-red-400 flex-shrink-0"
+          role="img"
+          aria-label="Disabled"
+        />
+      ) : bot.is_online ? (
+        <Circle
+          className="w-3 h-3 flex-shrink-0 fill-emerald-400 text-emerald-400"
+          role="img"
+          aria-label="Online"
+        />
       ) : (
         <CircleDot
-          className={`w-3 h-3 flex-shrink-0 ${bot.is_online ? "text-emerald-400" : "text-zinc-600"}`}
+          className="w-3 h-3 flex-shrink-0 text-zinc-500"
+          role="img"
+          aria-label="Offline"
         />
       )}
     </button>
@@ -106,7 +120,7 @@ export function BotsManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Bot className="w-3.5 h-3.5" />
         Bots
         <Button
@@ -133,8 +147,8 @@ export function BotsManager() {
             Couldn't load bots — check the gateway connection, then press refresh.
           </p>
         ) : (
-          <p className="text-sm text-zinc-600 px-1">
-            No bots yet. Click <span className="text-zinc-400">Add bot</span> to register one and
+          <p className="text-sm text-zinc-400 px-1">
+            No bots yet. Click <span className="text-zinc-200">Add bot</span> to register one and
             connect it with the Rust ACP connector.
           </p>
         )
@@ -165,7 +179,7 @@ export function BotsManager() {
                 onPoll={pollRefresh}
               />
             ) : (
-              <div className="rounded-xl bg-zinc-900/60 p-10 text-center text-sm text-zinc-600">
+              <div className="rounded-xl bg-zinc-900/60 p-10 text-center text-sm text-zinc-400">
                 Select a bot to manage it.
               </div>
             )}
@@ -191,7 +205,7 @@ export function BotsManager() {
             <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-zinc-400">
               Set this as <code>bot_token_env</code> for the connector account.
             </span>
             <CopyButton value={issued.token} label="Copy token" />

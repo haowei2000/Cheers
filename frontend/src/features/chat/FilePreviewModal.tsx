@@ -226,7 +226,7 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
       {kind === "audio" && <AudioBody file={file} />}
       {kind === "office" && <OfficeBody file={file} />}
       {kind === "none" && <UnsupportedBody file={file} />}
-      <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs text-zinc-500">
+      <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs text-zinc-400">
         <span>{typeof file.size_bytes === "number" ? formatBytes(file.size_bytes) : ""}</span>
         <button
           type="button"

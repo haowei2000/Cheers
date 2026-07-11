@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
         <div className="flex flex-col items-center mb-8">
           <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
           <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Reset your password</h1>
-          <p className="text-zinc-500 text-sm mt-1">We'll email you a one-time code.</p>
+          <p className="text-zinc-400 text-sm mt-1">We'll email you a one-time code.</p>
         </div>
 
         <div className="bg-zinc-900 rounded-2xl p-6 shadow-xl">
@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
               >
                 Enter code
               </Button>
-              <p className="text-center text-xs text-zinc-500">
+              <p className="text-center text-xs text-zinc-400">
                 <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
                   Back to sign in
                 </Link>
@@ -56,7 +56,7 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                   Email
                 </label>
                 <Input
@@ -71,7 +71,7 @@ export default function ForgotPasswordPage() {
               <Button type="submit" className="w-full mt-2" loading={loading} disabled={!email.trim()}>
                 Send reset code
               </Button>
-              <p className="text-center text-xs text-zinc-500">
+              <p className="text-center text-xs text-zinc-400">
                 <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
                   Back to sign in
                 </Link>

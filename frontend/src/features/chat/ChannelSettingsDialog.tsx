@@ -19,6 +19,14 @@ import {
 const CHANNEL_ROLES = ["owner", "admin", "member", "readonly"] as const;
 // Bots can never own/administer a channel — the backend rejects those roles.
 const BOT_ROLES = ["member", "readonly"] as const;
+// Human labels for the raw role constants — the wire value stays raw, only the
+// visible option text changes.
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+  readonly: "Read-only",
+};
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { InviteLinksSection } from "./InviteLinksSection";
@@ -46,6 +54,9 @@ export function ChannelSettingsDialog({
   const [purpose, setPurpose] = useState(channel.purpose ?? "");
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [savingMeta, setSavingMeta] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<InvitableItem[]>([]);
@@ -129,7 +140,7 @@ export function ChannelSettingsDialog({
   }
 
   async function doDelete() {
-    if (!confirm(`Delete channel "${channel.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
     try {
       await deleteChannel(channel.channel_id);
       setChannels(channels.filter((c) => c.channel_id !== channel.channel_id));
@@ -138,6 +149,7 @@ export function ChannelSettingsDialog({
       onClose();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to delete");
+      setDeleting(false);
     }
   }
 
@@ -151,7 +163,6 @@ export function ChannelSettingsDialog({
   }
 
   async function leave() {
-    if (!confirm(`Leave channel "${channel.name}"?`)) return;
     try {
       await leaveChannel(channel.channel_id);
       setChannels(channels.filter((c) => c.channel_id !== channel.channel_id));
@@ -168,7 +179,7 @@ export function ChannelSettingsDialog({
       <div className="space-y-5">
         {/* Meta */}
         <div className="space-y-2">
-          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Name
           </label>
           <input
@@ -177,7 +188,7 @@ export function ChannelSettingsDialog({
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
-          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Purpose
           </label>
           <input
@@ -198,7 +209,7 @@ export function ChannelSettingsDialog({
 
         {/* Members */}
         <div className="space-y-2">
-          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Members ({members.length})
           </label>
           <div className="max-h-48 overflow-y-auto rounded-lg bg-zinc-950/40 divide-y divide-zinc-800/60">
@@ -247,12 +258,14 @@ export function ChannelSettingsDialog({
                     >
                       {(m.member_type === "bot" ? BOT_ROLES : CHANNEL_ROLES).map((r) => (
                         <option key={r} value={r}>
-                          {r}
+                          {ROLE_LABELS[r] ?? r}
                         </option>
                       ))}
                     </select>
                   ) : (
-                    <p className="text-[11px] text-zinc-500">{m.role ?? "member"}</p>
+                    <p className="text-[11px] text-zinc-400">
+                      {ROLE_LABELS[m.role ?? "member"] ?? m.role ?? "member"}
+                    </p>
                   )}
                 </div>
                 {canManage && m.member_id !== me?.user_id && m.role !== "owner" && (
@@ -267,7 +280,7 @@ export function ChannelSettingsDialog({
               </div>
             ))}
             {members.length === 0 && (
-              <div className="px-3 py-4 text-xs text-zinc-600 text-center">No members yet</div>
+              <div className="px-3 py-4 text-xs text-zinc-400 text-center">No members yet</div>
             )}
           </div>
 
@@ -285,7 +298,7 @@ export function ChannelSettingsDialog({
               {(results.length > 0 || searching) && (
                 <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
                   {searching && (
-                    <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
+                    <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
                   )}
                   {results.map((it) => (
                     <button
@@ -313,10 +326,10 @@ export function ChannelSettingsDialog({
                         )}
                       </span>
                       {it.already_member ? (
-                        <span className="ml-auto text-xs text-zinc-600">Already in</span>
+                        <span className="ml-auto text-xs text-zinc-400">Already in</span>
                       ) : (
                         it.username && (
-                          <span className="ml-auto text-xs text-zinc-500">@{it.username}</span>
+                          <span className="ml-auto text-xs text-zinc-400">@{it.username}</span>
                         )
                       )}
                     </button>
@@ -337,32 +350,62 @@ export function ChannelSettingsDialog({
           />
         )}
 
-        {/* Danger zone */}
+        {/* Danger zone — a two-step inline confirm (no native confirm(), whose
+            Enter default runs the destructive "OK"). Cancel leads and takes
+            focus; the delete action is never the keyboard default. */}
         {canManage && (
-          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-zinc-200">Delete channel</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Deletes its messages and members too. This cannot be undone.</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Deletes its messages and members too. This cannot be undone.</p>
             </div>
-            <Button variant="danger" size="sm" onClick={() => void doDelete()}>
-              <Trash2 className="w-3.5 h-3.5" />
-              Delete
-            </Button>
+            {confirmingDelete ? (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  autoFocus
+                  disabled={deleting}
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  Cancel
+                </Button>
+                <Button variant="danger" size="sm" loading={deleting} onClick={() => void doDelete()}>
+                  Delete channel
+                </Button>
+              </div>
+            ) : (
+              <Button variant="danger" size="sm" onClick={() => setConfirmingDelete(true)}>
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </Button>
+            )}
           </div>
         )}
 
         {/* Leave — only for actual members (the backend blocks the last owner).
             myRole is undefined for a global admin viewing a channel they're not in. */}
         {myRole && (
-          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-zinc-200">Leave channel</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Remove yourself from this channel.</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Remove yourself from this channel.</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => void leave()}>
-              <LogOut className="w-3.5 h-3.5" />
-              Leave
-            </Button>
+            {confirmingLeave ? (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button variant="ghost" size="sm" autoFocus onClick={() => setConfirmingLeave(false)}>
+                  Cancel
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => void leave()}>
+                  Leave channel
+                </Button>
+              </div>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={() => setConfirmingLeave(true)}>
+                <LogOut className="w-3.5 h-3.5" />
+                Leave
+              </Button>
+            )}
           </div>
         )}
       </div>

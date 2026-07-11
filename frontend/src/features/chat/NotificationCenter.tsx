@@ -106,7 +106,7 @@ export function NotificationCenter() {
                         : "Workspace invite"}{" "}
                       · {label(n)}
                     </p>
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-zinc-400">
                       Role {n.role}
                       {n.invited_by ? ` · from ${n.invited_by}` : ""}
                     </p>

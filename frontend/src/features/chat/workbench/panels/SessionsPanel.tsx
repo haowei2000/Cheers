@@ -62,7 +62,7 @@ function statusColor(s: string): string {
     case "expired":
       return "text-red-400";
     default:
-      return "text-zinc-600";
+      return "text-zinc-500";
   }
 }
 
@@ -169,7 +169,7 @@ function SessionCard({
           {s.status}
         </span>
         <span
-          className="tabular-nums text-zinc-600 shrink-0"
+          className="tabular-nums text-zinc-400 shrink-0"
           title={`created ${fmtTime(s.created_at)}`}
         >
           {fmtTime(s.created_at)}
@@ -188,7 +188,7 @@ function SessionCard({
             disabled={busy}
             title="Close this session"
             onClick={() => run(() => closeChannelBotSession(channelId, s.bot_id, s.session_id))}
-            className="text-zinc-600 hover:text-red-300 disabled:opacity-40 shrink-0"
+            className="text-zinc-500 hover:text-red-300 disabled:opacity-40 shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -198,23 +198,23 @@ function SessionCard({
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
         <div className="mt-2 border-t border-zinc-800/60 pt-2 space-y-1.5">
-          <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-            <span className="text-zinc-600 w-12 shrink-0">session</span>
-            <span className="font-mono text-zinc-400" title={s.session_id}>
+          <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+            <span className="w-12 shrink-0">session</span>
+            <span className="font-mono text-zinc-200" title={s.session_id}>
               {s.session_id.slice(0, 8)}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-            <span className="text-zinc-600 w-12 shrink-0">last used</span>
-            <span className="tabular-nums text-zinc-400">{fmtTime(s.last_used_at)}</span>
-            {!canMode && mode && <span className="text-zinc-600">· mode {mode}</span>}
+          <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+            <span className="w-12 shrink-0">last used</span>
+            <span className="tabular-nums text-zinc-200">{fmtTime(s.last_used_at)}</span>
+            {!canMode && mode && <span>· mode {mode}</span>}
           </div>
 
           {(canMode || canCfg) && (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {canMode && (
                 <label className="inline-flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-500">mode</span>
+                  <span className="text-[10px] text-zinc-400">mode</span>
                   <select
                     value={controls!.allowed_modes.includes(mode) ? mode : ""}
                     disabled={busy}
@@ -240,7 +240,7 @@ function SessionCard({
                   const cur = cfgValues[opt.id] ?? opt.currentValue ?? "";
                   return (
                     <label key={opt.id} className="inline-flex items-center gap-1">
-                      <span className="text-[10px] text-zinc-500">{opt.name}</span>
+                      <span className="text-[10px] text-zinc-400">{opt.name}</span>
                       <select
                         value={opt.options.some((o) => o.value === cur) ? cur : ""}
                         disabled={busy}
@@ -267,17 +267,17 @@ function SessionCard({
             </div>
           )}
 
-          <div className="text-[10px] text-zinc-500">
+          <div className="text-[10px] text-zinc-400">
             <div className="flex items-center gap-1">
-              <span className="text-zinc-600 w-12 shrink-0">wd</span>
-              <span className="font-mono text-zinc-400 truncate" title={cwd || "connector default"}>
+              <span className="w-12 shrink-0">wd</span>
+              <span className="font-mono text-zinc-200 truncate" title={cwd || "connector default"}>
                 {cwd || "default"}
               </span>
-              {cwd && <span className="text-zinc-700">· immutable</span>}
+              {cwd && <span>· immutable</span>}
             </div>
             {dirsDraft === null ? (
               <div className="flex items-start gap-1 mt-0.5">
-                <span className="text-zinc-600 w-12 shrink-0">roots</span>
+                <span className="text-zinc-400 w-12 shrink-0">roots</span>
                 <span className="font-mono text-zinc-400 flex-1 break-all">
                   {dirs.length ? dirs.join(", ") : "—"}
                 </span>
@@ -315,7 +315,7 @@ function SessionCard({
                     type="button"
                     disabled={busy}
                     onClick={() => setDirsDraft(null)}
-                    className="text-zinc-500 hover:text-zinc-300"
+                    className="text-zinc-400 hover:text-zinc-200"
                   >
                     cancel
                   </button>
@@ -395,7 +395,7 @@ function NewSessionDialog({
     <Dialog title="New session" onClose={onClose} maxWidth="max-w-sm">
       <div className="space-y-3">
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Bot</span>
+          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Bot</span>
           <select
             value={botId}
             disabled={busy}
@@ -410,7 +410,7 @@ function NewSessionDialog({
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Working directory (optional)</span>
+          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Working directory (optional)</span>
           <input
             type="text"
             value={cwd}
@@ -426,17 +426,17 @@ function NewSessionDialog({
             {meta?.allowed_roots.map((r) => <option key={r} value={r} />)}
           </datalist>
           {meta && meta.allowed_roots.length > 0 && (
-            <span className="block text-[10px] text-zinc-600">
+            <span className="block text-[10px] text-zinc-400">
               {meta.backend_may_set_cwd
                 ? "Must be inside an allowed root: "
-                : "This connector does not let the platform set a cwd. Allowed roots: "}
+                : "This connector does not let the platform set a working directory. Allowed roots: "}
               {meta.allowed_roots.map((r, i) => (
                 <button
                   key={r}
                   type="button"
                   disabled={busy}
                   onClick={() => setCwd(r)}
-                  className="font-mono text-zinc-500 hover:text-indigo-300 underline decoration-dotted"
+                  className="font-mono text-zinc-400 hover:text-indigo-300 underline decoration-dotted"
                 >
                   {r}
                   {i < meta.allowed_roots.length - 1 ? ", " : ""}
@@ -446,7 +446,7 @@ function NewSessionDialog({
           )}
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Extra roots (optional)</span>
+          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Extra roots (optional)</span>
           <textarea
             value={dirs}
             disabled={busy}
@@ -455,7 +455,7 @@ function NewSessionDialog({
             onChange={(e) => setDirs(e.target.value)}
             className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
-          <span className="block text-[10px] text-zinc-600">One absolute path per line.</span>
+          <span className="block text-[10px] text-zinc-400">One absolute path per line.</span>
         </label>
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
@@ -553,7 +553,7 @@ function SessionsBody({
   return (
     <div className="p-2 space-y-2">
       <div className="flex items-center gap-2 px-1">
-        <span className="text-[11px] text-zinc-500">
+        <span className="text-[11px] text-zinc-400">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
         </span>
         <div className="flex-1" />
@@ -570,7 +570,7 @@ function SessionsBody({
       </div>
 
       {sessions.length === 0 ? (
-        <div className="px-3 py-6 text-xs text-zinc-600 flex items-center gap-2">
+        <div className="px-3 py-6 text-xs text-zinc-400 flex items-center gap-2">
           <Layers className="w-4 h-4" />
           No sessions yet
         </div>

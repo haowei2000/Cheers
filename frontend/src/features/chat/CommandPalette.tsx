@@ -47,7 +47,7 @@ export function CommandPalette({ commands, activeIndex, onSelect }: Props) {
           <Terminal className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span className="font-medium font-mono">/{c.name}</span>
           {c.description && (
-            <span className="text-xs text-zinc-500 truncate">
+            <span className="text-xs text-zinc-400 truncate">
               {c.description}
             </span>
           )}

@@ -62,7 +62,7 @@ export default function InvitePage() {
               ? "This invite link has been used up"
               : "This invite link is invalid"}
         </h1>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-zinc-400">
           Ask whoever shared it with you for a new link.
         </p>
         <Link
@@ -79,7 +79,7 @@ export default function InvitePage() {
       <div className="w-full max-w-sm my-auto">
         <div className="flex flex-col items-center mb-8">
           <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Cheers</h1>
+          <p className="text-2xl font-bold text-zinc-50 tracking-tight">Cheers</p>
         </div>
 
         <div className="bg-zinc-900 rounded-2xl p-6 shadow-xl flex flex-col items-center gap-3 text-center">
@@ -96,14 +96,14 @@ export default function InvitePage() {
                 size="lg"
               />
               <div>
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-zinc-400">
                   {preview.inviter ?? "Someone"} invited you to join
                 </p>
                 <h1 className="text-xl font-semibold text-zinc-100 mt-0.5">
                   {preview.workspace_name}
                 </h1>
               </div>
-              <div className="flex items-center gap-3 text-xs text-zinc-500">
+              <div className="flex items-center gap-3 text-xs text-zinc-400">
                 <span className="inline-flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" />
                   {preview.member_count ?? 0} member{(preview.member_count ?? 0) === 1 ? "" : "s"}
@@ -128,7 +128,7 @@ export default function InvitePage() {
                   >
                     Create an account to join
                   </Button>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-zinc-400">
                     Already have an account?{" "}
                     <Link
                       to={`/login?redirect=${encodeURIComponent(`/invite/${token}`)}`}

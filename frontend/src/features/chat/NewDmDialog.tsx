@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Bot, Search, User } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bot, Search, User, X } from "lucide-react";
+import toast from "react-hot-toast";
 import { createDm } from "@/api/channels";
 import { searchUsers, type UserSearchResult } from "@/api/users";
 import { listBots } from "@/api/bots";
@@ -24,6 +25,7 @@ export function NewDmDialog({
   const [users, setUsers] = useState<UserSearchResult[]>([]);
   const [bots, setBots] = useState<BotItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listBots().then(setBots).catch(() => {});
@@ -54,6 +56,17 @@ export function NewDmDialog({
       selectChannel(dm.channel_id);
       onPicked?.();
       onClose();
+    } catch (e) {
+      // Surface the API's human detail (permission, network), not raw JSON —
+      // keep the dialog open so the user knows the DM didn't open.
+      const raw = e instanceof Error ? e.message : String(e);
+      let detail = raw;
+      try {
+        detail = (JSON.parse(raw) as { detail?: string }).detail ?? raw;
+      } catch {
+        /* not JSON — use raw */
+      }
+      toast.error(`Couldn't start direct message — ${detail}`);
     } finally {
       setBusy(false);
     }
@@ -65,12 +78,26 @@ export function NewDmDialog({
         <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
           <Search className="w-3.5 h-3.5 text-zinc-500" />
           <input
+            ref={inputRef}
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"
             className="flex-1 bg-transparent py-2 text-sm text-zinc-200 outline-none"
           />
+          {q && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setQ("");
+                inputRef.current?.focus();
+              }}
+              className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <div className="max-h-72 overflow-auto space-y-0.5">
           {users.map((u) => (
@@ -85,7 +112,7 @@ export function NewDmDialog({
             </button>
           ))}
           {bots.length > 0 && (
-            <div className="px-2 pt-2 text-[10px] uppercase tracking-wide text-zinc-500">Bots</div>
+            <div className="px-2 pt-2 text-[10px] uppercase tracking-wide text-zinc-400">Bots</div>
           )}
           {bots.map((b) => (
             <button

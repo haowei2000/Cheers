@@ -147,8 +147,8 @@ function BotInlineSettings({
           className="inline-flex items-center gap-1"
           title={controls.can_set_mode ? "Session mode" : "Session mode — read-only (no permission)"}
         >
-          <span className="text-[10px] text-zinc-500">mode</span>
-          {!controls.can_set_mode && <Lock className="w-2.5 h-2.5 text-zinc-600" />}
+          <span className="text-[10px] text-zinc-400">mode</span>
+          {!controls.can_set_mode && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
           <select
             value={mode}
             disabled={!canMode || busy}
@@ -185,8 +185,8 @@ function BotInlineSettings({
             className="inline-flex items-center gap-1"
             title={canCfg ? opt.name : `${opt.name} — read-only (no permission)`}
           >
-            <span className="text-[10px] text-zinc-500">{opt.name}</span>
-            {!controls.can_set_config_option && <Lock className="w-2.5 h-2.5 text-zinc-600" />}
+            <span className="text-[10px] text-zinc-400">{opt.name}</span>
+            {!controls.can_set_config_option && <Lock className="w-2.5 h-2.5 text-zinc-500" />}
             <select
               value={cur}
               disabled={!canCfg || busy}

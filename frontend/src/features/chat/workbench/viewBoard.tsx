@@ -170,7 +170,7 @@ export function ViewBoardShell({
         {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
         <span className="text-xs text-zinc-300">{title}</span>
         <div className="flex-1" />
-        {loading && <span className="text-[10px] text-zinc-600">Loading…</span>}
+        {loading && <span className="text-[10px] text-zinc-400">Loading…</span>}
         {onRefresh && (
           <button onClick={onRefresh} title="Refresh" disabled={loading}>
             <RefreshCw
@@ -209,7 +209,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
           {Icon && <Icon className="w-3.5 h-3.5 text-zinc-500" />}
           <span className="text-xs text-zinc-300">{def.title}</span>
           <div className="flex-1" />
-          {loading && <span className="text-[10px] text-zinc-600">Loading…</span>}
+          {loading && <span className="text-[10px] text-zinc-400">Loading…</span>}
           <button onClick={onRefresh} title="Refresh" disabled={loading}>
             <RefreshCw
               className={`w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 ${loading ? "animate-spin" : ""}`}
@@ -222,7 +222,7 @@ export function defineViewBoard<T>(def: ViewBoardDef<T>): ViewBoardPanel {
             <div className="px-3 py-3 text-xs text-red-400">{error}</div>
           ) : data == null ? (
             // First load (no data yet) — neutral hint, not the board's "empty" state.
-            <div className="px-3 py-6 text-xs text-zinc-600">Loading…</div>
+            <div className="px-3 py-6 text-xs text-zinc-400">Loading…</div>
           ) : (
             def.render(data, ctx, refetch)
           )}

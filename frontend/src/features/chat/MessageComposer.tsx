@@ -21,6 +21,7 @@ import {
   AudioLines,
   Loader2,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
@@ -125,12 +126,17 @@ function MessageComposerImpl({
     if (!files || !channelId) return;
     setUploading(true);
     try {
+      // Per-file try/catch so one bad upload doesn't silently drop the rest of
+      // the batch, and every failure surfaces a toast (the "uploading…" chip
+      // just vanishing otherwise gives no signal the attachment was lost).
       for (const file of Array.from(files)) {
-        const info = await uploadFile(channelId, file);
-        setAttachments((prev) => [...prev, info]);
+        try {
+          const info = await uploadFile(channelId, file);
+          setAttachments((prev) => [...prev, info]);
+        } catch {
+          toast.error(`Couldn't upload ${file.name} — try again`);
+        }
       }
-    } catch {
-      /* keep the composer usable; failed uploads just won't attach */
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -446,7 +452,7 @@ function MessageComposerImpl({
               )}
               <span className="font-medium">{c.label}</span>
               {c.sublabel && (
-                <span className="text-xs text-zinc-500">@{c.sublabel}</span>
+                <span className="text-xs text-zinc-400">@{c.sublabel}</span>
               )}
               {c.type === "bot" && (
                 <span className="ml-auto text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300">
@@ -483,7 +489,7 @@ function MessageComposerImpl({
               <button
                 type="button"
                 onClick={() => removeAttachment(a.file_id)}
-                className="text-zinc-500 hover:text-zinc-200"
+                className="text-zinc-400 hover:text-zinc-200"
                 aria-label="Remove attachment"
                 title="Remove attachment"
               >
@@ -492,7 +498,7 @@ function MessageComposerImpl({
             </span>
           ))}
           {uploading && (
-            <span className="inline-flex items-center text-xs text-zinc-500 px-1">
+            <span className="inline-flex items-center text-xs text-zinc-400 px-1">
               uploading…
             </span>
           )}
@@ -628,7 +634,7 @@ function MessageComposerImpl({
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-base (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="flex-1 bg-transparent text-base md:text-sm text-zinc-100 placeholder-zinc-500 resize-none outline-none leading-relaxed py-1 min-h-[24px] max-h-[200px]"
+          className="flex-1 bg-transparent text-base md:text-sm text-zinc-100 placeholder-zinc-400 resize-none outline-none leading-relaxed py-1 min-h-[24px] max-h-[200px]"
         />
 
         <button
@@ -647,7 +653,7 @@ function MessageComposerImpl({
         </button>
       </div>
       {/* Hardware-keyboard hints — meaningless on touch, so hidden below md. */}
-      <p className="text-[11px] text-zinc-600 mt-1.5 px-1 max-md:hidden">
+      <p className="text-[11px] text-zinc-400 mt-1.5 px-1 max-md:hidden">
         <kbd className="font-mono">Enter</kbd> to send ·{" "}
         <kbd className="font-mono">Shift+Enter</kbd> for new line ·{" "}
         <kbd className="font-mono">@</kbd> to mention ·{" "}

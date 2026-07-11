@@ -60,7 +60,7 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
             Cheers
           </h1>
-          <p className="text-zinc-500 text-sm mt-1">Sign in to continue</p>
+          <p className="text-zinc-400 text-sm mt-1">Sign in to continue</p>
         </div>
 
         {/* Card */}
@@ -69,10 +69,14 @@ export default function LoginPage() {
           className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
         >
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+            <label
+              htmlFor="login"
+              className="text-xs font-medium text-zinc-400 uppercase tracking-wide"
+            >
               Username or Email
             </label>
             <Input
+              id="login"
               type="text"
               placeholder="you@example.com"
               autoComplete="username"
@@ -83,10 +87,14 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+            <label
+              htmlFor="password"
+              className="text-xs font-medium text-zinc-400 uppercase tracking-wide"
+            >
               Password
             </label>
             <Input
+              id="password"
               type="password"
               placeholder="••••••••"
               autoComplete="current-password"
@@ -106,7 +114,7 @@ export default function LoginPage() {
             Sign in
           </Button>
 
-          <div className="flex items-center justify-between text-xs text-zinc-500">
+          <div className="flex items-center justify-between text-xs text-zinc-400">
             <Link to="/register" className="text-indigo-400 hover:text-indigo-300">
               Create account
             </Link>

@@ -218,7 +218,7 @@ function ViewBoardDrawerImpl({
                   className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs whitespace-nowrap transition-colors ${
                     isActive
                       ? "bg-zinc-800 text-zinc-100"
-                      : "text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300"
+                      : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
                   }`}
                 >
                   {Icon && <Icon className="w-3.5 h-3.5" />}
@@ -231,7 +231,7 @@ function ViewBoardDrawerImpl({
           {activeBoard?.sessionScoped && (
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-zinc-800 flex-shrink-0">
               <Layers className="w-3 h-3 text-zinc-500 flex-shrink-0" />
-              <span className="text-[10px] uppercase tracking-wide text-zinc-500">Scope</span>
+              <span className="text-[10px] uppercase tracking-wide text-zinc-400">Scope</span>
               <select
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}

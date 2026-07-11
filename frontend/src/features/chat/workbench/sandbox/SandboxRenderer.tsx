@@ -115,7 +115,7 @@ export function SandboxRenderer({
   }, [fs, plugin.plugin_id, rendererId, path, readChannel]);
 
   if (err) return <div className="p-3 text-amber-400 text-xs">Failed to load renderer: {err}</div>;
-  if (bundle === null) return <div className="p-3 text-zinc-500 text-xs">Loading renderer…</div>;
+  if (bundle === null) return <div className="p-3 text-zinc-400 text-xs">Loading renderer…</div>;
   return (
     <div className="relative w-full h-full">
       <iframe

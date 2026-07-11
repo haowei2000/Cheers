@@ -80,15 +80,15 @@ export function WorkspaceRail({
   const { workspaces, personalWorkspace, selectedWorkspaceId, selectWorkspace } =
     useChatStore();
   const { user, logout } = useAuthStore();
-  const [wsOpen, setWsOpen] = useState(false);
-  const personalSelected =
-    !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
 
   function handleLogout() {
     logout();
     toast.success("Logged out");
     navigate("/login", { replace: true });
   }
+  const [wsOpen, setWsOpen] = useState(false);
+  const personalSelected =
+    !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
 
   return (
     <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -140,7 +140,7 @@ export function WorkspaceRail({
         <button
           title="Add workspace"
           onClick={() => setWsOpen(true)}
-          className="w-10 h-10 max-md:w-11 max-md:h-11 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-600 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors flex-shrink-0"
+          className="w-10 h-10 max-md:w-11 max-md:h-11 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-500 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
         </button>
@@ -172,22 +172,23 @@ export function WorkspaceRail({
           <Settings className="w-4 h-4" />
         </button>
 
-        <button
-          onClick={handleLogout}
-          title="Sign out"
-          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 flex items-center justify-center transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
-
         <div className="w-px h-4 bg-zinc-700/60" />
 
+        {/* Static identity mark — not interactive (no false click affordance). */}
         <Avatar
           name={user?.display_name ?? user?.username}
           id={user?.user_id}
           size="sm"
-          className="cursor-pointer hover:opacity-80 transition-opacity"
         />
+
+        <button
+          onClick={handleLogout}
+          title="Sign out"
+          aria-label="Sign out"
+          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
 
       {wsOpen && <NewWorkspaceDialog onClose={() => setWsOpen(false)} />}

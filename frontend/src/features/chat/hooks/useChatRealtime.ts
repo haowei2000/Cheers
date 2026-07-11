@@ -286,9 +286,31 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   useEffect(() => {
     mountedRef.current = true;
     connect();
+
+    // Recovery: the exponential-backoff loop caps out after MAX_RETRIES (~2.5min),
+    // which after a laptop sleep or a network blip would otherwise leave the channel
+    // silently frozen forever. Coming back online or refocusing the tab is the escape
+    // hatch — reset the retry budget and reconnect now if the socket has died.
+    const revive = () => {
+      if (!mountedRef.current) return;
+      if (document.visibilityState === "hidden") return;
+      const ws = wsRef.current;
+      if (ws && ws.readyState !== WebSocket.CLOSED) return; // already up or mid-connect
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      retryRef.current = 0;
+      connect();
+    };
+    window.addEventListener("online", revive);
+    document.addEventListener("visibilitychange", revive);
+
     return () => {
       mountedRef.current = false;
       if (timerRef.current) clearTimeout(timerRef.current);
+      window.removeEventListener("online", revive);
+      document.removeEventListener("visibilitychange", revive);
       wsRef.current?.close();
     };
   }, [connect]);

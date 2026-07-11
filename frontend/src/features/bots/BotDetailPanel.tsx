@@ -42,7 +42,9 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
           setDone(true);
           setTimeout(() => setDone(false), 1500);
         } catch {
-          /* clipboard blocked */
+          // The Agent Bridge token is shown only once — never let a copy failure
+          // be silent, or the value is lost. Point the user at the manual path.
+          toast.error("Clipboard unavailable — select and copy manually");
         }
       }}
       className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -125,7 +127,7 @@ export function BotDetailPanel({
             {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
             {bot.display_name || bot.username}
           </p>
-          <p className="text-xs text-zinc-500 truncate">
+          <p className="text-xs text-zinc-400 truncate">
             {bot.status_text ? bot.status_text : `@${bot.username}`}
           </p>
         </div>
@@ -138,7 +140,7 @@ export function BotDetailPanel({
           )}
           <span
             className={`inline-flex items-center gap-1 text-[11px] ${
-              bot.is_online ? "text-emerald-400" : "text-zinc-500"
+              bot.is_online ? "text-emerald-400" : "text-zinc-400"
             }`}
             title={bot.is_online ? "Connector attached" : "Connector not attached"}
           >
@@ -160,7 +162,7 @@ export function BotDetailPanel({
               className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
                 active
                   ? "border-indigo-500 text-zinc-100"
-                  : "border-transparent text-zinc-500 hover:text-zinc-300"
+                  : "border-transparent text-zinc-400 hover:text-zinc-200"
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -273,7 +275,7 @@ function BotOverview({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-xs">
-        <span className="text-zinc-500 w-14 shrink-0">bot_id</span>
+        <span className="text-zinc-400 w-14 shrink-0">bot_id</span>
         <code className="flex-1 truncate bg-zinc-800 px-2 py-1 rounded text-zinc-400">{bot.bot_id}</code>
         <CopyButton value={bot.bot_id} label="" />
       </div>
@@ -509,7 +511,7 @@ function BotStatusEditor({
           size="md"
           onUpload={handleAvatarUpload}
         />
-        <span className="text-[11px] text-zinc-500">Click the avatar to upload an image (PNG/JPEG/WebP/GIF, ≤5 MB)</span>
+        <span className="text-[11px] text-zinc-400">Click the avatar to upload an image (PNG/JPEG/WebP/GIF, ≤5 MB)</span>
       </div>
 
       <div className="flex gap-2">
@@ -572,7 +574,7 @@ function BotStatusEditor({
             />
             <span>minutes (min 5)</span>
           </div>
-          <p className="text-[11px] text-zinc-600 leading-snug">
+          <p className="text-[11px] text-zinc-400 leading-snug">
             The connector runs this prompt on the schedule and posts the answer back via the
             bot's token. Requires the bot to be online.
           </p>
@@ -604,7 +606,7 @@ function BotStatusEditor({
           here on its own once it writes back.
         </p>
       )}
-      <p className="text-[11px] text-zinc-600 leading-snug">
+      <p className="text-[11px] text-zinc-400 leading-snug">
         Runs the status prompt via the normal prompt path (needs the bot online; opens a
         DM with it automatically if you don't have one). Owner/admin only.
       </p>

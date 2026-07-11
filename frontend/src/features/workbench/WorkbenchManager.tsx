@@ -88,7 +88,7 @@ export function WorkbenchManager() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <Blocks className="w-3.5 h-3.5" />
         Workbench extensions
       </h2>
@@ -137,12 +137,12 @@ export function WorkbenchManager() {
               }}
             />
           </div>
-          <p className="text-[11px] text-zinc-500">
+          <p className="text-[11px] text-zinc-400">
             Sandboxed plugins that ship their own renderer, available in every channel. On
             install they run inside an isolated browser iframe.
           </p>
           <ul className="space-y-1">
-            {plugins.length === 0 && <li className="text-xs text-zinc-600">No plugins yet.</li>}
+            {plugins.length === 0 && <li className="text-xs text-zinc-400">No plugins yet.</li>}
             {plugins.map((p) => (
               <li
                 key={p.plugin_id}
@@ -150,14 +150,14 @@ export function WorkbenchManager() {
               >
                 <Puzzle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{p.title}</span>
-                <code className="text-[10px] text-zinc-600 truncate max-w-[80px]">{p.plugin_id}</code>
+                <code className="text-[10px] text-zinc-400 truncate max-w-[80px]">{p.plugin_id}</code>
                 <button
                   onClick={async () => {
                     await deletePlugin(p.plugin_id);
                     await reload();
                   }}
                   title="Uninstall"
-                  className="text-zinc-600 hover:text-red-400"
+                  className="text-zinc-500 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -190,13 +190,13 @@ export function WorkbenchManager() {
               }}
             />
           </div>
-          <p className="text-[11px] text-zinc-500">
+          <p className="text-[11px] text-zinc-400">
             Declarative scenario manifests (referencing built-in lenses), available in every
             channel. Pure data — no code execution, no sandbox needed.
           </p>
           <ul className="space-y-1">
             {templates.length === 0 && (
-              <li className="text-xs text-zinc-600">No global templates yet.</li>
+              <li className="text-xs text-zinc-400">No global templates yet.</li>
             )}
             {templates.map((t) => (
               <li
@@ -205,14 +205,14 @@ export function WorkbenchManager() {
               >
                 <Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{t.title}</span>
-                <code className="text-[10px] text-zinc-600 truncate max-w-[80px]">{t.id}</code>
+                <code className="text-[10px] text-zinc-400 truncate max-w-[80px]">{t.id}</code>
                 <button
                   onClick={async () => {
                     await deleteGlobalTemplate(t.id);
                     await reload();
                   }}
                   title="Uninstall"
-                  className="text-zinc-600 hover:text-red-400"
+                  className="text-zinc-500 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

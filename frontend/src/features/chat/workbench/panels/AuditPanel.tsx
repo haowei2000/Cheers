@@ -190,7 +190,7 @@ function MemberChip({ id, member }: { id?: string | null; member?: MemberItem })
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-2">
-      <span className="text-[10px] uppercase tracking-wide text-zinc-600 w-14 flex-shrink-0 pt-px">{label}</span>
+      <span className="text-[10px] uppercase tracking-wide text-zinc-400 w-14 flex-shrink-0 pt-px">{label}</span>
       <span className="min-w-0 flex-1 text-[11px] text-zinc-400 break-words">{children}</span>
     </div>
   );
@@ -274,13 +274,13 @@ function AuditRow({
               )}
               {target && (
                 <>
-                  <span className="text-[10px] text-zinc-600">for</span>
+                  <span className="text-[10px] text-zinc-400">for</span>
                   <MemberChip id={e.target_user_id} member={target} />
                 </>
               )}
             </div>
           </div>
-          <span className="text-[10px] text-zinc-600 tabular-nums whitespace-nowrap mt-px">
+          <span className="text-[10px] text-zinc-400 tabular-nums whitespace-nowrap mt-px">
             {fmtTime(e.created_at)}
           </span>
         </div>
@@ -289,7 +289,7 @@ function AuditRow({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="mt-1.5 inline-flex items-center gap-0.5 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="mt-1.5 inline-flex items-center gap-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
             Details
@@ -301,7 +301,7 @@ function AuditRow({
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>
-                {e.option_id && <span className="text-zinc-600 font-mono"> · {e.option_id}</span>}
+                {e.option_id && <span className="text-zinc-400 font-mono"> · {e.option_id}</span>}
               </DetailRow>
             )}
             {toolTitle && !command && (
@@ -327,7 +327,7 @@ function AuditRow({
             {kind && <DetailRow label="Kind">{kind}</DetailRow>}
             {e.request_id && (
               <DetailRow label="Request">
-                <span className="font-mono text-zinc-600">{short(e.request_id)}</span>
+                <span className="font-mono text-zinc-400">{short(e.request_id)}</span>
               </DetailRow>
             )}
           </div>
@@ -371,9 +371,9 @@ function AuditBody({ ctx }: { ctx: ViewBoardContext }) {
   return (
     <ViewBoardShell title="Audit" icon={ShieldCheck} loading={loading} onRefresh={() => void load()}>
       {events == null ? (
-        <div className="px-3 py-6 text-xs text-zinc-600">Loading…</div>
+        <div className="px-3 py-6 text-xs text-zinc-400">Loading…</div>
       ) : events.length === 0 ? (
-        <div className="px-3 py-6 text-xs text-zinc-600 flex items-center gap-2">
+        <div className="px-3 py-6 text-xs text-zinc-400 flex items-center gap-2">
           <ShieldCheck className="w-4 h-4" />
           No permission decisions yet
         </div>

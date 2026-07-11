@@ -62,6 +62,23 @@ function eventMeta(e: TraceEntry): { Icon: LucideIcon; tone: string; label: stri
   }
 }
 
+// Map the ACP tool-call status vocabulary (pending/in_progress/completed/failed)
+// to human labels — mirrors PlanBoardPanel's group labels — with a humanize
+// fallback so an unknown token never renders as raw snake_case.
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  in_progress: "In progress",
+  completed: "Completed",
+  failed: "Failed",
+};
+
+function statusLabel(status: string): string {
+  return (
+    STATUS_LABELS[status] ??
+    status.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())
+  );
+}
+
 /**
  * Collapsible "agent steps" panel for a completed bot turn. Lazily fetches the
  * durable trace timeline (docs/arch/TRACE_PERSISTENCE.md) on first expand and
@@ -109,8 +126,9 @@ export function BotTracePanel({ channelId, msgId }: Props) {
       <button
         type="button"
         onClick={toggle}
+        aria-expanded={expanded}
         title={expanded ? "Hide agent steps" : "Show agent steps"}
-        className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
       >
         {expanded ? (
           <ChevronDown className="w-3 h-3" />
@@ -138,21 +156,19 @@ export function BotTracePanel({ channelId, msgId }: Props) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 min-w-0">
                     <span
-                      className={cn(
-                        "text-[11px] truncate",
-                        isApproval ? "text-zinc-400" : "text-zinc-500"
-                      )}
+                      className="text-[11px] truncate text-zinc-200"
+                      title={e.title || label}
                     >
                       {e.title || label}
                     </span>
                     {e.status && (
-                      <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">
-                        {e.status}
+                      <span className="text-[10px] text-zinc-400 tabular-nums shrink-0">
+                        {statusLabel(e.status)}
                       </span>
                     )}
                   </div>
                   {isApproval && e.decision && (
-                    <div className="text-[10px] text-zinc-600 truncate">
+                    <div className="text-[11px] text-zinc-400 truncate" title={e.decision}>
                       {e.decision}
                       {e.actor_id ? (
                         <span title={e.actor_id}> · {e.actor_id.slice(0, 8)}</span>
@@ -160,7 +176,7 @@ export function BotTracePanel({ channelId, msgId }: Props) {
                     </div>
                   )}
                   {!isApproval && e.message && (
-                    <div className="text-[10px] text-zinc-600 truncate">
+                    <div className="text-[11px] text-zinc-400 truncate" title={e.message}>
                       {e.message}
                     </div>
                   )}
@@ -172,7 +188,7 @@ export function BotTracePanel({ channelId, msgId }: Props) {
       )}
 
       {expanded && events && events.length === 0 && !loading && !error && (
-        <div className="mt-1 px-2.5 text-[11px] text-zinc-600">
+        <div className="mt-1 px-2.5 text-[11px] text-zinc-400">
           No steps recorded.
         </div>
       )}
