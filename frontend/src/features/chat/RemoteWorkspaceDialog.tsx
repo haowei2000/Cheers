@@ -6,6 +6,7 @@ import {
   Download,
   FileText,
   Folder,
+  FolderPlus,
   GitBranch,
   GitCommit,
   GitCompare,
@@ -15,6 +16,11 @@ import {
   Save,
   X,
 } from "lucide-react";
+import toast from "react-hot-toast";
+import {
+  createChannelBotSession,
+  getSessionControls,
+} from "@/api/sessionControl";
 import {
   downloadWorkspaceFile,
   getGitCommitFiles,
@@ -120,6 +126,20 @@ function isUnstagedCode(xy: string): boolean {
   return xy[1] !== ".";
 }
 
+/**
+ * Absolute path of a root-relative browse location: the connector's canonical browse
+ * root (`WorkspaceTree.root`, always absolute POSIX) joined with a root-relative
+ * `path` (`""` = the root itself). Collapses the boundary slash so neither a trailing
+ * slash on the root nor a leading slash on the relative part yields `//`. This is the
+ * `cwd` handed to session creation, which the gateway requires to be absolute and the
+ * connector re-clamps against its `allowed_roots`.
+ */
+function joinAbs(root: string, rel: string): string {
+  const base = root.replace(/\/+$/, "");
+  const r = rel.replace(/^\/+/, "");
+  return r ? `${base}/${r}` : base || "/";
+}
+
 export function RemoteWorkspaceDialog({
   channelId,
   onClose,
@@ -197,6 +217,14 @@ export function RemoteWorkspaceDialog({
   // Explicitly selected browse root (one of meta.effective_roots). null = "Auto"
   // (connector default: session root / default_cwd / first allowed root).
   const [root, setRoot] = useState<string | null>(null);
+
+  // Whether the caller holds the `session_create` INITIATE grant for this bot in this
+  // channel (from /session-controls). Fail-closed: false until the server confirms it,
+  // so the "new session here" affordances stay hidden without the grant. The gateway
+  // re-checks the same grant on the create call — this only gates the UI. Reset per bot.
+  const [canCreateSession, setCanCreateSession] = useState(false);
+  // In-flight guard so a double-click can't fire two create calls.
+  const [creatingSession, setCreatingSession] = useState(false);
 
   // ── Read-only git visibility for the current directory's repo (supplementary) ──
   // Cleared silently when the dir isn't a git repo (`repo: false` answer) or git
@@ -436,6 +464,23 @@ export function RemoteWorkspaceDialog({
       alive = false;
     };
   }, [channelId, botId, effectiveSessionId]);
+
+  // Resolve the caller's session-create grant for the selected bot (best-effort). The
+  // affordance is fail-closed: any error / older gateway leaves it hidden. Independent
+  // of the browse scope — the grant is per (bot, channel), not per root set.
+  useEffect(() => {
+    if (!botId) {
+      setCanCreateSession(false);
+      return;
+    }
+    let alive = true;
+    getSessionControls(channelId, botId)
+      .then((c) => alive && setCanCreateSession(c.can_create_session === true))
+      .catch(() => alive && setCanCreateSession(false));
+    return () => {
+      alive = false;
+    };
+  }, [channelId, botId]);
 
   // Refetch whenever the browse context changes (bot / directory / scope).
   useEffect(() => {
@@ -716,6 +761,29 @@ export function RemoteWorkspaceDialog({
     setLogDone(false);
     setRoot(null); // the other scope has a different effective root set
   }, []);
+
+  // Spin up a new "other" session rooted at a folder in this browse view. `rel` is a
+  // root-relative directory path ("" = the current browse root); the absolute `cwd`
+  // is treeRoot ⊕ rel. Gated in the UI by the caller's session_create grant, and
+  // re-validated server-side against the connector's `allowed_roots` — that gateway
+  // check (not this one) is the security boundary. The session then shows up in the
+  // channel's Sessions panel.
+  const createSessionAt = useCallback(
+    async (rel: string) => {
+      if (!botId || treeRoot === null || !canCreateSession || creatingSession) return;
+      const cwdAbs = joinAbs(treeRoot, rel);
+      setCreatingSession(true);
+      try {
+        await createChannelBotSession(channelId, botId, { cwd: cwdAbs });
+        toast.success(`New session rooted at ${cwdAbs}`);
+      } catch (e) {
+        toast.error(cleanErr(e));
+      } finally {
+        setCreatingSession(false);
+      }
+    },
+    [channelId, botId, treeRoot, canCreateSession, creatingSession]
+  );
 
   // Switch the browse to another allowed root (null = Auto): reset like a scope flip.
   const selectRoot = useCallback((r: string | null) => {
@@ -1265,6 +1333,16 @@ export function RemoteWorkspaceDialog({
                       <GitCompare className="w-3.5 h-3.5" />
                     </button>
                   )}
+                  {canCreateSession && treeRoot !== null && (
+                    <button
+                      onClick={() => void createSessionAt(cwd)}
+                      disabled={creatingSession}
+                      title={`Start a new session rooted here (${joinAbs(treeRoot, cwd)})`}
+                      className="p-0.5 rounded hover:bg-zinc-800 hover:text-emerald-300 disabled:opacity-40"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button onClick={() => void refreshAll()} title="Refresh" className="p-0.5 rounded hover:bg-zinc-800">
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
@@ -1295,18 +1373,37 @@ export function RemoteWorkspaceDialog({
                             </span>
                           )}
                         </button>
-                        {/* Directory-scoped diff, on hover (repo dirs only). */}
-                        {ent.is_dir && git && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void openDiff(ent.path, false);
-                            }}
-                            title={`Diff ${ent.name}/ (working tree)`}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center p-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-100"
-                          >
-                            <GitCompare className="w-3 h-3" />
-                          </button>
+                        {/* Per-directory hover actions: start a new session rooted at
+                            this folder (with the session_create grant), and — for repo
+                            dirs — diff it. Grouped so the two buttons never overlap. */}
+                        {ent.is_dir && (canCreateSession || git) && (
+                          <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center gap-1">
+                            {canCreateSession && treeRoot !== null && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void createSessionAt(ent.path);
+                                }}
+                                disabled={creatingSession}
+                                title={`Start a new session rooted at ${ent.name}/`}
+                                className="flex items-center p-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-emerald-300 disabled:opacity-40"
+                              >
+                                <FolderPlus className="w-3 h-3" />
+                              </button>
+                            )}
+                            {git && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void openDiff(ent.path, false);
+                                }}
+                                title={`Diff ${ent.name}/ (working tree)`}
+                                className="flex items-center p-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-100"
+                              >
+                                <GitCompare className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
