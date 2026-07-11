@@ -50,6 +50,32 @@ separately under `connector-v*` tags.
 
 First tagged public-preview release.
 
+### Performance
+- **Frontend chat critical path trimmed by ~370 kB gzip.** The syntax
+  highlighter now loads `highlight.js/lib/common` (309 kB → 54 kB gzip) on the
+  chat route; the PDF engine (`pdfjs-dist`) and the file-preview modal are lazy
+  (dynamic `import()`), and the Files / Settings / Remote-workspace dialogs are
+  code-split out of the `ChatLayout` chunk (295 kB → 250 kB).
+- **Smoother agent streaming.** Incoming stream deltas are coalesced per
+  animation frame (one React commit instead of one per token chunk), code-block
+  highlighting is memoized, off-screen message rows use `content-visibility`,
+  and the composer / workbench / view-board are `React.memo`-isolated so a token
+  frame no longer re-renders the whole channel. View-board refetches
+  (activity/plan/audit) are debounced instead of firing on every message.
+- **Gateway streaming hot path.** The per-delta `touch_session` UPDATE is
+  debounced and run concurrently with the ownership check; the stream registry
+  no longer holds a DashMap shard guard across DB awaits (removes a lock-contention
+  hazard); the next-bot dispatch (S3 fetch + base64) runs off the connector read
+  loop so one turn's finalize can't stall other streams; per-mention INSERT/SELECT
+  loops are batched into single statements; the sidebar unread/mention counts use a
+  single lateral scan with a new covering index; capability-mode nonce accounting is
+  one atomic CTE; and multi-bot mentions fetch shared attachments/pinned files once.
+- **ACP connector.** Both bridge websockets are event-driven (`tokio::select!`)
+  instead of a 100 ms poll loop, removing the 0–100 ms latency floor on every
+  streamed frame; a pending permission approval no longer freezes the agent's
+  stdout reader (it's handled off the read loop); and `realize_file` size-caps
+  before reading so a large artifact can't stall the shared data socket.
+
 ### Added
 - Rust gateway (Axum + SQLx): real-time channels, bot routing, Agent Bridge
   (ACP) connectivity, files, and channel history.

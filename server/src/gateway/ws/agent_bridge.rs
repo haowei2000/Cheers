@@ -764,7 +764,9 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 && resp.get("ok").and_then(Value::as_bool) == Some(true)
             {
                 if let Some(created) = resp.get("data") {
-                    broadcast_and_trigger_created_message(
+                    // Fire-and-forget: the returned trigger handle is intentionally
+                    // dropped so the next bot@bot hop runs off this read loop.
+                    let _ = broadcast_and_trigger_created_message(
                         &state.stream_registry,
                         &state.fanout,
                         &state.db,
@@ -1182,6 +1184,16 @@ async fn allowed_seers(
             Ok(r) => r,
             Err(_) => return online,
         };
+    // Fast path: `resolve_access` for `See` only ever consults `see`-capability rules
+    // for this event_class, and the membership default for `See` is always allow. So
+    // with no matching `see` rule, everyone online is a seer — skip the channel-role
+    // query and the per-online-user `matched_groups` probes entirely (the common case).
+    if !rules
+        .iter()
+        .any(|r| r.event_class == event_class && r.capability == crate::domain::bot_event_policy::Capability::See.as_str())
+    {
+        return online;
+    }
     let mut chan_role: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut platform_admin: std::collections::HashSet<String> = std::collections::HashSet::new();
     if let Ok(rows) = sqlx::query(

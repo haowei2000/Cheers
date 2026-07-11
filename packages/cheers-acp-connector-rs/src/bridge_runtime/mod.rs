@@ -5,7 +5,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -49,8 +49,6 @@ use crate::config::{
 use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
 use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
 use crate::state::SessionStateStore;
-
-const SOCKET_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     let mut state = SessionStateStore::new(config.state_path.clone());
@@ -795,9 +793,33 @@ impl RuntimeContext {
             );
         }
 
+        // Cap the realize size BEFORE reading: mirrors the gateway's MAX_DELIVER_BYTES
+        // (server/src/resource/files.rs). Without this, an oversized artifact is read into
+        // memory, base64-expanded (~1.33x), and shipped as one giant frame that both
+        // balloons connector memory and stalls every other stream sharing the data socket
+        // — only for the gateway to reject it anyway.
+        const MAX_REALIZE_BYTES: u64 = 8 * 1024 * 1024;
+        let md = tokio::fs::metadata(&canonical)
+            .await
+            .with_context(|| format!("realize_file: cannot stat local file '{remote_ref}'"))?;
+        if md.len() > MAX_REALIZE_BYTES {
+            anyhow::bail!(
+                "realize_file: '{remote_ref}' is {} bytes, exceeds the {}MB realize limit",
+                md.len(),
+                MAX_REALIZE_BYTES / (1024 * 1024)
+            );
+        }
+
         let bytes = tokio::fs::read(&canonical)
             .await
             .with_context(|| format!("realize_file: cannot read local file '{remote_ref}'"))?;
+        // TOCTOU: the file may have grown between the stat and the read.
+        if bytes.len() as u64 > MAX_REALIZE_BYTES {
+            anyhow::bail!(
+                "realize_file: '{remote_ref}' grew past the {}MB realize limit during read",
+                MAX_REALIZE_BYTES / (1024 * 1024)
+            );
+        }
 
         let filename = std::path::Path::new(&remote_ref)
             .file_name()
@@ -810,7 +832,18 @@ impl RuntimeContext {
             .unwrap_or("application/octet-stream")
             .to_string();
 
+        // Encode then drop the raw bytes so both copies don't live across the response
+        // await, and MOVE the (large) base64 string into the params map instead of letting
+        // json!() clone it through to_value(&data_b64).
         let data_b64 = BASE64.encode(&bytes);
+        drop(bytes);
+
+        let mut param_map = serde_json::Map::new();
+        param_map.insert("file_id".to_string(), Value::String(file_id.clone()));
+        param_map.insert("channel_id".to_string(), Value::String(channel_id));
+        param_map.insert("data_b64".to_string(), Value::String(data_b64));
+        param_map.insert("content_type".to_string(), Value::String(content_type));
+        param_map.insert("filename".to_string(), Value::String(filename));
 
         let req_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -825,13 +858,7 @@ impl RuntimeContext {
                 v: BRIDGE_PROTOCOL_VERSION,
                 req_id: req_id.clone(),
                 resource: "channel.files.realize".to_string(),
-                params: Some(serde_json::json!({
-                    "file_id": file_id,
-                    "channel_id": channel_id,
-                    "data_b64": data_b64,
-                    "content_type": content_type,
-                    "filename": filename,
-                })),
+                params: Some(Value::Object(param_map)),
                 encrypted: None,
                 encrypted_payload: None,
                 acp_capability: None,

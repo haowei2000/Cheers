@@ -24,7 +24,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          hljs: ["highlight.js"],
+          // Only the common-language grammar set rides the eager chat chunk
+          // (MarkdownRenderer). The full highlight.js barrel is reachable solely
+          // through the lazily-loaded FilePreviewModal, so its long-tail grammars
+          // land in that async chunk instead of the critical path.
+          hljs: ["highlight.js/lib/common"],
           markdown: ["react-markdown", "remark-gfm"],
           pdf: ["pdfjs-dist"],
         },

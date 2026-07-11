@@ -190,31 +190,32 @@ pub async fn list_channels(
     // workspace name purely as a display label — membership still isn't granted.
     if q.guest == Some(true) {
         let rows = sqlx::query(
+            // One lateral scan for both counts (cm is an INNER JOIN here, so every row
+            // is a member — no non-member guard needed).
             "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
                     c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
                     w.name AS workspace_name,
-                    COALESCE((
-                        SELECT count(*) FROM messages m
-                        WHERE m.channel_id = c.channel_id
-                          AND m.is_partial = FALSE
-                          AND m.sender_id <> $1
-                          AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                    ), 0) AS unread_count,
-                    COALESCE((
-                        SELECT count(*) FROM messages m
-                        JOIN message_mentions mm ON mm.msg_id = m.msg_id
-                             AND mm.member_id = $1 AND mm.member_type = 'user'
-                        WHERE m.channel_id = c.channel_id
-                          AND m.is_partial = FALSE
-                          AND m.sender_id <> $1
-                          AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                    ), 0) AS mention_count
+                    counts.unread_count,
+                    counts.mention_count
              FROM channels c
              JOIN channel_memberships cm ON cm.channel_id = c.channel_id
                     AND cm.member_id = $1 AND cm.member_type = 'user'
              JOIN workspaces w ON w.workspace_id = c.workspace_id
              LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id
                     AND wm.user_id = $1 AND wm.status = 'active'
+             CROSS JOIN LATERAL (
+                 SELECT count(*) AS unread_count,
+                        count(*) FILTER (WHERE EXISTS (
+                            SELECT 1 FROM message_mentions mm
+                            WHERE mm.msg_id = m.msg_id
+                              AND mm.member_id = $1 AND mm.member_type = 'user'
+                        )) AS mention_count
+                 FROM messages m
+                 WHERE m.channel_id = c.channel_id
+                   AND m.is_partial = FALSE
+                   AND m.sender_id <> $1
+                   AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+             ) counts
              WHERE c.type != 'dm'
                AND wm.user_id IS NULL
              ORDER BY c.created_at DESC",
@@ -233,29 +234,34 @@ pub async fn list_channels(
     // Private channels never show to non-members. Unread/mention counts are only
     // meaningful for members — non-members get 0, not "every message ever".
     let rows = sqlx::query(
+        // Both counts come from ONE lateral scan of the unread message range instead
+        // of two independent correlated count(*) subqueries. The non-member guard
+        // (`cm.member_id IS NOT NULL`) lives inside the lateral WHERE, so non-members
+        // scan zero rows and an aggregate over zero rows still yields one row of 0 —
+        // preserving the old CASE-based "non-members get 0" invariant.
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.type, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
                 (cm.member_id IS NOT NULL) AS is_member,
-                CASE WHEN cm.member_id IS NULL THEN 0 ELSE COALESCE((
-                    SELECT count(*) FROM messages m
-                    WHERE m.channel_id = c.channel_id
-                      AND m.is_partial = FALSE
-                      AND m.sender_id <> $1
-                      AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                ), 0) END AS unread_count,
-                CASE WHEN cm.member_id IS NULL THEN 0 ELSE COALESCE((
-                    SELECT count(*) FROM messages m
-                    JOIN message_mentions mm ON mm.msg_id = m.msg_id
-                         AND mm.member_id = $1 AND mm.member_type = 'user'
-                    WHERE m.channel_id = c.channel_id
-                      AND m.is_partial = FALSE
-                      AND m.sender_id <> $1
-                      AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
-                ), 0) END AS mention_count
+                counts.unread_count,
+                counts.mention_count
          FROM channels c
          LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1
                 AND wm.status = 'active'
+         CROSS JOIN LATERAL (
+             SELECT count(*) AS unread_count,
+                    count(*) FILTER (WHERE EXISTS (
+                        SELECT 1 FROM message_mentions mm
+                        WHERE mm.msg_id = m.msg_id
+                          AND mm.member_id = $1 AND mm.member_type = 'user'
+                    )) AS mention_count
+             FROM messages m
+             WHERE cm.member_id IS NOT NULL
+               AND m.channel_id = c.channel_id
+               AND m.is_partial = FALSE
+               AND m.sender_id <> $1
+               AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+         ) counts
          WHERE c.type != 'dm'
            AND (cm.member_id IS NOT NULL
                 OR (wm.user_id IS NOT NULL AND c.type = 'public'))

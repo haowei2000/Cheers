@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Maximize2, Minimize2, Package, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
@@ -83,7 +83,7 @@ function parseCfg(content: string): WbConfig {
 //  - SERVER-LEVEL plugins (CODE, admin-installed, sandboxed iframe renderers)
 // Installing global templates / plugins lives in Settings → Workbench extensions (admin);
 // the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone.
-export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick }: Props) {
+function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -457,3 +457,7 @@ export function WorkbenchDrawer({ open, onClose, channelId, sendResourceReq, ope
       </aside>
   );
 }
+
+// Memoized: skips re-rendering the workbench (and its file tree) on ChannelView's
+// per-delta streaming renders; props change only on explicit workbench interactions.
+export const WorkbenchDrawer = memo(WorkbenchDrawerImpl);

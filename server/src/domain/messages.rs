@@ -261,6 +261,9 @@ pub async fn create_message(
     .flatten()
     .and_then(|r| r.try_get::<Option<String>, _>("role").ok().flatten())
     .unwrap_or_else(|| "member".to_string());
+    // Shared across all bots triggered by THIS message so identical trigger
+    // attachments / pinned files are fetched from S3 once, not once per bot.
+    let media_cache = dispatcher::MediaCache::default();
     for bot_id in bots {
         // Event-policy INITIATE gate (docs/arch/ACP_EVENT_TAXONOMY.md): may THIS user
         // trigger a `prompt` for THIS bot here? The message still posts to the channel;
@@ -339,6 +342,7 @@ pub async fn create_message(
                 session_id: resolved_session_id,
                 chain_id: chain_id.clone(),
             },
+            &media_cache,
         )
         .await;
 

@@ -1,14 +1,22 @@
-import { useContext } from "react";
+import { useContext, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PathOpenContext, looksLikePath } from "@/features/chat/workspaceLink";
-import hljs from "highlight.js";
+import hljs from "highlight.js/lib/common";
 import { cn } from "@/lib/cn";
 
 interface Props {
   content: string;
   className?: string;
 }
+
+// Restrict auto-detection to the grammars actually seen in agent output. lib/common
+// already ships ~37 languages; passing an explicit subset keeps highlightAuto's scan
+// bounded and deterministic on the streaming hot path.
+const AUTO_DETECT_LANGS = [
+  "javascript", "typescript", "python", "rust", "json", "bash", "yaml",
+  "xml", "css", "sql", "go", "java", "cpp", "markdown", "diff",
+];
 
 function CodeBlock({
   language,
@@ -17,16 +25,16 @@ function CodeBlock({
   language?: string;
   children: string;
 }) {
-  let highlighted = children;
-  try {
-    if (language && hljs.getLanguage(language)) {
-      highlighted = hljs.highlight(children, { language }).value;
-    } else {
-      highlighted = hljs.highlightAuto(children).value;
+  const highlighted = useMemo(() => {
+    try {
+      if (language && hljs.getLanguage(language)) {
+        return hljs.highlight(children, { language }).value;
+      }
+      return hljs.highlightAuto(children, AUTO_DETECT_LANGS).value;
+    } catch {
+      return children;
     }
-  } catch {
-    // leave as-is
-  }
+  }, [language, children]);
 
   return (
     <pre className="rounded-lg bg-zinc-900 p-4 overflow-x-auto my-2">

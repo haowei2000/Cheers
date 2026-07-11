@@ -1,4 +1,5 @@
 import {
+  memo,
   useState,
   useRef,
   useCallback,
@@ -83,7 +84,7 @@ interface PickerState {
   index: number;
 }
 
-export function MessageComposer({
+function MessageComposerImpl({
   channelId,
   channelName,
   disabled,
@@ -655,3 +656,8 @@ export function MessageComposer({
     </div>
   );
 }
+
+// Memoized: the composer holds live draft/typing state, so keeping it out of
+// ChannelView's per-delta streaming re-renders preserves typing latency. All props
+// are now stable (memoized toolbar, useCallback onSend/onMentionsChange).
+export const MessageComposer = memo(MessageComposerImpl);

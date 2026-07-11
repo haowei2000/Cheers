@@ -3,7 +3,7 @@
 // work area (a real layout column on the right, beside the Workbench and the
 // Remote workspace) so it never covers the chat — the chat column narrows and
 // docks against it instead. On mobile it stays a near-full-screen overlay sheet.
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { sessionTag } from "@/features/chat/sessionLabel";
@@ -46,7 +46,7 @@ interface SessionOpt {
   created_at?: string | null;
 }
 
-export function ViewBoardDrawer({
+function ViewBoardDrawerImpl({
   open,
   onClose,
   channelId,
@@ -277,3 +277,8 @@ export function ViewBoardDrawer({
     </aside>
   );
 }
+
+// Memoized: ChannelView re-renders on every streaming delta, but the drawer's props
+// (stable callbacks + scalar ids + boardTick) only change on board signals, so this
+// skips the whole board subtree during pure token streaming.
+export const ViewBoardDrawer = memo(ViewBoardDrawerImpl);

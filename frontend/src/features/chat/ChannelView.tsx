@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
@@ -19,9 +19,17 @@ import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
-import { ChannelFilesDialog } from "./ChannelFilesDialog";
-import { ChannelSettingsDialog } from "./ChannelSettingsDialog";
-import { RemoteWorkspaceDialog } from "./RemoteWorkspaceDialog";
+// Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
+// pulls in DiffView + the workspace browser; all three only mount on explicit user action.
+const ChannelFilesDialog = lazy(() =>
+  import("./ChannelFilesDialog").then((m) => ({ default: m.ChannelFilesDialog })),
+);
+const ChannelSettingsDialog = lazy(() =>
+  import("./ChannelSettingsDialog").then((m) => ({ default: m.ChannelSettingsDialog })),
+);
+const RemoteWorkspaceDialog = lazy(() =>
+  import("./RemoteWorkspaceDialog").then((m) => ({ default: m.RemoteWorkspaceDialog })),
+);
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
@@ -115,6 +123,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   );
 
   // A different channel means a different session set — drop any prior target.
+  // Also drop any buffered stream deltas + cancel a pending flush so a stale frame
+  // can't synthesize a phantom bubble in the newly opened channel.
   useEffect(() => {
     setSelectedSessionId("");
     setMentionedBots([]);
@@ -124,7 +134,20 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     setSelectMode(false);
     setSelectedIds(new Set());
     setForward(null);
+    pendingDeltas.current.clear();
+    if (flushHandle.current !== null) {
+      cancelAnimationFrame(flushHandle.current);
+      flushHandle.current = null;
+    }
   }, [channel?.channel_id]);
+
+  // Cancel any scheduled delta flush on unmount.
+  useEffect(
+    () => () => {
+      if (flushHandle.current !== null) cancelAnimationFrame(flushHandle.current);
+    },
+    []
+  );
 
   // Esc backs out of the transient message-action states (reply draft / selection).
   // Composer popups (mention/command picker, attach menu) preventDefault their own
@@ -273,29 +296,67 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     }
   }, []);
 
-  const handleStreamDelta = useCallback((msgId: string, delta: string) => {
+  // Stream deltas arrive one WS frame per token chunk (tens/sec). Applying a
+  // setMessages per frame runs a full channel render + O(N) list rebuild each time.
+  // Instead buffer per-msg_id text and flush once per animation frame: the final
+  // rendered content is byte-identical, only intermediate paint frequency drops from
+  // token-rate to display-refresh-rate.
+  const pendingDeltas = useRef<Map<string, string>>(new Map());
+  const flushHandle = useRef<number | null>(null);
+
+  const flushDeltas = useCallback(() => {
+    flushHandle.current = null;
+    const batch = pendingDeltas.current;
+    if (batch.size === 0) return;
+    pendingDeltas.current = new Map();
     setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.msg_id === msgId);
-      if (idx === -1) {
-        // Defensive: a delta beat its placeholder bubble — synthesize one.
-        return upsertMessage(prev, {
-          msg_id: msgId,
-          sender_type: "bot",
-          content: delta,
-          is_partial: true,
-          _streaming: true,
-        });
+      let out = prev;
+      let copied = false; // true once `out` is a fresh array safe to mutate in place
+      for (const [msgId, delta] of batch) {
+        const idx = out.findIndex((m) => m.msg_id === msgId);
+        if (idx === -1) {
+          // Defensive: a delta beat its placeholder bubble — synthesize one.
+          out = upsertMessage(out, {
+            msg_id: msgId,
+            sender_type: "bot",
+            content: delta,
+            is_partial: true,
+            _streaming: true,
+          });
+          copied = true; // upsertMessage returns a fresh array
+        } else {
+          if (!copied) {
+            out = out.slice();
+            copied = true;
+          }
+          out[idx] = {
+            ...out[idx],
+            content: (out[idx].content ?? "") + delta,
+            _streaming: true,
+          };
+        }
       }
-      return prev.map((m, i) =>
-        i === idx
-          ? { ...m, content: (m.content ?? "") + delta, _streaming: true }
-          : m
-      );
+      return out;
     });
   }, []);
 
+  const handleStreamDelta = useCallback(
+    (msgId: string, delta: string) => {
+      const pending = pendingDeltas.current;
+      pending.set(msgId, (pending.get(msgId) ?? "") + delta);
+      if (flushHandle.current === null) {
+        flushHandle.current = requestAnimationFrame(flushDeltas);
+      }
+    },
+    [flushDeltas]
+  );
+
   const handleStreamDone = useCallback(
     (update: Partial<Message> & { msg_id: string }) => {
+      // The done frame carries the full final content and overwrites wholesale, so
+      // any buffered deltas for this message are stale — drop them (flushing first
+      // would either duplicate text or append after finalize).
+      pendingDeltas.current.delete(update.msg_id);
       setMessages((prev) =>
         upsertMessage(prev, { ...update, _streaming: false, _trace: null })
       );
@@ -312,6 +373,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   );
 
   const handleDeleted = useCallback((msgId: string) => {
+    pendingDeltas.current.delete(msgId);
     setMessages((prev) =>
       prev.map((m) =>
         m.msg_id === msgId ? { ...m, is_deleted: true, content: "" } : m
@@ -504,6 +566,41 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     []
   );
 
+  // Stable handlers for the memoized drawers so a streaming re-render of ChannelView
+  // doesn't hand them fresh closures (which would defeat React.memo).
+  const closeViewBoard = useCallback(() => setVbOpen(false), []);
+  const toggleViewBoardMinimal = useCallback(() => setVbMinimal((m) => !m), []);
+  const closeWorkbench = useCallback(() => setWbOpen(false), []);
+
+  // Hoisted so the memoized MessageComposer isn't handed a fresh `toolbar` element
+  // on every streaming delta render. Null when there's no channel (composer unmounted).
+  const composerToolbar = useMemo(
+    () =>
+      channel ? (
+        <>
+          <SessionSwitcher
+            channelId={channel.channel_id}
+            bots={switcherBots}
+            value={selectedSessionId}
+            onChange={setSelectedSessionId}
+          />
+          {/* Model/mode + config for the @mentioned bot(s); with no live
+              mention, fall back to the channel's bots so the controls are
+              always reachable. */}
+          <ComposerModelPopover
+            channelId={channel.channel_id}
+            bots={
+              mentionedBots.length > 0
+                ? mentionedBots.map((m) => ({ botId: m.id, name: m.label }))
+                : switcherBots
+            }
+            selectedSessionId={selectedSessionId}
+          />
+        </>
+      ) : null,
+    [channel, switcherBots, selectedSessionId, mentionedBots]
+  );
+
   // Resolve a clicked file reference by PROVENANCE and TAKE THE USER TO where it
   // lives — the channel files view (inbox), the workbench File panel (desk), or the
   // workspace browser — instead of a silent download. Never assumes the bot followed
@@ -558,12 +655,13 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     [channel, botLabels]
   );
 
-  async function handleSend(
-    content: string,
-    mentionIds: string[],
-    fileIds: string[],
-    mentionNames: string[] = []
-  ) {
+  const handleSend = useCallback(
+    async (
+      content: string,
+      mentionIds: string[],
+      fileIds: string[],
+      mentionNames: string[] = []
+    ) => {
     if (!channel) return;
     const sendParams: NonNullable<Message["_sendParams"]> = {
       content,
@@ -594,7 +692,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       };
       setMessages((prev) => sortMessages([...prev, failed]));
     }
-  }
+    },
+    [channel, selectedSessionId, replyTo, user]
+  );
 
   // Retry a failed send: flip the placeholder to "sending", replay the original
   // arguments verbatim, then drop the placeholder on success (the confirmed row
@@ -1021,30 +1121,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         channelName={channel.name}
         mentionables={mentionables}
         commands={commands}
-        toolbar={
-          <>
-            <SessionSwitcher
-              channelId={channel.channel_id}
-              bots={switcherBots}
-              value={selectedSessionId}
-              onChange={setSelectedSessionId}
-            />
-            {/* Model/mode + config for the @mentioned bot(s); with no live
-                mention, fall back to the channel's bots so the controls are
-                always reachable. Collapsed behind a "Model" button — click to
-                open the popover (each bot's row self-hides when it advertises
-                nothing). */}
-            <ComposerModelPopover
-              channelId={channel.channel_id}
-              bots={
-                mentionedBots.length > 0
-                  ? mentionedBots.map((m) => ({ botId: m.id, name: m.label }))
-                  : switcherBots
-              }
-              selectedSessionId={selectedSessionId}
-            />
-          </>
-        }
+        toolbar={composerToolbar}
         onMentionsChange={setMentionedBots}
         onSend={handleSend}
       />
@@ -1063,6 +1140,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         }`}
       >
         {wsOpen && (
+          <Suspense fallback={null}>
           <RemoteWorkspaceDialog
             channelId={channel.channel_id}
             onClose={() => setWsOpen(false)}
@@ -1087,23 +1165,24 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             currentUserId={user?.user_id}
             memberNames={memberNames}
           />
+          </Suspense>
         )}
 
         <ViewBoardDrawer
           open={vbOpen}
-          onClose={() => setVbOpen(false)}
+          onClose={closeViewBoard}
           channelId={channel.channel_id}
           sendResourceReq={sendResourceReq}
           selectedSessionId={selectedSessionId}
           boardTick={boardTick}
           minimal={vbMinimal}
-          onToggleMinimal={() => setVbMinimal((m) => !m)}
+          onToggleMinimal={toggleViewBoardMinimal}
           onJumpToMessage={jumpToMessage}
         />
 
         <WorkbenchDrawer
           open={wbOpen}
-          onClose={() => setWbOpen(false)}
+          onClose={closeWorkbench}
           channelId={channel.channel_id}
           sendResourceReq={sendResourceReq}
           openFilePath={wbTarget}
@@ -1112,14 +1191,18 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       </aside>
       </div>
       {filesOpen && (
-        <ChannelFilesDialog
-          channelId={channel.channel_id}
-          onClose={() => setFilesOpen(false)}
-          focusFileId={filesFocus}
-        />
+        <Suspense fallback={null}>
+          <ChannelFilesDialog
+            channelId={channel.channel_id}
+            onClose={() => setFilesOpen(false)}
+            focusFileId={filesFocus}
+          />
+        </Suspense>
       )}
       {settingsOpen && (
-        <ChannelSettingsDialog channel={channel} onClose={() => setSettingsOpen(false)} />
+        <Suspense fallback={null}>
+          <ChannelSettingsDialog channel={channel} onClose={() => setSettingsOpen(false)} />
+        </Suspense>
       )}
       {forward && (
         <ForwardDialog

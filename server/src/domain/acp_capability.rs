@@ -802,45 +802,52 @@ async fn consume_nonce_and_bump(
     frame_type: &str,
     resource: Option<&str>,
 ) -> Result<(), CapabilityError> {
-    let inserted = sqlx::query(
-        "INSERT INTO acp_capability_nonce_log
-            (delegation_id, nonce, request_id, frame_type, frame_resource, used_at, created_at)
-         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-         ON CONFLICT DO NOTHING",
+    // One atomic statement instead of two serial round-trips (INSERT then UPDATE) —
+    // halves the per-frame write latency on the capability-enforced streaming hot path.
+    // `ins` RETURNING a row iff the nonce was newly inserted (ON CONFLICT DO NOTHING
+    // suppresses it on replay); the UPDATE gates on EXISTS(ins) so a replayed nonce
+    // never bumps use_count. CTE side effects still apply when the UPDATE matches zero
+    // rows, so an exhausted delegation still burns the nonce — same as the old order.
+    let row = sqlx::query(
+        "WITH ins AS (
+            INSERT INTO acp_capability_nonce_log
+                (delegation_id, nonce, request_id, frame_type, frame_resource, used_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+            ON CONFLICT DO NOTHING
+            RETURNING 1
+         ),
+         upd AS (
+            UPDATE acp_capability_delegations
+            SET use_count = use_count + 1, updated_at = NOW()
+            WHERE delegation_id = $1
+              AND (max_uses IS NULL OR use_count < max_uses)
+              AND EXISTS (SELECT 1 FROM ins)
+            RETURNING use_count
+         )
+         SELECT
+            EXISTS(SELECT 1 FROM ins) AS nonce_inserted,
+            (SELECT use_count FROM upd) AS new_use_count",
     )
     .bind(delegation_id.to_string())
     .bind(&envelope.nonce)
     .bind(&envelope.request_id)
     .bind(frame_type)
     .bind(resource)
-    .execute(db)
+    .fetch_one(db)
     .await
     .map_err(|e| {
-        tracing::error!(error = %e, ctx = "consume_nonce_and_bump: insert nonce log", "acp_capability db error");
+        tracing::error!(error = %e, ctx = "consume_nonce_and_bump: nonce+bump CTE", "acp_capability db error");
         CapabilityError::Denied("db error".into())
-    })?
-    .rows_affected();
-    if inserted == 0 {
+    })?;
+
+    let nonce_inserted: bool = row.try_get("nonce_inserted").unwrap_or(false);
+    if !nonce_inserted {
         return Err(CapabilityError::Denied("nonce replay detected".into()));
     }
-
-    let updated = sqlx::query_scalar::<_, i64>(
-        "UPDATE acp_capability_delegations
-         SET use_count = use_count + 1, updated_at = NOW()
-         WHERE delegation_id = $1
-           AND (max_uses IS NULL OR use_count < max_uses)
-         RETURNING use_count",
-    )
-    .bind(delegation_id.to_string())
-    .fetch_optional(db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, ctx = "consume_nonce_and_bump: bump use_count", "acp_capability db error");
-        CapabilityError::Denied("db error".into())
-    })?
-    .ok_or_else(|| CapabilityError::Denied("delegation exhausted".into()))?;
-
-    let _updated = updated;
+    let new_use_count: Option<i64> = row.try_get("new_use_count").ok().flatten();
+    if new_use_count.is_none() {
+        return Err(CapabilityError::Denied("delegation exhausted".into()));
+    }
     Ok(())
 }
 

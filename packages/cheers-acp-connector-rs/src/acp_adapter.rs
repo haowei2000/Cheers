@@ -929,7 +929,26 @@ async fn handle_peer_message(
 ) -> anyhow::Result<()> {
     if let Some(id) = value.get("id").and_then(Value::as_u64) {
         if value.get("method").is_some() {
-            handle_peer_request(account_id, writer, event_tx, id, value).await?;
+            // Spawn instead of awaiting inline: session/request_permission parks on a
+            // human approval (rx.await, potentially minutes). Awaiting it here would
+            // stall the ONLY consumer of this agent child's stdout — freezing every
+            // other concurrent session's streaming output and stranding pending
+            // JSON-RPC responses. Responses are id-correlated, so replying from a task
+            // (out of order) is protocol-correct; notifications keep forwarding inline.
+            let account_id = account_id.to_string();
+            let writer = writer.clone();
+            let event_tx = event_tx.clone();
+            tokio::spawn(async move {
+                if let Err(err) =
+                    handle_peer_request(&account_id, &writer, &event_tx, id, value).await
+                {
+                    let _ = event_tx
+                        .send(RuntimeEvent::AdapterError {
+                            message: err.to_string(),
+                        })
+                        .await;
+                }
+            });
             return Ok(());
         }
         let reply = if let Some(error) = value.get("error") {

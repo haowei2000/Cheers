@@ -42,33 +42,49 @@ pub enum MentionParseError {
 }
 
 /// 验证 mention_ids 都是频道成员，从 channel_memberships 取 member_type。
+/// 单次 `member_id = ANY(...)` 查询 + 内存比对，避免每个 mention 一次 DB 往返
+/// （群 @ 最多 500 个成员，逐条查询会在持有频道序列化锁的事务内堆积往返）。
 pub async fn validate_mention_ids(
     db: &PgPool,
     channel_id: Uuid,
     mention_ids: &[Uuid],
 ) -> Result<Vec<Mention>, MentionParseError> {
+    if mention_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let id_strs: Vec<String> = mention_ids.iter().map(|id| id.to_string()).collect();
+    let rows = sqlx::query(
+        "SELECT member_id, member_type FROM channel_memberships
+         WHERE channel_id = $1 AND member_id = ANY($2)",
+    )
+    .bind(channel_id.to_string())
+    .bind(&id_strs)
+    .fetch_all(db)
+    .await?;
+
+    // member_id → MemberType（仅收录 user/bot；未知 type 视同不存在 → InvalidMember）。
+    let mut type_by_id: std::collections::HashMap<Uuid, MemberType> = std::collections::HashMap::new();
+    for row in &rows {
+        let mid = row
+            .try_get::<String, _>("member_id")
+            .ok()
+            .and_then(|s| s.parse::<Uuid>().ok());
+        let mty = match row.try_get::<String, _>("member_type").as_deref() {
+            Ok("bot") => Some(MemberType::Bot),
+            Ok("user") => Some(MemberType::User),
+            _ => None,
+        };
+        if let (Some(mid), Some(mty)) = (mid, mty) {
+            type_by_id.insert(mid, mty);
+        }
+    }
+
+    // 按输入顺序遍历——保留“首个非成员即报错”的既有语义与去重顺序。
     let mut mentions = Vec::new();
     for &member_id in mention_ids {
-        let row = sqlx::query(
-            "SELECT member_type FROM channel_memberships
-             WHERE channel_id = $1 AND member_id = $2
-             LIMIT 1",
-        )
-        .bind(channel_id.to_string())
-        .bind(member_id.to_string())
-        .fetch_optional(db)
-        .await?;
-
-        let Some(row) = row else {
+        let Some(&member_type) = type_by_id.get(&member_id) else {
             return Err(MentionParseError::InvalidMember { member_id });
         };
-
-        let member_type = match row.try_get::<String, _>("member_type").as_deref() {
-            Ok("bot") => MemberType::Bot,
-            Ok("user") => MemberType::User,
-            _ => return Err(MentionParseError::InvalidMember { member_id }),
-        };
-
         push_unique(&mut mentions, member_id, member_type);
     }
     Ok(mentions)
@@ -231,23 +247,32 @@ pub async fn resolve_mention_names(
 }
 
 /// 在事务内批量写入 `message_mentions`（首次写入）。
+/// 单条 `unnest` 多行 INSERT——群 @ 时把最多 500 次往返压成一次，缩短持有频道
+/// 序列化锁（channel_seq 行锁）的窗口。
 pub async fn insert_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     msg_id: Uuid,
     mentions: &[Mention],
 ) -> Result<(), sqlx::Error> {
-    for mention in mentions {
-        sqlx::query(
-            "INSERT INTO message_mentions (msg_id, member_id, member_type)
-             VALUES ($1, $2, $3)
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(msg_id.to_string())
-        .bind(mention.member_id.to_string())
-        .bind(mention.member_type.as_str())
-        .execute(&mut **tx)
-        .await?;
+    if mentions.is_empty() {
+        return Ok(());
     }
+    let member_ids: Vec<String> = mentions.iter().map(|m| m.member_id.to_string()).collect();
+    let member_types: Vec<String> = mentions
+        .iter()
+        .map(|m| m.member_type.as_str().to_string())
+        .collect();
+    sqlx::query(
+        "INSERT INTO message_mentions (msg_id, member_id, member_type)
+         SELECT $1, u.id, u.ty
+         FROM unnest($2::text[], $3::text[]) AS u(id, ty)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(msg_id.to_string())
+    .bind(&member_ids)
+    .bind(&member_types)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 

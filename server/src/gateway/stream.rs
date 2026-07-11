@@ -43,6 +43,21 @@ pub struct StreamEntry {
     pub session_id: Option<Uuid>,
     /// 是否已 finalize（R4 守卫：finalize 后拒绝迟到 delta）
     pub finalized: bool,
+    /// 上次 touch_session 的时间戳（epoch millis）。每个 delta 都 touch 同一 session
+    /// 行会产生写放大，故按 `SESSION_TOUCH_DEBOUNCE_MS` 去抖；首个 delta 仍立即置 busy。
+    /// `Arc` 让 StreamEntry 的 Clone 与 DashMap Ref 共享同一计数器。
+    pub last_touched_ms: Arc<AtomicU64>,
+}
+
+/// 同一 session 行的 touch 去抖窗口（毫秒）。窗口内的 delta 仅损失亚秒级 last_used_at 精度。
+const SESSION_TOUCH_DEBOUNCE_MS: u64 = 2000;
+
+/// 当前时间的 epoch 毫秒（touch 去抖用）。时钟回拨时 saturating_sub 会退化为立即 touch。
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 // ── StreamRegistry ────────────────────────────────────────────────────────────
@@ -137,18 +152,39 @@ pub async fn handle_delta(
         .and_then(|s| s.parse().ok())
         .ok_or("missing msg_id")?;
     let delta = frame.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-    let entry = registry
-        .entries
-        .get(&msg_id)
-        .ok_or("stream not registered")?;
-    mark_session_alive(db, bot_id, provider_account_id, frame, entry.session_id).await;
 
-    // R1: 所有权校验 —— 以 PG 为准，不信任内存注册表
-    let channel_id = verify_ownership(db, bot_id, msg_id).await?;
+    // 复制所需字段后立即释放 DashMap 分片读锁——不得跨 .await 持有守卫，否则并发写者
+    // （register / claim_finalize / remove）会在 DB 往返期间被同步阻塞其 worker 线程。
+    let (session_id, last_touched_ms) = {
+        let entry = registry
+            .entries
+            .get(&msg_id)
+            .ok_or("stream not registered")?;
+        (entry.session_id, entry.last_touched_ms.clone())
+    };
 
-    // R4: finalize 守卫
-    if entry.finalized {
-        return Err("stream already finalized");
+    // touch 去抖：首个 delta 立即置 busy；窗口内的后续 delta 跳过 session 行 UPDATE，
+    // 仅损失亚秒级 last_used_at 精度。compare_exchange 防止并发帧重复 touch。
+    let now = now_millis();
+    let prev = last_touched_ms.load(Ordering::Relaxed);
+    let should_touch = now.saturating_sub(prev) >= SESSION_TOUCH_DEBOUNCE_MS
+        && last_touched_ms
+            .compare_exchange(prev, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok();
+
+    // R1 所有权校验与（偶发的）session touch 并发执行——两者互不依赖，省去一次串行往返。
+    let (owner, _) = tokio::join!(verify_ownership(db, bot_id, msg_id), async {
+        if should_touch {
+            mark_session_alive(db, bot_id, provider_account_id, frame, session_id).await;
+        }
+    });
+    let channel_id = owner?;
+
+    // R4: finalize 守卫——.await 后重新读取（done 已 remove entry 视同 gone）。
+    match registry.entries.get(&msg_id).map(|e| e.finalized) {
+        None => return Err("stream not registered"),
+        Some(true) => return Err("stream already finalized"),
+        Some(false) => {}
     }
 
     // R2: Backend 盖戳 seq
@@ -166,11 +202,57 @@ pub async fn handle_delta(
     Ok(())
 }
 
+/// bot@bot 回复触发从数据 WS 读循环里 spawn 出去执行。触发的下一跳
+/// （acquire_scope_session + dispatch 的 S3 拉取 + base64）耗时可达数百 ms；若 inline
+/// await，会 head-of-line 阻塞该 connector 上多路复用的所有其他流。此时源消息已落库、
+/// 终态帧已广播、ack 已发出——链的排序不属于协议契约，故安全后台化。
+/// Returns the spawned task's handle. Production callers drop it (fire-and-forget —
+/// that IS the point: don't block the read loop). Tests can `.await` it to observe the
+/// otherwise-async trigger deterministically.
+#[allow(clippy::too_many_arguments)]
+fn spawn_trigger_bot_replies(
+    db: &PgPool,
+    fanout: &Arc<dyn Fanout>,
+    registry: &Arc<StreamRegistry>,
+    bot_locator: &Arc<dyn BotLocator>,
+    channel_id: Uuid,
+    msg_id: Uuid,
+    channel_seq: i64,
+    depth: i32,
+    author_bot_id: Uuid,
+    mentions: Vec<mentions::Mention>,
+    chain_id: Option<String>,
+) -> tokio::task::JoinHandle<()> {
+    let db = db.clone();
+    let fanout = fanout.clone();
+    let registry = registry.clone();
+    let bot_locator = bot_locator.clone();
+    tokio::spawn(async move {
+        if let Err(e) = chains::trigger_bot_replies(
+            &db,
+            &fanout,
+            &registry,
+            &bot_locator,
+            channel_id,
+            msg_id,
+            channel_seq,
+            depth,
+            author_bot_id,
+            &mentions,
+            chain_id.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
+        }
+    })
+}
+
 /// 处理 bot 发来的 done 帧。
 ///
 /// 写后投递原则：先更新 PG，再 fan-out 终态帧。
 pub async fn handle_done(
-    registry: &StreamRegistry,
+    registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
@@ -303,24 +385,14 @@ pub async fn handle_done(
 
     // depth 上限 / 自 @ 过滤 / bot@bot INITIATE 门禁都在 trigger_bot_replies 内部处理。
     // chain_id 从本条回复继承，下一跳共享同一条可取消链（§8 gate 也在内部）。
-    if let Err(e) = chains::trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        depth,
-        bot_id,
-        &mentions,
-        chain_id.as_deref(),
-    )
-    .await
-    {
-        tracing::warn!(msg_id = %msg_id, err = %e, "bot reply trigger failed");
-    }
+    // spawn 出去，避免下一跳的 dispatch（S3 拉取 + base64）阻塞本 connector 的读循环。
+    spawn_trigger_bot_replies(
+        db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, depth, bot_id,
+        mentions, chain_id,
+    );
 
+    // finalize_session 保持 inline：单条快速 UPDATE，且 spawn 会扩大与 acquire_scope_session
+    // 无条件 upsert 的 BUSY/IDLE 竞态窗口。
     if let Some(sid) =
         resolve_session_id(db, bot_id, provider_account_id, frame, entry_session_id).await
     {
@@ -472,7 +544,7 @@ async fn resolve_session_id(
 /// 不同于 delta/done（续写占位），send 是建全新 Message。
 /// 权限检查：bot token 只映射身份；频道写权限由 membership role 决定。
 pub async fn handle_send(
-    registry: &StreamRegistry,
+    registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
@@ -581,23 +653,11 @@ pub async fn handle_send(
     // chain：主动 send 拿不到当前任务上下文，best-effort 继承发送 bot 进行中任务
     // 的链（让多跳 post_message 级联共享同一条可取消链），无则新起一条（§8）。
     let chain_id = chain_for_proactive_send(db, channel_id, bot_id, msg_id, &mentions).await;
-    if let Err(e) = chains::trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        0,
-        bot_id,
-        &mentions,
-        chain_id.as_deref(),
-    )
-    .await
-    {
-        tracing::warn!(msg_id = %msg_id, err = %e, "bot send @bot trigger failed");
-    }
+    // spawn：同 handle_done，避免下一跳 dispatch 阻塞 connector 读循环。
+    spawn_trigger_bot_replies(
+        db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, 0, bot_id, mentions,
+        chain_id,
+    );
 
     Ok(msg_id)
 }
@@ -634,14 +694,17 @@ async fn chain_for_proactive_send(
 /// 与 [`handle_send`] / [`handle_done`] 的行为对齐（同样的自 @ 过滤 / depth 上限 /
 /// INITIATE 门禁，都在 `trigger_bot_replies` 内部）。`created` 是 `handle_create`
 /// 返回的 `MessageDto` JSON；解析失败则静默跳过（消息已落库，不影响主流程）。
+/// Returns the bot@bot trigger's spawned task handle (or `None` when nothing is
+/// triggered). Production drops it (fire-and-forget); tests `.await` it to observe the
+/// trigger deterministically.
 pub async fn broadcast_and_trigger_created_message(
-    registry: &StreamRegistry,
+    registry: &Arc<StreamRegistry>,
     fanout: &Arc<dyn Fanout>,
     db: &PgPool,
     bot_locator: &Arc<dyn BotLocator>,
     author_bot_id: Uuid,
     created: &Value,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
     let (Some(msg_id), Some(channel_id)) = (
         created
             .get("msg_id")
@@ -652,7 +715,7 @@ pub async fn broadcast_and_trigger_created_message(
             .and_then(Value::as_str)
             .and_then(|s| s.parse::<Uuid>().ok()),
     ) else {
-        return;
+        return None;
     };
 
     // 1) live 广播：DTO 原样投递，前端与 handle_send 的 "message" 帧同形（多余字段无害）。
@@ -662,32 +725,20 @@ pub async fn broadcast_and_trigger_created_message(
     // 2) bot@bot 触发：从 DTO 的 mentions 还原 Vec<Mention>，depth=0（与用户发消息对等）。
     let mentions = dto_mentions(created);
     if mentions.is_empty() {
-        return;
+        return None;
     }
     let Some(channel_seq) = created.get("channel_seq").and_then(Value::as_i64) else {
-        return;
+        return None;
     };
     // Same proactive-send chain assignment as handle_send: inherit the author
     // bot's in-flight chain (multi-hop post_message stays one cancelable chain),
     // else root a new one (§8).
     let chain_id = chain_for_proactive_send(db, channel_id, author_bot_id, msg_id, &mentions).await;
-    if let Err(e) = chains::trigger_bot_replies(
-        db,
-        fanout,
-        registry,
-        bot_locator,
-        channel_id,
-        msg_id,
-        channel_seq,
-        0,
-        author_bot_id,
-        &mentions,
-        chain_id.as_deref(),
-    )
-    .await
-    {
-        tracing::warn!(msg_id = %msg_id, err = %e, "resource-create @bot trigger failed");
-    }
+    // spawn：同 handle_done / handle_send，避免下一跳 dispatch 阻塞 connector 读循环。
+    Some(spawn_trigger_bot_replies(
+        db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, 0, author_bot_id,
+        mentions, chain_id,
+    ))
 }
 
 /// 从 `MessageDto` JSON 的 `mentions` 数组还原 [`mentions::Mention`]（丢弃无法解析的项）。
@@ -848,6 +899,7 @@ mod tests {
             task_id: Uuid::new_v4(),
             session_id: None,
             finalized: false,
+            last_touched_ms: Default::default(),
         }
     }
 

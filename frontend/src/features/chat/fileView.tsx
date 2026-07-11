@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Captions, FileText, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { apiFetch } from "@/api/client";
@@ -6,7 +6,12 @@ import { realizeFile, pollFileStatus, transcribeFile } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { downloadFile, formatBytes, isAudioFile } from "./fileUtils";
 import { FileTypeIcon } from "./fileIcon";
-import { FilePreviewModal } from "./FilePreviewModal";
+
+// Click-gated: keeps pdfjs-dist (~364 kB) and the full highlight.js barrel out of the
+// chat critical path — they download on first file-preview click. Named export → default shim.
+const FilePreviewModal = lazy(() =>
+  import("./FilePreviewModal").then((m) => ({ default: m.FilePreviewModal })),
+);
 
 // Shared rendering for CHAT files (file_records / S3 attachments) — distinct from workbench
 // context_files. Used both inline in messages and in the channel Files dialog.
@@ -261,7 +266,11 @@ export function FileTile({ file }: { file: FileInfo }) {
           )}
         </button>
       )}
-      {open && <FilePreviewModal file={file} onClose={() => setOpen(false)} />}
+      {open && (
+        <Suspense fallback={null}>
+          <FilePreviewModal file={file} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
     </>
   );
 }

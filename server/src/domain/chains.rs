@@ -76,6 +76,9 @@ pub async fn trigger_bot_replies(
 
     let next_depth = current_depth.saturating_add(1);
 
+    // Shared across all bots triggered by this reply so identical trigger
+    // attachments / pinned files are fetched from S3 once, not once per bot.
+    let media_cache = dispatcher::MediaCache::default();
     for bot_id in bots {
         // Per-channel dispatch budget. The proactive `send` / `post_message`
         // paths reset `current_depth` to 0 (they carry no task depth), so the
@@ -159,6 +162,7 @@ pub async fn trigger_bot_replies(
                 // cancelable as one unit and the gate above blocks it once cancelled.
                 chain_id: chain_id.map(ToString::to_string),
             },
+            &media_cache,
         )
         .await
         {

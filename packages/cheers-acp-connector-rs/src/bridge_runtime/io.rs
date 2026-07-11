@@ -267,47 +267,67 @@ pub(super) fn spawn_control_socket(
     _ready: BridgeReady,
 ) {
     tokio::spawn(async move {
-        let mut next_heartbeat = Instant::now() + config.heartbeat_interval;
+        use tokio::time::{interval_at, Instant as TokioInstant, MissedTickBehavior};
+        // Event-driven instead of a 100ms poll: an outbound frame is written the instant
+        // it's queued (no 0–100ms latency floor on every control frame), and the loop
+        // idles with zero wakeups. First heartbeat one interval out; Delay so a stall
+        // doesn't burst pings — matching the old `next_heartbeat = now + interval` reset.
+        let mut hb = interval_at(
+            TokioInstant::now() + config.heartbeat_interval,
+            config.heartbeat_interval,
+        );
+        hb.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut out_open = true;
         tracing::debug!("control socket read loop started");
         loop {
-            while let Ok(frame) = out_rx.try_recv() {
-                if socket.send_json(&frame).await.is_err() {
-                    tracing::warn!("control socket send failed → closing");
-                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
-                    return;
-                }
-            }
-            if Instant::now() >= next_heartbeat {
-                if socket.send_json(&ControlOutbound::Ping).await.is_err() {
-                    tracing::warn!("control socket heartbeat failed → closing");
-                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
-                    return;
-                }
-                next_heartbeat = Instant::now() + config.heartbeat_interval;
-            }
-            match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
-                Ok(Ok(Some(value))) => match serde_json::from_value::<ControlInbound>(value) {
-                    Ok(frame) => {
-                        if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
+            tokio::select! {
+                maybe = out_rx.recv(), if out_open => match maybe {
+                    Some(frame) => {
+                        if socket.send_json(&frame).await.is_err() {
+                            tracing::warn!("control socket send failed → closing");
+                            let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
                             return;
                         }
+                        // Drain any further queued frames back-to-back (coalesce bursts).
+                        while let Ok(frame) = out_rx.try_recv() {
+                            if socket.send_json(&frame).await.is_err() {
+                                tracing::warn!("control socket send failed → closing");
+                                let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
+                                return;
+                            }
+                        }
                     }
-                    Err(err) => {
-                        let _ = runtime_tx
-                            .send(RuntimeInput::SocketError {
-                                stream: "control",
-                                error: err.to_string(),
-                            })
-                            .await;
+                    // All senders dropped: stop forwarding outbound but keep serving inbound.
+                    None => out_open = false,
+                },
+                _ = hb.tick() => {
+                    if socket.send_json(&ControlOutbound::Ping).await.is_err() {
+                        tracing::warn!("control socket heartbeat failed → closing");
+                        let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
                         return;
                     }
-                },
-                Ok(Ok(None)) | Ok(Err(_)) => {
-                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
-                    return;
                 }
-                Err(_elapsed) => {
-                    // Timeout — expected, just loop back to check heartbeats/outgoing
+                msg = socket.next_json() => match msg {
+                    Ok(Some(value)) => match serde_json::from_value::<ControlInbound>(value) {
+                        Ok(frame) => {
+                            if runtime_tx.send(RuntimeInput::Control(frame)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = runtime_tx
+                                .send(RuntimeInput::SocketError {
+                                    stream: "control",
+                                    error: err.to_string(),
+                                })
+                                .await;
+                            return;
+                        }
+                    },
+                    Ok(None) | Err(_) => {
+                        let _ = runtime_tx.send(RuntimeInput::SocketClosed("control")).await;
+                        return;
+                    }
                 }
             }
         }
@@ -323,10 +343,22 @@ pub(super) fn spawn_data_socket(
     _last_event_seq: Arc<AtomicU64>,
 ) {
     tokio::spawn(async move {
-        let mut next_heartbeat = Instant::now() + config.heartbeat_interval;
+        use tokio::time::{interval_at, Instant as TokioInstant, MissedTickBehavior};
+        // Event-driven (see spawn_control_socket): every streamed Delta / ack / permission
+        // frame is written the instant it's queued instead of waiting out a 100ms poll tick.
+        let mut hb = interval_at(
+            TokioInstant::now() + config.heartbeat_interval,
+            config.heartbeat_interval,
+        );
+        hb.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut out_open = true;
         tracing::debug!("data socket read loop started");
-        loop {
-            while let Ok(mut frame) = out_rx.try_recv() {
+
+        // Sign (capability mode) then write one outbound frame; None on success, or the
+        // stream label to report+close on failure.
+        macro_rules! write_frame {
+            ($frame:expr) => {{
+                let mut frame = $frame;
                 if let Some(signer) = &mut signer {
                     if let Err(err) = signer.attach(&mut frame) {
                         let _ = runtime_tx
@@ -342,37 +374,48 @@ pub(super) fn spawn_data_socket(
                     let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
                     return;
                 }
-            }
-            if Instant::now() >= next_heartbeat {
-                if socket.send_json(&DataOutbound::Ping).await.is_err() {
-                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
-                    return;
-                }
-                next_heartbeat = Instant::now() + config.heartbeat_interval;
-            }
-            match timeout(SOCKET_POLL_INTERVAL, socket.next_json()).await {
-                Ok(Ok(Some(value))) => match serde_json::from_value::<DataInbound>(value) {
-                    Ok(frame) => {
-                        if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
-                            return;
+            }};
+        }
+
+        loop {
+            tokio::select! {
+                maybe = out_rx.recv(), if out_open => match maybe {
+                    Some(frame) => {
+                        write_frame!(frame);
+                        // Drain any further queued frames back-to-back (coalesce bursts).
+                        while let Ok(frame) = out_rx.try_recv() {
+                            write_frame!(frame);
                         }
                     }
-                    Err(err) => {
-                        let _ = runtime_tx
-                            .send(RuntimeInput::SocketError {
-                                stream: "data",
-                                error: err.to_string(),
-                            })
-                            .await;
+                    None => out_open = false,
+                },
+                _ = hb.tick() => {
+                    if socket.send_json(&DataOutbound::Ping).await.is_err() {
+                        let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
                         return;
                     }
-                },
-                Ok(Ok(None)) | Ok(Err(_)) => {
-                    let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
-                    return;
                 }
-                Err(_elapsed) => {
-                    // Timeout — expected
+                msg = socket.next_json() => match msg {
+                    Ok(Some(value)) => match serde_json::from_value::<DataInbound>(value) {
+                        Ok(frame) => {
+                            if runtime_tx.send(RuntimeInput::Data(frame)).await.is_err() {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = runtime_tx
+                                .send(RuntimeInput::SocketError {
+                                    stream: "data",
+                                    error: err.to_string(),
+                                })
+                                .await;
+                            return;
+                        }
+                    },
+                    Ok(None) | Err(_) => {
+                        let _ = runtime_tx.send(RuntimeInput::SocketClosed("data")).await;
+                        return;
+                    }
                 }
             }
         }

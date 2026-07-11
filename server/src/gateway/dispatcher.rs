@@ -47,12 +47,43 @@ pub enum DispatchResult {
     DbError(String),
 }
 
+/// Per-trigger memo for the S3-backed context that every bot triggered by the SAME
+/// message would otherwise re-fetch independently: attachment bytes (an image can be
+/// up to 8 MB, GET + base64 per bot), audio transcripts, and the channel's pinned
+/// prompt blocks. Callers create one instance before their per-bot dispatch loop and
+/// pass `&cache` into each `dispatch`, so each object is fetched at most once per
+/// trigger. Per-bot inlining decisions (budget, audio capability) are unchanged — only
+/// the byte fetch is shared. `None`/miss is memoized too (best-effort: don't re-hit S3).
+#[derive(Default)]
+pub struct MediaCache {
+    b64: tokio::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
+    transcript: tokio::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
+    pinned: tokio::sync::Mutex<std::collections::HashMap<Uuid, Vec<String>>>,
+}
+
+impl MediaCache {
+    /// Cached [`load_pinned_context`] keyed by channel (pinned blocks are per-channel,
+    /// bot-independent).
+    async fn pinned_context(&self, db: &PgPool, channel_id: Uuid) -> Vec<String> {
+        if let Some(hit) = self.pinned.lock().await.get(&channel_id).cloned() {
+            return hit;
+        }
+        let blocks = load_pinned_context(db, channel_id).await;
+        self.pinned
+            .lock()
+            .await
+            .insert(channel_id, blocks.clone());
+        blocks
+    }
+}
+
 pub async fn dispatch(
     db: &PgPool,
     fanout: &Arc<dyn Fanout>,
     registry: &StreamRegistry,
     bot_locator: &Arc<dyn BotLocator>,
     params: DispatchParams,
+    media_cache: &MediaCache,
 ) -> DispatchResult {
     // ── 原子创建占位（先落库）────────────────────────────────────────────────
     // 占位 id 由 (trigger_msg_id, bot_id) 确定性派生（I4）：同一输入永远同一 UUID。
@@ -85,6 +116,7 @@ pub async fn dispatch(
         task_id,
         session_id: params.session_id,
         finalized: false,
+        last_touched_ms: Default::default(),
     });
 
     // ── fan-out 占位气泡给浏览器（终态帧，先落库再投递）─────────────────────
@@ -116,10 +148,10 @@ pub async fn dispatch(
     );
 
     // ── 通过 control WS 派发 task 帧给 bot ───────────────────────────────────
-    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id)
+    let mut task_context = load_task_context(db, params.trigger_msg_id, params.bot_id, media_cache)
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
-    task_context.pinned = load_pinned_context(db, params.channel_id).await;
+    task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
     // Per-session ACP root set (cwd + additionalDirectories) stored on the session
     // row; absent → the connector falls back to its default_cwd.
     let workspace = load_session_workspace(db, &params.provider_session_key).await;
@@ -262,7 +294,12 @@ impl TaskContext {
     }
 }
 
-async fn load_task_context(db: &PgPool, msg_id: Uuid, bot_id: Uuid) -> Option<TaskContext> {
+async fn load_task_context(
+    db: &PgPool,
+    msg_id: Uuid,
+    bot_id: Uuid,
+    media_cache: &MediaCache,
+) -> Option<TaskContext> {
     #[derive(Debug, sqlx::FromRow)]
     struct TaskRow {
         sender_id: Option<String>,
@@ -306,7 +343,7 @@ async fn load_task_context(db: &PgPool, msg_id: Uuid, bot_id: Uuid) -> Option<Ta
             })
         })
         .unwrap_or_default();
-    let attachments = load_attachments(db, &file_ids, bot_id).await;
+    let attachments = load_attachments(db, &file_ids, bot_id, media_cache).await;
     let timestamp = row.created_at.map(|dt| dt.to_rfc3339());
 
     Some(TaskContext {
@@ -358,7 +395,12 @@ struct AttachmentRow {
 /// connector emit native ACP image content blocks instead of a filename summary line.
 /// Everything here is best-effort: any DB/S3 failure degrades to metadata-only (or the bare
 /// `file_id`), never blocks the dispatch. Non-inlined files stay reachable via the MCP inbox.
-async fn load_attachments(db: &PgPool, file_ids: &[String], bot_id: Uuid) -> Vec<Value> {
+async fn load_attachments(
+    db: &PgPool,
+    file_ids: &[String],
+    bot_id: Uuid,
+    media_cache: &MediaCache,
+) -> Vec<Value> {
     if file_ids.is_empty() {
         return Vec::new();
     }
@@ -416,7 +458,7 @@ async fn load_attachments(db: &PgPool, file_ids: &[String], bot_id: Uuid) -> Vec
             "is_audio": is_audio,
         });
         if is_image && should_inline_media(row, inline_budget) {
-            if let Some(data_b64) = fetch_media_b64(row).await {
+            if let Some(data_b64) = fetch_media_b64(row, media_cache).await {
                 inline_budget -= i64::from(row.size_bytes.unwrap_or(0));
                 attachment["image_b64"] = json!(data_b64);
             }
@@ -427,7 +469,7 @@ async fn load_attachments(db: &PgPool, file_ids: &[String], bot_id: Uuid) -> Vec
         // audio block; else the metadata line above is all the agent gets.
         if is_audio {
             let transcript = if row.md_path.is_some() {
-                fetch_transcript(row).await
+                fetch_transcript(row, media_cache).await
             } else {
                 None
             };
@@ -438,7 +480,7 @@ async fn load_attachments(db: &PgPool, file_ids: &[String], bot_id: Uuid) -> Vec
                 None if bot_accepts_audio && should_inline_media(row, inline_budget) => {
                     // Same eligibility gate as images (uploaded, unexpired,
                     // size within the shared frame budget).
-                    if let Some(data_b64) = fetch_media_b64(row).await {
+                    if let Some(data_b64) = fetch_media_b64(row, media_cache).await {
                         inline_budget -= i64::from(row.size_bytes.unwrap_or(0));
                         attachment["audio_b64"] = json!(data_b64);
                     }
@@ -469,18 +511,22 @@ fn should_inline_media(row: &AttachmentRow, inline_budget: i64) -> bool {
 /// Fetch a stored audio transcript (`md_path` object), capped for prompt use.
 /// Best-effort like everything here: a miss just means the attachment goes out
 /// without a summary and the agent can still pull bytes via the MCP inbox.
-async fn fetch_transcript(row: &AttachmentRow) -> Option<String> {
+async fn fetch_transcript(row: &AttachmentRow, cache: &MediaCache) -> Option<String> {
     let (client, default_bucket) = crate::resource::files::s3_handle()?;
     let bucket = row.storage_bucket.as_deref().unwrap_or(default_bucket);
     let transcript_key = row.md_path.as_deref()?;
-    match crate::infra::s3::get_object(client, bucket, transcript_key).await {
+    let cache_key = format!("{bucket}/{transcript_key}");
+    // Memo: bots sharing this trigger read the identical transcript object.
+    if let Some(hit) = cache.transcript.lock().await.get(&cache_key).cloned() {
+        return hit;
+    }
+    let result = match crate::infra::s3::get_object(client, bucket, transcript_key).await {
         Ok(bytes) => {
             let text = String::from_utf8_lossy(&bytes);
             let text = text.trim();
             if text.is_empty() {
-                return None;
-            }
-            if text.chars().count() > MAX_INLINE_TRANSCRIPT_CHARS {
+                None
+            } else if text.chars().count() > MAX_INLINE_TRANSCRIPT_CHARS {
                 let cut: String = text.chars().take(MAX_INLINE_TRANSCRIPT_CHARS).collect();
                 Some(format!("{cut}… [transcript truncated]"))
             } else {
@@ -491,21 +537,30 @@ async fn fetch_transcript(row: &AttachmentRow) -> Option<String> {
             tracing::warn!(file_id = %row.file_id, err = %e, "attachment transcript fetch failed");
             None
         }
-    }
+    };
+    cache.transcript.lock().await.insert(cache_key, result.clone());
+    result
 }
 
-async fn fetch_media_b64(row: &AttachmentRow) -> Option<String> {
+async fn fetch_media_b64(row: &AttachmentRow, cache: &MediaCache) -> Option<String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     let (client, default_bucket) = crate::resource::files::s3_handle()?;
     let bucket = row.storage_bucket.as_deref().unwrap_or(default_bucket);
     let object_key = row.object_key.as_deref()?;
-    match crate::infra::s3::get_object(client, bucket, object_key).await {
+    let cache_key = format!("{bucket}/{object_key}");
+    // Memo: an 8 MB image @mentioned to N bots is fetched + base64-encoded once, not N times.
+    if let Some(hit) = cache.b64.lock().await.get(&cache_key).cloned() {
+        return hit;
+    }
+    let result = match crate::infra::s3::get_object(client, bucket, object_key).await {
         Ok(bytes) => Some(STANDARD.encode(&bytes)),
         Err(e) => {
             tracing::warn!(file_id = %row.file_id, err = %e, "attachment image fetch failed; sending metadata only");
             None
         }
-    }
+    };
+    cache.b64.lock().await.insert(cache_key, result.clone());
+    result
 }
 
 /// Read the channel's pinned convention files (paths listed in `.workbench.json`)

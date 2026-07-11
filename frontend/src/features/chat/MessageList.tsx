@@ -1,9 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import toast from "react-hot-toast";
 import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
 import type { Message, PermissionContentData } from "@/types";
+
+// Skip layout/paint for off-screen rows during frequent streaming re-renders while
+// keeping every row in the DOM — the data-msg-id jump, native scroll anchoring on
+// prepend, day labels, and auto-scroll all keep working. `auto` in contain-intrinsic-size
+// remembers each row's last real height; 80px is only the estimate for never-rendered rows.
+const ROW_CONTENT_VISIBILITY: CSSProperties = {
+  contentVisibility: "auto",
+  containIntrinsicSize: "auto 80px",
+};
 
 // A RESOLVED approval no longer needs its own line in the channel — the decision is
 // persisted in the bot turn's trace and reachable via the per-message "Agent steps"
@@ -162,6 +171,7 @@ export function MessageList({
             )}
             <div
               data-msg-id={msg.msg_id}
+              style={ROW_CONTENT_VISIBILITY}
               className={
                 msg.msg_id === highlightId
                   ? "rounded-lg bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
