@@ -49,6 +49,18 @@ export function WorkspaceSettingsDialog({
   const [results, setResults] = useState<WorkspaceInvitable[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // In-app confirmation for destructive actions (remove member / delete / leave) —
+  // replaces native confirm(), whose OK is the reflexive Enter default. Initial focus
+  // lands on the dialog's Close (X) button, so a reflexive Enter dismisses rather than
+  // firing the destructive action; the destructive button is never the keyboard default.
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
   async function refreshMembers() {
     try {
       setMembers(await listWorkspaceMembers(workspace.workspace_id));
@@ -125,7 +137,6 @@ export function WorkspaceSettingsDialog({
   }
 
   async function doDelete() {
-    if (!confirm(`Delete workspace "${workspace.name}"? Its channels will be deleted too. This cannot be undone.`)) return;
     try {
       await deleteWorkspace(workspace.workspace_id);
       setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
@@ -147,7 +158,6 @@ export function WorkspaceSettingsDialog({
   }
 
   async function leave() {
-    if (!confirm(`Leave workspace "${workspace.name}"?`)) return;
     try {
       await leaveWorkspace(workspace.workspace_id);
       setWorkspaces(workspaces.filter((w) => w.workspace_id !== workspace.workspace_id));
@@ -160,6 +170,7 @@ export function WorkspaceSettingsDialog({
   }
 
   return (
+    <>
     <Dialog title={`Workspace settings · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
         {!canManage && (
@@ -169,7 +180,7 @@ export function WorkspaceSettingsDialog({
         )}
 
         <div className="space-y-2">
-          <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Name</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Name</label>
           <div className="flex gap-2">
             <input
               value={name}
@@ -188,7 +199,7 @@ export function WorkspaceSettingsDialog({
         {canManage && (
           <>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                 Members ({members.length})
               </label>
               <div className="max-h-48 overflow-y-auto rounded-lg bg-zinc-950/40 divide-y divide-zinc-800/60">
@@ -215,13 +226,21 @@ export function WorkspaceSettingsDialog({
                           ))}
                         </select>
                       ) : (
-                        <p className="text-[11px] text-zinc-500">{m.role}</p>
+                        <p className="text-[11px] text-zinc-400">{m.role}</p>
                       )}
                     </div>
                     {m.user_id !== me?.user_id && m.role !== "owner" && (
                       <button
-                        onClick={() => void removeMember(m)}
-                        title="Remove member"
+                        onClick={() =>
+                          setConfirmState({
+                            title: "Remove member",
+                            message: `Remove ${m.display_name || m.username} from this workspace? They must accept a new invite to rejoin.`,
+                            confirmLabel: "Remove",
+                            onConfirm: () => removeMember(m),
+                          })
+                        }
+                        title={`Remove ${m.display_name || m.username}`}
+                        aria-label={`Remove ${m.display_name || m.username}`}
                         className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded p-1"
                       >
                         <X className="w-4 h-4" />
@@ -230,7 +249,7 @@ export function WorkspaceSettingsDialog({
                   </div>
                 ))}
                 {members.length === 0 && (
-                  <div className="px-3 py-4 text-xs text-zinc-600 text-center">No members yet</div>
+                  <div className="px-3 py-4 text-xs text-zinc-400 text-center">No members yet</div>
                 )}
               </div>
 
@@ -258,7 +277,7 @@ export function WorkspaceSettingsDialog({
                 {(results.length > 0 || searching || query.trim().length >= 2) && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
                     {searching && (
-                      <div className="px-3 py-2 text-xs text-zinc-500">Searching…</div>
+                      <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
                     )}
                     {results.map((u) => (
                       <div
@@ -270,7 +289,7 @@ export function WorkspaceSettingsDialog({
                           {u.display_name || u.username}
                         </span>
                         {u.membership ? (
-                          <span className="text-[10px] text-zinc-500 rounded px-1 py-0.5">
+                          <span className="text-[10px] text-zinc-400 rounded px-1 py-0.5">
                             {u.membership === "pending" ? "Invited" : "Member"}
                           </span>
                         ) : (
@@ -285,7 +304,7 @@ export function WorkspaceSettingsDialog({
                       </div>
                     ))}
                     {!searching && results.length === 0 && query.trim().length >= 2 && (
-                      <div className="px-3 py-2 text-xs text-zinc-500">
+                      <div className="px-3 py-2 text-xs text-zinc-400">
                         No matches. Name search covers your friends — for anyone else,
                         type their exact username or email.
                       </div>
@@ -300,9 +319,20 @@ export function WorkspaceSettingsDialog({
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-zinc-200">Delete workspace</p>
-                <p className="text-xs text-zinc-500 mt-0.5">Deletes its channels too. This cannot be undone.</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Deletes its channels too. This cannot be undone.</p>
               </div>
-              <Button variant="danger" size="sm" onClick={() => void doDelete()}>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() =>
+                  setConfirmState({
+                    title: "Delete workspace",
+                    message: `Delete "${workspace.name}"? Its channels are deleted too. This cannot be undone.`,
+                    confirmLabel: "Delete",
+                    onConfirm: doDelete,
+                  })
+                }
+              >
                 <Trash2 className="w-3.5 h-3.5" />
                 Delete
               </Button>
@@ -318,9 +348,20 @@ export function WorkspaceSettingsDialog({
           <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-zinc-200">Leave workspace</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Remove yourself from this workspace.</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Remove yourself from this workspace.</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => void leave()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setConfirmState({
+                  title: "Leave workspace",
+                  message: `Leave "${workspace.name}"? You'll need a new invite to rejoin.`,
+                  confirmLabel: "Leave",
+                  onConfirm: leave,
+                })
+              }
+            >
               <LogOut className="w-3.5 h-3.5" />
               Leave
             </Button>
@@ -328,5 +369,44 @@ export function WorkspaceSettingsDialog({
         )}
       </div>
     </Dialog>
+
+    {confirmState && (
+      <Dialog
+        title={confirmState.title}
+        onClose={() => {
+          if (!confirmBusy) setConfirmState(null);
+        }}
+        maxWidth="max-w-sm"
+      >
+        <p className="text-sm text-zinc-300">{confirmState.message}</p>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={confirmBusy}
+            onClick={() => setConfirmState(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={confirmBusy}
+            onClick={async () => {
+              setConfirmBusy(true);
+              try {
+                await confirmState.onConfirm();
+                setConfirmState(null);
+              } finally {
+                setConfirmBusy(false);
+              }
+            }}
+          >
+            {confirmState.confirmLabel}
+          </Button>
+        </div>
+      </Dialog>
+    )}
+    </>
   );
 }

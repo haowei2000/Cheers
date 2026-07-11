@@ -61,7 +61,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
       .finally(() => setBusy(false));
   };
 
-  if (!perms) return <p className="text-xs text-zinc-600 px-1 py-2">Loading…</p>;
+  if (!perms) return <p className="text-xs text-zinc-400 px-1 py-2">Loading…</p>;
 
   const posture = perms.posture;
   const configOptions = perms.config_options;
@@ -87,26 +87,26 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 ))}
               </select>
             ) : (
-              <span className="text-[11px] text-zinc-600">
+              <span className="text-[11px] text-zinc-400">
                 {posture.agent_type} advertises its own modes — no preset envelope
               </span>
             )}
-            <span className="ml-auto text-[11px] text-zinc-600">
-              agent: <code className="text-zinc-500">{posture.agent_type}</code>
+            <span className="ml-auto text-[11px] text-zinc-400">
+              agent: <code className="text-zinc-400">{posture.agent_type}</code>
             </span>
           </div>
-          <p className="text-[11px] text-zinc-600 mt-2 leading-relaxed">
+          <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
             The session mode controls <em>when the agent asks</em> (e.g.{" "}
-            <code className="text-zinc-500">default</code> = prompt per tool,{" "}
-            <code className="text-zinc-500">plan</code> = no execution). Switching it is the
+            <code className="text-zinc-400">default</code> = prompt per tool,{" "}
+            <code className="text-zinc-400">plan</code> = no execution). Switching it is the
             “Switch approval mode” permission in the grants below — pushed to the live
             connector, clamped by the host’s L0 allow-list.
           </p>
-          <p className="text-[11px] text-zinc-600 mt-2 leading-relaxed">
+          <p className="text-[11px] text-zinc-400 mt-2 leading-relaxed">
             Approval cards only appear when the agent chooses to ask. To require human
-            review of commits, keep <code className="text-zinc-500">git commit</code> /{" "}
-            <code className="text-zinc-500">git push</code> out of the agent’s auto-allow
-            rules — a whitelisted <code className="text-zinc-500">Bash(git *)</code> bypasses
+            review of commits, keep <code className="text-zinc-400">git commit</code> /{" "}
+            <code className="text-zinc-400">git push</code> out of the agent’s auto-allow
+            rules — a whitelisted <code className="text-zinc-400">Bash(git *)</code> bypasses
             the card entirely (the platform doesn’t intercept already-allowed commands).
           </p>
         </div>
@@ -138,12 +138,12 @@ export function BotPostureSection({ botId }: { botId: string }) {
                     <span className="text-[10px] text-indigo-400">override</span>
                   )}
                   {opt.category && (
-                    <code className="ml-auto text-[10px] text-zinc-600">{opt.category}</code>
+                    <code className="ml-auto text-[10px] text-zinc-400">{opt.category}</code>
                   )}
                 </div>
               );
             })}
-            <p className="text-[11px] text-zinc-600 mt-1 leading-relaxed">
+            <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
               Changing these is the “Change agent settings” permission in the grants below —
               owner-set overrides are pushed to the connector and applied to every session,
               clamped by the host’s L0 allow-list.
@@ -161,7 +161,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                     >
                       {UUID_RE.test(id) ? `${id.slice(0, 8)}…` : id}
                     </code>
-                    <span className="text-zinc-500 truncate">{value}</span>
+                    <span className="text-zinc-400 truncate">{value}</span>
                     <span className="ml-auto text-[10px] text-indigo-400">override</span>
                   </div>
                 ))}
@@ -192,7 +192,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                 Set
               </button>
             </div>
-            <p className="text-[11px] text-zinc-600 leading-relaxed">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
               This agent has not advertised selectable options. Manual overrides are still
               checked by the connector’s L0 allow-list.
             </p>

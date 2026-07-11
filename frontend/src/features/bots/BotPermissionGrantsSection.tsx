@@ -142,7 +142,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   };
 
   if (!access) {
-    return <p className="text-xs text-zinc-600 px-1 py-2">Loading grants…</p>;
+    return <p className="text-xs text-zinc-400 px-1 py-2">Loading grants…</p>;
   }
 
   return (
@@ -150,7 +150,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       <div className="flex items-center gap-2">
         <div>
           <p className="text-xs font-medium text-zinc-300">Permission grants</p>
-          <p className="text-[11px] text-zinc-600 mt-0.5">
+          <p className="text-[11px] text-zinc-400 mt-0.5">
             Who is authorized for what. No grant → the default: members may message the bot,
             cancel a running task, and view its activity; agent settings, session controls,
             remote file write, and answering approvals start owner-only. Precedence: user ▸
@@ -176,14 +176,14 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
         <div className="overflow-hidden rounded-lg ">
           <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-900/40">
             <p className="text-[11px] font-medium text-zinc-300">Effective defaults · Bot-wide</p>
-            <span className="text-[10px] text-zinc-600">
+            <span className="text-[10px] text-zinc-400">
               <span className="text-indigo-400">•</span> = set by a grant · channel / user / group
               grants can narrow this per scope
             </span>
           </div>
           <table className="w-full text-[11px]">
             <thead>
-              <tr className="text-zinc-500">
+              <tr className="text-zinc-400">
                 <th className="px-2.5 py-1 text-left font-normal">Event</th>
                 <th
                   className="px-2 py-1 text-center font-normal text-indigo-300"
@@ -207,7 +207,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     <tr>
                       <td
                         colSpan={2 + MATRIX_ROLES.length}
-                        className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-600"
+                        className="px-2.5 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-zinc-400"
                         title={`${cap} — ${CAPABILITY_LABEL[cap].desc}`}
                       >
                         {CAPABILITY_LABEL[cap].label}
@@ -233,7 +233,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                                   ? "text-indigo-300"
                                   : c.bot_owner.allow
                                   ? "text-emerald-400"
-                                  : "text-zinc-600"
+                                  : "text-zinc-400"
                               }
                               title={
                                 c.bot_owner.source === "owner"
@@ -264,7 +264,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                           return (
                             <td key={role} className="px-2 py-1 text-center">
                               <span
-                                className={d.allow ? "text-emerald-400" : "text-zinc-600"}
+                                className={d.allow ? "text-emerald-400" : "text-zinc-400"}
                                 title={d.source === "rule" ? "set by a grant" : "membership default"}
                               >
                                 {d.allow ? "✓" : "✗"}
@@ -287,7 +287,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       {/* New-grant form */}
       {creating && (
         <div className="rounded-lg bg-indigo-950/30 p-2.5 space-y-2">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">New grant</div>
+          <div className="text-[10px] uppercase tracking-wide text-zinc-400">New grant</div>
           <div className="flex flex-wrap items-center gap-1.5">
             <select
               value={perm}
@@ -414,8 +414,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               const [cap, ec] = perm.split("::");
               const gl = grantLabel(cap as Capability, ec);
               return gl.desc ? (
-                <p className="text-[11px] text-zinc-500">
-                  {gl.desc} <code className="text-zinc-600">({cap} · {ec})</code>
+                <p className="text-[11px] text-zinc-400">
+                  {gl.desc} <code className="text-zinc-400">({cap} · {ec})</code>
                 </p>
               ) : null;
             })()}
@@ -424,7 +424,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
       {/* Flat grants list */}
       {grants.length === 0 ? (
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-[11px] text-zinc-400">
           No grants yet — the bot uses the membership defaults. Click “New grant” to authorize a
           user, role, or group.
         </p>
@@ -460,7 +460,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               </span>
               {r.expired ? (
                 <span
-                  className="rounded px-1 py-0.5 text-[10px] text-zinc-500"
+                  className="rounded px-1 py-0.5 text-[10px] text-zinc-400"
                   title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
                 >
                   expired
@@ -477,7 +477,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               <span
                 className={`ml-auto ${
                   r.expired
-                    ? "text-zinc-600 line-through"
+                    ? "text-zinc-400 line-through"
                     : r.decision === "allow"
                       ? "text-emerald-300"
                       : "text-red-300"
@@ -500,7 +500,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                     })
                   )
                 }
-                className="text-zinc-600 hover:text-red-300 disabled:opacity-40"
+                className="text-zinc-500 hover:text-red-300 disabled:opacity-40"
               >
                 <X className="w-3.5 h-3.5" />
               </button>

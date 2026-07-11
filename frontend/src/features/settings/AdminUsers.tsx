@@ -13,6 +13,21 @@ import {
   type AdminUser,
 } from "@/api/users";
 
+// Human-readable role names — never surface the raw enum token (e.g. `system_admin`).
+const ROLE_LABELS: Record<string, string> = {
+  system_admin: "System admin",
+  admin: "Admin",
+  owner: "Owner",
+  member: "Member",
+  readonly: "Read-only",
+};
+function roleLabel(role: string): string {
+  return (
+    ROLE_LABELS[role] ??
+    role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
 // Admin-only: provision + moderate human accounts. Lists the directory (filterable),
 // creates new users, and suspends / unsuspends / deletes them. Renders nothing for
 // non-admins. Uses the admin `/users` endpoint (not friends/search, which is id-only).
@@ -70,7 +85,7 @@ export function AdminUsers() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+      <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4 flex items-center gap-2">
         <ShieldBan className="w-3.5 h-3.5" />
         User management (admin)
         <button
@@ -100,8 +115,8 @@ export function AdminUsers() {
                 <p className="text-sm text-zinc-200 truncate flex items-center gap-2">
                   {u.display_name || u.username}
                   {u.role !== "member" && (
-                    <span className="text-[10px] text-zinc-500">
-                      {u.role}
+                    <span className="text-[10px] text-zinc-400">
+                      {roleLabel(u.role)}
                     </span>
                   )}
                   {u.is_suspended && (
@@ -110,7 +125,7 @@ export function AdminUsers() {
                     </span>
                   )}
                 </p>
-                <p className="text-[11px] text-zinc-500 truncate">
+                <p className="text-[11px] text-zinc-400 truncate">
                   @{u.username}
                   {u.email ? ` · ${u.email}` : ""}
                 </p>
@@ -148,7 +163,7 @@ export function AdminUsers() {
             </div>
           ))}
           {!loading && users.length === 0 && (
-            <p className="text-xs text-zinc-600 py-3 text-center">No users.</p>
+            <p className="text-xs text-zinc-400 py-3 text-center">No users.</p>
           )}
         </div>
       </div>
@@ -229,8 +244,8 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
           className={inputCls}
         />
         <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
-          <option value="member">member</option>
-          <option value="admin">admin</option>
+          <option value="member">{roleLabel("member")}</option>
+          <option value="admin">{roleLabel("admin")}</option>
         </select>
         <div className="flex items-end">
           <Button type="submit" disabled={busy}>

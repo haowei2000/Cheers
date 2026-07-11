@@ -130,7 +130,7 @@ export function MessageList({
 
   if (!loading && visible.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
+      <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
         No messages yet. Start the conversation!
       </div>
     );
@@ -163,7 +163,7 @@ export function MessageList({
             {showDayLabel && (
               <div className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 h-px bg-zinc-800" />
-                <span className="text-xs text-zinc-500 font-medium">
+                <span className="text-xs text-zinc-400 font-medium">
                   {formatDayLabel(msg.created_at)}
                 </span>
                 <div className="flex-1 h-px bg-zinc-800" />

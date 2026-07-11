@@ -86,7 +86,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             {memberLabel(members, plan.bot_id)}
           </span>
           {plan.session_id ? (
-            <span className="text-[10px] text-zinc-600 truncate" title={plan.session_id}>
+            <span className="text-[10px] text-zinc-400 truncate" title={plan.session_id}>
               · {plan.session_id.slice(0, 8)}
             </span>
           ) : null}
@@ -109,7 +109,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
           if (items.length === 0) return null;
           return (
             <div key={g.key} className="mb-2 last:mb-0">
-              <div className="px-1 mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
+              <div className="px-1 mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
                 {g.label} · {items.length}
               </div>
               <ul className="space-y-0.5">
@@ -124,13 +124,13 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
                     {/* inert text — never dangerouslySetInnerHTML */}
                     <span
                       className={`flex-1 break-words ${
-                        g.key === "completed" ? "text-zinc-500 line-through" : ""
+                        g.key === "completed" ? "text-zinc-400 line-through" : ""
                       }`}
                     >
                       {e.content}
                     </span>
                     {e.priority ? (
-                      <span className="flex-shrink-0 text-[10px] text-zinc-600">{e.priority}</span>
+                      <span className="flex-shrink-0 text-[10px] text-zinc-400">{e.priority}</span>
                     ) : null}
                   </li>
                 ))}
@@ -150,8 +150,8 @@ function PlanBody({ data, ctx }: { data: PlanReadResponse; ctx: ViewBoardContext
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 text-zinc-600">
         <ClipboardList className="w-5 h-5" />
-        <span className="text-xs">No plan yet</span>
-        <span className="text-[11px] text-zinc-700">
+        <span className="text-xs text-zinc-400">No plan yet</span>
+        <span className="text-[11px] text-zinc-400">
           A plan appears here when an agent shares one.
         </span>
       </div>

@@ -51,7 +51,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
   const bots = data.bots ?? [];
   if (bots.length === 0) {
     return (
-      <div className="px-3 py-6 text-xs text-zinc-600 flex items-center gap-2">
+      <div className="px-3 py-6 text-xs text-zinc-400 flex items-center gap-2">
         <Gauge className="w-4 h-4" />
         No usage reported yet
       </div>
@@ -60,7 +60,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
   return (
     <table className="w-full text-xs">
       <thead>
-        <tr className="text-zinc-500 border-b border-zinc-800">
+        <tr className="text-zinc-400 border-b border-zinc-800">
           <th className="text-left font-normal px-3 py-1.5">Bot</th>
           <th className="text-left font-normal px-2 py-1.5">Session</th>
           <th className="text-right font-normal px-2 py-1.5">Input</th>
@@ -91,7 +91,7 @@ function UsageBody({ data, ctx }: { data: UsageRead; ctx: ViewBoardContext }) {
               </span>
             </td>
             <td
-              className="px-2 py-1.5 font-mono text-zinc-500 truncate max-w-[90px]"
+              className="px-2 py-1.5 font-mono text-zinc-400 truncate max-w-[90px]"
               title={b.session_id ?? undefined}
             >
               {b.session_id ? b.session_id.slice(0, 8) : "—"}

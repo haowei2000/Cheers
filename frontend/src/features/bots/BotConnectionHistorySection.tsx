@@ -47,7 +47,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
     <div className="rounded-xl bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs font-medium text-zinc-300">Connection history</span>
-        <span className="text-[11px] text-zinc-600">
+        <span className="text-[11px] text-zinc-400">
           bridge connects/disconnects (newest first)
         </span>
         <button
@@ -60,14 +60,14 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
         </button>
       </div>
       {events.length === 0 ? (
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-[11px] text-zinc-400">
           {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
         </p>
       ) : (
         <div className="max-h-56 overflow-y-auto divide-y divide-zinc-800/70">
           {events.map((e, i) => (
             <div key={i} className="flex items-center gap-2 py-1 text-[11px]">
-              <span className="text-zinc-600 tabular-nums w-36 shrink-0">{time(e.created_at)}</span>
+              <span className="text-zinc-400 tabular-nums w-36 shrink-0">{time(e.created_at)}</span>
               {e.event === "connected" ? (
                 <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               ) : (
@@ -80,7 +80,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
                 {e.event}
               </span>
               {e.reason && (
-                <span className="text-zinc-500 truncate" title={e.reason}>
+                <span className="text-zinc-400 truncate" title={e.reason}>
                   — {reasonLabel[e.reason] ?? e.reason}
                 </span>
               )}

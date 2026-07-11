@@ -43,7 +43,7 @@ function ImagePreview({ file }: { file: FileInfo }) {
 
   if (!src) {
     return (
-      <div className="h-32 w-32 rounded-lg bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-500">
+      <div className="h-32 w-32 rounded-lg bg-zinc-800/60 flex items-center justify-center text-[10px] text-zinc-400">
         Loading image…
       </div>
     );
@@ -89,7 +89,7 @@ function AudioTile({ file }: { file: FileInfo }) {
           {file.original_filename || "audio"}
         </span>
         {typeof file.size_bytes === "number" && (
-          <span className="flex-shrink-0 text-zinc-500">{formatBytes(file.size_bytes)}</span>
+          <span className="flex-shrink-0 text-zinc-400">{formatBytes(file.size_bytes)}</span>
         )}
       </div>
       {failed ? (
@@ -104,7 +104,7 @@ function AudioTile({ file }: { file: FileInfo }) {
       ) : src ? (
         <audio controls src={src} preload="metadata" className="h-9 w-full" />
       ) : (
-        <div className="flex h-9 items-center gap-1.5 text-[11px] text-zinc-500">
+        <div className="flex h-9 items-center gap-1.5 text-[11px] text-zinc-400">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading audio…
         </div>
       )}
@@ -136,7 +136,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
   const status = file.transcript_status;
   if (requested || status === "pending") {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500">
+      <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
         <Loader2 className="h-3 w-3 animate-spin" /> Transcribing…
       </span>
     );
@@ -155,7 +155,7 @@ function TranscriptSection({ file }: { file: FileInfo }) {
       type="button"
       onClick={request}
       title="Transcribe this audio to text"
-      className="inline-flex w-fit items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors"
+      className="inline-flex w-fit items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
     >
       <Captions className="h-3 w-3" />
       {status === "failed" ? "Transcription failed — retry" : "Transcribe to text"}
@@ -262,7 +262,7 @@ export function FileTile({ file }: { file: FileInfo }) {
           <FileTypeIcon file={file} size={16} className="flex-shrink-0" />
           <span className="truncate">{file.original_filename || "file"}</span>
           {typeof file.size_bytes === "number" && (
-            <span className="text-zinc-500">{formatBytes(file.size_bytes)}</span>
+            <span className="text-zinc-400">{formatBytes(file.size_bytes)}</span>
           )}
         </button>
       )}

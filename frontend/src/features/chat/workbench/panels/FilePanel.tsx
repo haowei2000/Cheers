@@ -228,7 +228,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const createInput = (depth: number) => (
     <div className="flex items-center gap-1.5 px-2 py-1" style={{ paddingLeft: depth * 12 + 8 }}>
-      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-600" />
+      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
       <input
         autoFocus
         value={newName}
@@ -252,27 +252,38 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
 
   const deleteControl = (path: string, recursive: boolean) =>
     confirmDel === path ? (
-      <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      // Confirm sits LEFT (far from where the Trash2 target was, on the right edge)
+      // and the pair is spaced gap-2 with padded hit areas, so a near-miss after
+      // arming delete lands on Cancel, never on the irreversible Confirm.
+      <span className="flex items-center gap-2">
         <button
+          type="button"
+          aria-label={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           title={recursive ? "Confirm: delete entire folder" : "Confirm delete"}
           onClick={() => void doDelete(path, recursive)}
+          className="p-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <Check className="w-3 h-3 text-red-400 hover:text-red-300" />
         </button>
-        <button title="Cancel" onClick={() => setConfirmDel(null)}>
+        <button
+          type="button"
+          aria-label="Cancel delete"
+          title="Cancel"
+          onClick={() => setConfirmDel(null)}
+          className="p-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
           <X className="w-3 h-3 text-zinc-500 hover:text-zinc-300" />
         </button>
       </span>
     ) : (
       <button
+        type="button"
+        aria-label={recursive ? "Delete folder" : "Delete file"}
         title={recursive ? "Delete folder" : "Delete"}
-        onClick={(ev) => {
-          ev.stopPropagation();
-          setConfirmDel(path);
-        }}
-        className="opacity-0 group-hover:opacity-100"
+        onClick={() => setConfirmDel(path)}
+        className="p-1.5 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
-        <Trash2 className="w-3 h-3 text-zinc-600 hover:text-red-400" />
+        <Trash2 className="w-3 h-3 text-zinc-500 hover:text-red-400" />
       </button>
     );
 
@@ -283,26 +294,36 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         const isCollapsed = collapsed.has(node.path);
         return (
           <div key={`d:${node.path}`}>
+            {/* Row is a real disclosure <button> (keyboard-operable, aria-expanded);
+                the new-file/delete controls are sibling buttons, not nested, to keep
+                interactives un-nested. */}
             <div
-              onClick={() => toggleCollapse(node.path)}
               style={pad}
-              className="group flex items-center gap-1 pr-2 py-1 cursor-pointer hover:bg-zinc-800/60 text-zinc-300"
+              className="group flex items-center gap-1 pr-2 hover:bg-zinc-800/60 text-zinc-300"
             >
-              {isCollapsed ? (
-                <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-500" />
-              ) : (
-                <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
-              )}
-              <Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />
-              <span className="truncate flex-1">{node.name}</span>
               <button
+                type="button"
+                onClick={() => toggleCollapse(node.path)}
+                aria-expanded={!isCollapsed}
+                className="flex-1 flex items-center gap-1 min-w-0 py-1 text-left cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+              >
+                {isCollapsed ? (
+                  <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-500" />
+                ) : (
+                  <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-500" />
+                )}
+                <Folder className="w-3.5 h-3.5 flex-shrink-0 text-indigo-400/70" />
+                <span className="truncate flex-1">{node.name}</span>
+              </button>
+              <button
+                type="button"
+                aria-label="New file in this folder"
                 title="New file in this folder"
-                onClick={(ev) => {
-                  ev.stopPropagation();
+                onClick={() => {
                   if (isCollapsed) toggleCollapse(node.path);
                   beginCreate(node.path);
                 }}
-                className="opacity-0 group-hover:opacity-100"
+                className="p-1.5 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <Plus className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
               </button>
@@ -320,14 +341,20 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       return (
         <div
           key={`f:${node.path}`}
-          onClick={() => setSelected(node.path)}
           style={pad}
-          className={`group flex items-center gap-1.5 pr-2 py-1 cursor-pointer hover:bg-zinc-800/60 ${
+          className={`group flex items-center gap-1.5 pr-2 hover:bg-zinc-800/60 ${
             selected === node.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-400"
           }`}
         >
-          <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
-          <span className="truncate flex-1">{node.name}</span>
+          <button
+            type="button"
+            onClick={() => setSelected(node.path)}
+            aria-current={selected === node.path ? "true" : undefined}
+            className="flex-1 flex items-center gap-1.5 min-w-0 py-1 text-left cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          >
+            <FileText className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />
+            <span className="truncate flex-1">{node.name}</span>
+          </button>
           {deleteControl(node.path, false)}
         </div>
       );
@@ -340,32 +367,47 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         <div className="w-52 flex-shrink-0 border-r border-zinc-800 flex flex-col">
           <div className="flex items-center gap-1 px-2 h-8 border-b border-zinc-800 flex-shrink-0">
             <button
+              type="button"
               onClick={() => beginCreate("")}
-              className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100"
+              className="flex items-center gap-1 rounded p-1 -ml-1 text-xs text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               <Plus className="w-3.5 h-3.5" /> New
             </button>
             <div className="flex-1" />
-            <button onClick={() => void refresh()} title="Refresh">
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              aria-label="Refresh file tree"
+              title="Refresh"
+              className="rounded p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
               <RefreshCw className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
             </button>
-            <button onClick={() => setTreeOpen(false)} title="Hide file tree">
+            <button
+              type="button"
+              onClick={() => setTreeOpen(false)}
+              aria-label="Hide file tree"
+              title="Hide file tree"
+              className="rounded p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
               <PanelLeftClose className="w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300" />
             </button>
           </div>
           <div className="flex-1 overflow-auto py-1">
             {creatingIn === "" && createInput(0)}
             {tree.length === 0 && creatingIn === null && (
-              <div className="px-2 py-3 text-xs text-zinc-600">No files</div>
+              <div className="px-2 py-3 text-xs text-zinc-400">No files</div>
             )}
             {renderNodes(tree, 0)}
           </div>
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => setTreeOpen(true)}
+          aria-label="Show file tree"
           title="Show file tree"
-          className="w-6 flex-shrink-0 border-r border-zinc-800 flex items-start justify-center pt-2 text-zinc-500 hover:text-zinc-200"
+          className="w-6 flex-shrink-0 border-r border-zinc-800 flex items-start justify-center pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </button>
@@ -374,7 +416,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
       {/* selected file: preview (matching renderer) or raw (textarea fallback) */}
       <div className="flex-1 flex flex-col min-w-0">
         {selected === null ? (
-          <div className="flex-1 flex items-center justify-center text-zinc-600 text-xs gap-2">
+          <div className="flex-1 flex items-center justify-center text-zinc-400 text-xs gap-2">
             <FolderOpen className="w-4 h-4" /> Select a file
           </div>
         ) : (
@@ -475,7 +517,10 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           })()
         )}
         {(editor.status || status) && (
-          <div className="px-3 py-1 text-[11px] text-zinc-500 border-t border-zinc-800 flex-shrink-0">
+          <div
+            aria-live="polite"
+            className="px-3 py-1 text-[11px] text-zinc-400 border-t border-zinc-800 flex-shrink-0"
+          >
             {editor.status || status}
           </div>
         )}

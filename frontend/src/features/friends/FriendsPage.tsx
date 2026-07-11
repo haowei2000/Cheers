@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { SurfaceSpinner } from "@/components/ui/spinner";
 import {
   listFriends,
   removeFriend,
@@ -61,7 +62,10 @@ export default function FriendsPage() {
 
       <div className="flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto max-w-2xl p-4 max-md:pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div className="flex gap-1 mb-4 border-b border-zinc-800 overflow-x-auto">
+          <div
+            aria-label="Friend management"
+            className="flex gap-1 mb-4 border-b border-zinc-800 overflow-x-auto"
+          >
             <TabBtn active={tab === "friends"} onClick={() => setTab("friends")}>
               Friends
             </TabBtn>
@@ -102,12 +106,14 @@ function TabBtn({
 }) {
   return (
     <button
+      type="button"
+      aria-current={active ? "page" : undefined}
       onClick={onClick}
       className={cn(
         "px-3 py-2 max-md:py-2.5 text-sm border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
         active
           ? "border-indigo-500 text-zinc-100"
-          : "border-transparent text-zinc-500 hover:text-zinc-300"
+          : "border-transparent text-zinc-400 hover:text-zinc-200"
       )}
     >
       {children}
@@ -156,7 +162,7 @@ function FriendsTab() {
     }
   }
 
-  if (loading) return <Empty>Loading…</Empty>;
+  if (loading) return <SurfaceSpinner />;
   if (!friends.length)
     return <Empty>No friends yet. Use the Add tab to find people.</Empty>;
 
@@ -230,7 +236,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
     }
   }
 
-  if (loading) return <Empty>Loading…</Empty>;
+  if (loading) return <SurfaceSpinner />;
   if (!incoming.length && !outgoing.length)
     return <Empty>No pending requests.</Empty>;
 
@@ -266,7 +272,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
               id={u.user_id}
               avatar={u.avatar_url}
             >
-              <span className="text-xs text-zinc-500 flex items-center gap-1">
+              <span className="text-xs text-zinc-400 flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 Pending
               </span>
@@ -285,8 +291,11 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
 // can't be browsed/enumerated. Paste an id → look it up → confirm → send the request.
 function AddTab() {
   const [id, setId] = useState("");
-  // null = idle, "none" = looked up but no match, else the single matched user.
-  const [result, setResult] = useState<UserSearchResult | null | "none">(null);
+  // null = idle, "none" = looked up but no match, "error" = lookup failed,
+  // else the single matched user.
+  const [result, setResult] = useState<
+    UserSearchResult | null | "none" | "error"
+  >(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<Record<string, string>>({});
 
@@ -298,7 +307,9 @@ function AddTab() {
       const r = await searchUsers(term);
       setResult(r[0] ?? "none");
     } catch {
-      setResult("none");
+      // A failed lookup must not masquerade as "no such user" — that would
+      // assert a false fact when the real cause is a network/server error.
+      setResult("error");
     } finally {
       setBusy(false);
     }
@@ -318,7 +329,7 @@ function AddTab() {
 
   return (
     <div>
-      <p className="text-xs text-zinc-500 mb-2 leading-relaxed">
+      <p className="text-xs text-zinc-400 mb-2 leading-relaxed">
         Add a friend by their exact <span className="text-zinc-300">user ID</span>. Ask them
         to copy it from <span className="text-zinc-300">Settings → Profile → User ID</span>.
       </p>
@@ -334,7 +345,7 @@ function AddTab() {
             onKeyDown={(e) => e.key === "Enter" && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
             // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-600 focus:focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
+            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
           />
         </div>
         <Button onClick={lookup} disabled={busy || !id.trim()}>
@@ -343,6 +354,13 @@ function AddTab() {
       </div>
       {result === null ? (
         <Empty>Enter a user ID and press Look up.</Empty>
+      ) : result === "error" ? (
+        <div
+          role="alert"
+          className="text-sm text-red-400 py-10 text-center"
+        >
+          Couldn&apos;t look up that ID — check your connection and try again.
+        </div>
       ) : result === "none" ? (
         <Empty>No user with that ID.</Empty>
       ) : (
@@ -356,7 +374,7 @@ function AddTab() {
             {sent[result.user_id] === "accepted" ? (
               <span className="text-xs text-emerald-400">Friends</span>
             ) : sent[result.user_id] === "pending" ? (
-              <span className="text-xs text-zinc-500">Requested</span>
+              <span className="text-xs text-zinc-400">Requested</span>
             ) : (
               <IconBtn title="Add friend" onClick={() => add(result)} primary>
                 <UserPlus className="w-4 h-4" />
@@ -394,7 +412,7 @@ function BlockedTab() {
     }
   }
 
-  if (loading) return <Empty>Loading…</Empty>;
+  if (loading) return <SurfaceSpinner />;
   if (!blocked.length) return <Empty>No blocked users.</Empty>;
   return (
     <div className="space-y-1">
@@ -436,7 +454,7 @@ function Row({
       <Avatar name={name} src={avatar ?? undefined} id={id} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="text-sm text-zinc-100 truncate">{name}</div>
-        <div className="text-xs text-zinc-500 truncate">{sub}</div>
+        <div className="text-xs text-zinc-400 truncate">{sub}</div>
       </div>
       <div className="flex items-center gap-1.5">{children}</div>
     </div>
@@ -458,14 +476,16 @@ function IconBtn({
 }) {
   return (
     <button
+      type="button"
       title={title}
+      aria-label={title}
       onClick={onClick}
       className={cn(
         "w-8 h-8 max-md:w-11 max-md:h-11 rounded-md flex items-center justify-center transition-colors",
         primary
           ? "text-emerald-400 hover:bg-emerald-500/10"
           : danger
-            ? "text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10"
+            ? "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
             : "text-zinc-400 hover:bg-zinc-800"
       )}
     >
@@ -477,7 +497,7 @@ function IconBtn({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1 px-2">
+      <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1 px-2">
         {title}
       </div>
       <div className="space-y-1">{children}</div>
@@ -486,5 +506,5 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <div className="text-sm text-zinc-500 py-10 text-center">{children}</div>;
+  return <div className="text-sm text-zinc-400 py-10 text-center">{children}</div>;
 }

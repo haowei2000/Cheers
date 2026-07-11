@@ -103,12 +103,12 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
             className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
               i <= step
                 ? "bg-indigo-600 text-white"
-                : "bg-zinc-800 text-zinc-500"
+                : "bg-zinc-800 text-zinc-400"
             }`}
           >
             {i + 1}
           </span>
-          <span className={i <= step ? "text-zinc-200" : "text-zinc-500"}>
+          <span className={i <= step ? "text-zinc-200" : "text-zinc-400"}>
             {label}
           </span>
           {i < labels.length - 1 && (
@@ -283,7 +283,7 @@ export function BotOnboardingWizard({
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Username
                     </label>
                     <input
@@ -294,7 +294,7 @@ export function BotOnboardingWizard({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Display name
                     </label>
                     <input
@@ -308,7 +308,7 @@ export function BotOnboardingWizard({
               </div>
             ) : (
               <div>
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">Bot</label>
+                <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot</label>
                 <select
                   value={existingId}
                   onChange={(e) => setExistingId(e.target.value)}
@@ -324,7 +324,7 @@ export function BotOnboardingWizard({
             )}
 
             <div>
-              <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide block mb-1">
+              <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                 Agent type
               </label>
               <select
@@ -352,7 +352,7 @@ export function BotOnboardingWizard({
         {/* ── Step 1: pick a mode ───────────────────────────────────── */}
         {step === 1 && (
           <div className="space-y-3">
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-zinc-400">
               Connecting <span className="text-zinc-300">@{bot?.username}</span>.
               Pick how you want to run the connector on the agent's machine.
             </p>
@@ -466,7 +466,7 @@ function ModeCard({
             </span>
           )}
         </p>
-        <p className="text-xs text-zinc-500 mt-0.5">{desc}</p>
+        <p className="text-xs text-zinc-400 mt-0.5">{desc}</p>
       </div>
     </button>
   );
@@ -494,7 +494,7 @@ function ManualPanel({
   const tokenFile = config?.token_file ?? `secrets/${accountId}.token`;
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-zinc-400">
         Manual setup for <span className="text-zinc-300">@{bot.username}</span>{" "}
         ({agentType}). Two secrets: a config (safe to keep) and a one-time token
         (write to a 0600 file, never commit).
@@ -538,8 +538,8 @@ function ManualPanel({
               >
                 <Download className="w-3.5 h-3.5" /> Download
               </button>
-              <span className="text-xs text-zinc-600">
-                save as <code className="text-zinc-500">{configFile}</code>
+              <span className="text-xs text-zinc-400">
+                save as <code className="text-zinc-400">{configFile}</code>
               </span>
             </div>
           </>
@@ -568,8 +568,8 @@ function ManualPanel({
               </code>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-600">
-                write to <code className="text-zinc-500">~/.cheers/{tokenFile}</code> (chmod 600)
+              <span className="text-xs text-zinc-400">
+                write to <code className="text-zinc-400">~/.cheers/{tokenFile}</code> (chmod 600)
               </span>
               <CopyBtn value={token.token} label="Copy token" />
             </div>
@@ -589,7 +589,7 @@ cce-acp-connector status --name ${accountId}`}
           </pre>
         </div>
         <div className="space-y-1.5 pt-1">
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-zinc-400">
             Need the connector binary? Download the prebuilt release (no Rust toolchain needed):
           </p>
           <div className="rounded-lg bg-zinc-950 p-3">
@@ -608,10 +608,10 @@ cce-acp-connector status --name ${accountId}`}
             </a>
             <CopyBtn value={CONNECTOR_DOWNLOAD_CMD} label="Copy command" />
           </div>
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-zinc-400">
             Or build from source:{" "}
-            <code className="text-zinc-500">cargo build --release</code> in{" "}
-            <code className="text-zinc-500">packages/cheers-acp-connector-rs</code>.
+            <code className="text-zinc-400">cargo build --release</code> in{" "}
+            <code className="text-zinc-400">packages/cheers-acp-connector-rs</code>.
           </p>
         </div>
       </div>
@@ -661,7 +661,7 @@ function ScriptPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-zinc-400">
         One command on the agent's machine for{" "}
         <span className="text-zinc-300">@{bot.username}</span> ({agentType}):
         redeem a one-time code, write the config + 0600 token, install a
@@ -713,9 +713,9 @@ function ScriptPanel({
             </pre>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-600">
+            <span className="text-xs text-zinc-400">
               Tip: prepend a space so the code stays out of shell history
-              (<code className="text-zinc-500">HISTCONTROL=ignorespace</code>).
+              (<code className="text-zinc-400">HISTCONTROL=ignorespace</code>).
             </span>
             <CopyBtn value={command} label="Copy command" />
           </div>
@@ -780,7 +780,7 @@ function AgentPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-zinc-400">
         Hand your own agent a prompt and it runs the installer for you. Honest
         framing: this is the install script (mode 2), driven by your agent — so
         it must leave a background service running, or{" "}

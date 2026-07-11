@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Hash, Lock } from "lucide-react";
+import toast from "react-hot-toast";
 import { createChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
@@ -38,6 +39,17 @@ export function NewChannelDialog({
       selectChannel(ch.channel_id);
       onPicked?.();
       onClose();
+    } catch (e) {
+      // Surface the API's human detail (duplicate name, permission, network),
+      // not raw JSON — keep the dialog open so the user can fix and retry.
+      const raw = e instanceof Error ? e.message : String(e);
+      let detail = raw;
+      try {
+        detail = (JSON.parse(raw) as { detail?: string }).detail ?? raw;
+      } catch {
+        /* not JSON — use raw */
+      }
+      toast.error(`Couldn't create channel — ${detail}`);
     } finally {
       setBusy(false);
     }

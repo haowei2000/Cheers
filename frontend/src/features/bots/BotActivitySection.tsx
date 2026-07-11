@@ -47,7 +47,7 @@ export function BotActivitySection({ botId }: { botId: string }) {
     <div className="rounded-xl bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs font-medium text-zinc-300">Recent ACP activity</span>
-        <span className="text-[11px] text-zinc-600">
+        <span className="text-[11px] text-zinc-400">
           every event the bot emitted (newest first)
         </span>
         <button
@@ -60,14 +60,14 @@ export function BotActivitySection({ botId }: { botId: string }) {
         </button>
       </div>
       {events.length === 0 ? (
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-[11px] text-zinc-400">
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
         <div className="max-h-56 overflow-y-auto divide-y divide-zinc-800/70">
           {events.map((e, i) => (
             <div key={i} className="flex items-center gap-2 py-1 text-[11px]">
-              <span className="text-zinc-600 tabular-nums w-20 shrink-0">{time(e.created_at)}</span>
+              <span className="text-zinc-400 tabular-nums w-20 shrink-0">{time(e.created_at)}</span>
               <span
                 className={`shrink-0 rounded px-1.5 py-0.5 border text-[10px] ${homeCls[e.home] ?? homeCls.observe}`}
                 title={`home: ${e.home || "unclassified"}`}

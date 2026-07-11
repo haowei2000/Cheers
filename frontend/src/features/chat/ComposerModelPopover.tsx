@@ -79,7 +79,7 @@ export function ComposerModelPopover({
               />
             </div>
           ) : (
-            <p className="px-1 py-1 text-[11px] text-zinc-600">
+            <p className="px-1 py-1 text-[11px] text-zinc-400">
               No bot in this channel to configure.
             </p>
           )}

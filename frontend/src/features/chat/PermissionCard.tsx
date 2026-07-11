@@ -166,7 +166,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       // collapsed "✓ Approved" isn't misread as "the agent acted on it".
       if (res && res.delivered === false) setUndelivered(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "failed to resolve");
+      setError(e instanceof Error ? e.message : "Couldn't resolve the approval");
     } finally {
       setBusy(false);
     }
@@ -180,7 +180,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       await requestApprovalAccess(channelId, requestId);
       setRequested(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "failed to request access");
+      setError(e instanceof Error ? e.message : "Couldn't request access");
     } finally {
       setBusy(false);
     }
@@ -203,7 +203,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       const res = await getGitDiff(channelId, botId, cwd, true);
       setStagedDiff(res.diff);
     } catch (e) {
-      setDiffError(e instanceof Error ? e.message : "couldn't load staged diff");
+      setDiffError(e instanceof Error ? e.message : "Couldn't load the staged diff");
     } finally {
       setDiffLoading(false);
     }
@@ -217,18 +217,18 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       <div className="flex items-center gap-2 py-0.5 text-xs">
         <span
           className={cn(
-            expired ? "text-zinc-500" : ok ? "text-zinc-400" : "text-red-400/70"
+            expired ? "text-zinc-400" : ok ? "text-zinc-400" : "text-red-400/70"
           )}
         >
           {expired ? "⏱ Expired" : ok ? "✓ Approved" : "✕ Denied"}
         </span>
         {command && (
-          <code className="font-mono text-zinc-500 truncate min-w-0">
+          <code className="font-mono text-zinc-400 truncate min-w-0">
             {command}
           </code>
         )}
         {data.resolved_by && (
-          <span className="text-zinc-600 whitespace-nowrap" title={data.resolved_by}>
+          <span className="text-zinc-400 whitespace-nowrap" title={data.resolved_by}>
             · {resolverName}
           </span>
         )}
@@ -254,7 +254,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-zinc-300">{title}</p>
           {command && (
-            <p className="text-xs font-mono text-zinc-500 truncate mt-0.5">
+            <p className="text-xs font-mono text-zinc-400 truncate mt-0.5">
               {command}
             </p>
           )}
@@ -284,12 +284,12 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-200">{title}</p>
           {command && (
-            <p className="text-xs font-mono text-zinc-500 truncate mt-0.5">
+            <p className="text-xs font-mono text-zinc-400 truncate mt-0.5">
               {command}
             </p>
           )}
         </div>
-        <span className="flex items-center gap-1.5 text-xs text-zinc-500 whitespace-nowrap">
+        <span className="flex items-center gap-1.5 text-xs text-zinc-400 whitespace-nowrap">
           Details <span className="text-zinc-600">⌄</span>
         </span>
       </button>
@@ -302,13 +302,13 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
       <header className="flex items-start justify-between gap-3 px-3 py-2.5 border-b border-zinc-800">
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-200">{title}</p>
-          <p className="text-xs text-zinc-500 mt-0.5">{subtitle}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">{subtitle}</p>
         </div>
         <button
           onClick={() => setCollapsed(true)}
           aria-label="Collapse"
           title="Collapse"
-          className="shrink-0 text-zinc-600 hover:text-zinc-300 leading-none"
+          className="shrink-0 text-zinc-500 hover:text-zinc-300 leading-none"
         >
           <span className="inline-block rotate-180 text-sm">⌄</span>
         </button>
@@ -316,13 +316,13 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
 
       {command && (
         <div className="px-3 py-2.5 border-b border-zinc-800 bg-zinc-950/40">
-          <p className="text-[10px] uppercase tracking-wide text-zinc-600 mb-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1.5">
             Command
           </p>
           <pre className="m-0 text-xs font-mono text-zinc-300 bg-black/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
             {command}
           </pre>
-          {impact && <p className="text-xs text-zinc-500 mt-2">{impact}</p>}
+          {impact && <p className="text-xs text-zinc-400 mt-2">{impact}</p>}
           {canViewStagedDiff && (
             <div className="mt-2">
               <button
@@ -338,7 +338,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
               {diffOpen && (
                 <div className="mt-2 rounded bg-black/30 overflow-hidden">
                   {diffLoading ? (
-                    <div className="px-3 py-3 text-[11px] text-zinc-600">
+                    <div className="px-3 py-3 text-[11px] text-zinc-400">
                       Loading staged diff…
                     </div>
                   ) : diffError ? (
@@ -346,7 +346,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
                       className="px-3 py-3 text-[11px] text-amber-400/80"
                       title={diffError}
                     >
-                      couldn’t load staged diff
+                      Couldn’t load the staged diff
                     </div>
                   ) : (
                     <DiffView diff={stagedDiff ?? ""} className="max-h-72" />
@@ -389,7 +389,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
                   {o.name || o.kind || id}
                 </span>
                 {o.description && (
-                  <span className="block text-xs text-zinc-500 mt-0.5">
+                  <span className="block text-xs text-zinc-400 mt-0.5">
                     {o.description}
                   </span>
                 )}
@@ -418,7 +418,11 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
         </button>
       </footer>
 
-      {error && <p className="text-xs text-red-400 px-3 pb-2">{error}</p>}
+      {error && (
+        <p role="alert" className="text-xs text-red-400 px-3 pb-2">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

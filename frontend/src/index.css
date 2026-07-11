@@ -121,7 +121,8 @@ button:not(:disabled) {
   color: #e4e4e7;
   padding: 0.15em 0.4em;
   border-radius: 4px;
-  font-size: 0.875em;
+  /* Size is owned by the renderer's utility class (text-sm) so inline code,
+     code blocks, and the backtick-path button all agree — don't override here. */
   font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
 }
 
@@ -136,7 +137,6 @@ button:not(:disabled) {
   background: none;
   padding: 0;
   border-radius: 0;
-  font-size: 0.875em;
 }
 
 .prose ul,
@@ -233,7 +233,7 @@ button:not(:disabled) {
   color: #fb923c !important;
 }
 .hljs-comment {
-  color: #71717a !important;
+  color: #a1a1aa !important;
   font-style: italic;
 }
 .hljs-function,

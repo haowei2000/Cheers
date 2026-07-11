@@ -69,7 +69,7 @@ const LINE_CLASS: Record<DiffKind, string> = {
   add: "text-emerald-300 bg-emerald-500/10",
   del: "text-rose-300 bg-rose-500/10",
   hunk: "text-cyan-300/90 bg-cyan-500/5",
-  meta: "text-zinc-500",
+  meta: "text-zinc-400",
   ctx: "text-zinc-300/80",
 };
 
@@ -176,9 +176,9 @@ function parseSections(diff: string): FileSection[] {
 function Gutter({ line }: { line: DiffLine }) {
   const num = (n?: number) => (n == null ? "" : String(n));
   return (
-    <span className="sticky left-0 shrink-0 select-none bg-zinc-950/95 pr-1.5 text-right text-zinc-600">
-      <span className="inline-block w-9">{num(line.oldNo)}</span>
-      <span className="inline-block w-9">{num(line.newNo)}</span>
+    <span className="sticky left-0 shrink-0 select-none bg-zinc-950/95 pr-1.5 text-right text-zinc-400">
+      <span className="inline-block w-10">{num(line.oldNo)}</span>
+      <span className="inline-block w-10">{num(line.newNo)}</span>
     </span>
   );
 }
@@ -203,7 +203,7 @@ function FileSectionView({ section }: { section: FileSection }) {
         )}
         <span className="truncate font-mono text-zinc-200">{section.title}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">
-          {section.binary && <span className="text-zinc-500">binary</span>}
+          {section.binary && <span className="text-zinc-400">binary</span>}
           {section.adds > 0 && <span className="text-emerald-400">+{section.adds}</span>}
           {section.dels > 0 && <span className="text-rose-400">−{section.dels}</span>}
         </span>
@@ -211,7 +211,7 @@ function FileSectionView({ section }: { section: FileSection }) {
       {lines.map((l, i) => (
         <div key={i} className={`flex whitespace-pre px-2 ${LINE_CLASS[l.kind]}`}>
           {l.kind === "meta" || l.kind === "hunk" ? (
-            <span className="sticky left-0 inline-block w-[4.75rem] shrink-0 select-none bg-zinc-950/95" />
+            <span className="sticky left-0 inline-block w-[5.375rem] shrink-0 select-none bg-zinc-950/95" />
           ) : (
             <Gutter line={l} />
           )}
@@ -221,7 +221,7 @@ function FileSectionView({ section }: { section: FileSection }) {
       {open && hidden > 0 && (
         <button
           onClick={() => setShown((s) => s + PAGE_LINES)}
-          className="block w-full px-2 py-1 text-left text-[11px] italic text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+          className="block w-full px-2 py-1 text-left text-[11px] italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
         >
           … show more ({hidden} hidden lines)
         </button>
@@ -241,7 +241,7 @@ export function DiffView({
 
   if (!diff.trim()) {
     return (
-      <div className="px-3 py-4 text-[11px] text-zinc-600">No changes.</div>
+      <div className="px-3 py-4 text-[11px] text-zinc-400">No changes.</div>
     );
   }
 
@@ -250,7 +250,7 @@ export function DiffView({
 
   return (
     <div className={`overflow-auto ${className ?? ""}`}>
-      <div className="w-max min-w-full font-mono text-[11px] leading-[1.55]">
+      <div className="w-max min-w-full font-mono text-[13px] leading-[1.55]">
         {/* Diffstat summary — sticky so totals stay visible while scrolling. */}
         <div className="sticky top-0 z-[2] flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/95 px-2 py-1 text-[11px] tabular-nums backdrop-blur-sm">
           <span className="text-zinc-400">

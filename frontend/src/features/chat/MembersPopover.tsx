@@ -69,9 +69,9 @@ export function MembersPopover({
 
         <div className="max-h-72 overflow-y-auto py-1">
           {members === null ? (
-            <p className="px-3 py-3 text-xs text-zinc-600">Loading…</p>
+            <p className="px-3 py-3 text-xs text-zinc-400">Loading…</p>
           ) : members.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-zinc-600">No members found</p>
+            <p className="px-3 py-3 text-xs text-zinc-400">No members found</p>
           ) : (
             members.map((m) => {
               const name = m.display_name || m.username || m.member_id.slice(0, 8);
@@ -79,7 +79,15 @@ export function MembersPopover({
                 <button
                   key={m.member_id}
                   type="button"
-                  onClick={(e) => card?.open(e.currentTarget, m)}
+                  onClick={(e) => {
+                    // Close this popover before opening the hovercard so the two
+                    // transient layers never stack (one popover at a time). The
+                    // rect is captured synchronously here, so the anchor unmounting
+                    // right after is fine — mirrors the "Manage members…" pattern.
+                    const anchor = e.currentTarget;
+                    onClose();
+                    card?.open(anchor, m);
+                  }}
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-zinc-800/60 transition-colors"
                 >
                   <div className="relative">
@@ -102,7 +110,7 @@ export function MembersPopover({
                     </p>
                   </div>
                   {m.role && m.role !== "member" && (
-                    <span className="text-[10px] text-zinc-500 capitalize">{m.role}</span>
+                    <span className="text-[10px] text-zinc-400 capitalize">{m.role}</span>
                   )}
                 </button>
               );

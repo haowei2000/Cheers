@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare, Menu } from "lucide-react";
+import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare, Menu, Settings } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel, Workspace } from "@/types";
@@ -12,37 +12,69 @@ interface SectionProps {
   children: React.ReactNode;
   defaultOpen?: boolean;
   onAdd?: () => void;
+  /** Accessible name for the add (+) control, e.g. "New channel". */
+  addLabel?: string;
 }
 
-function Section({ label, children, defaultOpen = true, onAdd }: SectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+// Persist each section's collapsed/expanded choice per label, mirroring the
+// existing "cheers.sidebar.open" pattern, so the state survives reloads and the
+// mobile Sidebar remount when returning from a conversation.
+const SECTION_STATE_PREFIX = "cheers.sidebar.section.";
+
+function Section({ label, children, defaultOpen = true, onAdd, addLabel }: SectionProps) {
+  const storageKey = SECTION_STATE_PREFIX + label;
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored === null ? defaultOpen : stored === "1";
+    } catch {
+      return defaultOpen;
+    }
+  });
+
+  const toggle = () =>
+    setOpen((o) => {
+      const next = !o;
+      try {
+        localStorage.setItem(storageKey, next ? "1" : "0");
+      } catch {
+        // Storage unavailable (private mode / quota) — keep the in-memory state.
+      }
+      return next;
+    });
 
   return (
     <div className="mb-1">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-1 px-2 py-1 max-md:py-2 text-xs font-semibold text-zinc-500 hover:text-zinc-300 uppercase tracking-wider transition-colors group"
-      >
-        {open ? (
-          <ChevronDown className="w-3 h-3" />
-        ) : (
-          <ChevronRight className="w-3 h-3" />
-        )}
-        <span className="flex-1 text-left">{label}</span>
+      {/* Two sibling buttons (not a span nested in the toggle) so the add control
+          is its own focusable, keyboard-reachable button with valid ARIA. */}
+      <div className="group flex items-center gap-1 px-2">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          className="flex-1 flex items-center gap-1 py-1 max-md:py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 uppercase tracking-wider transition-colors"
+        >
+          {open ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
+          )}
+          <span className="flex-1 text-left">{label}</span>
+        </button>
         {onAdd && (
-          <span
-            onClick={(e) => {
-              e.stopPropagation();
-              onAdd();
-            }}
-            title="Add"
-            // Hover-revealed on desktop; always visible (with a bigger tap area) on touch.
-            className="opacity-0 group-hover:opacity-100 max-md:opacity-100 p-0.5 max-md:p-1.5 max-md:-my-1 rounded hover:bg-zinc-700 transition-all cursor-pointer"
+          <button
+            type="button"
+            onClick={onAdd}
+            aria-label={addLabel ?? "Add"}
+            title={addLabel ?? "Add"}
+            // Hover-revealed on desktop, revealed on keyboard focus too, and always
+            // visible (with a bigger tap area) on touch.
+            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 p-0.5 max-md:p-1.5 max-md:-my-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-all"
           >
             <Plus className="w-3.5 h-3.5" />
-          </span>
+          </button>
         )}
-      </button>
+      </div>
       {open && <div>{children}</div>}
     </div>
   );
@@ -146,14 +178,16 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             {workspace?.name ?? "Workspace"}
           </span>
           {canOpenSettings && (
-            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+            // Gear, not a down-chevron: this opens the settings modal rather than
+            // expanding a dropdown beneath the header, so a chevron would lie.
+            <Settings className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
           )}
         </button>
       </div>
 
       {/* Channel list */}
       <div className="flex-1 overflow-y-auto overscroll-contain py-3 px-2 max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <Section label="Channels" onAdd={() => setChannelOpen(true)}>
+        <Section label="Channels" addLabel="New channel" onAdd={() => setChannelOpen(true)}>
           {publicChannels.map((ch) => (
             <ChannelItem
               key={ch.channel_id}
@@ -180,7 +214,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
         {/* Direct messages live only in the personal workspace (the DM home), so
             they aren't duplicated across every team workspace's sidebar. */}
         {isPersonal && (
-          <Section label="Direct Messages" onAdd={() => setDmOpen(true)}>
+          <Section label="Direct Messages" addLabel="New direct message" onAdd={() => setDmOpen(true)}>
             {dms.map((ch) => (
               <button
                 key={ch.channel_id}
@@ -197,14 +231,21 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
               </button>
             ))}
             {dms.length === 0 && (
-              <div className="px-3 py-1 text-xs text-zinc-600">Click + to start a direct message</div>
+              <div className="px-3 py-1 text-xs text-zinc-400">Click + to start a direct message</div>
             )}
           </Section>
         )}
 
         {channels.length === 0 && (
-          <div className="px-3 py-4 text-xs text-zinc-600 text-center">
-            No channels yet
+          <div className="px-3 py-4 text-center">
+            <p className="text-xs text-zinc-400">No channels yet</p>
+            <button
+              type="button"
+              onClick={() => setChannelOpen(true)}
+              className="mt-1 text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              Create a channel
+            </button>
           </div>
         )}
       </div>

@@ -249,10 +249,10 @@ function RailTooltip({ rect, item, memberOf }: { rect: DOMRect; item: RailItem; 
           src={memberOf(item.tip.id)?.avatar_url ?? undefined}
           id={item.tip.id ?? item.key}
           size="xs"
-          className="!w-4 !h-4 !text-[8px]"
+          className="!w-4 !h-4"
         />
         <span className="text-xs font-medium text-zinc-100 truncate">{item.tip.name}</span>
-        {item.tip.time && <span className="ml-auto text-[10px] text-zinc-500 flex-shrink-0">{item.tip.time}</span>}
+        {item.tip.time && <span className="ml-auto text-[10px] text-zinc-400 flex-shrink-0">{item.tip.time}</span>}
       </div>
       {item.tip.summary && <div className="text-[11px] text-zinc-400 leading-snug">{item.tip.summary}</div>}
     </div>
@@ -317,7 +317,6 @@ function EpisodeDetail({
           src={(trigger ?? dom)?.avatar_url ?? undefined}
           id={ep.triggerActorId ?? ep.dominantActorId ?? ep.id}
           size="xs"
-          className="!w-5 !h-5 !text-[9px]"
         />
         <span className="text-xs text-zinc-200 min-w-0 truncate">
           <span className="font-medium">
@@ -330,7 +329,7 @@ function EpisodeDetail({
             </>
           )}
         </span>
-        <span className="ml-auto text-[10px] text-zinc-600 tabular-nums whitespace-nowrap flex-shrink-0">
+        <span className="ml-auto text-[10px] text-zinc-400 tabular-nums whitespace-nowrap flex-shrink-0">
           {fmtTime(ep.startTs)}
           {span && ` · ${span}`}
         </span>
@@ -345,8 +344,8 @@ function EpisodeDetail({
                 <span className="w-5 flex justify-center flex-shrink-0">
                   <Pencil className="w-3.5 h-3.5 text-zinc-500" />
                 </span>
-                <span className="text-[11px] text-zinc-500">
-                  <span className="text-zinc-400">{nameOf(actor, row.actorId)}</span> wrote{" "}
+                <span className="text-[11px] text-zinc-400">
+                  <span className="text-zinc-300">{nameOf(actor, row.actorId)}</span> wrote{" "}
                   {row.count} file{row.count > 1 ? "s" : ""}
                 </span>
               </div>
@@ -374,7 +373,7 @@ function EpisodeDetail({
                   src={actor?.avatar_url ?? undefined}
                   id={n.actorId ?? String(n.seq)}
                   size="xs"
-                  className="mt-0.5 !w-5 !h-5 !text-[9px] flex-shrink-0"
+                  className="mt-0.5 flex-shrink-0"
                 />
               ) : (
                 <span className="w-5 flex justify-center mt-0.5 flex-shrink-0">
@@ -390,16 +389,16 @@ function EpisodeDetail({
                     <span className="text-[10px] text-emerald-400/80">approval</span>
                   )}
                   {n.fileCount > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400">
                       <Paperclip className="w-2.5 h-2.5" />
                       {n.fileCount}
                     </span>
                   )}
-                  <span className="ml-auto text-[10px] text-zinc-600 tabular-nums flex-shrink-0">
+                  <span className="ml-auto text-[10px] text-zinc-400 tabular-nums flex-shrink-0">
                     {fmtTime(n.ts)}
                   </span>
                 </div>
-                {n.excerpt && <div className="text-[11px] text-zinc-500 truncate mt-px">{n.excerpt}</div>}
+                {n.excerpt && <div className="text-[11px] text-zinc-400 truncate mt-px">{n.excerpt}</div>}
                 {n.mentions.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
                     {n.mentions.map((m) => (
@@ -537,7 +536,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
           <div className="grid grid-cols-[minmax(112px,38%)_1fr] flex-1 min-h-0" onMouseLeave={onLeave}>
             {/* Rail — the whole channel, one short node per row. */}
             <div className="overflow-y-auto border-r border-zinc-900 p-1.5 space-y-0.5">
-              <div className="px-1 pb-1 text-[10px] uppercase tracking-wide text-zinc-600">
+              <div className="px-1 pb-1 text-[10px] uppercase tracking-wide text-zinc-400">
                 rail · whole channel
               </div>
               {railItems.map((item) => (
@@ -557,7 +556,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
               {selectedEpisode ? (
                 <EpisodeDetail ep={selectedEpisode} memberOf={memberOf} onJump={ctx.onJumpToMessage} />
               ) : (
-                <div className="px-3 py-6 text-center text-xs text-zinc-600">
+                <div className="px-3 py-6 text-center text-xs text-zinc-400">
                   Select an episode to see its detail.
                 </div>
               )}
@@ -575,7 +574,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
                 onClick={() => setLens(l)}
                 className={cn(
                   "rounded-full px-2.5 py-0.5 text-[10px] capitalize transition-colors",
-                  lens === l ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+                  lens === l ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
                 {l}
@@ -623,7 +622,7 @@ function FilterChip({
       className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] whitespace-nowrap flex-shrink-0 border transition-colors ${
         active
           ? "border-zinc-600 bg-zinc-800 text-zinc-200"
-          : "border-transparent bg-zinc-900/60 text-zinc-500 hover:text-zinc-300"
+          : "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
       }`}
     >
       {children}
@@ -712,12 +711,12 @@ function MemberFilter({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search members…"
-              className="flex-1 min-w-0 bg-transparent text-xs text-zinc-200 placeholder:text-zinc-600 outline-none"
+              className="flex-1 min-w-0 bg-transparent text-xs text-zinc-200 placeholder:text-zinc-400 outline-none"
             />
           </div>
           <div className="max-h-56 overflow-y-auto py-1">
             {shown.length === 0 ? (
-              <div className="px-3 py-3 text-center text-[11px] text-zinc-600">No members match.</div>
+              <div className="px-3 py-3 text-center text-[11px] text-zinc-400">No members match.</div>
             ) : (
               shown.map((mem) => {
                 const on = selected.has(mem.member_id);
@@ -741,13 +740,13 @@ function MemberFilter({
                       src={mem.avatar_url ?? undefined}
                       id={mem.member_id}
                       size="xs"
-                      className="!w-4 !h-4 !text-[8px]"
+                      className="!w-4 !h-4"
                     />
                     <span className="flex-1 truncate text-xs text-zinc-300">
                       {mem.display_name || mem.username || short(mem.member_id)}
                     </span>
                     {mem.member_type === "bot" && (
-                      <span className="text-[10px] uppercase tracking-wide text-zinc-600 flex-shrink-0">bot</span>
+                      <span className="text-[10px] uppercase tracking-wide text-zinc-400 flex-shrink-0">bot</span>
                     )}
                   </button>
                 );

@@ -56,11 +56,11 @@ export function ExistingFilePicker({
   return (
     <Dialog title="Pick channel files" onClose={onClose} maxWidth="max-w-xl">
       {files === null ? (
-        <div className="py-8 flex items-center justify-center gap-2 text-xs text-zinc-500">
+        <div className="py-8 flex items-center justify-center gap-2 text-xs text-zinc-400">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : files.length === 0 ? (
-        <div className="py-8 text-center text-xs text-zinc-600">
+        <div className="py-8 text-center text-xs text-zinc-400">
           No files in this channel yet. Upload one with 📎 first.
         </div>
       ) : (
@@ -100,9 +100,9 @@ export function ExistingFilePicker({
                   {f.original_filename || f.file_id.slice(0, 8)}
                 </span>
                 {typeof f.size_bytes === "number" && (
-                  <span className="text-xs text-zinc-500">{formatBytes(f.size_bytes)}</span>
+                  <span className="text-xs text-zinc-400">{formatBytes(f.size_bytes)}</span>
                 )}
-                {isAttached && <span className="text-[10px] text-zinc-500">Added</span>}
+                {isAttached && <span className="text-[10px] text-zinc-400">Added</span>}
               </button>
             );
           })}

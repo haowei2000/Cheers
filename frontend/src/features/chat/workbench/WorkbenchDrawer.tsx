@@ -124,17 +124,24 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
 
   const writeCfg = useCallback(
     async (next: WbConfig) => {
+      const prev = cfg; // snapshot for rollback if the persist fails
       setCfg(next);
       try {
         // strip any stale _doc, regenerate it fresh, pretty-print for human/AI readability
         const { _doc: _drop, ...rest } = next;
         const body = { _doc: WB_DOC, ...rest };
         await fs.write(WORKBENCH_CONFIG_PATH, JSON.stringify(body, null, 2));
-      } catch {
-        /* optimistic */
+      } catch (e) {
+        // The optimistic update didn't persist — revert so pins/bindings/scenario
+        // don't keep showing as applied while the saved config still holds the old
+        // values, and surface why (the notice bar already lives in this drawer).
+        // Only revert if our optimistic value is still the current one: a later
+        // write that already succeeded must not be clobbered by this stale rollback.
+        setCfg((c) => (c === next ? prev : c));
+        setNotice(errMsg(e));
       }
     },
-    [fs]
+    [cfg, fs]
   );
 
   const pinned = useMemo(() => cfg.pinned ?? [], [cfg.pinned]);
@@ -372,7 +379,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
             title="Load a temporary template: pick a manifest .json, this session only (install globally in Settings → Workbench extensions)"
             className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
           >
-            <Clock className="w-3.5 h-3.5" /> Temp template
+            <Clock className="w-3.5 h-3.5" /> Load template
           </button>
           {pinned.length > 0 && (
             <div className="relative">
@@ -385,7 +392,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
               </button>
               {pinMenu && (
                 <div className="absolute left-0 top-6 z-50 w-64 rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/40">
-                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400">
                     Pinned (injected into every prompt)
                   </div>
                   {pinned.map((p) => (
@@ -435,10 +442,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         )}
 
         {!minimized && allEnvs.length === 0 && selectedId === null && (
-          <div className="px-3 py-1.5 text-[11px] text-zinc-500 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
+          <div className="px-3 py-1.5 text-[11px] text-zinc-400 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
             <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
             <span className="flex-1">
-              No scenarios yet — drop a .json template here, use "Temp template", or
+              No scenarios yet — drop a .json template here, use "Load template", or
             </span>
             <button
               onClick={() => loadTemporary(JSON.stringify(researchExample))}
