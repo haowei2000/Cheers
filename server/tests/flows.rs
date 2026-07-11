@@ -344,8 +344,12 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
             bot_locator.clone(),
             make_params(),
         );
-        let h1 = tokio::spawn(async move { dispatcher::dispatch(&db1, &f1, &r1, &l1, p1).await });
-        let h2 = tokio::spawn(async move { dispatcher::dispatch(&db2, &f2, &r2, &l2, p2).await });
+        let h1 = tokio::spawn(async move {
+            dispatcher::dispatch(&db1, &f1, &r1, &l1, p1, &dispatcher::MediaCache::default()).await
+        });
+        let h2 = tokio::spawn(async move {
+            dispatcher::dispatch(&db2, &f2, &r2, &l2, p2, &dispatcher::MediaCache::default()).await
+        });
         (h1.await.unwrap(), h2.await.unwrap())
     };
 
@@ -413,6 +417,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
             session_id: None,
             chain_id: None,
         },
+        &dispatcher::MediaCache::default(),
     )
     .await;
     let placeholder = match res {
