@@ -18,6 +18,7 @@ import { ComposerModelPopover } from "./ComposerModelPopover";
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
+import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Button } from "@/components/ui/button";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
@@ -575,6 +576,25 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [wsOpen, setWsOpen] = useState(false);
   const [wsInit, setWsInit] = useState<{ botId?: string; path?: string }>({});
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
+
+  // The work lane is the bounded canvas the instrument windows drag/resize
+  // inside. Track its element as state (not a ref) so panels re-render with the
+  // real bounds once it mounts; getLaneBounds is read live on every drag/resize.
+  // MUST stay above the isPreview early-return so the hook order never changes.
+  const [laneEl, setLaneEl] = useState<HTMLElement | null>(null);
+  const getLaneBounds = useCallback(
+    () => laneEl?.getBoundingClientRect() ?? null,
+    [laneEl]
+  );
+  // The lane also resizes without a window resize event — collapsing the sidebar
+  // reflows its width via CSS. Re-clamp the floating windows on any lane box
+  // change so one can't get stranded in the lane's overflow-hidden clip.
+  useEffect(() => {
+    if (!laneEl || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => window.dispatchEvent(new Event("resize")));
+    ro.observe(laneEl);
+    return () => ro.disconnect();
+  }, [laneEl]);
   const [wbTarget, setWbTarget] = useState<string | undefined>(undefined);
   const [refError, setRefError] = useState<string | null>(null);
   // Jump-to-message request from ViewBoard history items (activity rows, audit
@@ -916,7 +936,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     );
   }
 
-  const anyWorkOpen = vbOpen || wbOpen || wsOpen;
+  const anyWorkOpen = vbOpen || wbOpen || wsOpen || filesOpen;
 
   return (
     <ProfileCardProvider members={memberById}>
@@ -1030,21 +1050,30 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           <PanelRight className="w-4 h-4" />
         </button>
         {channel.type !== "dm" && (
-          <button
-            onClick={() => setSettingsOpen(true)}
-            title="Channel settings"
-            className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+          <>
+            {/* Divider: the buttons left of it toggle instrument panels in the
+                lane; Settings opens a modal — a different kind of action. */}
+            <div className="w-px h-4 bg-zinc-700 flex-shrink-0 mx-0.5" />
+            <button
+              onClick={() => setSettingsOpen(true)}
+              title="Channel settings"
+              className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </>
         )}
       </div>
 
       <div className="flex-1 min-h-0 flex">
-      {/* Chat region — the capped column inside centers or right-docks. The
-          md floor keeps the chat usable however crowded the dock gets (the
-          dock scrolls horizontally past that point instead). */}
-      <div className="flex-1 min-w-0 md:min-w-[24rem] flex flex-col">
+      {/* Chat region — capped at 52rem when the lane is open so the lane takes
+          all the remaining width; shrinks to a 24rem floor before the lane
+          does. Centered when the lane is closed. */}
+      <div
+        className={`flex-1 min-w-0 flex flex-col ${
+          anyWorkOpen ? "md:max-w-[52rem] md:min-w-[24rem]" : ""
+        }`}
+      >
       <div
         className={`flex flex-col h-full w-full min-w-0 md:max-w-[52rem] ${
           anyWorkOpen ? "md:ml-auto" : "md:mx-auto"
@@ -1161,17 +1190,22 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       </div>
       </div>
 
-      {/* Work area — a dedicated lane on the right where the instrument cards
-          (unchanged chrome) are laid out side by side instead of floating over
-          the chat. Cards shrink from their preferred width toward their minimum
-          before the lane scrolls; the chat column always keeps its floor. On
-          mobile the wrapper is display:contents — the panels stay overlay
-          sheets there. */}
+      {/* Work area — a dedicated lane on the right, a bounded canvas the
+          instrument windows (unchanged chrome) float, drag and resize inside.
+          It fills the width left of the capped chat column. `relative` +
+          `overflow-hidden` make it the positioning context and clip stray
+          windows. On mobile it's display:contents — the panels stay overlay
+          sheets there. LaneBoundsContext hands each window this box's live
+          rect so drag/resize stays inside it. */}
       <aside
-        className={`max-md:contents flex min-w-0 min-h-0 ${
-          anyWorkOpen ? "md:gap-3 md:p-3 md:overflow-x-auto" : ""
-        }`}
+        ref={setLaneEl}
+        className={
+          anyWorkOpen
+            ? "max-md:contents md:relative md:flex-1 md:min-w-[20rem] md:min-h-0 md:overflow-hidden"
+            : "contents"
+        }
       >
+        <LaneBoundsContext.Provider value={anyWorkOpen ? getLaneBounds : null}>
         {wsOpen && (
           <Suspense fallback={null}>
           <RemoteWorkspaceDialog
@@ -1221,17 +1255,21 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           openFilePath={wbTarget}
           filesTick={boardTick.files}
         />
+
+        {/* Channel files lives in the lane too, so it floats/drags/resizes like the
+            other instrument panels instead of over the whole viewport. */}
+        {filesOpen && (
+          <Suspense fallback={null}>
+            <ChannelFilesDialog
+              channelId={channel.channel_id}
+              onClose={() => setFilesOpen(false)}
+              focusFileId={filesFocus}
+            />
+          </Suspense>
+        )}
+        </LaneBoundsContext.Provider>
       </aside>
       </div>
-      {filesOpen && (
-        <Suspense fallback={null}>
-          <ChannelFilesDialog
-            channelId={channel.channel_id}
-            onClose={() => setFilesOpen(false)}
-            focusFileId={filesFocus}
-          />
-        </Suspense>
-      )}
       {settingsOpen && (
         <Suspense fallback={null}>
           <ChannelSettingsDialog channel={channel} onClose={() => setSettingsOpen(false)} />

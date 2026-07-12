@@ -973,14 +973,11 @@ export function RemoteWorkspaceDialog({
         onClose();
       }}
       storageKey="cheers.float.workspace"
-      className="w-[1024px]"
-      defaultPosClassName="top-16 left-1/2 -translate-x-1/2"
-      // Desktop: laid out in the channel's work area (widest card — it hosts a
-      // side-by-side tree + editor; shrinks when the lane gets crowded).
-      // Mobile: full-screen sheet via FloatingPanel.
-      docked
-      dockedClassName="w-[1024px] shrink min-w-[480px]"
-      // The panes stack (mobile) or sit side-by-side (docked) and stretch — the
+      // Widest card (it hosts a side-by-side tree + editor); default height fills
+      // most of the lane. Clamped to the lane's width/height by FloatingPanel.
+      className="w-[1024px] h-[85%]"
+      defaultPosClassName="top-6 left-6"
+      // The panes stack (mobile) or sit side-by-side (desktop) and stretch — the
       // body must be a non-scrolling flex column in both cases.
       bodyClassName="flex flex-col overflow-hidden"
     >
@@ -1122,7 +1119,7 @@ export function RemoteWorkspaceDialog({
           Select an online bot to browse the workspace on its machine.
         </div>
       ) : (
-        // Desktop (docked): side-by-side tree + editor filling the column height.
+        // Desktop: side-by-side tree + editor filling the window height.
         // Mobile: a full-screen sheet, so stack the panes vertically. Either way the
         // panes fill the remaining body height and keep their own internal scroll.
         <div className="flex gap-3 flex-1 min-h-0 max-md:flex-col">

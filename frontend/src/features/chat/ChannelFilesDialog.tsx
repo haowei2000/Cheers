@@ -38,10 +38,10 @@ export function ChannelFilesDialog({
       icon={Paperclip}
       onClose={onClose}
       storageKey="cheers.float.files"
-      className="w-[640px]"
-      // Default spawn at the top-LEFT of the chat area, clear of the right-anchored
-      // ViewBoard/Workbench defaults (drag to taste; the position persists).
-      defaultPosClassName="top-16 left-[max(1.5rem,20%)]"
+      // Same lane-window defaults as the other instrument panels (drag/resize to
+      // taste; geometry persists). Bounded to the lane via LaneBoundsContext.
+      className="w-[640px] h-[70%]"
+      defaultPosClassName="top-2 left-2"
     >
       {files === null ? (
         <SurfaceSpinner />
