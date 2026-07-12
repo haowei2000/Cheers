@@ -52,7 +52,17 @@ const MIN_VISIBLE_Y = 48;
 const MIN_W = 280;
 const MIN_H = 160;
 
-function clampPos(pos: Pos, width: number): Pos {
+// Clamp a top-left position. In BOUNDED mode (`bounds` given, e.g. the work
+// lane) coordinates are local to that box and the window is kept fully inside
+// it — the lane is a canvas, not the whole screen. Otherwise coordinates are
+// viewport-absolute and we only keep a grabbable sliver on-screen.
+function clampPos(pos: Pos, width: number, height: number, bounds: DOMRect | null): Pos {
+  if (bounds) {
+    return {
+      x: Math.min(Math.max(pos.x, 0), Math.max(0, bounds.width - width)),
+      y: Math.min(Math.max(pos.y, 0), Math.max(0, bounds.height - Math.min(height, bounds.height))),
+    };
+  }
   return {
     x: Math.min(Math.max(pos.x, MIN_VISIBLE_X - width), window.innerWidth - MIN_VISIBLE_X),
     y: Math.min(Math.max(pos.y, MIN_TOP), window.innerHeight - MIN_VISIBLE_Y),
@@ -86,13 +96,24 @@ export interface WindowDrag {
   style: CSSProperties;
   /** Position + stacking only (no size) — for collapsed/minimized rendering. */
   posStyle: CSSProperties;
+  /** True while a bounds box is active — the root should use `absolute` (inside
+   *  the positioned lane) rather than `fixed` (the viewport). */
+  bounded: boolean;
   /** Bring this window to the front (also wired into the handle's pointerdown). */
   toFront: () => void;
   /** Forget the dragged/resized geometry (window snaps back to its defaults). */
   reset: () => void;
 }
 
-export function useWindowDrag(storageKey: string, enabled = true): WindowDrag {
+// `getBounds` (optional) turns on BOUNDED mode: the window floats inside that
+// box (the work lane) with `absolute` positioning and lane-local coordinates,
+// instead of over the whole viewport. It's read live on every drag/resize so a
+// resized lane is always respected.
+export function useWindowDrag(
+  storageKey: string,
+  enabled = true,
+  getBounds?: () => DOMRect | null
+): WindowDrag {
   const [geom, setGeom] = useState<Geom>(() => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -153,13 +174,20 @@ export function useWindowDrag(storageKey: string, enabled = true): WindowDrag {
     [enabled, toFront]
   );
 
-  const onDragMove = useCallback((e: ReactPointerEvent) => {
-    const drag = dragRef.current;
-    const el = elRef.current;
-    if (!drag || !el) return;
-    const p = clampPos({ x: e.clientX - drag.dx, y: e.clientY - drag.dy }, el.offsetWidth);
-    setGeom((g) => ({ ...g, ...p }));
-  }, []);
+  const onDragMove = useCallback(
+    (e: ReactPointerEvent) => {
+      const drag = dragRef.current;
+      const el = elRef.current;
+      if (!drag || !el) return;
+      const b = getBounds ? getBounds() : null;
+      // In bounded mode the pointer (viewport coords) maps to lane-local coords.
+      const x = e.clientX - drag.dx - (b ? b.left : 0);
+      const y = e.clientY - drag.dy - (b ? b.top : 0);
+      const p = clampPos({ x, y }, el.offsetWidth, el.offsetHeight, b);
+      setGeom((g) => ({ ...g, ...p }));
+    },
+    [getBounds]
+  );
 
   const onDragUp = useCallback(
     (e: ReactPointerEvent) => {
@@ -180,26 +208,47 @@ export function useWindowDrag(storageKey: string, enabled = true): WindowDrag {
       if (!el) return;
       const r = el.getBoundingClientRect();
       resizeRef.current = { w: r.width, h: r.height, px: e.clientX, py: e.clientY };
+      const b = getBounds ? getBounds() : null;
       // Freeze the current spot: a default position is often right-anchored /
       // translated, and resizing an anchored edge moves the window instead of
       // growing it. Pin left/top first so the grip behaves like an OS window.
+      // In bounded mode the pinned spot is lane-local.
       setGeom((g) =>
-        g.x == null || g.y == null ? { ...g, ...clampPos({ x: r.left, y: r.top }, r.width) } : g
+        g.x == null || g.y == null
+          ? {
+              ...g,
+              ...clampPos(
+                { x: r.left - (b ? b.left : 0), y: r.top - (b ? b.top : 0) },
+                r.width,
+                r.height,
+                b
+              ),
+            }
+          : g
       );
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       e.preventDefault();
       e.stopPropagation();
     },
-    [enabled, toFront]
+    [enabled, toFront, getBounds]
   );
 
-  const onResizeMove = useCallback((e: ReactPointerEvent) => {
-    const rs = resizeRef.current;
-    if (!rs) return;
-    const w = Math.min(Math.max(rs.w + (e.clientX - rs.px), MIN_W), window.innerWidth - 16);
-    const h = Math.min(Math.max(rs.h + (e.clientY - rs.py), MIN_H), window.innerHeight - 16);
-    setGeom((g) => ({ ...g, w: Math.round(w), h: Math.round(h) }));
-  }, []);
+  const onResizeMove = useCallback(
+    (e: ReactPointerEvent) => {
+      const rs = resizeRef.current;
+      if (!rs) return;
+      const b = getBounds ? getBounds() : null;
+      const g = geomRef.current;
+      // In bounded mode a window can't grow past the lane's right/bottom edge
+      // from its current top-left; otherwise it's clamped to the viewport.
+      const maxW = b ? b.width - (g.x ?? 0) : window.innerWidth - 16;
+      const maxH = b ? b.height - (g.y ?? 0) : window.innerHeight - 16;
+      const w = Math.min(Math.max(rs.w + (e.clientX - rs.px), MIN_W), maxW);
+      const h = Math.min(Math.max(rs.h + (e.clientY - rs.py), MIN_H), maxH);
+      setGeom((gg) => ({ ...gg, w: Math.round(w), h: Math.round(h) }));
+    },
+    [getBounds]
+  );
 
   const onResizeUp = useCallback(
     (e: ReactPointerEvent) => {
@@ -210,6 +259,40 @@ export function useWindowDrag(storageKey: string, enabled = true): WindowDrag {
     },
     [persist]
   );
+
+  // A persisted position can fall off-screen after a layout change — a narrower
+  // window, a collapsed sidebar, the work lane opening/resizing. Without this a
+  // window would "open" in the DOM but render where nobody can see it (looks
+  // like it never opened). On mount and on every resize, if the saved top-left
+  // is stranded (past the keep-a-sliver bound) pull it FULLY back into the
+  // current box for a clean reveal; leave windows parked within bounds alone.
+  // Size is already re-clamped at render via min().
+  useEffect(() => {
+    if (!enabled) return;
+    const reclamp = () => {
+      const el = elRef.current;
+      if (!el) return;
+      const b = getBounds ? getBounds() : null;
+      const boxW = b ? b.width : window.innerWidth;
+      const boxH = b ? b.height : window.innerHeight;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      setGeom((g) => {
+        if (g.x == null || g.y == null) return g;
+        // Only act when the sliver-clamp would move it (i.e. it's stranded).
+        const sliver = clampPos({ x: g.x, y: g.y }, w, h, b);
+        if (sliver.x === g.x && sliver.y === g.y) return g;
+        return {
+          ...g,
+          x: Math.min(Math.max(g.x, 0), Math.max(0, boxW - w)),
+          y: Math.min(Math.max(g.y, 0), Math.max(0, boxH - h)),
+        };
+      });
+    };
+    reclamp();
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [enabled, getBounds]);
 
   const reset = useCallback(() => {
     setGeom({});
@@ -227,14 +310,33 @@ export function useWindowDrag(storageKey: string, enabled = true): WindowDrag {
   const pos = enabled && geom.x != null && geom.y != null ? { x: geom.x, y: geom.y } : null;
   const size = enabled && geom.w != null && geom.h != null ? { w: geom.w, h: geom.h } : null;
 
+  const boundsAtRender = enabled && getBounds ? getBounds() : null;
+  const bounded = boundsAtRender != null;
+
   const posStyle: CSSProperties = pos
-    ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto", zIndex: z }
-    : { zIndex: z };
-  // min() re-clamps a persisted size against the CURRENT viewport at render time.
+    ? {
+        // Absolute inside the lane, fixed over the viewport — set explicitly so it
+        // wins over the root's `fixed`/`absolute` className either way.
+        position: bounded ? "absolute" : "fixed",
+        left: pos.x,
+        top: pos.y,
+        right: "auto",
+        bottom: "auto",
+        zIndex: z,
+      }
+    : bounded
+      ? { position: "absolute", zIndex: z }
+      : { zIndex: z };
+  // min() re-clamps a persisted size against the CURRENT box (lane or viewport)
+  // at render time, so a shrunk lane / viewport never strands an oversized card.
+  // Guard width/height > 0: on the closed→open frame the lane can still measure
+  // 0×0 (display:contents not yet swapped), which would flash the window to 0px.
+  const laneW = boundsAtRender && boundsAtRender.width > 0 ? boundsAtRender.width : null;
+  const laneH = boundsAtRender && boundsAtRender.height > 0 ? boundsAtRender.height : null;
   const sizeStyle: CSSProperties = size
     ? {
-        width: `min(${size.w}px, 94vw)`,
-        height: `min(${size.h}px, calc(100dvh - 24px))`,
+        width: laneW ? `min(${size.w}px, ${laneW}px)` : `min(${size.w}px, 94vw)`,
+        height: laneH ? `min(${size.h}px, ${laneH}px)` : `min(${size.h}px, calc(100dvh - 24px))`,
         maxWidth: "none",
         maxHeight: "none",
       }
@@ -245,6 +347,7 @@ export function useWindowDrag(storageKey: string, enabled = true): WindowDrag {
     pos,
     size,
     z,
+    bounded,
     handleProps: {
       onPointerDown: onDragDown,
       onPointerMove: onDragMove,

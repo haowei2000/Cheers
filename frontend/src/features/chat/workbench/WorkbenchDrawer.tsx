@@ -1,6 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Maximize2, Minimize2, Package, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useLaneWindow } from "@/hooks/useLaneWindow";
+import { ResizeGrip } from "@/components/ui/resize-grip";
+import { cn } from "@/lib/cn";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
@@ -310,6 +313,9 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     });
   };
   const minimized = collapsed && !isMobile;
+  // Desktop: a draggable/resizable window floating inside the work lane (chrome
+  // unchanged; drag by the title bar, resize from the grip, geometry persists).
+  const { float, drag } = useLaneWindow("cheers.float.workbench");
 
   const ctx: WorkbenchContext = useMemo(
     () => ({
@@ -340,12 +346,28 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
       }`
-    : `${open ? "flex" : "hidden"} min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors ${
-        minimized ? "w-[300px] shrink min-w-[10rem] self-start" : "w-[560px] shrink min-w-[380px]"
-      } ${dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"}`;
+    : float
+      ? cn(
+          open ? "flex" : "hidden",
+          "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          !drag.pos && "top-4 left-4",
+          // Default size until dragged/resized; drag.style overrides w/h inline.
+          minimized ? "w-[300px]" : "w-[560px] h-[75%]",
+          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+        )
+      : // Fallback (no lane context): the previous docked column.
+        `${open ? "flex" : "hidden"} min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors ${
+          minimized ? "w-[300px] shrink min-w-[10rem] self-start" : "w-[560px] shrink min-w-[380px]"
+        } ${dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"}`;
+
+  // Minimized keeps its dragged spot but sheds the resized size.
+  const shellStyle = float ? (minimized ? drag.posStyle : drag.style) : undefined;
 
   return (
       <aside
+        ref={float ? drag.ref : undefined}
+        onPointerDownCapture={float ? drag.toFront : undefined}
+        style={shellStyle}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -354,7 +376,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         onDrop={onDrop}
         className={shellClass}
       >
-        <div className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none">
+        <div
+          {...(float ? drag.handleProps : {})}
+          className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none"
+        >
           <span className="text-sm font-semibold text-zinc-100">Workbench</span>
           {!minimized && (
           <>
@@ -461,6 +486,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         <div className={minimized ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>
           {open && <FilePanel ctx={ctx} />}
         </div>
+        {float && !minimized && <ResizeGrip resizeProps={drag.resizeProps} />}
       </aside>
   );
 }
