@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
+import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
+  Bot,
+  File,
   FolderTree,
   Download,
   FileText,
@@ -980,6 +983,46 @@ export function RemoteWorkspaceDialog({
       // The panes stack (mobile) or sit side-by-side (desktop) and stretch — the
       // body must be a non-scrolling flex column in both cases.
       bodyClassName="flex flex-col overflow-hidden"
+      // Minimized glance: which bot, the open file (with unsaved marker), and the
+      // git branch + change count — the signals you keep an eye on while parked.
+      collapsedSummary={(expand) => (
+        <>
+          <GlanceRow
+            Icon={Bot}
+            label="Bot"
+            sub={selectedBot ? (selectedBot.online ? "online" : "offline") : null}
+            value={selectedBot ? selectedBot.display_name || selectedBot.username : "—"}
+            onClick={expand}
+            title="Open remote workspace"
+          />
+          <GlanceRow
+            Icon={File}
+            label="File"
+            sub={dirty ? "unsaved" : null}
+            value={file ? `${dirty ? "● " : ""}${file.filename}` : "—"}
+            onClick={expand}
+          >
+            {cwd && <DetailLine name={cwd} />}
+          </GlanceRow>
+          {botId && git && (
+            <GlanceRow
+              Icon={GitBranch}
+              label="Git"
+              value={git.branch || "(detached)"}
+              onClick={expand}
+            >
+              <DetailLine
+                name={`${git.entries.length} change${git.entries.length === 1 ? "" : "s"}`}
+                figure={
+                  [git.ahead ? `↑${git.ahead}` : "", git.behind ? `↓${git.behind}` : ""]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
+              />
+            </GlanceRow>
+          )}
+        </>
+      )}
     >
       {/* Bot picker */}
       <div className="flex items-center gap-2 mb-2 text-xs flex-wrap flex-shrink-0">

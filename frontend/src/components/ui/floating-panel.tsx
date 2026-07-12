@@ -27,6 +27,7 @@ export function FloatingPanel({
   defaultPosClassName = "top-20 left-1/2 -translate-x-1/2",
   bodyClassName,
   headerExtra,
+  collapsedSummary,
   children,
 }: {
   title: ReactNode;
@@ -42,6 +43,11 @@ export function FloatingPanel({
   bodyClassName?: string;
   /** Extra header controls, rendered between the title and the close button. */
   headerExtra?: ReactNode;
+  /** Minimized glance (ViewBoard-style): a compact key-signal summary shown in
+   *  place of the body while collapsed. `expand` reopens the panel — wire it to
+   *  the glance rows so clicking a signal expands straight to the full view.
+   *  When omitted, collapsed is just a bare title chip. */
+  collapsedSummary?: (expand: () => void) => ReactNode;
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -84,6 +90,42 @@ export function FloatingPanel({
   // Collapsed keeps the dragged position but sheds the resized width/height.
   const style: CSSProperties = collapsed && !isMobile ? drag.posStyle : drag.style;
 
+  // Title label. While collapsed the whole label is the expand target (a much
+  // bigger hit area than the 14px restore icon); the button wrapper also opts
+  // the label out of the drag handle (useWindowDrag ignores pointerdowns on
+  // buttons), so a click reliably expands instead of half-starting a drag.
+  const titleLabel = (
+    <>
+      {Icon && <Icon className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 truncate">
+        {title}
+      </span>
+    </>
+  );
+  const titleEl = collapsed ? (
+    <button
+      type="button"
+      onClick={toggleCollapsed}
+      title="Expand"
+      className="flex items-center gap-2 min-w-0 -mx-1 rounded px-1 py-0.5 hover:bg-zinc-800/60"
+    >
+      {titleLabel}
+    </button>
+  ) : (
+    titleLabel
+  );
+
+  // Collapsed body: the ViewBoard-style glance, if the panel supplies one.
+  const summaryEl =
+    collapsed && !isMobile && collapsedSummary ? (
+      <div className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+        {collapsedSummary(toggleCollapsed)}
+      </div>
+    ) : null;
+  // Collapsed width: a compact glance column when there's a summary, else a
+  // content-hugging title chip.
+  const collapsedWidth = collapsedSummary ? "w-[248px]" : "w-auto";
+
   return (
     <div
       ref={drag.ref}
@@ -102,17 +144,14 @@ export function FloatingPanel({
         // Mobile: full-screen sheet — position/size overrides beat the defaults.
         "max-md:inset-0 max-md:max-w-none max-md:max-h-none max-md:w-auto max-md:rounded-none max-md:translate-x-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]",
         !drag.pos && defaultPosClassName,
-        collapsed && !isMobile ? "w-[300px]" : className
+        collapsed && !isMobile ? collapsedWidth : className
       )}
     >
       <div
         {...drag.handleProps}
         className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
       >
-        {Icon && <Icon className="w-4 h-4 text-zinc-400 flex-shrink-0" />}
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 truncate">
-          {title}
-        </span>
+        {titleEl}
         <div className="flex-1" />
         {!collapsed && headerExtra}
         <button
@@ -131,7 +170,9 @@ export function FloatingPanel({
           <X className="w-4 h-4" />
         </button>
       </div>
-      {(!collapsed || isMobile) && (
+      {collapsed && !isMobile ? (
+        summaryEl
+      ) : (
         <div
           className={cn(
             "flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3",
