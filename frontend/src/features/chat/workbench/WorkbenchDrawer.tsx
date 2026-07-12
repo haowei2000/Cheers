@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Maximize2, Minimize2, Package, X } from "lucide-react";
+import { Clock, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
+import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { cn } from "@/lib/cn";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
@@ -352,12 +353,12 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
           !drag.pos && "top-4 left-4",
           // Default size until dragged/resized; drag.style overrides w/h inline.
-          minimized ? "w-[300px]" : "w-[560px] h-[75%]",
+          minimized ? "w-[248px]" : "w-[560px] h-[75%]",
           dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
         )
       : // Fallback (no lane context): the previous docked column.
         `${open ? "flex" : "hidden"} min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors ${
-          minimized ? "w-[300px] shrink min-w-[10rem] self-start" : "w-[560px] shrink min-w-[380px]"
+          minimized ? "w-[248px] shrink-0 self-start" : "w-[560px] shrink min-w-[380px]"
         } ${dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"}`;
 
   // Minimized keeps its dragged spot but sheds the resized size.
@@ -380,7 +381,20 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           {...(float ? drag.handleProps : {})}
           className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none"
         >
-          <span className="text-sm font-semibold text-zinc-100">Workbench</span>
+          {minimized ? (
+            // Collapsed: the whole title is the expand target (bigger than the
+            // 14px restore icon); a button also opts out of the drag handle.
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              title="Expand"
+              className="-mx-1 rounded px-1 py-0.5 text-sm font-semibold text-zinc-100 hover:bg-zinc-800/60"
+            >
+              Workbench
+            </button>
+          ) : (
+            <span className="text-sm font-semibold text-zinc-100">Workbench</span>
+          )}
           {!minimized && (
           <>
           <select
@@ -481,6 +495,30 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           </div>
         )}
 
+        {/* Minimized: a ViewBoard-style glance (scenario + pinned files) in place
+            of the full browser. Clicking a row expands back to the browser. */}
+        {minimized && (
+          <div className="min-h-0 overflow-y-auto overscroll-contain p-1.5">
+            <GlanceRow
+              Icon={Package}
+              label="Scenario"
+              value={allEnvs.find((e) => e.id === selectedId)?.title ?? "General"}
+              onClick={toggleCollapsed}
+              title="Open workbench"
+            />
+            <GlanceRow
+              Icon={Pin}
+              label="Pinned"
+              value={String(pinned.length)}
+              onClick={toggleCollapsed}
+            >
+              {pinned.slice(0, 4).map((p) => (
+                <DetailLine key={p} name={p.split("/").pop() || p} />
+              ))}
+              {pinned.length > 4 && <DetailLine name={`+${pinned.length - 4} more`} />}
+            </GlanceRow>
+          </div>
+        )}
         {/* the body IS the file browser: select a file → pin / preview / raw.
             Kept mounted while minimized (hidden) so tree/selection state survives. */}
         <div className={minimized ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>

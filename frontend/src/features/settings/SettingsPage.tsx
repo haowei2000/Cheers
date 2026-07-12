@@ -318,7 +318,11 @@ export default function SettingsPage() {
       <div className="border-b border-zinc-800 px-6 max-md:px-4 py-4 flex items-center gap-4">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          // Always return to the chat home, not the previous history entry — the
+          // in-page section nav pushes /settings/:section entries, so navigate(-1)
+          // would step through those (or leave the app on a fresh load) instead of
+          // leaving Settings. Matches FriendsPage's back button.
+          onClick={() => navigate("/chat")}
           title="Back"
           className="text-zinc-500 hover:text-zinc-200 transition-colors p-2 -m-2 rounded-lg"
         >
