@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
+import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { listChannelFiles } from "@/api/files";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import type { FileInfo } from "@/types";
 import { FileGrid } from "./fileView";
+
+const GLANCE_FILE_LINES = 4;
 
 // The channel's CHAT file library — a dedicated view, kept separate from the workbench
 // File panel (context_files). Images preview inline; other files download.
@@ -42,6 +45,22 @@ export function ChannelFilesDialog({
       // taste; geometry persists). Bounded to the lane via LaneBoundsContext.
       className="w-[640px] h-[70%]"
       defaultPosClassName="top-2 left-2"
+      collapsedSummary={(expand) => (
+        <GlanceRow
+          Icon={Paperclip}
+          label="Files"
+          value={files === null ? "…" : String(files.length)}
+          onClick={expand}
+          title="Open channel files"
+        >
+          {files?.slice(0, GLANCE_FILE_LINES).map((f) => (
+            <DetailLine key={f.file_id} name={f.original_filename ?? f.file_id} />
+          ))}
+          {files && files.length > GLANCE_FILE_LINES && (
+            <DetailLine name={`+${files.length - GLANCE_FILE_LINES} more`} />
+          )}
+        </GlanceRow>
+      )}
     >
       {files === null ? (
         <SurfaceSpinner />
