@@ -58,7 +58,7 @@ docker compose logs --tail=200 postgres
 Common causes:
 
 - `.env` PostgreSQL password does not match an already-initialized `data/postgres` directory.
-- Alembic migration failed.
+- A sqlx migration failed (the gateway runs `sqlx` migrations from `server/migrations/` on startup — check the gateway logs).
 - Required secrets or storage configuration are missing.
 
 ## No Projects in Sidebar

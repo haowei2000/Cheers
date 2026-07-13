@@ -1,5 +1,7 @@
 # Cheers 架构重构规划
 
+> **状态：** 🛠 规划 —— 从 Python 单体迁移到 Rust 网关的历史迁移规划，**非**当前状态的权威参考。当前架构以 [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md) 和实际代码为准。
+
 > 版本：v0.2
 > 分支：`break/rust-gateway-arch`
 > 决策背景：现有 Python 单体后端兼顾了实时连接网关和 Agent 编排两层职责。本文档记录从单体迁移到「Rust Backend + Python Agent Service」混合架构的完整规划。

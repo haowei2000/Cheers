@@ -72,8 +72,9 @@ Rust Backend                     ← platform; routes tasks, persists messages, 
 
 **Why stdio, not remote HTTP MCP:** the agent and the MCP server are co-located on
 the same machine; stdio is the most mature and lowest-latency transport. The remote
-HTTP MCP path (`backend/app/api/v1/mcp/`) is a second phase for third-party hosts
-that cannot run a local process (e.g., Claude.ai web).
+HTTP MCP path (`server/src/api/mcp.rs`, serving `/api/v1/mcp/*` — currently only MCP
+config preview/parsing) is a second phase for third-party hosts that cannot run a local
+process (e.g., Claude.ai web).
 
 **The MCP server does NOT open its own Agent Bridge WS.** It forwards each MCP tool
 call over local IPC to the connector, which emits `resource_req` on its existing

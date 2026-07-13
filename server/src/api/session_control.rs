@@ -206,6 +206,44 @@ pub async fn close_session(
     ))
 }
 
+// ── POST /api/v1/channels/:channel_id/bots/:bot_id/sessions/:session_id/primary ─
+
+/// Promote an existing session to the channel's PRIMARY for this bot — the one
+/// Auto/mention messages route to. The binding role is the source of truth
+/// (domain::sessions::set_primary_session); the demoted session stays addressable
+/// as an "other" session. Gated like session_create/close: owner-default +
+/// grantable INITIATE, fail-closed.
+pub async fn set_primary_session(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, bot_id, session_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
+    let role = caller_role(&state, channel_id, user_id).await?;
+    gate_initiate(
+        &state,
+        &claims,
+        channel_id,
+        bot_id,
+        user_id,
+        &role,
+        "cheers/session_set_primary",
+    )
+    .await?;
+    // Verify the session is live in this channel and belongs to this bot.
+    let (sbot, _key) =
+        sessions::resolve_channel_session(&state.db, &channel_id.to_string(), session_id).await?;
+    if sbot != bot_id {
+        return Err(AppError::BadRequest(
+            "session does not belong to this bot".into(),
+        ));
+    }
+    sessions::set_primary_session(&state.db, bot_id, &channel_id.to_string(), session_id).await?;
+    Ok(Json(
+        json!({ "ok": true, "session_id": session_id.to_string() }),
+    ))
+}
+
 // ── Delegated session-scoped mode / config changes ───────────────────────────
 // set_mode / set_config_option are OWNER-default but GRANTABLE per-subject: a
 // channel member with an explicit INITIATE grant may change the mode/config of a
@@ -602,6 +640,18 @@ pub async fn session_controls(
         )
         .await
         .unwrap_or(false);
+    let can_set_primary = privileged
+        || acp_policy::allows(
+            &state.db,
+            &bot_id.to_string(),
+            &channel_id.to_string(),
+            &user_id.to_string(),
+            &role,
+            "cheers/session_set_primary",
+            Capability::Initiate,
+        )
+        .await
+        .unwrap_or(false);
     let agent_type = bot_agent_type(&state, bot_id).await;
     let (default_mode, allowed_modes) = connector_config::posture_preset(&agent_type);
     Ok(Json(json!({
@@ -609,6 +659,7 @@ pub async fn session_controls(
         "can_set_config_option": can_set_config_option,
         "can_create_session": can_create_session,
         "can_close_session": can_close_session,
+        "can_set_primary": can_set_primary,
         "allowed_modes": allowed_modes,
         // The agent's preset mode — the session's effective mode when no per-session
         // override is set. Lets the UI show the current mode read-only even without a

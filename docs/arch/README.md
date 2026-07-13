@@ -36,11 +36,19 @@ This directory stores architecture, protocol, and gateway design docs.
 - [Context & Environment](context-and-environment.md)
 - [E2EE Notes](E2EE_NOTES.md)
 
-## Evolution / Refactors
+## Planning Documents (not current-state reference)
 
-- [Refactor Plan](REFACTOR_PLAN.md)
+Working engineering plans — actively maintained, but not the source of truth for how the system behaves today. When these conflict with [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) or the current code, the latter win.
+
+- 🛠 [Engineering Execution Roadmap](ROADMAP.md) — milestone build order, acceptance gates, refactor items R1–R14
+- 🛠 [Data Flow & Refactor Plan](DATA_FLOW_AND_REFACTOR_PLAN.md) — code-current snapshot + protocol/code diff table + change items
+- 🛠 [Gateway Refactor Plan](REFACTOR_PLAN.md)
 - [Decentralized Mesh](DECENTRALIZED_MESH.md) / [中文](DECENTRALIZED_MESH.zh-CN.md)
 - [Mobile Client Strategy](MOBILE_CLIENT_STRATEGY.md) / [中文](MOBILE_CLIENT_STRATEGY.zh-CN.md)
+
+## Proposals (draft)
+
+- 📝 [Research Scenario ("research-lab")](RESEARCH_SCENARIO.md) — not yet implemented; scenario proposal
 
 ## Back to Hub
 

@@ -5,8 +5,11 @@
 > This document records the agreed architecture for how Cheers builds context
 > for bots, how channel memory is modeled, and how per-scenario "Environments"
 > are packaged as registrable plugins. It is design intent — verify against code
-> (`gateway/src/acp_bridge/resource/`, `backend/app/features/memory/`,
-> `backend/app/features/bot_runtime/pipeline/`) before implementing.
+> (`server/src/resource/` for the resource layer, and `server/src/gateway/dispatcher.rs`
+> for how context is injected into the agent prompt) before implementing. The Python
+> `backend/app/features/memory/` and `.../bot_runtime/pipeline/` push side referenced by
+> earlier drafts was removed with the Python backend and is not part of the current model
+> (see CURRENT MODEL below).
 
 ---
 
@@ -64,9 +67,10 @@ that channel's messages."
 - **Local stdio MCP** (`packages/cheers-mcp-server/`) — for the project's own
   reverse-connected ACP bot. Co-located with the agent, gets the bound channel via
   env injection. **This is the primary channel.** Most mature MCP transport.
-- **Remote HTTP MCP** (`backend/app/api/v1/mcp/`) — for third-party MCP hosts
+- **Remote HTTP MCP** (`server/src/api/mcp.rs` — currently only MCP config
+  preview/parsing under `/api/v1/mcp/*`) — for third-party MCP hosts
   (Claude Desktop, Cursor) that do not go through the connector. REST-backed,
-  bot-token / OAuth scoped. Second phase.
+  bot-token / OAuth scoped. Second phase (the full remote MCP host is not yet built).
 
 Topology constraint: a bot has exactly one `(control, data)` WebSocket pair; a
 second connection with the same token is superseded (close 4402). The MCP server
@@ -222,8 +226,14 @@ currently returns metadata with `content: null` — the body is a pull concern.)
 
 ### Consistency risk to manage
 
-Push assembly (Python `context_load`) and pull (Rust gateway `resource/*`) read the
-**same** primitives through **two** implementations. Treat the gateway resources as
+> ⚠️ Written for the two-implementation world (Python push + Rust pull). The Python
+> push assembly was removed; today the gateway resource layer (`server/src/resource/*`)
+> is the single implementation, and the only push is the awareness convention injected by
+> `server/src/gateway/dispatcher.rs`. The dual-implementation drift below is retained as a
+> design caution for if a second consumer of these primitives is ever added.
+
+Push assembly (formerly Python `context_load`) and pull (Rust gateway `resource/*`) read
+the **same** primitives through **two** implementations. Treat the gateway resources as
 the single source of truth and have push take a snapshot from / share DTOs with the
 same layer, or "what the bot was shown" and "what the tool fetches" will drift.
 

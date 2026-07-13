@@ -153,6 +153,12 @@ effective_config  →  adapter / pipeline
 
 ## 8. 与重构主线的关系
 
-- 本设计属于 **Python Agent Service** 范畴：`build_effective_bot_config()` 在 Agent Service rehydrate 上下文（见 [TASK_DELIVERY.md](./TASK_DELIVERY.md) §5）时调用，产出喂给 adapter。
-- 与 Rust Backend / 线协议无关——配置解析全在 Python 侧。
-- 频道覆盖的 JSONB 列是一次 Alembic 迁移；实现时机随 Agent Service 剥离（Phase 2）。
+> ⚠️ **本节的「Python Agent Service」前提已被 external-agent-first 取代**（见
+> [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md) 第二节与
+> [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)）：平台侧没有内置 Python runtime，
+> `build_effective_bot_config()` 这类 Python 侧配置组装从未落地。当前配置以数据形式存放于
+> `bot_accounts` 及频道成员覆盖列，由 Rust 网关（`server/src`）投递给外部 ACP Agent。下列条目保留原设计描述作历史记录。
+
+- （历史设计）本设计属于 **Python Agent Service** 范畴：`build_effective_bot_config()` 在 Agent Service rehydrate 上下文（见 [TASK_DELIVERY.md](./TASK_DELIVERY.md) §5）时调用，产出喂给 adapter。
+- （历史设计）与 Rust Backend / 线协议无关——配置解析全在 Python 侧。
+- 频道覆盖的 JSONB 列需要一次 **sqlx** 迁移（`server/migrations/`，网关启动时自动运行）。

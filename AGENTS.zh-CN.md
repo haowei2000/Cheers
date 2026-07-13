@@ -4,7 +4,7 @@
 
 面向在 Cheers 上工作的编码智能体的项目专属说明。
 
-英文版是为开源文档集准备的默认公开版本，本文件是其中文镜像。带有原始历史措辞的完整中文旧版保留在 [docs/governance/AGENTS.zh-CN.md](docs/governance/AGENTS.zh-CN.md)。
+英文版是为开源文档集准备的默认公开版本，本文件是其中文镜像。
 
 ## 关键主题
 

@@ -1,5 +1,7 @@
 # Engineering Execution Roadmap
 
+> **Status:** 🛠 Planning — actively-maintained engineering execution plan, **not** the current-state reference. For the current architecture see [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md); for the public product roadmap see [docs/ROADMAP.md](../ROADMAP.md).
+
 > 版本：v1.8（2026-06-26）—— M3.5：ACP 协议库采用 R14（Tier A typed schema 已落地 / Tier B 全量 runtime 规划）
 > 版本：v1.7（2026-06-25）—— M3 收口：R8 错误上下文 · R9 session 解析合并 · R10 sqlx 样板 · R11 拆 bridge_runtime(+impl) · 孤儿占位回收器 · R13 文档对齐（R12 长期搁置）
 > 版本：v1.5（2026-06-18）—— M0 完成：R1（进程内）·R3 背压·R4-1 单测·R4-2 集成·R5 双派发
@@ -8,7 +10,7 @@
 > - [ARCHITECTURE_OVERVIEW.md](./ARCHITECTURE_OVERVIEW.md) —— 目标拓扑与硬契约（**做什么**）
 > - [DATA_FLOW_AND_REFACTOR_PLAN.md](./DATA_FLOW_AND_REFACTOR_PLAN.md) —— 代码现状快照 + 改造项 R1–R13（**改哪里**）
 > - 本文 —— 里程碑、依赖、验收门（**按什么顺序、何时算完成**）
-> - 区别于 [docs/policies/ROADMAP.md](../policies/ROADMAP.md)：那是**面向公众的产品路线图**；本文是**工程执行计划**。
+> - 区别于 [docs/ROADMAP.md](../ROADMAP.md)：那是**面向公众的产品路线图**；本文是**工程执行计划**。
 
 ---
 
