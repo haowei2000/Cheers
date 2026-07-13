@@ -974,24 +974,25 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         )}
         <div className="flex-1" />
         <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
-          {onlineCount > 0 && (
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {onlineCount} online
-            </span>
-          )}
           {/* Members: was a dead-looking span — now a real button opening the roster. */}
           <div className="relative" data-members-root>
             <button
               type="button"
               onClick={() => setMembersOpen((v) => !v)}
               title="Channel members"
+              aria-expanded={membersOpen}
               className={`flex items-center gap-1.5 rounded px-1.5 py-1 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
                 membersOpen ? "text-zinc-100 bg-zinc-800" : ""
               }`}
             >
               <Users className="w-3.5 h-3.5" />
               {mentionables.length || "Members"}
+              {onlineCount > 0 && (
+                <span className="flex items-center gap-1.5 ml-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  {onlineCount} online
+                </span>
+              )}
             </button>
             {membersOpen && (
               <MembersPopover
