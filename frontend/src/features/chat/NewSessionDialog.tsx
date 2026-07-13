@@ -10,6 +10,7 @@ import { createChannelBotSession } from "@/api/sessionControl";
 import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { bustBotControls } from "./sessionControlsCache";
 
 export function NewSessionDialog({
   channelId,
@@ -63,6 +64,7 @@ export function NewSessionDialog({
           : undefined
       );
       toast.success("New session created");
+      bustBotControls(channelId, botId);
       onCreated({ session_id: created.session_id, bot_id: botId });
       onClose();
     } catch (e) {

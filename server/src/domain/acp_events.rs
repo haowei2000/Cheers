@@ -122,6 +122,13 @@ pub const REGISTRY: &[AcpEvent] = &[
         Some("initiate"),
         false,
     ),
+    ev(
+        "cheers/session_set_primary",
+        Home::Cheers,
+        Some("session_set_primary"),
+        Some("initiate"),
+        false,
+    ),
     // Cheers-level remote-workspace WRITE permission (not a raw ACP method): who may
     // write a file into the bot's real working machine via the workspace browser.
     // Owner-default + grantable per-subject like the session-config classes above.
@@ -281,6 +288,14 @@ mod tests {
         assert_eq!(
             classify("session/request_permission").unwrap().event_class,
             Some("permission_request")
+        );
+        // Regression: an unregistered name classifies to None and acp_policy::
+        // allows() short-circuits to Ok(true) — this action must stay gated.
+        assert_eq!(
+            classify("cheers/session_set_primary")
+                .unwrap()
+                .event_class,
+            Some("session_set_primary")
         );
     }
 

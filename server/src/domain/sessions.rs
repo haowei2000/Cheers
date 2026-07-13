@@ -560,6 +560,12 @@ pub async fn resolve_channel_session(
 /// out of the switcher and can no longer be targeted. Verifies it is bound (active)
 /// to the channel first. Cheers-level only — the agent's ACP session is left to go
 /// idle (no `session/delete` round-trip needed).
+///
+/// Also demotes a `role='primary'` binding to `'other'`: `uq_cheers_session_binding_primary`
+/// only cares about `role`, not `detached_at`/session status, so a terminated
+/// session left at role='primary' permanently occupies the scope's primary slot
+/// — no other session (including the deterministic fallback) could ever be
+/// (re)promoted to primary for this bot+scope again.
 pub async fn close_channel_session(
     db: &PgPool,
     channel_id: &str,
@@ -576,7 +582,9 @@ pub async fn close_channel_session(
         .await
         .map_err(AppError::Db)?;
     sqlx::query(
-        "UPDATE cheers_session_bindings SET detached_at = COALESCE(detached_at, $1)
+        "UPDATE cheers_session_bindings
+         SET detached_at = COALESCE(detached_at, $1),
+             role = CASE WHEN role = 'primary' THEN 'other' ELSE role END
          WHERE session_id = $2 AND detached_at IS NULL",
     )
     .bind(now)
@@ -598,6 +606,15 @@ async fn upsert_session_binding(
     role: &str,
 ) -> Result<(), AppError> {
     let (channel_id, binding_task_id) = scope_columns(scope_type, scope_id, task_id.as_deref());
+    // Conflict target is `uq_cheers_session_binding_session_scope` (session_id,
+    // scope_type, scope_id) — this session's OWN prior binding to this scope,
+    // not the bot+scope primary-only partial index. A session demoted to
+    // 'other' (set_primary_session) still holds that row, so re-acquiring it
+    // (e.g. the deterministic primary falling back after its promoted
+    // replacement closes) must update it in place rather than attempt a second
+    // insert, which would violate the same-session unique constraint.
+    // `uq_cheers_session_binding_primary` (bot+scope, role='primary') still
+    // guards against two different sessions racing to hold primary.
     sqlx::query(
         "INSERT INTO cheers_session_bindings (
             binding_id, session_id, bot_id, provider, provider_account_id, provider_agent_id,
@@ -605,10 +622,8 @@ async fn upsert_session_binding(
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()
         )
-        ON CONFLICT (bot_id, provider, provider_agent_id, provider_account_id, scope_type, scope_id)
-        WHERE role = 'primary'
+        ON CONFLICT (session_id, scope_type, scope_id)
         DO UPDATE SET
-            session_id = EXCLUDED.session_id,
             role = EXCLUDED.role,
             detached_at = NULL,
             bot_id = EXCLUDED.bot_id,

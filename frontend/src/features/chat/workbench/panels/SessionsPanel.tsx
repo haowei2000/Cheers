@@ -24,6 +24,7 @@ import {
 import { listChannelMembers } from "@/api/channels";
 import { NewSessionDialog } from "@/features/chat/NewSessionDialog";
 import { cwdBasename, statusColor } from "@/features/chat/sessionLabel";
+import { bustBotControls } from "@/features/chat/sessionControlsCache";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
 
 interface SessionRow {
@@ -95,6 +96,11 @@ function SessionCard({
     setBusy(true);
     try {
       await fn();
+      // The composer's session-controls cache (model chip, ComposerBotSettings)
+      // has no visibility into board mutations (close/promote/mode/config) —
+      // bust it so the next read picks up the new primary/session set instead
+      // of routing a change to a stale target.
+      bustBotControls(channelId, s.bot_id);
       refetch();
       toast.success("Applied");
     } catch (e) {

@@ -1558,6 +1558,83 @@ async fn phasea_sessions_read_lists_channel_sessions(db: PgPool) {
     assert_eq!(denied["code"].as_str(), Some("NOT_MEMBER"));
 }
 
+// Regression: promote an "other" session to primary, then close it. The
+// deterministic session (demoted to role='other' by the promotion) must be
+// re-acquirable as primary again — before the fix, `upsert_session_binding`'s
+// ON CONFLICT target (bot+scope, role='primary') didn't match the demoted row,
+// so the fallback re-insert hit `uq_cheers_session_binding_session_scope` and
+// the channel was left with no primary at all.
+#[sqlx::test]
+async fn phasea_sessions_primary_falls_back_after_promoted_session_closes(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let cid = ch.to_string();
+
+    let deterministic = server::domain::sessions::acquire_scope_session(
+        &db,
+        bot,
+        "acct1",
+        &server::domain::sessions::primary_provider_session_key(&cid, bot),
+        server::domain::sessions::SESSION_SCOPE_CHANNEL,
+        &cid,
+        None,
+        "primary",
+    )
+    .await
+    .expect("acquire deterministic primary");
+
+    let other = server::domain::sessions::create_channel_session(
+        &db, bot, "acct1", &cid, "other", None, &[],
+    )
+    .await
+    .expect("create other session");
+
+    server::domain::sessions::set_primary_session(&db, bot, &cid, other.session_id)
+        .await
+        .expect("promote other session to primary");
+    let (primary_id, _) = server::domain::sessions::resolve_primary_session(&db, bot, &cid)
+        .await
+        .expect("resolve primary")
+        .expect("a primary is bound");
+    assert_eq!(primary_id, other.session_id, "promoted session should be primary");
+
+    server::domain::sessions::close_channel_session(&db, &cid, other.session_id)
+        .await
+        .expect("close promoted session");
+    assert!(
+        server::domain::sessions::resolve_primary_session(&db, bot, &cid)
+            .await
+            .expect("resolve primary after close")
+            .is_none(),
+        "no live primary once the promoted session is closed"
+    );
+
+    // The Auto-dispatch fallback path: re-acquire the deterministic session as
+    // primary. Must succeed (not hit a unique-constraint DB error) and must
+    // actually re-bind the deterministic session as primary.
+    let reacquired = server::domain::sessions::acquire_scope_session(
+        &db,
+        bot,
+        "acct1",
+        &server::domain::sessions::primary_provider_session_key(&cid, bot),
+        server::domain::sessions::SESSION_SCOPE_CHANNEL,
+        &cid,
+        None,
+        "primary",
+    )
+    .await
+    .expect("re-acquiring the deterministic session as primary must not error");
+    assert_eq!(reacquired.session_id, deterministic.session_id);
+
+    let (primary_id, _) = server::domain::sessions::resolve_primary_session(&db, bot, &cid)
+        .await
+        .expect("resolve primary")
+        .expect("deterministic session should be primary again");
+    assert_eq!(primary_id, deterministic.session_id);
+}
+
 #[sqlx::test]
 async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
     let ws = seed_workspace(&db).await;
