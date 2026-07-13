@@ -1,17 +1,22 @@
-// Sessions inspector + controller — a ViewBoard where EVERY session is one card
-// (channel.sessions.read). The card face keeps just the essentials: which bot,
-// status, create time, and an info (ⓘ) toggle; the expanded details hold the
-// session id, last-used, mode/config controls and the ACP root set. The card
-// matching the composer's selected session is highlighted.
+// Sessions inspector + controller — a ViewBoard grouped BY BOT: each bot is a
+// header, its sessions are cards under it (channel.sessions.read). The card face
+// shows the session's working directory, a `primary` badge, status, create time,
+// and an info (ⓘ) toggle; the expanded details hold the session id, last-used,
+// mode/config controls and the ACP root set. The card matching the composer's
+// selected session is highlighted.
 //
-// This is the SINGLE home for per-channel session management (the old channel-header
-// SessionControlButton was folded in here). Creating a session moved off the bot
-// group headers into one "+ New session" button that opens a small dialog: pick a
-// bot (only those the caller holds a session_create grant for) + optional working
-// directory / extra roots. All mutations refetch the board.
+// Drag-to-promote (native HTML5 DnD, desktop): drag a non-primary card onto its
+// bot's primary card to make it the new primary. While a drag is in flight the
+// source dims, the bot's primary card shows a dashed "droppable" hint, and
+// hovering it surfaces a "↑ Make primary" pill.
+//
+// This is the SINGLE home for per-channel session management. Creating a session
+// is one "+ New session" button that opens a small dialog: pick a bot (only those
+// the caller holds a session_create grant for) + optional working directory /
+// extra roots. All mutations refetch the board.
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info } from "lucide-react";
+import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info, Folder, ArrowUp } from "lucide-react";
 import {
   getSessionControls,
   closeChannelBotSession,
@@ -23,8 +28,9 @@ import {
 } from "@/api/sessionControl";
 import { listChannelMembers } from "@/api/channels";
 import { NewSessionDialog } from "@/features/chat/NewSessionDialog";
-import { cwdBasename, statusColor } from "@/features/chat/sessionLabel";
+import { statusColor } from "@/features/chat/sessionLabel";
 import { bustBotControls } from "@/features/chat/sessionControlsCache";
+import { cn } from "@/lib/cn";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
 
 interface SessionRow {
@@ -65,12 +71,17 @@ function SessionCard({
   channelId,
   controls,
   refetch,
+  dragging,
+  setDragging,
 }: {
   s: SessionRow;
   selected: string;
   channelId: string;
   controls?: SessionControls;
   refetch: () => void;
+  /** session_id currently being dragged within this bot group (null = none). */
+  dragging: string | null;
+  setDragging: (id: string | null) => void;
 }) {
   const isSelected = selected && s.session_id === selected;
   const [open, setOpen] = useState(false); // ⓘ details
@@ -84,6 +95,10 @@ function SessionCard({
   const dndType = `application/x-cheers-session-${s.bot_id}`;
   const draggable = canSetPrimary && !s.is_primary && !busy;
   const dropTarget = canSetPrimary && s.is_primary;
+  // Drag feedback (scoped to this bot group via `dragging`): this card is the one
+  // being dragged, or SOME sibling is — so the primary card can invite the drop.
+  const isDragging = dragging === s.session_id;
+  const dragActive = dragging != null;
 
   // The session's effective posture mode: per-session override → the agent's preset default.
   const mode =
@@ -131,23 +146,24 @@ function SessionCard({
     });
   }
 
-  const botLabel = s.bot_name || s.bot_id.slice(0, 8);
-  // A readable name for this session: "primary", else the working-dir basename (coding
-  // sessions), else "other" — the created-time column below disambiguates the rest.
-  const tag = s.is_primary ? "primary" : cwdBasename(cwd) ?? "other";
+  // Working directory shown on the card face (the bot name lives in the group
+  // header now). Left-truncated so the meaningful tail (project dir) stays visible.
+  const wdLabel = cwd || "default";
 
   return (
     <div
       draggable={draggable}
-      title={draggable ? "Drag onto the primary session to make this the primary" : undefined}
+      title={draggable ? "Drag onto the primary session to make it primary" : undefined}
       onDragStart={
         draggable
           ? (e) => {
               e.dataTransfer.setData(dndType, s.session_id);
               e.dataTransfer.effectAllowed = "move";
+              setDragging(s.session_id);
             }
           : undefined
       }
+      onDragEnd={draggable ? () => setDragging(null) : undefined}
       onDragOver={
         dropTarget
           ? (e) => {
@@ -164,6 +180,7 @@ function SessionCard({
         dropTarget
           ? (e) => {
               setDropOver(false);
+              setDragging(null);
               const sid = e.dataTransfer.getData(dndType);
               if (!sid || sid === s.session_id) return;
               e.preventDefault();
@@ -171,29 +188,35 @@ function SessionCard({
             }
           : undefined
       }
-      className={`rounded-lg border px-3 py-2 ${
+      className={cn(
+        "relative rounded-lg border px-3 py-2 transition-[border-color,box-shadow,opacity]",
         isSelected
           ? "border-emerald-500/40 bg-emerald-500/10"
-          : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
-      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${
-        dropOver ? "ring-2 ring-indigo-500/60" : ""
-      }`}
+          : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700",
+        draggable && "cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-40",
+        // A sibling is being dragged → invite the drop on the primary card.
+        dropTarget && dragActive && !isDragging && !dropOver && "border-dashed border-indigo-500/50",
+        dropOver && "border-indigo-500/60 bg-indigo-500/10 ring-2 ring-indigo-500/70"
+      )}
     >
-      {/* Card face: bot · primary chip · status · created · ⓘ · ✕ */}
+      {/* Card face: workdir · primary badge · status · created · ⓘ · ✕ */}
       <div className="flex items-center gap-2 text-xs">
-        <BotIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-        <span className="text-zinc-200 truncate" title={s.bot_id}>
-          {botLabel}
-        </span>
+        <Folder className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
         <span
-          title={!s.is_primary && cwd ? cwd : undefined}
-          className={`text-[10px] px-1 py-0.5 rounded shrink-0 max-w-[120px] truncate ${
-            s.is_primary ? "bg-zinc-700 text-zinc-200" : "bg-zinc-800 text-zinc-400"
-          }`}
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-300"
+          style={{ direction: "rtl" }}
+          title={cwd || "connector default"}
         >
-          {tag}
+          {/* plaintext keeps the path itself LTR while the rtl parent clips the
+              LEFT (start) of an overlong path, so the project dir stays visible. */}
+          <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
         </span>
-        <div className="flex-1" />
+        {s.is_primary && (
+          <span className="shrink-0 rounded bg-indigo-500/15 px-1 py-0.5 text-[10px] text-indigo-300">
+            primary
+          </span>
+        )}
         <span className="inline-flex items-center gap-1 text-zinc-400 shrink-0">
           <CircleDot className={`w-3 h-3 ${statusColor(s.status)}`} />
           {s.status}
@@ -224,6 +247,16 @@ function SessionCard({
           </button>
         )}
       </div>
+
+      {/* Drop affordance: a pill over the primary card while a sibling hovers it. */}
+      {dropOver && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white shadow-lg">
+            <ArrowUp className="h-3 w-3" />
+            Make primary
+          </span>
+        </div>
+      )}
 
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
@@ -359,6 +392,55 @@ function SessionCard({
   );
 }
 
+// ── One bot = a header + its session cards ────────────────────────────────────
+
+function BotGroup({
+  botId,
+  label,
+  sessions,
+  selected,
+  channelId,
+  controls,
+  refetch,
+}: {
+  botId: string;
+  label: string;
+  sessions: SessionRow[];
+  selected: string;
+  channelId: string;
+  controls?: SessionControls;
+  refetch: () => void;
+}) {
+  // The in-flight drag is scoped to this group so bot A's drag never lights up
+  // bot B's primary card (the DnD type also gates cross-bot drops).
+  const [dragging, setDragging] = useState<string | null>(null);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5 px-1">
+        <BotIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+        <span className="text-[11px] font-medium text-zinc-300 truncate" title={botId}>
+          {label}
+        </span>
+        <span className="text-[10px] text-zinc-500">
+          {sessions.length} session{sessions.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      {sessions.map((s) => (
+        <SessionCard
+          key={s.session_id}
+          s={s}
+          selected={selected}
+          channelId={channelId}
+          controls={controls}
+          refetch={refetch}
+          dragging={dragging}
+          setDragging={setDragging}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ── Board body ────────────────────────────────────────────────────────────────
 
 function SessionsBody({
@@ -436,10 +518,38 @@ function SessionsBody({
       .map((id) => ({ id, label: label.get(id) || id.slice(0, 8) }));
   }, [botIds, controls, memberBots, sessions]);
 
+  // Group sessions by bot: one header per bot, primary card first, then the rest
+  // newest-first. Group order is alphabetical by bot label for a stable list.
+  const groups = useMemo(() => {
+    const byBot = new Map<string, SessionRow[]>();
+    for (const s of sessions) {
+      const arr = byBot.get(s.bot_id);
+      if (arr) arr.push(s);
+      else byBot.set(s.bot_id, [s]);
+    }
+    const labelOf = (id: string) =>
+      sessions.find((x) => x.bot_id === id && x.bot_name)?.bot_name ||
+      memberBots.find((b) => b.id === id)?.label ||
+      id.slice(0, 8);
+    return [...byBot.entries()]
+      .map(([botId, ss]) => ({
+        botId,
+        label: labelOf(botId),
+        sessions: [...ss].sort((a, b) =>
+          a.is_primary === b.is_primary
+            ? (b.last_used_at || "").localeCompare(a.last_used_at || "")
+            : a.is_primary
+              ? -1
+              : 1
+        ),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [sessions, memberBots]);
+
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
-    <div className="p-2 space-y-2">
+    <div className="p-2 space-y-3">
       <div className="flex items-center gap-2 px-1">
         <span className="text-[11px] text-zinc-400">
           {sessions.length} session{sessions.length === 1 ? "" : "s"}
@@ -463,13 +573,15 @@ function SessionsBody({
           No sessions yet
         </div>
       ) : (
-        sessions.map((s) => (
-          <SessionCard
-            key={s.session_id}
-            s={s}
+        groups.map((g) => (
+          <BotGroup
+            key={g.botId}
+            botId={g.botId}
+            label={g.label}
+            sessions={g.sessions}
             selected={selected}
             channelId={ctx.channelId}
-            controls={controls[s.bot_id]}
+            controls={controls[g.botId]}
             refetch={refetch}
           />
         ))
