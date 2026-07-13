@@ -244,11 +244,21 @@ async fn resolve_git_target(
 /// Spawn `git -C <git_dir> <args...>` (fixed argv, NO shell) and capture output.
 /// Maps a missing `git` binary → `E_GIT_UNAVAILABLE`; other spawn failures → `E_IO`.
 /// The caller inspects the exit status / stdout (e.g. `rev-parse` for repo checks).
+///
+/// Every caller is read-only inspection (`rev-parse`/`status`/`diff`/`log`/`show`) that
+/// runs no repository hooks, and `git_dir` is always clamped inside an operator
+/// allow-listed workspace root. So we disable git's dubious-ownership guard for the
+/// invocation: when the repo's files are owned by a different user than the connector
+/// process (bind-mounted / container / mixed-UID workspaces) git otherwise refuses even
+/// `rev-parse` with a non-zero exit, which the caller would misreport as `E_NOT_A_REPO`.
+/// Passed per-invocation via `-c`, so nothing is written to any on-disk git config.
 async fn run_git(
     git_dir: &std::path::Path,
     args: &[&str],
 ) -> Result<std::process::Output, (String, String)> {
     tokio::process::Command::new("git")
+        .arg("-c")
+        .arg("safe.directory=*")
         .arg("-C")
         .arg(git_dir)
         .args(args)
@@ -1345,12 +1355,19 @@ impl RuntimeContext {
                     .await
                     .map_err(|(c, m)| (c, m, None))?;
                 // Definitive non-repo detection → E_NOT_A_REPO (spawn-not-found →
-                // E_GIT_UNAVAILABLE, propagated from run_git).
+                // E_GIT_UNAVAILABLE, propagated from run_git). Only a genuine "not a
+                // git repository" maps to E_NOT_A_REPO; any other `rev-parse` failure
+                // (corrupt/locked repo, unreadable gitdir, …) surfaces its real stderr
+                // as E_GIT instead of being masked as a non-repo.
                 let rp = run_git(&git_dir, &["rev-parse", "--git-dir"])
                     .await
                     .map_err(|(c, m)| (c, m, None))?;
                 if !rp.status.success() {
-                    return Err(err("E_NOT_A_REPO", "not a git repository".into()));
+                    let se = git_stderr(&rp);
+                    if se.contains("not a git repository") {
+                        return Err(err("E_NOT_A_REPO", "not a git repository".into()));
+                    }
+                    return Err(err("E_GIT", se));
                 }
                 match op {
                     "git_status" => {
@@ -3107,5 +3124,54 @@ mod tests {
             "no bot-callback convention for a human trigger"
         );
         assert!(text.contains("hi there"));
+    }
+
+    // ── Git inspection: repo detection ─────────────────────────────────────
+    // These guard the `run_git` happy path and the rev-parse classification the
+    // dispatch relies on: adding `-c safe.directory=*` must not break a normal
+    // repo, and a genuine non-repo must still be distinguishable from other git
+    // failures (so only it maps to E_NOT_A_REPO).
+
+    async fn git_init(dir: &std::path::Path) {
+        // A minimal, hook-free repo — identity is set locally so `git` never reads
+        // (or requires) a global config in the sandbox.
+        for args in [
+            &["init", "-q"][..],
+            &["config", "user.email", "t@example.com"][..],
+            &["config", "user.name", "Tester"][..],
+        ] {
+            let out = run_git(dir, args).await.expect("git spawn");
+            assert!(out.status.success(), "git {args:?} failed: {}", git_stderr(&out));
+        }
+    }
+
+    #[tokio::test]
+    async fn run_git_rev_parse_succeeds_in_a_real_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        git_init(tmp.path()).await;
+        let out = run_git(tmp.path(), &["rev-parse", "--git-dir"])
+            .await
+            .expect("git spawn");
+        assert!(
+            out.status.success(),
+            "rev-parse must succeed on a real repo even with safe.directory=*: {}",
+            git_stderr(&out)
+        );
+    }
+
+    #[tokio::test]
+    async fn run_git_rev_parse_flags_a_plain_dir_as_not_a_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = run_git(tmp.path(), &["rev-parse", "--git-dir"])
+            .await
+            .expect("git spawn");
+        assert!(!out.status.success(), "a plain dir is not a repo");
+        // The dispatch keys E_NOT_A_REPO off exactly this substring; any other
+        // stderr surfaces as E_GIT instead of being masked as a non-repo.
+        assert!(
+            git_stderr(&out).contains("not a git repository"),
+            "expected the canonical non-repo stderr, got: {}",
+            git_stderr(&out)
+        );
     }
 }

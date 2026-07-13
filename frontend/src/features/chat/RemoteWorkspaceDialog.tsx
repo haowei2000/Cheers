@@ -31,6 +31,7 @@ import {
   getGitLog,
   getGitShow,
   getGitStatus,
+  getSessionWorkdirs,
   getWorkspaceFile,
   getWorkspaceMeta,
   getWorkspaceTree,
@@ -43,6 +44,7 @@ import {
   type GitCommitFile,
   type GitStatus,
   type GitStatusEntry,
+  type SessionWorkdir,
   type WorkspaceBot,
   type WorkspaceEntry,
   type WorkspaceFile,
@@ -119,6 +121,15 @@ function relDate(iso: string): string {
 
 /** Commits per history page (`git log -n LOG_PAGE --skip=…`). */
 const LOG_PAGE = 50;
+
+/** Consecutive failed background pulls before the live refetch enters degraded mode. */
+const DEGRADE_AFTER = 3;
+/** Minimum gap between live refetches while degraded (a slow retry, not a storm). */
+const DEGRADED_GAP_MS = 12_000;
+
+/** A root-picker choice: a session's workdir (scopes to that session) or a bare
+ *  allowed_root (bot-wide). `sessionId` is set only for the `"session"` kind. */
+type RootOption = { path: string; sessionId: string | null; kind: "session" | "root" };
 
 /** A file (index) status char that means the change is staged (not `.` clean, not `?` untracked). */
 function isStagedCode(xy: string): boolean {
@@ -213,13 +224,27 @@ export function RemoteWorkspaceDialog({
   // Session-scoped by default: browse only the active session's root set. Un-checking
   // "Entire allowed roots" drops the session id so the user sees the bot's ENTIRE allowed roots.
   const [scoped, setScoped] = useState(true);
-  const effectiveSessionId = scoped ? sessionId : undefined;
   // Workspace policy metadata (allowed/effective roots, cwd, git availability) for the
   // selected bot + scope; backs the root picker. Best-effort — null hides the picker.
   const [meta, setMeta] = useState<WorkspaceMeta | null>(null);
-  // Explicitly selected browse root (one of meta.effective_roots). null = "Auto"
-  // (connector default: session root / default_cwd / first allowed root).
+  // The channel's session workdirs (each with its owning session) — the primary source
+  // for the root picker: browse the folders this channel's sessions actually work in.
+  // The connector's allowed_roots (from `meta`) are merged in as the fallback set.
+  const [sessionWorkdirs, setSessionWorkdirs] = useState<SessionWorkdir[] | null>(null);
+  // Explicitly selected browse root. null = "Auto" (connector default: session root /
+  // default_cwd / first allowed root).
   const [root, setRoot] = useState<string | null>(null);
+  // When the selected root is a session workdir, the owning session's id — the browse
+  // scopes to that session so the connector accepts the workdir as a `root`. null when
+  // the selected root is a bare allowed_root (bot-wide browse) or Auto.
+  const [rootSessionId, setRootSessionId] = useState<string | null>(null);
+  // The session that scopes the browse: an explicitly-picked workdir's session wins;
+  // otherwise fall back to the default scope toggle (active session vs. bot-wide).
+  const effectiveSessionId = root
+    ? (rootSessionId ?? undefined)
+    : scoped
+      ? sessionId
+      : undefined;
 
   // Whether the caller holds the `session_create` INITIATE grant for this bot in this
   // channel (from /session-controls). Fail-closed: false until the server confirms it,
@@ -282,6 +307,35 @@ export function RemoteWorkspaceDialog({
     pendingFull.current = false;
     pendingPaths.current = [];
   }, []);
+
+  // ── Live-refetch circuit breaker ────────────────────────────────────────────
+  // A failing/offline connector still receives WS ticks + signals; without a brake
+  // every frame re-fires the up-to-5-request refetch batch and hammers the gateway
+  // (the "报错后一直刷新" storm). Track consecutive background-pull failures: after a
+  // few, the debounce drops into a slow "degraded" probe cadence so the flood
+  // collapses to one periodic retry — and the moment a pull succeeds we snap back to
+  // the responsive 400ms debounce. Foreground navigation and manual Refresh run
+  // outside this throttle, so a user can always retry immediately.
+  const failStreakRef = useRef(0);
+  const degradedRef = useRef(false);
+  const lastRefetchAtRef = useRef(0);
+  const [degraded, setDegraded] = useState(false);
+  const noteConnHealth = useCallback((ok: boolean) => {
+    if (ok) {
+      failStreakRef.current = 0;
+      if (degradedRef.current) {
+        degradedRef.current = false;
+        setDegraded(false);
+      }
+      return;
+    }
+    failStreakRef.current += 1;
+    if (failStreakRef.current >= DEGRADE_AFTER && !degradedRef.current) {
+      degradedRef.current = true;
+      setDegraded(true);
+    }
+  }, []);
+
   useEffect(() => {
     epochRef.current++;
     // The pending live refetch belongs to the PREVIOUS browse context — its timer
@@ -350,6 +404,9 @@ export function RemoteWorkspaceDialog({
       }
       try {
         const t = await getWorkspaceTree(channelId, botId, path, rootParam, effectiveSessionId);
+        // The connector answered → healthy, regardless of whether this response is
+        // still current. Clears any degraded throttle on the next successful pull.
+        noteConnHealth(true);
         if (ep !== epochRef.current) return null;
         // A background pull was ISSUED against liveRef's cwd — if a foreground
         // navigation committed a different directory while it was in flight, its
@@ -365,13 +422,16 @@ export function RemoteWorkspaceDialog({
         if (!bg && t.path === liveRef.current.cwd) void loadGitStatusRef.current?.();
         return null;
       } catch (e) {
+        // A failed pull feeds the circuit breaker (offline connector / erroring op);
+        // enough in a row throttles the live refetch instead of hammering.
+        noteConnHealth(false);
         if (!bg && ep === epochRef.current) setErr(cleanErr(e));
         return cleanErr(e);
       } finally {
         if (!bg && ep === epochRef.current) setBusy(false);
       }
     },
-    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch]
+    [channelId, botId, rootParam, effectiveSessionId, cancelLiveRefetch, noteConnHealth]
   );
 
   // `background` = a live-refresh of an already-open CLEAN file: swap the content
@@ -447,9 +507,10 @@ export function RemoteWorkspaceDialog({
   }, [channelId, botId, cwd, rootParam, effectiveSessionId]);
   loadGitStatusRef.current = loadGitStatus;
 
-  // Workspace policy metadata for the selected bot + scope (best-effort; backs the
-  // root picker and the git-availability hint). An explicit root that fell out of
-  // the new effective set is dropped back to Auto.
+  // Workspace policy metadata for the selected bot + scope (best-effort; supplies the
+  // allowed_roots fallback for the root picker and the git-availability hint). `meta`'s
+  // `allowed_roots`/`git_ops` don't vary with the session scope, so this stays stable
+  // across scope changes — the picker's option validity is handled below off rootOptions.
   useEffect(() => {
     if (!botId) {
       setMeta(null);
@@ -457,16 +518,59 @@ export function RemoteWorkspaceDialog({
     }
     let alive = true;
     getWorkspaceMeta(channelId, botId, effectiveSessionId)
-      .then((m) => {
-        if (!alive) return;
-        setMeta(m);
-        setRoot((r) => (r && !m.effective_roots.includes(r) ? null : r));
-      })
+      .then((m) => alive && setMeta(m))
       .catch(() => alive && setMeta(null));
     return () => {
       alive = false;
     };
   }, [channelId, botId, effectiveSessionId]);
+
+  // The channel's session workdirs for the selected bot (best-effort; the primary root-
+  // picker source). DB-only on the gateway, so it answers even when the connector is
+  // offline. Independent of the browse scope — it lists ALL the channel's sessions.
+  useEffect(() => {
+    if (!botId) {
+      setSessionWorkdirs(null);
+      return;
+    }
+    let alive = true;
+    getSessionWorkdirs(channelId, botId)
+      .then((w) => alive && setSessionWorkdirs(w))
+      .catch(() => alive && setSessionWorkdirs(null));
+    return () => {
+      alive = false;
+    };
+  }, [channelId, botId]);
+
+  // Root-picker options: the channel's session workdirs FIRST (each scoping the browse
+  // to its owning session, so the connector accepts the workdir as a `root`), then the
+  // connector's allowed_roots as the bot-wide fallback set. Deduped by path — a workdir
+  // that is also an allowed_root keeps its session binding (listed once, in the session
+  // group). Rendered only when there's an actual choice (see the picker below).
+  const rootOptions = useMemo<RootOption[]>(() => {
+    const opts: RootOption[] = [];
+    const seen = new Set<string>();
+    for (const w of sessionWorkdirs ?? []) {
+      if (!w.path || seen.has(w.path)) continue;
+      seen.add(w.path);
+      opts.push({ path: w.path, sessionId: w.session_id, kind: "session" });
+    }
+    for (const r of meta?.allowed_roots ?? []) {
+      if (!r || seen.has(r)) continue;
+      seen.add(r);
+      opts.push({ path: r, sessionId: null, kind: "root" });
+    }
+    return opts;
+  }, [sessionWorkdirs, meta]);
+
+  // Drop a selected root that's no longer among the current options (bot switch, a
+  // session/workdir that vanished): fall back to Auto so the browse stays valid.
+  useEffect(() => {
+    if (root && !rootOptions.some((o) => o.path === root)) {
+      setRoot(null);
+      setRootSessionId(null);
+    }
+  }, [root, rootOptions]);
 
   // Resolve the caller's session-create grant for the selected bot (best-effort). The
   // affordance is fail-closed: any error / older gateway leaves it hidden. Independent
@@ -670,9 +774,9 @@ export function RemoteWorkspaceDialog({
       const { treeRoot } = liveRef.current;
       if (!hint || !treeRoot || hint.root !== treeRoot) pendingFull.current = true;
       else pendingPaths.current.push(...hint.paths);
-      if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
-      refetchTimer.current = window.setTimeout(() => {
+      const fire = () => {
         refetchTimer.current = null;
+        lastRefetchAtRef.current = Date.now();
         const { cwd, file, dirty, leftView, diff, git } = liveRef.current;
         const full = pendingFull.current;
         const paths = pendingPaths.current;
@@ -701,7 +805,20 @@ export function RemoteWorkspaceDialog({
         // A live diff's paths are repo-relative (a different basis than the signal's
         // root-relative paths), so it can't be scoped — refresh it unconditionally.
         if (diff?.kind === "file") void openDiff(diff.path, diff.staged);
-      }, 400);
+      };
+      if (degradedRef.current) {
+        // Degraded: coalesce every incoming frame onto ONE slow probe. Crucially we
+        // do NOT restart the timer per frame — a steady signal stream would keep
+        // pushing it out and starve the retry forever. Let the armed probe fire; its
+        // pull either succeeds (clears degraded, back to fast debounce) or re-arms.
+        if (refetchTimer.current != null) return;
+        const wait = Math.max(400, DEGRADED_GAP_MS - (Date.now() - lastRefetchAtRef.current));
+        refetchTimer.current = window.setTimeout(fire, wait);
+        return;
+      }
+      // Healthy: 400ms trailing debounce — restart on each frame so a burst coalesces.
+      if (refetchTimer.current != null) window.clearTimeout(refetchTimer.current);
+      refetchTimer.current = window.setTimeout(fire, 400);
     },
     [loadDir, loadGitStatus, loadLog, openFile, openDiff]
   );
@@ -763,6 +880,7 @@ export function RemoteWorkspaceDialog({
     setLog(null);
     setLogDone(false);
     setRoot(null); // the other scope has a different effective root set
+    setRootSessionId(null);
   }, []);
 
   // Spin up a new "other" session rooted at a folder in this browse view. `rel` is a
@@ -788,9 +906,12 @@ export function RemoteWorkspaceDialog({
     [channelId, botId, treeRoot, canCreateSession, creatingSession]
   );
 
-  // Switch the browse to another allowed root (null = Auto): reset like a scope flip.
-  const selectRoot = useCallback((r: string | null) => {
-    setRoot(r);
+  // Switch the browse to another root option (null = Auto): reset like a scope flip. A
+  // session-workdir option also scopes the browse to its owning session (via
+  // rootSessionId → effectiveSessionId) so the connector accepts the workdir as a root.
+  const selectRoot = useCallback((opt: RootOption | null) => {
+    setRoot(opt?.path ?? null);
+    setRootSessionId(opt?.sessionId ?? null);
     setEntries(null);
     setTreeRoot(null);
     setFile(null);
@@ -1042,6 +1163,7 @@ export function RemoteWorkspaceDialog({
             setLog(null);
             setLogDone(false);
             setRoot(null);
+            setRootSessionId(null);
             deepLinked.current = true; // manual switch: don't re-deep-link
           }}
           className="bg-zinc-800 text-zinc-200 rounded px-2 py-1 outline-none"
@@ -1058,24 +1180,52 @@ export function RemoteWorkspaceDialog({
             </option>
           ))}
         </select>
-        {/* Root picker — only when this scope actually has several roots to choose from. */}
-        {meta && meta.effective_roots.length > 1 && (
+        {/* Root picker — the channel's session workdirs first, then the connector's
+            allowed_roots. Only shown when there's an actual choice (>1 option). */}
+        {rootOptions.length > 1 && (
           <select
             value={root ?? ""}
-            onChange={(e) => selectRoot(e.target.value || null)}
-            title="Workspace root to browse (the connector's allowed_roots)"
+            onChange={(e) =>
+              selectRoot(rootOptions.find((o) => o.path === e.target.value) ?? null)
+            }
+            title="Folder to browse — a session's workdir (scoped to that session) or one of the connector's allowed roots"
             className="max-w-[220px] bg-zinc-800 text-zinc-300 rounded px-2 py-1 outline-none"
           >
             <option value="">Root: auto</option>
-            {meta.effective_roots.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
+            {rootOptions.some((o) => o.kind === "session") && (
+              <optgroup label="Session workdirs">
+                {rootOptions
+                  .filter((o) => o.kind === "session")
+                  .map((o) => (
+                    <option key={o.path} value={o.path}>
+                      {o.path}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+            {rootOptions.some((o) => o.kind === "root") && (
+              <optgroup label="Allowed roots">
+                {rootOptions
+                  .filter((o) => o.kind === "root")
+                  .map((o) => (
+                    <option key={o.path} value={o.path}>
+                      {o.path}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
           </select>
         )}
         {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
         {err && <span className="text-red-400 truncate" title={err}>{err}</span>}
+        {degraded && !err && (
+          <span
+            className="text-amber-400 truncate"
+            title="The connector isn't responding, so live auto-refresh has slowed to an occasional retry. Click Refresh to try now."
+          >
+            live updates paused
+          </span>
+        )}
         <div className="flex-1" />
         {meta?.git_ops === "off" && (
           <span

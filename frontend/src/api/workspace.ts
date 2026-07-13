@@ -402,6 +402,26 @@ export async function getWorkspaceMeta(
   return apiJson<WorkspaceMeta>(`/channels/${channelId}/workspace/meta?${qs}`);
 }
 
+/** A folder one of the channel's sessions works in, and the session that owns it. */
+export interface SessionWorkdir {
+  /** Absolute `cwd` of the session (already validated against allowed_roots). */
+  path: string;
+  /** The owning session — browsing this workdir scopes to that session's root set. */
+  session_id: string;
+}
+
+/** The distinct workdirs of this channel's sessions for the bot (most-recent first). */
+export async function getSessionWorkdirs(
+  channelId: string,
+  botId: string
+): Promise<SessionWorkdir[]> {
+  const qs = new URLSearchParams({ bot_id: botId });
+  const r = await apiJson<{ workdirs: SessionWorkdir[] }>(
+    `/channels/${channelId}/workspace/session-workdirs?${qs}`
+  );
+  return r.workdirs;
+}
+
 /** Where a clicked file reference actually lives (resolved by provenance, not syntax). */
 export interface ResolvedRef {
   store: "inbox" | "desk" | "workspace" | "none";
