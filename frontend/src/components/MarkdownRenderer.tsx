@@ -48,9 +48,11 @@ function CodeBlock({
 
 export function MarkdownRenderer({ content, className }: Props) {
   const onPath = useContext(PathOpenContext);
+  // react-markdown v10 dropped the `className` prop (passing it throws). Wrap in a styled
+  // div instead so "prose" + caller classes still apply.
   return (
+    <div className={cn("prose", className)}>
     <ReactMarkdown
-      className={cn("prose", className)}
       remarkPlugins={[remarkGfm]}
       components={{
         pre({ children }) {
@@ -88,5 +90,6 @@ export function MarkdownRenderer({ content, className }: Props) {
     >
       {content}
     </ReactMarkdown>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -21,6 +21,11 @@ import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
 import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
+
+// Click-gated: the CodeMirror editor (its own chunk, incl. md/json language packs) only
+// downloads when a user actually opens Raw mode — keeps it off the chat critical path, like
+// the pdf/hljs viewers. Named export → default shim. Suspense falls back to a blank field.
+const CodeEditor = lazy(() => import("../CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
 // Export bridge: a context file is TEXT, so "download" = save its content as a blob
 // client-side (filename = the path's basename). No backend round-trip needed.
@@ -504,13 +509,18 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     <RendererHost ctx={ctx} path={selected} renderer={previewRenderer} config={configs[selected]} />
                   </div>
                 ) : (
-                  // textarea = inert text rendering; never dangerouslySetInnerHTML
-                  <textarea
-                    value={editor.content}
-                    onChange={(e) => editor.edit(e.target.value)}
-                    spellCheck={false}
-                    className="flex-1 resize-none bg-zinc-950 text-zinc-200 font-mono text-xs p-3 outline-none"
-                  />
+                  // CodeMirror in raw mode: still inert text (no HTML execution, no XSS), now
+                  // with line numbers, undo history and md/json syntax highlighting.
+                  <Suspense
+                    fallback={<div className="flex-1 min-h-0 bg-zinc-950" aria-busy="true" />}
+                  >
+                    <CodeEditor
+                      value={editor.content}
+                      onChange={editor.edit}
+                      path={selected}
+                      className="flex-1 min-h-0 overflow-hidden"
+                    />
+                  </Suspense>
                 )}
               </>
             );
