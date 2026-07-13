@@ -367,19 +367,23 @@ export function useWindowDrag(
     : bounded
       ? { position: "absolute", zIndex: z }
       : { zIndex: z };
-  // min() re-clamps a persisted size against the CURRENT box (lane or viewport)
-  // at render time, so a shrunk lane / viewport never strands an oversized card.
-  // Guard width/height > 0: on the closed→open frame the lane can still measure
-  // 0×0 (display:contents not yet swapped), which would flash the window to 0px.
-  const laneW = boundsAtRender && boundsAtRender.width > 0 ? boundsAtRender.width : null;
-  const laneH = boundsAtRender && boundsAtRender.height > 0 ? boundsAtRender.height : null;
+  // min() re-clamps a persisted size against the CURRENT box so an oversized card
+  // never overflows. Bounded windows cap against `100%` — the LIVE lane box (their
+  // absolute containing block) — so dragging the lane splitter narrower re-fits
+  // them with no re-render; the className's max-w/max-h (calc(100%-2rem)) keeps
+  // the 2rem inset. Free (fixed) windows cap against the viewport instead.
   const sizeStyle: CSSProperties = size
-    ? {
-        width: laneW ? `min(${size.w}px, ${laneW}px)` : `min(${size.w}px, 94vw)`,
-        height: laneH ? `min(${size.h}px, ${laneH}px)` : `min(${size.h}px, calc(100dvh - 24px))`,
-        maxWidth: "none",
-        maxHeight: "none",
-      }
+    ? bounded
+      ? {
+          width: `min(${size.w}px, 100%)`,
+          height: `min(${size.h}px, 100%)`,
+        }
+      : {
+          width: `min(${size.w}px, 94vw)`,
+          height: `min(${size.h}px, calc(100dvh - 24px))`,
+          maxWidth: "none",
+          maxHeight: "none",
+        }
     : {};
 
   return {

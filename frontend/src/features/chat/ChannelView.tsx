@@ -21,6 +21,7 @@ import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { LaneZones } from "./workbench/LaneZones";
+import { LaneResizer } from "./workbench/LaneResizer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Button } from "@/components/ui/button";
 import { usePopoverDismiss } from "@/components/ui/popover";
@@ -592,6 +593,23 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     () => laneEl?.getBoundingClientRect() ?? null,
     [laneEl]
   );
+  // User-adjustable lane width (px), dragged via the splitter between the chat
+  // column and the lane. CSS min/max on the <aside> clamp a stale value against
+  // the current row so neither column can collapse; the splitter also clamps
+  // live. Persisted so the split survives reloads/channel switches.
+  const [laneWidth, setLaneWidth] = useState<number>(() => {
+    const v = Number(localStorage.getItem("cheers.lane.width"));
+    return Number.isFinite(v) && v > 0 ? v : 520;
+  });
+  const laneWidthRef = useRef(laneWidth);
+  laneWidthRef.current = laneWidth;
+  const commitLaneWidth = useCallback(() => {
+    try {
+      localStorage.setItem("cheers.lane.width", String(laneWidthRef.current));
+    } catch {
+      /* private mode — width just won't persist */
+    }
+  }, []);
   // The lane also resizes without a window resize event — collapsing the sidebar
   // reflows its width via CSS. Re-clamp the floating windows on any lane box
   // change so one can't get stranded in the lane's overflow-hidden clip.
@@ -1111,12 +1129,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       </div>
 
       <div className="flex-1 min-h-0 flex">
-      {/* Chat region — capped at 52rem when the lane is open so the lane takes
-          all the remaining width; shrinks to a 24rem floor before the lane
-          does. Centered when the lane is closed. */}
+      {/* Chat region — fills the width left of the (resizable) lane, down to a
+          24rem floor; the inner column below caps the reading width at 52rem and
+          docks it against the lane. Centered when the lane is closed. */}
       <div
         className={`flex-1 min-w-0 flex flex-col ${
-          anyWorkOpen ? "md:max-w-[52rem] md:min-w-[24rem]" : ""
+          anyWorkOpen ? "md:min-w-[24rem]" : ""
         }`}
       >
       <div
@@ -1237,19 +1255,27 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       </div>
       </div>
 
+      {/* Splitter — drag to resize the lane's width (desktop only, when open). */}
+      {anyWorkOpen && (
+        <LaneResizer onChange={setLaneWidth} onCommit={commitLaneWidth} />
+      )}
+
       {/* Work area — a dedicated lane on the right: a bounded canvas the instrument
           windows (ViewBoard, Workbench, Remote workspace, Channel files) float,
           drag and resize inside. `relative` + `overflow-hidden` make it the
           positioning context and clip stray windows; dragging a window overlays a
-          grid of snap zones (LaneZones) and drops snap the window into a zone. On
-          mobile it's display:contents — the panels stay full-screen overlay
-          sheets there. LaneBoundsContext hands each window this box's live rect so
+          grid of snap zones (LaneZones) and drops snap the window into a zone. Its
+          width is user-adjustable via the splitter (explicit `width`, clamped by
+          min/max so neither column collapses). On mobile it's display:contents —
+          the panels stay full-screen overlay sheets there (width ignored).
+          LaneBoundsContext hands each window this box's live rect so
           drag/resize/snap stay inside it. */}
       <aside
         ref={setLaneEl}
+        style={{ width: laneWidth }}
         className={
           anyWorkOpen
-            ? "max-md:contents md:relative md:flex-1 md:min-w-[20rem] md:min-h-0 md:overflow-hidden"
+            ? "max-md:contents md:relative md:shrink-0 md:min-w-[20rem] md:max-w-[calc(100%-24rem)] md:min-h-0 md:overflow-hidden"
             : "contents"
         }
       >
