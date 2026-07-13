@@ -1131,17 +1131,14 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       <div className="flex-1 min-h-0 flex">
       {/* Chat region — fills the width left of the (resizable) lane, down to a
           24rem floor; the inner column below caps the reading width at 52rem and
-          docks it against the lane. Centered when the lane is closed. */}
+          stays centered in that space (whether or not the lane is open) so it
+          never strands a wide empty gutter on one side. */}
       <div
         className={`flex-1 min-w-0 flex flex-col ${
           anyWorkOpen ? "md:min-w-[24rem]" : ""
         }`}
       >
-      <div
-        className={`flex flex-col h-full w-full min-w-0 md:max-w-[52rem] ${
-          anyWorkOpen ? "md:ml-auto" : "md:mx-auto"
-        }`}
-      >
+      <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
       {/* Messages */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
