@@ -36,6 +36,9 @@ interface Props {
   onToggleMinimal?: () => void;
   /** Best-effort "jump the chat to this message" (scroll + flash when loaded). */
   onJumpToMessage?: (msgId: string) => void;
+  /** External "switch to this board" request (composer's "Manage sessions…").
+   *  `nonce` lets a repeat request for the same board re-apply. */
+  focusBoard?: { id: string; nonce: number };
 }
 
 const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
@@ -58,6 +61,7 @@ function ViewBoardDrawerImpl({
   minimal,
   onToggleMinimal,
   onJumpToMessage,
+  focusBoard,
 }: Props) {
   const boards = getViewBoards();
   const [active, setActive] = useState<string>(
@@ -67,6 +71,11 @@ function ViewBoardDrawerImpl({
   useEffect(() => {
     if (active) localStorage.setItem(ACTIVE_BOARD_KEY, active);
   }, [active]);
+
+  // External board-switch request (e.g. the composer's "Manage sessions…").
+  useEffect(() => {
+    if (focusBoard) setActive(focusBoard.id);
+  }, [focusBoard]);
 
   // Keep-alive: boards visited this channel stay mounted (hidden) so tab switches
   // don't remount → refetch → lose scroll/filter state. Reset on channel change so

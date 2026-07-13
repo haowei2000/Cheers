@@ -188,18 +188,48 @@ shadow (popovers, windows) provides the separation:
 | Surface | Recipe |
 |---|---|
 | Modal (use `<Dialog>`) | backdrop `bg-black/50`, card `rounded-xl bg-zinc-900 p-4` — no shadow needed |
-| Anchored popover | `rounded-xl bg-zinc-900 shadow-xl shadow-black/40` |
+| Anchored popover (use `<PopoverPanel>` + `usePopoverDismiss`) | `rounded-xl bg-zinc-900 shadow-xl shadow-black/40` |
 | Autocomplete / menu list | same as popover, `rounded-lg` acceptable for compact lists |
 | Draggable window (use `<FloatingPanel>`) | `rounded-xl bg-zinc-900/95 backdrop-blur-sm shadow-2xl shadow-black/50` |
 
 `shadow-2xl` is reserved for draggable windows; anchored popovers use
 `shadow-xl`.
 
+**Anchored popover primitive** (`src/components/ui/popover.tsx`): a `relative`
+wrapper holds the trigger and the panel; `usePopoverDismiss(open, onClose,
+rootRef)` closes on outside-mousedown / Escape (Escape is claimed with
+`preventDefault` so outer Esc handlers skip it); `<PopoverPanel placement="up"|
+"down" align="start"|"end">` renders the §2.4 surface at `z-50`. Keep the
+trigger inside the root ref so toggling never close-then-reopens:
+
+```tsx
+const rootRef = useRef<HTMLDivElement>(null);
+usePopoverDismiss(open, close, rootRef);
+<div ref={rootRef} className="relative inline-flex">
+  <button aria-expanded={open} …>trigger</button>
+  {open && <PopoverPanel placement="up" className="w-72 p-1">…</PopoverPanel>}
+</div>
+```
+
+If the panel must escape a `transform`/`overflow-hidden`/`backdrop-blur`
+ancestor, portal to `document.body` instead (ProfileHovercard precedent,
+`z-[60]`).
+
 ### 2.5 Chips (composer, files)
 
 Borderless soft pills: `rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px]`.
 Interactive chips add `hover:bg-zinc-800 hover:text-zinc-200`; an active/open
 chip switches to `bg-indigo-600/15 text-indigo-200`.
+
+**Composer control chips** (session target, model — the composer card's
+controls row): the interactive chip recipe above plus a leading `w-3.5 h-3.5`
+icon, a `truncate` label with a `max-w-*` cap, and a trailing `ChevronDown
+w-3 h-3` that rotates 180° while open. Three states: resting (soft zinc),
+open/targeted (`bg-indigo-600/15 text-indigo-200`, icon `text-indigo-400`),
+mobile touch target via `max-md:py-2`. Focus:
+`focus-visible:ring-2 focus-visible:ring-indigo-500`. The composer card itself
+is the canonical borderless field: `rounded-xl bg-zinc-800/80` with
+`focus-within:ring-2 focus-within:ring-indigo-500/50` — no resting border.
 
 ### 2.6 Badges & counters
 

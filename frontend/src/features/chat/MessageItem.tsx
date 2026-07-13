@@ -9,7 +9,7 @@ import { FileGrid } from "./fileView";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
 import { BotTracePanel } from "./BotTracePanel";
-import { cancelMessage } from "@/api/messages";
+import { stopTurn } from "./stopTurn";
 import type { Message } from "@/types";
 import { useProfileCard } from "./ProfileHovercard";
 
@@ -393,25 +393,10 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
       disabled={stopping}
       onClick={async () => {
         setStopping(true);
-        try {
-          await cancelMessage(channelId, msgId);
-          // Leave it disabled: the turn finalizes via the stream and the bubble
-          // drops out of its active state, unmounting this button.
-        } catch (e) {
-          const raw = e instanceof Error ? e.message : String(e);
-          // A turn that already finished 404s ("not found") — a benign race, not
-          // worth a toast. Surface anything else (e.g. a 403 authz denial).
-          if (!/not found/i.test(raw)) {
-            let detail = raw;
-            try {
-              detail = (JSON.parse(raw) as { detail?: string }).detail ?? raw;
-            } catch {
-              /* not JSON — use raw */
-            }
-            toast.error(detail);
-          }
-          setStopping(false);
-        }
+        // On success leave it disabled: the turn finalizes via the stream and
+        // the bubble drops out of its active state, unmounting this button.
+        const ok = await stopTurn(channelId, msgId);
+        if (!ok) setStopping(false);
       }}
       className="inline-flex items-center gap-1 rounded-md bg-zinc-800/80 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"

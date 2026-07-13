@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { SlidersHorizontal, Lock } from "lucide-react";
 import {
-  getSessionControls,
-  listChannelBotSessions,
   setSessionMode,
   setSessionConfigOption,
   type SessionControls,
   type SessionInfo,
 } from "@/api/sessionControl";
+import { readBotControls, bustBotControls } from "./sessionControlsCache";
 
 export interface MentionedBot {
   botId: string;
@@ -34,10 +33,14 @@ export function ComposerBotSettings({
   channelId,
   bots,
   selectedSessionId,
+  onApplied,
 }: {
   channelId: string;
   bots: MentionedBot[];
   selectedSessionId: string;
+  /** Fires after a mode/config change lands (cache already busted) — lets the
+      model chip re-resolve its label. */
+  onApplied?: () => void;
 }) {
   return (
     <>
@@ -47,6 +50,7 @@ export function ComposerBotSettings({
           channelId={channelId}
           bot={b}
           selectedSessionId={selectedSessionId}
+          onApplied={onApplied}
         />
       ))}
     </>
@@ -57,10 +61,12 @@ function BotInlineSettings({
   channelId,
   bot,
   selectedSessionId,
+  onApplied,
 }: {
   channelId: string;
   bot: MentionedBot;
   selectedSessionId: string;
+  onApplied?: () => void;
 }) {
   const [controls, setControls] = useState<SessionControls | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -74,12 +80,9 @@ function BotInlineSettings({
     let cancelled = false;
     (async () => {
       try {
-        const [c, s] = await Promise.all([
-          getSessionControls(channelId, bot.botId),
-          listChannelBotSessions(channelId, bot.botId)
-            .then((r) => r.sessions)
-            .catch(() => [] as SessionInfo[]),
-        ]);
+        // Shared read-through cache — the model chip already fetched this pair
+        // for its label, so opening the popover usually costs no request.
+        const { controls: c, sessions: s } = await readBotControls(channelId, bot.botId);
         if (cancelled) return;
         setControls(c);
         setSessions(s);
@@ -118,6 +121,10 @@ function BotInlineSettings({
     optimistic();
     try {
       await fn();
+      // Server state moved: drop the cached controls/sessions pair so the model
+      // chip (and the next popover open) re-reads the effective values.
+      bustBotControls(channelId, bot.botId);
+      onApplied?.();
       toast.success("Applied");
     } catch (e) {
       toast.error(String(e));
