@@ -20,6 +20,8 @@ import {
   FolderOpen,
   AudioLines,
   Loader2,
+  Square,
+  SquareSlash,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
@@ -28,6 +30,7 @@ import type { FileInfo } from "@/types";
 import { isAudioFile } from "./fileUtils";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
 import { ExistingFilePicker } from "./ExistingFilePicker";
+import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -62,11 +65,18 @@ interface Props {
   mentionables?: MentionCandidate[];
   /** Slash-commands advertised by the channel's bots (⑦ command palette). */
   commands?: CommandCandidate[];
-  /** Optional controls rendered just above the input row (e.g. a session switcher). */
+  /** Optional controls rendered in the card's controls row, between the attach
+      button and the send button (session chip, model chip, …). */
   toolbar?: ReactNode;
   /** Fires with the bots currently @mentioned in the draft (token still present),
       so the parent can surface per-bot controls contextual to the mention. */
   onMentionsChange?: (mentionedBots: MentionCandidate[]) => void;
+  /** Bot turns currently streaming in the channel. With an empty draft the send
+      button morphs into Stop; a typed draft always keeps Send (concurrent sends
+      are legal in a channel chat). */
+  streamingCount?: number;
+  /** Stop every in-flight bot turn (each stop also halts its bot@bot chain). */
+  onStopStreaming?: () => Promise<void> | void;
   onSend: (
     content: string,
     mentionIds: string[],
@@ -85,6 +95,37 @@ interface PickerState {
   index: number;
 }
 
+// Per-channel draft stash. One composer instance survives channel switches, so
+// without this a half-typed draft — and worse, channel A's uploaded attachments —
+// leaks into channel B. In-memory for the tab's lifetime; `text` additionally
+// mirrors into sessionStorage so a reload doesn't eat a half-typed message
+// (attachments/mentions stay memory-only — file metadata isn't trusted across
+// reloads).
+interface DraftState {
+  text: string;
+  attachments: FileInfo[];
+  picked: MentionCandidate[];
+  transcribedIds: Set<string>;
+}
+const draftsByChannel = new Map<string, DraftState>();
+const draftKey = (channelId: string) => `cheers.draft.${channelId}`;
+
+function stashDraft(channelId: string, d: DraftState) {
+  if (d.text || d.attachments.length) draftsByChannel.set(channelId, d);
+  else draftsByChannel.delete(channelId);
+}
+
+function restoredText(channelId?: string): string {
+  if (!channelId) return "";
+  const mem = draftsByChannel.get(channelId);
+  if (mem) return mem.text;
+  try {
+    return sessionStorage.getItem(draftKey(channelId)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function MessageComposerImpl({
   channelId,
   channelName,
@@ -93,14 +134,20 @@ function MessageComposerImpl({
   commands = [],
   toolbar,
   onMentionsChange,
+  streamingCount = 0,
+  onStopStreaming,
   onSend,
 }: Props) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => restoredText(channelId));
   const [sending, setSending] = useState(false);
-  const [attachments, setAttachments] = useState<FileInfo[]>([]);
+  const [attachments, setAttachments] = useState<FileInfo[]>(
+    () => (channelId && draftsByChannel.get(channelId)?.attachments) || []
+  );
   const [uploading, setUploading] = useState(false);
   // Mentions the user has picked, keyed by id. Routing source of truth.
-  const [picked, setPicked] = useState<MentionCandidate[]>([]);
+  const [picked, setPicked] = useState<MentionCandidate[]>(
+    () => (channelId && draftsByChannel.get(channelId)?.picked) || []
+  );
   const [picker, setPicker] = useState<PickerState | null>(null);
   // Paperclip → small menu (upload vs. pick existing) + the channel-file picker dialog.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
@@ -108,6 +155,68 @@ function MessageComposerImpl({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachRef = useRef<HTMLDivElement>(null);
+  // Voice-to-deaf-bot guard state (used further below): audio attachments the
+  // transcribe-then-send flow completed, and the paused-send warning.
+  const [transcribedIds, setTranscribedIds] = useState<Set<string>>(
+    () => (channelId && draftsByChannel.get(channelId)?.transcribedIds) || new Set()
+  );
+  const [voiceWarning, setVoiceWarning] = useState<{
+    deafBots: string[];
+    error?: string;
+  } | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
+
+  // Live snapshot of the stashable draft (read by the channel-switch effect and
+  // the unmount stash below — refreshed every render, so always current).
+  const draftRef = useRef<DraftState>({ text, attachments, picked, transcribedIds });
+  draftRef.current = { text, attachments, picked, transcribedIds };
+  const prevChannelRef = useRef(channelId);
+
+  // Channel switch: stash the outgoing channel's draft, restore (or blank) the
+  // incoming one, and drop all transient popup state — none of it survives a
+  // room change (the parent separately resets the session target and mentions).
+  useEffect(() => {
+    const prev = prevChannelRef.current;
+    if (prev === channelId) return;
+    prevChannelRef.current = channelId;
+    if (prev) stashDraft(prev, draftRef.current);
+    const mem = channelId ? draftsByChannel.get(channelId) : undefined;
+    setText(restoredText(channelId));
+    setAttachments(mem?.attachments ?? []);
+    setPicked(mem?.picked ?? []);
+    setTranscribedIds(mem?.transcribedIds ?? new Set());
+    setPicker(null);
+    setAttachMenuOpen(false);
+    setLibraryOpen(false);
+    setVoiceWarning(null);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    });
+  }, [channelId]);
+
+  // Unmount (e.g. mobile back-navigation unmounts ChannelView): keep the draft.
+  useEffect(
+    () => () => {
+      const prev = prevChannelRef.current;
+      if (prev) stashDraft(prev, draftRef.current);
+    },
+    []
+  );
+
+  // Reload survival for the text (declared after the switch effect on purpose:
+  // on a channel switch the restore reads sessionStorage before this rewrites it).
+  useEffect(() => {
+    if (!channelId) return;
+    try {
+      if (text) sessionStorage.setItem(draftKey(channelId), text);
+      else sessionStorage.removeItem(draftKey(channelId));
+    } catch {
+      /* quota / private mode — the in-memory stash still covers switches */
+    }
+  }, [channelId, text]);
 
   // Bots whose "@label" token still survives in the draft — the live mention set
   // (mirrors submit()'s routing filter). Emitted up so the parent can show the
@@ -157,25 +266,8 @@ function MessageComposerImpl({
   }
 
   // Close the attach menu on outside click / Escape.
-  useEffect(() => {
-    if (!attachMenuOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (attachRef.current && !attachRef.current.contains(e.target as Node))
-        setAttachMenuOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      // Claim this Esc so outer handlers (reply/selection cancel) skip it.
-      e.preventDefault();
-      setAttachMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [attachMenuOpen]);
+  const closeAttachMenu = useCallback(() => setAttachMenuOpen(false), []);
+  usePopoverDismiss(attachMenuOpen, closeAttachMenu, attachRef);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -222,17 +314,29 @@ function MessageComposerImpl({
           .slice(0, 8)
       : [];
 
+  // Commands from more than one bot render grouped under bot headers; the sort
+  // happens HERE (not in CommandPalette) so `picker.index` and the keyboard
+  // navigation stay aligned with the render order.
+  const multiBotCommands = useMemo(
+    () => new Set(commands.map((c) => c.botId)).size > 1,
+    [commands]
+  );
   const filteredCommands =
     picker?.kind === "command"
-      ? commands
-          .filter((c) => {
-            const q = picker.query.toLowerCase();
-            return (
+      ? (() => {
+          const q = picker.query.toLowerCase();
+          const hits = commands.filter(
+            (c) =>
               c.name.toLowerCase().includes(q) ||
               (c.description?.toLowerCase().includes(q) ?? false)
+          );
+          if (multiBotCommands)
+            hits.sort(
+              (a, b) =>
+                a.botLabel.localeCompare(b.botLabel) || a.name.localeCompare(b.name)
             );
-          })
-          .slice(0, 8)
+          return hits.slice(0, 8);
+        })()
       : [];
 
   // The active list length drives keyboard navigation regardless of which picker
@@ -276,17 +380,29 @@ function MessageComposerImpl({
     });
   }
 
+  // The "/" toolbar button: mouse/touch entry into the command picker. Inserts a
+  // "/" trigger at the caret (padded to a word start — refreshPicker's rule) and
+  // opens the same picker the keyboard path uses, keyboard navigation included.
+  function openCommandPicker() {
+    const el = textareaRef.current;
+    if (!el) return;
+    const caret = el.selectionStart ?? text.length;
+    const before = text.slice(0, caret);
+    const insert = before && !/\s$/.test(before) ? " /" : "/";
+    const next = before + insert + text.slice(caret);
+    const newCaret = caret + insert.length;
+    setText(next);
+    setPicker({ kind: "command", at: newCaret - 1, query: "", index: 0 });
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(newCaret, newCaret);
+      adjustHeight();
+    });
+  }
+
   // Voice-to-deaf-bot guard: audio attachments not yet transcribed, headed at a
   // bot that can't hear audio, pause the send behind an explicit choice
-  // (transcribe-then-send vs send-as-is). `transcribedIds` marks attachments the
-  // transcribe-then-send flow completed; `voiceWarning` holds the paused state.
-  const [transcribedIds, setTranscribedIds] = useState<Set<string>>(new Set());
-  const [voiceWarning, setVoiceWarning] = useState<{
-    deafBots: string[];
-    error?: string;
-  } | null>(null);
-  const [transcribing, setTranscribing] = useState(false);
-
+  // (transcribe-then-send vs send-as-is). State lives in the top block above.
   function untranscribedAudio(): FileInfo[] {
     return attachments.filter(
       (a) => isAudioFile(a) && !a.summary && !transcribedIds.has(a.file_id)
@@ -424,6 +540,30 @@ function MessageComposerImpl({
     !uploading &&
     !disabled;
 
+  // Send→stop morph: with an EMPTY draft while bot turns stream, the send slot
+  // becomes Stop. A typed draft always keeps Send — interrupting is never the
+  // price of talking. `stopping` guards double-fire; it re-arms when a new turn
+  // starts streaming after all previous ones ended.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (streamingCount === 0) setStopping(false);
+  }, [streamingCount]);
+  const showStop =
+    !canSend && !disabled && !sending && streamingCount > 0 && !!onStopStreaming;
+  const stopTitle =
+    streamingCount > 1 ? "Stop all responses" : "Stop response";
+  async function stopStreaming() {
+    if (!onStopStreaming || stopping) return;
+    setStopping(true);
+    try {
+      await onStopStreaming();
+    } finally {
+      // If some turns are still streaming (cancel refused / new turn), let the
+      // button be pressed again; the effect above re-arms on full stop anyway.
+      setStopping(false);
+    }
+  }
+
   return (
     // Mobile: tighter gutters + safe-area bottom padding so the input clears the
     // home indicator; the dvh root + interactive-widget=resizes-content keep it
@@ -469,6 +609,7 @@ function MessageComposerImpl({
           commands={filteredCommands}
           activeIndex={picker.index}
           onSelect={selectCommand}
+          grouped={multiBotCommands}
         />
       )}
 
@@ -561,60 +702,17 @@ function MessageComposerImpl({
         </div>
       )}
 
-      {toolbar && <div className="mb-2 flex flex-wrap items-center gap-2">{toolbar}</div>}
-
+      {/* Unified composer card (DESIGN.md §2.3 borderless field): the textarea on
+          top, a controls row (attach · session/model chips · commands · send)
+          along the bottom. The ring is the focus state — no resting border. */}
       <div
         className={cn(
-          "flex items-end gap-2 rounded-xl border bg-zinc-800/80 px-3 py-2 transition-colors",
+          "rounded-xl bg-zinc-800/80 transition-all",
           disabled
-            ? "border-zinc-800 opacity-60"
-            : "border-zinc-700 hover:border-zinc-600 focus-within:border-indigo-500/60 focus-within:bg-zinc-800"
+            ? "opacity-60"
+            : "focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/50"
         )}
       >
-        <div ref={attachRef} className="relative flex-shrink-0 mb-0.5">
-          <button
-            type="button"
-            onClick={() => setAttachMenuOpen((o) => !o)}
-            disabled={disabled || !channelId}
-            className={cn(
-              "w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
-              attachMenuOpen
-                ? "text-zinc-200 bg-zinc-700/50"
-                : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
-            )}
-            aria-label="Attach file"
-            title="Attach file"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
-          {attachMenuOpen && (
-            <div className="absolute bottom-full left-0 mb-1.5 w-48 overflow-hidden rounded-lg bg-zinc-900 py-1 shadow-xl shadow-black/40 z-20">
-              <button
-                type="button"
-                onClick={() => {
-                  setAttachMenuOpen(false);
-                  fileInputRef.current?.click();
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
-              >
-                <Upload className="w-3.5 h-3.5 text-zinc-500" />
-                Upload from computer
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAttachMenuOpen(false);
-                  setLibraryOpen(true);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
-                Pick a channel file
-              </button>
-            </div>
-          )}
-        </div>
-
         <textarea
           ref={textareaRef}
           rows={1}
@@ -634,23 +732,102 @@ function MessageComposerImpl({
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-base (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="flex-1 bg-transparent text-base md:text-sm text-zinc-100 placeholder-zinc-400 resize-none outline-none leading-relaxed py-1 min-h-[24px] max-h-[200px]"
+          className="block w-full bg-transparent text-base md:text-sm text-zinc-100 placeholder-zinc-400 resize-none outline-none leading-relaxed px-3 pt-2.5 pb-1 min-h-[24px] max-h-[200px]"
         />
 
-        <button
-          onClick={() => void submit()}
-          disabled={!canSend}
-          className={cn(
-            "flex-shrink-0 w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-all duration-150 mb-0.5",
-            canSend
-              ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm"
-              : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
+        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+          <div ref={attachRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setAttachMenuOpen((o) => !o)}
+              disabled={disabled || !channelId}
+              className={cn(
+                "w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
+                attachMenuOpen
+                  ? "text-zinc-200 bg-zinc-700/50"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+              )}
+              aria-label="Attach file"
+              title="Attach file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+            {attachMenuOpen && (
+              <PopoverPanel className="w-48 overflow-hidden rounded-lg py-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttachMenuOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <Upload className="w-3.5 h-3.5 text-zinc-500" />
+                  Upload from computer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttachMenuOpen(false);
+                    setLibraryOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
+                  Pick a channel file
+                </button>
+              </PopoverPanel>
+            )}
+          </div>
+
+          {/* Session + model chips from the parent; min-w-0 lets them truncate
+              instead of pushing the send button off a narrow screen. */}
+          {toolbar && (
+            <div className="flex min-w-0 items-center gap-1">{toolbar}</div>
           )}
-          aria-label="Send message"
-          title="Send message"
-        >
-          <SendHorizontal className="w-4 h-4" />
-        </button>
+
+          {commands.length > 0 && (
+            <button
+              type="button"
+              onClick={openCommandPicker}
+              disabled={disabled || sending}
+              className="w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 flex-shrink-0"
+              aria-label="Insert a command"
+              title="Commands (/)"
+            >
+              <SquareSlash className="w-4 h-4" />
+            </button>
+          )}
+
+          <div className="flex-1" />
+
+          {showStop ? (
+            <button
+              onClick={() => void stopStreaming()}
+              disabled={stopping}
+              className="flex-shrink-0 w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-all duration-150 bg-zinc-700/50 text-red-400 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-50"
+              aria-label={stopTitle}
+              title={stopTitle}
+            >
+              <Square className="w-3.5 h-3.5" fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              onClick={() => void submit()}
+              disabled={!canSend}
+              className={cn(
+                "flex-shrink-0 w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-all duration-150",
+                canSend
+                  ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm"
+                  : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
+              )}
+              aria-label="Send message"
+              title="Send message"
+            >
+              <SendHorizontal className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
       {/* Hardware-keyboard hints — meaningless on touch, so hidden below md. */}
       <p className="text-[11px] text-zinc-400 mt-1.5 px-1 max-md:hidden">

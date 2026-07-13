@@ -13,14 +13,16 @@ import {
   type MentionCandidate,
   type CommandCandidate,
 } from "./MessageComposer";
-import { SessionSwitcher } from "./SessionSwitcher";
+import { SessionChip } from "./SessionChip";
 import { ComposerModelPopover } from "./ComposerModelPopover";
+import { stopTurn } from "./stopTurn";
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
 import { LaneLayoutContext } from "@/hooks/useLaneWindow";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Button } from "@/components/ui/button";
+import { usePopoverDismiss } from "@/components/ui/popover";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 const ChannelFilesDialog = lazy(() =>
@@ -111,6 +113,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
   // Header members dropdown (read-only list; management stays in settings).
   const [membersOpen, setMembersOpen] = useState(false);
+  const membersRootRef = useRef<HTMLDivElement>(null);
+  const closeMembers = useCallback(() => setMembersOpen(false), []);
+  usePopoverDismiss(membersOpen, closeMembers, membersRootRef);
   // Message actions: reply target, multi-select set, pending forward payload.
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -587,6 +592,14 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     (msgId: string) => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 })),
     []
   );
+  // "Open the ViewBoard on THIS board" request (same nonce pattern as focusMsg) —
+  // the session chip's "Manage sessions…" jumps straight to the Sessions board.
+  const [focusBoard, setFocusBoard] = useState<{ id: string; nonce: number } | null>(null);
+  const openSessionsBoard = useCallback(() => {
+    setVbMinimal(false);
+    setVbOpen(true);
+    setFocusBoard((prev) => ({ id: "sessions", nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
 
   // Stable handlers for the memoized drawers so a streaming re-render of ChannelView
   // doesn't hand them fresh closures (which would defeat React.memo).
@@ -600,11 +613,13 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     () =>
       channel ? (
         <>
-          <SessionSwitcher
+          <SessionChip
             channelId={channel.channel_id}
             bots={switcherBots}
             value={selectedSessionId}
             onChange={setSelectedSessionId}
+            sendResourceReq={sendResourceReq}
+            onManageSessions={openSessionsBoard}
           />
           {/* Model/mode + config for the @mentioned bot(s); with no live
               mention, fall back to the channel's bots so the controls are
@@ -620,8 +635,35 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           />
         </>
       ) : null,
-    [channel, switcherBots, selectedSessionId, mentionedBots]
+    // sendResourceReq and openSessionsBoard are identity-stable (useCallback).
+    [channel, switcherBots, selectedSessionId, mentionedBots, sendResourceReq, openSessionsBoard]
   );
+
+  // In-flight bot turns, for the composer's send→stop morph. The array identity
+  // churns per delta flush, but the composer only receives the COUNT (changes on
+  // stream start/end) and a stable callback reading the live ids from a ref — so
+  // token streaming still never re-renders the memoized composer.
+  const streamingIds = useMemo(
+    () =>
+      messages
+        .filter(
+          (m) =>
+            m.sender_type === "bot" &&
+            (m._streaming || m.is_partial) &&
+            !m.is_deleted
+        )
+        .map((m) => m.msg_id),
+    [messages]
+  );
+  const streamingIdsRef = useRef(streamingIds);
+  streamingIdsRef.current = streamingIds;
+  const channelIdForStop = channel?.channel_id;
+  const stopStreaming = useCallback(async () => {
+    if (!channelIdForStop) return;
+    await Promise.all(
+      streamingIdsRef.current.map((id) => stopTurn(channelIdForStop, id))
+    );
+  }, [channelIdForStop]);
 
   // Resolve a clicked file reference by PROVENANCE and TAKE THE USER TO where it
   // lives — the channel files view (inbox), the workbench File panel (desk), or the
@@ -957,7 +999,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         <div className="flex-1" />
         <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
           {/* Members: was a dead-looking span — now a real button opening the roster. */}
-          <div className="relative" data-members-root>
+          <div className="relative" ref={membersRootRef}>
             <button
               type="button"
               onClick={() => setMembersOpen((v) => !v)}
@@ -1168,6 +1210,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         commands={commands}
         toolbar={composerToolbar}
         onMentionsChange={setMentionedBots}
+        streamingCount={streamingIds.length}
+        onStopStreaming={stopStreaming}
         onSend={handleSend}
       />
       </div>
@@ -1228,6 +1272,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           minimal={vbMinimal}
           onToggleMinimal={toggleViewBoardMinimal}
           onJumpToMessage={jumpToMessage}
+          focusBoard={focusBoard ?? undefined}
         />
 
         <WorkbenchDrawer

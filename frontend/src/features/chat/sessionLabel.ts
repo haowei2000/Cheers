@@ -38,3 +38,42 @@ export function sessionTag(s: {
   if (s.is_primary) return "primary";
   return cwdBasename(s.cwd) ?? shortWhen(s.when) ?? s.session_id.slice(0, 8);
 }
+
+/** Session status → text/icon color (shared by the Sessions board and the
+ *  composer's session chip so the same status never renders two colors). */
+export function statusColor(s: string): string {
+  switch (s) {
+    case "active":
+    case "busy":
+      return "text-emerald-500";
+    case "idle":
+      return "text-zinc-500";
+    case "paused":
+      return "text-amber-400";
+    case "error":
+    case "revoked":
+    case "expired":
+      return "text-red-400";
+    default:
+      return "text-zinc-500";
+  }
+}
+
+/** Session status → solid dot fill (bg-*), for plain status dots (DESIGN.md §2.7 shape). */
+export function statusDotColor(s: string): string {
+  switch (s) {
+    case "active":
+    case "busy":
+      return "bg-emerald-500";
+    case "idle":
+      return "bg-zinc-600";
+    case "paused":
+      return "bg-amber-400";
+    case "error":
+    case "revoked":
+    case "expired":
+      return "bg-red-400";
+    default:
+      return "bg-zinc-600";
+  }
+}

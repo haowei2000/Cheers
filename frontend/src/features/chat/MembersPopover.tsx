@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Users, Bot, Settings } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
 import { Avatar } from "@/components/ui/avatar";
+import { PopoverPanel } from "@/components/ui/popover";
 import { useProfileCard } from "./ProfileHovercard";
 import type { MemberItem } from "@/types";
 
@@ -9,6 +10,11 @@ import type { MemberItem } from "@/types";
  * Header "Members" dropdown — the quick answer to "who is in this channel?".
  * Read-only list (avatar · name · role · liveness); management stays in
  * ChannelSettingsDialog, reachable via the footer button for non-DM channels.
+ *
+ * Dismissal (outside click / Esc) is owned by the trigger wrapper in
+ * ChannelView via `usePopoverDismiss` — an anchored panel, NOT a fixed
+ * backdrop: the header's backdrop-blur makes it the containing block for
+ * `fixed` descendants, which would clip an overlay to the 48px header strip.
  */
 export function MembersPopover({
   channelId,
@@ -34,32 +40,9 @@ export function MembersPopover({
     };
   }, [channelId]);
 
-  // Close on outside click / Esc. NOT a fixed backdrop: the header's
-  // backdrop-blur makes it the containing block for `fixed` descendants, which
-  // would clip an overlay to the 48px header strip. Document listeners instead;
-  // clicks inside the trigger+panel wrapper ([data-members-root]) are ignored so
-  // toggling via the button doesn't close-then-reopen.
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-members-root]")) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
   return (
     <>
-      <div className="absolute right-0 top-9 z-50 w-72 rounded-xl bg-zinc-900 shadow-xl shadow-black/40 overflow-hidden">
+      <PopoverPanel placement="down" align="end" className="w-72 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-950/60">
           <Users className="w-3.5 h-3.5 text-zinc-500" />
           <span className="text-xs font-medium text-zinc-300">
@@ -131,7 +114,7 @@ export function MembersPopover({
             Manage members…
           </button>
         )}
-      </div>
+      </PopoverPanel>
     </>
   );
 }
