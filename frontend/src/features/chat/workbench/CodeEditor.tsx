@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
-import { Annotation, EditorState, StateEffect, type Extension } from "@codemirror/state";
+import {
+  Annotation,
+  Compartment,
+  EditorState,
+  StateEffect,
+  type Extension,
+} from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -14,7 +20,9 @@ import {
   indentOnInput,
   syntaxHighlighting,
   HighlightStyle,
+  LanguageDescription,
 } from "@codemirror/language";
+import { languages } from "@codemirror/language-data";
 import { markdown } from "@codemirror/lang-markdown";
 import { json } from "@codemirror/lang-json";
 import { tags as t } from "@lezer/highlight";
@@ -81,11 +89,32 @@ const highlight = HighlightStyle.define([
 
 // Language pack by extension. text/toml/xml fall through to no highlighting (plain text) —
 // still a fully usable editor, just uncolored; add lang-* packs later if a format earns it.
-function languageFor(path: string): Extension[] {
+// Compartment holding the active language extension, so it can be swapped in place (on a
+// path change, or when an async language pack finishes loading) without rebuilding the view.
+const languageConf = new Compartment();
+
+// Synchronous fast path for the workspace's own formats (no async flash on the common case).
+// Everything else resolves via @codemirror/language-data below.
+function syncLanguageFor(path: string): Extension {
   const p = path.toLowerCase();
-  if (p.endsWith(".json")) return [json()];
-  if (p.endsWith(".md") || p.endsWith(".markdown")) return [markdown()];
+  if (p.endsWith(".json")) return json();
+  if (p.endsWith(".md") || p.endsWith(".markdown")) return markdown();
   return [];
+}
+
+// Async language resolution for arbitrary repo files (.ts/.rs/.py/Dockerfile/…). Each grammar
+// is a dynamic import (Vite code-splits it into its own chunk), so only the languages a user
+// actually opens are ever fetched. Returns null when no language matches (→ plain text).
+async function loadLanguageFor(path: string): Promise<Extension | null> {
+  const filename = path.split("/").pop() || path;
+  const desc = LanguageDescription.matchFilename(languages, filename);
+  if (!desc) return null;
+  try {
+    const support = await desc.load();
+    return support;
+  } catch {
+    return null; // grammar failed to load → stay plain text, never crash the editor
+  }
 }
 
 // Marks a dispatch as a programmatic content sync (not a user edit), so the updateListener
@@ -105,7 +134,7 @@ function baseExtensions(path: string, onChange: (v: string) => void): Extension[
     syntaxHighlighting(highlight),
     theme,
     EditorView.lineWrapping,
-    ...languageFor(path),
+    languageConf.of(syncLanguageFor(path)),
     EditorView.updateListener.of((u) => {
       // Only USER edits become dirty. Programmatic loads (path switch, live-push/conflict
       // reload) carry the `sync` annotation and must NOT call onChange — otherwise a clean
@@ -170,6 +199,28 @@ export function CodeEditor({ value, onChange, path, className }: CodeEditorProps
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, value]);
+
+  // Async language highlighting for non-md/json files (real repo source in Remote Workspace).
+  // The reconfigure above resets the language compartment to the sync value ([] for these);
+  // here we load the matching grammar and swap it in when it resolves. Guarded so a slow load
+  // for a file the user already navigated away from is dropped (pathRef holds the latest path).
+  useEffect(() => {
+    const p = path.toLowerCase();
+    // md/json are already highlighted synchronously by syncLanguageFor — no async load needed.
+    if (p.endsWith(".json") || p.endsWith(".md") || p.endsWith(".markdown")) return;
+    let cancelled = false;
+    void loadLanguageFor(path).then((support) => {
+      const view = viewRef.current;
+      if (cancelled || !support || !view || pathRef.current !== path) return;
+      view.dispatch({
+        effects: languageConf.reconfigure(support),
+        annotations: syncAnnotation.of(true),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
 
   // Sync external content changes (live-push reload, conflict reload) without clobbering the
   // cursor: only replace the doc when the incoming value truly differs from the editor's.
