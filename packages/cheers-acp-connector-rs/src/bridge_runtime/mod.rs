@@ -252,6 +252,17 @@ async fn resolve_git_target(
 /// process (bind-mounted / container / mixed-UID workspaces) git otherwise refuses even
 /// `rev-parse` with a non-zero exit, which the caller would misreport as `E_NOT_A_REPO`.
 /// Passed per-invocation via `-c`, so nothing is written to any on-disk git config.
+///
+/// SECURITY: `safe.directory=*` also re-enables trusting a foreign-owned repo's LOCAL
+/// config, and a couple of config/attribute knobs make otherwise-innocent read commands
+/// spawn arbitrary processes as the connector user. We neutralize the ones reachable
+/// from read-only inspection: `core.fsmonitor` (a query hook run during index refresh by
+/// status/diff) is disabled here for EVERY invocation with `-c core.fsmonitor=false`;
+/// external diff (`diff.external`/`diff.<d>.command`) and textconv (`diff.<d>.textconv`)
+/// are killed at the command level with `--no-ext-diff`/`--no-textconv` on the
+/// patch-producing ops (git_diff/git_show/git_commit_files). NB: a `-c diff.external=`
+/// override does NOT disable it — git then tries to exec the empty string and aborts the
+/// diff — so `--no-ext-diff` is the right lever. See the P1 review on PR #174.
 async fn run_git(
     git_dir: &std::path::Path,
     args: &[&str],
@@ -259,6 +270,9 @@ async fn run_git(
     tokio::process::Command::new("git")
         .arg("-c")
         .arg("safe.directory=*")
+        // A foreign repo's fsmonitor hook would run as us during any index refresh.
+        .arg("-c")
+        .arg("core.fsmonitor=false")
         .arg("-C")
         .arg(git_dir)
         .args(args)
@@ -1392,7 +1406,11 @@ impl RuntimeContext {
                         }))
                     }
                     "git_diff" => {
-                        let mut args: Vec<&str> = vec!["diff", "--no-color"];
+                        // `--no-ext-diff`/`--no-textconv`: never run a foreign repo's
+                        // external-diff or textconv driver (arbitrary command exec) —
+                        // see the run_git SECURITY note.
+                        let mut args: Vec<&str> =
+                            vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv"];
                         if staged {
                             args.push("--staged");
                         }
@@ -1430,7 +1448,15 @@ impl RuntimeContext {
                             .map(commit_pathspec)
                             .transpose()
                             .map_err(|(c, m)| (c, m, None))?;
-                        let mut args: Vec<&str> = vec!["show", "--no-color", commit];
+                        // `--no-ext-diff`/`--no-textconv`: as in git_diff, refuse to run
+                        // a foreign repo's external-diff/textconv driver.
+                        let mut args: Vec<&str> = vec![
+                            "show",
+                            "--no-color",
+                            "--no-ext-diff",
+                            "--no-textconv",
+                            commit,
+                        ];
                         if let Some(ps) = filter.as_deref() {
                             args.push("--");
                             args.push(ps);
@@ -1457,7 +1483,15 @@ impl RuntimeContext {
                         let commit = validate_hex_commit(commit).map_err(|(c, m)| (c, m, None))?;
                         let out = run_git(
                             &git_dir,
-                            &["show", "--no-color", "--name-status", "--format=", commit],
+                            &[
+                                "show",
+                                "--no-color",
+                                "--no-ext-diff",
+                                "--no-textconv",
+                                "--name-status",
+                                "--format=",
+                                commit,
+                            ],
                         )
                         .await
                         .map_err(|(c, m)| (c, m, None))?;
@@ -3176,6 +3210,60 @@ mod tests {
             git_stderr(&out).contains("not a git repository"),
             "expected the canonical non-repo stderr, got: {}",
             git_stderr(&out)
+        );
+    }
+
+    // Since `safe.directory=*` makes us trust a foreign-owned repo's local config, a
+    // malicious `diff.external` must NOT execute when we diff it. The `--no-ext-diff`
+    // that git_diff/git_show pass is the lever that neutralizes it. (unix-only: needs an
+    // executable marker script + chmod.)
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_git_diff_ignores_a_repos_external_diff_command() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        git_init(dir).await;
+        // A hostile external-diff driver that, if run, drops a sentinel file.
+        let sentinel = dir.join("PWNED");
+        let script = dir.join("evil.sh");
+        tokio::fs::write(
+            &script,
+            format!("#!/bin/sh\ntouch {}\n", sentinel.display()),
+        )
+        .await
+        .unwrap();
+        tokio::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+            .await
+            .unwrap();
+        // Wire it into the repo's own config (what a foreign repo would ship).
+        let cfg = run_git(dir, &["config", "diff.external", &script.to_string_lossy()])
+            .await
+            .expect("git spawn");
+        assert!(cfg.status.success(), "config: {}", git_stderr(&cfg));
+        // A committed file with an uncommitted change → `git diff` has something to render.
+        tokio::fs::write(dir.join("a.txt"), "one\n").await.unwrap();
+        for args in [&["add", "a.txt"][..], &["commit", "-qm", "seed"][..]] {
+            let out = run_git(dir, args).await.expect("git spawn");
+            assert!(out.status.success(), "git {args:?}: {}", git_stderr(&out));
+        }
+        tokio::fs::write(dir.join("a.txt"), "two\n").await.unwrap();
+
+        // Exactly what the git_diff op runs: `--no-ext-diff` must win over the repo's
+        // hostile diff.external.
+        let out = run_git(dir, &["diff", "--no-ext-diff", "--no-textconv"])
+            .await
+            .expect("git spawn");
+        assert!(out.status.success(), "diff: {}", git_stderr(&out));
+        assert!(
+            !sentinel.exists(),
+            "diff.external must NOT run — the repo's config is untrusted for inspection"
+        );
+        // And we still get a real builtin diff, not the external driver's (empty) output.
+        let diff = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            diff.contains("-one") && diff.contains("+two"),
+            "expected a builtin patch, got: {diff}"
         );
     }
 }

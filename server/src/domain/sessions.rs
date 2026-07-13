@@ -368,6 +368,7 @@ pub async fn channel_session_workdirs(
            FROM cheers_sessions s
            JOIN cheers_session_bindings b ON b.session_id = s.session_id
           WHERE b.channel_id = $1 AND s.bot_id = $2
+            AND s.status NOT IN ('terminated', 'revoked', 'expired')
           ORDER BY s.last_used_at DESC",
     )
     .bind(channel_id.to_string())
