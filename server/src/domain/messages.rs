@@ -291,39 +291,58 @@ pub async fn create_message(
         }
 
         // Resolve the session to prompt. A targeted "other" session reuses its
-        // own key (cheers:session:{id}); otherwise the channel PRIMARY session is
-        // acquired (scope-derived stable key, resumed across turns).
+        // own key (cheers:session:{id}); otherwise the channel PRIMARY session:
+        // the `role='primary'` BINDING is authoritative (set_primary_session can
+        // re-point it at a promoted "other" session, which keeps its own key), and
+        // only when no live primary is bound is the scope-derived deterministic
+        // key acquired (lazily creating the default primary on first message).
         let (provider_session_key, resolved_session_id) = match &targeted_session {
             Some((_, sid, key)) => {
                 let _ = sessions::touch_session(db, *sid).await;
                 (key.clone(), Some(*sid))
             }
             None => {
-                let provider_session_key =
-                    provider_session_key_for_bot_channel(params.channel_id, bot_id);
-                let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
-                    .await
-                    .unwrap_or_else(|_| bot_id.to_string());
-                let session = sessions::acquire_scope_session(
+                match sessions::resolve_primary_session(
                     db,
                     bot_id,
-                    &provider_account_id,
-                    &provider_session_key,
-                    sessions::SESSION_SCOPE_CHANNEL,
                     &params.channel_id.to_string(),
-                    None,
-                    "primary",
                 )
-                .await;
-                if let Err(e) = &session {
-                    warn!(
-                        bot_id = %bot_id,
-                        channel_id = %params.channel_id,
-                        err = %e,
-                        "session acquire failed, fallback to unbound task dispatch"
-                    );
+                .await
+                .ok()
+                .flatten()
+                {
+                    Some((sid, key)) => {
+                        let _ = sessions::touch_session(db, sid).await;
+                        (key, Some(sid))
+                    }
+                    None => {
+                        let provider_session_key =
+                            provider_session_key_for_bot_channel(params.channel_id, bot_id);
+                        let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
+                            .await
+                            .unwrap_or_else(|_| bot_id.to_string());
+                        let session = sessions::acquire_scope_session(
+                            db,
+                            bot_id,
+                            &provider_account_id,
+                            &provider_session_key,
+                            sessions::SESSION_SCOPE_CHANNEL,
+                            &params.channel_id.to_string(),
+                            None,
+                            "primary",
+                        )
+                        .await;
+                        if let Err(e) = &session {
+                            warn!(
+                                bot_id = %bot_id,
+                                channel_id = %params.channel_id,
+                                err = %e,
+                                "session acquire failed, fallback to unbound task dispatch"
+                            );
+                        }
+                        (provider_session_key, session.ok().map(|s| s.session_id))
+                    }
                 }
-                (provider_session_key, session.ok().map(|s| s.session_id))
             }
         };
 

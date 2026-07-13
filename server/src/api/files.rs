@@ -551,13 +551,19 @@ pub async fn realize_file(
         .ok_or_else(|| AppError::BadRequest("staged file has no channel".into()))?;
 
     // Confine the realize to the (bot, channel) PRIMARY session's root set. The
-    // connector re-clamps against allowed_roots and falls back to default_cwd when
-    // this is empty (docs/arch/SESSION_WORKDIR_ROOTSET.md, Phase 6).
-    let roots = crate::domain::sessions::session_root_set(
-        &state.db,
-        &crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id),
-    )
-    .await;
+    // primary binding is authoritative (a promoted session brings its own key);
+    // fall back to the scope-derived deterministic key. The connector re-clamps
+    // against allowed_roots and falls back to default_cwd when this is empty
+    // (docs/arch/SESSION_WORKDIR_ROOTSET.md, Phase 6).
+    let primary_key = crate::domain::sessions::resolve_primary_session(&state.db, bot_id, &channel_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|(_, key)| key)
+        .unwrap_or_else(|| {
+            crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id)
+        });
+    let roots = crate::domain::sessions::session_root_set(&state.db, &primary_key).await;
 
     let frame = serde_json::json!({
         "type": "realize_file",

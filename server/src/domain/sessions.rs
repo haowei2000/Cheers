@@ -302,17 +302,23 @@ pub async fn ensure_primary_session_workspace(
 
     let session_uuid = Uuid::parse_str(&session_id)
         .map_err(|_| AppError::Internal("invalid session_id".into()))?;
-    upsert_session_binding(
-        db,
-        &session_uuid,
-        bot_id,
-        provider_account_id,
-        SESSION_SCOPE_CHANNEL,
-        channel_id,
-        None,
-        "primary",
-    )
-    .await?;
+    // A promoted primary (set_primary_session) must survive a re-invite: only
+    // (re)bind the deterministic session as primary when no live primary binding
+    // exists for this scope. When the deterministic session already IS the
+    // primary, the upsert would be a no-op anyway.
+    if resolve_primary_session(db, bot_id, channel_id).await?.is_none() {
+        upsert_session_binding(
+            db,
+            &session_uuid,
+            bot_id,
+            provider_account_id,
+            SESSION_SCOPE_CHANNEL,
+            channel_id,
+            None,
+            "primary",
+        )
+        .await?;
+    }
 
     Ok(SessionHandle {
         session_id: session_uuid,
@@ -378,6 +384,94 @@ pub async fn set_session_additional_dirs(
     .await
     .map_err(AppError::Db)?;
     updated.map(|_| ()).ok_or(AppError::NotFound)
+}
+
+/// Resolve the channel's CURRENT primary session for a bot. The `role='primary'`
+/// binding is the authoritative pointer — `set_primary_session` can re-point it at
+/// a promoted "other" session, so dispatch must consult it BEFORE falling back to
+/// the scope-derived deterministic key (which lazily creates the default primary
+/// on first message). Same liveness rule as the switcher: no `detached_at` filter
+/// (bindings detach on finalize but stay authoritative); exclude only truly-closed
+/// sessions, so a terminated primary falls back cleanly.
+pub async fn resolve_primary_session(
+    db: &PgPool,
+    bot_id: Uuid,
+    channel_id: &str,
+) -> Result<Option<(Uuid, String)>, AppError> {
+    let row = sqlx::query(
+        "SELECT s.session_id, s.provider_session_key
+         FROM cheers_session_bindings b
+         JOIN cheers_sessions s ON s.session_id = b.session_id
+         WHERE b.bot_id = $1 AND b.scope_type = $2 AND b.scope_id = $3
+           AND b.role = 'primary'
+           AND s.status NOT IN ('terminated', 'revoked', 'expired')
+         LIMIT 1",
+    )
+    .bind(bot_id.to_string())
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .fetch_optional(db)
+    .await
+    .map_err(AppError::Db)?;
+    Ok(row.and_then(|r| {
+        let sid = r
+            .try_get::<String, _>("session_id")
+            .ok()
+            .and_then(|v| Uuid::parse_str(&v).ok())?;
+        let key = r.try_get::<String, _>("provider_session_key").ok()?;
+        Some((sid, key))
+    }))
+}
+
+/// Make an existing channel session the bot's PRIMARY — the session Auto/mention
+/// messages route to. The binding role is the source of truth: demote the current
+/// primary binding to 'other' and promote the target, in one transaction (the
+/// partial-unique index `uq_cheers_session_binding_primary` allows at most one
+/// primary per bot+scope, so demote must land first). Session keys are left
+/// untouched — the promoted session keeps its own `provider_session_key`, so the
+/// connector-side ACP session (and its history) follows the promotion, and the
+/// demoted session stays addressable as an "other" session.
+pub async fn set_primary_session(
+    db: &PgPool,
+    bot_id: Uuid,
+    channel_id: &str,
+    session_id: Uuid,
+) -> Result<(), AppError> {
+    let mut tx = db.begin().await.map_err(AppError::Db)?;
+    // Demote whatever holds the primary role now (skip if the target already does,
+    // making a re-promote a no-op instead of a demote-then-fail).
+    sqlx::query(
+        "UPDATE cheers_session_bindings SET role = 'other'
+         WHERE bot_id = $1 AND scope_type = $2 AND scope_id = $3
+           AND role = 'primary' AND session_id <> $4",
+    )
+    .bind(bot_id.to_string())
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .bind(session_id.to_string())
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::Db)?;
+    // Promote the target's binding (and re-attach it). RETURNING → NotFound when
+    // the session isn't bound to this channel+bot; the tx rolls back on drop, so
+    // the demote above never sticks without a new primary.
+    let promoted: Option<String> = sqlx::query_scalar(
+        "UPDATE cheers_session_bindings SET role = 'primary', detached_at = NULL
+         WHERE bot_id = $1 AND scope_type = $2 AND scope_id = $3 AND session_id = $4
+         RETURNING binding_id",
+    )
+    .bind(bot_id.to_string())
+    .bind(SESSION_SCOPE_CHANNEL)
+    .bind(channel_id)
+    .bind(session_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(AppError::Db)?;
+    if promoted.is_none() {
+        return Err(AppError::NotFound);
+    }
+    tx.commit().await.map_err(AppError::Db)?;
+    Ok(())
 }
 
 /// A channel's sessions for a bot (primary first), for the session switcher.
