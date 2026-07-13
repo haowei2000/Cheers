@@ -18,7 +18,7 @@ import { ComposerModelPopover } from "./ComposerModelPopover";
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
-import { LaneBoundsContext } from "@/hooks/useLaneWindow";
+import { LaneLayoutContext } from "@/hooks/useLaneWindow";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
 import { Button } from "@/components/ui/button";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
@@ -577,24 +577,6 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [wsInit, setWsInit] = useState<{ botId?: string; path?: string }>({});
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
 
-  // The work lane is the bounded canvas the instrument windows drag/resize
-  // inside. Track its element as state (not a ref) so panels re-render with the
-  // real bounds once it mounts; getLaneBounds is read live on every drag/resize.
-  // MUST stay above the isPreview early-return so the hook order never changes.
-  const [laneEl, setLaneEl] = useState<HTMLElement | null>(null);
-  const getLaneBounds = useCallback(
-    () => laneEl?.getBoundingClientRect() ?? null,
-    [laneEl]
-  );
-  // The lane also resizes without a window resize event — collapsing the sidebar
-  // reflows its width via CSS. Re-clamp the floating windows on any lane box
-  // change so one can't get stranded in the lane's overflow-hidden clip.
-  useEffect(() => {
-    if (!laneEl || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => window.dispatchEvent(new Event("resize")));
-    ro.observe(laneEl);
-    return () => ro.disconnect();
-  }, [laneEl]);
   const [wbTarget, setWbTarget] = useState<string | undefined>(undefined);
   const [refError, setRefError] = useState<string | null>(null);
   // Jump-to-message request from ViewBoard history items (activity rows, audit
@@ -1191,22 +1173,22 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       </div>
       </div>
 
-      {/* Work area — a dedicated lane on the right, a bounded canvas the
-          instrument windows (unchanged chrome) float, drag and resize inside.
-          It fills the width left of the capped chat column. `relative` +
-          `overflow-hidden` make it the positioning context and clip stray
-          windows. On mobile it's display:contents — the panels stay overlay
-          sheets there. LaneBoundsContext hands each window this box's live
-          rect so drag/resize stays inside it. */}
+      {/* Work area — a dedicated lane on the right that TILES the open instrument
+          windows (unchanged chrome) into an auto-grid: one window fills the lane,
+          two sit side by side, three or four wrap to a 2×N grid; a narrow lane
+          collapses to a single stacked column. `auto-fit` + a min column width
+          drive the reflow, and windows hidden while closed drop out of the grid
+          automatically. On mobile it's display:contents — the panels stay
+          full-screen overlay sheets there. LaneLayoutContext tells each window it
+          lives in the grid so it renders as a full-cell block. */}
       <aside
-        ref={setLaneEl}
         className={
           anyWorkOpen
-            ? "max-md:contents md:relative md:flex-1 md:min-w-[20rem] md:min-h-0 md:overflow-hidden"
+            ? "max-md:contents md:grid md:flex-1 md:min-w-[20rem] md:min-h-0 md:gap-3 md:p-3 md:auto-rows-[minmax(0,1fr)] md:[grid-template-columns:repeat(auto-fit,minmax(min(24rem,100%),1fr))] md:overflow-hidden"
             : "contents"
         }
       >
-        <LaneBoundsContext.Provider value={anyWorkOpen ? getLaneBounds : null}>
+        <LaneLayoutContext.Provider value={anyWorkOpen ? "grid" : null}>
         {wsOpen && (
           <Suspense fallback={null}>
           <RemoteWorkspaceDialog
@@ -1268,7 +1250,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             />
           </Suspense>
         )}
-        </LaneBoundsContext.Provider>
+        </LaneLayoutContext.Provider>
       </aside>
       </div>
       {settingsOpen && (
