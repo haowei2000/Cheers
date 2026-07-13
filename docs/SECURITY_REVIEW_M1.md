@@ -1,5 +1,7 @@
 # Security Review & Hardening Roadmap — M1 (branch `demo/main`)
 
+> **Status:** 🗄 Historical — point-in-time security review of the M1 diff (2026-06-22); findings reflect that snapshot, not the current codebase.
+
 > Date: 2026-06-22 · Scope: the M1 changes (web + Rust gateway + Rust connector) on branch `demo/main`.
 > Method: live black-box probes against the running gateway (`:8000`), the repo `/security-review`
 > (sub-agent identify → adversarial filter), and manual input→sink data-flow tracing.

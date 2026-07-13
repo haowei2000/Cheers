@@ -33,11 +33,19 @@
 - [环境与上下文](context-and-environment.md)
 - [端到端加密说明](E2EE_NOTES.md)
 
-## 迭代与重构
+## 规划文档（非当前状态参考）
 
-- [网关重构计划](REFACTOR_PLAN.md)
+工作中的工程规划——持续维护，但不代表系统当前的真实行为。当它们与 [架构总览](ARCHITECTURE_OVERVIEW.md) 或当前代码冲突时，以后者为准。
+
+- 🛠 [工程执行路线图](ROADMAP.md) —— 逐里程碑的落地顺序、验收门、改造项 R1–R14
+- 🛠 [数据流全景与改造计划](DATA_FLOW_AND_REFACTOR_PLAN.md) —— 代码现状快照 + 协议/代码差异表 + 改造项
+- 🛠 [网关重构计划](REFACTOR_PLAN.md)
 - [去中心化 Mesh](DECENTRALIZED_MESH.md) / [中文](DECENTRALIZED_MESH.zh-CN.md)
 - [移动端客户端策略](MOBILE_CLIENT_STRATEGY.zh-CN.md) / [English](MOBILE_CLIENT_STRATEGY.md)
+
+## 提案（草稿）
+
+- 📝 [科研场景（research-lab）](RESEARCH_SCENARIO.md) —— 尚未实现的场景提案
 
 ## 返回入口
 

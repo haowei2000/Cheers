@@ -1,6 +1,6 @@
 # Cheers Main Chat Mockup - Figma Notes
 
-> Status: visual direction draft
+> **Status:** 📝 Draft / Proposal — visual direction draft, not yet implemented; may change without notice.
 > File: `main-chat-clean.svg`
 > Date: 2026-06-02
 

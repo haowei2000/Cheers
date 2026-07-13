@@ -13,21 +13,25 @@
 - [社区与贡献](community/CONTRIBUTING.md)
 - [发布说明](release_note/README.md)
 
-## 分类目录
+## 正式参考（当前状态）
 
-- 规划与路线：[`policies`](policies/)
+以下文档描述 Cheers 当前的真实运作方式。当它们与规划类文档冲突时，以这些为准。
+
+- [项目概览](PROJECT_OVERVIEW.zh-CN.md) / [English](PROJECT_OVERVIEW.md)
+- [产品路线图](ROADMAP.zh-CN.md) / [English](ROADMAP.md)
+- 帮助与操作文档：[`help`](help/)
+- 架构与协议文档：[`arch`](arch/)
 - 开发与集成：[`developer`](developer/)
 - 治理与合规：[`governance`](governance/)
 - 运维与问题复盘：[`ops`](ops/)
-- 帮助与操作文档：[`help`](help/)
-- 架构文档：[`arch`](arch/)
 - 发布说明：[`release_note`](release_note/)
 
-## 兼容入口
+## 草稿与规划文档
 
-如遇旧链接仍指向根目录文档名称，可通过以下兼容页跳转到当前归档路径：
+工作文档——计划、提案与阶段性存档。每篇顶部都带有状态横幅，**并非**当前状态的权威参考。
 
-- [ROADMAP](ROADMAP.md)
-- [路线图（中文）](ROADMAP.zh-CN.md)
-- [PROJECT_OVERVIEW](PROJECT_OVERVIEW.md)
-- [项目说明（中文）](PROJECT_OVERVIEW.zh-CN.md)
+- 🛠 规划中 —— [工程执行路线图](arch/ROADMAP.md)、[数据流全景与改造计划](arch/DATA_FLOW_AND_REFACTOR_PLAN.md)、[网关重构计划](arch/REFACTOR_PLAN.md)
+- 📝 草稿 / 提案 —— [科研场景](arch/RESEARCH_SCENARIO.md)、[frontend-next Figma 设计稿说明](design/frontend-next/main-chat-full-base.figma-notes.md)
+- 🗄 历史存档 —— [M1 演示手册](DEMO_M1.md)、[M1 安全评审](SECURITY_REVIEW_M1.md)
+
+完整清单见[文档索引](INDEX.zh-CN.md)。

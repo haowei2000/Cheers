@@ -1,5 +1,7 @@
 # M1 Demo Runbook — message → @bot → streaming reply
 
+> **Status:** 🗄 Historical — point-in-time runbook from the M1 milestone (2026-06); commands and ports may be stale. For current setup see [docs/help/deployment.md](help/deployment.md).
+
 End-to-end walkthrough of the M1 core loop: a user creates a workspace/channel,
 sends a message that `@mentions` an external bot, the bot (a local ACP agent
 reverse-connected through the **Rust ACP connector**) streams a reply, it
