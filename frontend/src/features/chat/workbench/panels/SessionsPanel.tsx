@@ -16,6 +16,7 @@ import {
   getSessionControls,
   createChannelBotSession,
   closeChannelBotSession,
+  setPrimaryChannelBotSession,
   setSessionMode,
   setSessionConfigOption,
   setSessionAdditionalDirs,
@@ -94,6 +95,15 @@ function SessionCard({
   const isSelected = selected && s.session_id === selected;
   const [open, setOpen] = useState(false); // ⓘ details
   const [busy, setBusy] = useState(false);
+  // Drag-to-promote: drag a non-primary card onto its bot's PRIMARY card to make
+  // it the new primary (native HTML5 DnD, desktop-only like the window drags).
+  // The bot id rides in the drag TYPE — dragover can only read types, not data —
+  // so a cross-bot drop never lights up as a target.
+  const [dropOver, setDropOver] = useState(false);
+  const canSetPrimary = !!controls?.can_set_primary;
+  const dndType = `application/x-cheers-session-${s.bot_id}`;
+  const draggable = canSetPrimary && !s.is_primary && !busy;
+  const dropTarget = canSetPrimary && s.is_primary;
 
   // The session's effective posture mode: per-session override → the agent's preset default.
   const mode =
@@ -143,10 +153,45 @@ function SessionCard({
 
   return (
     <div
+      draggable={draggable}
+      title={draggable ? "Drag onto the primary session to make this the primary" : undefined}
+      onDragStart={
+        draggable
+          ? (e) => {
+              e.dataTransfer.setData(dndType, s.session_id);
+              e.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
+      onDragOver={
+        dropTarget
+          ? (e) => {
+              if (e.dataTransfer.types.includes(dndType)) {
+                e.preventDefault(); // allow the drop
+                e.dataTransfer.dropEffect = "move";
+                setDropOver(true);
+              }
+            }
+          : undefined
+      }
+      onDragLeave={dropTarget ? () => setDropOver(false) : undefined}
+      onDrop={
+        dropTarget
+          ? (e) => {
+              setDropOver(false);
+              const sid = e.dataTransfer.getData(dndType);
+              if (!sid || sid === s.session_id) return;
+              e.preventDefault();
+              run(() => setPrimaryChannelBotSession(channelId, s.bot_id, sid));
+            }
+          : undefined
+      }
       className={`rounded-lg border px-3 py-2 ${
         isSelected
           ? "border-emerald-500/40 bg-emerald-500/10"
           : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700"
+      } ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${
+        dropOver ? "ring-2 ring-indigo-500/60" : ""
       }`}
     >
       {/* Card face: bot · primary chip · status · created · ⓘ · ✕ */}

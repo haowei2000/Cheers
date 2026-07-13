@@ -119,31 +119,48 @@ pub async fn trigger_bot_replies(
             continue;
         }
 
-        // Per-channel session (see messages.rs): scope-derived stable key.
-        let provider_session_key = provider_session_key_for_bot_channel(channel_id, bot_id);
-        let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
-            .await?
-            .unwrap_or_else(|| bot_id.to_string());
-        let session = sessions::acquire_scope_session(
-            db,
-            bot_id,
-            &provider_account_id,
-            &provider_session_key,
-            sessions::SESSION_SCOPE_CHANNEL,
-            &channel_id.to_string(),
-            None,
-            "primary",
-        )
-        .await;
+        // Per-channel session (see messages.rs): the primary BINDING is
+        // authoritative (a promoted session keeps its own key); fall back to the
+        // scope-derived deterministic key when no live primary is bound.
+        let (provider_session_key, resolved_session_id) =
+            match sessions::resolve_primary_session(db, bot_id, &channel_id.to_string())
+                .await
+                .ok()
+                .flatten()
+            {
+                Some((sid, key)) => {
+                    let _ = sessions::touch_session(db, sid).await;
+                    (key, Some(sid))
+                }
+                None => {
+                    let provider_session_key =
+                        provider_session_key_for_bot_channel(channel_id, bot_id);
+                    let provider_account_id = resolve_provider_account_id_for_bot(db, bot_id)
+                        .await?
+                        .unwrap_or_else(|| bot_id.to_string());
+                    let session = sessions::acquire_scope_session(
+                        db,
+                        bot_id,
+                        &provider_account_id,
+                        &provider_session_key,
+                        sessions::SESSION_SCOPE_CHANNEL,
+                        &channel_id.to_string(),
+                        None,
+                        "primary",
+                    )
+                    .await;
 
-        if let Err(e) = &session {
-            tracing::warn!(
-                bot_id = %bot_id,
-                channel_id = %channel_id,
-                err = %e,
-                "session acquire failed for bot reply trigger"
-            );
-        }
+                    if let Err(e) = &session {
+                        tracing::warn!(
+                            bot_id = %bot_id,
+                            channel_id = %channel_id,
+                            err = %e,
+                            "session acquire failed for bot reply trigger"
+                        );
+                    }
+                    (provider_session_key, session.ok().map(|s| s.session_id))
+                }
+            };
 
         if let dispatcher::DispatchResult::DbError(e) = dispatcher::dispatch(
             db,
@@ -157,7 +174,7 @@ pub async fn trigger_bot_replies(
                 channel_id,
                 depth: next_depth,
                 provider_session_key,
-                session_id: session.ok().map(|s| s.session_id),
+                session_id: resolved_session_id,
                 // Every hop inherits the cascade's chain_id, so the whole thing is
                 // cancelable as one unit and the gate above blocks it once cancelled.
                 chain_id: chain_id.map(ToString::to_string),

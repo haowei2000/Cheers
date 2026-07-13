@@ -52,6 +52,21 @@ export async function createChannelBotSession(
   });
 }
 
+/**
+ * Promote a session to the channel's PRIMARY for its bot — the session
+ * Auto/mention messages route to. The demoted session stays addressable as an
+ * "other" session. Gated by the session_set_primary grant (owner-default).
+ */
+export async function setPrimaryChannelBotSession(
+  channelId: string,
+  botId: string,
+  sessionId: string
+): Promise<void> {
+  await apiJson(`/channels/${channelId}/bots/${botId}/sessions/${sessionId}/primary`, {
+    method: "POST",
+  });
+}
+
 /** Close (terminate + detach) an "other" session — gated by the session_close grant. */
 export async function closeChannelBotSession(
   channelId: string,
@@ -67,6 +82,8 @@ export interface SessionControls {
   can_set_config_option: boolean;
   can_create_session: boolean;
   can_close_session: boolean;
+  /** May promote a session to the channel's primary for this bot. */
+  can_set_primary: boolean;
   allowed_modes: string[];
   /** The agent's preset mode — the effective mode when no per-session override is set. */
   current_mode?: string;
