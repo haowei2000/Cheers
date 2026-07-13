@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
@@ -58,6 +58,17 @@ import type { PresenceFocus } from "./hooks/useChatRealtime";
  * each on its own connector/machine, so everything is keyed by the selected bot.
  * Deep-link (from a linkified path in a bot reply) via initialBotId + initialPath.
  */
+// Click-gated code editor (CodeMirror 6): shared with the workbench File panel. Only loads
+// when a text file is opened here — off the chat critical path.
+const CodeEditor = lazy(() =>
+  import("./workbench/CodeEditor").then((m) => ({ default: m.CodeEditor }))
+);
+
+// Click-gated Material Icon Theme file/folder icons for the tree — its own lazy chunk
+// (~279 kB gzip monolith), fetched only when this dialog's tree renders. Falls back to the
+// lucide glyphs (below) until the chunk lands.
+const MaterialFsIcon = lazy(() => import("./MaterialFsIcon"));
+
 /** Turn an API error into a human message (strip the JSON envelope / "bad request:"). */
 function cleanErr(e: unknown): string {
   const s = e instanceof Error ? e.message : String(e);
@@ -1561,11 +1572,19 @@ export function RemoteWorkspaceDialog({
                             file?.path === ent.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-300"
                           }`}
                         >
-                          {ent.is_dir ? (
-                            <Folder className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                          ) : (
-                            <FileText className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                          )}
+                          <Suspense
+                            fallback={
+                              ent.is_dir ? (
+                                <Folder className="w-4 h-4 text-sky-400 shrink-0" />
+                              ) : (
+                                <FileText className="w-4 h-4 text-zinc-500 shrink-0" />
+                              )
+                            }
+                          >
+                            <span className="shrink-0 inline-flex" style={{ width: 16, height: 16 }}>
+                              <MaterialFsIcon isDir={ent.is_dir} name={ent.name} size={16} />
+                            </span>
+                          </Suspense>
                           <span className="truncate flex-1">{ent.name}</span>
                           {mk && (
                             <span
@@ -1790,16 +1809,19 @@ export function RemoteWorkspaceDialog({
                 )}
                 <div className="flex-1 overflow-auto">
                   {file.is_text ? (
-                    <textarea
-                      value={edit}
-                      onChange={(e) => {
-                        setEdit(e.target.value);
-                        setDirty(true);
-                      }}
-                      spellCheck={false}
-                      // 16px below md prevents iOS Safari's auto-zoom on focus.
-                      className="w-full h-full resize-none bg-zinc-950 text-zinc-200 font-mono text-xs max-md:text-base p-2 outline-none"
-                    />
+                    // CodeMirror 6 editor: line numbers, undo, and syntax highlighting by
+                    // filename (real repo source). Still inert text — no HTML execution.
+                    <Suspense fallback={<div className="w-full h-full bg-zinc-950" aria-busy="true" />}>
+                      <CodeEditor
+                        value={edit}
+                        onChange={(v) => {
+                          setEdit(v);
+                          setDirty(true);
+                        }}
+                        path={file.filename}
+                        className="w-full h-full"
+                      />
+                    </Suspense>
                   ) : isImage ? (
                     <img
                       src={`data:${file.content_type};base64,${file.content_b64}`}
