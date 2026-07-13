@@ -265,6 +265,56 @@ Selectable rows: `px-2.5 py-1.5 rounded-md text-sm hover:bg-zinc-800`;
 selected `bg-zinc-800 text-zinc-100` (nav lists may tint with indigo per
 §2.8's active pill). Every interactive row needs a hover state.
 
+### 2.13 Field (label + control + hint)
+
+Use `<Field>` (`src/components/ui/field.tsx`) to stack a form label over a
+control with an optional hint — the label is **persistent**, never a
+placeholder standing in for one (HIG data-entry floor). The label uses the §1
+form-label recipe; the control is any shared field (`Input`/`Textarea`/
+`Select`) or a custom row (e.g. an emoji box + text input side by side).
+
+```tsx
+<Field label="Display name" htmlFor="dn">
+  <Input id="dn" value={name} onChange={…} />
+</Field>
+```
+
+`<SectionHead>` (same file) is the in-card divider heading —
+`text-xs font-semibold text-zinc-400 uppercase tracking-wider`, optional
+leading icon. Don't repeat a heading the surrounding chrome already says (a
+card whose header shows the identity doesn't also need a "Profile" heading).
+
+### 2.14 Hover help (`<Tip>`)
+
+Supplementary explanation — what a control does, a constraint, a one-time
+note, a consequence preview — lives behind `<Tip>`
+(`src/components/ui/tip.tsx`), not as a resting paragraph of body copy. The
+bubble shows on **hover and keyboard focus** (touch: tap the trigger); it is a
+lighter transient layer (`bg-zinc-700`) so it separates from the `zinc-900`
+card, `role="tooltip"`, associated to its trigger via `aria-describedby`.
+
+```tsx
+<Tip content="Asks the bot on a schedule and writes the answer back." />   {/* default ⓘ trigger */}
+<Tip content={`Current prompt: "${p}". Click to edit.`}>                    {/* wrap any control */}
+  <Button size="sm" variant="secondary">Edit prompt</Button>
+</Tip>
+```
+
+**Never hide behind hover** anything the user must see to act correctly:
+validation errors stay inline (`text-red-400` next to the field), and
+irreversible consequences are confirmed in a dialog, not merely tooltipped.
+Hover help is for "nice to know", not "need to know".
+
+### 2.15 Danger zone
+
+Destructive actions (delete, disable) sit in their own trailing section
+behind a `Danger zone` `<SectionHead>`, divider-separated from the form above
+— never inline next to ordinary Save/Add controls. Buttons use the danger
+**soft** recipe (`bg-red-950/40 text-red-300 hover:bg-red-950/70`), never the
+accent fill; the irreversible one gets a `…` suffix (`Delete…`) to signal a
+confirm step follows (§7 reversibility — prefer a confirm dialog to an
+inline red button that fires on first click). Consequences go in a `<Tip>`.
+
 ---
 
 ## 3. Known gaps (extraction roadmap)
@@ -272,12 +322,12 @@ selected `bg-zinc-800 text-zinc-100` (nav lists may tint with indigo per
 Patterns that should graduate into `src/components/ui/` — until then, copy
 the recipes above:
 
-1. `Select` / `Textarea` (mirror `Input`)
-2. `SearchInput` (forms A & B of §2.2)
-3. `EmptyState` (§2.9)
-4. `Spinner` (§2.10)
-5. `Field` + `Label` (label + control + hint stack, §1 typography)
-6. `Badge` (§2.6)
+1. `SearchInput` (forms A & B of §2.2)
+2. `Badge` (§2.6)
+
+Extracted (were gaps, now shared components): `Select` / `Textarea`
+(mirror `Input`), `EmptyState` (§2.9), `Spinner` (§2.10), `Field` +
+`SectionHead` (§2.13), `Tip` (§2.14).
 
 The full audit that produced this doc: visual-consistency reports
 2026-07-10 (static sweep + live review, see PR #134 context).

@@ -8,7 +8,11 @@ import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Field, SectionHead, MetaRow } from "@/components/ui/field";
 import { BotsManager } from "@/features/bots/BotsManager";
+import { CopyButton } from "@/features/bots/BotDetailPanel";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
@@ -194,14 +198,11 @@ function ProfileEditCard() {
     return url;
   }
 
-  const inputCls =
-    "w-full rounded-lg bg-zinc-800 px-3 py-2 text-base md:text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500";
-
   // Load failed: don't render the editable form. Saving an empty form over a
   // profile that never hydrated would silently wipe the user's real details.
   if (loadError) {
     return (
-      <div className="bg-zinc-900 rounded-2xl p-6">
+      <div className="bg-zinc-900 rounded-xl p-6">
         <p className="text-sm font-medium text-zinc-200">Couldn't load your profile</p>
         <p className="text-xs text-zinc-400 mt-1">
           Editing is disabled until it loads so your saved details aren't
@@ -216,9 +217,14 @@ function ProfileEditCard() {
     );
   }
 
+  const handle = user?.username ?? user?.user_id?.slice(0, 8);
+
   return (
-    <div className="bg-zinc-900 rounded-2xl p-6 space-y-4">
-      <div className="flex items-center gap-4">
+    // One card, three divider-separated regions: identity header → form → details.
+    <div className="bg-zinc-900 rounded-xl">
+      {/* Identity header — the avatar is the upload entry; this doubles as a
+          live preview, so no separate preview block above the form. */}
+      <div className="flex items-center gap-4 p-5">
         <AvatarUpload
           name={displayName || user?.username}
           id={user?.user_id}
@@ -226,66 +232,79 @@ function ProfileEditCard() {
           size="lg"
           onUpload={handleAvatarUpload}
         />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="font-semibold text-zinc-100 truncate">
             {statusEmoji && <span className="mr-1">{statusEmoji}</span>}
             {displayName || user?.username || "Unknown"}
           </p>
           <p className="text-sm text-zinc-400 truncate">
-            {statusText || `@${user?.username ?? user?.user_id?.slice(0, 8)}`}
+            @{handle}
+            {statusText ? ` · ${statusText}` : ""}
           </p>
         </div>
       </div>
 
-      <div className="grid gap-3">
-        <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-          Display name
-          <input
+      <div className="border-t border-zinc-800" />
+
+      <div className="p-5 space-y-4">
+        <Field label="Display name" htmlFor="pf-name">
+          <Input
+            id="pf-name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Your name"
-            className={`${inputCls} mt-1 normal-case font-normal tracking-normal`}
           />
-        </label>
+        </Field>
 
-        <div>
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Status</label>
-          <div className="flex gap-2 mt-1">
-            <input
+        <Field label="Status">
+          <div className="flex gap-2">
+            <Input
               value={statusEmoji}
               onChange={(e) => setStatusEmoji(e.target.value)}
               placeholder="🟢"
               maxLength={8}
-              className={`${inputCls} w-16 text-center`}
+              className="w-16 text-center"
               aria-label="Status emoji"
             />
-            <input
+            <Input
               value={statusText}
               onChange={(e) => setStatusText(e.target.value)}
               placeholder="What you're up to (e.g. focusing, on vacation)"
               maxLength={140}
-              className={inputCls}
               aria-label="Status text"
             />
           </div>
-        </div>
+        </Field>
 
-        <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-          Bio
-          <textarea
+        <Field label="Bio" htmlFor="pf-bio">
+          <Textarea
+            id="pf-bio"
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             placeholder="A little about you"
             rows={3}
-            className={`${inputCls} mt-1 normal-case font-normal tracking-normal resize-y`}
+            className="resize-y"
           />
-        </label>
-      </div>
+        </Field>
 
-      <div>
         <Button onClick={() => void save()} disabled={busy || !loaded}>
           {busy ? "Saving…" : "Save profile"}
         </Button>
+      </div>
+
+      <div className="border-t border-zinc-800" />
+
+      <div className="p-5 space-y-3">
+        <SectionHead>Details</SectionHead>
+        <MetaRow label="User ID">
+          <code className="flex-1 truncate rounded bg-zinc-800 px-2 py-1 text-zinc-400">
+            {user?.user_id ?? "—"}
+          </code>
+          {user?.user_id && <CopyButton value={user.user_id} label="" />}
+        </MetaRow>
+        <MetaRow label="Role">
+          <span className="capitalize text-zinc-300">{user?.role ?? "user"}</span>
+        </MetaRow>
       </div>
     </div>
   );
@@ -293,7 +312,6 @@ function ProfileEditCard() {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const setToken = useAuthStore((s) => s.setToken);
   const isAdmin = useIsAdmin();
@@ -365,27 +383,6 @@ export default function SettingsPage() {
               </h2>
 
               <ProfileEditCard />
-
-              <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
-                      User ID
-                    </label>
-                    <code className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded block truncate">
-                      {user?.user_id ?? "—"}
-                    </code>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
-                      Role
-                    </label>
-                    <span className="text-xs text-zinc-400 capitalize">
-                      {user?.role ?? "user"}
-                    </span>
-                  </div>
-                </div>
-              </div>
             </section>
           )}
 
