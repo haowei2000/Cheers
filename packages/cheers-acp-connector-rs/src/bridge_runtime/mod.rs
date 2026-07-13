@@ -3141,7 +3141,11 @@ mod tests {
             &["config", "user.name", "Tester"][..],
         ] {
             let out = run_git(dir, args).await.expect("git spawn");
-            assert!(out.status.success(), "git {args:?} failed: {}", git_stderr(&out));
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                git_stderr(&out)
+            );
         }
     }
 
