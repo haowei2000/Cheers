@@ -435,6 +435,11 @@ function BotGroup({
         const r = primaryElRef.current?.getBoundingClientRect();
         return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
       };
+      const cleanup = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+      };
       const onMove = (ev: PointerEvent) => {
         if (!started) {
           if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
@@ -443,8 +448,7 @@ function BotGroup({
         setDrag({ id: sessionId, hot: overPrimary(ev.clientX, ev.clientY) });
       };
       const onUp = (ev: PointerEvent) => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
+        cleanup();
         setDrag(null);
         // Promote when released over the primary card. `started` gates the visual
         // feedback (so a plain click doesn't flash), but the drop itself doesn't
@@ -452,8 +456,16 @@ function BotGroup({
         // click releases over its own (non-primary) card, so it never promotes.
         if (overPrimary(ev.clientX, ev.clientY)) void promote(sessionId);
       };
+      // pointercancel (touch interrupted, capture lost, element unmounts): tear the
+      // drag down cleanly — otherwise the listeners leak and the source card stays
+      // dimmed forever, and a stale onMove would corrupt the next drag.
+      const onCancel = () => {
+        cleanup();
+        setDrag(null);
+      };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [primary?.session_id, channelId, botId]

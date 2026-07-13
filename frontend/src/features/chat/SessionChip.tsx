@@ -392,7 +392,7 @@ export function SessionChip({
                     <span className="flex flex-col flex-1 min-w-0">
                       {/* line 1: tag (primary / time / dir basename) + status */}
                       <span className="flex items-center gap-2">
-                        <span className="truncate">{tagOf(s)}</span>
+                        <span className="min-w-0 truncate">{tagOf(s)}</span>
                         <span className="ml-auto text-[11px] text-zinc-400 flex-shrink-0">
                           {s.status}
                         </span>
