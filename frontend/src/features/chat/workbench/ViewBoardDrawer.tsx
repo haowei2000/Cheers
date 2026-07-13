@@ -156,8 +156,14 @@ function ViewBoardDrawerImpl({
   // and a hidden card drops out of the grid. Mobile keeps the overlay-sheet.
   useLaneWindow();
 
+  // NB: no `flex` here — the desktop shell toggles display via `open ? "flex" :
+  // "hidden"`, and `cn` runs tailwind-merge: a hardcoded `flex` in this chrome
+  // would win the display conflict over `hidden`, so a CLOSED ViewBoard would
+  // still render as a static w-full block. With the lane's `display:contents`
+  // (nothing open) that block becomes a flex sibling of the chat column and
+  // crushes it to 0 width. WorkbenchDrawer omits `flex` for the same reason.
   const cardChrome =
-    "flex min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm";
+    "min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm";
   const shellClass = isMobile
     ? // z-40: above the chat chrome (z-30 header, z-10/z-20 composer popups,
       // sticky DiffView headers) but below true modals (z-50).
