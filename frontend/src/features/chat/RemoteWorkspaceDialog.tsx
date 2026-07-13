@@ -62,6 +62,11 @@ const CodeEditor = lazy(() =>
   import("./workbench/CodeEditor").then((m) => ({ default: m.CodeEditor }))
 );
 
+// Click-gated Material Icon Theme file/folder icons for the tree — its own lazy chunk
+// (~279 kB gzip monolith), fetched only when this dialog's tree renders. Falls back to the
+// lucide glyphs (below) until the chunk lands.
+const MaterialFsIcon = lazy(() => import("./MaterialFsIcon"));
+
 /** Turn an API error into a human message (strip the JSON envelope / "bad request:"). */
 function cleanErr(e: unknown): string {
   const s = e instanceof Error ? e.message : String(e);
@@ -1417,11 +1422,19 @@ export function RemoteWorkspaceDialog({
                             file?.path === ent.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-300"
                           }`}
                         >
-                          {ent.is_dir ? (
-                            <Folder className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                          ) : (
-                            <FileText className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                          )}
+                          <Suspense
+                            fallback={
+                              ent.is_dir ? (
+                                <Folder className="w-4 h-4 text-sky-400 shrink-0" />
+                              ) : (
+                                <FileText className="w-4 h-4 text-zinc-500 shrink-0" />
+                              )
+                            }
+                          >
+                            <span className="shrink-0 inline-flex" style={{ width: 16, height: 16 }}>
+                              <MaterialFsIcon isDir={ent.is_dir} name={ent.name} size={16} />
+                            </span>
+                          </Suspense>
                           <span className="truncate flex-1">{ent.name}</span>
                           {mk && (
                             <span
