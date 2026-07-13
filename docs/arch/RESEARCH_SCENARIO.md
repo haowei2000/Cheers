@@ -1,6 +1,6 @@
 # Research Scenario ("research-lab") — Design Proposal
 
-> **Status**: Proposal (v1) · **Date**: 2026-07-07 · **Language**: English default
+> **Status:** 📝 Draft / Proposal — not yet implemented; may change without notice. · v1 · 2026-07-07 · Language: English default
 >
 > Goal: show that Cheers can host an **AutoSci-style scientific-research workflow**
 > ([github.com/skyllwt/AutoSci](https://github.com/skyllwt/AutoSci)) as a *scenario

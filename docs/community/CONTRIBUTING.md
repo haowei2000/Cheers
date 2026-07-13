@@ -51,4 +51,4 @@ release or CI wiring for them.
 
 ## Security issues
 
-Please do not disclose vulnerability details in public issues. Press [SECURITY.md](SECURITY.md) to report a security issue.
+Please do not disclose vulnerability details in public issues. Press [SECURITY.md](../governance/SECURITY.md) to report a security issue.

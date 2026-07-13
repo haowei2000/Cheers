@@ -1,6 +1,6 @@
 # Cheers Main Chat Mockup - Full Base Layer Notes
 
-> Status: visual direction draft v2
+> **Status:** 📝 Draft / Proposal — visual direction draft v2, not yet implemented; may change without notice.
 > File: `main-chat-full-base.svg`
 > Date: 2026-06-02
 

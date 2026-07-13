@@ -12,14 +12,11 @@
 
 ## 开发环境
 
-后端：
+网关（Rust 后端）：
 
 ```bash
-cd backend
-uv venv
-source .venv/bin/activate
-uv sync --extra dev
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd server
+cargo run   # 启动时自动运行 sqlx 迁移
 ```
 
 前端：
@@ -45,8 +42,7 @@ docker compose up -d
 根据变更范围运行：
 
 ```bash
-cd backend && uv run ruff check app/
-cd backend && uv run pytest ../tests -v
+cd server && cargo build && cargo test
 cd frontend && npm run build
 ```
 
@@ -61,9 +57,9 @@ npm 包变更还需要运行对应包目录下的 `npm run lint`、`npm test`、
 
 - 说明变更动机、核心方案和测试结果。
 - 涉及 API、配置、部署或用户流程时，同步更新文档。
-- 涉及数据库结构时，提交 Alembic 迁移并验证 upgrade。
+- 涉及数据库结构时，新增一个顺序编号的 sqlx 迁移（`server/migrations/<NNNN>_<desc>.sql`）；不要修改已经应用过的迁移。
 - 不要提交 `.env`、数据库、日志、上传文件、私钥、token 或生产配置。
 
 ## 安全问题
 
-请不要在公开 Issue 中披露漏洞细节。按 [SECURITY.md](SECURITY.md) 报告安全问题。
+请不要在公开 Issue 中披露漏洞细节。按 [SECURITY.md](../governance/SECURITY.md) 报告安全问题。
