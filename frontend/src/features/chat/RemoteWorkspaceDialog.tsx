@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
+import { FsTreeIcon } from "./FsTreeIcon";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
@@ -62,10 +63,6 @@ const CodeEditor = lazy(() =>
   import("./workbench/CodeEditor").then((m) => ({ default: m.CodeEditor }))
 );
 
-// Click-gated Material Icon Theme file/folder icons for the tree — its own lazy chunk
-// (~279 kB gzip monolith), fetched only when this dialog's tree renders. Falls back to the
-// lucide glyphs (below) until the chunk lands.
-const MaterialFsIcon = lazy(() => import("./MaterialFsIcon"));
 
 /** Turn an API error into a human message (strip the JSON envelope / "bad request:"). */
 function cleanErr(e: unknown): string {
@@ -1422,19 +1419,7 @@ export function RemoteWorkspaceDialog({
                             file?.path === ent.path ? "bg-zinc-800 text-zinc-100" : "text-zinc-300"
                           }`}
                         >
-                          <Suspense
-                            fallback={
-                              ent.is_dir ? (
-                                <Folder className="w-4 h-4 text-sky-400 shrink-0" />
-                              ) : (
-                                <FileText className="w-4 h-4 text-zinc-500 shrink-0" />
-                              )
-                            }
-                          >
-                            <span className="shrink-0 inline-flex" style={{ width: 16, height: 16 }}>
-                              <MaterialFsIcon isDir={ent.is_dir} name={ent.name} size={16} />
-                            </span>
-                          </Suspense>
+                          <FsTreeIcon isDir={ent.is_dir} name={ent.name} size={16} />
                           <span className="truncate flex-1">{ent.name}</span>
                           {mk && (
                             <span
