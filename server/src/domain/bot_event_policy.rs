@@ -112,6 +112,7 @@ pub const OWNER_DEFAULT_INITIATE: &[&str] = &[
     "set_config_option",
     "session_create",
     "session_close",
+    "session_set_primary",
     "workspace_write",
 ];
 
@@ -896,6 +897,17 @@ mod tests {
             "session_close",
             Capability::Initiate
         ));
+        // set_primary is the same owner-default+grantable shape as create/close —
+        // it must be registered here too, or acp_policy::classify() never assigns
+        // it a class and acp_policy::allows() lets any member through unchecked.
+        assert!(!allows(
+            &[],
+            "c1",
+            "u1",
+            "member",
+            "session_set_primary",
+            Capability::Initiate
+        ));
         // ...but an explicit grant widens, and they're in the INITIATE vocabulary.
         let g = vec![rule(
             "c1",
@@ -914,7 +926,11 @@ mod tests {
             Capability::Initiate
         ));
         let ev = initiate_events();
-        assert!(ev.contains(&"session_create") && ev.contains(&"session_close"));
+        assert!(
+            ev.contains(&"session_create")
+                && ev.contains(&"session_close")
+                && ev.contains(&"session_set_primary")
+        );
     }
 
     #[test]
