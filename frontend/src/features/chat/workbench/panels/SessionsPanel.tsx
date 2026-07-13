@@ -5,16 +5,17 @@
 // mode/config controls and the ACP root set. The card matching the composer's
 // selected session is highlighted.
 //
-// Drag-to-promote (native HTML5 DnD, desktop): drag a non-primary card onto its
-// bot's primary card to make it the new primary. While a drag is in flight the
+// Drag-to-promote (pointer-based, desktop + touch): drag a non-primary card onto
+// its bot's primary card to make it the new primary. While a drag is in flight the
 // source dims, the bot's primary card shows a dashed "droppable" hint, and
-// hovering it surfaces a "↑ Make primary" pill.
+// hovering it surfaces a "↑ Make primary" pill. (Pointer events, not native HTML5
+// DnD, which dropped silently in practice.)
 //
 // This is the SINGLE home for per-channel session management. Creating a session
 // is one "+ New session" button that opens a small dialog: pick a bot (only those
 // the caller holds a session_create grant for) + optional working directory /
 // extra roots. All mutations refetch the board.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import toast from "react-hot-toast";
 import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info, Folder, ArrowUp } from "lucide-react";
 import {
@@ -71,34 +72,40 @@ function SessionCard({
   channelId,
   controls,
   refetch,
-  dragging,
-  setDragging,
+  busy,
+  dragId,
+  dropHot,
+  onDragPointerDown,
+  registerPrimary,
 }: {
   s: SessionRow;
   selected: string;
   channelId: string;
   controls?: SessionControls;
   refetch: () => void;
+  /** A promote/close is in flight for this bot group (disables card actions). */
+  busy: boolean;
   /** session_id currently being dragged within this bot group (null = none). */
-  dragging: string | null;
-  setDragging: (id: string | null) => void;
+  dragId: string | null;
+  /** The drag pointer is currently over the primary card (drop would land). */
+  dropHot: boolean;
+  /** Pointer-down on a non-primary card starts a drag (handled by the group). */
+  onDragPointerDown: (e: ReactPointerEvent) => void;
+  /** The primary card registers its element so the group can hit-test the drop. */
+  registerPrimary: (el: HTMLDivElement | null) => void;
 }) {
   const isSelected = selected && s.session_id === selected;
   const [open, setOpen] = useState(false); // ⓘ details
-  const [busy, setBusy] = useState(false);
-  // Drag-to-promote: drag a non-primary card onto its bot's PRIMARY card to make
-  // it the new primary (native HTML5 DnD, desktop-only like the window drags).
-  // The bot id rides in the drag TYPE — dragover can only read types, not data —
-  // so a cross-bot drop never lights up as a target.
-  const [dropOver, setDropOver] = useState(false);
+  const [localBusy, setLocalBusy] = useState(false); // per-card actions (mode/config/roots/close)
+  // Drag-to-promote is pointer-based (works with touch + reliable across browsers,
+  // unlike native HTML5 DnD): a non-primary card is dragged onto its bot's PRIMARY
+  // card. The group owns the pointer tracking + hit-test; the card just renders the
+  // feedback and starts the drag on pointer-down.
   const canSetPrimary = !!controls?.can_set_primary;
-  const dndType = `application/x-cheers-session-${s.bot_id}`;
-  const draggable = canSetPrimary && !s.is_primary && !busy;
+  const canDrag = canSetPrimary && !s.is_primary && !busy;
   const dropTarget = canSetPrimary && s.is_primary;
-  // Drag feedback (scoped to this bot group via `dragging`): this card is the one
-  // being dragged, or SOME sibling is — so the primary card can invite the drop.
-  const isDragging = dragging === s.session_id;
-  const dragActive = dragging != null;
+  const isDragging = dragId === s.session_id;
+  const dragActive = dragId != null;
 
   // The session's effective posture mode: per-session override → the agent's preset default.
   const mode =
@@ -107,8 +114,9 @@ function SessionCard({
     "";
   const cfgValues = s.session_config?.config_options ?? {};
 
+  const actionBusy = busy || localBusy;
   async function run(fn: () => Promise<void>) {
-    setBusy(true);
+    setLocalBusy(true);
     try {
       await fn();
       // The composer's session-controls cache (model chip, ComposerBotSettings)
@@ -121,7 +129,7 @@ function SessionCard({
     } catch (e) {
       toast.error(String(e));
     } finally {
-      setBusy(false);
+      setLocalBusy(false);
     }
   }
 
@@ -150,54 +158,24 @@ function SessionCard({
   // header now). Left-truncated so the meaningful tail (project dir) stays visible.
   const wdLabel = cwd || "default";
 
+  const showHot = dropTarget && dropHot; // pointer over the primary while dragging
+
   return (
     <div
-      draggable={draggable}
-      title={draggable ? "Drag onto the primary session to make it primary" : undefined}
-      onDragStart={
-        draggable
-          ? (e) => {
-              e.dataTransfer.setData(dndType, s.session_id);
-              e.dataTransfer.effectAllowed = "move";
-              setDragging(s.session_id);
-            }
-          : undefined
-      }
-      onDragEnd={draggable ? () => setDragging(null) : undefined}
-      onDragOver={
-        dropTarget
-          ? (e) => {
-              if (e.dataTransfer.types.includes(dndType)) {
-                e.preventDefault(); // allow the drop
-                e.dataTransfer.dropEffect = "move";
-                setDropOver(true);
-              }
-            }
-          : undefined
-      }
-      onDragLeave={dropTarget ? () => setDropOver(false) : undefined}
-      onDrop={
-        dropTarget
-          ? (e) => {
-              setDropOver(false);
-              setDragging(null);
-              const sid = e.dataTransfer.getData(dndType);
-              if (!sid || sid === s.session_id) return;
-              e.preventDefault();
-              run(() => setPrimaryChannelBotSession(channelId, s.bot_id, sid));
-            }
-          : undefined
-      }
+      ref={dropTarget ? registerPrimary : undefined}
+      onPointerDown={canDrag ? onDragPointerDown : undefined}
+      title={canDrag ? "Drag onto the primary session to make it primary" : undefined}
+      style={canDrag ? { touchAction: "none" } : undefined}
       className={cn(
         "relative rounded-lg border px-3 py-2 transition-[border-color,box-shadow,opacity]",
         isSelected
           ? "border-emerald-500/40 bg-emerald-500/10"
           : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700",
-        draggable && "cursor-grab active:cursor-grabbing",
+        canDrag && (isDragging ? "cursor-grabbing" : "cursor-grab"),
         isDragging && "opacity-40",
-        // A sibling is being dragged → invite the drop on the primary card.
-        dropTarget && dragActive && !isDragging && !dropOver && "border-dashed border-indigo-500/50",
-        dropOver && "border-indigo-500/60 bg-indigo-500/10 ring-2 ring-indigo-500/70"
+        // A card is being dragged → invite the drop on the primary card.
+        dropTarget && dragActive && !showHot && "border-dashed border-indigo-500/50",
+        showHot && "border-indigo-500/60 bg-indigo-500/10 ring-2 ring-indigo-500/70"
       )}
     >
       {/* Card face: workdir · primary badge · status · created · ⓘ · ✕ */}
@@ -238,7 +216,7 @@ function SessionCard({
         {canClose && (
           <button
             type="button"
-            disabled={busy}
+            disabled={actionBusy}
             title="Close this session"
             onClick={() => run(() => closeChannelBotSession(channelId, s.bot_id, s.session_id))}
             className="text-zinc-500 hover:text-red-300 disabled:opacity-40 shrink-0"
@@ -248,8 +226,8 @@ function SessionCard({
         )}
       </div>
 
-      {/* Drop affordance: a pill over the primary card while a sibling hovers it. */}
-      {dropOver && (
+      {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
+      {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white shadow-lg">
             <ArrowUp className="h-3 w-3" />
@@ -280,7 +258,7 @@ function SessionCard({
                   <span className="text-[10px] text-zinc-400">mode</span>
                   <select
                     value={controls!.allowed_modes.includes(mode) ? mode : ""}
-                    disabled={busy}
+                    disabled={actionBusy}
                     onChange={(e) =>
                       e.target.value &&
                       run(() => setSessionMode(channelId, s.bot_id, s.session_id, e.target.value))
@@ -306,7 +284,7 @@ function SessionCard({
                       <span className="text-[10px] text-zinc-400">{opt.name}</span>
                       <select
                         value={opt.options.some((o) => o.value === cur) ? cur : ""}
-                        disabled={busy}
+                        disabled={actionBusy}
                         onChange={(e) =>
                           e.target.value &&
                           run(() =>
@@ -347,7 +325,7 @@ function SessionCard({
                 {canEditRoots && (
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={actionBusy}
                     onClick={() => setDirsDraft(dirs.join("\n"))}
                     className="text-indigo-300/70 hover:text-indigo-200 disabled:opacity-40 shrink-0"
                   >
@@ -359,7 +337,7 @@ function SessionCard({
               <div className="mt-0.5 flex flex-col gap-1">
                 <textarea
                   value={dirsDraft}
-                  disabled={busy}
+                  disabled={actionBusy}
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
@@ -368,7 +346,7 @@ function SessionCard({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={actionBusy}
                     onClick={saveDirs}
                     className="rounded bg-indigo-600/15 px-1.5 py-0.5 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
                   >
@@ -376,7 +354,7 @@ function SessionCard({
                   </button>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={actionBusy}
                     onClick={() => setDirsDraft(null)}
                     className="text-zinc-400 hover:text-zinc-200"
                   >
@@ -411,9 +389,76 @@ function BotGroup({
   controls?: SessionControls;
   refetch: () => void;
 }) {
-  // The in-flight drag is scoped to this group so bot A's drag never lights up
-  // bot B's primary card (the DnD type also gates cross-bot drops).
-  const [dragging, setDragging] = useState<string | null>(null);
+  const primary = sessions.find((s) => s.is_primary);
+  const primaryElRef = useRef<HTMLDivElement | null>(null);
+  // Pointer-based drag-to-promote (scoped to this bot group): drag a non-primary
+  // card and drop it on the bot's PRIMARY card. Native HTML5 DnD proved
+  // unreliable (drops silently dropped), so the group owns a pointer drag — it
+  // tracks the cursor on `window`, hit-tests the primary card's rect, and on
+  // release over it promotes the dragged session. `hot` = cursor is over primary.
+  const [drag, setDrag] = useState<{ id: string; hot: boolean } | null>(null);
+  const [promoting, setPromoting] = useState(false);
+
+  async function promote(sessionId: string) {
+    setPromoting(true);
+    try {
+      await setPrimaryChannelBotSession(channelId, botId, sessionId);
+      bustBotControls(channelId, botId); // composer's controls cache is board-blind
+      refetch();
+      toast.success("Applied");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setPromoting(false);
+    }
+  }
+
+  const startDrag = useCallback(
+    (sessionId: string, e: ReactPointerEvent) => {
+      // Let the ⓘ / ✕ controls keep their clicks — only bare card space drags.
+      if ((e.target as HTMLElement).closest("button, select, input, textarea, a")) return;
+      if (!primary || sessionId === primary.session_id) return;
+      // Capture the pointer so every move/up lands on this element (and bubbles to
+      // our window listeners) even if the cursor leaves it; preventDefault stops
+      // text selection while dragging. Both mirror the lane-window drag.
+      const el = e.currentTarget as HTMLElement;
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        /* capture unsupported — window listeners still cover the drag */
+      }
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let started = false; // only begins after a small move, so a plain click is inert
+      const overPrimary = (x: number, y: number) => {
+        const r = primaryElRef.current?.getBoundingClientRect();
+        return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      };
+      const onMove = (ev: PointerEvent) => {
+        if (!started) {
+          if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+          started = true;
+        }
+        setDrag({ id: sessionId, hot: overPrimary(ev.clientX, ev.clientY) });
+      };
+      const onUp = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        setDrag(null);
+        // Promote when released over the primary card. `started` gates the visual
+        // feedback (so a plain click doesn't flash), but the drop itself doesn't
+        // require it — a fast flick with no tracked move still lands correctly. A
+        // click releases over its own (non-primary) card, so it never promotes.
+        if (overPrimary(ev.clientX, ev.clientY)) void promote(sessionId);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [primary?.session_id, channelId, botId]
+  );
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 px-1">
@@ -433,8 +478,13 @@ function BotGroup({
           channelId={channelId}
           controls={controls}
           refetch={refetch}
-          dragging={dragging}
-          setDragging={setDragging}
+          busy={promoting}
+          dragId={drag?.id ?? null}
+          dropHot={!!drag?.hot}
+          onDragPointerDown={(e) => startDrag(s.session_id, e)}
+          registerPrimary={(el) => {
+            primaryElRef.current = el;
+          }}
         />
       ))}
     </div>
