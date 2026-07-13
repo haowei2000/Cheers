@@ -9,6 +9,12 @@
 // full-screen sheets — pass `enabled: false` there and the hook is inert.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import {
+  beginSnap,
+  updateSnap,
+  endSnap,
+  getSnapState,
+} from "@/features/chat/workbench/laneSnap";
 
 // ── z-order: bottom→top list of window keys; raise() moves a key to the top ──
 // Base 40 keeps every floating window below true modals (Dialog & co. sit at
@@ -112,7 +118,11 @@ export interface WindowDrag {
 export function useWindowDrag(
   storageKey: string,
   enabled = true,
-  getBounds?: () => DOMRect | null
+  getBounds?: () => DOMRect | null,
+  // Bounded windows only: while dragging, publish the cursor to the lane snap
+  // store (drives the LaneZones overlay) and, on drop, snap position+size to the
+  // resolved zone. No-op when there's no bounds (free viewport float).
+  snap = false
 ): WindowDrag {
   const [geom, setGeom] = useState<Geom>(() => {
     try {
@@ -185,8 +195,15 @@ export function useWindowDrag(
       const y = e.clientY - drag.dy - (b ? b.top : 0);
       const p = clampPos({ x, y }, el.offsetWidth, el.offsetHeight, b);
       setGeom((g) => ({ ...g, ...p }));
+      // Feed the cursor (lane-local) to the snap overlay so it can highlight the
+      // zone the window will land in. Start the overlay on the first real move
+      // (not on pointerdown) so a bare header click never flashes the grid.
+      if (snap && b) {
+        if (!getSnapState().active) beginSnap({ width: b.width, height: b.height });
+        updateSnap({ x: e.clientX - b.left, y: e.clientY - b.top });
+      }
     },
-    [getBounds]
+    [getBounds, snap]
   );
 
   const onDragUp = useCallback(
@@ -194,9 +211,32 @@ export function useWindowDrag(
       if (!dragRef.current) return;
       dragRef.current = null;
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      // Snap to the zone under the drop point (position AND size), if any. Build
+      // the snapped geom explicitly and persist THAT — geomRef won't reflect the
+      // queued setGeom until the next render, so persist() alone would save the
+      // pre-snap position.
+      if (snap) {
+        const zone = endSnap();
+        if (zone) {
+          const snapped: Geom = {
+            ...geomRef.current,
+            x: Math.round(zone.x),
+            y: Math.round(zone.y),
+            w: Math.round(zone.w),
+            h: Math.round(zone.h),
+          };
+          setGeom(snapped);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(snapped));
+          } catch {
+            /* private mode etc. — geometry just won't persist */
+          }
+          return;
+        }
+      }
       persist();
     },
-    [persist]
+    [persist, snap, storageKey]
   );
 
   // ── resizing (bottom-right grip) ──

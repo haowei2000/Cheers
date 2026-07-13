@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
+import { ResizeGrip } from "@/components/ui/resize-grip";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { cn } from "@/lib/cn";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
@@ -313,9 +314,9 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     });
   };
   const minimized = collapsed && !isMobile;
-  // Desktop: a tile in the work-lane auto-grid (chrome unchanged; the grid sizes
-  // and positions it — no free drag/resize).
-  useLaneWindow();
+  // Desktop: a draggable/resizable floating window inside the work lane; dragging
+  // snaps it to the lane's grid zones.
+  const { float, drag } = useLaneWindow("cheers.float.workbench");
 
   const ctx: WorkbenchContext = useMemo(
     () => ({
@@ -346,18 +347,33 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
       }`
-    : // Desktop grid cell: fill the cell; minimized shrinks to content height and
-      // parks at the top of the cell instead of stretching full-height.
-      cn(
-        open ? "flex" : "hidden",
-        "min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
-        "w-full",
-        minimized ? "h-auto self-start max-h-full" : "h-full",
-        dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
-      );
+    : float
+      ? // Floating window in the lane: `absolute`, capped to the box; a default
+        // top-left spot until dragged; drag.style overrides w/h inline.
+        cn(
+          open ? "flex" : "hidden",
+          "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
+          "min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          !drag.pos && "top-2 left-2",
+          minimized ? "w-[300px]" : "w-[560px] h-[75%]",
+          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+        )
+      : // Fallback (no lane context): a plain docked column.
+        cn(
+          open ? "flex" : "hidden",
+          "min-h-0 flex-col rounded-xl border shadow-2xl ring-1 ring-black/40 backdrop-blur-sm bg-zinc-900/95 transition-colors",
+          minimized ? "w-[300px] self-start max-h-full" : "w-[560px] h-full",
+          dragOver || busy ? "border-amber-500/60" : "border-zinc-700/80"
+        );
+
+  // Minimized keeps its dragged spot but sheds the resized size (content-height).
+  const shellStyle = float ? (minimized ? drag.posStyle : drag.style) : undefined;
 
   return (
       <aside
+        ref={float ? drag.ref : undefined}
+        onPointerDownCapture={float ? drag.toFront : undefined}
+        style={shellStyle}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -366,7 +382,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         onDrop={onDrop}
         className={shellClass}
       >
-        <div className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none">
+        <div
+          {...(float ? drag.handleProps : {})}
+          className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none"
+        >
           {minimized ? (
             // Collapsed: the whole title is the expand target (bigger than the
             // 14px restore icon); a button also opts out of the drag handle.
@@ -510,6 +529,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         <div className={minimized ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>
           {open && <FilePanel ctx={ctx} />}
         </div>
+        {float && !minimized && <ResizeGrip resizeProps={drag.resizeProps} />}
       </aside>
   );
 }

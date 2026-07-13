@@ -1,12 +1,12 @@
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
-// SEPARATE from the file-based Workbench. On desktop it DOCKS into the channel's
-// work area (a real layout column on the right, beside the Workbench and the
-// Remote workspace) so it never covers the chat — the chat column narrows and
-// docks against it instead. On mobile it stays a near-full-screen overlay sheet.
+// SEPARATE from the file-based Workbench. On desktop it's a draggable/resizable
+// floating window inside the channel's work lane; dragging snaps it to the lane's
+// grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
+import { ResizeGrip } from "@/components/ui/resize-grip";
 import { cn } from "@/lib/cn";
 import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
@@ -149,19 +149,15 @@ function ViewBoardDrawerImpl({
   );
 
   const isMobile = useIsMobile();
-  // Desktop: a tile in the work-lane auto-grid. The card chrome is UNCHANGED; the
-  // grid sizes and positions it (fills its cell), so there's no free drag/resize.
-  // Minimal collapses to a compact content-height glance card that sits at the
-  // top of its cell. Closed keeps it mounted (hidden) so board state survives —
-  // and a hidden card drops out of the grid. Mobile keeps the overlay-sheet.
-  useLaneWindow();
+  // Desktop: a draggable/resizable floating window inside the work lane; dragging
+  // snaps it to the lane's grid zones. Minimal collapses to a content-height
+  // glance card that keeps its dragged spot. Closed keeps it mounted (hidden) so
+  // board state survives. Mobile keeps the overlay-sheet.
+  const { float, drag } = useLaneWindow("cheers.float.viewboard");
 
-  // NB: no `flex` here — the desktop shell toggles display via `open ? "flex" :
-  // "hidden"`, and `cn` runs tailwind-merge: a hardcoded `flex` in this chrome
-  // would win the display conflict over `hidden`, so a CLOSED ViewBoard would
-  // still render as a static w-full block. With the lane's `display:contents`
-  // (nothing open) that block becomes a flex sibling of the chat column and
-  // crushes it to 0 width. WorkbenchDrawer omits `flex` for the same reason.
+  // NB: no `flex` here — the shell toggles display via `open ? "flex" : "hidden"`,
+  // and `cn` runs tailwind-merge: a hardcoded `flex` in this chrome would win the
+  // display conflict over `hidden`, so a CLOSED drawer would still render visible.
   const cardChrome =
     "min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm";
   const shellClass = isMobile
@@ -176,18 +172,37 @@ function ViewBoardDrawerImpl({
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
       }`
-    : // Desktop grid cell: fill the cell; minimal shrinks to content height and
-      // parks at the top of the cell instead of stretching full-height.
-      cn(
-        open ? "flex" : "hidden",
-        cardChrome,
-        "w-full",
-        minimal ? "h-auto self-start max-h-full" : "h-full"
-      );
+    : float
+      ? // Floating window in the lane: `absolute`, capped to the box; a default
+        // top-left spot until dragged; drag.style overrides w/h inline.
+        cn(
+          open ? "flex" : "hidden",
+          "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
+          cardChrome,
+          !drag.pos && "top-2 left-2",
+          minimal ? "w-[280px]" : "w-[420px] h-[70%]"
+        )
+      : // Fallback (no lane context): a plain docked column.
+        cn(
+          open ? "flex" : "hidden",
+          cardChrome,
+          minimal ? "w-[280px] self-start max-h-full" : "w-[420px] h-full"
+        );
+
+  // Minimal keeps its dragged spot but sheds the resized size (content-height).
+  const shellStyle = float ? (minimal ? drag.posStyle : drag.style) : undefined;
 
   return (
-    <aside className={shellClass}>
-      <div className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none">
+    <aside
+      ref={float ? drag.ref : undefined}
+      onPointerDownCapture={float ? drag.toFront : undefined}
+      style={shellStyle}
+      className={shellClass}
+    >
+      <div
+        {...(float ? drag.handleProps : {})}
+        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
+      >
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           ViewBoard
@@ -294,6 +309,7 @@ function ViewBoardDrawerImpl({
           </div>
         </>
       )}
+      {float && !minimal && <ResizeGrip resizeProps={drag.resizeProps} />}
     </aside>
   );
 }
