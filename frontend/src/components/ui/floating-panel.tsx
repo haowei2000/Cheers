@@ -3,7 +3,7 @@ import { Maximize2, Minimize2, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
-import { LaneBoundsContext } from "@/hooks/useLaneWindow";
+import { LaneLayoutContext } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 
 // A NON-MODAL floating window (ViewBoard-style chrome): rounded elevated card,
@@ -12,9 +12,9 @@ import { ResizeGrip } from "@/components/ui/resize-grip";
 // `storageKey`); clicking anywhere in the window raises it above the others; the
 // Minimize button collapses it to a compact title bar.
 //
-// Where it floats depends on context: inside a LaneBoundsContext (the work lane)
-// it's `absolute` and drag/resize stay inside that box; with no lane (e.g. the
-// Channel files dialog) it floats `fixed` over the whole viewport.
+// Placement depends on context: inside the work lane (LaneLayoutContext = "grid")
+// it renders as a tiled grid cell the lane sizes and positions — no drag/resize.
+// With no lane it floats `fixed` over the whole viewport, draggable/resizable.
 //
 // Mobile: a full-screen sheet (drag/resize/minimize disabled), mirroring
 // Dialog's fullScreenOnMobile behavior so heavy panels are never crushed.
@@ -51,9 +51,11 @@ export function FloatingPanel({
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
-  const getBounds = useContext(LaneBoundsContext);
-  // Bounded to the lane when one is present; otherwise floats over the viewport.
-  const drag = useWindowDrag(storageKey, !isMobile, getBounds ?? undefined);
+  const layout = useContext(LaneLayoutContext);
+  // In the lane grid the panel is a tiled cell (the grid sizes/positions it — no
+  // drag/resize). With no lane it stays a free-floating window over the viewport.
+  const grid = !isMobile && layout === "grid";
+  const drag = useWindowDrag(storageKey, !isMobile && !grid, undefined);
   // Minimized = just the title bar (a compact chip you can park anywhere).
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(`${storageKey}.min`) === "1"
@@ -87,8 +89,13 @@ export function FloatingPanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [isMobile, onClose]);
 
-  // Collapsed keeps the dragged position but sheds the resized width/height.
-  const style: CSSProperties = collapsed && !isMobile ? drag.posStyle : drag.style;
+  // Grid cell: no inline geometry (the grid owns it). Free-floating: collapsed
+  // keeps the dragged position but sheds the resized width/height.
+  const style: CSSProperties | undefined = grid
+    ? undefined
+    : collapsed && !isMobile
+      ? drag.posStyle
+      : drag.style;
 
   // Title label. While collapsed the whole label is the expand target (a much
   // bigger hit area than the 14px restore icon); the button wrapper also opts
@@ -128,27 +135,29 @@ export function FloatingPanel({
 
   return (
     <div
-      ref={drag.ref}
-      onPointerDownCapture={drag.toFront}
+      ref={grid ? undefined : drag.ref}
+      onPointerDownCapture={grid ? undefined : drag.toFront}
       style={style}
       className={cn(
         // Borderless (DESIGN.md §2.4): shadow-2xl is the draggable-window elevation.
-        // Absolute inside the lane, fixed over the viewport (drag.style sets the
-        // matching `position` so this only decides the fallback box).
-        drag.bounded ? "absolute" : "fixed",
         "flex flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm",
-        // Cap to the box, leaving a 2rem inset in the lane so a default-spawned
-        // window (and its bottom-right resize grip) always fits inside the
-        // overflow-clip; or short of the composer over the viewport.
-        drag.bounded ? "max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]" : "max-w-[94vw] max-h-[calc(100dvh-10rem)]",
         // Mobile: full-screen sheet — position/size overrides beat the defaults.
         "max-md:inset-0 max-md:max-w-none max-md:max-h-none max-md:w-auto max-md:rounded-none max-md:translate-x-0 max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]",
-        !drag.pos && defaultPosClassName,
-        collapsed && !isMobile ? collapsedWidth : className
+        grid
+          ? // Grid cell: fill the cell; collapsed shrinks to content height and
+            // parks at the top of the cell instead of stretching full-height.
+            cn("relative w-full", collapsed ? "h-auto self-start max-h-full" : "h-full")
+          : // Free-floating window over the viewport.
+            cn(
+              "fixed",
+              "max-w-[94vw] max-h-[calc(100dvh-10rem)]",
+              !drag.pos && defaultPosClassName,
+              collapsed && !isMobile ? collapsedWidth : className
+            )
       )}
     >
       <div
-        {...drag.handleProps}
+        {...(grid ? {} : drag.handleProps)}
         className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
       >
         {titleEl}
@@ -182,7 +191,7 @@ export function FloatingPanel({
           {children}
         </div>
       )}
-      {!collapsed && !isMobile && <ResizeGrip resizeProps={drag.resizeProps} />}
+      {!collapsed && !isMobile && !grid && <ResizeGrip resizeProps={drag.resizeProps} />}
     </div>
   );
 }

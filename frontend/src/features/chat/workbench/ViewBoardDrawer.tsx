@@ -7,7 +7,6 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
-import { ResizeGrip } from "@/components/ui/resize-grip";
 import { cn } from "@/lib/cn";
 import { sessionTag } from "@/features/chat/sessionLabel";
 import type { SendResourceReq } from "./fsClient";
@@ -141,20 +140,18 @@ function ViewBoardDrawerImpl({
   );
 
   const isMobile = useIsMobile();
-  // Desktop: a draggable/resizable window floating inside the work lane. The
-  // card chrome is UNCHANGED; only its placement is now free-form (drag by the
-  // title bar, resize from the grip, geometry persists). Minimal stays a compact
-  // content-height glance card (position kept, size shed — like a collapse).
-  // Closed keeps it mounted (hidden) so board state survives. Mobile keeps the
-  // original overlay-sheet behavior.
-  const { float, drag } = useLaneWindow("cheers.float.viewboard");
+  // Desktop: a tile in the work-lane auto-grid. The card chrome is UNCHANGED; the
+  // grid sizes and positions it (fills its cell), so there's no free drag/resize.
+  // Minimal collapses to a compact content-height glance card that sits at the
+  // top of its cell. Closed keeps it mounted (hidden) so board state survives —
+  // and a hidden card drops out of the grid. Mobile keeps the overlay-sheet.
+  useLaneWindow();
 
   const cardChrome =
     "flex min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm";
   const shellClass = isMobile
     ? // z-40: above the chat chrome (z-30 header, z-10/z-20 composer popups,
-      // sticky DiffView headers) but below true modals (z-50) — the band the
-      // floating windows used to get inline from useWindowDrag.
+      // sticky DiffView headers) but below true modals (z-50).
       `fixed top-14 left-2 right-3 z-40 flex flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm transition-[opacity,transform] duration-200 ${
         minimal
           ? "max-h-[calc(100dvh-4.5rem)]"
@@ -164,36 +161,18 @@ function ViewBoardDrawerImpl({
           ? "opacity-100 translate-x-0 pointer-events-auto"
           : "opacity-0 translate-x-4 pointer-events-none"
       }`
-    : float
-      ? cn(
-          open ? "flex" : "hidden",
-          "absolute max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)]",
-          cardChrome,
-          !drag.pos && "top-2 left-2",
-          // Default size until dragged/resized; drag.style overrides w/h inline.
-          minimal ? "w-[280px]" : "w-[420px] h-[70%]"
-        )
-      : // Fallback (no lane context): the previous docked column.
-        `${open ? "flex" : "hidden"} min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm ${
-          minimal
-            ? "w-[280px] shrink min-w-[13rem] self-start max-h-full"
-            : "w-[420px] shrink min-w-[320px]"
-        }`;
-
-  // Minimal keeps its dragged spot but sheds the resized size (content-height).
-  const shellStyle = float ? (minimal ? drag.posStyle : drag.style) : undefined;
+    : // Desktop grid cell: fill the cell; minimal shrinks to content height and
+      // parks at the top of the cell instead of stretching full-height.
+      cn(
+        open ? "flex" : "hidden",
+        cardChrome,
+        "w-full",
+        minimal ? "h-auto self-start max-h-full" : "h-full"
+      );
 
   return (
-    <aside
-      ref={float ? drag.ref : undefined}
-      onPointerDownCapture={float ? drag.toFront : undefined}
-      style={shellStyle}
-      className={shellClass}
-    >
-      <div
-        {...(float ? drag.handleProps : {})}
-        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
-      >
+    <aside className={shellClass}>
+      <div className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none">
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
           ViewBoard
@@ -220,7 +199,7 @@ function ViewBoardDrawerImpl({
       {minimal ? (
         // Minimized: a purpose-built glance (not the board shrunk). Clicking a row
         // expands straight to that board.
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
           {open && (
             <ViewBoardMinimized
               ctx={ctx}
@@ -300,7 +279,6 @@ function ViewBoardDrawerImpl({
           </div>
         </>
       )}
-      {float && !minimal && <ResizeGrip resizeProps={drag.resizeProps} />}
     </aside>
   );
 }
