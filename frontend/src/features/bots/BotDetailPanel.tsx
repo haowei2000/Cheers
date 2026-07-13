@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
-  Bot,
   CircleDot,
   Ban,
   Power,
@@ -12,6 +11,7 @@ import {
   Check,
   Info,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import {
   disableBot,
@@ -22,8 +22,16 @@ import {
   getBotStatus,
 } from "@/api/bots";
 import { uploadBotAvatar } from "@/api/avatars";
+import { Avatar } from "@/components/ui/avatar";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, SectionHead, MetaRow } from "@/components/ui/field";
+import { Tip } from "@/components/ui/tip";
+import { cn } from "@/lib/cn";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
@@ -65,8 +73,8 @@ const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
 
 /**
  * Right-pane detail view for the selected bot — replaces the old nested BotPermissionsDialog
- * modal. Identity + actions live in Overview; Permissions folds in Posture + Grants inline;
- * Events shows the per-bot ACP event log.
+ * modal. Built on the shared identity-card anatomy (DESIGN.md §2.13–2.15): identity header →
+ * sectioned Overview (status editor, Details, Danger zone) → Permissions → Events.
  */
 export function BotDetailPanel({
   bot,
@@ -115,23 +123,50 @@ export function BotDetailPanel({
     };
   }, [bot.bot_id, onPoll]);
 
+  async function handleAvatarUpload(file: File) {
+    const url = await uploadBotAvatar(bot.bot_id, file);
+    onChanged(); // refetch so avatar_url updates wherever the bot is shown
+    return url;
+  }
+
+  const name = bot.display_name || bot.username;
+
   return (
     <div className="rounded-xl bg-zinc-900">
-      {/* Header */}
+      {/* Identity header — the avatar is the upload entry (managers); presence dot
+          per §2.7 sits on it, with the online/offline pill carrying the text. */}
       <div className="flex items-center gap-3 p-4 border-b border-zinc-800">
-        <div className="w-10 h-10 rounded-lg bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
-          <Bot className="w-5 h-5 text-indigo-300" />
+        <div className="relative flex-shrink-0">
+          {bot.can_manage ? (
+            <AvatarUpload
+              name={name}
+              id={bot.bot_id}
+              src={bot.avatar_url}
+              size="lg"
+              onUpload={handleAvatarUpload}
+            />
+          ) : (
+            <Avatar name={name} id={bot.bot_id} src={bot.avatar_url} size="lg" />
+          )}
+          <span
+            className={cn(
+              "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-900",
+              bot.is_online ? "bg-emerald-500" : "bg-zinc-600"
+            )}
+            aria-hidden
+          />
         </div>
-        <div className="min-w-0">
-          <p className="font-medium text-zinc-100 truncate">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-zinc-100 truncate">
             {bot.status_emoji && <span className="mr-1">{bot.status_emoji}</span>}
-            {bot.display_name || bot.username}
+            {name}
           </p>
-          <p className="text-xs text-zinc-400 truncate">
-            {bot.status_text ? bot.status_text : `@${bot.username}`}
+          <p className="text-sm text-zinc-400 truncate">
+            @{bot.username}
+            {bot.status_text ? ` · ${bot.status_text}` : ""}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex flex-shrink-0 items-center gap-2.5">
           {bot.is_disabled && (
             <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
               <Ban className="w-3 h-3" />
@@ -139,9 +174,10 @@ export function BotDetailPanel({
             </span>
           )}
           <span
-            className={`inline-flex items-center gap-1 text-[11px] ${
+            className={cn(
+              "inline-flex items-center gap-1 text-[11px]",
               bot.is_online ? "text-emerald-400" : "text-zinc-400"
-            }`}
+            )}
             title={bot.is_online ? "Connector attached" : "Connector not attached"}
           >
             <CircleDot className="w-3 h-3" />
@@ -159,11 +195,12 @@ export function BotDetailPanel({
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
                 active
                   ? "border-indigo-500 text-zinc-100"
                   : "border-transparent text-zinc-400 hover:text-zinc-200"
-              }`}
+              )}
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
@@ -273,13 +310,7 @@ function BotOverview({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-zinc-400 w-14 shrink-0">bot_id</span>
-        <code className="flex-1 truncate bg-zinc-800 px-2 py-1 rounded text-zinc-400">{bot.bot_id}</code>
-        <CopyButton value={bot.bot_id} label="" />
-      </div>
-
+    <div className="space-y-5">
       {bot.can_manage && (
         <BotStatusEditor
           bot={bot}
@@ -289,64 +320,94 @@ function BotOverview({
         />
       )}
 
-      <div className="flex items-center gap-2">
-        <select
-          value={channelId}
-          onChange={(e) => setChannelId(e.target.value)}
-          className="flex-1 min-w-0 rounded-lg bg-zinc-800 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="">Add to channel…</option>
-          {channels.map((c) => (
-            <option key={c.channel_id} value={c.channel_id}>
-              #{c.name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={add}
-          disabled={!channelId || busy}
-          className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40 transition-colors"
-        >
-          {added ? "Added ✓" : "Add"}
-        </button>
-      </div>
+      {bot.can_manage && <div className="border-t border-zinc-800" />}
 
+      {/* Details — Bot ID / Bridge token / Channels, one row form (§2.13) */}
+      <section className="space-y-3">
+        <SectionHead>Details</SectionHead>
+        <MetaRow label="Bot ID">
+          <code className="flex-1 truncate rounded bg-zinc-800 px-2 py-1 text-zinc-400">
+            {bot.bot_id}
+          </code>
+          <CopyButton value={bot.bot_id} label="" />
+        </MetaRow>
+        {bot.can_manage && (
+          <MetaRow label="Bridge token">
+            <Tip content="Shown once when issued — copy it right away.">
+              <Button size="sm" variant="secondary" onClick={() => onIssue(bot.bot_id)}>
+                <KeyRound className="w-3.5 h-3.5" />
+                Issue token
+              </Button>
+            </Tip>
+          </MetaRow>
+        )}
+        <MetaRow label="Channels">
+          <Select
+            value={channelId}
+            onChange={(e) => setChannelId(e.target.value)}
+            aria-label="Add bot to channel"
+            className="h-8 min-w-0 flex-1 text-xs"
+          >
+            <option value="">Add to channel…</option>
+            {channels.map((c) => (
+              <option key={c.channel_id} value={c.channel_id}>
+                #{c.name}
+              </option>
+            ))}
+          </Select>
+          <Button size="sm" variant="secondary" onClick={add} disabled={!channelId || busy}>
+            {added ? "Added ✓" : "Add"}
+          </Button>
+        </MetaRow>
+      </section>
+
+      {/* Danger zone — trailing, one row; consequences in hover help (§2.15) */}
       {bot.can_manage && (
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={() => onIssue(bot.bot_id)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            Issue token
-          </button>
-          {/* status editor is rendered above; token/enable/delete stay grouped here */}
-          <button
-            type="button"
-            onClick={toggleDisabled}
-            disabled={toggling}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
-              bot.is_disabled
-                ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
-                : "bg-red-950/40 text-red-300 hover:bg-red-950/70"
-            }`}
-          >
-            {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
-            {bot.is_disabled ? "Enable bot" : "Disable bot"}
-          </button>
-          <button
-            type="button"
-            onClick={remove}
-            disabled={toggling}
-            title="Permanently delete this bot"
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-red-950/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Delete
-          </button>
-        </div>
+        <>
+          <div className="border-t border-zinc-800" />
+          <section className="flex items-center justify-between gap-3">
+            <SectionHead className="mb-0">Danger zone</SectionHead>
+            <div className="flex items-center gap-2">
+              <Tip
+                align="end"
+                content={
+                  bot.is_disabled
+                    ? "Re-enables the bot so its connector can attach again."
+                    : "Disconnects the connector; the bot goes offline until re-enabled."
+                }
+              >
+                <button
+                  type="button"
+                  onClick={toggleDisabled}
+                  disabled={toggling}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40",
+                    bot.is_disabled
+                      ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+                      : "bg-red-950/40 text-red-300 hover:bg-red-950/70"
+                  )}
+                >
+                  {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                  {bot.is_disabled ? "Enable bot" : "Disable bot"}
+                </button>
+              </Tip>
+              <Tip
+                align="end"
+                content="Removes it from all channels — asks you to confirm first. This can't be undone."
+              >
+                <button
+                  type="button"
+                  onClick={remove}
+                  disabled={toggling}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-950/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete…
+                </button>
+              </Tip>
+            </div>
+          </section>
+        </>
       )}
     </div>
   );
@@ -389,6 +450,12 @@ function BotStatusEditor({
   );
   const [busy, setBusy] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
+  // The status prompt is a low-frequency edit, so it lives behind an "Edit
+  // prompt" button that opens a dialog instead of taking a permanent textarea.
+  // The dialog edits a draft; Done commits it into `prompt`, Cancel discards —
+  // the profile itself is still persisted by the card's Save button.
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptDraft, setPromptDraft] = useState("");
 
   // Manual "Update status now" completion lifecycle (item 4). Instead of blind
   // 5/15/30s reloads, we ask the agent then POLL the bot's status every ~4s for
@@ -490,126 +557,141 @@ function BotStatusEditor({
     }
   }
 
-  const inputCls =
-    "w-full rounded-lg bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500";
-
-  async function handleAvatarUpload(file: File) {
-    const url = await uploadBotAvatar(bot.bot_id, file);
-    onChanged(); // refetch so avatar_url updates wherever the bot is shown
-    return url;
-  }
-
   return (
-    <div className="rounded-lg bg-zinc-950/40 p-3 space-y-3">
-      <p className="text-xs font-semibold text-zinc-400">Status & information</p>
-
-      <div className="flex items-center gap-3">
-        <AvatarUpload
-          name={bot.display_name || bot.username}
-          id={bot.bot_id}
-          src={bot.avatar_url}
-          size="md"
-          onUpload={handleAvatarUpload}
-        />
-        <span className="text-[11px] text-zinc-400">Click the avatar to upload an image (PNG/JPEG/WebP/GIF, ≤5 MB)</span>
-      </div>
-
-      <div className="flex gap-2">
-        <input
-          value={statusEmoji}
-          onChange={(e) => setStatusEmoji(e.target.value)}
-          placeholder="🤖"
-          maxLength={8}
-          className={`${inputCls} w-14 text-center`}
-          aria-label="Status emoji"
-        />
-        <input
-          value={statusText}
-          onChange={(e) => setStatusText(e.target.value)}
-          placeholder="Short status (e.g. reviewing PRs)"
-          maxLength={140}
-          className={inputCls}
-          aria-label="Status text"
-        />
-      </div>
-
-      <textarea
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Information — what this bot does"
-        rows={2}
-        className={`${inputCls} resize-y`}
-        aria-label="Bot description"
-      />
-
-      <label className="flex items-center gap-2 text-xs text-zinc-300">
-        <input
-          type="checkbox"
-          checked={auto}
-          onChange={(e) => setAuto(e.target.checked)}
-          className="accent-indigo-500"
-        />
-        Auto-refresh status on a schedule (asks the bot with the prompt below)
-      </label>
-
-      {auto && (
-        <div className="space-y-2 pl-1">
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Prompt the bot runs to compose its own status, e.g. 'Summarize what you're working on in under 10 words.'"
-            rows={2}
-            className={`${inputCls} resize-y`}
-            aria-label="Status update prompt"
+    <div className="space-y-4">
+      <Field label="Status">
+        <div className="flex gap-2">
+          <Input
+            value={statusEmoji}
+            onChange={(e) => setStatusEmoji(e.target.value)}
+            placeholder="🤖"
+            maxLength={8}
+            className="w-16 text-center"
+            aria-label="Status emoji"
           />
-          <div className="flex items-center gap-2 text-xs text-zinc-400">
-            <span>Every</span>
-            <input
+          <Input
+            value={statusText}
+            onChange={(e) => setStatusText(e.target.value)}
+            placeholder="Short status (e.g. reviewing PRs)"
+            maxLength={140}
+            aria-label="Status text"
+          />
+        </div>
+      </Field>
+
+      <Field label="Description">
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What this bot does"
+          rows={3}
+          className="resize-y"
+          aria-label="Bot description"
+        />
+      </Field>
+
+      {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm text-zinc-300">
+          <input
+            type="checkbox"
+            checked={auto}
+            onChange={(e) => setAuto(e.target.checked)}
+            className="accent-indigo-500"
+          />
+          Auto-refresh status
+        </label>
+        <Tip content="Asks the bot with the status prompt on a schedule (min 5 minutes) and writes the answer back. Needs the bot online." />
+        {auto && (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-zinc-400">Every</span>
+            <Input
               type="number"
               min={5}
               value={interval}
               onChange={(e) => setIntervalMin(e.target.value)}
-              className={`${inputCls} w-20`}
+              className="h-8 w-16 text-center"
               aria-label="Interval minutes"
             />
-            <span>minutes (min 5)</span>
+            <span className="text-xs text-zinc-400">min</span>
+            <Tip
+              align="end"
+              content={`Current prompt: “${prompt.trim() || "none set"}”. Click to edit.`}
+            >
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setPromptDraft(prompt);
+                  setPromptOpen(true);
+                }}
+              >
+                <Pencil className="w-3 h-3" />
+                Edit prompt
+              </Button>
+            </Tip>
           </div>
-          <p className="text-[11px] text-zinc-400 leading-snug">
-            The connector runs this prompt on the schedule and posts the answer back via the
-            bot's token. Requires the bot to be online.
-          </p>
-        </div>
-      )}
+        )}
+      </div>
 
       {promptError && <p className="text-xs text-red-400">{promptError}</p>}
+
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => void save()} disabled={busy}>
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Saving…" : "Save profile"}
         </Button>
-        <button
-          type="button"
-          onClick={() => void refreshNow()}
-          disabled={refreshPhase === "waiting"}
-          title="Ask the agent to update its own status now"
-          className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 transition-colors"
-        >
-          {refreshPhase === "waiting"
-            ? "Waiting for the agent…"
-            : refreshPhase === "done"
-              ? "✓ status updated"
-              : "Update status now"}
-        </button>
+        <Tip content="Runs the status prompt via a DM with the bot right now — owner/admin only.">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void refreshNow()}
+            disabled={refreshPhase === "waiting"}
+          >
+            {refreshPhase === "waiting"
+              ? "Waiting for the agent…"
+              : refreshPhase === "done"
+                ? "✓ status updated"
+                : "Update status now"}
+          </Button>
+        </Tip>
       </div>
+
       {refreshPhase === "timeout" && (
         <p className="text-[11px] text-amber-400/80 leading-snug">
           The agent hasn't responded yet — it may still be working. Its status will update
           here on its own once it writes back.
         </p>
       )}
-      <p className="text-[11px] text-zinc-400 leading-snug">
-        Runs the status prompt via the normal prompt path (needs the bot online; opens a
-        DM with it automatically if you don't have one). Owner/admin only.
-      </p>
+
+      {promptOpen && (
+        <Dialog title="Status prompt" onClose={() => setPromptOpen(false)} maxWidth="max-w-md">
+          <Textarea
+            value={promptDraft}
+            onChange={(e) => setPromptDraft(e.target.value)}
+            placeholder="Prompt the bot runs to compose its own status, e.g. 'Summarize what you're working on in under 10 words.'"
+            rows={4}
+            autoFocus
+            aria-label="Status update prompt"
+          />
+          <p className="text-xs text-zinc-400">
+            The bot answers this prompt on the schedule and the reply becomes its status.
+            Save the profile to apply your changes.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPromptOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setPrompt(promptDraft);
+                setPromptOpen(false);
+              }}
+            >
+              Done
+            </Button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }
