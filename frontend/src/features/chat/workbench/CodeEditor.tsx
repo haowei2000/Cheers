@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { EditorState, StateEffect, type Extension } from "@codemirror/state";
+import { Annotation, EditorState, StateEffect, type Extension } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -88,6 +88,10 @@ function languageFor(path: string): Extension[] {
   return [];
 }
 
+// Marks a dispatch as a programmatic content sync (not a user edit), so the updateListener
+// can skip onChange for it — see the listener below.
+const syncAnnotation = Annotation.define<boolean>();
+
 function baseExtensions(path: string, onChange: (v: string) => void): Extension[] {
   return [
     lineNumbers(),
@@ -103,7 +107,13 @@ function baseExtensions(path: string, onChange: (v: string) => void): Extension[
     EditorView.lineWrapping,
     ...languageFor(path),
     EditorView.updateListener.of((u) => {
-      if (u.docChanged) onChange(u.state.doc.toString());
+      // Only USER edits become dirty. Programmatic loads (path switch, live-push/conflict
+      // reload) carry the `sync` annotation and must NOT call onChange — otherwise a clean
+      // server reload marks the buffer dirty, wrongly enables Save, and blocks the next
+      // live-push (FilePanel skips reloads when it thinks there are unsaved edits).
+      if (!u.docChanged) return;
+      if (u.transactions.some((tr) => tr.annotation(syncAnnotation))) return;
+      onChange(u.state.doc.toString());
     }),
   ];
 }
@@ -156,6 +166,7 @@ export function CodeEditor({ value, onChange, path, className }: CodeEditorProps
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: value },
       effects: StateEffect.reconfigure.of(baseExtensions(path, (v) => onChangeRef.current(v))),
+      annotations: syncAnnotation.of(true),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, value]);
@@ -166,7 +177,10 @@ export function CodeEditor({ value, onChange, path, className }: CodeEditorProps
     const view = viewRef.current;
     if (!view || pathRef.current !== path) return; // path effect above handles path switches
     if (value === view.state.doc.toString()) return;
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: value },
+      annotations: syncAnnotation.of(true),
+    });
   }, [value, path]);
 
   return <div ref={hostRef} className={className} />;
