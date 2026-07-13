@@ -352,6 +352,43 @@ pub async fn session_root_set(db: &PgPool, provider_session_key: &str) -> Vec<St
     out
 }
 
+/// Distinct workspace `cwd`s of the sessions bound to a channel for a bot, most-
+/// recently-used first, each paired with the session that owns it. Feeds the remote-
+/// workspace root picker so it can offer the folders this channel's sessions actually
+/// work in — and browsing one scopes to that session's root set (so the connector
+/// accepts it as a `root`). Deduped by path (keeps the most-recent session per path);
+/// entries without a pinned `cwd` are skipped. Best-effort: a DB error yields `[]`.
+pub async fn channel_session_workdirs(
+    db: &PgPool,
+    channel_id: Uuid,
+    bot_id: Uuid,
+) -> Vec<(String, String)> {
+    let rows = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT s.session_id, s.metadata->'workspace'->>'cwd' AS cwd
+           FROM cheers_sessions s
+           JOIN cheers_session_bindings b ON b.session_id = s.session_id
+          WHERE b.channel_id = $1 AND s.bot_id = $2
+            AND s.status NOT IN ('terminated', 'revoked', 'expired')
+          ORDER BY s.last_used_at DESC",
+    )
+    .bind(channel_id.to_string())
+    .bind(bot_id.to_string())
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (session_id, cwd) in rows {
+        if let Some(cwd) = cwd {
+            if cwd.is_empty() || !seen.insert(cwd.clone()) {
+                continue;
+            }
+            out.push((cwd, session_id));
+        }
+    }
+    out
+}
+
 /// Update **only** `metadata.workspace.additional_dirs` for a session, preserving
 /// the immutable `cwd`. This is the mutable lever of the ACP root set: extra
 /// accessible roots may change across loads while `cwd` stays fixed. Takes effect

@@ -14,7 +14,7 @@
 // changes, so fetch-on-open is the freshness model.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { ArrowRight, Check, ChevronDown, Layers, LayoutDashboard, Plus } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   getSessionControls,
@@ -384,10 +384,30 @@ export function SessionChip({
                     className={rowCls(idx, isSel)}
                   >
                     <span
-                      className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))}
+                      className={cn(
+                        "w-2 h-2 rounded-full flex-shrink-0",
+                        statusDotColor(s.status)
+                      )}
                     />
-                    <span className="flex-1 min-w-0 truncate">{tagOf(s)}</span>
-                    <span className="text-[11px] text-zinc-400 flex-shrink-0">{s.status}</span>
+                    <span className="flex flex-col flex-1 min-w-0">
+                      {/* line 1: tag (primary / time / dir basename) + status */}
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 truncate">{tagOf(s)}</span>
+                        <span className="ml-auto text-[11px] text-zinc-400 flex-shrink-0">
+                          {s.status}
+                        </span>
+                      </span>
+                      {/* line 2: the working directory (left-truncated, full on hover) */}
+                      <span className="mt-0.5 flex items-center gap-1 text-[10px] text-zinc-500">
+                        <Folder className="w-3 h-3 flex-shrink-0" />
+                        <span
+                          className="min-w-0 flex-1 truncate font-mono"
+                          style={{ direction: "rtl" }}
+                        >
+                          <span style={{ unicodeBidi: "plaintext" }}>{s.cwd || "default"}</span>
+                        </span>
+                      </span>
+                    </span>
                     {isSel && <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />}
                   </button>
                 );

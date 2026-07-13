@@ -77,6 +77,13 @@ pub struct TreeQuery {
     pub session_id: Option<Uuid>,
 }
 
+/// `GET workspace/session-workdirs` — enumerates a channel's session workdirs to
+/// populate the root picker; needs only the bot to scope by.
+#[derive(Deserialize)]
+pub struct WorkdirsQuery {
+    pub bot_id: Uuid,
+}
+
 #[derive(Deserialize)]
 pub struct FileQuery {
     pub bot_id: Uuid,
@@ -937,6 +944,28 @@ pub async fn get_workspace_meta(
     )
     .await?;
     Ok(Json(data))
+}
+
+/// GET /api/v1/channels/:channel_id/workspace/session-workdirs?bot_id=
+/// The distinct `cwd`s of this channel's sessions for the bot (most-recent first),
+/// each paired with the session that owns it. Backs the root picker so it offers the
+/// folders the channel's sessions actually work in — the connector's `allowed_roots`
+/// (from `/meta`) are merged in client-side as the fallback set. Membership-gated,
+/// read-only, and DB-only (no connector round-trip), so it answers even when the
+/// connector is offline.
+pub async fn get_session_workdirs(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(channel_id): Path<Uuid>,
+    Query(q): Query<WorkdirsQuery>,
+) -> Result<Json<Value>, AppError> {
+    ensure_access(&state, &claims, channel_id, q.bot_id).await?;
+    let workdirs = crate::domain::sessions::channel_session_workdirs(&state.db, channel_id, q.bot_id)
+        .await
+        .into_iter()
+        .map(|(path, session_id)| json!({ "path": path, "session_id": session_id }))
+        .collect::<Vec<_>>();
+    Ok(Json(json!({ "workdirs": workdirs })))
 }
 
 /// POST /api/v1/channels/:channel_id/workspace/watch?bot_id=&path=&root=&session_id=
