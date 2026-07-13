@@ -2,7 +2,18 @@
 
 > **语言**：中文 | [English](prompt-template-operations.md)
 
-本文说明 Cheers 中提示词模板的存储、选择、渲染与操作方式。内容基于当前代码实现核对，主要涉及 `backend/app/core/prompt_templates.py`、`backend/app/features/bot_runtime/adapters/prompt_template.py`、Bot 运行流水线以及前端设置界面。
+> **⚠️ 状态 —— 历史设计，当前后端未实现。**
+> 本文描述的 `{{变量}}` 提示词模板渲染功能属于**已移除的 Python 后端**。平台现为
+> external-agent-first，唯一后端是 `server/` 下的 Rust 网关（见
+> [CLAUDE.md](../../CLAUDE.md)），该渲染流水线**未被重新实现**：`server/src` 中不存在
+> `/api/v1/templates` API、模板渲染器或记忆分层变量。仍然保留的是
+> `prompt_templates` 表（`server/migrations/0001_baseline.sql`）以及由
+> `server/src/api/bots.rs` 持久化的 `bot_accounts.template_id` / `custom_system_prompt`
+> 列。当前上下文注入通过**固定上下文文件**完成（`.workbench.json` → `context_files`，见
+> `server/src/gateway/dispatcher.rs` 的 `load_pinned_context`），而非模板变量。下文（含 API
+> 与前端示例）仅作为该历史功能的参考保留，不代表当前行为。
+
+本文说明该功能在拥有它的 Python 后端中，对 Cheers 提示词模板的存储、选择、渲染与操作方式。
 
 ## 适用范围
 
@@ -351,6 +362,19 @@ curl -X POST http://localhost:8000/api/v1/channels/<channel_id>/messages \
 
 ## 开发维护要点
 
+**当前 Rust 网关中实际存在的部分：**
+
+- 遗留表结构：`server/migrations/0001_baseline.sql` 中的 `prompt_templates` 表（其中也定义了
+  `bot_accounts.template_id` 外键）。
+- Bot 模板绑定与 `custom_system_prompt` 存储：`server/src/api/bots.rs`。
+- 当前的上下文注入 —— 固定文件，**而非** `{{变量}}` 渲染：`server/src/gateway/dispatcher.rs`
+  的 `load_pinned_context`（读取 `.workbench.json` 列出的路径对应的 `context_files` 内容并注入
+  Agent 提示词）。
+- `server/src` 中当前**没有** `/api/v1/templates` API、模板渲染器、HTTP/Agent Bridge 提示词
+  组装 adapter、有效模板解析或记忆门控阶段。
+
+**遗留 Python 源码（随 Python 后端一并移除，仅供历史对照）：**
+
 - 共享默认值：`backend/app/core/prompt_templates.py`。
 - 模板渲染和变量上下文：`backend/app/features/bot_runtime/adapters/prompt_template.py`。
 - HTTP Bot 组装提示词：`backend/app/features/bot_runtime/adapters/http_bot.py`。
@@ -361,12 +385,5 @@ curl -X POST http://localhost:8000/api/v1/channels/<channel_id>/messages \
 - 前端模板管理：`frontend/src/features/settings/templates/TemplateListSubPane.tsx`。
 - 单条消息强制模板：`frontend/src/App.tsx` 和 `frontend/src/components/MessageComposer.tsx`。
 
-建议回归测试：
-
-```bash
-cd backend
-pytest ../tests/test_template_vars.py ../tests/test_pipeline_context_load.py ../tests/test_bot_scope.py -q
-pytest ../tests/test_template_scope.py -q
-```
-
-需要端到端确认时，应按 `AGENTS.md` 要求启动完整 Docker Compose 栈后运行集成测试。
+`backend/` Python 树及其 `pytest` 套件已不存在；网关检查为
+`cd server && cargo build && cargo test`。

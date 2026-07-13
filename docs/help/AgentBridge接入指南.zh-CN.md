@@ -36,7 +36,7 @@ Agent Bridge 使用两条 WebSocket：
 | control | `/ws/agent-bridge/control` | 连接握手、频道 membership 快照、加入/移除通知、心跳 |
 | data | `/ws/agent-bridge/data` | 推送用户消息，接收 `reply` / `delta` / `done` / `error` / 文件上传 |
 
-Docker 默认从 `.env.example` 复制时，后端宿主机端口是 `8000`；本地 `uvicorn` 开发也常用 `8000`。下面示例用变量表示：
+后端是 `server/` 下的 Rust（Axum）网关，默认监听 `8000`（`PORT` 环境变量默认值，见 `server/src/config.rs`）；Docker Compose 中该服务名为 `gateway`。下面示例用变量表示：
 
 ```bash
 export CHEERS_BASE_URL=http://localhost:8000
@@ -535,8 +535,8 @@ AGENT_BRIDGE_TIMEOUT_SECONDS=600
 
 当前仓库中的实现入口：
 
-- Agent Bridge HTTP/WS 路由：`backend/app/api/v1/agent_bridge/routes.py`
-- Agent Bridge 机器可读注册页：`backend/app/agent_bridge_docs_routes.py`
-- Agent Bridge Bot 适配器：`backend/app/features/bot_runtime/adapters/agent_bridge_bot.py`
+- Agent Bridge WS 处理器：`server/src/gateway/ws/agent_bridge.rs`（`control_handler` / `data_handler`；路由 `/ws/agent-bridge/control` 与 `/ws/agent-bridge/data` 注册在 `server/src/router.rs`）
+- 任务派发（Backend → Agent）：`server/src/gateway/dispatcher.rs`
+- Agent Bridge 机器可读注册页：随 Python 后端一并移除，尚未在 Rust 网关重建
 - OpenClaw 插件包：已停用并从仓库删除
 - ACP Connector：`packages/cheers-acp-connector-rs/`

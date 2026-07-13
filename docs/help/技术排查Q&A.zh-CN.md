@@ -62,7 +62,7 @@ docker compose logs --tail=200 postgres
 常见原因：
 
 - `.env` 中 `POSTGRES_PASSWORD` 与已初始化的 `data/postgres` 不一致。
-- 数据库迁移失败。
+- sqlx 迁移失败（网关启动时自动运行 `server/migrations/` 下的 sqlx 迁移 —— 查看网关日志）。
 - `JWT_SECRET_KEY`、对象存储或文件目录配置缺失。
 
 如果修改过 PostgreSQL 密码但保留了旧的 `data/postgres`，需要使用旧密码启动后再改密，或清理本地开发数据目录重新初始化。

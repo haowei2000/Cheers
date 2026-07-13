@@ -112,11 +112,16 @@ Browser / Mobile
 
 ## 三、职责切分
 
+> ⚠️ **本节的「Python / Rust 双层切分」已被 external-agent-first 取代（见第二节与
+> [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)）。** 现状：平台侧**只有** `server/` 下的 Rust
+> 网关这一个后端；**没有独立的 Python Agent Service**——智能全部来自用户自连的外部 ACP
+> Agent。下表保留原始「拆分」设想作历史记录，`Python Agent Service` 行整行已废弃。
+
 | 层 | 语言 | 拿走的现有模块 |
 |----|------|--------------|
-| **Rust Backend** | Rust | `api/v1/*` + `services/*` + `features/agent_bridge/` + `db/` |
-| **Python Agent Service** | Python | `features/bot_runtime/` + `features/memory/`（⚠️ 历史设计，已废弃 — `memory_entries` 分层记忆已被 `context_files` 文件树取代，见 CURRENT MODEL）+ `tools/` |
-| **共用** | — | PostgreSQL + Alembic；JWT（RS256）；S3 |
+| **Rust Backend**（现为唯一后端，代码在 `server/src`） | Rust | `api/v1/*` + `services/*` + `features/agent_bridge/` + `db/` |
+| **Python Agent Service** ⚠️ 整行已废弃 —— 该层从未落地，external-agent-first 下平台不提供内置 runtime | Python | `features/bot_runtime/` + `features/memory/`（`memory_entries` 分层记忆已被 `context_files` 文件树取代，见 CURRENT MODEL）+ `tools/` |
+| **共用** | — | PostgreSQL + **sqlx**（迁移在 `server/migrations/`，网关启动时自动运行）；JWT（RS256）；S3 |
 
 ---
 
@@ -145,9 +150,11 @@ Browser / Mobile
 
 > **Clean rebuild，无 Phase 0 渐进。** 见 [REFACTOR_PLAN §六](./REFACTOR_PLAN.md) 和 [BUILTIN_AGENT.md](./BUILTIN_AGENT.md)。
 
+> ⚠️ **下表 Phase 1 的「新 Python Agent Service 通用 runtime 从零写」已作废**（[ROADMAP.md](./ROADMAP.md) 已标注此矛盾）。现行 external-agent-first 路线**不写任何平台侧 Python runtime**：Phase 1 只保留「Rust 网关补齐网格 schema + 路由重写、旧 Python 单体整体下线」，智能由外部 ACP Agent 提供；后续行中的 “Agent Service” 均指**外部** Agent，而非平台内置服务。
+
 | Phase | 目标 | 关键动作 |
 |-------|------|---------|
-| **1** | Rust Backend + 新 Agent Service | Rust Backend（已启动）补齐网格 schema + 路由重写；新 Python Agent Service 通用 runtime 从零写；旧 Python 单体整体下线 |
+| **1** | Rust Backend（唯一后端） | Rust Backend（已启动）补齐网格 schema + 路由重写；旧 Python 单体整体下线（~~新 Python Agent Service 通用 runtime 从零写~~ 已作废，见上注） |
 | **2** | 全量 REST + 网格能力 | 补齐 REST 端点；DM resource（topic 已砍 2026-06-24）；Lens 渲染 v1 |
 | **3** | 优化 | Agent Service 扩容（多身份分片）；OpenTelemetry；权限审计日志 |
 
@@ -174,6 +181,6 @@ Browser / Mobile
 ## 七、明确不在本次范围
 
 - 前端框架迁移（继续 React + Vite）
-- 数据库迁移（继续 PostgreSQL + Alembic）
+- 数据库选型（继续 PostgreSQL；迁移工具为 sqlx，见 `server/migrations/`）
 - 多租户隔离模型变更（现有 workspace 模型不变）
 - Vector DB 选型（Phase 3 再评估）

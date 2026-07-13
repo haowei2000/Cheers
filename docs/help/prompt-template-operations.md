@@ -2,7 +2,21 @@
 
 > **Language**: English | [中文](prompt-template-operations.zh-CN.md)
 
-This guide explains how Cheers prompt templates are stored, selected, rendered, and operated. It reflects the current implementation in `backend/app/core/prompt_templates.py`, `backend/app/features/bot_runtime/adapters/prompt_template.py`, the Bot runtime pipeline, and the frontend settings UI.
+> **⚠️ Status — legacy design, not implemented in the current backend.**
+> This guide describes the `{{variable}}` prompt-template rendering feature as it worked in
+> the **removed Python backend**. The platform is now external-agent-first — the Rust
+> gateway in `server/` is the only backend (see [CLAUDE.md](../../CLAUDE.md)) — and this
+> rendering pipeline was **not** reimplemented. There is no `/api/v1/templates` API,
+> template renderer, or memory-layer variable in `server/src`. What survives is the
+> `prompt_templates` table (`server/migrations/0001_baseline.sql`) plus the
+> `bot_accounts.template_id` and `custom_system_prompt` columns persisted by
+> `server/src/api/bots.rs`. Context is injected today via **pinned context files**
+> (`.workbench.json` → `context_files`; see `load_pinned_context` in
+> `server/src/gateway/dispatcher.rs`), not template variables. The sections below,
+> including the API and frontend examples, are retained as reference for that legacy
+> feature and do not describe current behavior.
+
+This guide explains how Cheers prompt templates were stored, selected, rendered, and operated in the Python backend that owned this feature.
 
 ## Scope
 
@@ -351,6 +365,20 @@ Use these checks when a Bot reply does not match the expected prompt behavior.
 
 ## Development Notes
 
+**What exists in the current Rust gateway:**
+
+- Schema holdover: the `prompt_templates` table in `server/migrations/0001_baseline.sql`
+  (referenced by the `bot_accounts.template_id` FK, also defined there).
+- Bot template binding + `custom_system_prompt` storage: `server/src/api/bots.rs`.
+- Current context injection — pinned files, **not** `{{variable}}` rendering:
+  `load_pinned_context` in `server/src/gateway/dispatcher.rs` (reads paths listed in
+  `.workbench.json` from `context_files` and injects them into the agent prompt).
+- There is currently **no** `/api/v1/templates` API, template renderer, HTTP/Agent-Bridge
+  prompt-assembly adapter, effective-template resolution, or memory-gating stage in
+  `server/src`.
+
+**Legacy Python sources (removed with the Python backend; listed for historical mapping only):**
+
 - Shared defaults: `backend/app/core/prompt_templates.py`.
 - Template renderer and variable context: `backend/app/features/bot_runtime/adapters/prompt_template.py`.
 - HTTP prompt assembly: `backend/app/features/bot_runtime/adapters/http_bot.py`.
@@ -361,12 +389,5 @@ Use these checks when a Bot reply does not match the expected prompt behavior.
 - Frontend template management: `frontend/src/features/settings/templates/TemplateListSubPane.tsx`.
 - Composer forced override: `frontend/src/App.tsx` and `frontend/src/components/MessageComposer.tsx`.
 
-Recommended regression tests:
-
-```bash
-cd backend
-pytest ../tests/test_template_vars.py ../tests/test_pipeline_context_load.py ../tests/test_bot_scope.py -q
-pytest ../tests/test_template_scope.py -q
-```
-
-For end-to-end confidence, run the full integration suite against a Docker Compose stack as described in `AGENTS.md`.
+The `backend/` Python tree and its `pytest` suites no longer exist; gateway checks are
+`cd server && cargo build && cargo test`.
