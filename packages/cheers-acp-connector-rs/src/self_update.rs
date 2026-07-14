@@ -21,6 +21,11 @@
 //!   blocks that version from being retried.
 //! - Containers never self-update (image rebuilds own that path), and
 //!   `CHEERS_ACP_NO_SELF_UPDATE=1` force-disables regardless of config.
+//!
+//! When self-update is OFF (or unavailable) the connector still tells the owner:
+//! a newer advertised version is persisted to `self-update/available.json`, a
+//! manual-update warning is logged both when the hello arrives and on every
+//! subsequent startup, and `cce-acp-connector status` surfaces it.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -184,6 +189,78 @@ fn marker_path(state_dir: &Path) -> PathBuf {
     state_dir.join("self-update").join("marker.json")
 }
 
+// ── "update available" notice ─────────────────────────────────────────────────
+
+/// Persisted whenever a gateway advertises a release newer than this binary, so
+/// the reminder survives to the next startup (before any gateway is reachable)
+/// and `cce-acp-connector status` can show it without a config or a connection.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AvailableUpdate {
+    pub latest: String,
+    pub download_base: Option<String>,
+}
+
+impl AvailableUpdate {
+    /// Direct download URL for this platform's connector binary, when both the
+    /// gateway base and a prebuilt asset exist.
+    pub fn download_url(&self) -> Option<String> {
+        let base = self.download_base.as_deref()?;
+        let suffix = platform_asset_suffix()?;
+        Some(format!("{base}/cce-acp-connector-{suffix}"))
+    }
+
+    fn manual_hint(&self, reason: &str) -> String {
+        let how = if reason.contains("container") {
+            "rebuild/pull the bot image built from the new release".to_string()
+        } else {
+            let get = match self.download_url() {
+                Some(url) => {
+                    format!("download {url} (and the matching cheers-mcp-server)")
+                }
+                None => "install the new release binaries".to_string(),
+            };
+            format!(
+                "{get}, replace the installed binaries, then run `cce-acp-connector restart`; \
+                 or set `[update] auto = true` in the connector config to update automatically"
+            )
+        };
+        format!(
+            "connector {} is available (running {}; self-update off: {reason}). \
+             To update: {how}.",
+            self.latest,
+            current_version()
+        )
+    }
+}
+
+fn available_path(state_dir: &Path) -> PathBuf {
+    state_dir.join("self-update").join("available.json")
+}
+
+/// Read the persisted notice, dropping it once it's stale (the binary caught
+/// up, e.g. via a manual update) so old reminders can't outlive their truth.
+pub fn available_update(state_dir: &Path) -> Option<AvailableUpdate> {
+    let bytes = std::fs::read(available_path(state_dir)).ok()?;
+    let notice: AvailableUpdate = serde_json::from_slice(&bytes).ok()?;
+    if version_is_newer(&notice.latest, current_version()) {
+        Some(notice)
+    } else {
+        let _ = std::fs::remove_file(available_path(state_dir));
+        None
+    }
+}
+
+fn write_available(state_dir: &Path, notice: &AvailableUpdate) -> anyhow::Result<()> {
+    let path = available_path(state_dir);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(notice)?)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
 fn read_marker(state_dir: &Path) -> Option<Marker> {
     let bytes = std::fs::read(marker_path(state_dir)).ok()?;
     serde_json::from_slice(&bytes).ok()
@@ -207,6 +284,9 @@ pub struct SelfUpdater {
     state_dir: PathBuf,
     started: AtomicBool,
     confirmed: AtomicBool,
+    /// Last version a manual-update warning was emitted for — one warning per
+    /// version per process, not one per reconnect/hello.
+    noticed: std::sync::Mutex<Option<String>>,
 }
 
 impl SelfUpdater {
@@ -220,6 +300,7 @@ impl SelfUpdater {
             state_dir,
             started: AtomicBool::new(false),
             confirmed: AtomicBool::new(false),
+            noticed: std::sync::Mutex::new(None),
         })
     }
 
@@ -317,18 +398,55 @@ impl SelfUpdater {
         }
     }
 
-    /// Trigger half: called with the gateway-advertised release version after
-    /// every hello. Spawns at most one update task per process lifetime.
-    pub fn maybe_start(self: &Arc<Self>, advertised: String, control_url: String) {
-        if !version_is_newer(&advertised, current_version()) {
+    /// Startup half of the notice rail: before any gateway is reachable, replay
+    /// the persisted "newer version exists" reminder from the previous run so an
+    /// owner reading the boot log knows an update is pending. (`available_update`
+    /// self-clears once the binary has caught up.)
+    pub fn startup_notice(&self) {
+        let Some(notice) = available_update(&self.state_dir) else {
             return;
-        }
+        };
         if let Some(reason) = self.disabled_reason() {
+            self.notice_manual(&notice, reason);
+        } else {
             tracing::info!(
                 current = current_version(),
-                available = %advertised,
-                "connector update available but self-update is off ({reason})"
+                available = %notice.latest,
+                "connector update pending — will self-update after connecting"
             );
+        }
+    }
+
+    /// Warn the owner that a manual update is needed — once per version per
+    /// process, so reconnect-time hellos don't turn the reminder into spam.
+    fn notice_manual(&self, notice: &AvailableUpdate, reason: &str) {
+        let mut noticed = self.noticed.lock().expect("noticed lock poisoned");
+        if noticed.as_deref() == Some(notice.latest.as_str()) {
+            return;
+        }
+        *noticed = Some(notice.latest.clone());
+        tracing::warn!("{}", notice.manual_hint(reason));
+    }
+
+    /// Trigger half: called with the gateway-advertised release version after
+    /// every hello. Persists (or clears) the update notice, and spawns at most
+    /// one update task per process lifetime when self-update is enabled.
+    pub fn maybe_start(self: &Arc<Self>, advertised: String, control_url: String) {
+        if !version_is_newer(&advertised, current_version()) {
+            // This gateway serves nothing newer — drop any stale reminder (a
+            // manual update landed, or the gateway was pinned back).
+            let _ = std::fs::remove_file(available_path(&self.state_dir));
+            return;
+        }
+        let notice = AvailableUpdate {
+            latest: advertised.clone(),
+            download_base: download_base_from_control_url(&control_url),
+        };
+        if let Err(err) = write_available(&self.state_dir, &notice) {
+            tracing::warn!("failed to persist update notice: {err}");
+        }
+        if let Some(reason) = self.disabled_reason() {
+            self.notice_manual(&notice, reason);
             return;
         }
         if let Some(marker) = read_marker(&self.state_dir) {
@@ -614,6 +732,40 @@ mod tests {
             assert_eq!(active_prompts(), before + 2);
         }
         assert_eq!(active_prompts(), before);
+    }
+
+    #[test]
+    fn disabled_update_persists_notice_and_clears_when_caught_up() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let state_path = dir.path().join("state.json");
+        let updater = SelfUpdater::new(UpdateSettings::default(), &state_path);
+        let control = "wss://h.example/ws/agent-bridge/control".to_string();
+
+        // auto=false + newer advertised → no update task, but the notice (with
+        // a derived download base) is persisted for startup/status reminders.
+        updater.maybe_start("999.0.0".into(), control.clone());
+        let notice = available_update(dir.path()).expect("notice persisted");
+        assert_eq!(notice.latest, "999.0.0");
+        assert_eq!(
+            notice.download_base.as_deref(),
+            Some("https://h.example/api/v1/connector/download")
+        );
+
+        // The gateway no longer advertises anything newer → reminder cleared.
+        updater.maybe_start(current_version().into(), control);
+        assert!(available_update(dir.path()).is_none());
+
+        // A stale persisted notice (binary caught up meanwhile) self-clears on read.
+        write_available(
+            dir.path(),
+            &AvailableUpdate {
+                latest: current_version().into(),
+                download_base: None,
+            },
+        )
+        .expect("write notice");
+        assert!(available_update(dir.path()).is_none());
+        assert!(!available_path(dir.path()).exists());
     }
 
     #[test]

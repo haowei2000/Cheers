@@ -77,7 +77,7 @@ image instead); `CHEERS_ACP_NO_SELF_UPDATE=1` force-disables it everywhere.
 
 | Key               | Type   | Default | Meaning |
 |-------------------|--------|---------|---------|
-| `auto`            | bool   | `false` | Opt in to automatic self-update. Off by default: updating executes code fetched over the network, so the host owner must enable it deliberately. |
+| `auto`            | bool   | `false` | Opt in to automatic self-update. Off by default: updating executes code fetched over the network, so the host owner must enable it deliberately. Even when off, a newer advertised release is logged as a manual-update warning at startup and on connect, and shown by `cce-acp-connector status`. |
 | `public_key_file` | string | embedded key | Path (relative to the config file) to an ed25519 SPKI PEM that overrides the release-signing public key compiled into the binary. Only needed by forks publishing their own signed releases. |
 
 ---

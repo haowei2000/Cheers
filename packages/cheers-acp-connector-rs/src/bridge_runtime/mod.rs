@@ -56,6 +56,9 @@ pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     // to get this far, this call restores the previous one (and never returns).
     let updater = SelfUpdater::new(config.update.clone(), &config.state_path);
     updater.startup_gate()?;
+    // Replay last run's "newer release exists" reminder into the boot log —
+    // with self-update off this is the owner's manual-update prompt.
+    updater.startup_notice();
 
     let mut state = SessionStateStore::new(config.state_path.clone());
     state.load().await?;
