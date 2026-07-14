@@ -250,6 +250,9 @@ version = 1                          # config version, fixed at 1
 state_path = "state-codex.json"      # session state store
 log_dir    = "logs-codex"            # log dir (<name>.stdout.log / .stderr.log)
 
+[update]                             # optional: signed self-update (default OFF; connector >= 0.1.27)
+auto = true                          # verify ed25519 manifest + sha256, drain, swap, re-exec
+
 # ── bridge (connect to the gateway) ──
 [accounts.codex.bridge]
 control_url           = "ws://localhost:8000/ws/agent-bridge/control"
@@ -339,6 +342,26 @@ $BIN run     --config <file>     # run in the foreground (debugging, not daemoni
 
 - **Rotate a token:** re-issue (§3.2) over `secrets/<name>.token`, then `restart --name <name>`.
 - **Auto-start on login:** write a launchd plist (one per bot, or one that runs `cheers-bots.sh start`). Ask if you want one.
+
+### Automatic updates (connector >= 0.1.27)
+
+Opt in per host with `[update] auto = true` (§6). When the gateway advertises a
+newer connector release, the connector downloads that release's **signed
+manifest** through the gateway, verifies its **ed25519 signature** against the
+release key compiled into the binary, verifies each binary's **sha256**, waits
+until no prompt is in flight, atomically swaps itself + `cheers-mcp-server`,
+and restarts in place (same PID — launchd/systemd keep tracking it). The
+previous binary is kept as `<exe>.old`; after 3 boots without a healthy
+connection it is restored automatically and that version is never retried.
+
+- **Off by default** — updating means executing downloaded code; the host owner
+  opts in. Even when off, you get reminders: a warn log at startup/connect and
+  an `update available:` line in `cce-acp-connector status`.
+- `CHEERS_ACP_NO_SELF_UPDATE=1` force-disables it; containers never self-update
+  (update the image instead).
+- Fresh installs: prefix the install one-liner with `CHEERS_AUTO_UPDATE=1`.
+- **Upgrading an old (< 0.1.27) install: update the binary FIRST, then add
+  `[update]`** — older binaries reject configs containing the section.
 
 ---
 

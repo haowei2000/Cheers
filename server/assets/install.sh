@@ -18,6 +18,10 @@
 #   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default haowei2000/Cheers)
 #   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.22 (default: latest)
 #   CHEERS_INSTALL_DAEMON=0  skip the launchd/systemd unit (just write + start)
+#   CHEERS_AUTO_UPDATE=1 enable signed self-update in the written config
+#                        (only applied when this script downloaded the binary,
+#                        i.e. it is provably >= 0.1.27 — older binaries reject
+#                        configs containing the [update] section)
 set -euo pipefail
 
 API_BASE="${CHEERS_API_BASE:-__CHEERS_API_BASE__}"
@@ -111,6 +115,7 @@ if [ -z "$BIN" ]; then
         # "version GLIBC_2.39 not found") so the failure is explainable.
         if RUN_ERR="$("$DEST" --help </dev/null 2>&1 >/dev/null)"; then
           BIN="$DEST"
+          BIN_DOWNLOADED=1
           info "installed connector → $BIN"
           break
         else
@@ -122,6 +127,31 @@ if [ -z "$BIN" ]; then
       fi
     done
     [ -n "$BIN" ] || info "no usable prebuilt binary for $os/$arch (will fall back to build instructions)"
+  fi
+fi
+
+# ── 4a. opt-in signed self-update (CHEERS_AUTO_UPDATE=1) ──────────────────────
+# Only when THIS script downloaded the binary: a fresh release download is
+# provably >= 0.1.27 and parses [update]; a PATH/user-supplied binary may be
+# older and would crash-loop on a config containing the section.
+if [ "${CHEERS_AUTO_UPDATE:-0}" = "1" ]; then
+  if [ "${BIN_DOWNLOADED:-0}" = "1" ]; then
+    python3 - "$CONFIG_FILE" <<'PYUP'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+commented = "# [update]\n# auto = true"
+if "[update]" in text.replace(commented, ""):
+    pass  # already enabled
+elif commented in text:
+    text = text.replace(commented, "[update]\nauto = true", 1)
+else:
+    text += "\n[update]\nauto = true\n"
+open(path, "w").write(text)
+PYUP
+    info "signed self-update ENABLED ([update] auto = true)"
+  else
+    info "WARNING: CHEERS_AUTO_UPDATE=1 ignored — using a pre-existing binary that may predate 0.1.27; update it first, then set [update] auto = true in $CONFIG_FILE"
   fi
 fi
 
@@ -270,3 +300,6 @@ sleep 1
 "$BIN" status --name "$ACCOUNT_ID" || true
 
 printf '\n\033[1;32m✓ done.\033[0m bot "%s" (%s) connecting to %s\n' "$ACCOUNT_ID" "$AGENT_TYPE" "$CONTROL_URL"
+if [ "${CHEERS_AUTO_UPDATE:-0}" != "1" ]; then
+  info "tip: signed self-update is available — set [update] auto = true in $CONFIG_FILE (connector >= 0.1.27), or re-install with CHEERS_AUTO_UPDATE=1"
+fi

@@ -117,6 +117,9 @@ version = 1
 state_path = "state-codex.json"     # 相对本文件目录(~/.cheers)
 log_dir    = "logs-codex"
 
+[update]                             # 可选：签名自动更新（默认关闭；连接器 >= 0.1.27）
+auto = true                          # 验签 ed25519 清单 + sha256，排空后原子替换并原地重启
+
 [accounts.codex.bridge]
 control_url    = "ws://localhost:8000/ws/agent-bridge/control"
 data_url       = "ws://localhost:8000/ws/agent-bridge/data"
@@ -336,6 +339,22 @@ $BIN run     --config <file>     # 前台运行（调试用，不守护）
 
 - **轮换 token**：重新签发（§3.2）覆盖 `secrets/<name>.token`，再 `restart --name <name>`。
 - **开机自启**：可写一个 launchd plist（每个 bot 一个，或一个跑 `cheers-bots.sh start`）。需要可让我补一份。
+
+### 自动更新（连接器 >= 0.1.27）
+
+在配置里显式开启（§6）：`[update] auto = true`。当网关通告更新的连接器版本时，
+连接器会经网关下载该版本的**签名清单**，用**编译进二进制的 ed25519 公钥**验签，
+再逐个校验二进制的 **sha256**，等到没有进行中的对话轮次后，原子替换自身 +
+`cheers-mcp-server` 并原地重启（PID 不变，launchd/systemd 无感知）。旧二进制保留为
+`<exe>.old`；新版本连续 3 次启动都连不上网关会自动回滚，且该版本不再重试。
+
+- **默认关闭**——更新本质是执行从网络下载的代码，必须由宿主机所有者显式开启。
+  即使关闭也有提醒：启动/连接时的 warn 日志 + `cce-acp-connector status` 里的
+  `update available:` 行。
+- `CHEERS_ACP_NO_SELF_UPDATE=1` 强制禁用；容器内永不自更新（应更新镜像）。
+- 全新安装：在安装一行命令前加 `CHEERS_AUTO_UPDATE=1` 即可默认开启。
+- **老版本（< 0.1.27）升级注意：先手动升二进制，再加 `[update]`** ——
+  旧二进制会拒绝解析含该配置段的文件。
 
 ---
 
