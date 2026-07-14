@@ -50,6 +50,80 @@ async fn channel_role(state: &AppState, channel_id: Uuid, uid: Uuid) -> String {
     .unwrap_or_else(|| "member".to_string())
 }
 
+/// Resolve (may_see, may_answer) for one pending card — the same SEE gate and
+/// 3-way answer compose as `resolve_permission`. Fail-closed on errors.
+async fn see_and_answer(
+    state: &AppState,
+    p: &crate::domain::fleet::FleetPending,
+    uid: Uuid,
+    role: &str,
+) -> (bool, bool) {
+    let may_see = crate::domain::acp_policy::allows(
+        &state.db,
+        &p.bot_id.to_string(),
+        &p.channel_id.to_string(),
+        &uid.to_string(),
+        role,
+        "session/request_permission",
+        Capability::See,
+    )
+    .await
+    .unwrap_or(false);
+    if !may_see {
+        return (false, false);
+    }
+    let op_kind = p
+        .content_data
+        .get("tool")
+        .and_then(|t| t.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or("*");
+    let actionable = approval::is_approver(&state.db, p.bot_id, p.channel_id, uid, op_kind)
+        .await
+        .unwrap_or(false)
+        || crate::domain::acp_policy::allows(
+            &state.db,
+            &p.bot_id.to_string(),
+            &p.channel_id.to_string(),
+            &uid.to_string(),
+            role,
+            "session/request_permission",
+            Capability::Respond,
+        )
+        .await
+        .unwrap_or(false);
+    (true, actionable)
+}
+
+// ── GET /fleet/badge ─────────────────────────────────────────────────────────
+
+/// Workspace-agnostic count of pending approvals the caller may answer —
+/// feeds the rail badge. Cheap by construction: pending volume is small.
+pub async fn get_fleet_badge(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Value>, AppError> {
+    let uid = user_id(&claims)?;
+    let pending = fleet::find_pending_for_user_all(&state.db, uid).await?;
+    let mut roles: HashMap<Uuid, String> = HashMap::new();
+    let mut count: i64 = 0;
+    for p in pending {
+        let role = match roles.get(&p.channel_id) {
+            Some(r) => r.clone(),
+            None => {
+                let r = channel_role(&state, p.channel_id, uid).await;
+                roles.insert(p.channel_id, r.clone());
+                r
+            }
+        };
+        let (_, actionable) = see_and_answer(&state, &p, uid, &role).await;
+        if actionable {
+            count += 1;
+        }
+    }
+    Ok(Json(json!({ "count": count })))
+}
+
 // ── GET /workspaces/:workspace_id/fleet ─────────────────────────────────────
 
 pub async fn get_fleet(
@@ -78,42 +152,10 @@ pub async fn get_fleet(
             }
         };
         // SEE gate — fail-closed: on error, drop the row (see module docs).
-        let may_see = crate::domain::acp_policy::allows(
-            &state.db,
-            &p.bot_id.to_string(),
-            &p.channel_id.to_string(),
-            &uid.to_string(),
-            &role,
-            "session/request_permission",
-            Capability::See,
-        )
-        .await
-        .unwrap_or(false);
+        let (may_see, actionable) = see_and_answer(&state, &p, uid, &role).await;
         if !may_see {
             continue;
         }
-        // May-answer = same 3-way compose as resolve_permission: owner ∪
-        // per-kind delegate (both inside is_approver) ∪ RESPOND grant.
-        let op_kind = p
-            .content_data
-            .get("tool")
-            .and_then(|t| t.get("kind"))
-            .and_then(Value::as_str)
-            .unwrap_or("*");
-        let actionable = approval::is_approver(&state.db, p.bot_id, p.channel_id, uid, op_kind)
-            .await
-            .unwrap_or(false)
-            || crate::domain::acp_policy::allows(
-                &state.db,
-                &p.bot_id.to_string(),
-                &p.channel_id.to_string(),
-                &uid.to_string(),
-                &role,
-                "session/request_permission",
-                Capability::Respond,
-            )
-            .await
-            .unwrap_or(false);
         *pending_counts.entry((p.bot_id, p.channel_id)).or_insert(0) += 1;
         approvals.push(json!({
             "message_id": p.msg_id.to_string(),

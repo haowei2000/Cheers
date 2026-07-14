@@ -151,6 +151,8 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces/:workspace_id/fleet",
             get(api::fleet::get_fleet),
         )
+        // Rail badge: workspace-agnostic actionable-pending count
+        .route("/api/v1/fleet/badge", get(api::fleet::get_fleet_badge))
         // 邀请候选搜索：好友按名字模糊匹配 ∪ 任何人按完整用户名/邮箱精确匹配
         // （沿用无全站姓名目录的隐私决策；/friends/search 只认 UUID，不适用于此）
         .route(

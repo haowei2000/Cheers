@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
 import { getFleet, type FleetApproval, type FleetBot } from "@/api/fleet";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
+import { useFleetLive } from "./useFleetLive";
 import { PermissionCard } from "@/features/chat/PermissionCard";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -178,6 +179,16 @@ export default function FleetPage() {
       window.removeEventListener("focus", onFocus);
     };
   }, [activeWsId, refresh]);
+
+  // Live wire (P2): any relevant WS frame in a fleet channel → quiet refetch.
+  // The 30s poll stays as the fallback for signals the WS can't carry.
+  const liveChannelIds = useMemo(
+    () => [...new Set(bots.map((b) => b.channel_id))],
+    [bots]
+  );
+  useFleetLive(liveChannelIds, () => {
+    if (activeWsId) refresh(activeWsId, true);
+  });
 
   const botName = useMemo(() => {
     const m = new Map<string, string>();

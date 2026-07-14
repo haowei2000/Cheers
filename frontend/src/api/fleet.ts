@@ -38,3 +38,8 @@ export interface FleetResponse {
 export async function getFleet(workspaceId: string): Promise<FleetResponse> {
   return apiJson(`/workspaces/${workspaceId}/fleet`);
 }
+
+/** Workspace-agnostic count of pending approvals the caller may answer. */
+export async function getFleetBadge(): Promise<{ count: number }> {
+  return apiJson(`/fleet/badge`);
+}

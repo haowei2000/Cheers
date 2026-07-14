@@ -47,35 +47,61 @@ pub async fn find_pending_for_user(
     .bind(user_id.to_string())
     .fetch_all(db)
     .await?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|r| {
-            Some(FleetPending {
-                msg_id: r
-                    .try_get::<String, _>("msg_id")
-                    .ok()
-                    .and_then(|s| s.parse().ok())?,
-                channel_id: r
-                    .try_get::<String, _>("channel_id")
-                    .ok()
-                    .and_then(|s| s.parse().ok())?,
-                channel_name: r.try_get("channel_name").unwrap_or_default(),
-                bot_id: r
-                    .try_get::<String, _>("sender_id")
-                    .ok()
-                    .and_then(|s| s.parse().ok())?,
-                content_data: r
-                    .try_get::<Option<Value>, _>("content_data")
-                    .ok()
-                    .flatten()
-                    .unwrap_or(Value::Null),
-                created_at: r
-                    .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                    .map(|t| t.to_rfc3339())
-                    .unwrap_or_default(),
-            })
-        })
-        .collect())
+    Ok(rows.into_iter().filter_map(row_to_fleet_pending).collect())
+}
+
+fn row_to_fleet_pending(r: sqlx::postgres::PgRow) -> Option<FleetPending> {
+    Some(FleetPending {
+        msg_id: r
+            .try_get::<String, _>("msg_id")
+            .ok()
+            .and_then(|s| s.parse().ok())?,
+        channel_id: r
+            .try_get::<String, _>("channel_id")
+            .ok()
+            .and_then(|s| s.parse().ok())?,
+        channel_name: r.try_get("channel_name").unwrap_or_default(),
+        bot_id: r
+            .try_get::<String, _>("sender_id")
+            .ok()
+            .and_then(|s| s.parse().ok())?,
+        content_data: r
+            .try_get::<Option<Value>, _>("content_data")
+            .ok()
+            .flatten()
+            .unwrap_or(Value::Null),
+        created_at: r
+            .try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_default(),
+    })
+}
+
+/// Unresolved permission cards across ALL channels `user_id` is a member of
+/// (every workspace) — feeds the rail badge, which is workspace-agnostic.
+/// Same contract as [`find_pending_for_user`]: membership-gated only.
+pub async fn find_pending_for_user_all(
+    db: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<FleetPending>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT m.msg_id, m.channel_id, c.name AS channel_name, m.sender_id,
+                m.content_data, m.created_at
+         FROM messages m
+         JOIN channels c ON c.channel_id = m.channel_id
+         JOIN channel_memberships cm
+           ON cm.channel_id = m.channel_id
+          AND cm.member_id = $1 AND cm.member_type = 'user'
+         WHERE m.msg_type = 'permission'
+           AND (m.content_data->>'resolved' IS NULL
+                OR m.content_data->>'resolved' = 'false')
+         ORDER BY m.created_at DESC
+         LIMIT 100",
+    )
+    .bind(user_id.to_string())
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().filter_map(row_to_fleet_pending).collect())
 }
 
 /// One bot × channel roster row (before liveness/cost/pending decoration).
