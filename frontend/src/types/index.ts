@@ -149,6 +149,7 @@ export interface Message {
    *  Rendered as context chips under the message. */
   context_bundle?: {
     origin?: string;
+    from?: { type?: string; id?: string } | null;
     items?: Array<{ verb: string; label: string; kind: string; params?: unknown }>;
   } | null;
   _streaming?: boolean;

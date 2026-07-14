@@ -103,6 +103,7 @@ pub async fn dispatch(
         params.bot_id,
         params.depth,
         params.chain_id.as_deref(),
+        params.context_bundle.as_ref(),
     )
     .await
     {
@@ -140,6 +141,9 @@ pub async fn dispatch(
             "file_ids": [],
             "mentions": [],
             "files": [],
+            // F2 handoff card: the assembled bundle rides the placeholder so the
+            // chat shows "received a handoff" the moment the bot starts working.
+            "context_bundle": params.context_bundle,
         }),
     );
     fanout.broadcast_channel(params.channel_id, bubble).await;
@@ -231,11 +235,13 @@ async fn create_placeholder(
     bot_id: Uuid,
     depth: i32,
     chain_id: Option<&str>,
+    context_bundle: Option<&Value>,
 ) -> Result<bool, String> {
     let result = sqlx::query(
         "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
-         VALUES ($1, $2, 'bot', $3, '', TRUE, $4, $5)
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id,
+             context_bundle)
+         VALUES ($1, $2, 'bot', $3, '', TRUE, $4, $5, $6)
          ON CONFLICT (msg_id) DO NOTHING",
     )
     .bind(placeholder_id.to_string())
@@ -243,6 +249,7 @@ async fn create_placeholder(
     .bind(bot_id.to_string())
     .bind(depth)
     .bind(chain_id)
+    .bind(context_bundle)
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;

@@ -9,6 +9,7 @@ import {
   Activity,
   Boxes,
   DollarSign,
+  CornerDownRight,
   type LucideIcon,
 } from "lucide-react";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
@@ -35,31 +36,52 @@ function iconFor(kind: string): LucideIcon {
   return KIND_ICON[kind as ContextItem["kind"]] ?? FileText;
 }
 
-/** Read-only chips for a sent message's attached context (rendered in MessageItem). */
+/** Read-only chips for a message's attached context (rendered in MessageItem).
+ *  Two origins: a human's manual pick renders as plain chips; a bot@bot handoff
+ *  (origin="handoff") renders a labeled "↪ Received handoff" card so the automatic
+ *  context hand-off is visible in chat, not just delivered to the agent. */
 export function MessageContextChips({
   bundle,
   className,
 }: {
-  bundle: { items?: Array<{ label: string; kind: string }> } | null | undefined;
+  bundle:
+    | { origin?: string; items?: Array<{ label: string; kind: string }> }
+    | null
+    | undefined;
   className?: string;
 }) {
   const items = bundle?.items ?? [];
   if (!items.length) return null;
+  const isHandoff = bundle?.origin === "handoff";
+  const chips = items.map((it, i) => {
+    const Icon = iconFor(it.kind);
+    return (
+      <span
+        key={`${it.kind}:${it.label}:${i}`}
+        className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-0.5 text-[11px] text-zinc-400"
+        title={`${isHandoff ? "Handed off" : "Attached"} context: ${it.label}`}
+      >
+        <Icon className="w-3 h-3" />
+        <span className="max-w-[12rem] truncate">{it.label}</span>
+      </span>
+    );
+  });
+  if (isHandoff) {
+    return (
+      <div
+        className={`flex items-center flex-wrap gap-1.5 rounded-lg bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
+      >
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-300">
+          <CornerDownRight className="w-3 h-3" />
+          Received handoff
+        </span>
+        {chips}
+      </div>
+    );
+  }
   return (
     <div className={`flex items-center flex-wrap gap-1.5 ${className ?? ""}`}>
-      {items.map((it, i) => {
-        const Icon = iconFor(it.kind);
-        return (
-          <span
-            key={`${it.kind}:${it.label}:${i}`}
-            className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-0.5 text-[11px] text-zinc-400"
-            title={`Attached context: ${it.label}`}
-          >
-            <Icon className="w-3 h-3" />
-            <span className="max-w-[12rem] truncate">{it.label}</span>
-          </span>
-        );
-      })}
+      {chips}
     </div>
   );
 }
