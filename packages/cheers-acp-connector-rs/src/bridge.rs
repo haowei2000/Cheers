@@ -611,7 +611,7 @@ mod fixture_tests {
                 assert_eq!(attachments.len(), 1);
                 assert_eq!(attachments[0].filename.as_deref(), Some("notes.md"));
                 assert_eq!(pinned.len(), 1);
-                assert!(session_id.is_none(), "fixture pins session_id: null");
+                assert!(session_id.is_none(), "fixture omits session_id");
                 let policy = session_policy.expect("session_policy present");
                 assert_eq!(policy.on_missing, "create");
                 let session = session.expect("nested session ref present");

@@ -684,6 +684,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers-bridge-protocol"
+version = "0.1.27"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2880,6 +2888,7 @@ dependencies = [
  "axum",
  "base64",
  "bcrypt",
+ "cheers-bridge-protocol",
  "chrono",
  "dashmap",
  "dotenvy",

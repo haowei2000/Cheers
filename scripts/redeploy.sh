@@ -45,7 +45,8 @@ esac
 images=()
 if $do_gateway; then
   echo "▸ [1/3] building $GATEWAY_IMAGE (Rust — this is the slow one)…"
-  docker build -t "$GATEWAY_IMAGE" server
+  # Root context: the gateway depends on packages/.../bridge-protocol (path dep).
+  docker build -t "$GATEWAY_IMAGE" -f server/Dockerfile .
   images+=("$GATEWAY_IMAGE")
 fi
 if $do_frontend; then

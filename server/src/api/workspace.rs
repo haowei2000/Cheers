@@ -426,23 +426,19 @@ async fn workspace_call(
     }
     let req_id = Uuid::new_v4().to_string();
     let rx = state.workspace_rpc.register(req_id.clone());
-    let mut frame = json!({
-        "type": "workspace_req",
-        "req_id": req_id,
-        "op": op,
-        "path": path,
-        "root": root,
-        // `op == "write"` precondition; JSON null for every read/git op.
-        "if_etag": if_etag,
-        // Optional session root set to scope this browse (empty ⇒ full allowed_roots).
-        "roots": roots,
-    });
-    // Merge op-specific fields into the frame as top-level keys.
-    if let (Value::Object(dst), Value::Object(src)) = (&mut frame, extra) {
-        for (k, v) in src {
-            dst.insert(k, v);
-        }
-    }
+    // Typed op-specific fields (deny_unknown_fields): a typo'd key in a caller
+    // is a loud 400 instead of a silently-dropped frame field.
+    let extra: crate::gateway::bridge_frames::WorkspaceReqExtra = serde_json::from_value(extra)
+        .map_err(|e| AppError::BadRequest(format!("bad workspace op field: {e}")))?;
+    let frame = crate::gateway::bridge_frames::workspace_req_frame(
+        &req_id,
+        op,
+        path,
+        root,
+        if_etag.as_deref(),
+        roots,
+        extra,
+    );
     if !state.bot_locator.send_data(bot_id, frame).await {
         state.workspace_rpc.cancel(&req_id);
         return Err(AppError::BadRequest("bot connector is offline".into()));

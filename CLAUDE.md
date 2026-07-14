@@ -57,7 +57,7 @@ UI: frontend NodePort → <http://localhost:30080> (sign in `admin` / `admin1234
 
 ```bash
 # First-time install: build images → load into kind → install the release
-docker build -t cheers/gateway:dev server
+docker build -t cheers/gateway:dev -f server/Dockerfile .   # root context: server needs packages/.../bridge-protocol
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/jwt_priv.pem
@@ -71,7 +71,7 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 ```bash
 # Redeploy after a code change: rebuild → reload into kind → roll the pod.
 # Shortcut for all of the below: ./scripts/redeploy.sh [gateway|frontend|both]
-docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend  # gateway: docker build -t cheers/gateway:dev server
+docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend  # gateway: docker build -t cheers/gateway:dev -f server/Dockerfile .
 kind load docker-image cheers/frontend:dev --name cheers
 kubectl -n cheers rollout restart deployment/cheers-frontend   # or deployment/cheers-gateway
 kubectl -n cheers rollout status  deployment/cheers-frontend

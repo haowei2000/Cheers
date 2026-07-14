@@ -147,7 +147,7 @@ pub struct AcpCapabilityEnvelope {
     pub kid: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConnectorControlSettings {
     #[serde(
         default,
@@ -260,11 +260,11 @@ pub struct AttachmentInfo {
     pub summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_image: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_b64: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_audio: Option<Value>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_b64: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
@@ -799,7 +799,7 @@ pub enum DataInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         root: Option<String>,
         /// base64 file bytes for `op == "write"`.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         content_b64: Option<String>,
         /// `op == "write"` precondition (safe remote writes). Absent/null ⇒
         /// unconditional overwrite (back-compat). `""` ⇒ create-only (fail if the

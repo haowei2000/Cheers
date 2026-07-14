@@ -32,17 +32,18 @@ use crate::{
 };
 use sqlx::PgPool;
 
-// ── 关闭码（与 WIRE_PROTOCOL 对齐）──────────────────────────────────────────
-const CLOSE_AUTH_FAIL: u16 = 4401;
-const CLOSE_BOT_UNAVAILABLE: u16 = 4403;
-const CLOSE_SUPERSEDED: u16 = 4402;
+// ── 关闭码（与 WIRE_PROTOCOL 对齐；共享常量在 cheers-bridge-protocol）─────────
+use cheers_bridge_protocol::{
+    WS_CLOSE_AUTH_FAIL as CLOSE_AUTH_FAIL, WS_CLOSE_BOT_UNAVAILABLE as CLOSE_BOT_UNAVAILABLE,
+    WS_CLOSE_SUPERSEDED as CLOSE_SUPERSEDED, WS_CLOSE_UNSUPPORTED_PROTOCOL as CLOSE_PROTOCOL_ERROR,
+};
+/// Heartbeat idle close (WIRE_PROTOCOL §10.1): a connector whose process died
+/// without a clean TCP FIN would otherwise stay "online" until the OS notices.
+/// Gateway-local (connectors treat it as retryable), so not in the shared crate.
+const CLOSE_IDLE_TIMEOUT: u16 = 4409;
 /// A connector that keeps sending unparseable frames is buggy/hostile — close it
 /// with a protocol-error code after this many CONSECUTIVE malformed frames so it
 /// can't spin the read loop / hammer logs. A good frame resets the counter.
-const CLOSE_PROTOCOL_ERROR: u16 = 4400;
-/// Heartbeat idle close (WIRE_PROTOCOL §10.1): a connector whose process died
-/// without a clean TCP FIN would otherwise stay "online" until the OS notices.
-const CLOSE_IDLE_TIMEOUT: u16 = 4409;
 const MAX_MALFORMED_FRAMES: u32 = 20;
 use crate::gateway::bridge_frames::{
     self, bridge_error, send_ack_err, send_ack_ok, terminal_ack_err, terminal_ack_ok,
@@ -124,7 +125,11 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         .and_then(|c| c.get("agentNativePermissionMode"))
         .and_then(Value::as_str)
     {
-        let cfg = bridge_frames::config_update_frame(json!({ "agentNativePermissionMode": mode }));
+        let cfg =
+            bridge_frames::config_update_frame(cheers_bridge_protocol::ConnectorControlSettings {
+                agent_native_permission_mode: Some(mode.to_string()),
+                ..Default::default()
+            });
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
@@ -137,7 +142,11 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         .and_then(|c| c.get("configOptions"))
         .filter(|v| v.as_object().is_some_and(|m| !m.is_empty()))
     {
-        let cfg = bridge_frames::config_update_frame(json!({ "configOptions": opts }));
+        let cfg =
+            bridge_frames::config_update_frame(cheers_bridge_protocol::ConnectorControlSettings {
+                config_options: Some(opts.clone()),
+                ..Default::default()
+            });
         let _ = ws_send(&mut socket, &cfg).await;
     }
 

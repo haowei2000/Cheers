@@ -187,7 +187,10 @@ pub async fn set_posture(
     let delivered = match bot_id.parse::<Uuid>() {
         Ok(uuid) => {
             let frame = crate::gateway::bridge_frames::config_update_frame(
-                json!({ "agentNativePermissionMode": mode }),
+                cheers_bridge_protocol::ConnectorControlSettings {
+                    agent_native_permission_mode: Some(mode.clone()),
+                    ..Default::default()
+                },
             );
             state.bot_locator.dispatch_task(uuid, frame).await
         }
@@ -291,7 +294,10 @@ pub async fn set_config_option(
     let delivered = match bot_id.parse::<Uuid>() {
         Ok(uuid) => {
             let frame = crate::gateway::bridge_frames::config_update_frame(
-                json!({ "configOptions": desired }),
+                cheers_bridge_protocol::ConnectorControlSettings {
+                    config_options: Some(desired.clone()),
+                    ..Default::default()
+                },
             );
             state.bot_locator.dispatch_task(uuid, frame).await
         }

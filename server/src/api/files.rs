@@ -566,13 +566,12 @@ pub async fn realize_file(
             });
     let roots = crate::domain::sessions::session_root_set(&state.db, &primary_key).await;
 
-    let frame = serde_json::json!({
-        "type": "realize_file",
-        "file_id": file_id,
-        "remote_ref": remote_ref,
-        "channel_id": channel_id,
-        "roots": roots,
-    });
+    let frame = crate::gateway::bridge_frames::realize_file_frame(
+        &file_id,
+        &remote_ref,
+        &channel_id,
+        &roots,
+    );
 
     let sent = state.bot_locator.send_data(bot_id, frame).await;
     if !sent {
