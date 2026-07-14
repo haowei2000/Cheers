@@ -187,6 +187,38 @@ reuses the foundation with no UI; F3 layers suggestion onto F1's picker.
 - Cross-channel / cross-workspace refs — v1 is channel-scoped (matches how the
   resource verbs are scoped and authorized today).
 
+## Relationship to the existing workbench "pin"
+
+Cheers already has a **pin** (`PinToggle` in the workbench file tree →
+`.workbench.json` `pinned[]` → `dispatcher::load_pinned_context`): a file whose
+full content is inlined into the `pinned` slot of **every** task frame in the
+channel — "the semantic layer, a controlled push, not auto-memory."
+
+They do **not** conflict — different scope, different delivery slot — and pin in
+fact *validates* this direction (same "controlled push" philosophy). Context
+bundle is the **per-message, multi-kind, ref-based generalization** of what pin
+does at channel scope:
+
+| | **Pin** (exists) | **Context bundle** (new) |
+|---|---|---|
+| Scope | channel-standing, always on | one message / one invocation |
+| Applies to | every bot, every request | one `@bot` message / one handoff |
+| Content | one file's full text, inlined | refs (plan/file/msg/activity) + pull, consumer-governed |
+| Slot | `pinned: Vec<String>` | `context_bundle` (new) |
+
+Three rules keep them clean (not a v1 merge):
+
+1. **No name collision.** The picker is "add context" (this message), never
+   "pin" (always). Pinned files show in the picker as *already pinned — in every
+   prompt*, so a user doesn't redundantly attach them.
+2. **No double delivery.** A file that is both pinned and attached would reach the
+   agent twice (inlined in `pinned` + via the bundle). The human picker disables
+   already-pinned files; the F2 handoff auto-assembler **excludes pinned paths**.
+3. **Future unification, not now.** Pin is conceptually a *channel-scoped standing
+   bundle (files only, inlined)*. It could later be reframed as a standing
+   `context_bundle` at channel scope to share one delivery path — a refactor,
+   explicitly out of v1. v1 keeps the two slots and de-dups.
+
 ## Resolved decisions (2026-07)
 
 1. **Storage** → a `context_bundle` **JSONB column on `messages`** (not a side
