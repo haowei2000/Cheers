@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   Plus,
+  Check,
   X,
   ListChecks,
   FileText,
@@ -75,6 +76,44 @@ const QUICK: ContextItem[] = [
     kind: "activity",
   },
 ];
+
+/** In-panel "attach this to my next message" button (Viewboard / Workbench /
+ *  a message). Pushes one item to the channel's pending context; shows a check
+ *  once added. `disabled` (e.g. an already-pinned file) blocks the attach. */
+export function AttachContextButton({
+  channelId,
+  item,
+  title,
+  disabled,
+  disabledTitle,
+  className,
+}: {
+  channelId: string;
+  item: ContextItem;
+  title: string;
+  disabled?: boolean;
+  disabledTitle?: string;
+  className?: string;
+}) {
+  const add = useContextPickStore((s) => s.add);
+  const added = useContextPickStore((s) =>
+    (s.byChannel[channelId] ?? []).some((i) => i.id === item.id)
+  );
+  return (
+    <button
+      type="button"
+      disabled={disabled || added}
+      onClick={() => add(channelId, item)}
+      title={disabled ? disabledTitle ?? "Unavailable" : added ? "Added to context" : title}
+      className={
+        className ??
+        "rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
+      }
+    >
+      {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Plus className="w-3.5 h-3.5" />}
+    </button>
+  );
+}
 
 export function ContextPickBar({ channelId }: { channelId: string }) {
   const items = usePendingContext(channelId);
