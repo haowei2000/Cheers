@@ -1,0 +1,6 @@
+{
+  "replayed": 0,
+  "type": "resume_ack",
+  "up_to_seq": 42,
+  "v": 1
+}

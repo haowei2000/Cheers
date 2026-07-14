@@ -1,0 +1,25 @@
+{
+  "bot_id": "6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "bridge_protocol_version": 1,
+  "connection_id": "11111111-2222-4333-8444-555555555555",
+  "last_event_seq": 0,
+  "server_capabilities": {
+    "acp_security": true,
+    "auth": [
+      "authorization_bearer",
+      "auth_frame"
+    ],
+    "file_upload": false,
+    "latest_connector_version": "0.1.27",
+    "resource_req": true,
+    "resume": "ack_only",
+    "runtime_session_control": true,
+    "send_ack": true,
+    "task_stream": "control",
+    "terminal_ack": true
+  },
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "stream": "data",
+  "type": "hello",
+  "v": 1
+}

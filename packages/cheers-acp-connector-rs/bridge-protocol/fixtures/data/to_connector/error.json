@@ -1,0 +1,6 @@
+{
+  "code": "CAPABILITY_DENIED",
+  "detail": "signature verification failed",
+  "type": "error",
+  "v": 1
+}

@@ -1,0 +1,8 @@
+{
+  "client_msg_id": "client-msg-1",
+  "code": "SEND_FAILED",
+  "error": "channel not writable",
+  "ok": false,
+  "type": "send_ack",
+  "v": 1
+}

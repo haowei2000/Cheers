@@ -24,7 +24,8 @@ target/
 *.rs.bk
 
 # 运行时与数据（设计书约定排除）
-data/
+# 仅根目录的数据目录（不锚定会吞掉任意层级的 data/，例如 bridge-protocol/fixtures/data/）
+/data/
 tmp/
 .tmp/
 *.db

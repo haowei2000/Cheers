@@ -1,0 +1,12 @@
+{
+  "content_b64": "aGVsbG8=",
+  "if_etag": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "op": "write",
+  "path": "notes.md",
+  "req_id": "req-2",
+  "root": "/workspace",
+  "roots": [
+    "/workspace"
+  ],
+  "type": "workspace_req"
+}

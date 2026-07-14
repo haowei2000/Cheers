@@ -1,0 +1,9 @@
+{
+  "type": "resource_req",
+  "v": 1,
+  "req_id": "req-1",
+  "resource": "channel.activity.read",
+  "params": {
+    "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "client_msg_id": "client-msg-1",
+  "finalized_placeholder": true,
+  "message_id": "6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "ok": true,
+  "type": "send_ack",
+  "v": 1
+}

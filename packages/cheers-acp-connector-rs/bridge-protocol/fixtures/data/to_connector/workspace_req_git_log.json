@@ -1,0 +1,10 @@
+{
+  "limit": 20,
+  "op": "git_log",
+  "path": "",
+  "req_id": "req-3",
+  "root": "/workspace",
+  "roots": [],
+  "skip": 40,
+  "type": "workspace_req"
+}

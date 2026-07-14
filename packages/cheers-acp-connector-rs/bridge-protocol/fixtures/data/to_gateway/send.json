@@ -1,0 +1,10 @@
+{
+  "type": "send",
+  "v": 1,
+  "client_msg_id": "client-msg-3",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "text": "Proactive update: build finished.",
+  "file_ids": [],
+  "mention_ids": [],
+  "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff"
+}

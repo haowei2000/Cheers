@@ -1,0 +1,10 @@
+{
+  "op": "read",
+  "path": "src/main.rs",
+  "req_id": "req-1",
+  "root": "/workspace",
+  "roots": [
+    "/workspace"
+  ],
+  "type": "workspace_req"
+}

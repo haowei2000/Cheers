@@ -1,0 +1,6 @@
+{
+  "type": "permission_cancel",
+  "v": 1,
+  "request_id": "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+  "reason": "timeout"
+}
