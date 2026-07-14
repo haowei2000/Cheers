@@ -427,8 +427,9 @@ async fn workspace_call(
     let req_id = Uuid::new_v4().to_string();
     let rx = state.workspace_rpc.register(req_id.clone());
     // Typed op-specific fields (deny_unknown_fields): a typo'd key in a caller
-    // is a loud 400 instead of a silently-dropped frame field.
-    let extra: crate::gateway::bridge_frames::WorkspaceReqExtra = serde_json::from_value(extra)
+    // is a loud 400 instead of a silently-dropped frame field. `Null` is the
+    // documented "no extra fields" value and maps to defaults.
+    let extra = crate::gateway::bridge_frames::parse_workspace_extra(extra)
         .map_err(|e| AppError::BadRequest(format!("bad workspace op field: {e}")))?;
     let frame = crate::gateway::bridge_frames::workspace_req_frame(
         &req_id,

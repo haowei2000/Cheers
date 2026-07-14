@@ -312,6 +312,16 @@ pub(crate) struct WorkspaceReqExtra {
     watch_id: Option<String>,
 }
 
+/// Parse the caller-supplied op-specific fields. `Null` (the documented "this
+/// op needs none" value — most read/git callers pass it) means defaults; an
+/// object is validated with deny_unknown_fields so a typo'd key errors loudly.
+pub(crate) fn parse_workspace_extra(extra: Value) -> Result<WorkspaceReqExtra, String> {
+    if extra.is_null() {
+        return Ok(WorkspaceReqExtra::default());
+    }
+    serde_json::from_value(extra).map_err(|e| e.to_string())
+}
+
 /// Workspace RPC request, correlated by `req_id`; replies arrive as
 /// `workspace_res`. Version-less by contract.
 #[allow(clippy::too_many_arguments)]
@@ -624,6 +634,21 @@ mod tests {
             &["/workspace".to_string()],
         );
         assert_matches_fixture(&frame, "data/to_connector/realize_file.json", &[]);
+    }
+
+    /// Regression: read/git callers pass the documented `Value::Null` for
+    /// "no op-specific fields" — the typed parse must treat it as defaults,
+    /// not reject the whole request (broke the workspace browser in prod).
+    #[test]
+    fn workspace_extra_accepts_null_and_rejects_typos() {
+        assert!(parse_workspace_extra(Value::Null).is_ok());
+        assert!(parse_workspace_extra(json!({})).is_ok());
+        let parsed = parse_workspace_extra(json!({"limit": 20})).expect("limit parses");
+        assert_eq!(parsed.limit, Some(20));
+        assert!(
+            parse_workspace_extra(json!({"limt": 20})).is_err(),
+            "typo must error"
+        );
     }
 
     #[test]
