@@ -117,6 +117,18 @@
 
 新条目的路线图过滤问题：**这让多 agent 治理更强吗？**
 
+### Fleet 视图 —— 后续
+
+Fleet 视图（工作区任务控制中心：审批收件箱 + bot 名册）已交付实时 P2
+（`bot_processing` 芯片、rail 待批角标）。记录如下：
+
+- **Bot 间 dispatch 过授权矩阵**（进行中）—— 一个 agent 可以 `@` 另一个 agent 交接
+  子任务，但每一次这样的 dispatch 都要过 `user ▸ group ▸ role ▸ *` 矩阵里新增的
+  `dispatch` 能力位（deny 优先，默认仅 owner），并留审计。这是任何桥接派都做不到的
+  治理优势 —— 见 [docs/design/BOT_DISPATCH.md](design/BOT_DISPATCH.md)。
+- **Fleet P3**（已记录，未开始）—— 频道内 mini 舰队条（work lane 里紧凑的按频道
+  名册）+ 审批收件箱筛选（按 bot / 按操作类型 / 按频道）。
+
 ## 近期计划(资源占用考虑/安全性问题/关键断点->行动建议->工作量)
 
 ### UI
