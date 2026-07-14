@@ -24,16 +24,13 @@ use crate::{
 /// bot@bot 触发的最大深度，超出后静默停止。
 pub const MAX_BOT_REPLY_DEPTH: i32 = 5;
 
-/// 发起方 bot 在事件权限模型里的 subject 角色。owner 可在 `bot_event_access`
-/// 里对 `role=bot`（所有 bot 发起方）或对某个具体 bot（`user=<botId>` 维度）
-/// 写 deny，从而关闭 / 收紧 bot@bot；无规则时默认放行（与历史行为一致）。
-const BOT_INITIATOR_ROLE: &str = "bot";
-
 /// bot 消息（回复 finalize 或主动 send）落库后，触发消息里的 @bot mention，
 /// depth+1 后 dispatch。三重防护：
 /// - **深度上限**（[`MAX_BOT_REPLY_DEPTH`]）：`current_depth` 到顶后静默停止，防无限链。
 /// - **自 @ 过滤**：作者 bot（`author_bot_id`）即使 @ 了自己也不会再触发自身。
-/// - **INITIATE 门禁**：目标 bot 可按“发起方 bot”拒绝被触发（`bot_event_policy`，默认放行）。
+/// - **DISPATCH 门禁**：目标 bot 可按“发起方 bot”拒绝被指挥（`bot_event_policy` 的
+///   `dispatch` 能力位，subject=发起方 bot；默认放行，fail-closed，每次决定留审计。
+///   见 docs/design/BOT_DISPATCH.md）。
 #[allow(clippy::too_many_arguments)]
 pub async fn trigger_bot_replies(
     db: &PgPool,
@@ -95,26 +92,33 @@ pub async fn trigger_bot_replies(
             break;
         }
 
-        // INITIATE 门禁：目标 bot(bot_id) 是否允许被“发起方 bot”(author_bot_id) 触发？
-        // 复用事件权限中枢——发起方视为 role="bot" 的 subject，其 bot_id 落在 user 维度，
-        // 便于按“某个具体 bot”或“所有 bot”授权/拒绝。默认放行；规则出错时 fail-open。
-        let may_prompt = crate::domain::acp_policy::allows(
+        // DISPATCH 门禁：目标 bot(bot_id) 是否允许被“发起方 bot”(author_bot_id) 指挥？
+        // 发起方是一等的 bot subject（subject_kind='bot'），过 dispatch 能力位。
+        // 默认放行；规则库读不出时 fail-closed 拒绝；每次决定（放行/拒绝）都留审计。
+        let decision = crate::domain::bot_event_policy::resolve_dispatch_decision(
             db,
             &bot_id.to_string(),
             &channel_id.to_string(),
             &author_bot_id.to_string(),
-            BOT_INITIATOR_ROLE,
-            "session/prompt",
-            crate::domain::bot_event_policy::Capability::Initiate,
         )
-        .await
-        .unwrap_or(true);
-        if !may_prompt {
+        .await;
+        record_dispatch_audit(
+            db,
+            author_bot_id,
+            bot_id,
+            channel_id,
+            chain_id,
+            next_depth,
+            &decision,
+        )
+        .await;
+        if !decision.allow {
             tracing::info!(
                 target_bot = %bot_id,
                 initiator_bot = %author_bot_id,
                 channel_id = %channel_id,
-                "bot@bot INITIATE denied by bot_event_policy; message posted, target not triggered"
+                reason = decision.reason,
+                "bot@bot dispatch denied by grant matrix; message posted, target not triggered"
             );
             continue;
         }
@@ -202,6 +206,49 @@ fn mentioned_bots(mentions: &[Mention], exclude_bot_id: Uuid) -> Vec<Uuid> {
 
 fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
     format!("cheers:channel:{channel_id}:bot:{bot_id}")
+}
+
+/// Append one dispatch-decision row (allow *and* deny) to `acp_event_log` — the
+/// permanent trail behind bot@bot dispatch (docs/design/BOT_DISPATCH.md). Reuses
+/// the generic ACP-event substrate: `name='dispatch'`, `home='cheers'`, and a
+/// payload naming the initiator, target, decision, and reason. Best-effort — a
+/// failed audit write must not disrupt the live turn (it only warns).
+async fn record_dispatch_audit(
+    db: &PgPool,
+    initiator_bot_id: Uuid,
+    target_bot_id: Uuid,
+    channel_id: Uuid,
+    chain_id: Option<&str>,
+    depth: i32,
+    decision: &crate::domain::bot_event_policy::DispatchDecision,
+) {
+    let payload = serde_json::json!({
+        "initiator_bot_id": initiator_bot_id.to_string(),
+        "target_bot_id": target_bot_id.to_string(),
+        "channel_id": channel_id.to_string(),
+        "chain_id": chain_id,
+        "depth": depth,
+        "decision": if decision.allow { "allow" } else { "deny" },
+        "reason": decision.reason,
+    });
+    if let Err(err) = sqlx::query(
+        "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
+         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::jsonb)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(target_bot_id.to_string())
+    .bind(channel_id.to_string())
+    .bind(payload.to_string())
+    .execute(db)
+    .await
+    {
+        tracing::warn!(
+            target_bot = %target_bot_id,
+            initiator_bot = %initiator_bot_id,
+            %err,
+            "dispatch audit write failed"
+        );
+    }
 }
 
 async fn resolve_provider_account_id_for_bot(
