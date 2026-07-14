@@ -600,7 +600,11 @@ pub enum ControlOutbound {
         // (pinned by fixtures/compat/ready_plugin_version.json).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plugin_version: Option<String>,
-        runtime: RuntimeDescriptor,
+        /// Optional only for PARSING (a malformed/ancient ready without a
+        /// runtime descriptor must still reach the ready handler, not fall
+        /// through to Unknown) — this connector always sets it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runtime: Option<RuntimeDescriptor>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         connector_capabilities: Option<Value>,
     },

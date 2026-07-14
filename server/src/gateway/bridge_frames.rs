@@ -401,6 +401,57 @@ mod tests {
         Uuid::parse_str("11111111-2222-4333-8444-555555555555").unwrap()
     }
 
+    /// Every frame the CURRENT connector emits (the to_gateway fixtures, regen'd
+    /// from its typed values) must parse through the shared enums on this side
+    /// too — the gateway's inbound view can never lag the connector's outbound
+    /// one without this test failing.
+    #[test]
+    fn to_gateway_fixtures_parse_typed() {
+        let root = super::fixture::fixtures_root();
+        for (dir, is_control) in [("control/to_gateway", true), ("data/to_gateway", false)] {
+            let entries = std::fs::read_dir(root.join(dir))
+                .unwrap_or_else(|e| panic!("fixtures dir {dir} missing: {e}"));
+            for entry in entries {
+                let path = entry.expect("dir entry").path();
+                let raw = std::fs::read_to_string(&path).expect("read fixture");
+                let value: Value = serde_json::from_str(&raw).expect("fixture is JSON");
+                let name = path.display();
+                if is_control {
+                    let parsed: proto::ControlOutbound = serde_json::from_value(value)
+                        .unwrap_or_else(|e| panic!("{name} failed typed parse: {e}"));
+                    assert!(
+                        !matches!(parsed, proto::ControlOutbound::Unknown),
+                        "{name} fell through to Unknown"
+                    );
+                } else {
+                    let parsed: proto::DataOutbound = serde_json::from_value(value)
+                        .unwrap_or_else(|e| panic!("{name} failed typed parse: {e}"));
+                    assert!(
+                        !matches!(parsed, proto::DataOutbound::Unknown),
+                        "{name} fell through to Unknown"
+                    );
+                }
+            }
+        }
+        // The frozen legacy TS ready keeps parsing with the plugin_version alias.
+        let legacy: Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("compat/ready_plugin_version.json"))
+                .expect("compat fixture"),
+        )
+        .expect("compat fixture is JSON");
+        match serde_json::from_value(legacy).expect("legacy ready parses") {
+            proto::ControlOutbound::Ready {
+                connector_version,
+                plugin_version,
+                ..
+            } => {
+                assert!(connector_version.is_none());
+                assert_eq!(plugin_version.as_deref(), Some("0.9.3"));
+            }
+            other => panic!("expected Ready, got {other:?}"),
+        }
+    }
+
     #[test]
     fn control_hello_matches_fixture() {
         let frame = control_hello_frame(

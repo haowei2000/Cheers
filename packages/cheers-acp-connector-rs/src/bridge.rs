@@ -809,14 +809,14 @@ mod fixture_tests {
                 v: BRIDGE_PROTOCOL_VERSION,
                 connector_version: Some("0.1.27".into()),
                 plugin_version: None,
-                runtime: RuntimeDescriptor {
+                runtime: Some(RuntimeDescriptor {
                     protocol: "acp".into(),
                     name: Some("claude-agent-acp".into()),
                     version: Some("1.4.2".into()),
                     provider_session_id: None,
                     config: None,
                     extra: Default::default(),
-                },
+                }),
                 connector_capabilities: Some(json!({
                     "runtime_protocols": ["acp"],
                     "streaming": true,
@@ -1134,7 +1134,10 @@ mod fixture_tests {
             } => {
                 assert!(connector_version.is_none());
                 assert_eq!(plugin_version.as_deref(), Some("0.9.3"));
-                assert_eq!(runtime.protocol, "acp");
+                assert_eq!(
+                    runtime.expect("legacy ready carries runtime").protocol,
+                    "acp"
+                );
             }
             other => panic!("expected Ready, got {other:?}"),
         }

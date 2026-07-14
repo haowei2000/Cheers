@@ -33,6 +33,7 @@ use crate::{
 use sqlx::PgPool;
 
 // ── 关闭码（与 WIRE_PROTOCOL 对齐；共享常量在 cheers-bridge-protocol）─────────
+use cheers_bridge_protocol as proto;
 use cheers_bridge_protocol::{
     WS_CLOSE_AUTH_FAIL as CLOSE_AUTH_FAIL, WS_CLOSE_BOT_UNAVAILABLE as CLOSE_BOT_UNAVAILABLE,
     WS_CLOSE_SUPERSEDED as CLOSE_SUPERSEDED, WS_CLOSE_UNSUPPORTED_PROTOCOL as CLOSE_PROTOCOL_ERROR,
@@ -249,17 +250,34 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
 async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     let bot_id = bot.bot_id;
-    let ftype = frame.get("type").and_then(|v| v.as_str()).unwrap_or("");
-    match ftype {
-        "ping" => {} // pong 由 WS 层处理
-        "ready" => {
+    // Typed parse — the shared enum is the single schema both ends compile
+    // against, so a field rename can no longer silently read as None (the
+    // plugin_version bug class). Handlers that persist or tolerate legacy
+    // shapes still receive the raw `frame` for their payload.
+    let parsed: proto::ControlOutbound = match serde_json::from_value(frame.clone()) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(
+                bot_id = %bot_id,
+                frame_type = frame.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+                %err,
+                "control frame failed typed parse"
+            );
+            return;
+        }
+    };
+    match parsed {
+        proto::ControlOutbound::Ping => {} // pong 由 WS 层处理
+        proto::ControlOutbound::Ready {
+            connector_version,
+            plugin_version,
+            connector_capabilities,
+            ..
+        } => {
             // The Rust connector reports `connector_version`; the retired TS
-            // connector used `plugin_version` — accept both while old frames exist.
-            let connector_version = frame
-                .get("connector_version")
-                .or_else(|| frame.get("plugin_version"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
+            // connector used `plugin_version` — both are first-class fields on
+            // the shared Ready variant (pinned by fixtures/compat/).
+            let connector_version = connector_version.or(plugin_version);
             tracing::info!(bot_id = %bot_id, version = ?connector_version, "bot ready");
             // Persist the connector's advertised capabilities (e.g. whether the
             // downstream agent accepts audio/image prompts) so the platform can
@@ -268,9 +286,9 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
             // the agent would only discard. Refreshed on every (re)connect, so
             // a connector upgrade updates them automatically. The version rides
             // along so bot status can report update availability while offline.
-            let caps = frame.get("connector_capabilities");
+            let caps = connector_capabilities;
             if caps.is_some() || connector_version.is_some() {
-                let caps_str = serde_json::to_string(caps.unwrap_or(&Value::Null))
+                let caps_str = serde_json::to_string(&caps.unwrap_or(Value::Null))
                     .unwrap_or_else(|_| "null".into());
                 let result = sqlx::query(
                     "UPDATE bot_accounts
@@ -300,7 +318,9 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 }
             }
         }
-        "runtime_session_control_ack" => {
+        proto::ControlOutbound::RuntimeSessionControlAck { .. } => {
+            // The handler keeps the raw frame: it tolerates the legacy shape
+            // where session fields live at the top level instead of `session{}`.
             match handle_runtime_session_control_ack(frame, state, bot).await {
                 Ok(session_id) => {
                     tracing::info!(
@@ -318,24 +338,19 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 }
             }
         }
-        "config_options" => {
+        proto::ControlOutbound::ConfigOptions { options, v } => {
             // Advertised-options snapshot (configOptions / modes / models /
             // availableCommands / currentModeId / currentModelId). PATCH-merge:
             // each report carries only the fields its source event had (e.g. an
             // available_commands_update has no configOptions), so incoming
             // fields overlay the stored snapshot instead of replacing it —
             // otherwise a later commands update would null out the model list.
-            let mut incoming = frame
-                .get("options")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
+            let mut incoming = options.as_object().cloned().unwrap_or_default();
             // Defense against older connectors that still send explicit nulls.
             incoming.retain(|_, v| !v.is_null());
             let incoming_str =
                 serde_json::to_string(&Value::Object(incoming)).unwrap_or_else(|_| "{}".into());
-            let v_str = serde_json::to_string(&frame.get("v").cloned().unwrap_or(json!(1)))
-                .unwrap_or_else(|_| "1".into());
+            let v_str = v.to_string();
             let result = sqlx::query(
                 "UPDATE bot_accounts SET binding_config = jsonb_set(
                      jsonb_set(
@@ -361,12 +376,14 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 tracing::warn!(bot_id = %bot_id, err = %e, "config options merge failed");
             }
         }
-        ftype @ ("config_status" | "config_option_status") => {
+        kind @ (proto::ControlOutbound::ConfigStatus { .. }
+        | proto::ControlOutbound::ConfigOptionStatus { .. }) => {
             // connector 上报配置状态，统一写入 binding_config.connector_control.*
-            let config_key = match ftype {
-                "config_status" => "last_status",
-                "config_option_status" => "last_option_status",
-                _ => return,
+            // Raw `frame` is persisted (minus type) so fields beyond the typed
+            // schema survive in the stored blob.
+            let config_key = match kind {
+                proto::ControlOutbound::ConfigStatus { .. } => "last_status",
+                _ => "last_option_status",
             };
             let mut payload = frame.clone();
             // 去掉 type 字段，只存业务数据
@@ -393,8 +410,12 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 tracing::warn!(bot_id = %bot_id, key = config_key, err = %e, "config persist failed");
             }
         }
-        other => {
-            tracing::debug!(bot_id = %bot_id, frame_type = other, "unknown control frame");
+        proto::ControlOutbound::Auth { .. } | proto::ControlOutbound::Unknown => {
+            tracing::debug!(
+                bot_id = %bot_id,
+                frame_type = frame.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+                "unhandled control frame"
+            );
         }
     }
 }
@@ -656,6 +677,14 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 }
 
+/// Data-stream dispatch stays STRING-routed on purpose (unlike the typed
+/// control dispatch): several readers deliberately tolerate legacy shapes a
+/// strict `proto::DataOutbound` parse would reject — `delta` accepts
+/// `delta|content`, `done`/`reply`/`send` accept `content|text`, and `reply`
+/// isn't a variant at all (retired TS connector frame). Those aliases are
+/// wire-compat contracts, not drift; the typed schema both ends COMPILE
+/// against plus the golden fixtures already pin the canonical shapes (see
+/// bridge_frames::tests::to_gateway_fixtures_parse_typed).
 async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socket: &mut WebSocket) {
     let ftype = frame.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
