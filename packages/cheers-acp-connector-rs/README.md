@@ -35,6 +35,22 @@ version = 1
 state_path = "state.json"
 log_dir = "logs"
 
+# OPT-IN self-update (default off). When the gateway advertises a newer release,
+# the connector downloads the ed25519-signed sha256 manifest through the
+# gateway's release proxy, verifies it against the release key compiled into the
+# binary, verifies each binary hash, waits until no prompt is in flight, swaps
+# itself (and the sibling cheers-mcp-server) in place, and re-execs. The
+# previous binary is kept as <exe>.old and restored automatically if the new one
+# fails to connect 3 boots in a row. Containers never self-update (image
+# rebuilds own that), and CHEERS_ACP_NO_SELF_UPDATE=1 force-disables it.
+# Forks that sign their own releases point public_key_file at their key.
+# With auto = false the connector still nags: a newer advertised release is
+# logged as a manual-update warning at startup and on connect, and shows up in
+# `cce-acp-connector status` (with the download URL).
+[update]
+auto = false
+# public_key_file = "release-signing-pubkey.pem"
+
 [accounts.haowei_claude.bridge]
 control_url = "wss://cheers.example.com/ws/agent-bridge/control"
 data_url = "wss://cheers.example.com/ws/agent-bridge/data"

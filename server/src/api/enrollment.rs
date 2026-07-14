@@ -438,9 +438,17 @@ pub async fn install_script(
 }
 
 /// Allowlisted release-asset names the gateway will proxy — exactly the
-/// 2 products × 2 OS × 2 arches the release-connector workflow publishes.
-/// Anything else 404s, so the endpoint can't be used as an open proxy.
+/// 2 products × 2 OS × 2 arches the release-connector workflow publishes,
+/// plus the ed25519-signed sha256 manifest pair the connector self-updater
+/// verifies before swapping binaries. Anything else 404s, so the endpoint
+/// can't be used as an open proxy.
 fn is_known_connector_asset(name: &str) -> bool {
+    if matches!(
+        name,
+        "connector-manifest.json" | "connector-manifest.json.sig"
+    ) {
+        return true;
+    }
     let Some(rest) = name
         .strip_prefix("cce-acp-connector-")
         .or_else(|| name.strip_prefix("cheers-mcp-server-"))

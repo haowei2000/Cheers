@@ -17,6 +17,18 @@ pub struct ConnectorConfig {
     pub accounts: BTreeMap<String, AccountConfig>,
     pub state_path: PathBuf,
     pub log_dir: Option<PathBuf>,
+    pub update: UpdateSettings,
+}
+
+/// Opt-in self-update (`[update]`). `auto` is deliberately default-false:
+/// updating means executing code fetched over the network, so the host owner
+/// must turn it on explicitly. `public_key_pem` overrides the release-signing
+/// key compiled into the binary — only needed by forks that publish their own
+/// signed releases; the stock key verifies this repo's releases.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateSettings {
+    pub auto: bool,
+    pub public_key_pem: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -257,7 +269,18 @@ struct RawConfig {
     version: Option<u32>,
     #[serde(default)]
     daemon: RawDaemon,
+    #[serde(default)]
+    update: RawUpdate,
     accounts: BTreeMap<String, RawAccount>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawUpdate {
+    #[serde(default)]
+    auto: bool,
+    #[serde(default)]
+    public_key_file: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -664,6 +687,7 @@ pub async fn load_config(config_path: &Path) -> anyhow::Result<ConnectorConfig> 
         return Err(anyhow!("config.accounts must include at least one account"));
     }
     let daemon_config = normalize_daemon_file_config(raw.daemon, &base_dir)?;
+    let update = normalize_update(raw.update, &base_dir).await?;
     let mut accounts = BTreeMap::new();
     for (id, raw_account) in raw.accounts {
         accounts.insert(
@@ -676,6 +700,23 @@ pub async fn load_config(config_path: &Path) -> anyhow::Result<ConnectorConfig> 
         accounts,
         state_path: daemon_config.state_path,
         log_dir: daemon_config.log_dir,
+        update,
+    })
+}
+
+async fn normalize_update(raw: RawUpdate, base_dir: &Path) -> anyhow::Result<UpdateSettings> {
+    let public_key_pem = match raw.public_key_file.as_deref() {
+        Some(value) => {
+            let path = resolve_path(value, base_dir)?;
+            Some(fs::read_to_string(&path).await.with_context(|| {
+                format!("failed to read update.public_key_file {}", path.display())
+            })?)
+        }
+        None => None,
+    };
+    Ok(UpdateSettings {
+        auto: raw.auto,
+        public_key_pem,
     })
 }
 

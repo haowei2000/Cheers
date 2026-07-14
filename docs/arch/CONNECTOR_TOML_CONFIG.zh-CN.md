@@ -53,6 +53,23 @@ version = 1
 | `state_path` | string | `state.json` | 守护进程持久化运行态的位置（相对配置文件所在目录）。 |
 | `log_dir`    | string | `~/.cheers/acp-connector/<name>/` | 守护进程写 `stdout`/`stderr` 日志的位置。设置后日志为 `<log_dir>/<name>.stdout.log` / `.stderr.log`。 |
 
+### `[update]` — 自动更新（可选，需显式开启）
+
+进程级配置。开启后，当网关 hello 通告了更新的连接器版本
+（`server_capabilities.latest_connector_version`，即网关的
+`CHEERS_CONNECTOR_RELEASE_VERSION`），连接器会通过网关的下载代理拉取该版本的
+`connector-manifest.json` + `.sig`，用编译进二进制的发布公钥校验清单的
+**ed25519 签名**，再逐个校验二进制的 **sha256**，等到没有进行中的对话轮次后，
+原子替换自身（以及同目录配套发布的 `cheers-mcp-server`）并以相同 argv/PID
+重新 exec。被替换的旧二进制保留为 `<exe>.old`；新二进制若连续 3 次启动都无法
+建立健康的桥接连接，会自动回滚并拉黑该版本。容器内永不自更新（应更新镜像）；
+`CHEERS_ACP_NO_SELF_UPDATE=1` 可强制禁用。
+
+| 键                | 类型   | 默认       | 含义 |
+|-------------------|--------|------------|------|
+| `auto`            | bool   | `false`    | 是否开启自动更新。默认关闭：更新本质是执行从网络下载的代码，必须由宿主机所有者显式开启。即使关闭，发现新版本时也会在启动和连接时打印手动更新提醒，并在 `cce-acp-connector status` 中显示。 |
+| `public_key_file` | string | 内置公钥   | ed25519 SPKI PEM 路径（相对配置文件），覆盖编译进二进制的发布签名公钥。仅自建签名发布的 fork 需要。 |
+
 ---
 
 ## 单个 bot：`[accounts.<id>]`

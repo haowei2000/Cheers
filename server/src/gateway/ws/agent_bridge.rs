@@ -110,7 +110,7 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         "session_id": connection_id,
         "memberships": memberships,
         "connector_config": bot.connector_config,
-        "server_capabilities": server_capabilities(),
+        "server_capabilities": server_capabilities(&state),
     });
     if let Some(acp_security) = &bot.acp_security {
         hello["acp_security"] = acp_security.clone();
@@ -256,30 +256,46 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     match ftype {
         "ping" => {} // pong 由 WS 层处理
         "ready" => {
-            tracing::info!(bot_id = %bot_id, version = ?frame.get("plugin_version"), "bot ready");
+            // The Rust connector reports `connector_version`; the retired TS
+            // connector used `plugin_version` — accept both while old frames exist.
+            let connector_version = frame
+                .get("connector_version")
+                .or_else(|| frame.get("plugin_version"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            tracing::info!(bot_id = %bot_id, version = ?connector_version, "bot ready");
             // Persist the connector's advertised capabilities (e.g. whether the
             // downstream agent accepts audio/image prompts) so the platform can
             // consult them offline — the composer warns before sending voice to
             // a bot that can't hear it, and the dispatcher skips inlining bytes
             // the agent would only discard. Refreshed on every (re)connect, so
-            // a connector upgrade updates them automatically.
-            if let Some(caps) = frame.get("connector_capabilities") {
-                let caps_str = serde_json::to_string(caps).unwrap_or_else(|_| "{}".into());
+            // a connector upgrade updates them automatically. The version rides
+            // along so bot status can report update availability while offline.
+            let caps = frame.get("connector_capabilities");
+            if caps.is_some() || connector_version.is_some() {
+                let caps_str = serde_json::to_string(caps.unwrap_or(&Value::Null))
+                    .unwrap_or_else(|_| "null".into());
                 let result = sqlx::query(
                     "UPDATE bot_accounts
                      SET binding_config = COALESCE(binding_config, '{}'::jsonb)
                          || jsonb_build_object(
                              'connector_control',
                              COALESCE(binding_config->'connector_control', '{}'::jsonb)
-                             || jsonb_build_object(
-                                 'capabilities', $2::jsonb,
-                                 'capabilities_updated_at', to_jsonb(NOW())
-                             )
+                             || CASE WHEN $2::jsonb IS NOT NULL AND $2::jsonb <> 'null'::jsonb
+                                     THEN jsonb_build_object(
+                                         'capabilities', $2::jsonb,
+                                         'capabilities_updated_at', to_jsonb(NOW())
+                                     )
+                                     ELSE '{}'::jsonb END
+                             || CASE WHEN $3::text IS NOT NULL
+                                     THEN jsonb_build_object('connector_version', $3::text)
+                                     ELSE '{}'::jsonb END
                      )
                      WHERE bot_id = $1",
                 )
                 .bind(bot_id.to_string())
                 .bind(&caps_str)
+                .bind(connector_version.as_deref())
                 .execute(&state.db)
                 .await;
                 if let Err(e) = result {
@@ -487,7 +503,7 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
         "connection_id": connection_id,
         "session_id": connection_id,
         "last_event_seq": 0,
-        "server_capabilities": server_capabilities(),
+        "server_capabilities": server_capabilities(&state),
     });
     if let Some(acp_security) = &bot.acp_security {
         hello["acp_security"] = acp_security.clone();
@@ -823,8 +839,7 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
             if frame.get("resource").and_then(Value::as_str) == Some("bot.status.write")
                 && resp.get("ok").and_then(Value::as_bool) == Some(true)
             {
-                crate::api::bots::broadcast_bot_member_update(state, &bot.bot_id.to_string())
-                    .await;
+                crate::api::bots::broadcast_bot_member_update(state, &bot.bot_id.to_string()).await;
                 // Traceability (audit items 3 + 9): record the self-status write to
                 // acp_event_log so status changes are auditable alongside every other
                 // ACP event. Summary ONLY — which fields were set and their char
@@ -1188,10 +1203,10 @@ async fn allowed_seers(
     // for this event_class, and the membership default for `See` is always allow. So
     // with no matching `see` rule, everyone online is a seer — skip the channel-role
     // query and the per-online-user `matched_groups` probes entirely (the common case).
-    if !rules
-        .iter()
-        .any(|r| r.event_class == event_class && r.capability == crate::domain::bot_event_policy::Capability::See.as_str())
-    {
+    if !rules.iter().any(|r| {
+        r.event_class == event_class
+            && r.capability == crate::domain::bot_event_policy::Capability::See.as_str()
+    }) {
         return online;
     }
     let mut chan_role: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -1670,8 +1685,8 @@ fn bridge_error(code: &str, detail: &str) -> Value {
     })
 }
 
-fn server_capabilities() -> Value {
-    json!({
+fn server_capabilities(state: &AppState) -> Value {
+    let mut caps = json!({
         "auth": ["authorization_bearer", "auth_frame"],
         "task_stream": "control",
         "runtime_session_control": true,
@@ -1681,7 +1696,15 @@ fn server_capabilities() -> Value {
         "resume": "ack_only",
         "file_upload": false,
         "acp_security": true,
-    })
+    });
+    // Advertise the release version this gateway serves via its download proxy
+    // so an opted-in connector can self-update. Absent when the operator pins
+    // nothing (proxy then tracks "latest", whose version the gateway can't know
+    // without polling GitHub — connectors treat absence as "no update signal").
+    if let Some(v) = &state.config.connector_release_version {
+        caps["latest_connector_version"] = json!(v);
+    }
+    caps
 }
 
 // ── 鉴权：Authorization Bearer 或首帧 auth ─────────────────────────────────────

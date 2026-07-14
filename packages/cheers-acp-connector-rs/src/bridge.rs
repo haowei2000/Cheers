@@ -614,6 +614,11 @@ pub struct ServerCapabilities {
     pub resume: Option<Value>,
     #[serde(default)]
     pub acp_security: Option<bool>,
+    /// Version of the connector release this gateway serves via its download
+    /// proxy — the self-updater's trigger signal (see `self_update`). Absent on
+    /// gateways that pin no release version.
+    #[serde(default)]
+    pub latest_connector_version: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
 }

@@ -60,6 +60,26 @@ Applies to the whole daemon process, not a single bot.
 | `state_path` | string | `state.json` | Where the daemon persists runtime state (relative to the config file's directory). |
 | `log_dir`    | string | `~/.cheers/acp-connector/<name>/` | Where the daemon writes its `stdout`/`stderr` logs. When set, they become `<log_dir>/<name>.stdout.log` / `.stderr.log`. |
 
+### `[update]` — opt-in self-update (optional)
+
+Process-wide. When enabled and the gateway hello advertises a newer connector
+release (`server_capabilities.latest_connector_version`, i.e. the gateway's
+`CHEERS_CONNECTOR_RELEASE_VERSION`), the connector downloads that release's
+`connector-manifest.json` + `.sig` through the gateway's download proxy, verifies
+the manifest's **ed25519 signature** against the release key compiled into the
+binary, verifies each binary's **sha256** against the manifest, waits until no
+prompt turn is in flight, atomically swaps itself (and the sibling
+`cheers-mcp-server`, which ships in lockstep) and re-execs with the same argv/PID.
+The replaced binary is kept as `<exe>.old`; if the new binary fails to reach a
+healthy bridge connection 3 boots in a row it is rolled back automatically and
+that version is blocked from retry. Never active inside containers (update the
+image instead); `CHEERS_ACP_NO_SELF_UPDATE=1` force-disables it everywhere.
+
+| Key               | Type   | Default | Meaning |
+|-------------------|--------|---------|---------|
+| `auto`            | bool   | `false` | Opt in to automatic self-update. Off by default: updating executes code fetched over the network, so the host owner must enable it deliberately. Even when off, a newer advertised release is logged as a manual-update warning at startup and on connect, and shown by `cce-acp-connector status`. |
+| `public_key_file` | string | embedded key | Path (relative to the config file) to an ed25519 SPKI PEM that overrides the release-signing public key compiled into the binary. Only needed by forks publishing their own signed releases. |
+
 ---
 
 ## Per-bot: `[accounts.<id>]`

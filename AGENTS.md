@@ -70,8 +70,8 @@ Required order when connector behavior materially changes:
 1. Update `packages/cheers-acp-connector-rs/Cargo.toml` and `Cargo.lock` when the Rust connector version or dependencies change.
 2. Run `cargo fmt --check`, `cargo test`, and `cargo check` for `packages/cheers-acp-connector-rs`.
 3. Rebuild and push the `opencode-bot` image from the same merged commit so container deployments contain the new Rust connector and MCP server binaries.
-4. Upgrade machines that run the connector locally by installing the Rust binary from the repo or the approved release artifact, then restart the corresponding connector daemon.
-5. Upgrade container deployments by pulling or deploying the rebuilt `opencode-bot` image and recreating the service.
+4. Upgrade machines that run the connector locally by installing the Rust binary from the repo or the approved release artifact, then restart the corresponding connector daemon. Hosts that opted into `[update] auto = true` pick the release up themselves once the gateway's `CHEERS_CONNECTOR_RELEASE_VERSION` is bumped — that only works if the tag's `manifest` CI job succeeded (it signs `connector-manifest.json` with the `CONNECTOR_SIGNING_KEY` repo secret; the matching public key is `packages/cheers-acp-connector-rs/release-signing-pubkey.pem`, compiled into the binary).
+5. Upgrade container deployments by pulling or deploying the rebuilt `opencode-bot` image and recreating the service (containers never self-update).
 
 Do not reintroduce the old npm connector package or the retired `@haowei0520/acp-connector` release workflow.
 

@@ -339,7 +339,8 @@ pub async fn get_bot_status(
     ensure_bot_visible(&state, &claims, &bot_id).await?;
     let row = sqlx::query(
         "SELECT bot_id, is_disabled, binding_type, created_by,
-                status_text, status_emoji, status_updated_at
+                status_text, status_emoji, status_updated_at,
+                binding_config->'connector_control'->>'connector_version' AS connector_version
          FROM bot_accounts WHERE bot_id = $1",
     )
     .bind(&bot_id)
@@ -396,6 +397,20 @@ pub async fn get_bot_status(
     .fetch_one(&state.db)
     .await?;
 
+    // Version pair for the settings UI: what the connector reported at its last
+    // `ready` vs. the release this gateway serves. `update_available` only turns
+    // true on a strict semver-triple increase, so a pinned-back gateway doesn't
+    // nag newer connectors to "update" downward.
+    let connector_version = row
+        .try_get::<Option<String>, _>("connector_version")
+        .ok()
+        .flatten();
+    let latest_version = state.config.connector_release_version.clone();
+    let update_available = match (connector_version.as_deref(), latest_version.as_deref()) {
+        (Some(cur), Some(latest)) => version_is_newer(latest, cur),
+        _ => false,
+    };
+
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or(bot_id),
         "is_disabled": is_disabled,
@@ -409,6 +424,9 @@ pub async fn get_bot_status(
         "last_connected_at": last_connected_at.map(|t| t.to_rfc3339()),
         "last_disconnected_at": last_disconnected_at.map(|t| t.to_rfc3339()),
         "live_enrollment_codes": live_codes,
+        "connector_version": connector_version,
+        "latest_connector_version": latest_version,
+        "update_available": update_available,
         "status_text": row.try_get::<Option<String>, _>("status_text").ok().flatten(),
         "status_emoji": row.try_get::<Option<String>, _>("status_emoji").ok().flatten(),
         "status_updated_at": row
@@ -993,7 +1011,10 @@ pub async fn broadcast_bot_member_update(state: &AppState, bot_id: &str) {
         data["channel_id"] = json!(cid);
         state
             .fanout
-            .broadcast_channel(channel_uuid, WireFrame::channel(channel_uuid, "member_updated", data))
+            .broadcast_channel(
+                channel_uuid,
+                WireFrame::channel(channel_uuid, "member_updated", data),
+            )
             .await;
     }
 }
@@ -1110,4 +1131,39 @@ pub async fn refresh_bot_status(
         "channel_id": channel_id.to_string(),
         "msg_id": dto.msg_id,
     })))
+}
+
+/// Strict semver-triple "is `candidate` newer than `current`" — used for the
+/// connector `update_available` flag. Tolerates a leading `v`; anything that
+/// isn't three dot-separated integers compares as "not newer" (fail quiet:
+/// a garbled version must never nag every bot owner to update).
+fn version_is_newer(candidate: &str, current: &str) -> bool {
+    fn triple(s: &str) -> Option<(u64, u64, u64)> {
+        let mut it = s.trim().trim_start_matches('v').splitn(3, '.');
+        let major = it.next()?.parse().ok()?;
+        let minor = it.next()?.parse().ok()?;
+        let patch = it.next()?.parse().ok()?;
+        Some((major, minor, patch))
+    }
+    match (triple(candidate), triple(current)) {
+        (Some(a), Some(b)) => a > b,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_is_newer;
+
+    #[test]
+    fn version_compare_is_numeric_not_lexicographic() {
+        assert!(version_is_newer("0.1.27", "0.1.26"));
+        assert!(version_is_newer("0.2.0", "0.1.99"));
+        assert!(version_is_newer("0.1.100", "0.1.26"));
+        assert!(version_is_newer("v0.1.27", "0.1.26"));
+        assert!(!version_is_newer("0.1.26", "0.1.26"));
+        assert!(!version_is_newer("0.1.25", "0.1.26"));
+        assert!(!version_is_newer("latest", "0.1.26"));
+        assert!(!version_is_newer("0.1.27", "unknown"));
+    }
 }

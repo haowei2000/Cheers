@@ -2,6 +2,9 @@
 .env
 .env.local
 *.pem
+# PUBLIC verification key (not a secret) — compiled into the connector so it can
+# verify signed release manifests; the private half lives only in CI secrets.
+!packages/cheers-acp-connector-rs/release-signing-pubkey.pem
 
 # Python
 __pycache__/

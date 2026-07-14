@@ -106,6 +106,7 @@ pub async fn run() -> anyhow::Result<()> {
                 println!("config: {}", metadata.config_path.display());
                 println!("stdout: {}", metadata.stdout_log_path.display());
                 println!("stderr: {}", metadata.stderr_log_path.display());
+                print_update_notice(&metadata.config_path).await;
             } else {
                 println!("metadata: {}", status.paths.metadata_path.display());
             }
@@ -119,6 +120,31 @@ pub async fn run() -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+/// `status` addendum: surface a persisted "newer release available" notice
+/// (written by the running daemon when a gateway hello advertises one). Silent
+/// on any failure — status must keep working with a broken or missing config.
+async fn print_update_notice(config_path: &std::path::Path) {
+    let Ok(daemon_config) = crate::config::load_daemon_file_config(config_path).await else {
+        return;
+    };
+    let Some(state_dir) = daemon_config.state_path.parent() else {
+        return;
+    };
+    let Some(notice) = crate::self_update::available_update(state_dir) else {
+        return;
+    };
+    println!(
+        "update available: {} (running {})",
+        notice.latest,
+        crate::self_update::current_version()
+    );
+    if let Some(url) = notice.download_url() {
+        println!("  download: {url}");
+    }
+    println!("  then: replace the binary and run `cce-acp-connector restart`");
+    println!("  or:   set `[update] auto = true` in the connector config");
 }
 
 async fn run_foreground(config_path: Option<PathBuf>) -> anyhow::Result<()> {
