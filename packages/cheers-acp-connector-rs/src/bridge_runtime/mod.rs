@@ -48,9 +48,15 @@ use crate::config::{
 };
 use crate::loopback::{start_loopback, LoopbackHandle, LoopbackRequest, LoopbackResponse};
 use crate::runtime_adapter::{PermissionOutcome, RuntimeEvent, SessionStartOptions};
+use crate::self_update::SelfUpdater;
 use crate::state::SessionStateStore;
 
 pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
+    // Self-update rollback rail first: if a freshly-swapped binary keeps failing
+    // to get this far, this call restores the previous one (and never returns).
+    let updater = SelfUpdater::new(config.update.clone(), &config.state_path);
+    updater.startup_gate()?;
+
     let mut state = SessionStateStore::new(config.state_path.clone());
     state.load().await?;
     let state = Arc::new(Mutex::new(state));
@@ -58,7 +64,12 @@ pub async fn run_connector(config: ConnectorConfig) -> anyhow::Result<()> {
     let mut join_set = tokio::task::JoinSet::new();
     for (account_id, account) in config.accounts {
         let state = state.clone();
-        join_set.spawn(async move { AccountRuntime::new(account_id, account, state).run().await });
+        let updater = updater.clone();
+        join_set.spawn(async move {
+            AccountRuntime::new(account_id, account, state, updater)
+                .run()
+                .await
+        });
     }
 
     while let Some(result) = join_set.join_next().await {
@@ -71,6 +82,7 @@ struct AccountRuntime {
     account_id: String,
     config: AccountConfig,
     state: Arc<Mutex<SessionStateStore>>,
+    updater: Arc<SelfUpdater>,
 }
 
 impl AccountRuntime {
@@ -78,11 +90,13 @@ impl AccountRuntime {
         account_id: String,
         config: AccountConfig,
         state: Arc<Mutex<SessionStateStore>>,
+        updater: Arc<SelfUpdater>,
     ) -> Self {
         Self {
             account_id,
             config,
             state,
+            updater,
         }
     }
 
@@ -112,6 +126,19 @@ impl AccountRuntime {
             self.config.advanced.send_ack_timeout_ms,
         );
         let bridge = BridgeSession::connect(bridge_config.clone(), bridge_ready.clone()).await?;
+        // A healthy bridge connection is the self-update success signal (stops
+        // the rollback boot counter), and the gateway-advertised release version
+        // in the same hello is the update trigger.
+        self.updater.mark_healthy();
+        if let Some(latest) = bridge
+            .control_hello()
+            .server_capabilities
+            .as_ref()
+            .and_then(|caps| caps.latest_connector_version.clone())
+        {
+            self.updater
+                .maybe_start(latest, self.config.control_url.clone());
+        }
         let initial_connector_config = bridge.control_hello().connector_config.clone();
         // Capture the bot's own identity from the hello before `spawn_bridge_io`
         // consumes the session — it's injected into every prompt (see build_prompt).
@@ -1790,6 +1817,9 @@ impl RuntimeContext {
     }
 
     async fn run_task(self: Arc<Self>, task: TaskCommand) -> anyhow::Result<()> {
+        // Held for the whole turn (queued included) — a staged self-update only
+        // swaps binaries and re-execs once no guard is alive.
+        let _busy = crate::self_update::BusyGuard::new();
         if !self.config.policy.prompt.allow {
             let _ = self
                 .io

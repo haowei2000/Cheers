@@ -8,6 +8,7 @@ mod config;
 mod daemon;
 mod loopback;
 mod runtime_adapter;
+mod self_update;
 mod state;
 
 #[tokio::main]

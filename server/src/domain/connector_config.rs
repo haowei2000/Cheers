@@ -308,6 +308,13 @@ name       = {id_str}
 state_path = {state_path}
 log_dir    = {log_dir}
 
+# Optional: let the connector update itself when this server publishes a newer
+# release (ed25519-signed manifest, sha256-verified binaries, auto-rollback).
+# Kept commented out — executing downloaded code is the host owner's call, and
+# connectors older than 0.1.27 reject configs containing this section.
+# [update]
+# auto = true
+
 [accounts.{id}.bridge]
 control_url           = {control}
 data_url              = {data}

@@ -101,3 +101,65 @@ jobs:
           # On tag pushes this creates/updates the release for the tag; each matrix
           # job appends its binaries to the same release.
           fail_on_unmatched_files: true
+
+  # Signed update manifest for the connector's opt-in self-updater ([update]
+  # auto = true). Runs after every binary is attached: downloads them back from
+  # the release, records their sha256 in connector-manifest.json, and signs the
+  # manifest bytes with the CONNECTOR_SIGNING_KEY ed25519 secret (the matching
+  # public key ships inside the connector at
+  # packages/cheers-acp-connector-rs/release-signing-pubkey.pem). A connector
+  # only swaps binaries whose hash appears in a manifest that verifies against
+  # that pinned key — a compromised gateway or GitHub proxy can't push code.
+  manifest:
+    name: sign update manifest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/connector-v')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download release assets
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=${tag#connector-v}" >> "$GITHUB_ENV"
+          mkdir assets
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir assets \
+            --pattern 'cce-acp-connector-*' --pattern 'cheers-mcp-server-*'
+          ls -l assets
+
+      - name: Build + sign manifest
+        env:
+          CONNECTOR_SIGNING_KEY: ${{ secrets.CONNECTOR_SIGNING_KEY }}
+        run: |
+          if [ -z "$CONNECTOR_SIGNING_KEY" ]; then
+            echo "::error::CONNECTOR_SIGNING_KEY secret is not set — cannot publish a signed" \
+                 "update manifest. Self-updating connectors will not pick up this release." \
+                 "Add the ed25519 private key (PEM) as a repo secret and re-run this job."
+            exit 1
+          fi
+          python3 - << 'EOF'
+          import hashlib, json, os, pathlib
+          assets = {
+              p.name: {"sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+              for p in sorted(pathlib.Path("assets").iterdir())
+          }
+          manifest = {"version": os.environ["VERSION"], "assets": assets}
+          pathlib.Path("connector-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+          )
+          EOF
+          printf '%s' "$CONNECTOR_SIGNING_KEY" > signing-key.pem
+          openssl pkeyutl -sign -inkey signing-key.pem -rawin \
+            -in connector-manifest.json -out manifest.sig.bin
+          base64 -w0 manifest.sig.bin > connector-manifest.json.sig
+          rm -f signing-key.pem manifest.sig.bin
+          cat connector-manifest.json
+
+      - name: Attach manifest to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            connector-manifest.json
+            connector-manifest.json.sig
+          fail_on_unmatched_files: true
