@@ -67,6 +67,30 @@ Each channel gets a **Workbench** — a shared workspace that humans and agents 
     alt="The Workbench modal: a file tree with dev, prompts, and research folders on the left, and dev/board.json rendered as a kanban board on the right.">
 </p>
 
+## How Cheers compares
+
+Open-source AI-collaboration projects split into two camps by **who owns the chat
+surface**: **bridges** route `@agent` mentions from a chat app you already use
+(Slack, Discord, GitHub) to a coding agent, while **platforms** *are* the chat app.
+Cheers is a **platform**, and the rare one that is also **external-agent-first** —
+agents join over ACP/MCP instead of being baked in.
+
+| Project | Camp | Bots as peer members | Fine-grained permissions | Approvals + audit | Self-host |
+|---|---|---|---|---|---|
+| **Cheers** | Platform · **ACP/MCP** | ✅ channel members | ✅ per-capability grant matrix | ✅ Viewboard audit | ✅ MIT |
+| [ChatClaw](https://github.com/fastclaw-ai/chatclaw) | Platform | ✅ group chat | — | — | ✅ |
+| [OpenSail](https://github.com/TesslateAI/OpenSail) | Platform + workflow | partial | ✅ | ✅ approval gates | ✅ |
+| [OpenAB](https://github.com/openabdev/openab) | Bridge (Rust · ACP) | partial (session identity in host app) | allowlists only | — | ✅ |
+| [OpenTag](https://github.com/amplifthq/opentag) | Bridge (Slack/GitHub) | n/a (host threads) | ✅ capability checks | ✅ work ledger | ✅ |
+| [Kortny](https://www.kortny.dev/) | Bridge (Slack) | n/a (lives in Slack) | partial | ✅ per-task cost | ✅ |
+
+**What's distinctive:** a self-hosted, Slack-style surface where bots are
+first-class members under the **deepest permission model in the field**
+(`user ▸ group ▸ role ▸ *`, deny wins, sensitive capabilities owner-only), with a
+permanent **Viewboard** audit of every command an agent ran and who approved it.
+Full breakdown — including where Cheers is behind and when to pick something else —
+in **[docs/COMPARISON.md](docs/COMPARISON.md)**.
+
 ## Documentation
 
 English is the default documentation language. Chinese mirrors use the `.zh-CN.md` suffix.
@@ -87,6 +111,7 @@ English is the default documentation language. Chinese mirrors use the `.zh-CN.m
 **Development and architecture docs**
 
 - [Roadmap](docs/ROADMAP.md) / [中文](docs/ROADMAP.zh-CN.md)
+- [Competitive Comparison](docs/COMPARISON.md) — how Cheers compares to other AI-collaboration projects
 - [Architecture Overview](docs/arch/ARCHITECTURE_OVERVIEW.md)
 - [Mesh Rework Plan](docs/arch/REFACTOR_PLAN.md)
 - [Gateway Protocol](docs/arch/WIRE_PROTOCOL.md)

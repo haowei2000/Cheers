@@ -51,6 +51,7 @@ This is the consolidated documentation entrypoint for the repository.
 
 - [Product Roadmap](ROADMAP.md) / [中文](ROADMAP.zh-CN.md)
 - [Project Overview](PROJECT_OVERVIEW.md) / [中文](PROJECT_OVERVIEW.zh-CN.md)
+- [Competitive Comparison](COMPARISON.md) — Cheers vs. other AI-collaboration projects
 - [Release notes](release_note/README.md)
 
 ## Historical Documentation
