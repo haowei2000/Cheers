@@ -365,6 +365,9 @@ pub async fn create_message(
                 provider_session_key,
                 session_id: resolved_session_id,
                 chain_id: chain_id.clone(),
+                // Human path: no gateway handoff — the trigger message's own
+                // (human-attached) context bundle flows through load_task_context.
+                context_bundle: None,
             },
             &media_cache,
         )

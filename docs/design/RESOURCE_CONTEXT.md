@@ -181,7 +181,7 @@ friction of manual pick without changing the delivery/resolution path.
 |---|---|---|
 | **F0 — foundation** | bundle schema; `context_bundle` on message (persist) + on the Task frame; agent resolves refs via existing verbs; consumer-governed reads | a hand-crafted bundle on a message reaches a bot's task frame; bot pulls a ref it may read, is denied one it may not |
 | **F1 — human, manual pick** | composer "add context" picker for plan/file/message/activity; context chips on messages | a human attaches a plan + a file to an `@bot` message; the bot receives and reads them |
-| **F2 — bot, automatic pick (handoff)** | gateway auto-assembles the bundle on bot@bot dispatch (reuses F0) | A hands to B; B's task frame carries A's plan + touched files + recent decisions; a handoff card renders |
+| **F2 — bot, automatic pick (handoff)** | gateway auto-assembles the bundle on bot@bot dispatch (reuses F0). **Gateway done**: `chains.rs::assemble_handoff_bundle` attaches the initiator's plan + recent-decisions refs to each target's task frame. Follow-ups: files-touched refs, and a human-facing handoff card on the placeholder message | A hands to B; B's task frame carries A's plan + recent decisions |
 | **F3 — human, automatic pick (suggested)** | composer suggests chips from reply target / filenames / active plan | typing `@bot fix the board` offers a one-click `board.json` chip |
 
 Recommended order: **F0 → F1 → F2 → F3**. F1 first among producers — visible,

@@ -33,6 +33,12 @@ pub struct DispatchParams {
     /// dispatch gate can block hops of a cancelled chain. `None` for un-tracked
     /// dispatch (a targeted session, or a message that triggers no bot).
     pub chain_id: Option<String>,
+    /// Gateway-assembled resource context for this dispatch (docs/design/RESOURCE_CONTEXT.md,
+    /// F2 handoff). When `Some`, it OVERRIDES any bundle on the trigger message and
+    /// becomes the target's task-frame `context_bundle` — this is how a bot@bot hop
+    /// hands the initiator's plan/decisions to the next agent. `None` on the human
+    /// path, so the trigger message's own (human-attached) bundle flows through.
+    pub context_bundle: Option<Value>,
 }
 
 /// 派发结果。
@@ -149,6 +155,11 @@ pub async fn dispatch(
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
     task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
+    // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
+    // own bundle; otherwise the human-attached bundle read above flows through.
+    if params.context_bundle.is_some() {
+        task_context.context_bundle = params.context_bundle.clone();
+    }
     // Per-session ACP root set (cwd + additionalDirectories) stored on the session
     // row; absent → the connector falls back to its default_cwd.
     let workspace = load_session_workspace(db, &params.provider_session_key).await;
