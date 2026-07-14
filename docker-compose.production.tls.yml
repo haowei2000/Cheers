@@ -35,21 +35,32 @@ services:
       - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-https://cheers.example.com}
 
   tls-edge:
-    image: caddy:2-alpine
+    # Custom Caddy build with the Cloudflare DNS plugin, for ACME DNS-01.
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.caddy
+    image: ${TLS_EDGE_IMAGE:-cheers/tls-edge:latest}
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${TLS_CERT_DIR:-./certs}:/etc/caddy/certs:ro
+      # caddy_data persists the issued ACME certs across restarts — without it
+      # Caddy re-requests on every boot and will hit Let's Encrypt rate limits.
       - caddy_data:/data
       - caddy_config:/config
     environment:
+      # Primary public host. APP_DOMAIN_LEGACY is served in parallel during a
+      # domain migration; leave it empty when there is only one domain.
       - APP_DOMAIN=${APP_DOMAIN:-cheers.example.com}
+      - APP_DOMAIN_LEGACY=${APP_DOMAIN_LEGACY:-}
       - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-cheers-files}
-      - TLS_CERT_FILE=${TLS_CERT_FILE:-/etc/caddy/certs/fullchain.pem}
-      - TLS_KEY_FILE=${TLS_KEY_FILE:-/etc/caddy/certs/privkey.pem}
+      # ACME account email (expiry notices) and the Cloudflare API token used
+      # for the DNS-01 challenge. The token needs Zone:DNS:Edit on the zone(s)
+      # covering APP_DOMAIN / APP_DOMAIN_LEGACY. Provide it out-of-band in .env.
+      - ACME_EMAIL=${ACME_EMAIL:-}
+      - CF_API_TOKEN=${CF_API_TOKEN:-}
     depends_on:
       - gateway
       - frontend

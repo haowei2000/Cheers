@@ -170,17 +170,35 @@ The TLS overlay adds a Caddy `tls-edge` service that terminates HTTPS and
 reverse-proxies to the gateway/frontend/rustfs. It also binds the
 service host ports to loopback so only Caddy is publicly exposed.
 
+Caddy obtains and auto-renews its certificate via ACME — no manual cert files.
+The image is built from `docker/Dockerfile.caddy` with the Cloudflare DNS
+plugin so it can use the **DNS-01** challenge, which works while the domain
+stays behind Cloudflare's proxy (orange cloud) and renews unattended.
+
 ```bash
-# place certs at ./certs/fullchain.pem and ./certs/privkey.pem
-docker compose -f docker-compose.yml -f docker-compose.production.tls.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.production.tls.yml up -d --build
 ```
 
 Set in `.env` for production:
 
 - `APP_DOMAIN` — your public host, e.g. `cheers.example.com`
-- `CORS_ALLOWED_ORIGINS=https://cheers.example.com`
+- `APP_DOMAIN_LEGACY` — optional second host served in parallel during a domain
+  migration (leave empty when there is only one domain)
+- `CORS_ALLOWED_ORIGINS=https://cheers.example.com` (comma-separate both hosts
+  during a migration)
 - `STORAGE_S3_PUBLIC_ENDPOINT=https://cheers.example.com`
-- `HTTP_PORT=80`, `HTTPS_PORT=443`, and the `TLS_*` cert paths
+- `ACME_EMAIL` — email for the ACME account (expiry notices)
+- `CF_API_TOKEN` — Cloudflare API token with **Zone:DNS:Edit** on the zone(s)
+  covering the domain(s), used for the DNS-01 challenge
+- `HTTP_PORT=80`, `HTTPS_PORT=443`
+
+Set the Cloudflare SSL/TLS mode to **Full (strict)** so the edge trusts Caddy's
+ACME certificate on the origin hop.
+
+> **Non-Cloudflare / grey-cloud (proxy off):** you don't need the custom image
+> or a token. Use stock `caddy:2-alpine` and delete the `tls { dns cloudflare
+> ... }` block in `docker/Caddyfile`; Caddy then issues via HTTP-01 / TLS-ALPN-01
+> directly (requires ports 80/443 reachable and the domain pointing at the host).
 
 Add `--profile bot` to the command if you also run the bot.
 

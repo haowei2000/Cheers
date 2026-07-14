@@ -1,17 +1,16 @@
 {
   admin off
+  email {$ACME_EMAIL}
   log {
     output stdout
     format console
   }
 }
 
-http://{$APP_DOMAIN} {
-  redir https://{$APP_DOMAIN}{uri} 301
-}
-
-{$APP_DOMAIN} {
-  tls {$TLS_CERT_FILE} {$TLS_KEY_FILE}
+# Shared reverse-proxy rules, applied to every hostname we serve. Keeping them
+# in a snippet lets the primary and legacy domains share one definition during
+# a domain migration.
+(cheers_app) {
   encode gzip
 
   handle /api/v1/* {
@@ -45,4 +44,17 @@ http://{$APP_DOMAIN} {
   handle {
     reverse_proxy frontend:80
   }
+}
+
+# Primary host, plus an optional legacy host that stays live during a domain
+# migration (set APP_DOMAIN_LEGACY empty once the old domain is retired). Caddy
+# provisions and auto-renews a certificate for each hostname via the Cloudflare
+# ACME DNS-01 challenge, which works while the domain stays behind Cloudflare's
+# proxy. For a grey-cloud (proxy-off) deployment, delete the tls block so Caddy
+# falls back to automatic HTTP-01 / TLS-ALPN-01 and use stock caddy:2-alpine.
+{$APP_DOMAIN} {$APP_DOMAIN_LEGACY} {
+  tls {
+    dns cloudflare {env.CF_API_TOKEN}
+  }
+  import cheers_app
 }

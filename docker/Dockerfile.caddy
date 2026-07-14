@@ -1,0 +1,20 @@
+# Custom Caddy image with the Cloudflare DNS provider compiled in.
+#
+# Why: the production TLS edge obtains its certificate through the ACME
+# DNS-01 challenge. DNS-01 is the only ACME method that still works while the
+# domain sits behind Cloudflare's proxy ("orange cloud") — TLS-ALPN-01 fails
+# because Cloudflare terminates TLS at its edge, and HTTP-01 is intercepted by
+# "Always Use HTTPS". DNS-01 also renews unattended every ~60 days without
+# ever toggling the cloud color. It needs the caddy-dns/cloudflare module,
+# which is not part of the stock caddy:2-alpine image, so we build our own.
+#
+# If you instead run the domain grey-cloud (DNS-only / proxy off), you do not
+# need this image at all: use stock `caddy:2-alpine` and drop the `tls { dns
+# cloudflare ... }` block in the Caddyfile so Caddy falls back to automatic
+# HTTP-01 / TLS-ALPN-01 issuance.
+FROM caddy:2-builder-alpine AS builder
+RUN xcaddy build \
+    --with github.com/caddy-dns/cloudflare
+
+FROM caddy:2-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
