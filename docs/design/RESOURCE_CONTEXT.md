@@ -126,14 +126,24 @@ authorized consumer pull reveals it.
 
 ## Producer A — human, manual pick
 
-Composer gains an **"add context"** affordance (an `@`-style picker, mirroring
-the mention popup). Categories map to resource verbs:
+The pickable resources are **exactly what the Viewboard and Workbench already
+show** — a human attaches the same things they're looking at. Categories map to
+resource verbs:
 
-- **Plan** → `channel.plan.read`
-- **File / board** → `channel.files*` (board.json, any workbench/channel file)
+- **Plan** (Viewboard) → `channel.plan.read`
+- **Recent decisions / Activity** (Viewboard) → `channel.activity.read`
+- **Sessions / Cost / Audit** (Viewboard) → `channel.sessions.read` / `channel.usage.read` / approval audit
+- **File / board** (Workbench) → `channel.files*` (board.json, any workbench/channel file)
 - **Message / thread** → `channel.messages.by-seq` (pick a message; a thread = its range)
-- **Recent decisions** → `channel.activity.read`
-- **Session** → `channel.sessions.read`
+
+**Two entry points** (both feed the same context bundle):
+
+1. **Composer "add context"** — an `@`-style picker (mirrors the mention popup)
+   to browse and attach resources before sending.
+2. **In-panel "attach"** — a "pick up → send to agent" affordance *inside* the
+   Viewboard tabs and Workbench files. This is the pageagent/Cursor pattern:
+   attach *what you're viewing* without leaving it. Often the more natural entry
+   ("I'm looking at the plan — attach it").
 
 Selected items become context chips on the composer; on send they persist to the
 message and thread into any triggered bot's task frame. Rendered as a chips row

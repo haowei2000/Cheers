@@ -295,6 +295,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         files,
         created_at: now,
         content_data: None,
+        context_bundle: None,
     };
 
     Ok(serde_json::to_value(dto).unwrap_or_else(|_| {
