@@ -1,5 +1,5 @@
 import { memo, useContext, useState } from "react";
-import { Square, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
+import { Square, MessageCircleMore, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -73,14 +73,29 @@ async function copyMessage(message: Message) {
   }
 }
 
-/** Hover toolbar: reply · copy · forward · select. Hidden while streaming. */
-function ActionBar({ message, actions }: { message: Message; actions: MessageActionHandlers }) {
+/** Hover toolbar: reply · copy · forward · select. Hidden while streaming.
+ *  `reversed` rows (own messages) put the header on the right, so the toolbar
+ *  anchors left to avoid overlapping the name/timestamp/avatar. */
+function ActionBar({
+  message,
+  actions,
+  reversed,
+}: {
+  message: Message;
+  actions: MessageActionHandlers;
+  reversed?: boolean;
+}) {
   const btn =
     "flex items-center justify-center w-7 h-7 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/70";
   return (
-    <div className="absolute -top-3 right-4 z-10 flex opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity">
+    <div
+      className={cn(
+        "absolute -top-3 z-10 flex opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity",
+        reversed ? "left-4" : "right-4"
+      )}
+    >
       <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
-        <Reply className="w-3.5 h-3.5" />
+        <MessageCircleMore className="w-3.5 h-3.5" />
       </button>
       <button type="button" title="Copy text" className={btn} onClick={() => void copyMessage(message)}>
         <Copy className="w-3.5 h-3.5" />
@@ -369,7 +384,7 @@ export const MessageItem = memo(function MessageItem({
           />
         )}
       </div>
-      {showActions && <ActionBar message={message} actions={actions} />}
+      {showActions && <ActionBar message={message} actions={actions} reversed={isOwn} />}
     </div>
   );
 });
