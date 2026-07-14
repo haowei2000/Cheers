@@ -1,0 +1,13 @@
+{
+  "type": "config_options",
+  "v": 1,
+  "options": {
+    "configOptions": [
+      {
+        "id": "model",
+        "value": "claude-sonnet-5"
+      }
+    ],
+    "currentModeId": "default"
+  }
+}

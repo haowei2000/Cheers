@@ -1,0 +1,9 @@
+{
+  "type": "file_upload",
+  "v": 1,
+  "client_file_id": "client-file-1",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "filename": "report.pdf",
+  "content_type": "application/pdf",
+  "data_b64": "aGVsbG8="
+}

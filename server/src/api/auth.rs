@@ -105,10 +105,7 @@ pub struct RegisterCodeRequest {
 /// Sign-up gate shared by request-code + register: open registration, or a live
 /// invite-link token. The token is only CHECKED here — its use is consumed later
 /// by `accept_invite_link`, once the account exists and actually joins.
-async fn ensure_may_register(
-    state: &AppState,
-    invite_token: Option<&str>,
-) -> Result<(), AppError> {
+async fn ensure_may_register(state: &AppState, invite_token: Option<&str>) -> Result<(), AppError> {
     if state.config.open_registration {
         return Ok(());
     }
@@ -164,7 +161,9 @@ pub async fn register_request_code(
         .fetch_optional(&state.db)
         .await?;
     if taken.is_some() {
-        return Err(AppError::Conflict("that email is already registered".into()));
+        return Err(AppError::Conflict(
+            "that email is already registered".into(),
+        ));
     }
 
     let code = crate::infra::crypto::generate_email_code();

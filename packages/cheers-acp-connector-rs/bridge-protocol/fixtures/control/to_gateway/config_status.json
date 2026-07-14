@@ -1,0 +1,15 @@
+{
+  "type": "config_status",
+  "v": 1,
+  "revision": 3,
+  "ok": false,
+  "applied": [
+    "model"
+  ],
+  "rejected": [
+    {
+      "field": "cwd",
+      "reason": "outside allowed_roots"
+    }
+  ]
+}

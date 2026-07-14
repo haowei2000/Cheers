@@ -44,7 +44,14 @@ pub async fn send_password_reset_code(config: &Config, to_email: &str, code: &st
 /// Send the code to `to_email`, preferring Brevo and falling back to log delivery so
 /// the flow still works in dev (or if the provider is briefly unreachable). `kind`
 /// is a short label for the logs (e.g. `registration`).
-async fn deliver(config: &Config, to_email: &str, subject: &str, intro: &str, code: &str, kind: &str) {
+async fn deliver(
+    config: &Config,
+    to_email: &str,
+    subject: &str,
+    intro: &str,
+    code: &str,
+    kind: &str,
+) {
     let text = format!(
         "{intro}\n\n    {code}\n\n{CODE_TTL_TEXT}\nIf you didn't request this, you can ignore this email."
     );

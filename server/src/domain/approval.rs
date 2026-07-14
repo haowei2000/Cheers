@@ -215,7 +215,8 @@ pub async fn list_audit(
 
     for r in rows {
         let event_type: String = r.try_get("event_type").unwrap_or_default();
-        let request_id: Option<String> = r.try_get::<Option<String>, _>("request_id").ok().flatten();
+        let request_id: Option<String> =
+            r.try_get::<Option<String>, _>("request_id").ok().flatten();
         let bot_id: Option<String> = r.try_get::<Option<String>, _>("bot_id").ok().flatten();
         let detail: Option<Value> = r.try_get::<Option<Value>, _>("detail").ok().flatten();
 

@@ -1,0 +1,41 @@
+{
+  "additional_dirs": [
+    "/data"
+  ],
+  "attachments": [
+    {
+      "content_type": "text/markdown",
+      "file_id": "file-1",
+      "filename": "notes.md",
+      "size_bytes": 12
+    }
+  ],
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "cwd": "/workspace",
+  "depth": 0,
+  "msg_id": "eeeeeeee-ffff-4000-8111-222222222222",
+  "pinned": [
+    "Always answer in English."
+  ],
+  "placeholder_msg_id": "33333333-4444-4555-8666-777777777777",
+  "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "session": {
+    "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+    "task_scope_id": "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+  },
+  "session_policy": {
+    "after_task": "keep_active",
+    "on_missing": "create",
+    "on_paused": "resume"
+  },
+  "task_id": "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+  "trigger": "user_message",
+  "trigger_message": {
+    "content": "hello bot",
+    "msg_id": "eeeeeeee-ffff-4000-8111-222222222222"
+  },
+  "trigger_msg_id": "eeeeeeee-ffff-4000-8111-222222222222",
+  "trigger_seq": 42,
+  "type": "task",
+  "v": 1
+}

@@ -1,0 +1,12 @@
+{
+  "type": "ready",
+  "v": 1,
+  "plugin_version": "0.9.3",
+  "runtime": {
+    "protocol": "acp",
+    "name": "legacy-ts-connector"
+  },
+  "connector_capabilities": {
+    "streaming": true
+  }
+}

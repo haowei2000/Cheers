@@ -292,9 +292,7 @@ mod tests {
         // Regression: an unregistered name classifies to None and acp_policy::
         // allows() short-circuits to Ok(true) — this action must stay gated.
         assert_eq!(
-            classify("cheers/session_set_primary")
-                .unwrap()
-                .event_class,
+            classify("cheers/session_set_primary").unwrap().event_class,
             Some("session_set_primary")
         );
     }

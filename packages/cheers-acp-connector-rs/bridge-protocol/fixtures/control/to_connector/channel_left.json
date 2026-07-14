@@ -1,0 +1,5 @@
+{
+  "type": "channel_left",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "reason": "removed_by_admin"
+}

@@ -425,13 +425,8 @@ pub async fn set_session_mode(
     })
     .await?;
 
-    let frame = json!({
-        "type": "mode_set",
-        "v": 1,
-        "request_id": Uuid::new_v4().to_string(),
-        "provider_session_key": key,
-        "mode": mode,
-    });
+    let frame =
+        crate::gateway::bridge_frames::mode_set_frame(&Uuid::new_v4().to_string(), &key, &mode);
     let delivered = state.bot_locator.dispatch_task(bot_id, frame).await;
     Ok(Json(
         json!({ "ok": true, "mode": mode, "delivered": delivered }),
@@ -512,14 +507,12 @@ pub async fn set_session_config_option(
     })
     .await?;
 
-    let frame = json!({
-        "type": "config_option_set",
-        "v": 1,
-        "request_id": Uuid::new_v4().to_string(),
-        "provider_session_key": key,
-        "config_id": config_id,
-        "value": value,
-    });
+    let frame = crate::gateway::bridge_frames::config_option_set_frame(
+        &Uuid::new_v4().to_string(),
+        &key,
+        &config_id,
+        &value,
+    );
     let delivered = state.bot_locator.dispatch_task(bot_id, frame).await;
     Ok(Json(
         json!({ "ok": true, "config_id": config_id, "value": value, "delivered": delivered }),

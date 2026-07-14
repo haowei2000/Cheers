@@ -63,7 +63,8 @@ pub async fn validate_mention_ids(
     .await?;
 
     // member_id → MemberType（仅收录 user/bot；未知 type 视同不存在 → InvalidMember）。
-    let mut type_by_id: std::collections::HashMap<Uuid, MemberType> = std::collections::HashMap::new();
+    let mut type_by_id: std::collections::HashMap<Uuid, MemberType> =
+        std::collections::HashMap::new();
     for row in &rows {
         let mid = row
             .try_get::<String, _>("member_id")

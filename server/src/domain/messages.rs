@@ -102,9 +102,10 @@ pub async fn create_message(
     // GROUP_MENTION_CAP in resolve_mention_names — no per-channel budget here
     // (that guards *amplifying* bot→bot chains, and would wrongly throttle normal
     // 1:1 human↔bot chat).
-    let mut mentions = mentions::resolve_mention_names(db, params.channel_id, &params.mention_names)
-        .await
-        .map_err(mention_parse_error_to_app)?;
+    let mut mentions =
+        mentions::resolve_mention_names(db, params.channel_id, &params.mention_names)
+            .await
+            .map_err(mention_parse_error_to_app)?;
     let id_mentions = mentions::validate_mention_ids(db, params.channel_id, &params.mention_ids)
         .await
         .map_err(mention_parse_error_to_app)?;
@@ -239,8 +240,7 @@ pub async fn create_message(
     let chain_id: Option<String> = if bots.is_empty() {
         None
     } else {
-        match crate::domain::task_chains::start_chain(db, params.channel_id, msg_id, msg_id).await
-        {
+        match crate::domain::task_chains::start_chain(db, params.channel_id, msg_id, msg_id).await {
             Ok(cid) => Some(cid.to_string()),
             Err(e) => {
                 warn!(channel_id = %params.channel_id, err = %e, "start_chain failed; cascade will be un-cancelable");
@@ -302,14 +302,10 @@ pub async fn create_message(
                 (key.clone(), Some(*sid))
             }
             None => {
-                match sessions::resolve_primary_session(
-                    db,
-                    bot_id,
-                    &params.channel_id.to_string(),
-                )
-                .await
-                .ok()
-                .flatten()
+                match sessions::resolve_primary_session(db, bot_id, &params.channel_id.to_string())
+                    .await
+                    .ok()
+                    .flatten()
                 {
                     Some((sid, key)) => {
                         let _ = sessions::touch_session(db, sid).await;

@@ -44,6 +44,11 @@ services:
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-true}
       # 自助注册默认关闭（安全默认）；公开实例显式设为 true。
       - OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
+      # Connector self-update: the release version this gateway advertises in
+      # its hello + serves via /api/v1/connector/download. Unset ⇒ no update
+      # signal (download proxy then tracks the latest GitHub release).
+      - CHEERS_CONNECTOR_RELEASE_REPO=${CHEERS_CONNECTOR_RELEASE_REPO:-}
+      - CHEERS_CONNECTOR_RELEASE_VERSION=${CHEERS_CONNECTOR_RELEASE_VERSION:-}
       # SMTP（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}

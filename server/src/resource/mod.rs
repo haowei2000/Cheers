@@ -11,7 +11,7 @@ pub mod plan;
 pub mod sessions;
 pub mod usage;
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -167,15 +167,7 @@ async fn require_channel_admin(
     }
 }
 
-/// 构造成功的 resource_res 帧。
-fn ok_res(req_id: &str, data: Value) -> Value {
-    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": true, "data": data })
-}
-
-/// 构造失败的 resource_res 帧。
-fn err_res(req_id: &str, code: &str, msg: &str) -> Value {
-    json!({ "type": "resource_res", "v": 1, "req_id": req_id, "ok": false, "code": code, "error": msg })
-}
+use crate::gateway::bridge_frames::{resource_res_err as err_res, resource_res_ok as ok_res};
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────────────
 

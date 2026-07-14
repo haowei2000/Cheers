@@ -297,16 +297,14 @@ pub async fn resolve_permission(
     } else {
         "reject"
     };
-    let frame = json!({
-        "type": "permission_resolution",
-        "v": 1,
-        "request_id": request_id,
-        "message_id": pending.msg_id.to_string(),
-        "resolution": resolution,
-        "option_id": option_id,
-        "resolved_by": uid.to_string(),
-        "resolved_at": now,
-    });
+    let frame = crate::gateway::bridge_frames::permission_resolution_frame(
+        &request_id,
+        &pending.msg_id.to_string(),
+        resolution,
+        &option_id,
+        &uid.to_string(),
+        &now,
+    );
     let delivered = state.bot_locator.dispatch_task(pending.bot_id, frame).await;
 
     // Broadcast the resolved card so every client clears the pending state.

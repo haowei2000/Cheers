@@ -34,6 +34,9 @@ jobs:
           filters: |
             gateway:
               - "server/**"
+              # The gateway image compiles the shared bridge-protocol crate
+              # (path dep) — a protocol change alone must rebuild it.
+              - "packages/cheers-acp-connector-rs/bridge-protocol/**"
               - "docker-compose.yml.template"
               - ".github/workflows/cd.yml"
             frontend:
@@ -85,7 +88,10 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ./server
+          # Repo-root context: the gateway build needs the shared
+          # bridge-protocol crate under packages/ (path dependency).
+          context: .
+          file: ./server/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

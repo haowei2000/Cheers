@@ -877,7 +877,9 @@ pub async fn add_channel_member(
     .try_get::<bool, _>("ok")
     .unwrap_or(false);
     if already_member {
-        return Err(AppError::BadRequest("user is already a channel member".into()));
+        return Err(AppError::BadRequest(
+            "user is already a channel member".into(),
+        ));
     }
 
     // Idempotent: a repeat invite before the first is answered is a no-op.

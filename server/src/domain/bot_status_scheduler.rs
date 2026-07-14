@@ -83,7 +83,8 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
 
     // Find-or-create the owner↔bot DM (race-safe via dm_key), so a refresh works
     // even if the owner never opened one by hand.
-    let channel_id = crate::domain::dms::find_or_create_dm(&state.db, owner_uuid, bot_id, true).await?;
+    let channel_id =
+        crate::domain::dms::find_or_create_dm(&state.db, owner_uuid, bot_id, true).await?;
 
     // INITIATE(prompt) gate — the same one `api::bots::refresh_bot_status` checks.
     // `create_message` silently skips waking the bot when this event is denied (it

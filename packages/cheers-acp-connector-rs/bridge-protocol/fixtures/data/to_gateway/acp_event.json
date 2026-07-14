@@ -1,0 +1,16 @@
+{
+  "type": "acp_event",
+  "v": 1,
+  "name": "session/update:plan",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "msg_id": "33333333-4444-4555-8666-777777777777",
+  "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "payload": {
+    "entries": [
+      {
+        "content": "Fix the bug",
+        "status": "pending"
+      }
+    ]
+  }
+}

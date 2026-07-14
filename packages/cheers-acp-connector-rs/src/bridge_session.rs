@@ -74,7 +74,7 @@ pub struct BridgeReady {
 impl BridgeReady {
     pub fn acp(runtime_name: impl Into<String>, runtime_version: Option<String>) -> Self {
         Self {
-            connector: ConnectorInfo::default(),
+            connector: crate::bridge::local_connector_info(),
             runtime: RuntimeDescriptor {
                 protocol: "acp".to_string(),
                 name: Some(runtime_name.into()),
@@ -287,8 +287,9 @@ pub async fn connect_control_stream(
     control
         .send_json(&ControlOutbound::Ready {
             v: BRIDGE_PROTOCOL_VERSION,
-            connector_version: ready.connector.version.clone(),
-            runtime: ready.runtime.clone(),
+            connector_version: Some(ready.connector.version.clone()),
+            plugin_version: None,
+            runtime: Some(ready.runtime.clone()),
             connector_capabilities: ready.connector_capabilities.clone(),
         })
         .await

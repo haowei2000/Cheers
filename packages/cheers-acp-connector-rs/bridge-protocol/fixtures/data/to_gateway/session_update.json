@@ -1,0 +1,9 @@
+{
+  "type": "session_update",
+  "v": 1,
+  "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "provider_session_id": "acp-session-1",
+  "metadata": {
+    "model": "claude-sonnet-5"
+  }
+}

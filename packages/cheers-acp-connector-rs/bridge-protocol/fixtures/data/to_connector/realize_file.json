@@ -1,0 +1,9 @@
+{
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "file_id": "file-1",
+  "remote_ref": "/workspace/report.pdf",
+  "roots": [
+    "/workspace"
+  ],
+  "type": "realize_file"
+}

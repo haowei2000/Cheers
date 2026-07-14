@@ -69,10 +69,7 @@ impl MediaCache {
             return hit;
         }
         let blocks = load_pinned_context(db, channel_id).await;
-        self.pinned
-            .lock()
-            .await
-            .insert(channel_id, blocks.clone());
+        self.pinned.lock().await.insert(channel_id, blocks.clone());
         blocks
     }
 }
@@ -538,7 +535,11 @@ async fn fetch_transcript(row: &AttachmentRow, cache: &MediaCache) -> Option<Str
             None
         }
     };
-    cache.transcript.lock().await.insert(cache_key, result.clone());
+    cache
+        .transcript
+        .lock()
+        .await
+        .insert(cache_key, result.clone());
     result
 }
 
@@ -706,44 +707,93 @@ fn build_task_frame(
     };
 
     let (cwd, additional_dirs) = workspace;
-    json!({
-        "type": "task",
-        "v": 1,
-        "task_id": task_id,
-        "channel_id": channel_id,
-        "trigger_msg_id": msg_id,
-        "msg_id": msg_id,
-        "trigger_seq": trigger_seq,
-        "depth": depth,
-        "placeholder_msg_id": placeholder_msg_id,
-        "provider_session_key": provider_session_key,
-        "trigger": trigger,
-        "session_id": session_id,
-        "session_policy": {
-            "on_missing": "create",
-            "on_paused": "resume",
-            "after_task": "keep_active"
-        },
-        "trigger_message": task_context.trigger_message,
-        "attachments": task_context.attachments,
-        "pinned": task_context.pinned,
+    use cheers_bridge_protocol as proto;
+    // wire-compat: msg_id duplicates trigger_msg_id, and the nested session ref
+    // repeats session identifiers — deployed connectors read both shapes.
+    crate::gateway::bridge_frames::frame_value(&proto::ControlInbound::Task {
+        v: proto::BRIDGE_PROTOCOL_VERSION,
+        task_id: task_id.to_string(),
+        channel_id: channel_id.to_string(),
+        trigger_msg_id: msg_id.to_string(),
+        msg_id: Some(msg_id.to_string()),
+        trigger_seq: Some(trigger_seq),
+        depth: Some(depth),
+        trigger: Some(trigger.to_string()),
+        placeholder_msg_id: placeholder_msg_id.to_string(),
+        provider_session_key: provider_session_key.to_string(),
+        session_id: session_id.map(|id| id.to_string()),
+        session_policy: Some(proto::SessionPolicy {
+            on_missing: "create".to_string(),
+            on_paused: "resume".to_string(),
+            after_task: "keep_active".to_string(),
+        }),
+        trigger_message: Some(task_context.trigger_message),
+        attachments: task_context
+            .attachments
+            .into_iter()
+            .map(|a| {
+                serde_json::from_value::<proto::AttachmentInfo>(a)
+                    .expect("attachment objects fit AttachmentInfo (flatten extra)")
+            })
+            .collect(),
+        pinned: task_context.pinned,
         // Per-session ACP root set. The connector re-validates against its
-        // allowed_roots and uses default_cwd when cwd is null (ACP: cwd is a pure
-        // session/new argument, immutable for the session's lifetime).
-        "cwd": cwd,
-        "additional_dirs": additional_dirs,
-        "session": {
-            "id": session_id,
-            "provider_session_key": provider_session_key,
-            "task_scope_id": task_id,
-        },
-        "enqueued_at": chrono::Utc::now().to_rfc3339(),
+        // allowed_roots and uses default_cwd when cwd is absent (ACP: cwd is a
+        // pure session/new argument, immutable for the session's lifetime).
+        cwd,
+        additional_dirs,
+        binding_config: None,
+        session: Some(proto::RuntimeSessionRef {
+            id: session_id.map(|id| id.to_string()),
+            provider_session_key: Some(provider_session_key.to_string()),
+            provider_session_id: None,
+            provider_account_id: None,
+            provider_agent_id: None,
+            primary_scope_type: None,
+            primary_scope_id: None,
+            task_scope_id: Some(task_id.to_string()),
+            extra: Default::default(),
+        }),
+        enqueued_at: Some(chrono::Utc::now().to_rfc3339()),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gateway::bridge_frames::fixture::assert_matches_fixture;
+
+    /// The `task` frame is pinned to the shared golden fixture (the same file
+    /// the connector parses in its serde tests). `enqueued_at` is now() —
+    /// stripped before comparing.
+    #[test]
+    fn task_frame_matches_fixture() {
+        let frame = build_task_frame(
+            Uuid::parse_str("99999999-aaaa-4bbb-8ccc-dddddddddddd").unwrap(),
+            Uuid::parse_str("77777777-8888-4999-8aaa-bbbbbbbbbbbb").unwrap(),
+            Uuid::parse_str("eeeeeeee-ffff-4000-8111-222222222222").unwrap(),
+            42,
+            0,
+            Uuid::parse_str("33333333-4444-4555-8666-777777777777").unwrap(),
+            "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+            None,
+            TaskContext {
+                trigger_message: json!({
+                    "msg_id": "eeeeeeee-ffff-4000-8111-222222222222",
+                    "content": "hello bot",
+                }),
+                attachments: vec![json!({
+                    "file_id": "file-1",
+                    "filename": "notes.md",
+                    "content_type": "text/markdown",
+                    "size_bytes": 12,
+                })],
+                pinned: vec!["Always answer in English.".to_string()],
+            },
+            (Some("/workspace".to_string()), vec!["/data".to_string()]),
+        );
+        assert_matches_fixture(&frame, "control/to_connector/task.json", &["enqueued_at"]);
+    }
 
     /// I4：同一 (trigger, bot) 必派生同一占位 id（重投收敛同一占位）。
     #[test]

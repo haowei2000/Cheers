@@ -32,19 +32,24 @@ use crate::{
 };
 use sqlx::PgPool;
 
-// ── 关闭码（与 WIRE_PROTOCOL 对齐）──────────────────────────────────────────
-const CLOSE_AUTH_FAIL: u16 = 4401;
-const CLOSE_BOT_UNAVAILABLE: u16 = 4403;
-const CLOSE_SUPERSEDED: u16 = 4402;
+// ── 关闭码（与 WIRE_PROTOCOL 对齐；共享常量在 cheers-bridge-protocol）─────────
+use cheers_bridge_protocol as proto;
+use cheers_bridge_protocol::{
+    WS_CLOSE_AUTH_FAIL as CLOSE_AUTH_FAIL, WS_CLOSE_BOT_UNAVAILABLE as CLOSE_BOT_UNAVAILABLE,
+    WS_CLOSE_SUPERSEDED as CLOSE_SUPERSEDED, WS_CLOSE_UNSUPPORTED_PROTOCOL as CLOSE_PROTOCOL_ERROR,
+};
+/// Heartbeat idle close (WIRE_PROTOCOL §10.1): a connector whose process died
+/// without a clean TCP FIN would otherwise stay "online" until the OS notices.
+/// Gateway-local (connectors treat it as retryable), so not in the shared crate.
+const CLOSE_IDLE_TIMEOUT: u16 = 4409;
 /// A connector that keeps sending unparseable frames is buggy/hostile — close it
 /// with a protocol-error code after this many CONSECUTIVE malformed frames so it
 /// can't spin the read loop / hammer logs. A good frame resets the counter.
-const CLOSE_PROTOCOL_ERROR: u16 = 4400;
-/// Heartbeat idle close (WIRE_PROTOCOL §10.1): a connector whose process died
-/// without a clean TCP FIN would otherwise stay "online" until the OS notices.
-const CLOSE_IDLE_TIMEOUT: u16 = 4409;
 const MAX_MALFORMED_FRAMES: u32 = 20;
-const BRIDGE_PROTOCOL_VERSION: u32 = 1;
+use crate::gateway::bridge_frames::{
+    self, bridge_error, send_ack_err, send_ack_ok, terminal_ack_err, terminal_ack_ok,
+    BRIDGE_PROTOCOL_VERSION,
+};
 
 /// Gateway-side liveness: probe with a WS ping every PROBE_INTERVAL (the peer's
 /// WS stack auto-pongs, so this needs no connector cooperation), reap after
@@ -98,23 +103,16 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
     // ── 3. 发 hello 帧（membership snapshot）─────────────────────────────
     let memberships = load_memberships(&state.db, bot.bot_id).await;
-    let mut hello = json!({
-        "type": "hello",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "bridge_protocol_version": BRIDGE_PROTOCOL_VERSION,
-        "stream": "control",
-        "bot_id": bot.bot_id,
-        "bot_username": bot.username,
-        "bot_display_name": bot.display_name,
-        "connection_id": connection_id,
-        "session_id": connection_id,
-        "memberships": memberships,
-        "connector_config": bot.connector_config,
-        "server_capabilities": server_capabilities(&state),
-    });
-    if let Some(acp_security) = &bot.acp_security {
-        hello["acp_security"] = acp_security.clone();
-    }
+    let hello = bridge_frames::control_hello_frame(
+        bot.bot_id,
+        &bot.username,
+        bot.display_name.as_deref(),
+        connection_id,
+        Value::Array(memberships),
+        bot.connector_config.as_ref(),
+        server_capabilities(&state),
+        bot.acp_security.as_ref(),
+    );
     if ws_send(&mut socket, &hello).await.is_err() {
         return;
     }
@@ -128,11 +126,11 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         .and_then(|c| c.get("agentNativePermissionMode"))
         .and_then(Value::as_str)
     {
-        let cfg = json!({
-            "type": "config_update",
-            "v": BRIDGE_PROTOCOL_VERSION,
-            "settings": { "agentNativePermissionMode": mode },
-        });
+        let cfg =
+            bridge_frames::config_update_frame(cheers_bridge_protocol::ConnectorControlSettings {
+                agent_native_permission_mode: Some(mode.to_string()),
+                ..Default::default()
+            });
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
@@ -145,11 +143,11 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
         .and_then(|c| c.get("configOptions"))
         .filter(|v| v.as_object().is_some_and(|m| !m.is_empty()))
     {
-        let cfg = json!({
-            "type": "config_update",
-            "v": BRIDGE_PROTOCOL_VERSION,
-            "settings": { "configOptions": opts },
-        });
+        let cfg =
+            bridge_frames::config_update_frame(cheers_bridge_protocol::ConnectorControlSettings {
+                config_options: Some(opts.clone()),
+                ..Default::default()
+            });
         let _ = ws_send(&mut socket, &cfg).await;
     }
 
@@ -252,17 +250,34 @@ async fn handle_control(mut socket: WebSocket, state: AppState, header_token: Op
 
 async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
     let bot_id = bot.bot_id;
-    let ftype = frame.get("type").and_then(|v| v.as_str()).unwrap_or("");
-    match ftype {
-        "ping" => {} // pong 由 WS 层处理
-        "ready" => {
+    // Typed parse — the shared enum is the single schema both ends compile
+    // against, so a field rename can no longer silently read as None (the
+    // plugin_version bug class). Handlers that persist or tolerate legacy
+    // shapes still receive the raw `frame` for their payload.
+    let parsed: proto::ControlOutbound = match serde_json::from_value(frame.clone()) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(
+                bot_id = %bot_id,
+                frame_type = frame.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+                %err,
+                "control frame failed typed parse"
+            );
+            return;
+        }
+    };
+    match parsed {
+        proto::ControlOutbound::Ping => {} // pong 由 WS 层处理
+        proto::ControlOutbound::Ready {
+            connector_version,
+            plugin_version,
+            connector_capabilities,
+            ..
+        } => {
             // The Rust connector reports `connector_version`; the retired TS
-            // connector used `plugin_version` — accept both while old frames exist.
-            let connector_version = frame
-                .get("connector_version")
-                .or_else(|| frame.get("plugin_version"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
+            // connector used `plugin_version` — both are first-class fields on
+            // the shared Ready variant (pinned by fixtures/compat/).
+            let connector_version = connector_version.or(plugin_version);
             tracing::info!(bot_id = %bot_id, version = ?connector_version, "bot ready");
             // Persist the connector's advertised capabilities (e.g. whether the
             // downstream agent accepts audio/image prompts) so the platform can
@@ -271,9 +286,9 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
             // the agent would only discard. Refreshed on every (re)connect, so
             // a connector upgrade updates them automatically. The version rides
             // along so bot status can report update availability while offline.
-            let caps = frame.get("connector_capabilities");
+            let caps = connector_capabilities;
             if caps.is_some() || connector_version.is_some() {
-                let caps_str = serde_json::to_string(caps.unwrap_or(&Value::Null))
+                let caps_str = serde_json::to_string(&caps.unwrap_or(Value::Null))
                     .unwrap_or_else(|_| "null".into());
                 let result = sqlx::query(
                     "UPDATE bot_accounts
@@ -303,7 +318,9 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 }
             }
         }
-        "runtime_session_control_ack" => {
+        proto::ControlOutbound::RuntimeSessionControlAck { .. } => {
+            // The handler keeps the raw frame: it tolerates the legacy shape
+            // where session fields live at the top level instead of `session{}`.
             match handle_runtime_session_control_ack(frame, state, bot).await {
                 Ok(session_id) => {
                     tracing::info!(
@@ -321,24 +338,19 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 }
             }
         }
-        "config_options" => {
+        proto::ControlOutbound::ConfigOptions { options, v } => {
             // Advertised-options snapshot (configOptions / modes / models /
             // availableCommands / currentModeId / currentModelId). PATCH-merge:
             // each report carries only the fields its source event had (e.g. an
             // available_commands_update has no configOptions), so incoming
             // fields overlay the stored snapshot instead of replacing it —
             // otherwise a later commands update would null out the model list.
-            let mut incoming = frame
-                .get("options")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
+            let mut incoming = options.as_object().cloned().unwrap_or_default();
             // Defense against older connectors that still send explicit nulls.
             incoming.retain(|_, v| !v.is_null());
             let incoming_str =
                 serde_json::to_string(&Value::Object(incoming)).unwrap_or_else(|_| "{}".into());
-            let v_str = serde_json::to_string(&frame.get("v").cloned().unwrap_or(json!(1)))
-                .unwrap_or_else(|_| "1".into());
+            let v_str = v.to_string();
             let result = sqlx::query(
                 "UPDATE bot_accounts SET binding_config = jsonb_set(
                      jsonb_set(
@@ -364,12 +376,14 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 tracing::warn!(bot_id = %bot_id, err = %e, "config options merge failed");
             }
         }
-        ftype @ ("config_status" | "config_option_status") => {
+        kind @ (proto::ControlOutbound::ConfigStatus { .. }
+        | proto::ControlOutbound::ConfigOptionStatus { .. }) => {
             // connector 上报配置状态，统一写入 binding_config.connector_control.*
-            let config_key = match ftype {
-                "config_status" => "last_status",
-                "config_option_status" => "last_option_status",
-                _ => return,
+            // Raw `frame` is persisted (minus type) so fields beyond the typed
+            // schema survive in the stored blob.
+            let config_key = match kind {
+                proto::ControlOutbound::ConfigStatus { .. } => "last_status",
+                _ => "last_option_status",
             };
             let mut payload = frame.clone();
             // 去掉 type 字段，只存业务数据
@@ -396,8 +410,12 @@ async fn handle_control_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
                 tracing::warn!(bot_id = %bot_id, key = config_key, err = %e, "config persist failed");
             }
         }
-        other => {
-            tracing::debug!(bot_id = %bot_id, frame_type = other, "unknown control frame");
+        proto::ControlOutbound::Auth { .. } | proto::ControlOutbound::Unknown => {
+            tracing::debug!(
+                bot_id = %bot_id,
+                frame_type = frame.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+                "unhandled control frame"
+            );
         }
     }
 }
@@ -494,20 +512,12 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
 
     // ── 3. 发 hello 帧 ──────────────────────────────────────────────────
     // last_event_seq: 最后一次事件的 seq（重连重放用，暂返回 0）
-    let mut hello = json!({
-        "type": "hello",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "bridge_protocol_version": BRIDGE_PROTOCOL_VERSION,
-        "stream": "data",
-        "bot_id": bot.bot_id,
-        "connection_id": connection_id,
-        "session_id": connection_id,
-        "last_event_seq": 0,
-        "server_capabilities": server_capabilities(&state),
-    });
-    if let Some(acp_security) = &bot.acp_security {
-        hello["acp_security"] = acp_security.clone();
-    }
+    let hello = bridge_frames::data_hello_frame(
+        bot.bot_id,
+        connection_id,
+        server_capabilities(&state),
+        bot.acp_security.as_ref(),
+    );
     if ws_send(&mut socket, &hello).await.is_err() {
         return;
     }
@@ -667,6 +677,14 @@ async fn handle_data(mut socket: WebSocket, state: AppState, header_token: Optio
     crate::gateway::presence::broadcast_bot_presence(&state, bot.bot_id).await;
 }
 
+/// Data-stream dispatch stays STRING-routed on purpose (unlike the typed
+/// control dispatch): several readers deliberately tolerate legacy shapes a
+/// strict `proto::DataOutbound` parse would reject — `delta` accepts
+/// `delta|content`, `done`/`reply`/`send` accept `content|text`, and `reply`
+/// isn't a variant at all (retired TS connector frame). Those aliases are
+/// wire-compat contracts, not drift; the typed schema both ends COMPILE
+/// against plus the golden fixtures already pin the canonical shapes (see
+/// bridge_frames::tests::to_gateway_fixtures_parse_typed).
 async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socket: &mut WebSocket) {
     let ftype = frame.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -938,7 +956,7 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         }
 
         "ping" => {
-            let _ = ws_send(socket, &json!({ "type": "pong" })).await;
+            let _ = ws_send(socket, &bridge_frames::pong_frame()).await;
         }
 
         "resume" => {
@@ -951,16 +969,7 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 .and_then(Value::as_i64)
                 .unwrap_or(0)
                 .max(0);
-            let _ = ws_send(
-                socket,
-                &json!({
-                    "type": "resume_ack",
-                    "v": BRIDGE_PROTOCOL_VERSION,
-                    "replayed": 0,
-                    "up_to_seq": up_to_seq,
-                }),
-            )
-            .await;
+            let _ = ws_send(socket, &bridge_frames::resume_ack_frame(up_to_seq)).await;
         }
 
         // ── agent 进度（trace）：记录 + 转发给浏览器，让 UI 显示「思考中」状态 ──
@@ -1633,57 +1642,8 @@ fn client_msg_id(frame: &Value) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn send_ack_ok(client_msg_id: &str, message_id: Uuid, finalized_placeholder: bool) -> Value {
-    json!({
-        "type": "send_ack",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "client_msg_id": client_msg_id,
-        "ok": true,
-        "message_id": message_id,
-        "finalized_placeholder": finalized_placeholder,
-    })
-}
-
-fn send_ack_err(client_msg_id: &str, code: &str, error: &str) -> Value {
-    json!({
-        "type": "send_ack",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "client_msg_id": client_msg_id,
-        "ok": false,
-        "code": code,
-        "error": error,
-    })
-}
-
-fn terminal_ack_ok(client_msg_id: &str, msg_id: Uuid) -> Value {
-    json!({
-        "type": "terminal_ack",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "client_msg_id": client_msg_id,
-        "ok": true,
-        "msg_id": msg_id,
-    })
-}
-
-fn terminal_ack_err(client_msg_id: &str, code: &str, error: &str) -> Value {
-    json!({
-        "type": "terminal_ack",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "client_msg_id": client_msg_id,
-        "ok": false,
-        "code": code,
-        "error": error,
-    })
-}
-
-fn bridge_error(code: &str, detail: &str) -> Value {
-    json!({
-        "type": "error",
-        "v": BRIDGE_PROTOCOL_VERSION,
-        "code": code,
-        "detail": detail,
-    })
-}
+// send_ack / terminal_ack / error constructors live in gateway::bridge_frames
+// so their bytes are pinned by the shared golden fixtures.
 
 fn server_capabilities(state: &AppState) -> Value {
     let mut caps = json!({
@@ -1772,6 +1732,36 @@ async fn auth_bot(
 
                 if frame.get("type").and_then(Value::as_str) != Some("auth") {
                     close(socket, CLOSE_AUTH_FAIL, "first JSON frame must be auth").await;
+                    return None;
+                }
+
+                // Protocol negotiation, checked BEFORE the token hits the DB: the
+                // auth frame states the connector's bridge protocol version
+                // (absent ⇒ v1, the legacy default). Reject anything else with a
+                // 4400 close whose reason names the supported version — the
+                // connector-facing half of the handshake; the connector already
+                // strictly validates the gateway's hello (ensure_supported_version).
+                // NOTE: header-Bearer auth carries no auth frame; those connectors
+                // are covered by their own hello-side check.
+                let peer_version = frame
+                    .get("bridge_protocol_version")
+                    .or_else(|| frame.get("v"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(BRIDGE_PROTOCOL_VERSION as u64);
+                if peer_version != BRIDGE_PROTOCOL_VERSION as u64 {
+                    tracing::warn!(
+                        version = peer_version,
+                        connector = ?frame.get("connector"),
+                        "rejecting connector with unsupported bridge protocol version"
+                    );
+                    close(
+                        socket,
+                        CLOSE_PROTOCOL_ERROR,
+                        &format!(
+                            "unsupported bridge protocol version {peer_version}; supported: {BRIDGE_PROTOCOL_VERSION}"
+                        ),
+                    )
+                    .await;
                     return None;
                 }
 

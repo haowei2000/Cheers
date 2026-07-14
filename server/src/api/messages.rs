@@ -272,11 +272,7 @@ pub async fn cancel_message(
 
     let mut delivered = false;
     for (placeholder, target_bot) in &targets {
-        let frame = serde_json::json!({
-            "type": "cancel",
-            "msg_id": placeholder,
-            "reason": reason,
-        });
+        let frame = crate::gateway::bridge_frames::cancel_frame(*placeholder, reason);
         if state.bot_locator.dispatch_task(*target_bot, frame).await {
             delivered = true;
         }

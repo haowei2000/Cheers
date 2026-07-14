@@ -1,0 +1,9 @@
+{
+  "type": "workspace_event",
+  "v": 1,
+  "root": "/workspace",
+  "paths": [
+    "src/main.rs"
+  ],
+  "kind": "change"
+}

@@ -555,23 +555,23 @@ pub async fn realize_file(
     // fall back to the scope-derived deterministic key. The connector re-clamps
     // against allowed_roots and falls back to default_cwd when this is empty
     // (docs/arch/SESSION_WORKDIR_ROOTSET.md, Phase 6).
-    let primary_key = crate::domain::sessions::resolve_primary_session(&state.db, bot_id, &channel_id)
-        .await
-        .ok()
-        .flatten()
-        .map(|(_, key)| key)
-        .unwrap_or_else(|| {
-            crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id)
-        });
+    let primary_key =
+        crate::domain::sessions::resolve_primary_session(&state.db, bot_id, &channel_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|(_, key)| key)
+            .unwrap_or_else(|| {
+                crate::domain::sessions::primary_provider_session_key(&channel_id, bot_id)
+            });
     let roots = crate::domain::sessions::session_root_set(&state.db, &primary_key).await;
 
-    let frame = serde_json::json!({
-        "type": "realize_file",
-        "file_id": file_id,
-        "remote_ref": remote_ref,
-        "channel_id": channel_id,
-        "roots": roots,
-    });
+    let frame = crate::gateway::bridge_frames::realize_file_frame(
+        &file_id,
+        &remote_ref,
+        &channel_id,
+        &roots,
+    );
 
     let sent = state.bot_locator.send_data(bot_id, frame).await;
     if !sent {

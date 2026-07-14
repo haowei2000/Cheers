@@ -17,11 +17,7 @@ use sqlx::PgPool;
 
 use super::{db_err, resource_error, Principal, PrincipalType, ResourceResult};
 
-pub async fn handle_write(
-    db: &PgPool,
-    principal: &Principal,
-    params: &Value,
-) -> ResourceResult {
+pub async fn handle_write(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     // Bot-only: the verb writes the CALLER's own card. Users edit bot profiles
     // through the authed REST profile editor (owner/admin-gated), not here.
     if principal.principal_type != PrincipalType::Bot {
@@ -72,12 +68,19 @@ pub async fn handle_write(
     // Input caps (status_text ≤140, status_emoji ≤32, info/description ≤1000 chars)
     // live inside persist_bot_self_status — the choke point shared with the REST
     // /self-status path (audit item 1) — so both write paths validate identically.
-    crate::api::bots::persist_bot_self_status(db, &bot_id, &status_text, &status_emoji, info_provided, &info)
-        .await
-        .map_err(|e| match e {
-            crate::api::bots::PersistStatusError::Invalid(msg) => resource_error("INVALID_PARAMS", msg),
-            crate::api::bots::PersistStatusError::Db(e) => db_err("bot.status.write")(e),
-        })?;
+    crate::api::bots::persist_bot_self_status(
+        db,
+        &bot_id,
+        &status_text,
+        &status_emoji,
+        info_provided,
+        &info,
+    )
+    .await
+    .map_err(|e| match e {
+        crate::api::bots::PersistStatusError::Invalid(msg) => resource_error("INVALID_PARAMS", msg),
+        crate::api::bots::PersistStatusError::Db(e) => db_err("bot.status.write")(e),
+    })?;
 
     // Persist succeeded — commit the rate-limit interval (see `peek` above).
     crate::infra::ratelimit::bot_status_limiter().record(&bot_id);

@@ -306,7 +306,10 @@ pub async fn ensure_primary_session_workspace(
     // (re)bind the deterministic session as primary when no live primary binding
     // exists for this scope. When the deterministic session already IS the
     // primary, the upsert would be a no-op anyway.
-    if resolve_primary_session(db, bot_id, channel_id).await?.is_none() {
+    if resolve_primary_session(db, bot_id, channel_id)
+        .await?
+        .is_none()
+    {
         upsert_session_binding(
             db,
             &session_uuid,

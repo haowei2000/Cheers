@@ -1,0 +1,8 @@
+{
+  "code": "E_FORBIDDEN",
+  "error": "SEE denied for this event",
+  "ok": false,
+  "req_id": "req-1",
+  "type": "resource_res",
+  "v": 1
+}

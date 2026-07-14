@@ -1,0 +1,8 @@
+{
+  "type": "cancel",
+  "msg_id": "33333333-4444-4555-8666-777777777777",
+  "reason": "user_cancelled",
+  "brand_new_optional_field": {
+    "added_in": "a future gateway"
+  }
+}

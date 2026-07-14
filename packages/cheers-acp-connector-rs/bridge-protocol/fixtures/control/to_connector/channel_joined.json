@@ -1,0 +1,11 @@
+{
+  "type": "channel_joined",
+  "channel": {
+    "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+    "channel_name": "general",
+    "channel_type": "public",
+    "workspace_id": "cccccccc-dddd-4eee-8fff-000000000000",
+    "joined_at": "2026-06-01T10:15:30Z"
+  },
+  "invited_by": "33333333-4444-4555-8666-777777777777"
+}

@@ -54,7 +54,7 @@ UI：前端 NodePort → <http://localhost:30080>（登录 `admin` / `admin12345
 
 ```bash
 # 首次安装：构建镜像 → 加载进 kind → 安装 release
-docker build -t cheers/gateway:dev server
+docker build -t cheers/gateway:dev -f server/Dockerfile .   # 根上下文：server 依赖 packages/.../bridge-protocol
 docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend
 kind load docker-image cheers/gateway:dev cheers/frontend:dev --name cheers
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/jwt_priv.pem
@@ -68,7 +68,7 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 ```bash
 # 代码变更后重新部署：重建 → 重新加载进 kind → 滚动重启 pod。
 # 以下步骤的快捷方式：./scripts/redeploy.sh [gateway|frontend|both]
-docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend  # gateway 用：docker build -t cheers/gateway:dev server
+docker build -t cheers/frontend:dev --build-arg VITE_API_BASE_URL=/api/v1 frontend  # gateway 用：docker build -t cheers/gateway:dev -f server/Dockerfile .
 kind load docker-image cheers/frontend:dev --name cheers
 kubectl -n cheers rollout restart deployment/cheers-frontend   # 或 deployment/cheers-gateway
 kubectl -n cheers rollout status  deployment/cheers-frontend

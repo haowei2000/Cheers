@@ -14,6 +14,10 @@ path = "src/main.rs"
 integration = []
 
 [dependencies]
+# Shared Agent Bridge frame types — same crate the connector uses, so frame
+# drift between the two ends is a compile error. Path dep: the gateway docker
+# build uses the repo-root context to include it (see server/Dockerfile).
+cheers-bridge-protocol = { path = "../packages/cheers-acp-connector-rs/bridge-protocol" }
 # ── 运行时 ──────────────────────────────────────────────────────────────────
 tokio        = { version = "1",   features = ["full"] }
 axum         = { version = "0.7", features = ["ws", "macros"] }

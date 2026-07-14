@@ -1,0 +1,10 @@
+{
+  "op": "watch",
+  "path": "",
+  "req_id": "req-4",
+  "root": "/workspace",
+  "roots": [
+    "/workspace"
+  ],
+  "type": "workspace_req"
+}

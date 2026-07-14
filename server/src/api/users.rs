@@ -110,7 +110,11 @@ pub async fn update_me(
             "display_name too long (≤255 chars)".into(),
         ));
     }
-    if bio.value.as_deref().is_some_and(|s| s.chars().count() > 4000) {
+    if bio
+        .value
+        .as_deref()
+        .is_some_and(|s| s.chars().count() > 4000)
+    {
         return Err(AppError::BadRequest("bio too long (≤4000 chars)".into()));
     }
     if status_text

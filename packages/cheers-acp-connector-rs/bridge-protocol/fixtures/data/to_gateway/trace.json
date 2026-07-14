@@ -1,0 +1,15 @@
+{
+  "type": "trace",
+  "v": 1,
+  "msg_id": "33333333-4444-4555-8666-777777777777",
+  "task_id": "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "run_id": "run-1",
+  "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "stream": "progress",
+  "seq": 3,
+  "ts": 1780000000000,
+  "phase": "tool_call",
+  "status": "running",
+  "title": "Reading files"
+}

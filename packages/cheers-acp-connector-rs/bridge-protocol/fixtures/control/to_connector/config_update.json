@@ -1,0 +1,7 @@
+{
+  "settings": {
+    "agentNativePermissionMode": "acceptEdits"
+  },
+  "type": "config_update",
+  "v": 1
+}

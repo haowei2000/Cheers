@@ -387,8 +387,17 @@ pub async fn handle_done(
     // chain_id 从本条回复继承，下一跳共享同一条可取消链（§8 gate 也在内部）。
     // spawn 出去，避免下一跳的 dispatch（S3 拉取 + base64）阻塞本 connector 的读循环。
     spawn_trigger_bot_replies(
-        db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, depth, bot_id,
-        mentions, chain_id,
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        depth,
+        bot_id,
+        mentions,
+        chain_id,
     );
 
     // finalize_session 保持 inline：单条快速 UPDATE，且 spawn 会扩大与 acquire_scope_session
@@ -655,7 +664,16 @@ pub async fn handle_send(
     let chain_id = chain_for_proactive_send(db, channel_id, bot_id, msg_id, &mentions).await;
     // spawn：同 handle_done，避免下一跳 dispatch 阻塞 connector 读循环。
     spawn_trigger_bot_replies(
-        db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, 0, bot_id, mentions,
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        0,
+        bot_id,
+        mentions,
         chain_id,
     );
 
@@ -677,7 +695,8 @@ async fn chain_for_proactive_send(
     if mentions.is_empty() {
         return None;
     }
-    match crate::domain::task_chains::chain_of_active_bot_task(db, channel_id, author_bot_id).await {
+    match crate::domain::task_chains::chain_of_active_bot_task(db, channel_id, author_bot_id).await
+    {
         Ok(Some(cid)) => Some(cid),
         _ => crate::domain::task_chains::start_chain(db, channel_id, msg_id, msg_id)
             .await
@@ -736,8 +755,17 @@ pub async fn broadcast_and_trigger_created_message(
     let chain_id = chain_for_proactive_send(db, channel_id, author_bot_id, msg_id, &mentions).await;
     // spawn：同 handle_done / handle_send，避免下一跳 dispatch 阻塞 connector 读循环。
     Some(spawn_trigger_bot_replies(
-        db, fanout, registry, bot_locator, channel_id, msg_id, channel_seq, 0, author_bot_id,
-        mentions, chain_id,
+        db,
+        fanout,
+        registry,
+        bot_locator,
+        channel_id,
+        msg_id,
+        channel_seq,
+        0,
+        author_bot_id,
+        mentions,
+        chain_id,
     ))
 }
 

@@ -1586,7 +1586,13 @@ async fn phasea_sessions_primary_falls_back_after_promoted_session_closes(db: Pg
     .expect("acquire deterministic primary");
 
     let other = server::domain::sessions::create_channel_session(
-        &db, bot, "acct1", &cid, "other", None, &[],
+        &db,
+        bot,
+        "acct1",
+        &cid,
+        "other",
+        None,
+        &[],
     )
     .await
     .expect("create other session");
@@ -1598,7 +1604,10 @@ async fn phasea_sessions_primary_falls_back_after_promoted_session_closes(db: Pg
         .await
         .expect("resolve primary")
         .expect("a primary is bound");
-    assert_eq!(primary_id, other.session_id, "promoted session should be primary");
+    assert_eq!(
+        primary_id, other.session_id,
+        "promoted session should be primary"
+    );
 
     // The promoted primary handles a turn before it's closed — finalize_session
     // detaches its binding (COALESCE'd, idempotent) while it stays live/addressable.
@@ -1615,13 +1624,12 @@ async fn phasea_sessions_primary_falls_back_after_promoted_session_closes(db: Pg
     // it was already detached by finalize_session — `uq_cheers_session_binding_primary`
     // only cares about role, so a stale 'primary' row here would block any future
     // promotion for this bot+scope forever.
-    let closed_role: String = sqlx::query_scalar(
-        "SELECT role FROM cheers_session_bindings WHERE session_id = $1",
-    )
-    .bind(other.session_id.to_string())
-    .fetch_one(&db)
-    .await
-    .expect("closed session still has a binding row");
+    let closed_role: String =
+        sqlx::query_scalar("SELECT role FROM cheers_session_bindings WHERE session_id = $1")
+            .bind(other.session_id.to_string())
+            .fetch_one(&db)
+            .await
+            .expect("closed session still has a binding row");
     assert_eq!(
         closed_role, "other",
         "closed session's binding must be demoted off 'primary' even when already detached"
@@ -2249,7 +2257,9 @@ async fn members_marks_caller_is_self(db: PgPool) {
     assert_eq!(members.len(), 3);
     for m in members {
         let id = m["member_id"].as_str().unwrap();
-        let is_self = m["is_self"].as_bool().expect("is_self present on every row");
+        let is_self = m["is_self"]
+            .as_bool()
+            .expect("is_self present on every row");
         assert_eq!(
             is_self,
             id == bot_a.to_string(),
@@ -2326,7 +2336,11 @@ async fn resolve_group_mention_tokens_expand_by_scope(db: PgPool) {
         let people = resolve_mention_names(&db, ch, &[tok.to_string()])
             .await
             .unwrap();
-        assert_eq!(ids(&people), sorted(vec![user]), "token {tok:?} = people only");
+        assert_eq!(
+            ids(&people),
+            sorted(vec![user]),
+            "token {tok:?} = people only"
+        );
     }
     // A real member name is not a group token → resolves to that one member.
     let one = resolve_mention_names(&db, ch, &["Helper".to_string()])
@@ -2647,8 +2661,15 @@ async fn cancel_chain_blocks_downstream_and_is_idempotent(db: PgPool) {
 
     // Cancel → status cancelled, returns A's in-flight placeholder, gate closes.
     let inflight = task_chains::cancel_chain(&db, &chain, user).await.unwrap();
-    assert_eq!(inflight, vec![(a_placeholder, bot_a)], "cancel returns in-flight bots");
-    assert!(!task_chains::is_active(&db, &chain).await, "gate is closed after cancel");
+    assert_eq!(
+        inflight,
+        vec![(a_placeholder, bot_a)],
+        "cancel returns in-flight bots"
+    );
+    assert!(
+        !task_chains::is_active(&db, &chain).await,
+        "gate is closed after cancel"
+    );
 
     // A downstream hop on this (now cancelled) chain is dropped by the gate.
     let counter = Arc::new(CountingBotLocator::default());
@@ -2740,7 +2761,11 @@ async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
         h.await.unwrap();
     }
 
-    assert_eq!(counter.dispatched.load(Ordering::SeqCst), 1, "B is triggered");
+    assert_eq!(
+        counter.dispatched.load(Ordering::SeqCst),
+        1,
+        "B is triggered"
+    );
     // B's placeholder inherits A's chain (not a fresh one).
     let b_chain: Option<String> = sqlx::query_scalar(
         "SELECT chain_id FROM messages WHERE sender_id = $1 AND is_partial = TRUE",
@@ -2797,9 +2822,11 @@ async fn invite_link_liveness_lifecycle(db: PgPool) {
         .unwrap());
 
     // 未知 token → not live。
-    assert!(!server::api::invite_links::token_is_live(&db, "cinv_missing")
-        .await
-        .unwrap());
+    assert!(
+        !server::api::invite_links::token_is_live(&db, "cinv_missing")
+            .await
+            .unwrap()
+    );
 
     // 已过期 → not live。
     seed_invite_link(
@@ -2811,9 +2838,11 @@ async fn invite_link_liveness_lifecycle(db: PgPool) {
         Some(chrono::Duration::hours(-1)),
     )
     .await;
-    assert!(!server::api::invite_links::token_is_live(&db, "cinv_expired")
-        .await
-        .unwrap());
+    assert!(
+        !server::api::invite_links::token_is_live(&db, "cinv_expired")
+            .await
+            .unwrap()
+    );
 
     // 用尽(use_count == max_uses)→ not live。
     seed_invite_link(&db, ws, creator, "cinv_spent", Some(1), None).await;
@@ -2831,9 +2860,11 @@ async fn invite_link_liveness_lifecycle(db: PgPool) {
         .execute(&db)
         .await
         .unwrap();
-    assert!(!server::api::invite_links::token_is_live(&db, "cinv_revoked")
-        .await
-        .unwrap());
+    assert!(
+        !server::api::invite_links::token_is_live(&db, "cinv_revoked")
+            .await
+            .unwrap()
+    );
 }
 
 /// accept 的「占用一次使用」是条件 UPDATE:max_uses=1 时第二次占用必须 0 行 ——
