@@ -51,6 +51,7 @@
 
 - [产品路线图](ROADMAP.md) / [English](ROADMAP.md)
 - [项目概览](PROJECT_OVERVIEW.zh-CN.md) / [English](PROJECT_OVERVIEW.md)
+- [竞品对比](COMPARISON.zh-CN.md) / [English](COMPARISON.md) —— Cheers 与其它 AI 协作项目的对比
 - [发布说明](release_note/README.zh-CN.md)
 
 ## 历史文档说明
