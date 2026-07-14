@@ -1,3 +1,10 @@
+# Mini-workspace: the binary + the shared bridge-protocol frame crate (also
+# consumed by ../../server via a path dependency). The workspace root staying
+# at this directory keeps `cross`/`--locked` release builds and the bot-image
+# COPY of this whole directory working unchanged.
+[workspace]
+members = [".", "bridge-protocol"]
+
 [package]
 name = "cce-acp-connector"
 version = "0.1.27"
@@ -25,6 +32,7 @@ anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+cheers-bridge-protocol = { path = "bridge-protocol" }
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
 futures-util = "0.3"

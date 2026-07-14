@@ -6,13 +6,9 @@
   "ok": true,
   "session": {
     "id": "eeeeeeee-ffff-4000-8111-222222222222",
-    "session_id": null,
     "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
     "provider_session_id": "acp-session-1",
     "status": "terminated"
   },
-  "applied_at": "2026-06-01T10:15:30+00:00",
-  "code": null,
-  "error": null,
-  "retryable": null
+  "applied_at": "2026-06-01T10:15:30+00:00"
 }

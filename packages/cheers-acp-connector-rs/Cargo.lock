@@ -325,6 +325,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64",
+ "cheers-bridge-protocol",
  "chrono",
  "clap",
  "ed25519-dalek",
@@ -369,6 +370,14 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "cheers-bridge-protocol"
+version = "0.1.27"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

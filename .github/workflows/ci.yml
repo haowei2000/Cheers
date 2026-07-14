@@ -189,11 +189,13 @@ jobs:
           cargo fmt --manifest-path packages/cheers-acp-connector-rs/Cargo.toml -- --check
           cargo fmt --manifest-path packages/cheers-mcp-server/Cargo.toml -- --check
 
+      # --workspace: the connector dir is a 2-member mini-workspace (binary +
+      # the shared cheers-bridge-protocol crate the gateway also depends on).
       - name: Check Rust connector daemon
-        run: cargo check --manifest-path packages/cheers-acp-connector-rs/Cargo.toml
+        run: cargo check --workspace --manifest-path packages/cheers-acp-connector-rs/Cargo.toml
 
       - name: Test Rust connector daemon
-        run: cargo test --manifest-path packages/cheers-acp-connector-rs/Cargo.toml
+        run: cargo test --workspace --manifest-path packages/cheers-acp-connector-rs/Cargo.toml
 
       - name: Check Rust MCP server
         run: cargo check --manifest-path packages/cheers-mcp-server/Cargo.toml

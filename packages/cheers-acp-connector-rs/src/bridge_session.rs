@@ -74,7 +74,7 @@ pub struct BridgeReady {
 impl BridgeReady {
     pub fn acp(runtime_name: impl Into<String>, runtime_version: Option<String>) -> Self {
         Self {
-            connector: ConnectorInfo::default(),
+            connector: crate::bridge::local_connector_info(),
             runtime: RuntimeDescriptor {
                 protocol: "acp".to_string(),
                 name: Some(runtime_name.into()),
