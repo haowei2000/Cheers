@@ -32,6 +32,10 @@ pub const BOT_WIDE: &str = ""; // channel_id sentinel for "all channels"
 //    vocabulary is DERIVED from the acp_events registry (single source of truth)
 //    via initiate_events()/see_events()/respond_events() below. ──────────────
 pub const EV_PROMPT: &str = "prompt";
+/// Event class for reading a bot's remote workspace (`workspace/read`). A `bot`
+/// subject on this class expresses "reader bot may read owner bot's workspace"
+/// (docs/design/RESOURCE_CONTEXT.md P3 — workspace files as consumer refs).
+pub const EV_WORKSPACE_READ: &str = "workspace_read";
 pub const EV_TOOL_CALL: &str = "tool_call";
 pub const EV_PERMISSION_REQUEST: &str = "permission_request";
 
@@ -242,6 +246,64 @@ pub fn resolve_dispatch_opt(
 pub fn resolve_dispatch(rules: &[Rule], channel_id: &str, initiator_bot_id: &str) -> bool {
     resolve_dispatch_opt(rules, channel_id, initiator_bot_id)
         .unwrap_or_else(|| default_access_for(EV_PROMPT, Capability::Dispatch))
+}
+
+/// Bot-subject precedence for a READER bot's `workspace_read` on the OWNER bot's
+/// remote workspace — mirrors [`resolve_dispatch_opt`] but over the `workspace_read`
+/// class (`Capability::Initiate`). `None` = no rule matched (caller applies the
+/// member-allow default). Rules are the OWNER bot's; the subject is the reader.
+pub fn resolve_bot_workspace_read_opt(
+    rules: &[Rule],
+    channel_id: &str,
+    reader_bot_id: &str,
+) -> Option<bool> {
+    let cap = Capability::Initiate.as_str();
+    let one = |ch: &str, sid: &str| {
+        rules
+            .iter()
+            .find(|r| {
+                r.channel_id == ch
+                    && r.subject_kind == SUBJECT_BOT
+                    && r.subject_id == sid
+                    && r.event_class == EV_WORKSPACE_READ
+                    && r.capability == cap
+            })
+            .map(|r| r.allow)
+    };
+    one(channel_id, reader_bot_id)
+        .or_else(|| one(channel_id, ANY_SUBJECT))
+        .or_else(|| one(BOT_WIDE, reader_bot_id))
+        .or_else(|| one(BOT_WIDE, ANY_SUBJECT))
+}
+
+/// [`resolve_bot_workspace_read_opt`] with the member-allow default applied
+/// (`workspace/read` defaults to allow for members; owner denies via a rule).
+pub fn resolve_bot_workspace_read(rules: &[Rule], channel_id: &str, reader_bot_id: &str) -> bool {
+    resolve_bot_workspace_read_opt(rules, channel_id, reader_bot_id)
+        .unwrap_or_else(|| default_access_for(EV_WORKSPACE_READ, Capability::Initiate))
+}
+
+/// Load + resolve whether `reader_bot` may read `owner_bot`'s remote workspace in
+/// `channel` — **fail-closed** on a policy-store error. The caller must separately
+/// confirm `reader_bot` is a channel member (the default assumes membership).
+pub async fn can_bot_read_workspace(
+    db: &PgPool,
+    owner_bot_id: &str,
+    reader_bot_id: &str,
+    channel_id: &str,
+) -> bool {
+    match load_rules(db, owner_bot_id).await {
+        Ok(rules) => resolve_bot_workspace_read(&rules, channel_id, reader_bot_id),
+        Err(err) => {
+            tracing::warn!(
+                owner_bot = %owner_bot_id,
+                reader_bot = %reader_bot_id,
+                %err,
+                "workspace_read policy load failed; fail-closed deny"
+            );
+            false
+        }
+    }
 }
 
 /// A dispatch gate decision plus why — the audit trail records both.
@@ -657,6 +719,29 @@ mod tests {
     /// Test helper: resolve with no group memberships.
     fn allows(rules: &[Rule], ch: &str, user: &str, role: &str, ec: &str, cap: Capability) -> bool {
         resolve_access(rules, ch, user, role, &[], ec, cap)
+    }
+
+    #[test]
+    fn bot_workspace_read_defaults_allow_and_deny_overrides() {
+        // No rule → a reader bot may read a member bot's workspace (member-allow).
+        assert!(resolve_bot_workspace_read(&[], "c1", "readerBot"));
+        // A channel deny for that reader bot wins.
+        let deny = vec![rule(
+            "c1",
+            SUBJECT_BOT,
+            "readerBot",
+            EV_WORKSPACE_READ,
+            Capability::Initiate,
+            false,
+        )];
+        assert!(!resolve_bot_workspace_read(&deny, "c1", "readerBot"));
+        // A wildcard bot deny restricts everyone; a specific allow un-restricts one.
+        let star_deny_plus_allow = vec![
+            rule("c1", SUBJECT_BOT, "*", EV_WORKSPACE_READ, Capability::Initiate, false),
+            rule("c1", SUBJECT_BOT, "readerBot", EV_WORKSPACE_READ, Capability::Initiate, true),
+        ];
+        assert!(resolve_bot_workspace_read(&star_deny_plus_allow, "c1", "readerBot"));
+        assert!(!resolve_bot_workspace_read(&star_deny_plus_allow, "c1", "otherBot"));
     }
 
     #[test]

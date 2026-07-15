@@ -360,6 +360,24 @@ pub async fn create_message(
             }
         };
 
+        // Deliver-time finalize for THIS target (the same shared step the handoff
+        // path runs): the FULL bundle (with the inline snapshot the member-facing
+        // row omits) is re-authorized against this @mentioned bot + de-duped, then
+        // delivered straight to its task frame (overrides load_task_context's
+        // preview-stripped row read). A ref this target can't read is dropped.
+        let target_bundle = match &params.context_bundle {
+            Some(b) => Some(
+                crate::domain::context_bundle::finalize_bundle_for_target(
+                    db,
+                    b,
+                    crate::resource::Principal::bot(bot_id),
+                    params.channel_id,
+                )
+                .await,
+            ),
+            None => None,
+        };
+
         let result = dispatcher::dispatch(
             db,
             fanout,
@@ -374,12 +392,7 @@ pub async fn create_message(
                 provider_session_key,
                 session_id: resolved_session_id,
                 chain_id: chain_id.clone(),
-                // Human path: no gateway handoff. Deliver the FULL bundle (with the
-                // inline snapshot the member-facing row omits) straight to this
-                // @mentioned target bot's task frame — the authorized consumer the
-                // human chose. Overrides load_task_context's row read (which is the
-                // preview-stripped copy).
-                context_bundle: params.context_bundle.clone(),
+                context_bundle: target_bundle,
             },
             &media_cache,
         )

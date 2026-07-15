@@ -189,11 +189,18 @@ pub async fn trigger_bot_replies(
                 // cancelable as one unit and the gate above blocks it once cancelled.
                 chain_id: chain_id.map(ToString::to_string),
                 // The initiator's plan + recent decisions, delivered to this target's
-                // task frame — but re-authorized AGAINST THIS TARGET first, so a
-                // handoff can never list a resource the target couldn't read itself
-                // (no-permission-bypass; belt-and-suspenders on pull-time re-auth).
+                // task frame — finalized AGAINST THIS TARGET first (the one shared
+                // deliver-time step the human path also runs): per-target read-auth
+                // + de-dup, so a handoff never lists a resource the target couldn't
+                // read itself (no-permission-bypass; belt-and-suspenders on pull-time).
                 context_bundle: Some(
-                    authorize_handoff_for_target(db, &handoff, bot_id, channel_id).await,
+                    crate::domain::context_bundle::finalize_bundle_for_target(
+                        db,
+                        &handoff,
+                        crate::resource::Principal::bot(bot_id),
+                        channel_id,
+                    )
+                    .await,
                 ),
             },
             &media_cache,
@@ -263,59 +270,13 @@ async fn assemble_handoff_bundle(
         "label": "Recent decisions (handoff)",
         "kind": "activity",
     }));
-    // De-dup by (verb, params): if the initiator manually picked the same plan the
-    // auto step also adds, the target should see it once, not twice.
-    dedup_items_by_verb_params(&mut items);
+    // De-dup happens at deliver-time in `finalize_bundle_for_target` (per target),
+    // so the assemble step just concatenates manual picks + auto refs.
     serde_json::json!({
         "origin": "handoff",
         "from": { "type": "bot", "id": initiator_bot_id.to_string() },
         "items": items,
     })
-}
-
-/// Drop later items whose `(verb, params)` already appeared (manual pick first, so
-/// a manual plan ref wins over the auto one). Order-preserving.
-fn dedup_items_by_verb_params(items: &mut Vec<serde_json::Value>) {
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    items.retain(|it| {
-        let key = format!(
-            "{}|{}",
-            it.get("verb").and_then(|v| v.as_str()).unwrap_or_default(),
-            it.get("params").map(|p| p.to_string()).unwrap_or_default(),
-        );
-        seen.insert(key)
-    });
-}
-
-/// Filter a handoff bundle to only the refs the TARGET bot may read: each item's
-/// `params.channel_id` (falling back to the handoff channel when absent) is checked
-/// with `authorize_channel_read` for `Principal::bot(target)`. Refs the target
-/// isn't a member for are dropped, so its prompt never advertises a resource it
-/// can't pull. Best-effort membership read; keeps the bundle shape.
-pub async fn authorize_handoff_for_target(
-    db: &PgPool,
-    handoff: &serde_json::Value,
-    target_bot_id: Uuid,
-    fallback_channel: Uuid,
-) -> serde_json::Value {
-    use crate::resource::{authorize_channel_read, Principal};
-    let principal = Principal::bot(target_bot_id);
-    let items = crate::domain::context_bundle::bundle_items(handoff);
-    let mut kept: Vec<serde_json::Value> = Vec::with_capacity(items.len());
-    for item in items {
-        let cid = item
-            .get("params")
-            .and_then(|p| p.get("channel_id"))
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<Uuid>().ok())
-            .unwrap_or(fallback_channel);
-        if authorize_channel_read(db, &principal, cid).await.is_ok() {
-            kept.push(item);
-        }
-    }
-    let mut top = handoff.as_object().cloned().unwrap_or_default();
-    top.insert("items".into(), serde_json::Value::Array(kept));
-    serde_json::Value::Object(top)
 }
 
 /// The manually-picked context items on the triggering message, if any (best-effort;
@@ -494,7 +455,7 @@ mod tests {
             serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"}, "label": "auto" }),
             serde_json::json!({ "verb": "channel.activity.read", "params": {"channel_id":"c"} }),
         ];
-        dedup_items_by_verb_params(&mut items);
+        crate::domain::context_bundle::dedup_items_by_verb_params(&mut items);
         assert_eq!(items.len(), 2, "duplicate plan collapsed");
         assert_eq!(items[0]["label"], "manual", "first (manual pick) wins");
         // A different scope (session_id) is a distinct ref — not collapsed.
@@ -502,7 +463,7 @@ mod tests {
             serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"} }),
             serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c","session_id":"s"} }),
         ];
-        dedup_items_by_verb_params(&mut scoped);
+        crate::domain::context_bundle::dedup_items_by_verb_params(&mut scoped);
         assert_eq!(scoped.len(), 2, "distinct scope kept");
     }
 }
