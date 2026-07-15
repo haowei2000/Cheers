@@ -598,6 +598,7 @@ impl RuntimeContext {
                 pinned,
                 cwd,
                 additional_dirs,
+                context_bundle,
                 ..
             } => {
                 let task = TaskCommand {
@@ -612,6 +613,7 @@ impl RuntimeContext {
                     pinned,
                     cwd,
                     additional_dirs,
+                    context_bundle,
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
@@ -2176,6 +2178,7 @@ impl RuntimeContext {
                     pinned: Vec::new(),
                     cwd: session.cwd.clone(),
                     additional_dirs: session.additional_dirs.clone(),
+                    context_bundle: None,
                 };
                 let options = self.session_start_options(&task).await;
                 self.ensure_acp_session(&task, options).await.map(|id| {
@@ -2709,6 +2712,12 @@ struct TaskCommand {
     /// This session's ACP `additionalDirectories`. Re-validated against
     /// `allowed_roots`; out-of-policy entries are dropped.
     additional_dirs: Vec<String>,
+    /// Per-message resource context (docs/design/RESOURCE_CONTEXT.md): references
+    /// to Cheers resources a human picked or a bot handed off with this message.
+    /// Rendered into the prompt as a reference block the agent resolves on demand
+    /// via its Cheers resource tools — NOT inlined like `pinned`. `None` when the
+    /// message carried no bundle.
+    context_bundle: Option<Value>,
 }
 
 /// The bot this connector is authenticated as, learned from the control `hello`
@@ -2790,6 +2799,7 @@ mod tests {
             pinned: vec!["[Pinned: prompts/review.md]\nYou are a strict reviewer.".to_string()],
             cwd: None,
             additional_dirs: Vec::new(),
+            context_bundle: None,
         };
         let prompt = build_prompt(
             &task,
@@ -2838,6 +2848,7 @@ mod tests {
             pinned: Vec::new(),
             cwd: None,
             additional_dirs: Vec::new(),
+            context_bundle: None,
         }
     }
 
@@ -3044,6 +3055,7 @@ mod tests {
             pinned: Vec::new(),
             cwd: None,
             additional_dirs: Vec::new(),
+            context_bundle: None,
         };
         let prompt = build_prompt(
             &task,
@@ -3082,6 +3094,7 @@ mod tests {
             pinned: Vec::new(),
             cwd: None,
             additional_dirs: Vec::new(),
+            context_bundle: None,
         };
         let prompt = build_prompt(
             &task,
@@ -3116,7 +3129,54 @@ mod tests {
             pinned: Vec::new(),
             cwd: None,
             additional_dirs: Vec::new(),
+            context_bundle: None,
         }
+    }
+
+    #[test]
+    fn prompt_renders_context_bundle_references() {
+        // A picked-up / handed-off resource bundle must reach the agent as a
+        // reference block — regression against handle_control dropping it with `..`.
+        let mut task = identity_task(Some("bot_message"), Some(json!({"text": "take over"})));
+        task.context_bundle = Some(json!({
+            "origin": "handoff",
+            "from": { "type": "bot", "id": "opencode" },
+            "items": [
+                { "verb": "channel.plan.read", "params": {"channel_id": "c", "session_id": "s"},
+                  "label": "Plan (handoff)", "kind": "plan" },
+                { "verb": "channel.activity.read", "params": {"channel_id": "c"},
+                  "label": "Recent decisions (handoff)", "kind": "activity" }
+            ]
+        }));
+        let prompt = build_prompt(
+            &task,
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(text.contains("handed off"), "provenance header: {text}");
+        assert!(text.contains("from bot opencode"));
+        assert!(text.contains("Plan (handoff) [plan]"));
+        assert!(text.contains("channel.plan.read"));
+        assert!(text.contains("session_id=s"));
+        assert!(text.contains("channel.activity.read"));
+    }
+
+    #[test]
+    fn prompt_omits_context_block_when_no_bundle() {
+        let prompt = build_prompt(
+            &identity_task(None, None),
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(!text.contains("resource \""));
     }
 
     #[test]

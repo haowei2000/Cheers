@@ -24,10 +24,11 @@ shell on top.
 |              | **Manual pick** (explicit selection) | **Automatic pick** (system infers) |
 |--------------|--------------------------------------|------------------------------------|
 | **Human**    | composer "add context" picker → plan / board / file / message / thread | *suggested context*: the reply target, a named file, the channel's active plan — surfaced as one-click chips |
-| **Bot**      | a bot explicitly requests a resource (already possible via the resource protocol) | **handoff**: on dispatch the gateway auto-assembles the initiator's plan + touched files + recent decisions |
+| **Bot**      | a bot attaches a `context` bundle to a message it posts (`post_message`) — the *pageagent* case: pick some resources, hand them to another agent | **handoff**: on dispatch the gateway auto-assembles the initiator's plan + touched files + recent decisions |
 
-The interactive human picker (manual) and the bot handoff (auto) are the two v1
-producers; the other two cells are natural follow-ons on the same foundation.
+The interactive human picker (F1, manual) and the bot handoff (F2, auto) were the
+two v1 producers; **bot manual pick (F4)** fills the remaining bot cell, and
+suggested context (F3) the remaining human cell — all on the same foundation.
 
 ## Two pick modes
 
@@ -183,6 +184,28 @@ promoted suggestion becomes an ordinary F1 pick.
 - **Follow-on signals** (same mechanism, plug into `useContextSuggestions`): a
   filename in the draft matched against channel files; the channel's active plan.
 
+## Producer D — bot, manual pick (`post_message` context)
+
+The symmetric mirror of Producer A: a bot **explicitly** attaches a bundle to a
+message it posts, instead of the gateway inferring one. This is the *pageagent*
+case — an agent/client picks up some Cheers resources and hands them to another
+agent so the receiver reads the same state instead of guessing.
+
+- **Surface**: the `post_message` MCP tool gains an optional `context` array; each
+  item is a resource ref `{ verb, params?, label?, kind? }`. The tool wraps it as
+  `{ items: [...] }` and rides the existing `channel.messages.create` params — the
+  connector forwards params verbatim, so **no connector/protocol change**.
+- **Untrusted input → validated on the gateway** (`domain::context_bundle::sanitize_bot_bundle`,
+  applied in `resource::messages::handle_create`): only READ verbs survive, the item
+  count is capped, and `origin` is **stamped `"bot"`** (a bot cannot spoof `"handoff"`
+  / `"human"` provenance). Nothing survives → the column stays NULL.
+- **Delivery**: persisted on `messages.context_bundle` → renders as chips (F0/F1
+  renderer, no FE change) and, when the message @mentions another bot, the picked
+  items are **merged ahead of** the F2 handoff's plan+decisions
+  (`chains.rs::assemble_handoff_bundle`), so the target's task frame carries both.
+- **Governance unchanged**: reads stay consumer-governed — the receiving bot
+  resolves each ref as itself, so a bundle can only *point at* things it may read.
+
 ## Phasing
 
 | Phase | Scope | Verifiable outcome |
@@ -191,10 +214,12 @@ promoted suggestion becomes an ordinary F1 pick.
 | **F1 — human, manual pick** | composer "add context" picker for plan/file/message/activity; context chips on messages | a human attaches a plan + a file to an `@bot` message; the bot receives and reads them |
 | **F2 — bot, automatic pick (handoff)** | gateway auto-assembles the bundle on bot@bot dispatch (reuses F0). **Gateway done**: `chains.rs::assemble_handoff_bundle` attaches the initiator's plan + recent-decisions refs to each target's task frame. Follow-ups: files-touched refs, and a human-facing handoff card on the placeholder message | A hands to B; B's task frame carries A's plan + recent decisions |
 | **F3 — human, automatic pick (suggested)** | composer suggests ghost chips from draft signals; reply-target signal shipped (filename / active-plan signals plug into the same hook) | replying to a message offers a one-click "Message #N" chip; `+` promotes, `×` dismisses |
+| **F4 — bot, manual pick** | `post_message` gains a `context` array; gateway validates (read verbs only), caps, stamps `origin="bot"`, persists; bot@bot merges picks ahead of the handoff | a bot posts `@other` with `context=[plan]`; the message shows a chip and the target's task frame carries the picked plan + the auto handoff |
 
-Recommended order: **F0 → F1 → F2 → F3**. F1 first among producers — visible,
-demo-able, legible as "Cheers's `@context` for collaboration resources"; F2
-reuses the foundation with no UI; F3 layers suggestion onto F1's picker.
+Recommended order: **F0 → F1 → F2 → (F3 / F4)**. F1 first among producers —
+visible, demo-able, legible as "Cheers's `@context` for collaboration resources";
+F2 reuses the foundation with no UI; F4 mirrors F1 for the agent side (attach on
+`post_message`); F3 layers suggestion onto F1's picker.
 
 ## Out of scope (for now)
 
