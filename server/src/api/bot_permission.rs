@@ -313,11 +313,24 @@ pub async fn set_config_option(
 // authorization keyed on channel role with per-user overrides.
 
 fn parse_capability(raw: &str) -> Result<Capability, AppError> {
-    Capability::parse(raw).ok_or_else(|| {
+    let cap = Capability::parse(raw).ok_or_else(|| {
         AppError::BadRequest(format!(
             "capability must be initiate|see|respond, got {raw:?}"
         ))
-    })
+    })?;
+    // DISPATCH governs bot→bot dispatch and is keyed on a `subject_kind='bot'`
+    // subject, which this owner endpoint does not accept (role|user|group only).
+    // Letting `dispatch` through here would let a client save a role/user/group
+    // dispatch rule that returns {ok:true} but is silently ignored by the dispatch
+    // resolver, while the only effective (bot) rule can't be created here at all.
+    // Keep it out of the human INITIATE/SEE/RESPOND matrix; dispatch rules get a
+    // dedicated management path (docs/design/BOT_DISPATCH.md D2).
+    if matches!(cap, Capability::Dispatch) {
+        return Err(AppError::BadRequest(
+            "capability must be initiate|see|respond; dispatch is managed separately".into(),
+        ));
+    }
+    Ok(cap)
 }
 
 /// The dynamic-group subjects selectable for this bot: the owner's friends, plus
@@ -539,4 +552,30 @@ pub async fn list_acp_events(
         })
         .collect();
     Ok(Json(json!({ "events": events })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_capability_accepts_human_matrix_caps() {
+        for raw in ["initiate", "see", "respond"] {
+            assert!(parse_capability(raw).is_ok(), "{raw} should parse");
+        }
+    }
+
+    #[test]
+    fn parse_capability_rejects_dispatch_on_human_endpoint() {
+        // dispatch is bot-subject only and managed separately; the human
+        // event-access endpoints must not accept it (else a role/user/group
+        // dispatch rule saves ok but is silently ignored by the resolver).
+        let err = parse_capability("dispatch").unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn parse_capability_rejects_unknown() {
+        assert!(parse_capability("bogus").is_err());
+    }
 }

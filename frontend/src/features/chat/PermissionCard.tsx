@@ -15,6 +15,10 @@ interface Props {
   message: Message;
   channelId?: string;
   currentUserId?: string;
+  /** Server-authoritative may-answer flag (Fleet view passes the endpoint's
+   *  `actionable`, which also covers RESPOND grants the card's own
+   *  owner+delegate check can't see). When set, skips that self-check. */
+  approverOverride?: boolean;
 }
 
 function optId(o: PermissionOption): string {
@@ -64,7 +68,12 @@ function previewRawInput(raw: unknown): string | null {
  * collapsed preview); once resolved it shrinks into a single trace-style line so
  * the decision settles back into the bot's progress timeline.
  */
-export function PermissionCard({ message, channelId, currentUserId }: Props) {
+export function PermissionCard({
+  message,
+  channelId,
+  currentUserId,
+  approverOverride,
+}: Props) {
   const data = (message.content_data ?? {}) as PermissionContentData;
   const botId = message.sender_id;
   // Resolve "who approved" to a member name (falls back to the short id).
@@ -77,7 +86,9 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   const resolved = data.resolved === true;
 
   const isOwner = !!currentUserId && currentUserId === data.bot_owner_id;
-  const [amApprover, setAmApprover] = useState(isOwner);
+  const [amApprover, setAmApprover] = useState(
+    approverOverride !== undefined ? approverOverride : isOwner
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requested, setRequested] = useState(false);
@@ -139,7 +150,9 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
   }, [radioOptions, selectedId]);
 
   // Owner is always an approver; for non-owners, check delegations once.
+  // Skipped when the caller already resolved may-answer server-side.
   useEffect(() => {
+    if (approverOverride !== undefined) return;
     if (resolved || isOwner || !channelId || !currentUserId) return;
     let alive = true;
     listApprovers(botId, channelId)
@@ -152,7 +165,7 @@ export function PermissionCard({ message, channelId, currentUserId }: Props) {
     return () => {
       alive = false;
     };
-  }, [botId, channelId, currentUserId, isOwner, resolved]);
+  }, [approverOverride, botId, channelId, currentUserId, isOwner, resolved]);
 
   async function onResolve(id: string) {
     if (!channelId || !requestId || !id || busy) return;

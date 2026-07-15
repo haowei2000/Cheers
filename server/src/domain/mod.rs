@@ -13,6 +13,7 @@ pub mod commands_store;
 pub mod connector_config;
 pub mod context_bundle;
 pub mod dms;
+pub mod fleet;
 pub mod invitable;
 pub mod mentions;
 pub mod messages;
