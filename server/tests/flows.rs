@@ -3138,26 +3138,29 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
     assert!(dto.context_bundle.unwrap()["items"][0].get("preview").is_none(), "dto strips preview");
 }
 
-/// AUTHZ: a handoff bundle is re-authorized against the TARGET bot — a ref to a
-/// channel the target isn't a member of is dropped. Fix C.
+/// AUTHZ: the shared deliver-time finalizer re-authorizes a bundle against the
+/// TARGET bot — a ref to a channel the target isn't a member of is dropped, and
+/// duplicate (verb,params) collapse. One step for both pickup and handoff (P2).
 #[sqlx::test]
-async fn handoff_reauth_drops_refs_target_cannot_read(db: PgPool) {
-    use server::domain::chains::authorize_handoff_for_target;
+async fn finalize_drops_refs_target_cannot_read_and_dedups(db: PgPool) {
+    use server::domain::context_bundle::finalize_bundle_for_target;
+    use server::resource::Principal;
     let ws = seed_workspace(&db).await;
     let ch_a = seed_channel(&db, ws).await; // target IS a member here
     let ch_b = seed_channel(&db, ws).await; // target is NOT a member here
     let target = seed_bot(&db).await;
     add_member(&db, ch_a, target, "bot").await;
 
-    let handoff = serde_json::json!({
+    let bundle = serde_json::json!({
         "origin": "handoff",
         "items": [
             { "verb": "channel.plan.read", "params": { "channel_id": ch_a.to_string() }, "label": "A" },
+            { "verb": "channel.plan.read", "params": { "channel_id": ch_a.to_string() }, "label": "A-dup" },
             { "verb": "channel.plan.read", "params": { "channel_id": ch_b.to_string() }, "label": "B" }
         ]
     });
-    let filtered = authorize_handoff_for_target(&db, &handoff, target, ch_a).await;
+    let filtered = finalize_bundle_for_target(&db, &bundle, Principal::bot(target), ch_a).await;
     let items = filtered["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1, "cross-channel ref dropped: {filtered}");
-    assert_eq!(items[0]["label"], "A");
+    assert_eq!(items.len(), 1, "cross-channel dropped + dup collapsed: {filtered}");
+    assert_eq!(items[0]["label"], "A", "first (in-channel) kept");
 }

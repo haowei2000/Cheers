@@ -199,6 +199,56 @@ pub fn bundle_items(bundle: &Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// Drop later items whose `(verb, params)` already appeared (first occurrence
+/// wins — e.g. a manual plan pick beats the auto handoff plan). Order-preserving.
+pub fn dedup_items_by_verb_params(items: &mut Vec<Value>) {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    items.retain(|it| {
+        let key = format!(
+            "{}|{}",
+            it.get("verb").and_then(|v| v.as_str()).unwrap_or_default(),
+            it.get("params").map(|p| p.to_string()).unwrap_or_default(),
+        );
+        seen.insert(key)
+    });
+}
+
+/// **Deliver-time** finalization of a bundle for ONE target consumer — the single
+/// step both the human→bot dispatch and the bot→bot handoff run (docs/design/
+/// RESOURCE_CONTEXT.md: pickup and handoff are one primitive, unified here). For
+/// each item, re-authorize against the TARGET: a channel-scoped ref is kept only
+/// if the target can `authorize_channel_read` its `params.channel_id` (fallback =
+/// the dispatch channel, which the target was mentioned in) — so a target's prompt
+/// never lists a resource it couldn't pull itself. Then de-dup by `(verb, params)`.
+/// This is orthogonal to produce-time `sanitize_*` (per-producer trust) and to
+/// pull-time re-auth (the final gate); all three compose.
+pub async fn finalize_bundle_for_target(
+    db: &sqlx::PgPool,
+    bundle: &Value,
+    target: crate::resource::Principal,
+    fallback_channel: uuid::Uuid,
+) -> Value {
+    let mut kept: Vec<Value> = Vec::new();
+    for item in bundle_items(bundle) {
+        let cid = item
+            .get("params")
+            .and_then(|p| p.get("channel_id"))
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<uuid::Uuid>().ok())
+            .unwrap_or(fallback_channel);
+        if crate::resource::authorize_channel_read(db, &target, cid)
+            .await
+            .is_ok()
+        {
+            kept.push(item);
+        }
+    }
+    dedup_items_by_verb_params(&mut kept);
+    let mut top = bundle.as_object().cloned().unwrap_or_default();
+    top.insert("items".into(), Value::Array(kept));
+    Value::Object(top)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
