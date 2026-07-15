@@ -346,6 +346,17 @@ fn build_resource_call(
             copy_optional(args, &mut params, "mention_names", "mention_names");
             copy_optional(args, &mut params, "mention_ids", "mention_ids");
             copy_optional(args, &mut params, "reply_to_msg_id", "reply_to_msg_id");
+            // Resource-context (docs/design/RESOURCE_CONTEXT.md, "Bot / Manual pick"):
+            // wrap the `context` array into a bundle object; the gateway validates
+            // (read verbs only), caps, and stamps origin. Only emit when non-empty.
+            if let Some(items) = args.get("context").and_then(Value::as_array) {
+                if !items.is_empty() {
+                    params.insert(
+                        "context_bundle".to_string(),
+                        json!({ "items": items.clone() }),
+                    );
+                }
+            }
             Ok(ResourceCall {
                 resource: "channel.messages.create",
                 params,
@@ -588,12 +599,13 @@ fn tool_definitions() -> Vec<Value> {
             string_prop("file_id", "File id from inbox_list."),
             bool_prop("as_base64", "Return the raw file bytes as base64 instead of decoded text. Required for binaries (pdf/zip/images). Capped at 8MB."),
         ], vec!["channel_id", "file_id"]), true, false),
-        tool("post_message", "Post a message", "Send a message to a channel. Use this for proactive / cross-channel posts; the reply to the triggering message goes through the normal agent reply flow, not this tool. To hand work to ANOTHER bot, @mention it: use mention_ids with that bot's member_id from list_members (preferred — exact, no name ambiguity), or mention_names. @mentioning a bot triggers it to act on your message.", object_schema(vec![
+        tool("post_message", "Post a message", "Send a message to a channel. Use this for proactive / cross-channel posts; the reply to the triggering message goes through the normal agent reply flow, not this tool. To hand work to ANOTHER bot, @mention it: use mention_ids with that bot's member_id from list_members (preferred — exact, no name ambiguity), or mention_names. @mentioning a bot triggers it to act on your message. To hand over working context along with the message (so the recipient reads the same plan / decisions / file instead of guessing), attach `context` — a list of resource references the recipient resolves on demand.", object_schema(vec![
             channel_id_prop(),
             string_prop("text", "Message body (markdown)."),
             array_string_prop("mention_ids", "Members to @mention by member_id (uuid, from list_members). Preferred over mention_names for delegating to a specific bot — exact, no name collisions."),
             array_string_prop("mention_names", "Members to @mention by username or display name. Gateway resolves to UUIDs (ambiguous names may fail); prefer mention_ids when you have the id. Also accepts group tokens: \"all\"/\"everyone\"/\"here\" (whole channel), \"bots\" (all bots), \"humans\"/\"users\" (all people) — each expands to every matching member. Use group tokens sparingly: @-mentioning bots triggers them, and a channel-wide fan-out is rate-limited."),
             string_prop("reply_to_msg_id", "msg_id to reply to (threaded reply)."),
+            context_prop(),
         ], vec!["channel_id", "text"]), false, false),
         tool("set_status", "Update your own status card", "Set YOUR OWN status shown on your member card in every channel you're in: a short status_text (≤140 chars — what you're working on / your current state) plus an optional status_emoji, and optionally refresh your info line (the short self-description members see via list_members). Applied immediately and pushed live to viewers. Use this when asked to update your status, or when you start/finish notable work. This tool is the ONLY way to update your card — replying in chat does not change it.", object_schema(vec![
             string_prop("status_text", "Short status line (≤140 chars). Omit to clear the status."),
@@ -706,6 +718,31 @@ fn array_string_prop(name: &'static str, description: &'static str) -> (&'static
     )
 }
 
+/// The `context` array on `post_message` — a list of Cheers resource references
+/// attached to the message (docs/design/RESOURCE_CONTEXT.md, "Bot / Manual pick").
+/// Each item names a READ resource `verb` the recipient can resolve on demand; the
+/// gateway drops non-read verbs and caps the count, so the schema stays permissive.
+fn context_prop() -> (&'static str, Value) {
+    (
+        "context",
+        json!({
+            "type": "array",
+            "description": "Optional: Cheers resources to attach as context for the recipient(s) to read on demand — e.g. the plan, recent decisions, a file, or messages. Each item is a resource reference; only read verbs are kept.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "verb": { "type": "string", "description": "Read resource verb, e.g. \"channel.plan.read\", \"channel.activity.read\", \"channel.messages.by-seq\", \"channel.files.read\"." },
+                    "params": { "type": "object", "description": "Params the recipient passes when reading (e.g. {\"channel_id\":\"…\"}). channel_id defaults to this channel if omitted." },
+                    "label": { "type": "string", "description": "Short human label shown on the context chip." },
+                    "kind": { "type": "string", "description": "Optional kind hint: plan|file|message|activity|sessions|cost." }
+                },
+                "required": ["verb"],
+                "additionalProperties": false
+            }
+        }),
+    )
+}
+
 fn number_prop(
     name: &'static str,
     description: &'static str,
@@ -732,4 +769,59 @@ fn bool_prop(name: &'static str, description: &'static str) -> (&'static str, Va
         name,
         json!({ "type": "boolean", "description": description }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_client() -> CheersClient {
+        CheersClient {
+            http: Client::new(),
+            config: ServerConfig {
+                resource_url: "http://localhost/resource".to_string(),
+                resource_token: None,
+                bot_id: None,
+                request_timeout_ms: 1000,
+            },
+        }
+    }
+
+    #[test]
+    fn post_message_wraps_context_into_bundle() {
+        let client = test_client();
+        let args: Map<String, Value> = serde_json::from_value(json!({
+            "channel_id": "c1",
+            "text": "handing this over",
+            "context": [
+                { "verb": "channel.plan.read", "params": {"channel_id": "c1"}, "label": "Plan", "kind": "plan" }
+            ]
+        }))
+        .unwrap();
+        let call = build_resource_call(&client, "post_message", &args).unwrap();
+        assert_eq!(call.resource, "channel.messages.create");
+        let bundle = call.params.get("context_bundle").expect("bundle present");
+        let items = bundle.get("items").and_then(Value::as_array).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["verb"], json!("channel.plan.read"));
+    }
+
+    #[test]
+    fn post_message_without_context_has_no_bundle() {
+        let client = test_client();
+        let args: Map<String, Value> =
+            serde_json::from_value(json!({ "channel_id": "c1", "text": "hi" })).unwrap();
+        let call = build_resource_call(&client, "post_message", &args).unwrap();
+        assert!(call.params.get("context_bundle").is_none());
+    }
+
+    #[test]
+    fn post_message_empty_context_has_no_bundle() {
+        let client = test_client();
+        let args: Map<String, Value> =
+            serde_json::from_value(json!({ "channel_id": "c1", "text": "hi", "context": [] }))
+                .unwrap();
+        let call = build_resource_call(&client, "post_message", &args).unwrap();
+        assert!(call.params.get("context_bundle").is_none());
+    }
 }

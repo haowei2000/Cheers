@@ -96,6 +96,12 @@ pub(super) fn build_prompt(
     if let Some(text) = trigger_block(task) {
         parts.push(text);
     }
+    // Resource context the human picked / the handing-off bot bundled with this
+    // message — a reference list the agent resolves on demand via its Cheers
+    // resource tools, distinct from the inlined `pinned` blocks above.
+    if let Some(text) = context_bundle_block(task) {
+        parts.push(text);
+    }
     // Image/audio attachments become real ACP content blocks only when the agent
     // advertised the capability; everything else (and media we can't send) is
     // summarized as text so the agent still knows the file exists. An audio
@@ -186,6 +192,86 @@ notified — a plain reply does not reach another bot.\n\n"
         None => String::new(),
     };
     Some(format!("{prefix}{text}"))
+}
+
+/// Render the per-message resource-context bundle (docs/design/RESOURCE_CONTEXT.md)
+/// into a prompt block. Each item is a *reference* — a resource verb + params the
+/// agent can resolve on demand through its Cheers resource tools (governed by the
+/// bot's own grants), not inlined content. The header distinguishes a human pick
+/// from a bot hand-off so the agent knows the provenance. Returns `None` when
+/// there is no bundle or it carries no usable items.
+fn context_bundle_block(task: &TaskCommand) -> Option<String> {
+    let bundle = task.context_bundle.as_ref()?;
+    let items = bundle.get("items").and_then(Value::as_array)?;
+    let mut lines: Vec<String> = Vec::new();
+    for item in items {
+        let verb = item.get("verb").and_then(Value::as_str).unwrap_or_default();
+        if verb.is_empty() {
+            continue;
+        }
+        let label = item
+            .get("label")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let kind = item.get("kind").and_then(Value::as_str);
+        let params = item
+            .get("params")
+            .map(format_resource_params)
+            .unwrap_or_default();
+        let descriptor = match (label, kind) {
+            (Some(label), Some(kind)) => format!("{label} [{kind}]"),
+            (Some(label), None) => label.to_string(),
+            (None, Some(kind)) => kind.to_string(),
+            (None, None) => verb.to_string(),
+        };
+        if params.is_empty() {
+            lines.push(format!("- {descriptor} — resource \"{verb}\""));
+        } else {
+            lines.push(format!("- {descriptor} — resource \"{verb}\" ({params})"));
+        }
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let header = match bundle.get("origin").and_then(Value::as_str) {
+        Some("handoff") => {
+            let from = bundle
+                .get("from")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+                .map(|id| format!(" from bot {id}"))
+                .unwrap_or_default();
+            format!(
+                "Context handed off{from} with this task. Read any you need via your \
+Cheers resource tools before acting:"
+            )
+        }
+        _ => "Cheers context attached to this message. Read any you need via your \
+Cheers resource tools before answering:"
+            .to_string(),
+    };
+    Some(format!("{header}\n{}", lines.join("\n")))
+}
+
+/// Flatten a resource ref's `params` object into a compact `k=v, k=v` string for
+/// the reference line. Scalar values only; nested objects/arrays are rendered as
+/// their compact JSON so nothing is silently dropped.
+fn format_resource_params(params: &Value) -> String {
+    let Some(map) = params.as_object() else {
+        return String::new();
+    };
+    map.iter()
+        .map(|(key, value)| {
+            let rendered = match value {
+                Value::String(text) => text.clone(),
+                Value::Null => "null".to_string(),
+                other => other.to_string(),
+            };
+            format!("{key}={rendered}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub(super) const CHEERS_ACP_OUTPUT_CONTRACT: &str = "You are replying inside Cheers. Stream useful answer text through the ACP session; generated files should be returned as explicit file/resource updates when the runtime supports them.";
