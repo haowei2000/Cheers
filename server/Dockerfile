@@ -33,7 +33,13 @@ COPY server/src ./src
 COPY server/migrations ./migrations
 # assets/ holds files embedded via include_str! (e.g. the mode-2 install.sh).
 COPY server/assets ./assets
-RUN cargo build --release
+# CRITICAL: `docker COPY` preserves the source files' original mtimes, which are
+# OLDER than the stub artifacts built in the cache layer above. Without bumping
+# them, cargo sees "source older than artifact" and SKIPS the rebuild — shipping
+# the empty stub binary (exits 0 immediately → CrashLoopBackOff). Touch the real
+# sources so their mtime beats the stubs and both crates actually recompile.
+RUN find src /app/packages/cheers-acp-connector-rs/bridge-protocol/src -name '*.rs' -exec touch {} + \
+    && cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
