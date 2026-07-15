@@ -102,6 +102,10 @@ pub struct MessageDto {
     /// for plain chat messages.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub content_data: Option<Value>,
+    /// Resource-context bundle attached to this message (docs/design/RESOURCE_CONTEXT.md):
+    /// refs to Cheers resources the sender picked up. NULL for messages with none.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub context_bundle: Option<Value>,
 }
 
 impl MessageDto {
@@ -134,6 +138,7 @@ impl MessageDto {
             files: Vec::new(),
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
             content_data: row.try_get::<Value, _>("content_data").ok(),
+            context_bundle: row.try_get::<Value, _>("context_bundle").ok(),
         }
     }
 }

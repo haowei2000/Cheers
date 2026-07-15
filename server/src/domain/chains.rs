@@ -76,6 +76,10 @@ pub async fn trigger_bot_replies(
     // Shared across all bots triggered by this reply so identical trigger
     // attachments / pinned files are fetched from S3 once, not once per bot.
     let media_cache = dispatcher::MediaCache::default();
+    // F2 handoff (docs/design/RESOURCE_CONTEXT.md): the initiator is the same for
+    // every bot this reply triggers, so assemble its handoff bundle once and hand
+    // the same shared context to each target.
+    let handoff = assemble_handoff_bundle(db, author_bot_id, channel_id).await;
     for bot_id in bots {
         // Per-channel dispatch budget. The proactive `send` / `post_message`
         // paths reset `current_depth` to 0 (they carry no task depth), so the
@@ -182,6 +186,9 @@ pub async fn trigger_bot_replies(
                 // Every hop inherits the cascade's chain_id, so the whole thing is
                 // cancelable as one unit and the gate above blocks it once cancelled.
                 chain_id: chain_id.map(ToString::to_string),
+                // The initiator's plan + recent decisions, delivered to this target's
+                // task frame so it inherits the working state instead of guessing.
+                context_bundle: Some(handoff.clone()),
             },
             &media_cache,
         )
@@ -206,6 +213,50 @@ fn mentioned_bots(mentions: &[Mention], exclude_bot_id: Uuid) -> Vec<Uuid> {
 
 fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
     format!("cheers:channel:{channel_id}:bot:{bot_id}")
+}
+
+/// Build the F2 handoff bundle for a bot@bot dispatch (docs/design/RESOURCE_CONTEXT.md):
+/// references to the INITIATOR's plan and the channel's recent decisions, delivered
+/// to the target's task frame so the next agent inherits the shared working state
+/// instead of guessing from chat history. References only (no inlined content) — the
+/// target resolves them as itself via the resource protocol (consumer-governed reads),
+/// so this can't hand a target anything it isn't already allowed to read.
+async fn assemble_handoff_bundle(
+    db: &PgPool,
+    initiator_bot_id: Uuid,
+    channel_id: Uuid,
+) -> serde_json::Value {
+    let ch = channel_id.to_string();
+    // The initiator's primary session scopes its plan (best-effort; omit on miss →
+    // the plan ref then covers all sessions, which the reader can still attribute
+    // by the bot_id on each plan row).
+    let a_session = sessions::resolve_primary_session(db, initiator_bot_id, &ch)
+        .await
+        .ok()
+        .flatten()
+        .map(|(sid, _)| sid.to_string());
+    let mut plan_params = serde_json::json!({ "channel_id": ch });
+    if let Some(sid) = &a_session {
+        plan_params["session_id"] = serde_json::json!(sid);
+    }
+    serde_json::json!({
+        "origin": "handoff",
+        "from": { "type": "bot", "id": initiator_bot_id.to_string() },
+        "items": [
+            {
+                "verb": "channel.plan.read",
+                "params": plan_params,
+                "label": "Plan (handoff)",
+                "kind": "plan",
+            },
+            {
+                "verb": "channel.activity.read",
+                "params": { "channel_id": ch },
+                "label": "Recent decisions (handoff)",
+                "kind": "activity",
+            },
+        ],
+    })
 }
 
 /// Append one dispatch-decision row (allow *and* deny) to `acp_event_log` — the

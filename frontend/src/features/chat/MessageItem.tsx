@@ -6,6 +6,7 @@ import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
+import { MessageContextChips } from "./context/ContextPickBar";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
 import { BotTracePanel } from "./BotTracePanel";
@@ -504,6 +505,7 @@ function MessageBody({
         </div>
       )}
       <FileGrid files={files} className="mt-1.5" />
+      <MessageContextChips bundle={message.context_bundle} className="mt-1.5" />
     </div>
   );
 }

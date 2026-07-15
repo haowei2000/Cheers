@@ -145,6 +145,13 @@ export interface Message {
   error?: string | null;
   /** Structured payload for system messages (ACP approval cards, etc.). */
   content_data?: PermissionContentData | Record<string, unknown> | null;
+  /** Resource-context bundle the sender attached (docs/design/RESOURCE_CONTEXT.md).
+   *  Rendered as context chips under the message. */
+  context_bundle?: {
+    origin?: string;
+    from?: { type?: string; id?: string } | null;
+    items?: Array<{ verb: string; label: string; kind: string; params?: unknown }>;
+  } | null;
   _streaming?: boolean;
   /** Latest agent progress (trace) title shown while streaming. */
   _trace?: string | null;
@@ -161,6 +168,7 @@ export interface Message {
     file_ids?: string[];
     reply_to_msg_id?: string;
     session_id?: string;
+    context_bundle?: unknown;
   };
 }
 

@@ -49,6 +49,10 @@ pub struct CreateMessageParams {
     /// Target a specific "other" session (else the channel's primary). Must be a
     /// session bound to this channel; it determines which bot is prompted.
     pub session_id: Option<Uuid>,
+    /// Optional resource-context bundle attached to this message
+    /// (docs/design/RESOURCE_CONTEXT.md). Persisted on the row and threaded into
+    /// any triggered bot's task frame via `dispatcher::load_task_context`.
+    pub context_bundle: Option<serde_json::Value>,
 }
 
 pub async fn create_message(
@@ -130,8 +134,9 @@ pub async fn create_message(
     sqlx::query(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-             is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq)
-         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9)",
+             is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
+             context_bundle)
+         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9, $10)",
     )
     .bind(msg_id.to_string())
     .bind(params.channel_id.to_string())
@@ -142,6 +147,7 @@ pub async fn create_message(
     .bind(json!(file_ids.clone()))
     .bind(now)
     .bind(seq)
+    .bind(params.context_bundle.clone())
     .execute(&mut *tx)
     .await
     .map_err(AppError::Db)?;
@@ -179,6 +185,7 @@ pub async fn create_message(
         files: load_message_files(&db, &file_ids).await?,
         created_at: now,
         content_data: None,
+        context_bundle: params.context_bundle.clone(),
     };
 
     // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
@@ -203,6 +210,8 @@ pub async fn create_message(
             // quote block only appears after a history refetch.
             "reply_to_msg_id": dto.reply_to_msg_id,
             "created_at": now,
+            // Context chips render live (and on reload via the DTO) without a refetch.
+            "context_bundle": dto.context_bundle,
         }),
     );
     fanout.broadcast_channel(params.channel_id, wire).await;
@@ -356,6 +365,9 @@ pub async fn create_message(
                 provider_session_key,
                 session_id: resolved_session_id,
                 chain_id: chain_id.clone(),
+                // Human path: no gateway handoff — the trigger message's own
+                // (human-attached) context bundle flows through load_task_context.
+                context_bundle: None,
             },
             &media_cache,
         )
@@ -688,7 +700,8 @@ async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(
 const MESSAGE_LIST_SELECT: &str = "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
         m.channel_seq, u.display_name AS sender_name,
         m.content, m.msg_type, m.is_partial, m.file_ids,
-        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at, m.content_data
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at, m.content_data,
+        m.context_bundle
  FROM messages m
  LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id";
 

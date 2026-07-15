@@ -68,6 +68,15 @@ its live P2 (`bot_processing` chips, rail approval badge). Recorded next:
   per-channel roster in the work lane) and approvals-inbox filters (by bot / by
   operation kind / by channel).
 
+### Resource context — attachable Cheers resources as agent context
+
+The Cheers-native `@context`: any participant attaches Cheers's own resources
+(plan, board, file, message/thread, decisions) as structured context to an agent
+invocation — two producers (human manual pick, bot automatic handoff) over one
+foundation, with consumer-governed reads. Design:
+[docs/design/RESOURCE_CONTEXT.md](design/RESOURCE_CONTEXT.md). Phases:
+F0 foundation → F1 human picker → F2 bot handoff → F3 suggested context.
+
 ## Near-Term Plans
 
 ### UI

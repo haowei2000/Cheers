@@ -154,6 +154,7 @@ async fn prompt_one(state: &AppState, bot_id: &str, owner: &str) -> anyhow::Resu
             mention_ids: vec![bot_uuid],
             mention_names: vec![],
             session_id: None,
+            context_bundle: None,
         },
     )
     .await?;
