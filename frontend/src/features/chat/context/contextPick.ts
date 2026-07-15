@@ -20,19 +20,13 @@ export interface ContextItem {
   label: string;
   /** Category — drives the chip icon. */
   kind: "plan" | "file" | "message" | "activity" | "sessions" | "cost";
-  /** Inline snapshot (docs/design/RESOURCE_CONTEXT.md). Used for things the
-   *  consumer can't re-resolve — chiefly a remote-workspace file, which lives on
-   *  ONE bot's private machine, not as a shared resource. The snapshot is the
-   *  content at pick time; `params` still locate the owning bot so the receiver
-   *  can ask it for the current version. */
-  preview?: { text: string };
 }
 
-/** Max characters kept in an inline snapshot — keep the task frame small (the
- *  reference model exists precisely so bundles don't ship whole files). */
-export const PREVIEW_MAX_CHARS = 2000;
-
-/** The wire shape persisted on the message / delivered to the task frame. */
+/** The wire shape persisted on the message / delivered to the task frame. Every
+ *  item is a pure REFERENCE (verb + params) the consumer resolves under its own
+ *  read permission — no inline content. (The old `preview` snapshot field is
+ *  deprecated: remote-workspace files now ride as a `workspace.read` reference the
+ *  receiving bot pulls live; see docs/design/RESOURCE_CONTEXT.md P3.) */
 export interface ContextBundle {
   origin: "human" | "handoff";
   items: Array<{
@@ -40,7 +34,6 @@ export interface ContextBundle {
     params: Record<string, unknown>;
     label: string;
     kind: string;
-    preview?: { text: string };
   }>;
 }
 
@@ -277,32 +270,28 @@ export function toBundle(
       params: { channel_id: channelId, ...it.params },
       label: it.label,
       kind: it.kind,
-      ...(it.preview ? { preview: it.preview } : {}),
     })),
   };
 }
 
 /** A context ref for a file in a bot's REMOTE workspace (its live private
- *  machine, browsed via `/workspace/file`). Unlike a channel resource this can't
- *  be re-resolved by an arbitrary consumer, so it rides as an inline SNAPSHOT
- *  (content at pick time, truncated) plus a locator: `params` name the owning
- *  bot + path so the receiver can ask that bot for the current version. */
+ *  machine). A consumer-governed REFERENCE (docs/design/RESOURCE_CONTEXT.md P3):
+ *  `params` name WHOSE workspace + which file, and the receiving bot resolves it
+ *  live via the `read_workspace` tool under its OWN read permission — no snapshot
+ *  is captured or shipped. (Superseded the inline-snapshot pick; the gateway
+ *  brokers the read and 400s if the owner bot is offline, at which point the agent
+ *  can ask the owner directly via post_message — the locator names it.) */
 export function workspaceContextItem(args: {
   botId: string;
   botName?: string;
   path: string;
   sessionId?: string;
-  content: string;
 }): ContextItem {
   const base = args.path.split("/").pop() || args.path;
   const who = args.botName?.trim() || args.botId;
-  const snapshot = args.content.slice(0, PREVIEW_MAX_CHARS);
   return {
     id: `ws:${args.botId}:${args.path}`,
-    // Locator, not a consumer-resolvable read: it names WHOSE workspace + which
-    // file. The receiver reads the snapshot below; for the live version it asks
-    // the owning bot (post_message) — the connector prompt spells this out.
-    verb: "workspace.file",
+    verb: "workspace.read",
     params: {
       bot_id: args.botId,
       path: args.path,
@@ -310,6 +299,5 @@ export function workspaceContextItem(args: {
     },
     label: `${base} (@${who} workspace)`,
     kind: "file",
-    preview: { text: snapshot },
   };
 }
