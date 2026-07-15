@@ -500,6 +500,25 @@ fn build_resource_call(
                 params,
             })
         }
+        // Read a file from ANOTHER bot's remote workspace (unified context model, P3).
+        // Resolves a `workspace.read` reference handed over as context: `bot_id` names
+        // the owner, `path` the file, `channel_id` the shared channel (membership +
+        // grant are enforced gateway-side). The gateway brokers the live read under
+        // THIS bot's own `workspace_read` permission — no snapshot, current content.
+        "read_workspace" => {
+            let mut params = Map::new();
+            params.insert(
+                "channel_id".to_string(),
+                Value::String(client.resolve_channel(args)?),
+            );
+            copy_required(args, &mut params, "bot_id", "bot_id")?;
+            copy_required(args, &mut params, "path", "path")?;
+            copy_optional(args, &mut params, "session_id", "session_id");
+            Ok(ResourceCall {
+                resource: "workspace.read",
+                params,
+            })
+        }
         _ => Err(ResourceError {
             code: "UNKNOWN_TOOL".to_string(),
             message: format!("unknown tool: {tool}"),
@@ -661,6 +680,12 @@ fn tool_definitions() -> Vec<Value> {
             string_prop("from", "Source path."),
             string_prop("to", "Target path."),
         ], vec!["channel_id", "from", "to"]), false, false),
+        tool("read_workspace", "Read another bot's workspace file", "Read a file from ANOTHER bot's remote workspace, given as a `workspace.read` reference in handed-over context (bot_id = the owner, path = the file). The gateway brokers a LIVE read under your own permission and returns the current content — not a stale snapshot. Requires you and the owner to share the channel and the owner to grant you workspace read (else denied). If the owner's connector is offline the read fails; ask the owner directly (post_message) as a fallback. This is for files on another bot's private machine — for your own files use desk_read, for chat uploads use inbox_open.", object_schema(vec![
+            channel_id_prop(),
+            string_prop("bot_id", "member_id (uuid) of the bot whose workspace file to read — the owner named in the reference."),
+            string_prop("path", "File path within that bot's workspace, from the reference."),
+            string_prop("session_id", "Optional session id from the reference, scoping which workspace root to read."),
+        ], vec!["channel_id", "bot_id", "path"]), true, false),
     ]
 }
 

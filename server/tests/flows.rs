@@ -3164,3 +3164,54 @@ async fn finalize_drops_refs_target_cannot_read_and_dedups(db: PgPool) {
     assert_eq!(items.len(), 1, "cross-channel dropped + dup collapsed: {filtered}");
     assert_eq!(items[0]["label"], "A", "first (in-channel) kept");
 }
+
+/// P3-2: the `workspace.read` broker's authorization boundary. A reader bot may
+/// resolve another bot's workspace reference ONLY when both share the channel and the
+/// owner grants it `workspace_read` (member-allow default, deny-override). This tests
+/// the DB-only auth gate (`authorize_bot_workspace_read`); the actual file fetch needs
+/// a live connector (covered by the kind live check), which is why the broker splits
+/// the security boundary out. Mirrors the bot-subject dispatch-gate posture.
+#[sqlx::test]
+async fn workspace_read_broker_authz_member_grant_and_deny(db: PgPool) {
+    use server::api::workspace::authorize_bot_workspace_read;
+    use server::domain::bot_event_policy::{upsert_rule, Capability, EV_WORKSPACE_READ, SUBJECT_BOT};
+
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let owner = seed_bot(&db).await; // owns the workspace file
+    let reader = seed_bot(&db).await; // wants to resolve the reference
+    let outsider = seed_bot(&db).await; // shares no channel with the owner
+    add_member(&db, ch, owner, "bot").await;
+    add_member(&db, ch, reader, "bot").await;
+
+    // Both members, no rule → member-allow default lets the reader through.
+    authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect("granted by member-allow default");
+
+    // A non-member reader is denied (never reaches the grant check).
+    let err = authorize_bot_workspace_read(&db, owner, outsider, ch)
+        .await
+        .expect_err("non-member reader denied");
+    assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
+
+    // Owner posts a deny rule targeting the reader → denied despite membership.
+    upsert_rule(
+        &db,
+        &owner.to_string(),
+        &ch.to_string(),
+        SUBJECT_BOT,
+        &reader.to_string(),
+        EV_WORKSPACE_READ,
+        Capability::Initiate,
+        false, // deny
+        "test",
+        None,
+    )
+    .await
+    .unwrap();
+    let err = authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect_err("deny rule overrides default");
+    assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
+}
