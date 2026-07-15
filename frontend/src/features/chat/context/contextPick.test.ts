@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { computeSuggestions, type ContextItem, type FileRef } from "./contextPick";
+import {
+  computeSuggestions,
+  selectionLineRange,
+  rangedFileContextItem,
+  type ContextItem,
+  type FileRef,
+} from "./contextPick";
 
 const CH = "chan-1";
 const files: FileRef[] = [
@@ -74,5 +80,37 @@ describe("computeSuggestions (F3)", () => {
 
   it("returns nothing without a channel", () => {
     expect(computeSuggestions(undefined, { draftText: "the plan" }, [], {})).toEqual([]);
+  });
+});
+
+describe("selectionLineRange (passage picking)", () => {
+  const content = "line1\nline2\nline3\nline4\nline5";
+
+  it("maps a single-line selection to its 1-indexed line", () => {
+    expect(selectionLineRange(content, "line3")).toEqual({ start: 3, end: 3 });
+  });
+
+  it("maps a multi-line selection to an inclusive range", () => {
+    expect(selectionLineRange(content, "line2\nline3\nline4")).toEqual({ start: 2, end: 4 });
+  });
+
+  it("normalizes CRLF", () => {
+    expect(selectionLineRange(content, "line2\r\nline3")).toEqual({ start: 2, end: 3 });
+  });
+
+  it("returns null for empty or not-found selections", () => {
+    expect(selectionLineRange(content, "   ")).toBeNull();
+    expect(selectionLineRange(content, "nope")).toBeNull();
+  });
+});
+
+describe("rangedFileContextItem", () => {
+  it("builds a scoped fs.read ref with a labeled range", () => {
+    const it = rangedFileContextItem("notes/plan.md", 12, 40);
+    expect(it.id).toBe("file:notes/plan.md:12-40");
+    expect(it.verb).toBe("fs.read");
+    expect(it.params).toEqual({ path: "notes/plan.md", start_line: 12, end_line: 40 });
+    expect(it.label).toBe("plan.md:12-40");
+    expect(it.kind).toBe("file");
   });
 });

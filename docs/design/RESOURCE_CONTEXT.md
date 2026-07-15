@@ -135,6 +135,9 @@ resource verbs:
 - **Recent decisions / Activity** (Viewboard) → `channel.activity.read`
 - **Sessions / Cost / Audit** (Viewboard) → `channel.sessions.read` / `channel.usage.read` / approval audit
 - **File / board** (Workbench) → `channel.files*` (board.json, any workbench/channel file)
+- **File passage** (Workbench) → `fs.read` with `start_line`/`end_line`: select text in
+  the file viewer and attach *just that range* as a scoped ref (the agent pulls only
+  those lines on demand), instead of the whole file.
 - **Message / thread** → `channel.messages.by-seq` (pick a message; a thread = its range)
 
 **Two entry points** (both feed the same context bundle):

@@ -118,6 +118,40 @@ export function fileContextItem(file: FileRef): ContextItem {
   };
 }
 
+/** A context ref for a line range of a Workbench (desk) file — a picked passage.
+ *  The `fs.read` verb takes `start_line`/`end_line` (1-indexed inclusive); the
+ *  agent resolves just that slice on demand. */
+export function rangedFileContextItem(
+  path: string,
+  startLine: number,
+  endLine: number
+): ContextItem {
+  const base = path.split("/").pop() || path;
+  return {
+    id: `file:${path}:${startLine}-${endLine}`,
+    verb: "fs.read",
+    params: { path, start_line: startLine, end_line: endLine },
+    label: `${base}:${startLine}-${endLine}`,
+    kind: "file",
+  };
+}
+
+/** Map a selected substring to its 1-indexed inclusive line range within
+ *  `content`. Returns `null` when the selection is empty or not found (e.g. a
+ *  selection spanning virtualized/off-screen lines the DOM didn't hand back). */
+export function selectionLineRange(
+  content: string,
+  selected: string
+): { start: number; end: number } | null {
+  const text = selected.replace(/\r\n/g, "\n");
+  if (!text.trim()) return null;
+  const idx = content.indexOf(text);
+  if (idx < 0) return null;
+  const start = content.slice(0, idx).split("\n").length; // 1-indexed
+  const end = start + text.split("\n").length - 1;
+  return { start, end };
+}
+
 /** A channel file the draft might reference (built from loaded messages). */
 export interface FileRef {
   file_id: string;

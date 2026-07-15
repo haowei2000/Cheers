@@ -3036,3 +3036,51 @@ async fn fleet_membership_requires_active_status(db: PgPool) {
         "personal-workspace owner must have access without a membership row"
     );
 }
+
+/// fs.read with start_line/end_line returns just that 1-indexed inclusive slice
+/// plus the clamped range (passage picking — docs/design/RESOURCE_CONTEXT.md).
+#[sqlx::test]
+async fn fs_read_line_range_slice(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "fs.write",
+            serde_json::json!({ "channel_id": cid, "path": "notes/p.md", "content": "a\nb\nc\nd\ne", "if_version": 0 }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "write: {r}");
+
+    // ranged read → only lines 2..=4, with the range echoed
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "fs.read",
+            serde_json::json!({ "channel_id": cid, "path": "notes/p.md", "start_line": 2, "end_line": 4 }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "read: {r}");
+    assert_eq!(r["data"]["content"], "b\nc\nd");
+    assert_eq!(r["data"]["start_line"], 2);
+    assert_eq!(r["data"]["end_line"], 4);
+
+    // no range → whole file, and no range fields
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "notes/p.md" })),
+    )
+    .await;
+    assert_eq!(r["data"]["content"], "a\nb\nc\nd\ne");
+    assert!(r["data"]["start_line"].is_null(), "no range → no start_line: {}", r["data"]);
+}

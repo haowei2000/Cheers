@@ -71,15 +71,49 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
     .map_err(super::db_err("fs.read: select context_file"))?
     .ok_or_else(|| super::not_found("file"))?;
 
+    let full = row.try_get::<String, _>("content").unwrap_or_default();
+    // Optional 1-indexed inclusive line window (docs/design/RESOURCE_CONTEXT.md —
+    // passage picking). When present, return just that slice + the clamped range
+    // so a picked paragraph rides as a scoped ref, not the whole file.
+    let start = params.get("start_line").and_then(Value::as_i64);
+    let end = params.get("end_line").and_then(Value::as_i64);
+    let (content, range) = match slice_lines(&full, start, end) {
+        Some((text, s, e)) => (text, Some((s, e))),
+        None => (full, None),
+    };
+
     Ok(json!({
         "channel_id": channel_id,
         "path": row.try_get::<String, _>("path").unwrap_or(path),
-        "content": row.try_get::<String, _>("content").unwrap_or_default(),
+        "content": content,
         "version": row.try_get::<i64, _>("version").unwrap_or(0),
         "is_dir": row.try_get::<bool, _>("is_dir").unwrap_or(false),
+        // Present only for a ranged read: the actual (clamped) line window returned.
+        "start_line": range.map(|(s, _)| s),
+        "end_line": range.map(|(_, e)| e),
         "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
         "updated_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at").ok(),
     }))
+}
+
+/// Slice `content` to a 1-indexed inclusive `[start, end]` line window. Returns
+/// the sliced text plus the clamped `(start, end)` actually used, or `None` when
+/// no usable range was requested (caller then returns the whole file). Missing
+/// bound → open on that side; out-of-order or out-of-bounds bounds are clamped to
+/// the file so a bad range yields a valid (possibly empty) slice, never an error.
+fn slice_lines(content: &str, start: Option<i64>, end: Option<i64>) -> Option<(String, i64, i64)> {
+    if start.is_none() && end.is_none() {
+        return None;
+    }
+    let lines: Vec<&str> = content.split('\n').collect();
+    let n = lines.len() as i64;
+    if n == 0 {
+        return None;
+    }
+    let s = start.unwrap_or(1).max(1).min(n);
+    let e = end.unwrap_or(n).max(s).min(n);
+    let slice = lines[(s as usize - 1)..(e as usize)].join("\n");
+    Some((slice, s, e))
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -713,4 +747,46 @@ fn version_conflict(current: i64) -> (String, String) {
         "VERSION_CONFLICT",
         format!("version conflict; current_version={current}"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slice_lines;
+
+    #[test]
+    fn no_range_returns_none() {
+        assert!(slice_lines("a\nb\nc", None, None).is_none());
+    }
+
+    #[test]
+    fn inclusive_window() {
+        let (text, s, e) = slice_lines("l1\nl2\nl3\nl4", Some(2), Some(3)).unwrap();
+        assert_eq!(text, "l2\nl3");
+        assert_eq!((s, e), (2, 3));
+    }
+
+    #[test]
+    fn open_ended_and_open_start() {
+        assert_eq!(slice_lines("l1\nl2\nl3", Some(2), None).unwrap().0, "l2\nl3");
+        assert_eq!(slice_lines("l1\nl2\nl3", None, Some(2)).unwrap().0, "l1\nl2");
+    }
+
+    #[test]
+    fn clamps_out_of_bounds_and_reordered() {
+        // end past EOF clamps to last line
+        let (text, s, e) = slice_lines("l1\nl2\nl3", Some(2), Some(99)).unwrap();
+        assert_eq!(text, "l2\nl3");
+        assert_eq!((s, e), (2, 3));
+        // start past EOF clamps to last line; end < start clamps up to start
+        let (text, s, e) = slice_lines("l1\nl2\nl3", Some(99), Some(1)).unwrap();
+        assert_eq!(text, "l3");
+        assert_eq!((s, e), (3, 3));
+    }
+
+    #[test]
+    fn single_line_file() {
+        let (text, s, e) = slice_lines("only", Some(1), Some(1)).unwrap();
+        assert_eq!(text, "only");
+        assert_eq!((s, e), (1, 1));
+    }
 }

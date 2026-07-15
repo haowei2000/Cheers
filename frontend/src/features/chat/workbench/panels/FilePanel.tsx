@@ -20,6 +20,12 @@ import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
+import {
+  useContextPickStore,
+  selectionLineRange,
+  rangedFileContextItem,
+} from "@/features/chat/context/contextPick";
+import { TextQuote } from "lucide-react";
 import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 
@@ -102,6 +108,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // for the currently selected file (resets on selection change).
   const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
   const [status, setStatus] = useState<string | null>(null);
+  const addContext = useContextPickStore((s) => s.add);
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
   // (default is expanded). `creatingIn` = the folder prefix a new file is being typed
   // into ("" = root, null = not creating). `confirmDel` = the path armed for delete.
@@ -509,6 +516,28 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       kind: "file",
                     }}
                   />
+                  {/* attach just the SELECTED lines (a passage) as a ranged fs.read
+                      ref — pick text in the viewer, then click. */}
+                  <button
+                    type="button"
+                    title="Attach the selected lines as context (select text first)"
+                    onClick={() => {
+                      const sel = window.getSelection()?.toString() ?? "";
+                      const range = selectionLineRange(editor.content, sel);
+                      if (!range) {
+                        setStatus("Select some text in the file first, then attach.");
+                        return;
+                      }
+                      addContext(
+                        ctx.channelId,
+                        rangedFileContextItem(selected, range.start, range.end)
+                      );
+                      setStatus(`Attached ${selected.split("/").pop()}:${range.start}-${range.end} as context`);
+                    }}
+                    className="rounded p-0.5 text-zinc-500 hover:text-indigo-300"
+                  >
+                    <TextQuote className="w-3.5 h-3.5" />
+                  </button>
                   {effMode === "raw" && (
                     <button
                       onClick={() => void onSave()}
