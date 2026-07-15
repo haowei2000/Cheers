@@ -3084,3 +3084,80 @@ async fn fs_read_line_range_slice(db: PgPool) {
     assert_eq!(r["data"]["content"], "a\nb\nc\nd\ne");
     assert!(r["data"]["start_line"].is_null(), "no range → no start_line: {}", r["data"]);
 }
+
+/// AUTHZ: a human-attached bundle with an inline snapshot is persisted PREVIEW-
+/// STRIPPED (members/history never carry snapshot content); create_message keeps
+/// the full copy only for the task-frame dispatch. Fix B, docs/design/RESOURCE_CONTEXT.md.
+#[sqlx::test]
+async fn human_bundle_persists_without_preview(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let bot_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
+
+    // Full (already sanitized) bundle with a workspace snapshot preview.
+    let bundle = serde_json::json!({
+        "origin": "human",
+        "items": [{
+            "verb": "workspace.file", "kind": "file", "label": "m.rs",
+            "params": { "bot_id": Uuid::new_v4().to_string(), "path": "m.rs" },
+            "preview": { "text": "SECRET CONTENT" }
+        }]
+    });
+    let dto = messages::create_message(
+        &db, &fanout, &registry, &bot_locator,
+        CreateMessageParams {
+            context_bundle: Some(bundle),
+            user_id: user,
+            channel_id: ch,
+            content: "look".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![],
+            mention_names: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Persisted row + returned DTO must NOT contain the snapshot text.
+    let stored: Option<Value> =
+        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
+            .bind(&dto.msg_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let stored = stored.expect("bundle stored");
+    assert!(stored["items"][0].get("preview").is_none(), "row strips preview: {stored}");
+    assert_eq!(stored["items"][0]["label"], "m.rs", "keeps label/locator");
+    assert!(dto.context_bundle.unwrap()["items"][0].get("preview").is_none(), "dto strips preview");
+}
+
+/// AUTHZ: a handoff bundle is re-authorized against the TARGET bot — a ref to a
+/// channel the target isn't a member of is dropped. Fix C.
+#[sqlx::test]
+async fn handoff_reauth_drops_refs_target_cannot_read(db: PgPool) {
+    use server::domain::chains::authorize_handoff_for_target;
+    let ws = seed_workspace(&db).await;
+    let ch_a = seed_channel(&db, ws).await; // target IS a member here
+    let ch_b = seed_channel(&db, ws).await; // target is NOT a member here
+    let target = seed_bot(&db).await;
+    add_member(&db, ch_a, target, "bot").await;
+
+    let handoff = serde_json::json!({
+        "origin": "handoff",
+        "items": [
+            { "verb": "channel.plan.read", "params": { "channel_id": ch_a.to_string() }, "label": "A" },
+            { "verb": "channel.plan.read", "params": { "channel_id": ch_b.to_string() }, "label": "B" }
+        ]
+    });
+    let filtered = authorize_handoff_for_target(&db, &handoff, target, ch_a).await;
+    let items = filtered["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "cross-channel ref dropped: {filtered}");
+    assert_eq!(items[0]["label"], "A");
+}
