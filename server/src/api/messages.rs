@@ -36,6 +36,11 @@ pub struct SendMessageRequest {
     /// (else the channel's primary session).
     #[serde(default)]
     pub session_id: Option<Uuid>,
+    /// Optional resource-context bundle (docs/design/RESOURCE_CONTEXT.md): refs to
+    /// Cheers resources (plan / file / message / activity) the sender attached to
+    /// this message. Persisted and threaded into any triggered bot's task frame.
+    #[serde(default)]
+    pub context_bundle: Option<serde_json::Value>,
 }
 
 pub async fn send_message(
@@ -90,6 +95,7 @@ pub async fn send_message(
             mention_ids: body.mention_ids,
             mention_names: body.mention_names,
             session_id: body.session_id,
+            context_bundle: body.context_bundle,
         },
     )
     .await?;

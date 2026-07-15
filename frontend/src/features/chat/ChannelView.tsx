@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } fro
 import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
+import { useContextPickStore, toBundle } from "./context/contextPick";
+import { ContextPickBar } from "./context/ContextPickBar";
 import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
@@ -765,6 +767,11 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       mentionNames: string[] = []
     ) => {
     if (!channel) return;
+    // Attached resource context (docs/design/RESOURCE_CONTEXT.md): read the
+    // channel's pending picks and ship them as a bundle, then clear on success.
+    const pending =
+      useContextPickStore.getState().byChannel[channel.channel_id] ?? [];
+    const bundle = toBundle(pending, channel.channel_id);
     const sendParams: NonNullable<Message["_sendParams"]> = {
       content,
       ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
@@ -772,11 +779,13 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       ...(fileIds.length ? { file_ids: fileIds } : {}),
       ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
       ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
+      ...(bundle ? { context_bundle: bundle } : {}),
     };
     setReplyTo(null);
     try {
       const { content: body, ...opts } = sendParams;
       await sendMessage(channel.channel_id, body, opts);
+      useContextPickStore.getState().clear(channel.channel_id);
     } catch {
       // Don't lose the message: drop a client-only "failed" bubble into the
       // timeline (the composer already cleared the draft) so it stays visible
@@ -1236,6 +1245,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           </button>
         </div>
       )}
+
+      {/* Attached resource context (docs/design/RESOURCE_CONTEXT.md) */}
+      {!selectMode && <ContextPickBar channelId={channel.channel_id} />}
 
       {/* Composer */}
       <MessageComposer

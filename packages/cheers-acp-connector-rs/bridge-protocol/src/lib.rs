@@ -482,6 +482,14 @@ pub enum ControlInbound {
         /// every request — the channel's "convention prompt" (e.g. a prompt template).
         #[serde(default)]
         pinned: Vec<String>,
+        /// Per-message resource context (docs/design/RESOURCE_CONTEXT.md): an
+        /// ordered list of references to Cheers resources (plan / file / message /
+        /// activity) attached to THIS invocation by a human pick or a bot handoff.
+        /// Distinct from `pinned` (channel-standing, inlined): these are references
+        /// the agent resolves on demand via the resource protocol, as itself
+        /// (consumer-governed). Absent when the message carried no bundle.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context_bundle: Option<Value>,
         /// The session's primary working directory (ACP `cwd`), if the Backend
         /// pinned one for this session. Absolute; the connector re-validates it
         /// against `allowed_roots` and falls back to `default_cwd` when unset or

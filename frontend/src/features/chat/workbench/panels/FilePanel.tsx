@@ -19,6 +19,7 @@ import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
+import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
 import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 
@@ -493,6 +494,21 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   </button>
                   {/* pin this file's content into every bot prompt (toggle) */}
                   <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
+                  {/* attach this file as one-message context (disabled if pinned —
+                      pinned files already ride every prompt; no double delivery) */}
+                  <AttachContextButton
+                    channelId={ctx.channelId}
+                    disabled={pinned.includes(selected)}
+                    disabledTitle="Already pinned — sent in every prompt"
+                    title="Attach this file as context for your next message"
+                    item={{
+                      id: `file:${selected}`,
+                      verb: "fs.read",
+                      params: { path: selected },
+                      label: selected.split("/").pop() || selected,
+                      kind: "file",
+                    }}
+                  />
                   {effMode === "raw" && (
                     <button
                       onClick={() => void onSave()}

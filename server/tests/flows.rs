@@ -156,6 +156,7 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
             &registry,
             &bot_locator,
             CreateMessageParams {
+            context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: format!("msg {i}"),
@@ -229,6 +230,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "再详细一点".into(),
@@ -260,6 +262,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "self follow-up".into(),
@@ -318,6 +321,7 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
     let bot = Uuid::new_v4();
 
     let make_params = || DispatchParams {
+            context_bundle: None,
         trigger_msg_id: trigger,
         trigger_seq: 0,
         bot_id: bot,
@@ -408,6 +412,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         &registry,
         &locator,
         DispatchParams {
+            context_bundle: None,
             trigger_msg_id: Uuid::new_v4(),
             trigger_seq: 0,
             bot_id: bot,
@@ -1682,6 +1687,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
             &registry,
             &bot_locator,
             CreateMessageParams {
+            context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: format!("m{i}"),
@@ -1765,6 +1771,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             &registry,
             &bot_locator,
             CreateMessageParams {
+            context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: content.to_string(),
@@ -2088,6 +2095,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bot do something".into(),
@@ -2123,6 +2131,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bot again".into(),
@@ -2442,6 +2451,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
         &registry,
         &locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: bob,
             channel_id: ch,
             content: "hey look at this".into(),
@@ -2461,6 +2471,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
         &registry,
         &locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: bob,
             channel_id: ch,
             content: "plain follow-up".into(),
@@ -2542,6 +2553,7 @@ async fn human_group_bots_mention_triggers_all_bots(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bots standup please".into(),
@@ -2592,6 +2604,7 @@ async fn user_trigger_starts_chain_and_tags_placeholder(db: PgPool) {
         &registry,
         &locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bot please help".into(),
