@@ -517,10 +517,17 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     }}
                   />
                   {/* attach just the SELECTED lines (a passage) as a ranged fs.read
-                      ref — pick text in the viewer, then click. */}
+                      ref — pick text in the viewer, then click. Disabled when the
+                      file is pinned (it already rides every prompt — no double
+                      delivery, mirroring the whole-file attach). */}
                   <button
                     type="button"
-                    title="Attach the selected lines as context (select text first)"
+                    disabled={pinned.includes(selected)}
+                    title={
+                      pinned.includes(selected)
+                        ? "Already pinned — sent in every prompt"
+                        : "Attach the selected lines as context (select text first)"
+                    }
                     onClick={() => {
                       const sel = window.getSelection()?.toString() ?? "";
                       const range = selectionLineRange(editor.content, sel);
@@ -534,7 +541,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       );
                       setStatus(`Attached ${selected.split("/").pop()}:${range.start}-${range.end} as context`);
                     }}
-                    className="rounded p-0.5 text-zinc-500 hover:text-indigo-300"
+                    className="rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
                   >
                     <TextQuote className="w-3.5 h-3.5" />
                   </button>

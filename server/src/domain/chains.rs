@@ -189,8 +189,19 @@ pub async fn trigger_bot_replies(
                 // cancelable as one unit and the gate above blocks it once cancelled.
                 chain_id: chain_id.map(ToString::to_string),
                 // The initiator's plan + recent decisions, delivered to this target's
-                // task frame so it inherits the working state instead of guessing.
-                context_bundle: Some(handoff.clone()),
+                // task frame — finalized AGAINST THIS TARGET first (the one shared
+                // deliver-time step the human path also runs): per-target read-auth
+                // + de-dup, so a handoff never lists a resource the target couldn't
+                // read itself (no-permission-bypass; belt-and-suspenders on pull-time).
+                context_bundle: Some(
+                    crate::domain::context_bundle::finalize_bundle_for_target(
+                        db,
+                        &handoff,
+                        crate::resource::Principal::bot(bot_id),
+                        channel_id,
+                    )
+                    .await,
+                ),
             },
             &media_cache,
         )
@@ -259,6 +270,8 @@ async fn assemble_handoff_bundle(
         "label": "Recent decisions (handoff)",
         "kind": "activity",
     }));
+    // De-dup happens at deliver-time in `finalize_bundle_for_target` (per target),
+    // so the assemble step just concatenates manual picks + auto refs.
     serde_json::json!({
         "origin": "handoff",
         "from": { "type": "bot", "id": initiator_bot_id.to_string() },
@@ -433,5 +446,24 @@ mod tests {
         let author = Uuid::new_v4();
         // author @'d only itself → nothing to trigger (no self-loop).
         assert!(mentioned_bots(&[bot(author)], author).is_empty());
+    }
+
+    #[test]
+    fn dedup_collapses_same_verb_params_keeps_first() {
+        let mut items = vec![
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"}, "label": "manual" }),
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"}, "label": "auto" }),
+            serde_json::json!({ "verb": "channel.activity.read", "params": {"channel_id":"c"} }),
+        ];
+        crate::domain::context_bundle::dedup_items_by_verb_params(&mut items);
+        assert_eq!(items.len(), 2, "duplicate plan collapsed");
+        assert_eq!(items[0]["label"], "manual", "first (manual pick) wins");
+        // A different scope (session_id) is a distinct ref — not collapsed.
+        let mut scoped = vec![
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"} }),
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c","session_id":"s"} }),
+        ];
+        crate::domain::context_bundle::dedup_items_by_verb_params(&mut scoped);
+        assert_eq!(scoped.len(), 2, "distinct scope kept");
     }
 }

@@ -126,6 +126,15 @@ pub async fn create_message(
     let msg_type = params.msg_type.as_deref().unwrap_or("text");
     let now = Utc::now();
 
+    // Member-facing copy: strip inline snapshots so `preview.text` never reaches
+    // channel members / history (they only ever see chip labels). The full copy —
+    // `params.context_bundle`, already sanitized by `sanitize_human_bundle` in the
+    // API layer — is delivered ONLY to the @mentioned target bot's task frame.
+    let row_bundle = params
+        .context_bundle
+        .as_ref()
+        .map(crate::domain::context_bundle::strip_previews);
+
     let mut tx = db.begin().await.map_err(AppError::Db)?;
     let seq = channel_seq::allocate(&mut tx, params.channel_id)
         .await
@@ -147,7 +156,7 @@ pub async fn create_message(
     .bind(json!(file_ids.clone()))
     .bind(now)
     .bind(seq)
-    .bind(params.context_bundle.clone())
+    .bind(row_bundle.clone())
     .execute(&mut *tx)
     .await
     .map_err(AppError::Db)?;
@@ -185,7 +194,7 @@ pub async fn create_message(
         files: load_message_files(&db, &file_ids).await?,
         created_at: now,
         content_data: None,
-        context_bundle: params.context_bundle.clone(),
+        context_bundle: row_bundle.clone(),
     };
 
     // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
@@ -351,6 +360,24 @@ pub async fn create_message(
             }
         };
 
+        // Deliver-time finalize for THIS target (the same shared step the handoff
+        // path runs): the FULL bundle (with the inline snapshot the member-facing
+        // row omits) is re-authorized against this @mentioned bot + de-duped, then
+        // delivered straight to its task frame (overrides load_task_context's
+        // preview-stripped row read). A ref this target can't read is dropped.
+        let target_bundle = match &params.context_bundle {
+            Some(b) => Some(
+                crate::domain::context_bundle::finalize_bundle_for_target(
+                    db,
+                    b,
+                    crate::resource::Principal::bot(bot_id),
+                    params.channel_id,
+                )
+                .await,
+            ),
+            None => None,
+        };
+
         let result = dispatcher::dispatch(
             db,
             fanout,
@@ -365,9 +392,7 @@ pub async fn create_message(
                 provider_session_key,
                 session_id: resolved_session_id,
                 chain_id: chain_id.clone(),
-                // Human path: no gateway handoff — the trigger message's own
-                // (human-attached) context bundle flows through load_task_context.
-                context_bundle: None,
+                context_bundle: target_bundle,
             },
             &media_cache,
         )

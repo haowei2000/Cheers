@@ -199,7 +199,9 @@ async fn ensure_access(
 /// `workspace/read` policy class — member-ALLOW by default (visibility restriction
 /// is opt-in), FAIL-CLOSED on a rules/DB error. Backs [`ensure_access`] and the
 /// per-bot `can_read` flag on [`list_workspace_bots`]. Mirrors [`resolve_can_write`].
-async fn resolve_can_read(
+/// `pub(crate)` so the message-send path can re-verify a picked `workspace.file`
+/// snapshot against the same grant that gated browsing it.
+pub(crate) async fn resolve_can_read(
     state: &AppState,
     claims: &Claims,
     channel_id: Uuid,
