@@ -35,6 +35,7 @@ import { cn } from "@/lib/cn";
 import { addChannelMember } from "@/api/channels";
 import { BotPostureSection } from "./BotPostureSection";
 import { BotPermissionGrantsSection } from "./BotPermissionGrantsSection";
+import { BotToBotGrantsSection } from "./BotToBotGrantsSection";
 import { BotActivitySection } from "./BotActivitySection";
 import { BotConnectionHistorySection } from "./BotConnectionHistorySection";
 import type { BotItem, Channel } from "@/types";
@@ -224,6 +225,7 @@ export function BotDetailPanel({
           <div className="space-y-4">
             <BotPostureSection botId={bot.bot_id} />
             <BotPermissionGrantsSection botId={bot.bot_id} />
+            <BotToBotGrantsSection botId={bot.bot_id} />
           </div>
         )}
         {tab === "events" && (

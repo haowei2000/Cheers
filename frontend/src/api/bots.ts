@@ -384,6 +384,82 @@ export async function deleteEventRule(
   });
 }
 
+// ── Bot-to-bot grants (dispatch / workspace_read; bot-subject rules) ───────────
+// The dedicated management path for grants keyed on ANOTHER bot as subject, which the
+// human role/user/group event-access matrix intentionally excludes. Each grant kind
+// maps server-side to a distinct (event_class, capability); the client speaks the
+// stable kind. Both default member-allow with deny-override.
+
+/** An owner-manageable bot-subject grant kind. */
+export type BotGrantKind = "dispatch" | "workspace_read";
+
+/** One bot-to-bot grant rule (a bot-subject row of bot_event_access, tagged with the
+ *  owner-facing grant kind). `subject_id` is the granted bot's id, or "*" (any bot). */
+export interface BotGrant {
+  channel_id: string; // "" = bot-wide
+  subject_id: string; // bot_id | "*"
+  grant: BotGrantKind;
+  decision: "allow" | "deny";
+  updated_by?: string | null;
+  updated_at?: string;
+  expires_at?: string | null;
+  expired?: boolean;
+}
+
+/** A grant kind with its human label and member-allow default (for the UI). */
+export interface BotGrantKindInfo {
+  kind: BotGrantKind;
+  label: string;
+  default: "allow" | "deny";
+}
+
+/** A bot that may be named as a grant subject (a co-member of some shared channel). */
+export interface BotGrantSubject {
+  bot_id: string;
+  label: string;
+}
+
+export interface BotGrants {
+  grants: BotGrant[];
+  grant_kinds: BotGrantKindInfo[];
+  subjects: BotGrantSubject[];
+}
+
+/** Owner/admin: read this bot's bot-to-bot grants + the manageable kinds + candidate
+ *  subject bots. */
+export async function getBotGrants(botId: string): Promise<BotGrants> {
+  return apiJson<BotGrants>(`/bots/${botId}/bot-grants`);
+}
+
+/** Owner/admin: upsert one bot-to-bot grant (allow / deny a subject bot for a kind). */
+export async function upsertBotGrant(
+  botId: string,
+  grant: {
+    channel_id?: string;
+    subject_id: string; // bot_id | "*"
+    grant: BotGrantKind;
+    decision: "allow" | "deny";
+    expires_at?: string;
+  }
+): Promise<void> {
+  await apiJson(`/bots/${botId}/bot-grants`, {
+    method: "PUT",
+    body: JSON.stringify(grant),
+  });
+}
+
+/** Owner/admin: remove one bot-to-bot grant (back to the member-allow default). */
+export async function deleteBotGrant(
+  botId: string,
+  q: { channel_id?: string; subject_id: string; grant: BotGrantKind }
+): Promise<void> {
+  const params = new URLSearchParams({ subject_id: q.subject_id, grant: q.grant });
+  if (q.channel_id) params.set("channel_id", q.channel_id);
+  await apiJson(`/bots/${botId}/bot-grants?${params.toString()}`, {
+    method: "DELETE",
+  });
+}
+
 // ── Bridge connection history ─────────────────────────────────────────────────
 
 export interface BotConnectionEvent {

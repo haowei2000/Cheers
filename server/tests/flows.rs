@@ -3215,3 +3215,52 @@ async fn workspace_read_broker_authz_member_grant_and_deny(db: PgPool) {
         .expect_err("deny rule overrides default");
     assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
 }
+
+/// P4: the bot-grants management lifecycle. An owner authors a `workspace_read` deny
+/// for a specific reader bot (the same domain write the `/bot-grants` PUT performs),
+/// the broker denies, and removing the rule (the DELETE) restores the member-allow
+/// default. Proves the owner-facing grant management actually gates the read — the
+/// deny-override is no longer only reachable by hand-editing the DB.
+#[sqlx::test]
+async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool) {
+    use server::api::workspace::authorize_bot_workspace_read;
+    use server::domain::bot_event_policy::{
+        delete_rule, upsert_rule, Capability, EV_WORKSPACE_READ, SUBJECT_BOT,
+    };
+
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let owner = seed_bot(&db).await;
+    let reader = seed_bot(&db).await;
+    add_member(&db, ch, owner, "bot").await;
+    add_member(&db, ch, reader, "bot").await;
+
+    // Default (no rule): allowed.
+    authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect("member-allow default");
+
+    // Owner authors a deny (what `upsert_bot_grant` writes for grant=workspace_read).
+    upsert_rule(
+        &db, &owner.to_string(), &ch.to_string(), SUBJECT_BOT, &reader.to_string(),
+        EV_WORKSPACE_READ, Capability::Initiate, false, "owner", None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        authorize_bot_workspace_read(&db, owner, reader, ch).await.is_err(),
+        "authored deny gates the read"
+    );
+
+    // Owner removes it (what `delete_bot_grant` does) → back to member-allow.
+    let removed = delete_rule(
+        &db, &owner.to_string(), &ch.to_string(), SUBJECT_BOT, &reader.to_string(),
+        EV_WORKSPACE_READ, Capability::Initiate,
+    )
+    .await
+    .unwrap();
+    assert!(removed, "delete removed the rule");
+    authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect("default restored after delete");
+}
