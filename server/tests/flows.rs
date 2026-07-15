@@ -2909,3 +2909,75 @@ async fn invite_link_use_reservation_is_atomic(db: PgPool) {
         .rows_affected();
     assert_eq!(second, 0, "budget exhausted — second taker must be refused");
 }
+
+/// F4 — a bot attaches a context bundle to a message it posts via
+/// `channel.messages.create` (the post_message path). The gateway must keep only
+/// read verbs, stamp origin="bot", and persist it; an all-write/garbage bundle
+/// stores nothing. Regression for docs/design/RESOURCE_CONTEXT.md "Bot / Manual pick".
+#[sqlx::test]
+async fn f4_bot_post_message_context_bundle_sanitized(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    // Post with a mixed bundle: one read verb (kept) + one write verb (dropped).
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "channel.messages.create",
+            serde_json::json!({
+                "channel_id": cid,
+                "content": "handing this over",
+                "context_bundle": {
+                    "origin": "handoff", // must be overwritten to "bot"
+                    "items": [
+                        { "verb": "channel.plan.read", "params": {"channel_id": cid}, "label": "Plan", "kind": "plan" },
+                        { "verb": "channel.messages.create", "params": {} } // write → dropped
+                    ]
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "post should succeed: {r}");
+    let bundle = &r["data"]["context_bundle"];
+    assert_eq!(bundle["origin"], "bot", "origin must be stamped bot: {bundle}");
+    let items = bundle["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 1, "write verb must be dropped: {bundle}");
+    assert_eq!(items[0]["verb"], "channel.plan.read");
+
+    // Persisted to the column too.
+    let msg_id = r["data"]["msg_id"].as_str().unwrap();
+    let stored: Option<Value> =
+        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
+            .bind(msg_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(stored.unwrap()["origin"], "bot");
+
+    // A bundle with only non-read verbs persists nothing (column stays NULL).
+    let r2 = dispatch(
+        &db,
+        who,
+        &req(
+            "channel.messages.create",
+            serde_json::json!({
+                "channel_id": cid,
+                "content": "no real context",
+                "context_bundle": { "items": [ { "verb": "fs.write" } ] }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(r2["ok"], true);
+    assert!(
+        r2["data"]["context_bundle"].is_null(),
+        "all-dropped bundle must yield no context_bundle: {}",
+        r2["data"]
+    );
+}

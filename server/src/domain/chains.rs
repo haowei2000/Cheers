@@ -78,8 +78,10 @@ pub async fn trigger_bot_replies(
     let media_cache = dispatcher::MediaCache::default();
     // F2 handoff (docs/design/RESOURCE_CONTEXT.md): the initiator is the same for
     // every bot this reply triggers, so assemble its handoff bundle once and hand
-    // the same shared context to each target.
-    let handoff = assemble_handoff_bundle(db, author_bot_id, channel_id).await;
+    // the same shared context to each target. F4: if the initiator manually picked
+    // context on THIS message (post_message `context`), those refs are merged in
+    // ahead of the auto plan/decisions so the target gets the explicit picks too.
+    let handoff = assemble_handoff_bundle(db, author_bot_id, channel_id, reply_msg_id).await;
     for bot_id in bots {
         // Per-channel dispatch budget. The proactive `send` / `post_message`
         // paths reset `current_depth` to 0 (they carry no task depth), so the
@@ -221,10 +223,15 @@ fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> Strin
 /// instead of guessing from chat history. References only (no inlined content) — the
 /// target resolves them as itself via the resource protocol (consumer-governed reads),
 /// so this can't hand a target anything it isn't already allowed to read.
+///
+/// F4: if the triggering message carried a bot-picked bundle (post_message `context`,
+/// already sanitized on write), its items are merged FIRST — the initiator's explicit
+/// picks lead, then the auto plan + recent-decisions refs.
 async fn assemble_handoff_bundle(
     db: &PgPool,
     initiator_bot_id: Uuid,
     channel_id: Uuid,
+    trigger_msg_id: Uuid,
 ) -> serde_json::Value {
     let ch = channel_id.to_string();
     // The initiator's primary session scopes its plan (best-effort; omit on miss →
@@ -239,24 +246,41 @@ async fn assemble_handoff_bundle(
     if let Some(sid) = &a_session {
         plan_params["session_id"] = serde_json::json!(sid);
     }
+    let mut items = manual_pick_items(db, trigger_msg_id).await;
+    items.push(serde_json::json!({
+        "verb": "channel.plan.read",
+        "params": plan_params,
+        "label": "Plan (handoff)",
+        "kind": "plan",
+    }));
+    items.push(serde_json::json!({
+        "verb": "channel.activity.read",
+        "params": { "channel_id": ch },
+        "label": "Recent decisions (handoff)",
+        "kind": "activity",
+    }));
     serde_json::json!({
         "origin": "handoff",
         "from": { "type": "bot", "id": initiator_bot_id.to_string() },
-        "items": [
-            {
-                "verb": "channel.plan.read",
-                "params": plan_params,
-                "label": "Plan (handoff)",
-                "kind": "plan",
-            },
-            {
-                "verb": "channel.activity.read",
-                "params": { "channel_id": ch },
-                "label": "Recent decisions (handoff)",
-                "kind": "activity",
-            },
-        ],
+        "items": items,
     })
+}
+
+/// The manually-picked context items on the triggering message, if any (best-effort;
+/// empty on miss / no bundle). The stored bundle was already sanitized on write
+/// (`context_bundle::sanitize_bot_bundle`), so its items are trusted here.
+async fn manual_pick_items(db: &PgPool, trigger_msg_id: Uuid) -> Vec<serde_json::Value> {
+    let stored: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
+            .bind(trigger_msg_id.to_string())
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+    stored
+        .as_ref()
+        .map(crate::domain::context_bundle::bundle_items)
+        .unwrap_or_default()
 }
 
 /// Append one dispatch-decision row (allow *and* deny) to `acp_event_log` — the
