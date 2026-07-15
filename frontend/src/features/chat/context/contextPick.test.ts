@@ -5,7 +5,6 @@ import {
   rangedFileContextItem,
   workspaceContextItem,
   toBundle,
-  PREVIEW_MAX_CHARS,
   type ContextItem,
   type FileRef,
 } from "./contextPick";
@@ -118,39 +117,35 @@ describe("rangedFileContextItem", () => {
   });
 });
 
-describe("workspaceContextItem (remote workspace snapshot + locator)", () => {
-  it("captures a truncated snapshot and a bot-scoped locator", () => {
+describe("workspaceContextItem (remote workspace reference)", () => {
+  it("produces a bot-scoped workspace.read reference, no snapshot", () => {
     const it = workspaceContextItem({
       botId: "bot-A",
       botName: "codex",
       path: "src/main.rs",
       sessionId: "sess-1",
-      content: "fn main() {}\n",
     });
     expect(it.id).toBe("ws:bot-A:src/main.rs");
-    expect(it.verb).toBe("workspace.file");
+    expect(it.verb).toBe("workspace.read"); // consumer-governed ref, not a snapshot
     expect(it.params).toEqual({ bot_id: "bot-A", path: "src/main.rs", session_id: "sess-1" });
     expect(it.label).toBe("main.rs (@codex workspace)");
-    expect(it.preview?.text).toBe("fn main() {}\n");
+    expect("preview" in it).toBe(false); // no inline content is captured
   });
 
-  it("truncates the snapshot to the cap and omits an absent session", () => {
-    const big = "x".repeat(PREVIEW_MAX_CHARS + 500);
-    const it = workspaceContextItem({ botId: "b", path: "f.txt", content: big });
-    expect(it.preview?.text.length).toBe(PREVIEW_MAX_CHARS);
+  it("omits an absent session and falls back to botId for the name", () => {
+    const it = workspaceContextItem({ botId: "b", path: "f.txt" });
     expect("session_id" in it.params).toBe(false);
     expect(it.label).toBe("f.txt (@b workspace)"); // botId fallback for name
   });
 });
 
-describe("toBundle preview passthrough", () => {
-  it("carries an item's preview onto the wire bundle", () => {
-    const items: ContextItem[] = [
-      workspaceContextItem({ botId: "b", path: "a.md", content: "hello" }),
-    ];
+describe("toBundle (references only)", () => {
+  it("carries a workspace.read reference onto the wire bundle with channel_id", () => {
+    const items: ContextItem[] = [workspaceContextItem({ botId: "b", path: "a.md" })];
     const bundle = toBundle(items, "chan");
-    expect(bundle?.items[0].preview?.text).toBe("hello");
+    expect(bundle?.items[0].verb).toBe("workspace.read");
     expect(bundle?.origin).toBe("human");
-    expect(bundle?.items[0].params).toMatchObject({ channel_id: "chan", bot_id: "b" });
+    expect(bundle?.items[0].params).toMatchObject({ channel_id: "chan", bot_id: "b", path: "a.md" });
+    expect("preview" in bundle!.items[0]).toBe(false);
   });
 });

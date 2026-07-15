@@ -291,20 +291,32 @@ fn attached_context_element(task: &TaskCommand, attachment_frags: &[String]) -> 
                 .map(format_resource_params)
                 .unwrap_or_default();
             // A remote-workspace ref lives on another bot's private machine — name
-            // the owner so the agent can ask it for the live copy via post_message.
-            let note = if verb == "workspace.file" {
+            // the owner and tell the agent how to resolve it. `workspace.read` (the
+            // current reference) is pulled live with the `read_workspace` tool under
+            // the agent's own permission; `workspace.file` (legacy, snapshot below)
+            // has no live pull, so the agent asks the owner via post_message.
+            let owner_id = |item: &Value| {
                 item.get("params")
                     .and_then(|p| p.get("bot_id"))
                     .and_then(Value::as_str)
+                    .map(xml_attr)
+            };
+            let note = match verb {
+                "workspace.read" => owner_id(item)
                     .map(|owner| {
                         format!(
-                            " note=\"lives in bot {}'s workspace; ask it via post_message for the current version\"",
-                            xml_attr(owner)
+                            " note=\"lives in bot {owner}'s workspace; call read_workspace with this bot_id + path to fetch the current version (ask the owner via post_message if it is offline)\""
                         )
                     })
-                    .unwrap_or_default()
-            } else {
-                String::new()
+                    .unwrap_or_default(),
+                "workspace.file" => owner_id(item)
+                    .map(|owner| {
+                        format!(
+                            " note=\"lives in bot {owner}'s workspace; ask it via post_message for the current version\""
+                        )
+                    })
+                    .unwrap_or_default(),
+                _ => String::new(),
             };
             children.push(format!(
                 "<reference verb=\"{}\" kind=\"{}\" params=\"{}\"{note}>{}</reference>",

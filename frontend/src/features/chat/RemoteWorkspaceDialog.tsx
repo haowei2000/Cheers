@@ -1765,9 +1765,9 @@ export function RemoteWorkspaceDialog({
                   >
                     <Download className="w-3 h-3" /> Download
                   </button>
-                  {/* Attach this workspace file as context: a snapshot of the
-                      current content + a locator (which bot + path) so the
-                      recipient can ask for the live version. Text only. */}
+                  {/* Attach this workspace file as context: a reference (which
+                      bot + path), NOT a snapshot. The recipient bot reads the live
+                      file on demand under its own permission (workspace.read). */}
                   {file.is_text && botId && (
                     <button
                       onClick={() => {
@@ -1782,13 +1782,12 @@ export function RemoteWorkspaceDialog({
                               undefined,
                             path: file.path,
                             sessionId: effectiveSessionId || undefined,
-                            content: edit,
                           })
                         );
                         setAttached(true);
                         window.setTimeout(() => setAttached(false), 1500);
                       }}
-                      title="Attach a snapshot of this file (+ a locator to the owning bot) as context for your next message"
+                      title="Attach a reference to this file (which bot + path) as context — the recipient reads the live version on demand"
                       className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
                     >
                       <Paperclip className="w-3 h-3" /> {attached ? "Attached" : "Attach"}

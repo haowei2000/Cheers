@@ -3257,6 +3257,46 @@ mod tests {
     }
 
     #[test]
+    fn prompt_renders_workspace_read_reference_no_snapshot() {
+        // The current model (P3): a remote-workspace pick is a pure `workspace.read`
+        // REFERENCE — rendered with a note pointing at the `read_workspace` tool, and
+        // NO inline snapshot (the agent pulls the live file under its own permission).
+        let mut task = identity_task(None, Some(json!({"text": "look"})));
+        task.context_bundle = Some(json!({
+            "origin": "human",
+            "items": [
+                { "verb": "workspace.read", "kind": "file",
+                  "label": "main.rs (@codex workspace)",
+                  "params": { "channel_id": "c", "bot_id": "codex-bot", "path": "src/main.rs" } }
+            ]
+        }));
+        let prompt = build_prompt(
+            &task,
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(
+            text.contains("verb=\"workspace.read\""),
+            "reference: {text}"
+        );
+        assert!(text.contains("main.rs (@codex workspace)"));
+        assert!(
+            text.contains("call read_workspace with this bot_id + path"),
+            "read_workspace guidance: {text}"
+        );
+        assert!(
+            text.contains("lives in bot codex-bot's workspace"),
+            "locator: {text}"
+        );
+        // No snapshot: references never ship file bodies.
+        assert!(!text.contains("<snapshot>"), "no snapshot element: {text}");
+    }
+
+    #[test]
     fn prompt_omits_context_block_when_no_bundle() {
         let prompt = build_prompt(
             &identity_task(None, None),

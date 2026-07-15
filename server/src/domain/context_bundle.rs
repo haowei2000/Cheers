@@ -92,32 +92,36 @@ pub fn sanitize_bot_bundle(raw: &Value) -> Option<Value> {
     Some(json!({ "origin": "bot", "items": out }))
 }
 
-/// Max chars kept in a chip `label`, and in an inline `preview.text` snapshot —
-/// bound what a client can inflate the message row / task frame with.
+/// Max chars kept in a chip `label` — bound what a client can inflate the message
+/// row / task frame with. (No `preview` cap any more: bundles carry references
+/// only; the inline-snapshot path is deprecated.)
 const MAX_LABEL_CHARS: usize = 200;
-const MAX_PREVIEW_CHARS: usize = 2000;
 /// Drop an item whose `params` serialize larger than this (a bundle ref's params
 /// are small locators; anything huge is abuse).
 const MAX_PARAMS_CHARS: usize = 8000;
 
-/// Verbs a HUMAN may reference: every read verb, plus `workspace.file` — the
-/// remote-workspace snapshot locator, which humans legitimately pick (gated by
-/// their own `workspace/read`) but bots cannot produce.
+/// Verbs a HUMAN may reference: every read verb, plus `workspace.read` — the
+/// remote-workspace REFERENCE (a locator naming which bot + path), which humans
+/// legitimately pick from another bot's workspace. The receiving bot resolves it
+/// live under its own `workspace_read` grant (docs/design/RESOURCE_CONTEXT.md P3);
+/// bots don't produce it. (`workspace.file`, the old inline-snapshot verb, is
+/// deprecated and no longer admitted — only old persisted rows still carry it.)
 fn is_human_verb(verb: &str) -> bool {
-    is_read_verb(verb) || verb == "workspace.file"
+    is_read_verb(verb) || verb == "workspace.read"
 }
 
 /// Normalize a HUMAN-supplied context bundle (the composer / in-panel pickers).
 /// Same spine as [`sanitize_bot_bundle`] — read verbs only, item cap, `origin`
 /// stamped `"human"` (never trust the client's `origin`/`from`) — but the human
-/// allowlist also admits `workspace.file` and KEEPS the inline `preview` snapshot
-/// (truncated). Write verbs are dropped so a bundle can never carry an executable
-/// instruction into an agent's prompt. Returns `None` when nothing survives.
+/// allowlist also admits `workspace.read` (the remote-workspace reference). Write
+/// verbs are dropped so a bundle can never carry an executable instruction into an
+/// agent's prompt. Returns `None` when nothing survives.
 ///
-/// The returned bundle still carries previews; callers split it into a row copy
-/// (via [`strip_previews`], persisted + broadcast to members) and a dispatch copy
-/// (this value, delivered only to the @mentioned target bot's task frame), and
-/// must additionally re-check `workspace/read` for each `workspace.file` item.
+/// Every surviving item is a pure REFERENCE (verb + params); no inline content is
+/// kept. The old `preview` snapshot (from the deprecated `workspace.file` pick) is
+/// DROPPED here — remote-workspace files now resolve as a `workspace.read` reference
+/// the target bot pulls live under its own permission, so bundles never ship file
+/// bodies. Callers still authorize per target ([`finalize_bundle_for_target`]).
 pub fn sanitize_human_bundle(raw: &Value) -> Option<Value> {
     let items = raw
         .get("items")
@@ -149,16 +153,9 @@ pub fn sanitize_human_bundle(raw: &Value) -> Option<Value> {
         if let Some(kind) = obj.get("kind").and_then(Value::as_str) {
             clean.insert("kind".into(), json!(kind));
         }
-        // Keep the inline snapshot (truncated). Object-shaped only; a client can't
-        // smuggle a non-{text} preview.
-        if let Some(text) = obj
-            .get("preview")
-            .and_then(|p| p.get("text"))
-            .and_then(Value::as_str)
-        {
-            let snapshot: String = text.chars().take(MAX_PREVIEW_CHARS).collect();
-            clean.insert("preview".into(), json!({ "text": snapshot }));
-        }
+        // No inline content: a bundle carries references only (any client-supplied
+        // `preview` is dropped — the deprecated snapshot path). Remote-workspace
+        // files resolve live via a `workspace.read` reference the target pulls.
         out.push(Value::Object(clean));
     }
 
@@ -319,30 +316,31 @@ mod tests {
     }
 
     #[test]
-    fn human_drops_write_verbs_keeps_workspace_file() {
+    fn human_drops_write_verbs_and_snapshot_keeps_workspace_read() {
         let raw = json!({ "items": [
             { "verb": "fs.rm", "params": {"path": "x"} },      // write → dropped
             { "verb": "channel.messages.create" },              // write → dropped
             { "verb": "fs.read", "params": {"path": "y"} },     // read → kept
-            { "verb": "workspace.file", "params": {"bot_id": "b", "path": "m.rs"},
-              "label": "m.rs", "kind": "file", "preview": { "text": "code" } } // kept w/ preview
+            { "verb": "workspace.file", "params": {"bot_id": "b", "path": "old.rs"} }, // deprecated → dropped
+            { "verb": "workspace.read", "params": {"bot_id": "b", "path": "m.rs"},
+              "label": "m.rs", "kind": "file", "preview": { "text": "code" } } // ref kept, preview stripped
         ]});
         let out = sanitize_human_bundle(&raw).expect("survives");
         let verbs: Vec<&str> = out["items"].as_array().unwrap().iter()
             .map(|i| i["verb"].as_str().unwrap()).collect();
-        assert_eq!(verbs, vec!["fs.read", "workspace.file"]);
-        assert_eq!(out["items"][1]["preview"]["text"], json!("code"));
+        assert_eq!(verbs, vec!["fs.read", "workspace.read"]);
+        // The stray client-supplied snapshot is NOT carried onto the wire bundle.
+        assert!(out["items"][1].get("preview").is_none(), "preview dropped: {out}");
     }
 
     #[test]
-    fn human_truncates_label_and_preview() {
+    fn human_truncates_label() {
         let raw = json!({ "items": [
-            { "verb": "workspace.file", "params": {"bot_id":"b","path":"p"},
-              "label": "L".repeat(500), "preview": { "text": "P".repeat(5000) } }
+            { "verb": "workspace.read", "params": {"bot_id":"b","path":"p"},
+              "label": "L".repeat(500) }
         ]});
         let out = sanitize_human_bundle(&raw).unwrap();
         assert_eq!(out["items"][0]["label"].as_str().unwrap().chars().count(), MAX_LABEL_CHARS);
-        assert_eq!(out["items"][0]["preview"]["text"].as_str().unwrap().chars().count(), MAX_PREVIEW_CHARS);
     }
 
     #[test]
@@ -354,11 +352,12 @@ mod tests {
 
     #[test]
     fn strip_previews_removes_only_preview() {
-        let full = sanitize_human_bundle(&json!({ "items": [
+        // `strip_previews` stays defensive: an old persisted row (or any stray
+        // producer) with a `preview` still gets it removed for the member-facing copy.
+        let full = json!({ "origin": "human", "items": [
             { "verb": "workspace.file", "params": {"bot_id":"b","path":"p"},
               "label": "p", "kind": "file", "preview": { "text": "secret" } }
-        ]})).unwrap();
-        assert_eq!(full["items"][0]["preview"]["text"], json!("secret"));
+        ]});
         let row = strip_previews(&full);
         assert!(row["items"][0].get("preview").is_none(), "row copy strips preview");
         assert_eq!(row["items"][0]["label"], json!("p"), "keeps label/locator");
