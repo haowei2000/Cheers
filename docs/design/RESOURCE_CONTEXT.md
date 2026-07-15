@@ -67,7 +67,9 @@ The only thing auto-pick removes is *friction*, never *visibility*.
 
 An ordered list of **resource references**, each resolvable through the resource
 protocol Cheers already speaks (`server/src/resource/mod.rs`). A ref is a
-`(verb, params)` pair plus a human label and an optional inline preview:
+`(verb, params)` pair plus a human label. *(The `preview` fields in the example below
+are historical — **P3 removed inline previews**; bundles now carry references only, see
+§4. `preview` is retained solely to render old persisted messages.)*
 
 ```jsonc
 "context_bundle": {
@@ -91,10 +93,11 @@ Every `verb` above already exists in the resource registry
 `channel.activity.read`, `channel.context`, `channel.sessions.read`, …). The
 bundle is *just references to them* — no new read logic.
 
-**Reference-first, preview-as-hint.** Big resources ship as a ref + a small
-preview; the agent pulls full content **on demand** via the same verb. This
-keeps the task frame small (the ACP frame has a ~16 MiB ceiling) and means the
-context can be richer than what fits inline.
+**Reference-only.** Every resource ships as a ref; the agent pulls full content
+**on demand** via the same verb. This keeps the task frame small (the ACP frame has a
+~16 MiB ceiling) and means the context can be richer than what fits inline. *(Early
+versions allowed a small inline `preview` as a hint — **P3 removed inline content
+entirely**; see §4 and the note under the example above.)*
 
 ### 2. Delivery
 
@@ -120,10 +123,46 @@ through the existing resource dispatch. So:
   every read passes the matrix. A human picking up a restricted file for a bot
   that lacks access doesn't smuggle it in — B still gets denied.
 
-Previews are the one exception (they inline a snapshot the producer could see).
-v1 rule: **previews are only generated for refs the *producer* may read**, and
-kept small; anything sensitive rides as a bare ref (no preview) so only an
-authorized consumer pull reveals it.
+Previews were the one early exception (they inlined a snapshot the producer could
+see). **P3 removed them entirely: a bundle now carries references only — no inline
+content of any kind.** The last user of the snapshot mechanism was the remote-workspace
+pick, now a `workspace.read` reference (see below). `sanitize_human_bundle` drops any
+client-supplied `preview`; the connector's snapshot renderer survives solely to read back
+old persisted messages. (Historical v1 rule, kept for context: previews were only
+generated for refs the *producer* could read, and kept small.)
+
+### 4. Remote workspace files as consumer-governed references (P3, shipped)
+
+The last resource that couldn't be a consumer-resolvable ref was a bot's **remote
+workspace file** — it lives on one bot's private machine, not as a shared resource, so
+it used to ride as an inline snapshot. P3 closes that gap: a remote-workspace pick is a
+pure `workspace.read` reference the receiving bot resolves live under its own permission,
+bringing workspace files onto the same governance spine as every other verb.
+
+- **Pull path.** The consuming bot resolves the ref via the `read_workspace` MCP tool →
+  resource `workspace.read` `{channel_id, bot_id, path, session_id?}`. The gateway
+  intercepts it at the `resource_req` WS boundary (`agent_bridge::broker_workspace_read`;
+  it needs `AppState` for the workspace RPC, so it can't go through the db-only
+  `resource::dispatch`) and brokers a live read via the identity-free `workspace_call`.
+- **Three authorization layers, all enforced at pull time** (`authorize_bot_workspace_read`):
+  1. **channel membership** — reader *and* owner must be members of the channel the ref
+     was shared in;
+  2. **`workspace_read` grant** — the reader must hold it on the owner bot;
+  3. **connector `allowed_roots`** — the owner's connector is the final filesystem boundary.
+- **Offline owner → the read 400s** (a live read, not a stale snapshot). The agent sees
+  the resolve error and can ask the owner directly via `post_message` — the ref's params
+  name the owner, and the connector prompt spells this fallback out.
+
+**Permission posture (decided 2026-07, option B — "membership gate"):** the `workspace_read`
+grant defaults to **member-allow** with a **deny hook** (an owner can deny a specific reader
+bot via a `(subject_kind='bot', event_class='workspace_read')` rule). An **owner-facing
+management path** to author those rules is **deliberately deferred** — the `/event-access`
+endpoint rejects bot subjects today, exactly as it does for the `dispatch` capability, and
+both would be built together as one governance-UI follow-up. Until then the practical
+boundary is *channel membership + the connector's `allowed_roots`*, which is safe-by-default
+within the channel trust boundary. Dropping the grant layer was rejected (it would undo P3's
+consumer-governed intent); tightening the default to deny is gated on that management path
+existing.
 
 ## Producer A — human, manual pick
 
@@ -139,10 +178,11 @@ resource verbs:
   the file viewer and attach *just that range* as a scoped ref (the agent pulls only
   those lines on demand), instead of the whole file.
 - **Remote workspace file** (a bot's live private machine, browsed via `/workspace/file`)
-  → **not a shared resource**, so it can't ride as a consumer-resolvable ref. It attaches
-  as an inline **snapshot** (`preview`, content at pick time, capped) plus a **locator**
-  (`workspace.file` with `bot_id`/`path`): the receiver reads the snapshot and, for the
-  live version, asks the owning bot via `post_message`. The connector prompt spells this out.
+  → a consumer-governed **reference** `workspace.read` with `{bot_id, path, session_id?}`
+  (**P3**, see below). No content is captured at pick time; the receiving bot resolves the
+  live file on demand with the `read_workspace` MCP tool, brokered under **its own**
+  `workspace_read` permission. *(Superseded the old inline-`workspace.file`-snapshot pick;
+  the connector keeps a snapshot renderer only for reading back old persisted messages.)*
 - **Message / thread** → `channel.messages.by-seq` (pick a message; a thread = its range)
 
 **Two entry points** (both feed the same context bundle):
@@ -275,10 +315,11 @@ Three rules keep them clean (not a v1 merge):
 1. **Storage** → a `context_bundle` **JSONB column on `messages`** (not a side
    table). Simplest, one migration, read/write with the message row; revisit only
    if bundles grow large or need per-item query.
-2. **Restricted-resource previews** → **no preview, bare ref only.** A ref the
-   producer could see but the consumer may not carries no inline snapshot; only an
-   authorized consumer *pull* reveals content. Nothing sensitive rides in the
-   frame. (Non-restricted refs may carry a small preview.)
+2. **Restricted-resource previews** → **no preview, bare ref only** — and as of **P3,
+   *no* previews at all**: bundles carry references only, every read (including remote
+   workspace files, now `workspace.read`) resolves via an authorized consumer *pull*.
+   Nothing sensitive — and in fact no content — rides in the frame. (The `preview` field
+   and the connector snapshot renderer remain only to read back old persisted messages.)
 3. **F1 resource kinds** → **plan + file/board + message/thread** (the minimum
    useful set). `activity` and `session` follow (activity is anyway the workhorse
    of the F2 handoff auto-bundle).
