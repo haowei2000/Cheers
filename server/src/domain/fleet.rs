@@ -240,8 +240,12 @@ pub async fn cost_today(
         .collect())
 }
 
-/// Is `user_id` a member of `workspace_id`? Personal workspaces have no
-/// membership rows — their owner is `workspaces.owner_user_id` (see
+/// Is `user_id` an *active* member of `workspace_id`? A `pending` membership
+/// (an invite not yet accepted) grants no access, matching the rest of the
+/// workspace reads (`status = 'active'`); serving Fleet on a pending row would
+/// leak the bot roster + pending approvals to an invitee who hasn't joined.
+/// Personal workspaces have no membership rows — their owner is
+/// `workspaces.owner_user_id` (see
 /// `domain::workspaces::get_or_create_personal_workspace`), so accept either.
 pub async fn is_workspace_member(
     db: &PgPool,
@@ -251,7 +255,7 @@ pub async fn is_workspace_member(
     let row = sqlx::query(
         "SELECT (EXISTS(
             SELECT 1 FROM workspace_memberships
-            WHERE workspace_id = $1 AND user_id = $2
+            WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'
         ) OR EXISTS(
             SELECT 1 FROM workspaces
             WHERE workspace_id = $1 AND owner_user_id = $2

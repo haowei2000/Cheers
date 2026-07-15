@@ -2896,3 +2896,58 @@ async fn invite_link_use_reservation_is_atomic(db: PgPool) {
         .rows_affected();
     assert_eq!(second, 0, "budget exhausted — second taker must be refused");
 }
+
+/// Fleet access requires an *active* workspace membership: a pending invite
+/// (not yet accepted) must not see the bot roster / pending approvals, and the
+/// personal-workspace owner path still passes. Regression for the codex review
+/// on #196.
+#[sqlx::test]
+async fn fleet_membership_requires_active_status(db: PgPool) {
+    use server::domain::fleet::is_workspace_member;
+    let ws = seed_workspace(&db).await;
+    let user = seed_user(&db).await;
+
+    // Pending invite → not a member yet.
+    sqlx::query(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+         VALUES ($1, $2, 'member', 'pending')",
+    )
+    .bind(ws.to_string())
+    .bind(user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(
+        !is_workspace_member(&db, ws, user).await.unwrap(),
+        "pending invite must not grant Fleet access"
+    );
+
+    // Accept → active → member.
+    sqlx::query(
+        "UPDATE workspace_memberships SET status = 'active'
+         WHERE workspace_id = $1 AND user_id = $2",
+    )
+    .bind(ws.to_string())
+    .bind(user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(
+        is_workspace_member(&db, ws, user).await.unwrap(),
+        "active membership must grant Fleet access"
+    );
+
+    // Personal-workspace owner path (no membership row) still passes.
+    let owner = seed_user(&db).await;
+    let personal = Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (workspace_id, name, owner_user_id) VALUES ($1, 'personal', $2)")
+        .bind(personal.to_string())
+        .bind(owner.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(
+        is_workspace_member(&db, personal, owner).await.unwrap(),
+        "personal-workspace owner must have access without a membership row"
+    );
+}
