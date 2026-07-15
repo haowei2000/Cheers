@@ -16,7 +16,9 @@ import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import {
   useContextPickStore,
   usePendingContext,
+  useContextSuggestions,
   type ContextItem,
+  type ReplyTargetLike,
 } from "./contextPick";
 
 // Composer "add context" bar (docs/design/RESOURCE_CONTEXT.md, F1): renders the
@@ -137,16 +139,56 @@ export function AttachContextButton({
   );
 }
 
-export function ContextPickBar({ channelId }: { channelId: string }) {
+export function ContextPickBar({
+  channelId,
+  replyTo,
+}: {
+  channelId: string;
+  replyTo?: ReplyTargetLike | null;
+}) {
   const items = usePendingContext(channelId);
+  const suggestions = useContextSuggestions(channelId, replyTo);
   const add = useContextPickStore((s) => s.add);
   const remove = useContextPickStore((s) => s.remove);
+  const dismissSuggestion = useContextPickStore((s) => s.dismissSuggestion);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
     <div className="flex items-center flex-wrap gap-1.5 px-4 py-1.5 border-t border-zinc-800">
+      {/* Suggested context (F3): one-click to add, one-click to dismiss; never
+          auto-committed. Rendered as dashed "ghost" chips, distinct from picks. */}
+      {suggestions.map((sg) => {
+        const Icon = KIND_ICON[sg.kind];
+        return (
+          <span
+            key={`sg:${sg.id}`}
+            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-zinc-700 pl-1 pr-1 py-0.5 text-[11px] text-zinc-500"
+          >
+            <button
+              type="button"
+              onClick={() => add(channelId, sg)}
+              title={`Suggested: add "${sg.label}" as context`}
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-indigo-300"
+            >
+              <Icon className="w-3 h-3" />
+              <span className="max-w-[12rem] truncate">{sg.label}</span>
+              <Plus className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => dismissSuggestion(channelId, sg.id)}
+              aria-label={`Dismiss suggestion ${sg.label}`}
+              title="Dismiss suggestion"
+              className="rounded p-0.5 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        );
+      })}
+
       {items.map((it) => {
         const Icon = KIND_ICON[it.kind];
         return (

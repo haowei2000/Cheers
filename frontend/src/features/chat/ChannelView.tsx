@@ -1247,7 +1247,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       )}
 
       {/* Attached resource context (docs/design/RESOURCE_CONTEXT.md) */}
-      {!selectMode && <ContextPickBar channelId={channel.channel_id} />}
+      {!selectMode && (
+        <ContextPickBar channelId={channel.channel_id} replyTo={replyTo} />
+      )}
 
       {/* Composer */}
       <MessageComposer
