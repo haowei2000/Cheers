@@ -194,6 +194,10 @@ notified — a plain reply does not reach another bot.\n\n"
     Some(format!("{prefix}{text}"))
 }
 
+/// Cap on an inlined snapshot's length (chars), matching the frontend's capture
+/// cap — keeps the task frame small even if a producer over-shares.
+const PREVIEW_MAX_CHARS: usize = 2000;
+
 /// Render the per-message resource-context bundle (docs/design/RESOURCE_CONTEXT.md)
 /// into a prompt block. Each item is a *reference* — a resource verb + params the
 /// agent can resolve on demand through its Cheers resource tools (governed by the
@@ -229,6 +233,32 @@ fn context_bundle_block(task: &TaskCommand) -> Option<String> {
             lines.push(format!("- {descriptor} — resource \"{verb}\""));
         } else {
             lines.push(format!("- {descriptor} — resource \"{verb}\" ({params})"));
+        }
+        // A remote-workspace ref can't be resolved as yourself (it's another bot's
+        // private machine). Point at the owner so you can ask for the live copy.
+        if verb == "workspace.file" {
+            if let Some(owner) = item
+                .get("params")
+                .and_then(|p| p.get("bot_id"))
+                .and_then(Value::as_str)
+            {
+                lines.push(format!(
+                    "  (lives in bot {owner}'s workspace — snapshot below; \
+ask that bot via post_message for the current version)"
+                ));
+            }
+        }
+        // Inline snapshot (docs/design/RESOURCE_CONTEXT.md preview) — content the
+        // producer captured at pick time for refs you can't re-resolve.
+        if let Some(text) = item
+            .get("preview")
+            .and_then(|p| p.get("text"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        {
+            let snapshot: String = text.chars().take(PREVIEW_MAX_CHARS).collect();
+            lines.push(format!("  ```\n{snapshot}\n  ```"));
         }
     }
     if lines.is_empty() {

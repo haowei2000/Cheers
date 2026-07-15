@@ -3166,6 +3166,34 @@ mod tests {
     }
 
     #[test]
+    fn prompt_renders_workspace_snapshot_and_locator() {
+        // A remote-workspace ref rides as a snapshot + a locator to the owning bot.
+        let mut task = identity_task(None, Some(json!({"text": "look"})));
+        task.context_bundle = Some(json!({
+            "origin": "human",
+            "items": [
+                { "verb": "workspace.file", "kind": "file",
+                  "label": "main.rs (@codex workspace)",
+                  "params": { "bot_id": "codex-bot", "path": "src/main.rs" },
+                  "preview": { "text": "fn main() { println!(\"hi\"); }" } }
+            ]
+        }));
+        let prompt = build_prompt(
+            &task,
+            &test_identity(),
+            &test_prompt_policy(false),
+            None,
+            false,
+            false,
+        );
+        let text = prompt[0]["text"].as_str().expect("text block");
+        assert!(text.contains("main.rs (@codex workspace)"));
+        assert!(text.contains("lives in bot codex-bot's workspace"), "locator: {text}");
+        assert!(text.contains("post_message for the current version"));
+        assert!(text.contains("fn main() { println!(\"hi\"); }"), "snapshot inlined: {text}");
+    }
+
+    #[test]
     fn prompt_omits_context_block_when_no_bundle() {
         let prompt = build_prompt(
             &identity_task(None, None),

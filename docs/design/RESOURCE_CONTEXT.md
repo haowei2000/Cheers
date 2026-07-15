@@ -138,6 +138,11 @@ resource verbs:
 - **File passage** (Workbench) → `fs.read` with `start_line`/`end_line`: select text in
   the file viewer and attach *just that range* as a scoped ref (the agent pulls only
   those lines on demand), instead of the whole file.
+- **Remote workspace file** (a bot's live private machine, browsed via `/workspace/file`)
+  → **not a shared resource**, so it can't ride as a consumer-resolvable ref. It attaches
+  as an inline **snapshot** (`preview`, content at pick time, capped) plus a **locator**
+  (`workspace.file` with `bot_id`/`path`): the receiver reads the snapshot and, for the
+  live version, asks the owning bot via `post_message`. The connector prompt spells this out.
 - **Message / thread** → `channel.messages.by-seq` (pick a message; a thread = its range)
 
 **Two entry points** (both feed the same context bundle):

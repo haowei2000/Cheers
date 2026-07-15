@@ -3,6 +3,9 @@ import {
   computeSuggestions,
   selectionLineRange,
   rangedFileContextItem,
+  workspaceContextItem,
+  toBundle,
+  PREVIEW_MAX_CHARS,
   type ContextItem,
   type FileRef,
 } from "./contextPick";
@@ -112,5 +115,42 @@ describe("rangedFileContextItem", () => {
     expect(it.params).toEqual({ path: "notes/plan.md", start_line: 12, end_line: 40 });
     expect(it.label).toBe("plan.md:12-40");
     expect(it.kind).toBe("file");
+  });
+});
+
+describe("workspaceContextItem (remote workspace snapshot + locator)", () => {
+  it("captures a truncated snapshot and a bot-scoped locator", () => {
+    const it = workspaceContextItem({
+      botId: "bot-A",
+      botName: "codex",
+      path: "src/main.rs",
+      sessionId: "sess-1",
+      content: "fn main() {}\n",
+    });
+    expect(it.id).toBe("ws:bot-A:src/main.rs");
+    expect(it.verb).toBe("workspace.file");
+    expect(it.params).toEqual({ bot_id: "bot-A", path: "src/main.rs", session_id: "sess-1" });
+    expect(it.label).toBe("main.rs (@codex workspace)");
+    expect(it.preview?.text).toBe("fn main() {}\n");
+  });
+
+  it("truncates the snapshot to the cap and omits an absent session", () => {
+    const big = "x".repeat(PREVIEW_MAX_CHARS + 500);
+    const it = workspaceContextItem({ botId: "b", path: "f.txt", content: big });
+    expect(it.preview?.text.length).toBe(PREVIEW_MAX_CHARS);
+    expect("session_id" in it.params).toBe(false);
+    expect(it.label).toBe("f.txt (@b workspace)"); // botId fallback for name
+  });
+});
+
+describe("toBundle preview passthrough", () => {
+  it("carries an item's preview onto the wire bundle", () => {
+    const items: ContextItem[] = [
+      workspaceContextItem({ botId: "b", path: "a.md", content: "hello" }),
+    ];
+    const bundle = toBundle(items, "chan");
+    expect(bundle?.items[0].preview?.text).toBe("hello");
+    expect(bundle?.origin).toBe("human");
+    expect(bundle?.items[0].params).toMatchObject({ channel_id: "chan", bot_id: "b" });
   });
 });
