@@ -71,6 +71,9 @@ interface Props {
   /** Fires with the bots currently @mentioned in the draft (token still present),
       so the parent can surface per-bot controls contextual to the mention. */
   onMentionsChange?: (mentionedBots: MentionCandidate[]) => void;
+  /** Fires with the raw draft text on change, so the parent can derive suggested
+      context (F3 — e.g. a filename mentioned in the draft). */
+  onTextChange?: (text: string) => void;
   /** Bot turns currently streaming in the channel. With an empty draft the send
       button morphs into Stop; a typed draft always keeps Send (concurrent sends
       are legal in a channel chat). */
@@ -134,6 +137,7 @@ function MessageComposerImpl({
   commands = [],
   toolbar,
   onMentionsChange,
+  onTextChange,
   streamingCount = 0,
   onStopStreaming,
   onSend,
@@ -230,6 +234,12 @@ function MessageComposerImpl({
     onMentionsChange?.(mentionedBots);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mentionKey]);
+
+  // Surface the draft text up for F3 suggested context (filename detection).
+  useEffect(() => {
+    onTextChange?.(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || !channelId) return;

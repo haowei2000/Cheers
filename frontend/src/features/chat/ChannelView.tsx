@@ -125,6 +125,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [forward, setForward] = useState<{ content: string; count: number } | null>(null);
+  // Live draft text (from the composer) → F3 suggested context (filename detection).
+  const [draftText, setDraftText] = useState("");
 
   // Bots in the channel, derived from the mention candidates — the switcher lists
   // each bot's sessions under it.
@@ -135,6 +137,21 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         .map((m) => ({ botId: m.id, name: m.label })),
     [mentionables]
   );
+
+  // Channel file index (id + name) built from loaded messages' attachments — no
+  // extra fetch. Powers F3 filename suggestions (draft names a file → offer it).
+  const channelFiles = useMemo(() => {
+    const byId = new Map<string, { file_id: string; filename: string }>();
+    for (const m of messages) {
+      for (const f of m.files ?? []) {
+        const name = f.original_filename?.trim();
+        if (f.file_id && name && !byId.has(f.file_id)) {
+          byId.set(f.file_id, { file_id: f.file_id, filename: name });
+        }
+      }
+    }
+    return Array.from(byId.values());
+  }, [messages]);
 
   // A different channel means a different session set — drop any prior target.
   // Also drop any buffered stream deltas + cancel a pending flush so a stale frame
@@ -1248,7 +1265,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
       {/* Attached resource context (docs/design/RESOURCE_CONTEXT.md) */}
       {!selectMode && (
-        <ContextPickBar channelId={channel.channel_id} replyTo={replyTo} />
+        <ContextPickBar
+          channelId={channel.channel_id}
+          replyTo={replyTo}
+          draftText={draftText}
+          files={channelFiles}
+        />
       )}
 
       {/* Composer */}
@@ -1259,6 +1281,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         commands={commands}
         toolbar={composerToolbar}
         onMentionsChange={setMentionedBots}
+        onTextChange={setDraftText}
         streamingCount={streamingIds.length}
         onStopStreaming={stopStreaming}
         onSend={handleSend}

@@ -19,6 +19,7 @@ import {
   useContextSuggestions,
   type ContextItem,
   type ReplyTargetLike,
+  type FileRef,
 } from "./contextPick";
 
 // Composer "add context" bar (docs/design/RESOURCE_CONTEXT.md, F1): renders the
@@ -142,12 +143,16 @@ export function AttachContextButton({
 export function ContextPickBar({
   channelId,
   replyTo,
+  draftText,
+  files,
 }: {
   channelId: string;
   replyTo?: ReplyTargetLike | null;
+  draftText?: string;
+  files?: FileRef[];
 }) {
   const items = usePendingContext(channelId);
-  const suggestions = useContextSuggestions(channelId, replyTo);
+  const suggestions = useContextSuggestions(channelId, { replyTo, draftText, files });
   const add = useContextPickStore((s) => s.add);
   const remove = useContextPickStore((s) => s.remove);
   const dismissSuggestion = useContextPickStore((s) => s.dismissSuggestion);
