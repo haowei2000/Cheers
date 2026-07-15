@@ -12,6 +12,7 @@ pub mod channel_seq;
 pub mod commands_store;
 pub mod connector_config;
 pub mod dms;
+pub mod fleet;
 pub mod invitable;
 pub mod mentions;
 pub mod messages;

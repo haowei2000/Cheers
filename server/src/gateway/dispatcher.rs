@@ -200,6 +200,16 @@ pub async fn dispatch(
         return DispatchResult::BotOffline;
     }
 
+    // The bot is now working on this turn. The matching "idle" signal is the
+    // turn's `message_done` (or the offline/failed done-frame above) — clients
+    // (Fleet view, chat) pair the two; no separate end frame is needed.
+    let processing = WireFrame::channel(
+        params.channel_id,
+        "bot_processing",
+        json!({ "bot_id": params.bot_id, "channel_id": params.channel_id }),
+    );
+    fanout.broadcast_channel(params.channel_id, processing).await;
+
     tracing::info!(
         bot_id = %params.bot_id,
         channel_id = %params.channel_id,
