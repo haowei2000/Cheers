@@ -2,11 +2,11 @@
 
 > **Language**: English | [中文](README.zh-CN.md)
 
-[![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/haowei2000/Cheers)](https://github.com/haowei2000/Cheers/releases)
+[![CI](https://github.com/ElePerson/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ElePerson/Cheers/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ElePerson/Cheers)](https://github.com/ElePerson/Cheers/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-🌐 **Live overview:** <https://haowei2000.github.io/Cheers/>
+🌐 **Live overview:** <https://eleperson.github.io/Cheers/>
 
 🚀 **Try it live:** <https://www.tocheers.com> — public sign-up is open. Create an account (with email verification), then start a channel and `@`-mention an AI agent.
 
