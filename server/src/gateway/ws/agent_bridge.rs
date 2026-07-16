@@ -806,17 +806,35 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
                 && resp.get("ok").and_then(Value::as_bool) == Some(true)
             {
                 if let Some(created) = resp.get("data") {
-                    // Fire-and-forget: the returned trigger handle is intentionally
-                    // dropped so the next bot@bot hop runs off this read loop.
-                    let _ = broadcast_and_trigger_created_message(
-                        &state.stream_registry,
-                        &state.fanout,
-                        &state.db,
-                        &state.bot_locator,
-                        bot.bot_id,
-                        created,
-                    )
-                    .await;
+                    // Off the critical path: the message is already committed, so the
+                    // resource_res below can return immediately. The live broadcast
+                    // (Redis PUBLISH) + chain resolution + bot@bot trigger all run in a
+                    // spawned task instead of blocking the caller's post_message reply.
+                    // Ordering is safe: the frontend re-sorts incoming "message" frames
+                    // by channel_seq (ChannelView.upsertMessage), so a broadcast that
+                    // lands after the reply can't misorder the channel.
+                    let registry = state.stream_registry.clone();
+                    let fanout = state.fanout.clone();
+                    let db = state.db.clone();
+                    let bot_locator = state.bot_locator.clone();
+                    let author_bot_id = bot.bot_id;
+                    let created = created.clone();
+                    tokio::spawn(async move {
+                        let started = std::time::Instant::now();
+                        let _ = broadcast_and_trigger_created_message(
+                            &registry,
+                            &fanout,
+                            &db,
+                            &bot_locator,
+                            author_bot_id,
+                            &created,
+                        )
+                        .await;
+                        tracing::debug!(
+                            elapsed_ms = started.elapsed().as_millis() as u64,
+                            "post_message broadcast+trigger complete (off critical path)"
+                        );
+                    });
                 }
             }
             // bot 退出频道成功 → 成员集变了，在 WS 边界补发全量 presence
