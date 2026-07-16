@@ -20,6 +20,7 @@ import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
+import { addToContextTitle } from "@/features/chat/context/contextLabels";
 import {
   useContextPickStore,
   selectionLineRange,
@@ -507,7 +508,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     channelId={ctx.channelId}
                     disabled={pinned.includes(selected)}
                     disabledTitle="Already pinned — sent in every prompt"
-                    title="Attach this file as context for your next message"
+                    title={addToContextTitle("this file")}
                     item={{
                       id: `file:${selected}`,
                       verb: "fs.read",
@@ -526,7 +527,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                     title={
                       pinned.includes(selected)
                         ? "Already pinned — sent in every prompt"
-                        : "Attach the selected lines as context (select text first)"
+                        : `${addToContextTitle("the selected lines")} (select text first)`
                     }
                     onClick={() => {
                       const sel = window.getSelection()?.toString() ?? "";
@@ -539,7 +540,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                         ctx.channelId,
                         rangedFileContextItem(selected, range.start, range.end)
                       );
-                      setStatus(`Attached ${selected.split("/").pop()}:${range.start}-${range.end} as context`);
+                      setStatus(`Added ${selected.split("/").pop()}:${range.start}-${range.end} to context`);
                     }}
                     className="rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
                   >
