@@ -372,9 +372,10 @@ crosshair + tooltip, recessive hairline grid, tabular numerals.
 
 ### 6.3 Knowledge graph — sandbox plugin (Phase 2)
 Paper/citation graph fits the sandboxed iframe plugin renderer
-(`workbench/sandbox/`, table `workbench_plugins`, example
-`sandbox/examples/research-plugin.html`): reads a `context_files` JSON via the
-whitelisted postMessage fs proxy, draws client-side, network-isolated by CSP.
+(`workbench/sandbox/`, table `workbench_plugins`, current-protocol example
+`sandbox/examples/lit-review.html`): the host assigns one `context_files` JSON
+over the render/save postMessage protocol, the plugin draws client-side,
+network-isolated by the sandbox.
 
 ### 6.4 Daily recommendation / email — out of scope
 SMTP exists, but no scheduler/cron. A recurring digest needs new backend work; excluded

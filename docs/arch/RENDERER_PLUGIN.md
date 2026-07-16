@@ -1,8 +1,11 @@
 # 渲染器插件开发指南
 
-> **Language**: [English](../developer/PLUGIN_DEVELOPMENT.md) | 中文(本文,设计原文)
+> **Language**: [English(规范版)](../developer/PLUGIN_DEVELOPMENT.md) | 中文(本文,设计原文)
+>
+> ⚠️ **规范以英文版为准**:协议消息表、manifest 校验规则、Troubleshooting 都维护在
+> [PLUGIN_DEVELOPMENT.md](../developer/PLUGIN_DEVELOPMENT.md);本文保留设计动机与中文语境,两边冲突时以英文版为准。
 
-> 状态:**v1 已实现**。host 侧 `render/save` 协议已落地——工作台 **File 面板**里选中一个文件,用顶部「渲染器」下拉选内置 lens 或已装插件;绑定(`path → renderer id`)存进 `.workbench.json`。旧的 `panels`/`init` 沙箱(场景插件)仍并存。代码:`renderers/registry.ts`、`renderers/RendererHost.tsx`、`sandbox/SandboxRenderer.tsx`、`panels/FilePanel.tsx`。
+> 状态:**v1 已实现**。host 侧 `render/save` 协议已落地——工作台 **File 面板**里选中一个文件,用顶部「渲染器」下拉选内置 lens 或已装插件;绑定(`path → renderer id`)存进 `.workbench.json`。旧的 `panels`/`init` 沙箱(场景插件)**已退役**(上传会被拒绝,示例已删除)。代码:`renderers/registry.ts`、`renderers/RendererHost.tsx`、`sandbox/SandboxRenderer.tsx`、`panels/FilePanel.tsx`。
 > 关联:[[WORKBENCH]]「关系与边界」· [[context-and-environment]]
 
 ## 0. 一分钟心智模型
@@ -202,6 +205,7 @@ var info = await res("channel.info", {});   // → { ok, data }
 
 ## 7. 安装与绑定
 
+- **试用/开发**(人人):把 `.html` 拖进工作台抽屉(或点「Load extension」选文件)——**仅本浏览器会话**生效,渲染器立即进入匹配文件的候选列表(⏱ 标记);同 id 会话插件会遮蔽已安装版本,方便迭代调试,刷新即消失。
 - **安装**(admin):设置 → Workbench extensions → 上传 `.html`(进 `workbench_plugins` 表,全频道可见)。
 - **绑定**:打开某文件时,工作台按 `.workbench.json` 的 `bindings[path]` 选渲染器;没有就默认「原文」(textarea)或让用户从候选里挑,选择持久化进 `.workbench.json`(`path → rendererId`)。**绑定不进文件**,文件始终是纯内容。
 

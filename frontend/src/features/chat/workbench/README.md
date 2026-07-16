@@ -56,8 +56,10 @@ boards are automatically **shared human↔bot state**.
   `examples/research.json`, `examples/lit-review.json`.
 
 Code renderers (sandboxed iframe plugins) are the separate, heavier kind — shipped as
-`.html` via `/workbench/plugins`; see
-[docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md) and
+`.html` via `/workbench/plugins`, or dropped on the drawer for a **session-only
+temporary load** (the plugin dev loop — ⏱ in pickers, gone on reload); see
+[docs/developer/PLUGIN_DEVELOPMENT.md](../../../../../docs/developer/PLUGIN_DEVELOPMENT.md)
+(normative), plus [docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md) and
 [docs/arch/RENDERER_PLUGIN.md](../../../../../docs/arch/RENDERER_PLUGIN.md).
 
 ---
