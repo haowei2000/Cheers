@@ -109,7 +109,13 @@ cover YAML: the builtin table (arrays of objects) and chart (`series`) accept bo
 JSON and YAML, and their writes go through a comment-preserving round-trip —
 comments and blank lines in the file survive machine edits. Also remember YAML 1.2
 semantics: `yes`/`no`/`on`/`off` are plain strings, not booleans — agents writing
-1.1-style files will get strings back.
+1.1-style files will get strings back. The same ambiguity exists on the **write
+side**: when a lens saves a string cell whose value is a YAML 1.1 boolean literal
+(`no`, `yes`, `on`, `off`, any case), it is written **unquoted** (`answer: no`). A
+YAML 1.2 parser reads that back as the same string, but a YAML 1.1 consumer — e.g.
+PyYAML's `safe_load`, common in agent stacks — reads it as a **boolean**. Boards
+are YAML 1.2 documents; parse them with a 1.2 parser (JS `yaml`, `ruamel.yaml`)
+rather than relying on 1.1 semantics.
 
 ## 5. Protocol reference (protocol 1)
 

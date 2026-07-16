@@ -10,7 +10,7 @@ import { PLUGIN_PROTOCOL, type PluginMeta, type RendererMatch } from "../sandbox
 export interface RendererDesc {
   id: string; // composite, unique, stored in bindings: "builtin:markdown" | "plugin:<pid>:<rid>"
   title: string;
-  format: string[]; // coarse formats accepted: "markdown" | "json" | "toml" | "xml" | "text"
+  format: string[]; // coarse formats accepted: "markdown" | "json" | "yaml" | "toml" | "xml" | "text"
   source: "builtin" | "plugin";
   match: RendererMatch; // acceptance spec (host-evaluated for the candidate list)
   lensId?: string; // builtin: which compiled lens
@@ -19,6 +19,10 @@ export interface RendererDesc {
   // false => resolvable (getRenderer) but NOT offered in the File-panel picker. Used for
   // lenses that need external config (table columns) — only reachable via a template's view.
   pickable?: boolean;
+  // BUILTIN-ONLY structural refinement past the declarative `match` vocabulary,
+  // evaluated on the parsed structured data. Not manifest-expressible (a JSON manifest
+  // can't carry a predicate) — plugins get the same effect via cheers:unsupported.
+  acceptsData?: (data: unknown) => boolean;
 }
 
 // Manifest `match.format` accepts a string or a list; absent = "text" (catch-all).
@@ -75,12 +79,13 @@ export function accepts(desc: RendererDesc, path: string, content: string): bool
     // deprecated alias of dataHas with FROZEN json-only semantics (never matches yaml)
     if (formatOf(path) !== "json" || !hasKeys(parseStructured(path, content), m.jsonHas)) return false;
   }
-  if (m.dataHas?.length || m.dataKind !== undefined) {
+  if (m.dataHas?.length || m.dataKind !== undefined || desc.acceptsData) {
     const data = parseStructured(path, content);
     if (data === undefined) return false;
     if (m.dataKind === "array" && !Array.isArray(data)) return false;
     if (m.dataKind === "object" && (!data || typeof data !== "object" || Array.isArray(data))) return false;
     if (m.dataHas?.length && !hasKeys(data, m.dataHas)) return false;
+    if (desc.acceptsData && !desc.acceptsData(data)) return false;
   }
   return true;
 }
@@ -100,15 +105,19 @@ const BUILTINS: RendererDesc[] = [
   {
     // Array-of-rows table. Columns come from a template config when present, else the
     // lens infers them from the union of row keys — so it needs no external config and
-    // IS pickable, gated by dataKind to files whose top level is actually an array.
-    // This is also the official answer for YAML arrays (sandboxed plugins would have
-    // to inline their own YAML parser; the builtin gets it from the Format layer).
+    // IS pickable. This is also the official answer for YAML arrays (sandboxed plugins
+    // would have to inline their own YAML parser; the builtin gets it from the Format
+    // layer). Offered only when EVERY row is a plain object: YAML parses `- alpha` to a
+    // string row and a bare `-` to null, for which a table has nothing honest to show
+    // (per-character index columns / a crash) and a cell edit would corrupt the file.
     id: "builtin:table",
     title: "表格",
     format: ["json", "yaml"],
     source: "builtin",
     lensId: "table",
     match: { format: ["json", "yaml"], dataKind: "array" },
+    acceptsData: (d) =>
+      Array.isArray(d) && d.length > 0 && d.every((r) => r !== null && typeof r === "object" && !Array.isArray(r)),
   },
   {
     id: "builtin:kanban",

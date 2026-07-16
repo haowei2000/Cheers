@@ -118,6 +118,22 @@ describe("yaml as a structured format", () => {
     expect(idsOf("prose.yaml", "just a scalar string", [])).not.toContain("builtin:table");
   });
 
+  it("table needs rows that are plain objects — null/scalar rows are never offered", () => {
+    // `- name: a` + a bare `-` parses to [{name:"a"}, null]: ONE bad row disqualifies
+    // (rendering null rows used to throw all the way to the root ErrorBoundary)
+    expect(idsOf("rows.yaml", "- name: a\n-\n", [])).not.toContain("builtin:table");
+    // scalar rows: a table would fabricate per-character columns and a cell edit would
+    // spread the string into {"0":…} corruption on save
+    expect(idsOf("rows.yaml", "- alpha\n- beta\n", [])).not.toContain("builtin:table");
+    expect(idsOf("rows.json", "[1, 2]", [])).not.toContain("builtin:table");
+    expect(idsOf("rows.json", '[["a"],["b"]]', [])).not.toContain("builtin:table");
+    // an empty array has nothing to tabulate (and no keys to infer columns from)
+    expect(idsOf("rows.json", "[]", [])).not.toContain("builtin:table");
+    // arrays of plain objects keep being offered, json and yaml alike
+    expect(idsOf("rows.json", '[{"a":1},{"b":2}]', [])).toContain("builtin:table");
+    expect(idsOf("rows.yaml", "- name: a\n- name: b\n", [])).toContain("builtin:table");
+  });
+
   it("dataHas matches parsed YAML top-level keys (chart via `series`)", () => {
     expect(idsOf("m.yaml", "series:\n  - name: s\n    points: []\n", [])).toContain("builtin:chart");
     expect(idsOf("m.yaml", "other: 1\n", [])).not.toContain("builtin:chart");

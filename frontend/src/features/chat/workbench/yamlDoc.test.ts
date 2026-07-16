@@ -96,4 +96,21 @@ describe("applyEdits — comment-preserving rewrite", () => {
     const out = applyEdits("a: 1\n", [1, 2]);
     expect(parse(out)).toEqual([1, 2]);
   });
+
+  it("a comment-only file keeps its header comments across the first save", () => {
+    // a seeded board is often just "# fill me in" — contents parse to null, and the
+    // first lens save used to fall into the stringify path and eat the header
+    const out = applyEdits("# fill me in\n# (the bot appends rows)\n", { rows: [{ name: "a" }] });
+    expect(out).toContain("# fill me in");
+    expect(out).toContain("# (the bot appends rows)");
+    expect(parse(out)).toEqual({ rows: [{ name: "a" }] });
+  });
+
+  it("does not refold long plain scalars it never touched", () => {
+    const long = "word ".repeat(30).trim(); // 149 chars, well past the default 80-col fold
+    const src = `text: ${long}\nother: 1\n`;
+    const out = applyEdits(src, { text: long, other: 2 });
+    expect(out).toContain(`text: ${long}\n`); // still ONE line — no lineWidth reflow
+    expect(parse(out)).toEqual({ text: long, other: 2 });
+  });
 });

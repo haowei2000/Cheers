@@ -14,14 +14,14 @@ export const PLUGIN_PROTOCOL = 1;
 // inside the renderer at render time (it may reply cheers:unsupported).
 // Hosts ignore unknown match keys, so this vocabulary can grow within protocol 1.
 export interface RendererMatch {
-  /** Coarse format(s) by file extension: "markdown" | "json" | "toml" | "xml" | "text".
-   *  A single string or a list; "text" is the catch-all (matches any path). */
+  /** Coarse format(s) by file extension: "markdown" | "json" | "yaml" | "toml" | "xml"
+   *  | "text". A single string or a list; "text" is the catch-all (matches any path). */
   format?: string | string[];
   glob?: string; // optional path glob, e.g. "reviews/*.md"
   requireAll?: string[]; // content must contain ALL of these substrings (e.g. md headings)
   requireAny?: string[]; // content must contain AT LEAST ONE of these
-  /** Parsed STRUCTURED content (json today, yaml when supported) must have ALL these
-   *  top-level keys. Successor of jsonHas — prefer this. */
+  /** Parsed STRUCTURED content (JSON or YAML) must have ALL these top-level keys.
+   *  Successor of jsonHas — prefer this. */
   dataHas?: string[];
   /** Top-level shape of parsed structured content. The only way to claim "a JSON/YAML
    *  array" (dataHas can't — arrays have no keys). */
