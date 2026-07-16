@@ -15,7 +15,7 @@
 #   CHEERS_API_BASE      gateway API base; default injected at serve time
 #   CHEERS_CONNECTOR_BIN path to cce-acp-connector (else found on PATH, else a
 #                        prebuilt release binary is downloaded for this platform)
-#   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default haowei2000/Cheers)
+#   CHEERS_CONNECTOR_REPO     GitHub owner/repo for releases (default ElePerson/Cheers)
 #   CHEERS_CONNECTOR_VERSION  connector version, e.g. 0.1.22 (default: latest)
 #   CHEERS_INSTALL_DAEMON=0  skip the launchd/systemd unit (just write + start)
 #   CHEERS_AUTO_UPDATE=1 enable signed self-update in the written config
@@ -93,7 +93,7 @@ fi
 # against a newer glibc "downloads fine" and then crash-loops the keep-alive
 # service (seen in the wild: GLIBC_2.39 binary on Ubuntu 22.04 / glibc 2.35).
 if [ -z "$BIN" ]; then
-  REPO="${CHEERS_CONNECTOR_REPO:-haowei2000/Cheers}"
+  REPO="${CHEERS_CONNECTOR_REPO:-ElePerson/Cheers}"
   VER="${CHEERS_CONNECTOR_VERSION:-latest}"
   os="$(uname -s)"; arch="$(uname -m)"
   case "$os" in Darwin) os=darwin ;; Linux) os=linux ;; *) os="" ;; esac
@@ -186,7 +186,7 @@ if [ -z "$BIN" ]; then
 
   Config and token are in place, but no connector binary was found and none could
   be downloaded for this platform. Build it once:
-      git clone https://github.com/haowei2000/Cheers && cd Cheers/packages/cheers-acp-connector-rs
+      git clone https://github.com/ElePerson/Cheers && cd Cheers/packages/cheers-acp-connector-rs
       cargo build --release    # → target/release/cce-acp-connector
   then re-run with CHEERS_CONNECTOR_BIN=/path/to/cce-acp-connector, or start by hand:
       cce-acp-connector start --config "$CONFIG_FILE" --name "$ACCOUNT_ID"
