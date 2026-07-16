@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { notify, messageOf } from "@/lib/notify";
 import { X, Plus } from "lucide-react";
 import {
   getEventAccess,
@@ -59,7 +59,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       );
       setMembersByChannel(Object.fromEntries(lists));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     }
   }, [botId]);
   useEffect(() => {
@@ -72,7 +72,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       await fn();
       await load();
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(null);
     }

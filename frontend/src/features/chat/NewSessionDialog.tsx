@@ -4,6 +4,7 @@
 // directory / extra roots, with allowed-root suggestions from the connector's
 // workspace policy.
 import { useEffect, useState } from "react";
+import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { Plus } from "lucide-react";
 import { createChannelBotSession } from "@/api/sessionControl";
@@ -68,7 +69,7 @@ export function NewSessionDialog({
       onCreated({ session_id: created.session_id, bot_id: botId });
       onClose();
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }

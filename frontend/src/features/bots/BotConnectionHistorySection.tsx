@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import toast from "react-hot-toast";
+import { notify, messageOf } from "@/lib/notify";
 import { RefreshCw, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 import { listBotConnectionEvents, type BotConnectionEvent } from "@/api/bots";
 
@@ -33,7 +33,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
     try {
       setEvents(await listBotConnectionEvents(botId, 50));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setLoading(false);
     }

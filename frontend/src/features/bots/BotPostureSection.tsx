@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import toast from "react-hot-toast";
+import { notify, messageOf } from "@/lib/notify";
 import {
   getBotPermissions,
   setBotPosture,
@@ -27,14 +27,14 @@ export function BotPostureSection({ botId }: { botId: string }) {
   }, [botId]);
 
   useEffect(() => {
-    load().catch((e) => toast.error(String(e)));
+    load().catch((e) => notify.error(messageOf(e)));
   }, [load]);
 
   const changePosture = (mode: string) => {
     setBusy(true);
     setBotPosture(botId, mode)
       .then(load)
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => notify.error(messageOf(e)))
       .finally(() => setBusy(false));
   };
 
@@ -42,7 +42,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
     setBusy(true);
     setBotConfigOption(botId, configId, value)
       .then(load)
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => notify.error(messageOf(e)))
       .finally(() => setBusy(false));
   };
 
@@ -57,7 +57,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
         setManualConfigValue("");
         return load();
       })
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => notify.error(messageOf(e)))
       .finally(() => setBusy(false));
   };
 

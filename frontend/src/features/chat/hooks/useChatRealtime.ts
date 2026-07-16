@@ -1,7 +1,13 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { buildWsUrl } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, WsEvent } from "@/types";
+
+/** Live-connection state for the open channel, driving the tier-M banner:
+ *  connecting → first attempt (no banner; the channel is still loading anyway),
+ *  online → subscribed, reconnecting → dropped and retrying with backoff,
+ *  offline → retry budget exhausted (manual `reconnectNow` is the exit). */
+export type RealtimeStatus = "connecting" | "online" | "reconnecting" | "offline";
 
 /** Workspace-presence entry inside a `presence` frame: WHO is currently viewing
  *  WHICH bot's workspace, and at what `path` (a file, else a directory/cwd). */
@@ -117,6 +123,10 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const cbsRef = useRef(cbs);
   cbsRef.current = cbs;
   const pendingRef = useRef<Map<string, PendingReq>>(new Map());
+  const [status, setStatus] = useState<RealtimeStatus>("connecting");
+  // The server rejected our token (auth_err): reconnecting with the same token
+  // would just loop, so stop; the session-expired takeover is the exit.
+  const authFailedRef = useRef(false);
 
   const connect = useCallback(() => {
     if (!channelId || !token || !mountedRef.current) return;
@@ -165,10 +175,15 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         return;
       }
       if (type === "auth_err") {
+        // Dead token → tier L: flip the global session-expired takeover and stop
+        // the reconnect loop (retrying with the same token can never succeed).
+        authFailedRef.current = true;
+        useAuthStore.getState().markSessionExpired();
         ws.close();
         return;
       }
       if (type === "subscribed") {
+        if (mountedRef.current) setStatus("online");
         // (Re)subscribe ack — trigger REST since-seq catch-up to heal any gap
         // from a dropped connection (write-before-deliver self-heal).
         cbsRef.current.onReady?.();
@@ -271,8 +286,12 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
         p.reject(new ResourceError("DISCONNECTED", "socket closed"));
       }
       pendingRef.current.clear();
-      if (!mountedRef.current) return;
-      if (retryRef.current >= MAX_RETRIES) return;
+      if (!mountedRef.current || authFailedRef.current) return;
+      if (retryRef.current >= MAX_RETRIES) {
+        setStatus("offline");
+        return;
+      }
+      setStatus("reconnecting");
       const delay = Math.min(BASE_DELAY * 2 ** retryRef.current, MAX_DELAY);
       retryRef.current += 1;
       timerRef.current = setTimeout(connect, delay);
@@ -283,25 +302,33 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     };
   }, [channelId, token]);
 
+  // Recovery: the exponential-backoff loop caps out after MAX_RETRIES (~2.5min),
+  // which after a laptop sleep or a network blip would otherwise leave the channel
+  // silently frozen forever. Coming back online, refocusing the tab, or the
+  // banner's "Retry now" is the escape hatch — reset the retry budget and
+  // reconnect now if the socket has died.
+  const reconnectNow = useCallback(() => {
+    if (!mountedRef.current || authFailedRef.current) return;
+    const ws = wsRef.current;
+    if (ws && ws.readyState !== WebSocket.CLOSED) return; // already up or mid-connect
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    retryRef.current = 0;
+    setStatus("reconnecting");
+    connect();
+  }, [connect]);
+
   useEffect(() => {
     mountedRef.current = true;
+    authFailedRef.current = false; // fresh channel/token → the ban no longer applies
+    setStatus("connecting"); // fresh (re)mount — don't carry a stale banner across channels
     connect();
 
-    // Recovery: the exponential-backoff loop caps out after MAX_RETRIES (~2.5min),
-    // which after a laptop sleep or a network blip would otherwise leave the channel
-    // silently frozen forever. Coming back online or refocusing the tab is the escape
-    // hatch — reset the retry budget and reconnect now if the socket has died.
     const revive = () => {
-      if (!mountedRef.current) return;
       if (document.visibilityState === "hidden") return;
-      const ws = wsRef.current;
-      if (ws && ws.readyState !== WebSocket.CLOSED) return; // already up or mid-connect
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      retryRef.current = 0;
-      connect();
+      reconnectNow();
     };
     window.addEventListener("online", revive);
     document.addEventListener("visibilitychange", revive);
@@ -313,7 +340,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
       document.removeEventListener("visibilitychange", revive);
       wsRef.current?.close();
     };
-  }, [connect]);
+  }, [connect, reconnectNow]);
 
   // Imperative resource client: send a resource_req on the live channel socket and
   // resolve when the matching resource_res (by req_id) returns. Used by the workbench
@@ -355,5 +382,5 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     []
   );
 
-  return { sendResourceReq, sendPresenceFocus };
+  return { sendResourceReq, sendPresenceFocus, status, reconnectNow };
 }

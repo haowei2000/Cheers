@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { Bot, KeyRound, RefreshCw, Circle, CircleDot, Ban, Wand2 } from "lucide-react";
 import {
@@ -83,7 +84,7 @@ export function BotsManager() {
       // Background polls stay quiet — a transient blip shouldn't toast.
       if (!opts?.silent) {
         setLoadFailed(true);
-        toast.error(String(e));
+        notify.error(messageOf(e));
       }
     } finally {
       if (!opts?.silent) setLoading(false);
@@ -112,7 +113,7 @@ export function BotsManager() {
     try {
       setIssued(await issueBotToken(botId));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     }
   }
 

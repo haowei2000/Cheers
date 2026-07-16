@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
-import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, AlertCircle } from "lucide-react";
+import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, WifiOff } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
 import { useContextPickStore, toBundle } from "./context/contextPick";
@@ -25,6 +25,8 @@ import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { LaneZones } from "./workbench/LaneZones";
 import { LaneResizer } from "./workbench/LaneResizer";
 import { ErrorDialog } from "@/components/ui/ErrorDialog";
+import { Banner } from "@/components/ui/banner";
+import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import { usePopoverDismiss } from "@/components/ui/popover";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
@@ -489,7 +491,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     void loadCommands();
   }, [catchUp, loadCommands]);
 
-  const { sendResourceReq, sendPresenceFocus } = useChatRealtime(
+  const { sendResourceReq, sendPresenceFocus, status: rtStatus, reconnectNow } = useChatRealtime(
     // Preview (not yet a member) → don't subscribe; the gateway gates realtime
     // frames on channel membership anyway.
     !channel || isPreview ? null : channel.channel_id,
@@ -558,6 +560,18 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // Keep a stable ref so loadCommands can reach the latest resource client
   // without re-subscribing the realtime hook.
   sendResourceReqRef.current = sendResourceReq;
+
+  // Tier-M connection banner: a dropped socket only surfaces after a short grace
+  // period (most blips heal within a retry or two), but a dead one (retry budget
+  // spent) shows immediately. Clears itself the moment the socket is back.
+  const [showConnBanner, setShowConnBanner] = useState(false);
+  useEffect(() => {
+    if (rtStatus === "reconnecting") {
+      const t = setTimeout(() => setShowConnBanner(true), 1500);
+      return () => clearTimeout(t);
+    }
+    setShowConnBanner(rtStatus === "offline");
+  }, [rtStatus]);
 
   // Re-flatten the palette when bot labels resolve after the initial fetch.
   useEffect(() => {
@@ -1165,24 +1179,31 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         }`}
       >
       <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
+      {/* Live-connection banner (tier M): the channel is readable but frozen. */}
+      {showConnBanner && (
+        <Banner
+          severity={rtStatus === "offline" ? "error" : "warning"}
+          icon={WifiOff}
+          className="mx-4 mt-2 flex-shrink-0"
+          action={{ label: "Retry now", onClick: reconnectNow }}
+        >
+          {rtStatus === "offline"
+            ? "Connection lost — new messages are paused."
+            : "Connection lost — reconnecting…"}
+        </Banner>
+      )}
       {/* Messages */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
         </div>
       ) : loadError ? (
-        <div
-          role="alert"
-          className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center"
-        >
-          <AlertCircle className="w-8 h-8 text-zinc-700" />
-          <p className="text-sm text-zinc-400 max-w-xs">
-            Couldn&apos;t load messages. Check your connection and try again.
-          </p>
-          <Button variant="secondary" size="sm" onClick={loadHistory}>
-            Retry
-          </Button>
-        </div>
+        <ErrorState
+          className="flex-1"
+          title="Couldn't load messages"
+          description="Check your connection and try again."
+          action={{ label: "Retry", onClick: loadHistory }}
+        />
       ) : (
         <ResolveRefContext.Provider value={resolveAndOpenRef}>
           <MessageList
