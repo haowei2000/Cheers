@@ -156,7 +156,7 @@
     <div class="nav-actions">
       <a class="icon-btn lang" href="./connector.zh-CN.html" hreflang="zh-CN" lang="zh-CN" title="切换到中文版">中文</a>
       <button class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light and dark theme">◐</button>
-      <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/ElePerson/Cheers">GitHub</a>
     </div>
   </div>
 </header>
@@ -202,15 +202,16 @@
     <p>Download the prebuilt binary for your OS — no toolchain required. Paste this into a terminal:</p>
 <pre class="code"><span class="c"># pick the right file for your OS/CPU, download it, make it runnable</span>
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-mkdir -p ~/.cheers/bin
+mkdir -p ~/.cheers/bin ~/.cheers/workspace   <span class="c"># workspace = where the agent works — must exist, or the connector refuses to start</span>
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"   <span class="c"># add this line to your ~/.zshrc so it sticks</span>
 cce-acp-connector --help                <span class="c"># prints help = success</span></pre>
     <div class="callout"><strong>If the repo is private</strong>, plain <code>curl</code> returns a 404. Download with the
       GitHub CLI instead, e.g.
-      <code>gh release download connector-v0.1.28 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector</code>.</div>
+      <code>gh release download -R ElePerson/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector</code>
+      (with no tag, <code>gh</code> fetches the latest release).</div>
 
     <h2 id="token">4. Create the bot and get its token</h2>
     <p>A <strong>token</strong> is the connector's password to log in to the gateway as your bot. Get one in the UI:</p>
@@ -309,7 +310,7 @@ auto = true</pre>
     <p>Re-run the download from <a href="#install">step 3</a> (it overwrites the old binary), then restart:</p>
 <pre class="code">os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 cce-acp-connector restart --name claude</pre>
     <p>Auto-update is <strong>off by default</strong> on purpose — updating runs downloaded code, so the owner of the
@@ -332,6 +333,7 @@ cce-acp-connector restart --name claude</pre>
       <tr><th>What you see</th><th>Likely cause</th><th>Fix</th></tr>
       <tr><td><strong>Bot ignores files you attached</strong> — asks you to upload them or give a path, even though the chips are on your message</td><td>The connector is older than the version that renders attached context into the prompt</td><td><a href="#update">Update the connector</a> (≥ 0.1.28), then <code>restart</code>. Also confirm <code>allow_attachments = true</code>.</td></tr>
       <tr><td><code>start</code> exits right away, log mentions the token</td><td>The token file is missing or empty</td><td>Re-do <a href="#token">step 4</a>; check <code>~/.cheers/secrets/&lt;name&gt;.token</code> exists and isn't empty</td></tr>
+      <tr><td><code>start</code> exits right away, log: <code>allowed_roots does not exist</code></td><td>The folder your config points at (<code>allowed_roots</code> / <code>default_cwd</code>) hasn't been created — it must exist before startup</td><td><code>mkdir -p ~/.cheers/workspace</code> (or whichever directory your config names), then <code>start</code> again</td></tr>
       <tr><td>log: <code>command not found</code></td><td>Wrong path to your agent</td><td><code>command -v claude-agent-acp</code> and put the absolute path in <code>adapter.command</code></td></tr>
       <tr><td>Agent starts but never replies / auth fails</td><td>The agent can't read your subscription login</td><td>Make sure <code>policy.env.allow</code> includes <code>HOME</code></td></tr>
       <tr><td>Keeps reconnecting / never connects</td><td>Wrong gateway address, or gateway down</td><td>Check the two <code>ws://…</code> URLs with your admin; confirm the server is up</td></tr>
@@ -341,15 +343,15 @@ cce-acp-connector restart --name claude</pre>
 
     <h2 id="more">Read more</h2>
     <div class="docs-grid">
-      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%9C%AC%E5%9C%B0Bot%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%9C%AC%E5%9C%B0Bot%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md">
         <span class="dt">📖 Local Bot Setup Guide</span>
         <span class="dd">The full reference: every config field, multiple bots, token strategy, all options.</span>
       </a>
-      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.md">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.md">
         <span class="dt">🔌 Agent Bridge Guide</span>
         <span class="dd">Concepts, creating a bot in the UI, and the containerized bot path.</span>
       </a>
-      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.md">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&amp;A.md">
         <span class="dt">🔎 Troubleshooting Q&amp;A</span>
         <span class="dd">Health checks, logs, and what to do when a bot goes quiet.</span>
       </a>
@@ -362,8 +364,8 @@ cce-acp-connector restart --name claude</pre>
     <div>🍻 <strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
     <div class="foot-links">
       <a href="./index.html">Home</a>
-      <a href="https://github.com/haowei2000/Cheers">GitHub</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">License</a>
+      <a href="https://github.com/ElePerson/Cheers">GitHub</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/LICENSE">License</a>
     </div>
   </div>
 </footer>

@@ -156,7 +156,7 @@
     <div class="nav-actions">
       <a class="icon-btn lang" href="./connector.html" hreflang="en" lang="en" title="Switch to English">EN</a>
       <button class="icon-btn" id="themeToggle" title="切换 浅色 / 深色" aria-label="切换浅色和深色主题">◐</button>
-      <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/ElePerson/Cheers">GitHub</a>
     </div>
   </div>
 </header>
@@ -198,14 +198,15 @@
     <p>下载对应你系统的预编译二进制，无需任何工具链。把下面这段粘进终端：</p>
 <pre class="code"><span class="c"># 自动挑选对应系统/CPU 的文件、下载、赋予可执行权限</span>
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-mkdir -p ~/.cheers/bin
+mkdir -p ~/.cheers/bin ~/.cheers/workspace   <span class="c"># workspace 是智能体的工作目录——必须存在，否则连接器会拒绝启动</span>
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"   <span class="c"># 把这行加进 ~/.zshrc 就能长期生效</span>
 cce-acp-connector --help                <span class="c"># 打印出帮助 = 成功</span></pre>
     <div class="callout"><strong>如果仓库是私有的</strong>，直接 <code>curl</code> 会返回 404。改用 GitHub CLI 下载，例如
-      <code>gh release download connector-v0.1.28 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector</code>。</div>
+      <code>gh release download -R ElePerson/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector</code>
+      （不带 tag 时 <code>gh</code> 会取最新的 release）。</div>
 
     <h2 id="token">4. 创建机器人并拿到令牌</h2>
     <p><strong>令牌（token）</strong>是连接器以你的机器人身份登录网关用的"密码"。在界面里获取：</p>
@@ -301,7 +302,7 @@ auto = true</pre>
     <p>重新跑一遍<a href="#install">第 3 步</a>的下载（会覆盖旧二进制），然后重启：</p>
 <pre class="code">os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 cce-acp-connector restart --name claude</pre>
     <p>自动更新<strong>默认关闭</strong>是有意为之——更新意味着执行下载来的代码，所以由机器主人自己选择开启。
@@ -322,6 +323,7 @@ cce-acp-connector restart --name claude</pre>
       <tr><th>你看到的现象</th><th>可能原因</th><th>处理</th></tr>
       <tr><td><strong>机器人无视你附加的文件</strong>——让你上传或给路径，尽管消息上明明有小标签</td><td>连接器版本旧于"把附加 context 渲染进 prompt"的那一版</td><td><a href="#update">更新连接器</a>（≥ 0.1.28）后 <code>restart</code>；同时确认 <code>allow_attachments = true</code>。</td></tr>
       <tr><td><code>start</code> 立刻退出，日志提到 token</td><td>令牌文件缺失或为空</td><td>重做<a href="#token">第 4 步</a>；确认 <code>~/.cheers/secrets/&lt;名字&gt;.token</code> 存在且非空</td></tr>
+      <tr><td><code>start</code> 立刻退出，日志：<code>allowed_roots does not exist</code></td><td>配置里 <code>allowed_roots</code> / <code>default_cwd</code> 指向的目录还没创建——启动前它必须存在</td><td><code>mkdir -p ~/.cheers/workspace</code>（或你配置里写的那个目录），再重新 <code>start</code></td></tr>
       <tr><td>日志：<code>command not found</code></td><td>智能体路径不对</td><td><code>command -v claude-agent-acp</code>，把绝对路径填进 <code>adapter.command</code></td></tr>
       <tr><td>智能体启动了但从不回复 / 鉴权失败</td><td>智能体读不到你的订阅登录</td><td>确保 <code>policy.env.allow</code> 里包含 <code>HOME</code></td></tr>
       <tr><td>反复重连 / 一直连不上</td><td>网关地址不对，或网关没起</td><td>找管理员核对两个 <code>ws://…</code> URL；确认服务器在线</td></tr>
@@ -331,15 +333,15 @@ cce-acp-connector restart --name claude</pre>
 
     <h2 id="more">延伸阅读</h2>
     <div class="docs-grid">
-      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%9C%AC%E5%9C%B0Bot%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.zh-CN.md">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%9C%AC%E5%9C%B0Bot%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.zh-CN.md">
         <span class="dt">📖 本地 Bot 配置指南</span>
         <span class="dd">完整参考：每个配置字段、多机器人、令牌策略、全部选项。</span>
       </a>
-      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.zh-CN.md">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.zh-CN.md">
         <span class="dt">🔌 Agent Bridge 接入指南</span>
         <span class="dd">概念、在界面里创建机器人、容器化机器人路径。</span>
       </a>
-      <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.zh-CN.md">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&amp;A.zh-CN.md">
         <span class="dt">🔎 技术排查 Q&amp;A</span>
         <span class="dd">健康检查、日志，以及机器人不吭声时怎么办。</span>
       </a>
@@ -352,8 +354,8 @@ cce-acp-connector restart --name claude</pre>
     <div>🍻 <strong>Cheers</strong> —— 面向人类与 AI 智能体的开源协作。MIT 许可。</div>
     <div class="foot-links">
       <a href="./index.zh-CN.html">首页</a>
-      <a href="https://github.com/haowei2000/Cheers">GitHub</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">许可证</a>
+      <a href="https://github.com/ElePerson/Cheers">GitHub</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/LICENSE">许可证</a>
     </div>
   </div>
 </footer>
