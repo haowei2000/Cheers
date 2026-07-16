@@ -21,10 +21,7 @@ use crate::{
     domain::{acp_capability, channel_seq, sessions},
     gateway::{
         realtime::frame::WireFrame,
-        stream::{
-            broadcast_and_trigger_created_message, handle_delta, handle_done, handle_send,
-            handle_session_update,
-        },
+        stream::{handle_delta, handle_done, handle_send, handle_session_update},
     },
     infra::crypto::hash_bot_token,
     infra::db::models::MESSAGE_SCHEMA_VERSION,
@@ -792,135 +789,23 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         "resource_req" => {
             // `workspace.read` is a REMOTE-workspace pull (unified context model, P3):
             // a reader bot resolves ANOTHER bot's workspace file under its own read
-            // grant. It can't go through the db-only `resource::dispatch` — brokering
-            // the read needs `AppState` (the identity-free workspace RPC + presence).
-            // Intercept here at the WS boundary; every other verb falls through.
+            // grant. Brokering it needs the identity-free workspace RPC, so it is an
+            // alternate dispatch rather than a plain resource verb — intercepted here.
+            //
+            // Every other verb goes through `dispatch_with_effects`, never the db-only
+            // `resource::dispatch`: the live broadcast / bot@bot trigger / presence /
+            // Desk signal a successful write implies all live there, so any transport
+            // gets the complete semantics (see gateway::resource_effects).
             let resp = if frame.get("resource").and_then(Value::as_str) == Some("workspace.read") {
                 broker_workspace_read(state, bot.bot_id, frame).await
             } else {
-                resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await
-            };
-            // bot 主动 post_message（channel.messages.create）落库后，resource::dispatch 只有
-            // db、无 fanout/registry/bot_locator，故在此 WS 边界补 live 广播 + bot@bot 触发。
-            if frame.get("resource").and_then(Value::as_str) == Some("channel.messages.create")
-                && resp.get("ok").and_then(Value::as_bool) == Some(true)
-            {
-                if let Some(created) = resp.get("data") {
-                    // Off the critical path: the message is already committed, so the
-                    // resource_res below can return immediately. The live broadcast
-                    // (Redis PUBLISH) + chain resolution + bot@bot trigger all run in a
-                    // spawned task instead of blocking the caller's post_message reply.
-                    // Ordering is safe: the frontend re-sorts incoming "message" frames
-                    // by channel_seq (ChannelView.upsertMessage), so a broadcast that
-                    // lands after the reply can't misorder the channel.
-                    let registry = state.stream_registry.clone();
-                    let fanout = state.fanout.clone();
-                    let db = state.db.clone();
-                    let bot_locator = state.bot_locator.clone();
-                    let author_bot_id = bot.bot_id;
-                    let created = created.clone();
-                    tokio::spawn(async move {
-                        let started = std::time::Instant::now();
-                        let _ = broadcast_and_trigger_created_message(
-                            &registry,
-                            &fanout,
-                            &db,
-                            &bot_locator,
-                            author_bot_id,
-                            &created,
-                        )
-                        .await;
-                        tracing::debug!(
-                            elapsed_ms = started.elapsed().as_millis() as u64,
-                            "post_message broadcast+trigger complete (off critical path)"
-                        );
-                    });
-                }
-            }
-            // bot 退出频道成功 → 成员集变了，在 WS 边界补发全量 presence
-            //（resource::dispatch 只有 db，拿不到 fanout/bot_locator）。
-            if frame.get("resource").and_then(Value::as_str) == Some("channel.leave")
-                && resp.get("ok").and_then(Value::as_bool) == Some(true)
-            {
-                if let Some(cid) = frame
-                    .get("params")
-                    .and_then(|p| p.get("channel_id"))
-                    .and_then(Value::as_str)
-                    .and_then(|s| Uuid::parse_str(s).ok())
-                {
-                    crate::gateway::presence::broadcast_presence(state, cid).await;
-                }
-            }
-            // Live Desk: a successful mutating `fs.*` verb changed the channel's
-            // workspace files — nudge any open Desk view to re-pull. Mirrors the
-            // channel.messages.create / channel.leave live-broadcast pattern above:
-            // resource::dispatch only holds `db`, so the fanout tick is emitted here
-            // at the WS boundary. Data-free — clients re-fetch via their own authz'd
-            // fs.ls/fs.read. board name "files" (cross-slice contract).
-            if matches!(
-                frame.get("resource").and_then(Value::as_str),
-                Some("fs.write" | "fs.edit" | "fs.append" | "fs.rm" | "fs.mv")
-            ) && resp.get("ok").and_then(Value::as_bool) == Some(true)
-            {
-                if let Some(cid) = resp
-                    .get("data")
-                    .and_then(|d| d.get("channel_id"))
-                    .and_then(Value::as_str)
-                    .and_then(|s| s.parse::<Uuid>().ok())
-                {
-                    let wire = WireFrame::channel(
-                        cid,
-                        "board_signal",
-                        json!({ "channel_id": cid, "board": "files" }),
-                    );
-                    state.fanout.broadcast_channel(cid, wire).await;
-                }
-            }
-            // Agent wrote its own status card (`bot.status.write`, the set_status
-            // tool): persisted in dispatch (db-only); the live member_updated push
-            // to every channel the bot is in needs the fanout, so it's emitted
-            // here at the WS boundary — same pattern as the blocks above.
-            if frame.get("resource").and_then(Value::as_str) == Some("bot.status.write")
-                && resp.get("ok").and_then(Value::as_bool) == Some(true)
-            {
-                crate::api::bots::broadcast_bot_member_update(state, &bot.bot_id.to_string()).await;
-                // Traceability (audit items 3 + 9): record the self-status write to
-                // acp_event_log so status changes are auditable alongside every other
-                // ACP event. Summary ONLY — which fields were set and their char
-                // lengths, NEVER the text itself. channel_id is NULL (a self-card write
-                // isn't channel-scoped); session_id rides the frame if present.
-                // Best-effort: a log-write failure must never disrupt the live agent.
-                let params = frame.get("params");
-                let field_len = |key: &str| {
-                    params
-                        .and_then(|p| p.get(key))
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.chars().count())
-                };
-                let audit_payload = json!({
-                    "status_text_len": field_len("status_text"),
-                    "status_emoji_len": field_len("status_emoji"),
-                    "info_len": field_len("info"),
-                });
-                if let Err(err) = sqlx::query(
-                    "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)",
+                crate::gateway::resource_effects::dispatch_with_effects(
+                    state,
+                    resource::Principal::bot(bot.bot_id),
+                    frame,
                 )
-                .bind(Uuid::new_v4().to_string())
-                .bind(bot.bot_id.to_string())
-                .bind(Option::<&str>::None)
-                .bind(frame.get("session_id").and_then(Value::as_str))
-                .bind("bot.status.write")
-                .bind("cheers")
-                .bind(audit_payload.to_string())
-                .execute(&state.db)
                 .await
-                {
-                    tracing::warn!(bot_id = %bot.bot_id, error = %err, "bot.status.write audit log write failed");
-                }
-            }
+            };
             // resource_res 发回给 bot（通过同一条 data WS）
             let _ = ws_send(socket, &resp).await;
         }
