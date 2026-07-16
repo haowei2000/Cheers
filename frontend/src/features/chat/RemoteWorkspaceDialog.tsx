@@ -18,7 +18,7 @@ import {
   File,
   FolderTree,
   Download,
-  Paperclip,
+  MessageSquarePlus,
   FileText,
   Folder,
   FolderPlus,
@@ -1823,7 +1823,7 @@ export function RemoteWorkspaceDialog({
                       )}
                       className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
                     >
-                      <Paperclip className="w-3 h-3" /> {attached ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT}
+                      <MessageSquarePlus className="w-3 h-3" /> {attached ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT}
                     </button>
                   )}
                 </div>

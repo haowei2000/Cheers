@@ -61,7 +61,9 @@ export function SessionChip({
   bots: SwitcherBot[];
   /** "" = Auto (no session_id sent; mention routing → primary sessions). */
   value: string;
-  onChange: (sessionId: string) => void;
+  /** `botId` is the session's owning bot (omitted for Auto) — lets the composer
+   *  narrow the model chip to the single bot this pinned session targets. */
+  onChange: (sessionId: string, botId?: string) => void;
   sendResourceReq: SendResourceReq;
   /** Open the ViewBoard focused on the Sessions board. */
   onManageSessions: () => void;
@@ -202,12 +204,12 @@ export function SessionChip({
   function select(next: string) {
     setOpen(false);
     if (next === value) return;
-    onChange(next);
+    const t = next ? entries.find((s) => s.session_id === next) : undefined;
+    onChange(next, t?.bot_id);
     if (!next) {
       toast("Default routing restored (@mention → primary session)");
       return;
     }
-    const t = entries.find((s) => s.session_id === next);
     if (t) toast.success(`Switched · messages will go directly to @${t.bot_name} (${tagOf(t)})`);
   }
 
@@ -472,8 +474,8 @@ export function SessionChip({
             // should go where they just created. The awaited load keeps the
             // stale-target reset from bouncing the fresh id back to Auto.
             void load().then((next) => {
-              if (next?.some((s) => s.session_id === created.session_id))
-                onChange(created.session_id);
+              const entry = next?.find((s) => s.session_id === created.session_id);
+              if (entry) onChange(created.session_id, entry.bot_id);
             });
           }}
         />
