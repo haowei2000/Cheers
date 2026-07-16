@@ -40,7 +40,7 @@ Three rules:
 ### 1.1 Get the connector binary (prebuilt release)
 
 Download the platform binary from the project's
-[GitHub Releases](https://github.com/haowei2000/Cheers/releases/latest) — no Rust
+[GitHub Releases](https://github.com/ElePerson/Cheers/releases/latest) — no Rust
 toolchain needed (`release-connector` publishes
 `cce-acp-connector-{darwin,linux}-{arm64,amd64}` per tag):
 
@@ -48,7 +48,7 @@ toolchain needed (`release-connector` publishes
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"   # add to your shell profile to keep it
 cce-acp-connector --help
@@ -57,7 +57,7 @@ cce-acp-connector --help
 To pin a version, replace `latest/download` with `download/connector-v<version>`
 (e.g. `download/connector-v0.1.22`). While the repository is **private**, plain curl
 returns 404 — download with the authenticated GitHub CLI instead:
-`gh release download connector-v0.1.22 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`.
+`gh release download connector-v0.1.22 -R ElePerson/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`.
 Developers hacking on the connector itself can
 keep using the source build (`cargo build` → `target/debug/cce-acp-connector`);
 the commands below assume `cce-acp-connector` is on `PATH` either way.

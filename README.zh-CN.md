@@ -2,11 +2,11 @@
 
 > **语言**：中文 | [English](README.md)
 
-[![CI](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/haowei2000/Cheers/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/haowei2000/Cheers)](https://github.com/haowei2000/Cheers/releases)
+[![CI](https://github.com/ElePerson/Cheers/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ElePerson/Cheers/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ElePerson/Cheers)](https://github.com/ElePerson/Cheers/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-🌐 **在线介绍页：** <https://haowei2000.github.io/Cheers/>
+🌐 **在线介绍页：** <https://eleperson.github.io/Cheers/>
 
 🚀 **在线体验：** <https://www.tocheers.com> —— 已开放公开注册。用邮箱验证码注册一个账号，然后创建频道并 `@` 提及 AI 智能体开始体验。
 

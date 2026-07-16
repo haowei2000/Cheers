@@ -128,7 +128,7 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
 - UI: frontend NodePort → `http://localhost:30080` (sign in `admin` /
   `admin12345`, the dev default — change it for anything real).
 - Prefer not to build? Prebuilt public images are on GHCR
-  (`ghcr.io/haowei2000/cheers-gateway`, `ghcr.io/haowei2000/cheers-frontend`;
+  (`ghcr.io/eleperson/cheers-gateway`, `ghcr.io/eleperson/cheers-frontend`;
   tag `main` or a release version) — see the chart README for the
   `--set *.image.repository/tag` overrides.
 - Enable the OpenCode agent bot with `--set bot.enabled=true` plus its token /
