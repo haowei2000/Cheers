@@ -409,7 +409,10 @@ export interface BotGrant {
 /** A grant kind with its human label and member-allow default (for the UI). */
 export interface BotGrantKindInfo {
   kind: BotGrantKind;
+  /** User-friendly name shown by default. */
   label: string;
+  /** Raw (event_class · capability) key — shown only in hover tooltips. */
+  tech: string;
   default: "allow" | "deny";
 }
 

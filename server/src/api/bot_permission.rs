@@ -582,11 +582,14 @@ pub async fn list_bot_grants(
         .collect();
     Ok(Json(json!({
         "grants": grants,
-        // The two manageable grant kinds + their (member-allow) default, so the UI can
-        // show "default: allowed" and let the owner add a deny (or re-allow) override.
+        // The two manageable grant kinds. `label` is the user-friendly name shown by
+        // default; `tech` is the raw (event_class · capability) key, surfaced only in
+        // the UI's hover tooltip. `default` = the member-allow baseline.
         "grant_kinds": [
-            { "kind": "dispatch", "label": "Command this bot (dispatch)", "default": "allow" },
-            { "kind": "workspace_read", "label": "Read this bot's workspace", "default": "allow" }
+            { "kind": "dispatch", "label": "Command this bot",
+              "tech": "prompt · dispatch (bot subject)", "default": "allow" },
+            { "kind": "workspace_read", "label": "Read this bot's workspace",
+              "tech": "workspace_read · initiate (bot subject)", "default": "allow" }
         ],
         "subjects": bot_subject_catalog(&state, &bot_id).await,
     })))

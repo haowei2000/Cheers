@@ -65,6 +65,13 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
     for (const k of data?.grant_kinds ?? []) m[k.kind] = k.label;
     return m;
   }, [data]);
+  // Raw (event_class · capability) key per grant kind — shown only in hover tooltips,
+  // never as the default label. Falls back to the raw kind id if the backend omits it.
+  const kindTech = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const k of data?.grant_kinds ?? []) m[k.kind] = k.tech || k.kind;
+    return m;
+  }, [data]);
   const subjectLabel = useMemo(() => {
     const m: Record<string, string> = {};
     for (const s of data?.subjects ?? []) m[s.bot_id] = s.label;
@@ -118,7 +125,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
             >
               {data.grant_kinds.map((k) => (
-                <option key={k.kind} value={k.kind}>
+                <option key={k.kind} value={k.kind} title={`${k.kind} — ${k.tech}`}>
                   {k.label}
                 </option>
               ))}
@@ -207,7 +214,10 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               key={`${r.grant}:${r.channel_id}:${r.subject_id}`}
               className="flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
             >
-              <span className={`rounded px-1 py-0.5 text-[10px] border ${GRANT_BADGE[r.grant]}`}>
+              <span
+                className={`rounded px-1 py-0.5 text-[10px] border ${GRANT_BADGE[r.grant]}`}
+                title={`${r.grant} — ${kindTech[r.grant] ?? r.grant}`}
+              >
                 {kindLabel[r.grant] ?? r.grant}
               </span>
               <span className="text-zinc-600">→</span>

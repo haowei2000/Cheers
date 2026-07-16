@@ -53,6 +53,10 @@ const EVENT_LABEL: Record<string, GrantLabel> = {
     label: "Close sessions",
     desc: "Close or terminate a bot session",
   },
+  session_set_primary: {
+    label: "Set primary session",
+    desc: "Choose which of the bot's sessions is its primary (default) one",
+  },
   workspace_write: {
     label: "Remote file write",
     desc: "Write files onto the bot's machine via the workspace browser",
