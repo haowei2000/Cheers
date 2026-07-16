@@ -790,8 +790,16 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 
         // ── resource 访问 ──────────────────────────────────────────────────
         "resource_req" => {
-            let resp =
-                resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await;
+            // `workspace.read` is a REMOTE-workspace pull (unified context model, P3):
+            // a reader bot resolves ANOTHER bot's workspace file under its own read
+            // grant. It can't go through the db-only `resource::dispatch` — brokering
+            // the read needs `AppState` (the identity-free workspace RPC + presence).
+            // Intercept here at the WS boundary; every other verb falls through.
+            let resp = if frame.get("resource").and_then(Value::as_str) == Some("workspace.read") {
+                broker_workspace_read(state, bot.bot_id, frame).await
+            } else {
+                resource::dispatch(&state.db, resource::Principal::bot(bot.bot_id), frame).await
+            };
             // bot 主动 post_message（channel.messages.create）落库后，resource::dispatch 只有
             // db、无 fanout/registry/bot_locator，故在此 WS 边界补 live 广播 + bot@bot 触发。
             if frame.get("resource").and_then(Value::as_str) == Some("channel.messages.create")
@@ -1959,6 +1967,69 @@ fn resolve_bot_acp_security(binding_config: Option<&Value>) -> Option<Value> {
         "require_capability": require_capability,
         "phase": "negotiated",
     }))
+}
+
+/// Broker a `workspace.read` resource pull for a reader bot (unified context model,
+/// P3-2). The bundle reference names the OWNER bot + path + the channel it was shared
+/// in; `read_workspace_file_as_bot` enforces channel membership + the `workspace_read`
+/// grant, then reuses the identity-free workspace RPC to fetch the current file. Maps
+/// `AppError` back to a `resource_res` frame exactly like `resource::dispatch`, so the
+/// connector sees the same reply shape as every other verb. A `workspace.read` ref thus
+/// resolves under the reader's OWN read permission (superseding the inline snapshot).
+async fn broker_workspace_read(state: &AppState, reader_bot_id: Uuid, frame: &Value) -> Value {
+    let req_id = frame.get("req_id").and_then(Value::as_str).unwrap_or("");
+    let params = frame.get("params").cloned().unwrap_or(Value::Null);
+    let str_param = |k: &str| {
+        params
+            .get(k)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+    let uuid_param = |k: &str| str_param(k).and_then(|s| Uuid::parse_str(&s).ok());
+
+    let Some(owner_bot_id) = uuid_param("bot_id") else {
+        return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "bot_id required");
+    };
+    let Some(channel_id) = uuid_param("channel_id") else {
+        return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "channel_id required");
+    };
+    let Some(path) = str_param("path") else {
+        return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "path required");
+    };
+    let session_id = uuid_param("session_id");
+
+    match crate::api::workspace::read_workspace_file_as_bot(
+        state,
+        owner_bot_id,
+        reader_bot_id,
+        channel_id,
+        &path,
+        None,
+        session_id,
+    )
+    .await
+    {
+        Ok(data) => bridge_frames::resource_res_ok(req_id, data),
+        Err(e) => {
+            let (code, msg) = app_error_to_resource(&e);
+            bridge_frames::resource_res_err(req_id, code, &msg)
+        }
+    }
+}
+
+/// Map an `AppError` from the workspace broker to a `resource_res` (code, message)
+/// pair, mirroring the code space `resource::dispatch` / `workspace_call` already use
+/// (`E_CONFLICT`, `E_TOO_LARGE`, `PERMISSION_DENIED`, …). Internal errors are opaque.
+fn app_error_to_resource(e: &crate::errors::AppError) -> (&'static str, String) {
+    use crate::errors::AppError;
+    match e {
+        AppError::Forbidden(m) => ("PERMISSION_DENIED", m.clone()),
+        AppError::NotFound => ("NOT_FOUND", "not found".to_string()),
+        AppError::BadRequest(m) => ("INVALID_PARAMS", m.clone()),
+        AppError::Conflict(m) => ("E_CONFLICT", m.clone()),
+        AppError::PayloadTooLarge(m) => ("E_TOO_LARGE", m.clone()),
+        _ => ("INTERNAL_ERROR", "internal error".to_string()),
+    }
 }
 
 /// Fan the connector's `workspace_event` file-change push out to browsers as a

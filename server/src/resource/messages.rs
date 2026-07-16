@@ -202,6 +202,12 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         .and_then(|s| Uuid::parse_str(s).ok())
         .map(|v| v.to_string());
     let file_ids = parse_file_ids(params.get("file_ids"));
+    // Resource-context bundle attached by the posting bot (docs/design/RESOURCE_CONTEXT.md,
+    // "Bot / Manual pick"). Untrusted input: normalize to read verbs only, cap size, and
+    // stamp origin="bot" (reads stay consumer-governed at pull time). NULL when absent/empty.
+    let context_bundle = params
+        .get("context_bundle")
+        .and_then(crate::domain::context_bundle::sanitize_bot_bundle);
     // mention_names：LLM agent 传 username/display_name，gateway 做 name→UUID 解析
     let mention_names: Vec<String> = params
         .get("mention_names")
@@ -249,8 +255,9 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     sqlx::query(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
-          is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10)",
+          is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
+          context_bundle)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11)",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
@@ -262,6 +269,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(&serde_json::json!(file_ids.clone()))
     .bind(now)
     .bind(channel_seq)
+    .bind(context_bundle.clone())
     .execute(&mut *tx)
     .await
     .map_err(super::db_err("messages.create: insert message"))?;
@@ -295,6 +303,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         files,
         created_at: now,
         content_data: None,
+        context_bundle,
     };
 
     Ok(serde_json::to_value(dto).unwrap_or_else(|_| {

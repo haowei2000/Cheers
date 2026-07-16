@@ -1,6 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { FsTreeIcon } from "./FsTreeIcon";
+import {
+  useContextPickStore,
+  workspaceContextItem,
+} from "@/features/chat/context/contextPick";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
@@ -8,6 +12,7 @@ import {
   File,
   FolderTree,
   Download,
+  Paperclip,
   FileText,
   Folder,
   FolderPlus,
@@ -220,6 +225,8 @@ export function RemoteWorkspaceDialog({
   const [file, setFile] = useState<WorkspaceFile | null>(null);
   const [edit, setEdit] = useState("");
   const [dirty, setDirty] = useState(false);
+  const addContext = useContextPickStore((s) => s.add);
+  const [attached, setAttached] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // Optimistic-concurrency version of the open file; sent back as `If-Match` on save.
@@ -1758,6 +1765,34 @@ export function RemoteWorkspaceDialog({
                   >
                     <Download className="w-3 h-3" /> Download
                   </button>
+                  {/* Attach this workspace file as context: a reference (which
+                      bot + path), NOT a snapshot. The recipient bot reads the live
+                      file on demand under its own permission (workspace.read). */}
+                  {file.is_text && botId && (
+                    <button
+                      onClick={() => {
+                        addContext(
+                          channelId,
+                          workspaceContextItem({
+                            botId,
+                            botName:
+                              selectedBot?.display_name ||
+                              selectedBot?.username ||
+                              (memberNames && memberNames.get(botId)) ||
+                              undefined,
+                            path: file.path,
+                            sessionId: effectiveSessionId || undefined,
+                          })
+                        );
+                        setAttached(true);
+                        window.setTimeout(() => setAttached(false), 1500);
+                      }}
+                      title="Attach a reference to this file (which bot + path) as context — the recipient reads the live version on demand"
+                      className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
+                    >
+                      <Paperclip className="w-3 h-3" /> {attached ? "Attached" : "Attach"}
+                    </button>
+                  )}
                 </div>
                 {conflict && (
                   <div className="flex items-center gap-2 max-md:flex-wrap px-2 py-1.5 border-b border-amber-800/50 bg-amber-950/30 text-[11px] text-amber-300">

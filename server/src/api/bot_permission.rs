@@ -313,11 +313,24 @@ pub async fn set_config_option(
 // authorization keyed on channel role with per-user overrides.
 
 fn parse_capability(raw: &str) -> Result<Capability, AppError> {
-    Capability::parse(raw).ok_or_else(|| {
+    let cap = Capability::parse(raw).ok_or_else(|| {
         AppError::BadRequest(format!(
             "capability must be initiate|see|respond, got {raw:?}"
         ))
-    })
+    })?;
+    // DISPATCH governs bot→bot dispatch and is keyed on a `subject_kind='bot'`
+    // subject, which this owner endpoint does not accept (role|user|group only).
+    // Letting `dispatch` through here would let a client save a role/user/group
+    // dispatch rule that returns {ok:true} but is silently ignored by the dispatch
+    // resolver, while the only effective (bot) rule can't be created here at all.
+    // Keep it out of the human INITIATE/SEE/RESPOND matrix; dispatch rules get a
+    // dedicated management path (docs/design/BOT_DISPATCH.md D2).
+    if matches!(cap, Capability::Dispatch) {
+        return Err(AppError::BadRequest(
+            "capability must be initiate|see|respond; dispatch is managed separately".into(),
+        ));
+    }
+    Ok(cap)
 }
 
 /// The dynamic-group subjects selectable for this bot: the owner's friends, plus
@@ -427,20 +440,7 @@ pub async fn upsert_event_rule(
     if subject_id.is_empty() {
         return Err(AppError::BadRequest("subject_id required".into()));
     }
-    let expires_at = match body.expires_at.as_deref().map(str::trim) {
-        None | Some("") => None,
-        Some(raw) => {
-            let t = chrono::DateTime::parse_from_rfc3339(raw)
-                .map_err(|e| AppError::BadRequest(format!("invalid expires_at: {e}")))?
-                .with_timezone(&chrono::Utc);
-            if t <= chrono::Utc::now() {
-                return Err(AppError::BadRequest(
-                    "expires_at must be in the future".into(),
-                ));
-            }
-            Some(t)
-        }
-    };
+    let expires_at = parse_future_rfc3339(body.expires_at.as_deref())?;
     let channel = normalize_channel(body.channel_id);
     bot_event_policy::upsert_rule(
         &state.db,
@@ -493,6 +493,221 @@ pub async fn delete_event_rule(
     Ok(Json(json!({ "ok": true })))
 }
 
+// ── Bot-to-bot grants (dispatch / workspace_read) ───────────────────────────
+// The dedicated management path the human INITIATE/SEE/RESPOND matrix intentionally
+// excludes: rules keyed on a `subject_kind='bot'` subject, which the resolver
+// (`resolve_dispatch_opt` / `resolve_bot_workspace_read_opt`) is hardwired to read.
+// Two owner-facing grant kinds, each mapping to a distinct (event_class, capability):
+//   - `dispatch`       → (prompt, Dispatch)         — which bot may @mention/command me
+//   - `workspace_read` → (workspace_read, Initiate) — which bot may read my workspace
+// Both default member-allow with deny-override (docs/design/RESOURCE_CONTEXT.md §4,
+// docs/design/BOT_DISPATCH.md D2). Owner/admin gated like the rest of this module.
+
+/// Map an owner-facing grant kind to its `bot_event_access` `(event_class, capability)`
+/// key. The two bot-subject capabilities live on different keys, so the endpoint speaks
+/// the stable grant name and translates here.
+fn bot_grant_key(kind: &str) -> Result<(&'static str, Capability), AppError> {
+    match kind {
+        "dispatch" => Ok((bot_event_policy::EV_PROMPT, Capability::Dispatch)),
+        "workspace_read" => Ok((bot_event_policy::EV_WORKSPACE_READ, Capability::Initiate)),
+        other => Err(AppError::BadRequest(format!(
+            "grant must be dispatch|workspace_read, got {other:?}"
+        ))),
+    }
+}
+
+/// Reverse of [`bot_grant_key`]: recover the grant name from a stored rule's
+/// `(event_class, capability)`, or `None` if the rule isn't a bot-subject grant.
+fn bot_grant_kind(event_class: &str, capability: &str) -> Option<&'static str> {
+    match (event_class, capability) {
+        (bot_event_policy::EV_PROMPT, "dispatch") => Some("dispatch"),
+        (bot_event_policy::EV_WORKSPACE_READ, "initiate") => Some("workspace_read"),
+        _ => None,
+    }
+}
+
+/// The bots an owner can name as a grant subject: every OTHER bot that shares a
+/// channel with this bot (id + display label + which channel surfaced it). Plus the
+/// `*` wildcard ("any bot") is always available client-side.
+async fn bot_subject_catalog(state: &AppState, bot_id: &str) -> Vec<Value> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT b.bot_id, b.username, b.display_name
+         FROM channel_memberships mine
+         JOIN channel_memberships theirs ON theirs.channel_id = mine.channel_id
+         JOIN bot_accounts b ON b.bot_id = theirs.member_id
+         WHERE mine.member_id = $1 AND mine.member_type = 'bot'
+           AND theirs.member_type = 'bot' AND theirs.member_id <> $1",
+    )
+    .bind(bot_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    rows.into_iter()
+        .map(|r| {
+            let id: String = r.try_get("bot_id").unwrap_or_default();
+            let username: String = r.try_get("username").unwrap_or_default();
+            let display: Option<String> = r.try_get("display_name").ok().flatten();
+            json!({
+                "bot_id": id,
+                "label": display.filter(|s| !s.trim().is_empty()).unwrap_or(username),
+            })
+        })
+        .collect()
+}
+
+/// GET /bots/:bot_id/bot-grants — owner/admin: the bot-subject rules + vocabulary.
+pub async fn list_bot_grants(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    // Filter the full rule list to bot-subject grants, tagging each with its grant kind.
+    let grants: Vec<Value> = bot_event_policy::list_rules_json(&state.db, &bot_id)
+        .await?
+        .into_iter()
+        .filter_map(|mut r| {
+            let ec = r.get("event_class").and_then(Value::as_str).unwrap_or("");
+            let cap = r.get("capability").and_then(Value::as_str).unwrap_or("");
+            let subject = r.get("subject_kind").and_then(Value::as_str).unwrap_or("");
+            if subject != bot_event_policy::SUBJECT_BOT {
+                return None;
+            }
+            let kind = bot_grant_kind(ec, cap)?;
+            if let Some(obj) = r.as_object_mut() {
+                obj.insert("grant".into(), json!(kind));
+            }
+            Some(r)
+        })
+        .collect();
+    Ok(Json(json!({
+        "grants": grants,
+        // The two manageable grant kinds. `label` is the user-friendly name shown by
+        // default; `tech` is the raw (event_class · capability) key, surfaced only in
+        // the UI's hover tooltip. `default` = the member-allow baseline.
+        "grant_kinds": [
+            { "kind": "dispatch", "label": "Command this bot",
+              "tech": "prompt · dispatch (bot subject)", "default": "allow" },
+            { "kind": "workspace_read", "label": "Read this bot's workspace",
+              "tech": "workspace_read · initiate (bot subject)", "default": "allow" }
+        ],
+        "subjects": bot_subject_catalog(&state, &bot_id).await,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct UpsertBotGrantRequest {
+    pub channel_id: Option<String>,
+    /// Subject bot id, or `"*"` for "any bot".
+    pub subject_id: String,
+    /// `dispatch` | `workspace_read`.
+    pub grant: String,
+    pub decision: String, // allow | deny
+    /// Optional RFC3339 expiry (must be in the future); absent/null = permanent.
+    pub expires_at: Option<String>,
+}
+
+/// PUT /bots/:bot_id/bot-grants — owner/admin upsert one bot-subject grant.
+pub async fn upsert_bot_grant(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Json(body): Json<UpsertBotGrantRequest>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let (event_class, capability) = bot_grant_key(body.grant.trim())?;
+    let allow = match body.decision.trim() {
+        "allow" => true,
+        "deny" => false,
+        other => {
+            return Err(AppError::BadRequest(format!(
+                "decision must be allow|deny, got {other:?}"
+            )))
+        }
+    };
+    let subject_id = body.subject_id.trim();
+    if subject_id.is_empty() {
+        return Err(AppError::BadRequest("subject_id required".into()));
+    }
+    // A subject that names a concrete bot must be a real bot id (a Uuid). "*" is the
+    // wildcard escape hatch. This rejects typos that would silently never match.
+    if subject_id != bot_event_policy::ANY_SUBJECT && Uuid::parse_str(subject_id).is_err() {
+        return Err(AppError::BadRequest(
+            "subject_id must be a bot id (uuid) or \"*\"".into(),
+        ));
+    }
+    let expires_at = parse_future_rfc3339(body.expires_at.as_deref())?;
+    let channel = normalize_channel(body.channel_id);
+    bot_event_policy::upsert_rule(
+        &state.db,
+        &bot_id,
+        &channel,
+        bot_event_policy::SUBJECT_BOT,
+        subject_id,
+        event_class,
+        capability,
+        allow,
+        &claims.sub,
+        expires_at,
+    )
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct DeleteBotGrantQuery {
+    pub channel_id: Option<String>,
+    pub subject_id: String,
+    pub grant: String,
+}
+
+/// DELETE /bots/:bot_id/bot-grants — owner/admin remove one bot-subject grant.
+pub async fn delete_bot_grant(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(bot_id): Path<String>,
+    Query(q): Query<DeleteBotGrantQuery>,
+) -> Result<Json<Value>, AppError> {
+    crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
+    let (event_class, capability) = bot_grant_key(q.grant.trim())?;
+    let channel = normalize_channel(q.channel_id);
+    let removed = bot_event_policy::delete_rule(
+        &state.db,
+        &bot_id,
+        &channel,
+        bot_event_policy::SUBJECT_BOT,
+        q.subject_id.trim(),
+        event_class,
+        capability,
+    )
+    .await?;
+    if !removed {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Parse an optional RFC3339 timestamp that must lie in the future (shared by the
+/// event-rule and bot-grant upserts). `None`/empty → `None` (permanent).
+fn parse_future_rfc3339(
+    raw: Option<&str>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, AppError> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(raw) => {
+            let t = chrono::DateTime::parse_from_rfc3339(raw)
+                .map_err(|e| AppError::BadRequest(format!("invalid expires_at: {e}")))?
+                .with_timezone(&chrono::Utc);
+            if t <= chrono::Utc::now() {
+                return Err(AppError::BadRequest(
+                    "expires_at must be in the future".into(),
+                ));
+            }
+            Ok(Some(t))
+        }
+    }
+}
+
 // ── GET /bots/:bot_id/acp-events — the complete ACP event timeline ──────────
 // docs/arch/ACP_EVENT_TAXONOMY.md Phase 5: read the acp_event_log the passthrough
 // populates, so the owner can see *everything the bot did* (classified by home).
@@ -539,4 +754,59 @@ pub async fn list_acp_events(
         })
         .collect();
     Ok(Json(json!({ "events": events })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_capability_accepts_human_matrix_caps() {
+        for raw in ["initiate", "see", "respond"] {
+            assert!(parse_capability(raw).is_ok(), "{raw} should parse");
+        }
+    }
+
+    #[test]
+    fn parse_capability_rejects_dispatch_on_human_endpoint() {
+        // dispatch is bot-subject only and managed separately; the human
+        // event-access endpoints must not accept it (else a role/user/group
+        // dispatch rule saves ok but is silently ignored by the resolver).
+        let err = parse_capability("dispatch").unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn parse_capability_rejects_unknown() {
+        assert!(parse_capability("bogus").is_err());
+    }
+
+    #[test]
+    fn bot_grant_key_maps_the_two_grant_kinds() {
+        // The endpoint speaks stable grant names; each maps to a DISTINCT
+        // (event_class, capability) key — mixing them up would author a rule the
+        // resolver never reads. Dispatch: (prompt, Dispatch); read: (workspace_read,
+        // Initiate).
+        let (ec, cap) = bot_grant_key("dispatch").unwrap();
+        assert_eq!(ec, bot_event_policy::EV_PROMPT);
+        assert_eq!(cap, Capability::Dispatch);
+        let (ec, cap) = bot_grant_key("workspace_read").unwrap();
+        assert_eq!(ec, bot_event_policy::EV_WORKSPACE_READ);
+        assert_eq!(cap, Capability::Initiate);
+        assert!(bot_grant_key("see").is_err(), "human caps are not bot grants");
+        assert!(bot_grant_key("bogus").is_err());
+    }
+
+    #[test]
+    fn bot_grant_kind_round_trips_and_ignores_others() {
+        // Reverse mapping must recover exactly the two grants and reject anything
+        // else — e.g. a human INITIATE·prompt rule must NOT read back as a grant.
+        assert_eq!(bot_grant_kind(bot_event_policy::EV_PROMPT, "dispatch"), Some("dispatch"));
+        assert_eq!(
+            bot_grant_kind(bot_event_policy::EV_WORKSPACE_READ, "initiate"),
+            Some("workspace_read")
+        );
+        assert_eq!(bot_grant_kind(bot_event_policy::EV_PROMPT, "initiate"), None);
+        assert_eq!(bot_grant_kind("see", "see"), None);
+    }
 }

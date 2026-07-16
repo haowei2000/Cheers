@@ -24,16 +24,13 @@ use crate::{
 /// bot@bot 触发的最大深度，超出后静默停止。
 pub const MAX_BOT_REPLY_DEPTH: i32 = 5;
 
-/// 发起方 bot 在事件权限模型里的 subject 角色。owner 可在 `bot_event_access`
-/// 里对 `role=bot`（所有 bot 发起方）或对某个具体 bot（`user=<botId>` 维度）
-/// 写 deny，从而关闭 / 收紧 bot@bot；无规则时默认放行（与历史行为一致）。
-const BOT_INITIATOR_ROLE: &str = "bot";
-
 /// bot 消息（回复 finalize 或主动 send）落库后，触发消息里的 @bot mention，
 /// depth+1 后 dispatch。三重防护：
 /// - **深度上限**（[`MAX_BOT_REPLY_DEPTH`]）：`current_depth` 到顶后静默停止，防无限链。
 /// - **自 @ 过滤**：作者 bot（`author_bot_id`）即使 @ 了自己也不会再触发自身。
-/// - **INITIATE 门禁**：目标 bot 可按“发起方 bot”拒绝被触发（`bot_event_policy`，默认放行）。
+/// - **DISPATCH 门禁**：目标 bot 可按“发起方 bot”拒绝被指挥（`bot_event_policy` 的
+///   `dispatch` 能力位，subject=发起方 bot；默认放行，fail-closed，每次决定留审计。
+///   见 docs/design/BOT_DISPATCH.md）。
 #[allow(clippy::too_many_arguments)]
 pub async fn trigger_bot_replies(
     db: &PgPool,
@@ -79,6 +76,12 @@ pub async fn trigger_bot_replies(
     // Shared across all bots triggered by this reply so identical trigger
     // attachments / pinned files are fetched from S3 once, not once per bot.
     let media_cache = dispatcher::MediaCache::default();
+    // F2 handoff (docs/design/RESOURCE_CONTEXT.md): the initiator is the same for
+    // every bot this reply triggers, so assemble its handoff bundle once and hand
+    // the same shared context to each target. F4: if the initiator manually picked
+    // context on THIS message (post_message `context`), those refs are merged in
+    // ahead of the auto plan/decisions so the target gets the explicit picks too.
+    let handoff = assemble_handoff_bundle(db, author_bot_id, channel_id, reply_msg_id).await;
     for bot_id in bots {
         // Per-channel dispatch budget. The proactive `send` / `post_message`
         // paths reset `current_depth` to 0 (they carry no task depth), so the
@@ -95,26 +98,33 @@ pub async fn trigger_bot_replies(
             break;
         }
 
-        // INITIATE 门禁：目标 bot(bot_id) 是否允许被“发起方 bot”(author_bot_id) 触发？
-        // 复用事件权限中枢——发起方视为 role="bot" 的 subject，其 bot_id 落在 user 维度，
-        // 便于按“某个具体 bot”或“所有 bot”授权/拒绝。默认放行；规则出错时 fail-open。
-        let may_prompt = crate::domain::acp_policy::allows(
+        // DISPATCH 门禁：目标 bot(bot_id) 是否允许被“发起方 bot”(author_bot_id) 指挥？
+        // 发起方是一等的 bot subject（subject_kind='bot'），过 dispatch 能力位。
+        // 默认放行；规则库读不出时 fail-closed 拒绝；每次决定（放行/拒绝）都留审计。
+        let decision = crate::domain::bot_event_policy::resolve_dispatch_decision(
             db,
             &bot_id.to_string(),
             &channel_id.to_string(),
             &author_bot_id.to_string(),
-            BOT_INITIATOR_ROLE,
-            "session/prompt",
-            crate::domain::bot_event_policy::Capability::Initiate,
         )
-        .await
-        .unwrap_or(true);
-        if !may_prompt {
+        .await;
+        record_dispatch_audit(
+            db,
+            author_bot_id,
+            bot_id,
+            channel_id,
+            chain_id,
+            next_depth,
+            &decision,
+        )
+        .await;
+        if !decision.allow {
             tracing::info!(
                 target_bot = %bot_id,
                 initiator_bot = %author_bot_id,
                 channel_id = %channel_id,
-                "bot@bot INITIATE denied by bot_event_policy; message posted, target not triggered"
+                reason = decision.reason,
+                "bot@bot dispatch denied by grant matrix; message posted, target not triggered"
             );
             continue;
         }
@@ -178,6 +188,20 @@ pub async fn trigger_bot_replies(
                 // Every hop inherits the cascade's chain_id, so the whole thing is
                 // cancelable as one unit and the gate above blocks it once cancelled.
                 chain_id: chain_id.map(ToString::to_string),
+                // The initiator's plan + recent decisions, delivered to this target's
+                // task frame — finalized AGAINST THIS TARGET first (the one shared
+                // deliver-time step the human path also runs): per-target read-auth
+                // + de-dup, so a handoff never lists a resource the target couldn't
+                // read itself (no-permission-bypass; belt-and-suspenders on pull-time).
+                context_bundle: Some(
+                    crate::domain::context_bundle::finalize_bundle_for_target(
+                        db,
+                        &handoff,
+                        crate::resource::Principal::bot(bot_id),
+                        channel_id,
+                    )
+                    .await,
+                ),
             },
             &media_cache,
         )
@@ -202,6 +226,117 @@ fn mentioned_bots(mentions: &[Mention], exclude_bot_id: Uuid) -> Vec<Uuid> {
 
 fn provider_session_key_for_bot_channel(channel_id: Uuid, bot_id: Uuid) -> String {
     format!("cheers:channel:{channel_id}:bot:{bot_id}")
+}
+
+/// Build the F2 handoff bundle for a bot@bot dispatch (docs/design/RESOURCE_CONTEXT.md):
+/// references to the INITIATOR's plan and the channel's recent decisions, delivered
+/// to the target's task frame so the next agent inherits the shared working state
+/// instead of guessing from chat history. References only (no inlined content) — the
+/// target resolves them as itself via the resource protocol (consumer-governed reads),
+/// so this can't hand a target anything it isn't already allowed to read.
+///
+/// F4: if the triggering message carried a bot-picked bundle (post_message `context`,
+/// already sanitized on write), its items are merged FIRST — the initiator's explicit
+/// picks lead, then the auto plan + recent-decisions refs.
+async fn assemble_handoff_bundle(
+    db: &PgPool,
+    initiator_bot_id: Uuid,
+    channel_id: Uuid,
+    trigger_msg_id: Uuid,
+) -> serde_json::Value {
+    let ch = channel_id.to_string();
+    // The initiator's primary session scopes its plan (best-effort; omit on miss →
+    // the plan ref then covers all sessions, which the reader can still attribute
+    // by the bot_id on each plan row).
+    let a_session = sessions::resolve_primary_session(db, initiator_bot_id, &ch)
+        .await
+        .ok()
+        .flatten()
+        .map(|(sid, _)| sid.to_string());
+    let mut plan_params = serde_json::json!({ "channel_id": ch });
+    if let Some(sid) = &a_session {
+        plan_params["session_id"] = serde_json::json!(sid);
+    }
+    let mut items = manual_pick_items(db, trigger_msg_id).await;
+    items.push(serde_json::json!({
+        "verb": "channel.plan.read",
+        "params": plan_params,
+        "label": "Plan (handoff)",
+        "kind": "plan",
+    }));
+    items.push(serde_json::json!({
+        "verb": "channel.activity.read",
+        "params": { "channel_id": ch },
+        "label": "Recent decisions (handoff)",
+        "kind": "activity",
+    }));
+    // De-dup happens at deliver-time in `finalize_bundle_for_target` (per target),
+    // so the assemble step just concatenates manual picks + auto refs.
+    serde_json::json!({
+        "origin": "handoff",
+        "from": { "type": "bot", "id": initiator_bot_id.to_string() },
+        "items": items,
+    })
+}
+
+/// The manually-picked context items on the triggering message, if any (best-effort;
+/// empty on miss / no bundle). The stored bundle was already sanitized on write
+/// (`context_bundle::sanitize_bot_bundle`), so its items are trusted here.
+async fn manual_pick_items(db: &PgPool, trigger_msg_id: Uuid) -> Vec<serde_json::Value> {
+    let stored: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
+            .bind(trigger_msg_id.to_string())
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+    stored
+        .as_ref()
+        .map(crate::domain::context_bundle::bundle_items)
+        .unwrap_or_default()
+}
+
+/// Append one dispatch-decision row (allow *and* deny) to `acp_event_log` — the
+/// permanent trail behind bot@bot dispatch (docs/design/BOT_DISPATCH.md). Reuses
+/// the generic ACP-event substrate: `name='dispatch'`, `home='cheers'`, and a
+/// payload naming the initiator, target, decision, and reason. Best-effort — a
+/// failed audit write must not disrupt the live turn (it only warns).
+async fn record_dispatch_audit(
+    db: &PgPool,
+    initiator_bot_id: Uuid,
+    target_bot_id: Uuid,
+    channel_id: Uuid,
+    chain_id: Option<&str>,
+    depth: i32,
+    decision: &crate::domain::bot_event_policy::DispatchDecision,
+) {
+    let payload = serde_json::json!({
+        "initiator_bot_id": initiator_bot_id.to_string(),
+        "target_bot_id": target_bot_id.to_string(),
+        "channel_id": channel_id.to_string(),
+        "chain_id": chain_id,
+        "depth": depth,
+        "decision": if decision.allow { "allow" } else { "deny" },
+        "reason": decision.reason,
+    });
+    if let Err(err) = sqlx::query(
+        "INSERT INTO acp_event_log (id, bot_id, channel_id, session_id, name, home, payload)
+         VALUES ($1, $2, $3, NULL, 'dispatch', 'cheers', $4::jsonb)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(target_bot_id.to_string())
+    .bind(channel_id.to_string())
+    .bind(payload.to_string())
+    .execute(db)
+    .await
+    {
+        tracing::warn!(
+            target_bot = %target_bot_id,
+            initiator_bot = %initiator_bot_id,
+            %err,
+            "dispatch audit write failed"
+        );
+    }
 }
 
 async fn resolve_provider_account_id_for_bot(
@@ -311,5 +446,24 @@ mod tests {
         let author = Uuid::new_v4();
         // author @'d only itself → nothing to trigger (no self-loop).
         assert!(mentioned_bots(&[bot(author)], author).is_empty());
+    }
+
+    #[test]
+    fn dedup_collapses_same_verb_params_keeps_first() {
+        let mut items = vec![
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"}, "label": "manual" }),
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"}, "label": "auto" }),
+            serde_json::json!({ "verb": "channel.activity.read", "params": {"channel_id":"c"} }),
+        ];
+        crate::domain::context_bundle::dedup_items_by_verb_params(&mut items);
+        assert_eq!(items.len(), 2, "duplicate plan collapsed");
+        assert_eq!(items[0]["label"], "manual", "first (manual pick) wins");
+        // A different scope (session_id) is a distinct ref — not collapsed.
+        let mut scoped = vec![
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c"} }),
+            serde_json::json!({ "verb": "channel.plan.read", "params": {"channel_id":"c","session_id":"s"} }),
+        ];
+        crate::domain::context_bundle::dedup_items_by_verb_params(&mut scoped);
+        assert_eq!(scoped.len(), 2, "distinct scope kept");
     }
 }

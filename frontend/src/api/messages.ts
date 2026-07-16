@@ -39,6 +39,9 @@ export async function sendMessage(
     // Route the prompt to a specific session in this channel (a bot's "other" or
     // primary session). Omit to use mention-based routing → the channel primary.
     session_id?: string;
+    // Resource-context bundle (docs/design/RESOURCE_CONTEXT.md): refs to Cheers
+    // resources the sender attached, delivered to any triggered bot.
+    context_bundle?: unknown;
   } = {}
 ): Promise<Message> {
   return apiJson<Message>(`/channels/${channelId}/messages`, {

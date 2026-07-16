@@ -54,6 +54,29 @@ Three phases:
 
 Roadmap filter for new items: **does this make multi-agent governance stronger?**
 
+### Fleet view — follow-ups
+
+The Fleet view (workspace mission control: approvals inbox + bot roster) shipped
+its live P2 (`bot_processing` chips, rail approval badge). Recorded next:
+
+- **Bot-to-bot dispatch under the grant matrix** (in progress) — an agent may
+  `@` another agent to hand off a subtask, but every such dispatch passes a new
+  `dispatch` capability in the `user ▸ group ▸ role ▸ *` matrix (deny wins,
+  owner-only default) and is audited. This is the governance edge no bridge can
+  match — see [docs/design/BOT_DISPATCH.md](design/BOT_DISPATCH.md).
+- **Fleet P3** (recorded, not started) — in-channel mini fleet strip (a compact
+  per-channel roster in the work lane) and approvals-inbox filters (by bot / by
+  operation kind / by channel).
+
+### Resource context — attachable Cheers resources as agent context
+
+The Cheers-native `@context`: any participant attaches Cheers's own resources
+(plan, board, file, message/thread, decisions) as structured context to an agent
+invocation — two producers (human manual pick, bot automatic handoff) over one
+foundation, with consumer-governed reads. Design:
+[docs/design/RESOURCE_CONTEXT.md](design/RESOURCE_CONTEXT.md). Phases:
+F0 foundation → F1 human picker → F2 bot handoff → F3 suggested context.
+
 ## Near-Term Plans
 
 ### UI

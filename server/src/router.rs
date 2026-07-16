@@ -146,6 +146,13 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/workspaces/:workspace_id/members",
             get(api::workspaces::list_workspace_members),
         )
+        // Fleet view: workspace-level approvals inbox + bot roster (docs/design/FLEET_VIEW.md)
+        .route(
+            "/api/v1/workspaces/:workspace_id/fleet",
+            get(api::fleet::get_fleet),
+        )
+        // Rail badge: workspace-agnostic actionable-pending count
+        .route("/api/v1/fleet/badge", get(api::fleet::get_fleet_badge))
         // 邀请候选搜索：好友按名字模糊匹配 ∪ 任何人按完整用户名/邮箱精确匹配
         // （沿用无全站姓名目录的隐私决策；/friends/search 只认 UUID，不适用于此）
         .route(
@@ -312,6 +319,13 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::bot_permission::list_event_access)
                 .put(api::bot_permission::upsert_event_rule)
                 .delete(api::bot_permission::delete_event_rule),
+        )
+        // ── Bot-to-bot grants (dispatch / workspace_read; bot-subject rules) ──
+        .route(
+            "/api/v1/bots/:bot_id/bot-grants",
+            get(api::bot_permission::list_bot_grants)
+                .put(api::bot_permission::upsert_bot_grant)
+                .delete(api::bot_permission::delete_bot_grant),
         )
         .route(
             "/api/v1/bots/:bot_id/acp-events",

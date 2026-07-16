@@ -199,7 +199,9 @@ async fn ensure_access(
 /// `workspace/read` policy class — member-ALLOW by default (visibility restriction
 /// is opt-in), FAIL-CLOSED on a rules/DB error. Backs [`ensure_access`] and the
 /// per-bot `can_read` flag on [`list_workspace_bots`]. Mirrors [`resolve_can_write`].
-async fn resolve_can_read(
+/// `pub(crate)` so the message-send path can re-verify a picked `workspace.file`
+/// snapshot against the same grant that gated browsing it.
+pub(crate) async fn resolve_can_read(
     state: &AppState,
     claims: &Claims,
     channel_id: Uuid,
@@ -585,6 +587,70 @@ async fn browse_roots(state: &AppState, bot_id: Uuid, session_id: Option<Uuid>) 
         Some(k) => crate::domain::sessions::session_root_set(&state.db, &k).await,
         None => Vec::new(),
     }
+}
+
+/// Authorize a bot-to-bot workspace read (docs/design/RESOURCE_CONTEXT.md P3): both
+/// bots must be members of the channel the reference was shared in, and `reader_bot`
+/// must hold the `workspace_read` grant on `owner_bot` (member-allow default; owner
+/// denies via a rule). DB-only and transport-free, so this security boundary is
+/// unit-testable without a live connector. Fail-closed (any policy error → denied).
+pub async fn authorize_bot_workspace_read(
+    db: &sqlx::PgPool,
+    owner_bot_id: Uuid,
+    reader_bot_id: Uuid,
+    channel_id: Uuid,
+) -> Result<(), AppError> {
+    use crate::resource::{authorize_channel_read, Principal};
+    authorize_channel_read(db, &Principal::bot(reader_bot_id), channel_id)
+        .await
+        .map_err(|(_, m)| AppError::Forbidden(format!("reader not a channel member: {m}")))?;
+    authorize_channel_read(db, &Principal::bot(owner_bot_id), channel_id)
+        .await
+        .map_err(|(_, m)| AppError::Forbidden(format!("owner not a channel member: {m}")))?;
+    if !crate::domain::bot_event_policy::can_bot_read_workspace(
+        db,
+        &owner_bot_id.to_string(),
+        &reader_bot_id.to_string(),
+        &channel_id.to_string(),
+    )
+    .await
+    {
+        return Err(AppError::Forbidden(
+            "reader bot is not granted workspace/read on this bot".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Broker a READ of `owner_bot`'s remote workspace file ON BEHALF OF `reader_bot`
+/// (docs/design/RESOURCE_CONTEXT.md P3 — workspace files as consumer-governed refs).
+/// Unlike the human REST path (`get_file`, gated by a user `Claims`), this authorizes
+/// the READER BOT via `authorize_bot_workspace_read`, then reuses the identity-free
+/// `workspace_call` transport — so a `workspace.read` resource ref resolves under the
+/// reader's own permission. 400 when the owner's connector is offline (a live read,
+/// replacing the old always-available snapshot).
+pub(crate) async fn read_workspace_file_as_bot(
+    state: &AppState,
+    owner_bot_id: Uuid,
+    reader_bot_id: Uuid,
+    channel_id: Uuid,
+    path: &str,
+    root: Option<&str>,
+    session_id: Option<Uuid>,
+) -> Result<Value, AppError> {
+    authorize_bot_workspace_read(&state.db, owner_bot_id, reader_bot_id, channel_id).await?;
+    let roots = browse_roots(state, owner_bot_id, session_id).await;
+    workspace_call(
+        state,
+        owner_bot_id,
+        "read",
+        path,
+        root,
+        Value::Null,
+        None,
+        &roots,
+    )
+    .await
 }
 
 /// GET /api/v1/channels/:channel_id/workspace/tree?bot_id=&path=&root=&session_id=

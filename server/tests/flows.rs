@@ -156,6 +156,7 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
             &registry,
             &bot_locator,
             CreateMessageParams {
+            context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: format!("msg {i}"),
@@ -229,6 +230,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "再详细一点".into(),
@@ -260,6 +262,7 @@ async fn reply_to_bot_message_triggers_that_bot(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "self follow-up".into(),
@@ -318,6 +321,7 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
     let bot = Uuid::new_v4();
 
     let make_params = || DispatchParams {
+            context_bundle: None,
         trigger_msg_id: trigger,
         trigger_seq: 0,
         bot_id: bot,
@@ -408,6 +412,7 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
         &registry,
         &locator,
         DispatchParams {
+            context_bundle: None,
             trigger_msg_id: Uuid::new_v4(),
             trigger_seq: 0,
             bot_id: bot,
@@ -1682,6 +1687,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
             &registry,
             &bot_locator,
             CreateMessageParams {
+            context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: format!("m{i}"),
@@ -1765,6 +1771,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             &registry,
             &bot_locator,
             CreateMessageParams {
+            context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: content.to_string(),
@@ -2088,6 +2095,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bot do something".into(),
@@ -2123,6 +2131,7 @@ async fn readonly_bot_is_not_dispatched(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bot again".into(),
@@ -2442,6 +2451,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
         &registry,
         &locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: bob,
             channel_id: ch,
             content: "hey look at this".into(),
@@ -2461,6 +2471,7 @@ async fn mention_count_reverse_lookup_counts_unread_mentions(db: PgPool) {
         &registry,
         &locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: bob,
             channel_id: ch,
             content: "plain follow-up".into(),
@@ -2542,6 +2553,7 @@ async fn human_group_bots_mention_triggers_all_bots(db: PgPool) {
         &registry,
         &bot_locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bots standup please".into(),
@@ -2592,6 +2604,7 @@ async fn user_trigger_starts_chain_and_tags_placeholder(db: PgPool) {
         &registry,
         &locator,
         CreateMessageParams {
+            context_bundle: None,
             user_id: user,
             channel_id: ch,
             content: "@bot please help".into(),
@@ -2895,4 +2908,359 @@ async fn invite_link_use_reservation_is_atomic(db: PgPool) {
         .unwrap()
         .rows_affected();
     assert_eq!(second, 0, "budget exhausted — second taker must be refused");
+}
+
+/// F4 — a bot attaches a context bundle to a message it posts via
+/// `channel.messages.create` (the post_message path). The gateway must keep only
+/// read verbs, stamp origin="bot", and persist it; an all-write/garbage bundle
+/// stores nothing. Regression for docs/design/RESOURCE_CONTEXT.md "Bot / Manual pick".
+#[sqlx::test]
+async fn f4_bot_post_message_context_bundle_sanitized(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    // Post with a mixed bundle: one read verb (kept) + one write verb (dropped).
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "channel.messages.create",
+            serde_json::json!({
+                "channel_id": cid,
+                "content": "handing this over",
+                "context_bundle": {
+                    "origin": "handoff", // must be overwritten to "bot"
+                    "items": [
+                        { "verb": "channel.plan.read", "params": {"channel_id": cid}, "label": "Plan", "kind": "plan" },
+                        { "verb": "channel.messages.create", "params": {} } // write → dropped
+                    ]
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "post should succeed: {r}");
+    let bundle = &r["data"]["context_bundle"];
+    assert_eq!(bundle["origin"], "bot", "origin must be stamped bot: {bundle}");
+    let items = bundle["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 1, "write verb must be dropped: {bundle}");
+    assert_eq!(items[0]["verb"], "channel.plan.read");
+
+    // Persisted to the column too.
+    let msg_id = r["data"]["msg_id"].as_str().unwrap();
+    let stored: Option<Value> =
+        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
+            .bind(msg_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(stored.unwrap()["origin"], "bot");
+
+    // A bundle with only non-read verbs persists nothing (column stays NULL).
+    let r2 = dispatch(
+        &db,
+        who,
+        &req(
+            "channel.messages.create",
+            serde_json::json!({
+                "channel_id": cid,
+                "content": "no real context",
+                "context_bundle": { "items": [ { "verb": "fs.write" } ] }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(r2["ok"], true);
+    assert!(
+        r2["data"]["context_bundle"].is_null(),
+        "all-dropped bundle must yield no context_bundle: {}",
+        r2["data"]
+    );
+}
+
+/// Fleet access requires an *active* workspace membership: a pending invite
+/// (not yet accepted) must not see the bot roster / pending approvals, and the
+/// personal-workspace owner path still passes. Regression for the codex review
+/// on #196.
+#[sqlx::test]
+async fn fleet_membership_requires_active_status(db: PgPool) {
+    use server::domain::fleet::is_workspace_member;
+    let ws = seed_workspace(&db).await;
+    let user = seed_user(&db).await;
+
+    // Pending invite → not a member yet.
+    sqlx::query(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+         VALUES ($1, $2, 'member', 'pending')",
+    )
+    .bind(ws.to_string())
+    .bind(user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(
+        !is_workspace_member(&db, ws, user).await.unwrap(),
+        "pending invite must not grant Fleet access"
+    );
+
+    // Accept → active → member.
+    sqlx::query(
+        "UPDATE workspace_memberships SET status = 'active'
+         WHERE workspace_id = $1 AND user_id = $2",
+    )
+    .bind(ws.to_string())
+    .bind(user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(
+        is_workspace_member(&db, ws, user).await.unwrap(),
+        "active membership must grant Fleet access"
+    );
+
+    // Personal-workspace owner path (no membership row) still passes.
+    let owner = seed_user(&db).await;
+    let personal = Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (workspace_id, name, owner_user_id) VALUES ($1, 'personal', $2)")
+        .bind(personal.to_string())
+        .bind(owner.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(
+        is_workspace_member(&db, personal, owner).await.unwrap(),
+        "personal-workspace owner must have access without a membership row"
+    );
+}
+
+/// fs.read with start_line/end_line returns just that 1-indexed inclusive slice
+/// plus the clamped range (passage picking — docs/design/RESOURCE_CONTEXT.md).
+#[sqlx::test]
+async fn fs_read_line_range_slice(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let bot = seed_bot(&db).await;
+    add_member(&db, ch, bot, "bot").await;
+    let who = Principal::bot(bot);
+    let cid = ch.to_string();
+
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "fs.write",
+            serde_json::json!({ "channel_id": cid, "path": "notes/p.md", "content": "a\nb\nc\nd\ne", "if_version": 0 }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "write: {r}");
+
+    // ranged read → only lines 2..=4, with the range echoed
+    let r = dispatch(
+        &db,
+        who,
+        &req(
+            "fs.read",
+            serde_json::json!({ "channel_id": cid, "path": "notes/p.md", "start_line": 2, "end_line": 4 }),
+        ),
+    )
+    .await;
+    assert_eq!(r["ok"], true, "read: {r}");
+    assert_eq!(r["data"]["content"], "b\nc\nd");
+    assert_eq!(r["data"]["start_line"], 2);
+    assert_eq!(r["data"]["end_line"], 4);
+
+    // no range → whole file, and no range fields
+    let r = dispatch(
+        &db,
+        who,
+        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "notes/p.md" })),
+    )
+    .await;
+    assert_eq!(r["data"]["content"], "a\nb\nc\nd\ne");
+    assert!(r["data"]["start_line"].is_null(), "no range → no start_line: {}", r["data"]);
+}
+
+/// AUTHZ: a human-attached bundle with an inline snapshot is persisted PREVIEW-
+/// STRIPPED (members/history never carry snapshot content); create_message keeps
+/// the full copy only for the task-frame dispatch. Fix B, docs/design/RESOURCE_CONTEXT.md.
+#[sqlx::test]
+async fn human_bundle_persists_without_preview(db: PgPool) {
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let user = seed_user(&db).await;
+    add_member(&db, ch, user, "user").await;
+    let fanout = fanout();
+    let registry = StreamRegistry::new();
+    let bot_locator: Arc<dyn BotLocator> = InProcessBotLocator::new();
+
+    // Full (already sanitized) bundle with a workspace snapshot preview.
+    let bundle = serde_json::json!({
+        "origin": "human",
+        "items": [{
+            "verb": "workspace.file", "kind": "file", "label": "m.rs",
+            "params": { "bot_id": Uuid::new_v4().to_string(), "path": "m.rs" },
+            "preview": { "text": "SECRET CONTENT" }
+        }]
+    });
+    let dto = messages::create_message(
+        &db, &fanout, &registry, &bot_locator,
+        CreateMessageParams {
+            context_bundle: Some(bundle),
+            user_id: user,
+            channel_id: ch,
+            content: "look".into(),
+            msg_type: None,
+            reply_to_msg_id: None,
+            file_ids: vec![],
+            mention_ids: vec![],
+            mention_names: vec![],
+            session_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Persisted row + returned DTO must NOT contain the snapshot text.
+    let stored: Option<Value> =
+        sqlx::query_scalar("SELECT context_bundle FROM messages WHERE msg_id = $1")
+            .bind(&dto.msg_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let stored = stored.expect("bundle stored");
+    assert!(stored["items"][0].get("preview").is_none(), "row strips preview: {stored}");
+    assert_eq!(stored["items"][0]["label"], "m.rs", "keeps label/locator");
+    assert!(dto.context_bundle.unwrap()["items"][0].get("preview").is_none(), "dto strips preview");
+}
+
+/// AUTHZ: the shared deliver-time finalizer re-authorizes a bundle against the
+/// TARGET bot — a ref to a channel the target isn't a member of is dropped, and
+/// duplicate (verb,params) collapse. One step for both pickup and handoff (P2).
+#[sqlx::test]
+async fn finalize_drops_refs_target_cannot_read_and_dedups(db: PgPool) {
+    use server::domain::context_bundle::finalize_bundle_for_target;
+    use server::resource::Principal;
+    let ws = seed_workspace(&db).await;
+    let ch_a = seed_channel(&db, ws).await; // target IS a member here
+    let ch_b = seed_channel(&db, ws).await; // target is NOT a member here
+    let target = seed_bot(&db).await;
+    add_member(&db, ch_a, target, "bot").await;
+
+    let bundle = serde_json::json!({
+        "origin": "handoff",
+        "items": [
+            { "verb": "channel.plan.read", "params": { "channel_id": ch_a.to_string() }, "label": "A" },
+            { "verb": "channel.plan.read", "params": { "channel_id": ch_a.to_string() }, "label": "A-dup" },
+            { "verb": "channel.plan.read", "params": { "channel_id": ch_b.to_string() }, "label": "B" }
+        ]
+    });
+    let filtered = finalize_bundle_for_target(&db, &bundle, Principal::bot(target), ch_a).await;
+    let items = filtered["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "cross-channel dropped + dup collapsed: {filtered}");
+    assert_eq!(items[0]["label"], "A", "first (in-channel) kept");
+}
+
+/// P3-2: the `workspace.read` broker's authorization boundary. A reader bot may
+/// resolve another bot's workspace reference ONLY when both share the channel and the
+/// owner grants it `workspace_read` (member-allow default, deny-override). This tests
+/// the DB-only auth gate (`authorize_bot_workspace_read`); the actual file fetch needs
+/// a live connector (covered by the kind live check), which is why the broker splits
+/// the security boundary out. Mirrors the bot-subject dispatch-gate posture.
+#[sqlx::test]
+async fn workspace_read_broker_authz_member_grant_and_deny(db: PgPool) {
+    use server::api::workspace::authorize_bot_workspace_read;
+    use server::domain::bot_event_policy::{upsert_rule, Capability, EV_WORKSPACE_READ, SUBJECT_BOT};
+
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let owner = seed_bot(&db).await; // owns the workspace file
+    let reader = seed_bot(&db).await; // wants to resolve the reference
+    let outsider = seed_bot(&db).await; // shares no channel with the owner
+    add_member(&db, ch, owner, "bot").await;
+    add_member(&db, ch, reader, "bot").await;
+
+    // Both members, no rule → member-allow default lets the reader through.
+    authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect("granted by member-allow default");
+
+    // A non-member reader is denied (never reaches the grant check).
+    let err = authorize_bot_workspace_read(&db, owner, outsider, ch)
+        .await
+        .expect_err("non-member reader denied");
+    assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
+
+    // Owner posts a deny rule targeting the reader → denied despite membership.
+    upsert_rule(
+        &db,
+        &owner.to_string(),
+        &ch.to_string(),
+        SUBJECT_BOT,
+        &reader.to_string(),
+        EV_WORKSPACE_READ,
+        Capability::Initiate,
+        false, // deny
+        "test",
+        None,
+    )
+    .await
+    .unwrap();
+    let err = authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect_err("deny rule overrides default");
+    assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
+}
+
+/// P4: the bot-grants management lifecycle. An owner authors a `workspace_read` deny
+/// for a specific reader bot (the same domain write the `/bot-grants` PUT performs),
+/// the broker denies, and removing the rule (the DELETE) restores the member-allow
+/// default. Proves the owner-facing grant management actually gates the read — the
+/// deny-override is no longer only reachable by hand-editing the DB.
+#[sqlx::test]
+async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool) {
+    use server::api::workspace::authorize_bot_workspace_read;
+    use server::domain::bot_event_policy::{
+        delete_rule, upsert_rule, Capability, EV_WORKSPACE_READ, SUBJECT_BOT,
+    };
+
+    let ws = seed_workspace(&db).await;
+    let ch = seed_channel(&db, ws).await;
+    let owner = seed_bot(&db).await;
+    let reader = seed_bot(&db).await;
+    add_member(&db, ch, owner, "bot").await;
+    add_member(&db, ch, reader, "bot").await;
+
+    // Default (no rule): allowed.
+    authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect("member-allow default");
+
+    // Owner authors a deny (what `upsert_bot_grant` writes for grant=workspace_read).
+    upsert_rule(
+        &db, &owner.to_string(), &ch.to_string(), SUBJECT_BOT, &reader.to_string(),
+        EV_WORKSPACE_READ, Capability::Initiate, false, "owner", None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        authorize_bot_workspace_read(&db, owner, reader, ch).await.is_err(),
+        "authored deny gates the read"
+    );
+
+    // Owner removes it (what `delete_bot_grant` does) → back to member-allow.
+    let removed = delete_rule(
+        &db, &owner.to_string(), &ch.to_string(), SUBJECT_BOT, &reader.to_string(),
+        EV_WORKSPACE_READ, Capability::Initiate,
+    )
+    .await
+    .unwrap();
+    assert!(removed, "delete removed the rule");
+    authorize_bot_workspace_read(&db, owner, reader, ch)
+        .await
+        .expect("default restored after delete");
 }

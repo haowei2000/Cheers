@@ -19,6 +19,13 @@ import type { WorkbenchContext } from "../context";
 import type { FsEntry } from "../fsClient";
 import { errMsg, useFileEditor } from "../jsonFile";
 import { PinToggle } from "../PinToggle";
+import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
+import {
+  useContextPickStore,
+  selectionLineRange,
+  rangedFileContextItem,
+} from "@/features/chat/context/contextPick";
+import { TextQuote } from "lucide-react";
 import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
 
@@ -101,6 +108,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
   // for the currently selected file (resets on selection change).
   const [mode, setMode] = useState<"auto" | "preview" | "raw">("auto");
   const [status, setStatus] = useState<string | null>(null);
+  const addContext = useContextPickStore((s) => s.add);
   // Folder tree UI state. `collapsed` holds folder paths the user has folded shut
   // (default is expanded). `creatingIn` = the folder prefix a new file is being typed
   // into ("" = root, null = not creating). `confirmDel` = the path armed for delete.
@@ -493,6 +501,50 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                   </button>
                   {/* pin this file's content into every bot prompt (toggle) */}
                   <PinToggle path={selected} pinned={pinned} togglePin={togglePin} />
+                  {/* attach this file as one-message context (disabled if pinned —
+                      pinned files already ride every prompt; no double delivery) */}
+                  <AttachContextButton
+                    channelId={ctx.channelId}
+                    disabled={pinned.includes(selected)}
+                    disabledTitle="Already pinned — sent in every prompt"
+                    title="Attach this file as context for your next message"
+                    item={{
+                      id: `file:${selected}`,
+                      verb: "fs.read",
+                      params: { path: selected },
+                      label: selected.split("/").pop() || selected,
+                      kind: "file",
+                    }}
+                  />
+                  {/* attach just the SELECTED lines (a passage) as a ranged fs.read
+                      ref — pick text in the viewer, then click. Disabled when the
+                      file is pinned (it already rides every prompt — no double
+                      delivery, mirroring the whole-file attach). */}
+                  <button
+                    type="button"
+                    disabled={pinned.includes(selected)}
+                    title={
+                      pinned.includes(selected)
+                        ? "Already pinned — sent in every prompt"
+                        : "Attach the selected lines as context (select text first)"
+                    }
+                    onClick={() => {
+                      const sel = window.getSelection()?.toString() ?? "";
+                      const range = selectionLineRange(editor.content, sel);
+                      if (!range) {
+                        setStatus("Select some text in the file first, then attach.");
+                        return;
+                      }
+                      addContext(
+                        ctx.channelId,
+                        rangedFileContextItem(selected, range.start, range.end)
+                      );
+                      setStatus(`Attached ${selected.split("/").pop()}:${range.start}-${range.end} as context`);
+                    }}
+                    className="rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
+                  >
+                    <TextQuote className="w-3.5 h-3.5" />
+                  </button>
                   {effMode === "raw" && (
                     <button
                       onClick={() => void onSave()}

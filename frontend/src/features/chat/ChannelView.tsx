@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } fro
 import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
+import { useContextPickStore, toBundle } from "./context/contextPick";
+import { ContextPickBar } from "./context/ContextPickBar";
 import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
@@ -123,6 +125,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [forward, setForward] = useState<{ content: string; count: number } | null>(null);
+  // Live draft text (from the composer) → F3 suggested context (filename detection).
+  const [draftText, setDraftText] = useState("");
 
   // Bots in the channel, derived from the mention candidates — the switcher lists
   // each bot's sessions under it.
@@ -133,6 +137,21 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         .map((m) => ({ botId: m.id, name: m.label })),
     [mentionables]
   );
+
+  // Channel file index (id + name) built from loaded messages' attachments — no
+  // extra fetch. Powers F3 filename suggestions (draft names a file → offer it).
+  const channelFiles = useMemo(() => {
+    const byId = new Map<string, { file_id: string; filename: string }>();
+    for (const m of messages) {
+      for (const f of m.files ?? []) {
+        const name = f.original_filename?.trim();
+        if (f.file_id && name && !byId.has(f.file_id)) {
+          byId.set(f.file_id, { file_id: f.file_id, filename: name });
+        }
+      }
+    }
+    return Array.from(byId.values());
+  }, [messages]);
 
   // A different channel means a different session set — drop any prior target.
   // Also drop any buffered stream deltas + cancel a pending flush so a stale frame
@@ -765,6 +784,11 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       mentionNames: string[] = []
     ) => {
     if (!channel) return;
+    // Attached resource context (docs/design/RESOURCE_CONTEXT.md): read the
+    // channel's pending picks and ship them as a bundle, then clear on success.
+    const pending =
+      useContextPickStore.getState().byChannel[channel.channel_id] ?? [];
+    const bundle = toBundle(pending, channel.channel_id);
     const sendParams: NonNullable<Message["_sendParams"]> = {
       content,
       ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
@@ -772,11 +796,13 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       ...(fileIds.length ? { file_ids: fileIds } : {}),
       ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
       ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
+      ...(bundle ? { context_bundle: bundle } : {}),
     };
     setReplyTo(null);
     try {
       const { content: body, ...opts } = sendParams;
       await sendMessage(channel.channel_id, body, opts);
+      useContextPickStore.getState().clear(channel.channel_id);
     } catch {
       // Don't lose the message: drop a client-only "failed" bubble into the
       // timeline (the composer already cleared the draft) so it stays visible
@@ -1237,6 +1263,16 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         </div>
       )}
 
+      {/* Attached resource context (docs/design/RESOURCE_CONTEXT.md) */}
+      {!selectMode && (
+        <ContextPickBar
+          channelId={channel.channel_id}
+          replyTo={replyTo}
+          draftText={draftText}
+          files={channelFiles}
+        />
+      )}
+
       {/* Composer */}
       <MessageComposer
         channelId={channel.channel_id}
@@ -1245,6 +1281,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         commands={commands}
         toolbar={composerToolbar}
         onMentionsChange={setMentionedBots}
+        onTextChange={setDraftText}
         streamingCount={streamingIds.length}
         onStopStreaming={stopStreaming}
         onSend={handleSend}

@@ -36,6 +36,11 @@ pub struct SendMessageRequest {
     /// (else the channel's primary session).
     #[serde(default)]
     pub session_id: Option<Uuid>,
+    /// Optional resource-context bundle (docs/design/RESOURCE_CONTEXT.md): refs to
+    /// Cheers resources (plan / file / message / activity) the sender attached to
+    /// this message. Persisted and threaded into any triggered bot's task frame.
+    #[serde(default)]
+    pub context_bundle: Option<serde_json::Value>,
 }
 
 pub async fn send_message(
@@ -75,6 +80,19 @@ pub async fn send_message(
         }
     }
 
+    // Harden the human-attached context bundle before it is persisted / delivered
+    // (docs/design/RESOURCE_CONTEXT.md, no-permission-bypass): read verbs only,
+    // origin stamped server-side, caps — then re-verify `workspace/read` on every
+    // `workspace.file` snapshot so a pick can't reference (or fabricate) a bot
+    // workspace the caller isn't granted. See sanitize_human_bundle.
+    let context_bundle = match body.context_bundle {
+        Some(raw) => {
+            let sanitized = crate::domain::context_bundle::sanitize_human_bundle(&raw);
+            authorize_workspace_items(&state, &claims, channel_id, sanitized).await
+        }
+        None => None,
+    };
+
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
@@ -90,6 +108,7 @@ pub async fn send_message(
             mention_ids: body.mention_ids,
             mention_names: body.mention_names,
             session_id: body.session_id,
+            context_bundle,
         },
     )
     .await?;
@@ -101,6 +120,47 @@ pub async fn send_message(
     );
 
     Ok((StatusCode::CREATED, Json(dto)))
+}
+
+/// Drop every `workspace.file` item whose owning bot the caller isn't granted
+/// `workspace/read` on — the same gate that guarded browsing it. A snapshot the
+/// caller couldn't read (or fabricated) never rides along. Non-workspace items
+/// pass through untouched. Returns `None` when nothing survives.
+async fn authorize_workspace_items(
+    state: &AppState,
+    claims: &Claims,
+    channel_id: Uuid,
+    bundle: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let mut bundle = bundle?;
+    let items = bundle.get("items").and_then(|v| v.as_array())?.clone();
+    let mut kept: Vec<serde_json::Value> = Vec::with_capacity(items.len());
+    for item in items {
+        let is_ws = item.get("verb").and_then(|v| v.as_str()) == Some("workspace.file");
+        if is_ws {
+            let owner = item
+                .get("params")
+                .and_then(|p| p.get("bot_id"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<Uuid>().ok());
+            match owner {
+                Some(bot_id)
+                    if crate::api::workspace::resolve_can_read(
+                        state, claims, channel_id, bot_id,
+                    )
+                    .await => {}
+                _ => continue, // no grant (or unparseable owner) → drop the snapshot
+            }
+        }
+        kept.push(item);
+    }
+    if kept.is_empty() {
+        return None;
+    }
+    bundle
+        .as_object_mut()
+        .map(|o| o.insert("items".into(), serde_json::Value::Array(kept)));
+    Some(bundle)
 }
 
 // ── GET /api/v1/channels/{channel_id}/messages ─────────────────────────────

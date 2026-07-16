@@ -33,6 +33,12 @@ pub struct DispatchParams {
     /// dispatch gate can block hops of a cancelled chain. `None` for un-tracked
     /// dispatch (a targeted session, or a message that triggers no bot).
     pub chain_id: Option<String>,
+    /// Gateway-assembled resource context for this dispatch (docs/design/RESOURCE_CONTEXT.md,
+    /// F2 handoff). When `Some`, it OVERRIDES any bundle on the trigger message and
+    /// becomes the target's task-frame `context_bundle` — this is how a bot@bot hop
+    /// hands the initiator's plan/decisions to the next agent. `None` on the human
+    /// path, so the trigger message's own (human-attached) bundle flows through.
+    pub context_bundle: Option<Value>,
 }
 
 /// 派发结果。
@@ -97,6 +103,7 @@ pub async fn dispatch(
         params.bot_id,
         params.depth,
         params.chain_id.as_deref(),
+        params.context_bundle.as_ref(),
     )
     .await
     {
@@ -134,6 +141,9 @@ pub async fn dispatch(
             "file_ids": [],
             "mentions": [],
             "files": [],
+            // F2 handoff card: the assembled bundle rides the placeholder so the
+            // chat shows "received a handoff" the moment the bot starts working.
+            "context_bundle": params.context_bundle,
         }),
     );
     fanout.broadcast_channel(params.channel_id, bubble).await;
@@ -149,6 +159,11 @@ pub async fn dispatch(
         .await
         .unwrap_or_else(|| TaskContext::fallback(params.trigger_msg_id));
     task_context.pinned = media_cache.pinned_context(db, params.channel_id).await;
+    // A gateway-assembled handoff bundle (bot@bot) overrides the trigger message's
+    // own bundle; otherwise the human-attached bundle read above flows through.
+    if params.context_bundle.is_some() {
+        task_context.context_bundle = params.context_bundle.clone();
+    }
     // Per-session ACP root set (cwd + additionalDirectories) stored on the session
     // row; absent → the connector falls back to its default_cwd.
     let workspace = load_session_workspace(db, &params.provider_session_key).await;
@@ -185,6 +200,16 @@ pub async fn dispatch(
         return DispatchResult::BotOffline;
     }
 
+    // The bot is now working on this turn. The matching "idle" signal is the
+    // turn's `message_done` (or the offline/failed done-frame above) — clients
+    // (Fleet view, chat) pair the two; no separate end frame is needed.
+    let processing = WireFrame::channel(
+        params.channel_id,
+        "bot_processing",
+        json!({ "bot_id": params.bot_id, "channel_id": params.channel_id }),
+    );
+    fanout.broadcast_channel(params.channel_id, processing).await;
+
     tracing::info!(
         bot_id = %params.bot_id,
         channel_id = %params.channel_id,
@@ -220,11 +245,13 @@ async fn create_placeholder(
     bot_id: Uuid,
     depth: i32,
     chain_id: Option<&str>,
+    context_bundle: Option<&Value>,
 ) -> Result<bool, String> {
     let result = sqlx::query(
         "INSERT INTO messages
-            (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id)
-         VALUES ($1, $2, 'bot', $3, '', TRUE, $4, $5)
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial, depth, chain_id,
+             context_bundle)
+         VALUES ($1, $2, 'bot', $3, '', TRUE, $4, $5, $6)
          ON CONFLICT (msg_id) DO NOTHING",
     )
     .bind(placeholder_id.to_string())
@@ -232,6 +259,7 @@ async fn create_placeholder(
     .bind(bot_id.to_string())
     .bind(depth)
     .bind(chain_id)
+    .bind(context_bundle)
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;
@@ -279,6 +307,10 @@ struct TaskContext {
     /// Pinned convention/prompt blocks (formatted) injected into the prompt every
     /// request — the channel's semantic layer (e.g. a pinned prompt template).
     pinned: Vec<String>,
+    /// Per-message resource context bundle attached to the trigger message
+    /// (docs/design/RESOURCE_CONTEXT.md). Threaded through to the Task frame so the
+    /// agent can resolve the refs as itself. `None` when the message carried none.
+    context_bundle: Option<Value>,
 }
 
 impl TaskContext {
@@ -287,6 +319,7 @@ impl TaskContext {
             trigger_message: json!({ "msg_id": msg_id }),
             attachments: Vec::new(),
             pinned: Vec::new(),
+            context_bundle: None,
         }
     }
 }
@@ -305,6 +338,7 @@ async fn load_task_context(
         msg_type: Option<String>,
         in_reply_to_msg_id: Option<String>,
         file_ids: Option<Value>,
+        context_bundle: Option<Value>,
         sender_name: Option<String>,
     }
 
@@ -318,6 +352,7 @@ async fn load_task_context(
             m.msg_type,
             m.in_reply_to_msg_id,
             m.file_ids,
+            m.context_bundle,
             COALESCE(NULLIF(u.display_name, ''), u.username, NULLIF(b.display_name, ''), b.username) AS sender_name
          FROM messages m
          LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
@@ -355,6 +390,7 @@ async fn load_task_context(
         }),
         attachments,
         pinned: Vec::new(),
+        context_bundle: row.context_bundle,
     })
 }
 
@@ -737,6 +773,7 @@ fn build_task_frame(
             })
             .collect(),
         pinned: task_context.pinned,
+        context_bundle: task_context.context_bundle,
         // Per-session ACP root set. The connector re-validates against its
         // allowed_roots and uses default_cwd when cwd is absent (ACP: cwd is a
         // pure session/new argument, immutable for the session's lifetime).
@@ -789,6 +826,7 @@ mod tests {
                     "size_bytes": 12,
                 })],
                 pinned: vec!["Always answer in English.".to_string()],
+                context_bundle: None,
             },
             (Some("/workspace".to_string()), vec!["/data".to_string()]),
         );

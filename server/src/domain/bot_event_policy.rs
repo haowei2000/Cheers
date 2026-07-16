@@ -24,6 +24,7 @@ use crate::errors::AppError;
 pub const SUBJECT_ROLE: &str = "role";
 pub const SUBJECT_USER: &str = "user";
 pub const SUBJECT_GROUP: &str = "group"; // dynamic group: friends | channel:<id> | workspace:<id>
+pub const SUBJECT_BOT: &str = "bot"; // a bot as grant subject — used by the DISPATCH capability
 pub const ANY_SUBJECT: &str = "*"; // role wildcard
 pub const BOT_WIDE: &str = ""; // channel_id sentinel for "all channels"
 
@@ -31,6 +32,10 @@ pub const BOT_WIDE: &str = ""; // channel_id sentinel for "all channels"
 //    vocabulary is DERIVED from the acp_events registry (single source of truth)
 //    via initiate_events()/see_events()/respond_events() below. ──────────────
 pub const EV_PROMPT: &str = "prompt";
+/// Event class for reading a bot's remote workspace (`workspace/read`). A `bot`
+/// subject on this class expresses "reader bot may read owner bot's workspace"
+/// (docs/design/RESOURCE_CONTEXT.md P3 — workspace files as consumer refs).
+pub const EV_WORKSPACE_READ: &str = "workspace_read";
 pub const EV_TOOL_CALL: &str = "tool_call";
 pub const EV_PERMISSION_REQUEST: &str = "permission_request";
 
@@ -39,12 +44,18 @@ pub const EV_PERMISSION_REQUEST: &str = "permission_request";
 /// thing to answer it). This is the matrix vocabulary — it can't drift from the
 /// registry because it's computed from it.
 fn events_for(cap: Capability) -> Vec<&'static str> {
+    // DISPATCH is not a registry-tagged capability — it gates exactly one thing,
+    // one bot causing another bot's turn to start, i.e. the `prompt` class.
+    if matches!(cap, Capability::Dispatch) {
+        return vec![EV_PROMPT];
+    }
     let mut out: Vec<&'static str> = Vec::new();
     for e in crate::domain::acp_events::REGISTRY {
         let matches = match cap {
             Capability::Initiate => e.capability == Some("initiate"),
             Capability::See => matches!(e.capability, Some("see") | Some("respond")),
             Capability::Respond => e.capability == Some("respond"),
+            Capability::Dispatch => false, // handled above
         };
         if matches {
             if let Some(class) = e.event_class {
@@ -75,6 +86,11 @@ pub enum Capability {
     Initiate,
     See,
     Respond,
+    /// One bot causing another bot's turn to start (bot@bot dispatch). Subject is
+    /// a **bot** (`subject_kind='bot'`), not a human — distinct from INITIATE so an
+    /// owner controls "which bots may command B" separately from "which humans may
+    /// prompt B". See docs/design/BOT_DISPATCH.md.
+    Dispatch,
 }
 
 impl Capability {
@@ -83,6 +99,7 @@ impl Capability {
             Capability::Initiate => "initiate",
             Capability::See => "see",
             Capability::Respond => "respond",
+            Capability::Dispatch => "dispatch",
         }
     }
 
@@ -91,13 +108,16 @@ impl Capability {
             "initiate" => Some(Capability::Initiate),
             "see" => Some(Capability::See),
             "respond" => Some(Capability::Respond),
+            "dispatch" => Some(Capability::Dispatch),
             _ => None,
         }
     }
 }
 
 /// The membership-derived default when no rule matches: members may INITIATE and
-/// SEE; RESPOND is denied by default (only the bot owner or an explicit grant).
+/// SEE; RESPOND is denied by default (only the bot owner or an explicit grant);
+/// DISPATCH is allowed by default (bots may command each other unless an owner
+/// writes an explicit deny — backward compatible, docs/design/BOT_DISPATCH.md).
 pub fn default_access(capability: Capability) -> bool {
     !matches!(capability, Capability::Respond)
 }
@@ -190,6 +210,146 @@ pub fn resolve_access(
         .or_else(|| one(BOT_WIDE, SUBJECT_ROLE, role))
         .or_else(|| one(BOT_WIDE, SUBJECT_ROLE, ANY_SUBJECT))
         .unwrap_or_else(|| default_access_for(event_class, capability))
+}
+
+/// Resolve a **bot-to-bot dispatch** decision, or `None` if no rule matched (so the
+/// caller can distinguish "a rule decided it" from "fell through to the default").
+/// Precedence mirrors [`resolve_access`] but over bot subjects only:
+/// `(chan, bot:A) ▸ (chan, bot:*) ▸ (bot-wide, bot:A) ▸ (bot-wide, bot:*)`.
+/// Groups/roles don't apply — a dispatch subject is always a concrete bot or `*`.
+pub fn resolve_dispatch_opt(
+    rules: &[Rule],
+    channel_id: &str,
+    initiator_bot_id: &str,
+) -> Option<bool> {
+    let cap = Capability::Dispatch.as_str();
+    let one = |ch: &str, sid: &str| {
+        rules
+            .iter()
+            .find(|r| {
+                r.channel_id == ch
+                    && r.subject_kind == SUBJECT_BOT
+                    && r.subject_id == sid
+                    && r.event_class == EV_PROMPT
+                    && r.capability == cap
+            })
+            .map(|r| r.allow)
+    };
+    one(channel_id, initiator_bot_id)
+        .or_else(|| one(channel_id, ANY_SUBJECT))
+        .or_else(|| one(BOT_WIDE, initiator_bot_id))
+        .or_else(|| one(BOT_WIDE, ANY_SUBJECT))
+}
+
+/// [`resolve_dispatch_opt`] with the membership default applied (dispatch defaults
+/// to **allow**). Side-effect-free for unit testing.
+pub fn resolve_dispatch(rules: &[Rule], channel_id: &str, initiator_bot_id: &str) -> bool {
+    resolve_dispatch_opt(rules, channel_id, initiator_bot_id)
+        .unwrap_or_else(|| default_access_for(EV_PROMPT, Capability::Dispatch))
+}
+
+/// Bot-subject precedence for a READER bot's `workspace_read` on the OWNER bot's
+/// remote workspace — mirrors [`resolve_dispatch_opt`] but over the `workspace_read`
+/// class (`Capability::Initiate`). `None` = no rule matched (caller applies the
+/// member-allow default). Rules are the OWNER bot's; the subject is the reader.
+pub fn resolve_bot_workspace_read_opt(
+    rules: &[Rule],
+    channel_id: &str,
+    reader_bot_id: &str,
+) -> Option<bool> {
+    let cap = Capability::Initiate.as_str();
+    let one = |ch: &str, sid: &str| {
+        rules
+            .iter()
+            .find(|r| {
+                r.channel_id == ch
+                    && r.subject_kind == SUBJECT_BOT
+                    && r.subject_id == sid
+                    && r.event_class == EV_WORKSPACE_READ
+                    && r.capability == cap
+            })
+            .map(|r| r.allow)
+    };
+    one(channel_id, reader_bot_id)
+        .or_else(|| one(channel_id, ANY_SUBJECT))
+        .or_else(|| one(BOT_WIDE, reader_bot_id))
+        .or_else(|| one(BOT_WIDE, ANY_SUBJECT))
+}
+
+/// [`resolve_bot_workspace_read_opt`] with the member-allow default applied
+/// (`workspace/read` defaults to allow for members; owner denies via a rule).
+pub fn resolve_bot_workspace_read(rules: &[Rule], channel_id: &str, reader_bot_id: &str) -> bool {
+    resolve_bot_workspace_read_opt(rules, channel_id, reader_bot_id)
+        .unwrap_or_else(|| default_access_for(EV_WORKSPACE_READ, Capability::Initiate))
+}
+
+/// Load + resolve whether `reader_bot` may read `owner_bot`'s remote workspace in
+/// `channel` — **fail-closed** on a policy-store error. The caller must separately
+/// confirm `reader_bot` is a channel member (the default assumes membership).
+pub async fn can_bot_read_workspace(
+    db: &PgPool,
+    owner_bot_id: &str,
+    reader_bot_id: &str,
+    channel_id: &str,
+) -> bool {
+    match load_rules(db, owner_bot_id).await {
+        Ok(rules) => resolve_bot_workspace_read(&rules, channel_id, reader_bot_id),
+        Err(err) => {
+            tracing::warn!(
+                owner_bot = %owner_bot_id,
+                reader_bot = %reader_bot_id,
+                %err,
+                "workspace_read policy load failed; fail-closed deny"
+            );
+            false
+        }
+    }
+}
+
+/// A dispatch gate decision plus why — the audit trail records both.
+#[derive(Debug, Clone, Copy)]
+pub struct DispatchDecision {
+    pub allow: bool,
+    /// `"rule"` (a stored bot rule decided it), `"default_allow"` (no rule → the
+    /// backward-compatible default), or `"policy_unavailable"` (the rule store
+    /// couldn't be read → fail-closed deny).
+    pub reason: &'static str,
+}
+
+/// Load + resolve a bot-to-bot dispatch gate, **fail-closed**: unlike the human
+/// INITIATE gate (which fails open so a message still posts), a dispatch whose
+/// policy can't be evaluated is denied — a governance gate must not silently open
+/// when its own store is unreachable. "No rule" still means allow (the default).
+pub async fn resolve_dispatch_decision(
+    db: &PgPool,
+    target_bot_id: &str,
+    channel_id: &str,
+    initiator_bot_id: &str,
+) -> DispatchDecision {
+    match load_rules(db, target_bot_id).await {
+        Ok(rules) => match resolve_dispatch_opt(&rules, channel_id, initiator_bot_id) {
+            Some(allow) => DispatchDecision {
+                allow,
+                reason: "rule",
+            },
+            None => DispatchDecision {
+                allow: default_access_for(EV_PROMPT, Capability::Dispatch),
+                reason: "default_allow",
+            },
+        },
+        Err(err) => {
+            tracing::warn!(
+                target_bot = %target_bot_id,
+                initiator_bot = %initiator_bot_id,
+                %err,
+                "dispatch policy load failed; fail-closed deny"
+            );
+            DispatchDecision {
+                allow: false,
+                reason: "policy_unavailable",
+            }
+        }
+    }
 }
 
 // ── Dynamic group membership (friends | channel:<id> | workspace:<id>) ──────
@@ -404,7 +564,10 @@ pub fn effective_matrix(rules: &[Rule], owner_user_id: Option<&str>) -> Vec<Valu
                 );
             }
             let bot_owner = match cap {
-                Capability::Initiate | Capability::Respond => {
+                // Dispatch never appears in this role×event matrix (the loop above
+                // enumerates only Initiate/See/Respond); the arm exists solely for
+                // exhaustiveness and is unreachable.
+                Capability::Initiate | Capability::Respond | Capability::Dispatch => {
                     json!({ "allow": true, "source": "owner" })
                 }
                 Capability::See => {
@@ -556,6 +719,29 @@ mod tests {
     /// Test helper: resolve with no group memberships.
     fn allows(rules: &[Rule], ch: &str, user: &str, role: &str, ec: &str, cap: Capability) -> bool {
         resolve_access(rules, ch, user, role, &[], ec, cap)
+    }
+
+    #[test]
+    fn bot_workspace_read_defaults_allow_and_deny_overrides() {
+        // No rule → a reader bot may read a member bot's workspace (member-allow).
+        assert!(resolve_bot_workspace_read(&[], "c1", "readerBot"));
+        // A channel deny for that reader bot wins.
+        let deny = vec![rule(
+            "c1",
+            SUBJECT_BOT,
+            "readerBot",
+            EV_WORKSPACE_READ,
+            Capability::Initiate,
+            false,
+        )];
+        assert!(!resolve_bot_workspace_read(&deny, "c1", "readerBot"));
+        // A wildcard bot deny restricts everyone; a specific allow un-restricts one.
+        let star_deny_plus_allow = vec![
+            rule("c1", SUBJECT_BOT, "*", EV_WORKSPACE_READ, Capability::Initiate, false),
+            rule("c1", SUBJECT_BOT, "readerBot", EV_WORKSPACE_READ, Capability::Initiate, true),
+        ];
+        assert!(resolve_bot_workspace_read(&star_deny_plus_allow, "c1", "readerBot"));
+        assert!(!resolve_bot_workspace_read(&star_deny_plus_allow, "c1", "otherBot"));
     }
 
     #[test]
@@ -1189,9 +1375,61 @@ mod tests {
 
     #[test]
     fn capability_parse_roundtrip() {
-        for c in [Capability::Initiate, Capability::See, Capability::Respond] {
+        for c in [
+            Capability::Initiate,
+            Capability::See,
+            Capability::Respond,
+            Capability::Dispatch,
+        ] {
             assert_eq!(Capability::parse(c.as_str()), Some(c));
         }
         assert_eq!(Capability::parse("bogus"), None);
+    }
+
+    // ── bot-to-bot dispatch resolver ─────────────────────────────────────────
+
+    fn drule(ch: &str, sid: &str, allow: bool) -> Rule {
+        rule(ch, SUBJECT_BOT, sid, EV_PROMPT, Capability::Dispatch, allow)
+    }
+
+    #[test]
+    fn dispatch_defaults_to_allow() {
+        // No rule → bots may command each other (backward compatible).
+        assert!(resolve_dispatch(&[], "c1", "botA"));
+        assert_eq!(resolve_dispatch_opt(&[], "c1", "botA"), None);
+    }
+
+    #[test]
+    fn dispatch_specific_bot_deny_wins_over_wildcard_allow() {
+        // bot:* allowed, but bot:A explicitly denied at the same scope → A blocked.
+        let rules = [drule("c1", ANY_SUBJECT, true), drule("c1", "botA", false)];
+        assert!(!resolve_dispatch(&rules, "c1", "botA"));
+        assert!(resolve_dispatch(&rules, "c1", "botB")); // B still allowed via *
+    }
+
+    #[test]
+    fn dispatch_channel_scope_beats_bot_wide() {
+        // Bot-wide deny-all, but this channel carves bot:A back in.
+        let rules = [
+            drule(BOT_WIDE, ANY_SUBJECT, false),
+            drule("c1", "botA", true),
+        ];
+        assert!(resolve_dispatch(&rules, "c1", "botA")); // channel allow wins
+        assert!(!resolve_dispatch(&rules, "c2", "botA")); // other channel → bot-wide deny
+        assert!(!resolve_dispatch(&rules, "c1", "botB")); // no channel rule → bot-wide deny
+    }
+
+    #[test]
+    fn dispatch_ignores_human_initiate_rules() {
+        // A human INITIATE·prompt deny must NOT leak into the dispatch decision.
+        let rules = [rule(
+            "c1",
+            SUBJECT_ROLE,
+            ANY_SUBJECT,
+            EV_PROMPT,
+            Capability::Initiate,
+            false,
+        )];
+        assert!(resolve_dispatch(&rules, "c1", "botA")); // dispatch still default-allow
     }
 }

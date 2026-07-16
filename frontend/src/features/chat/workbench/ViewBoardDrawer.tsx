@@ -3,8 +3,12 @@
 // floating window inside the channel's work lane; dragging snaps it to the lane's
 // grid zones. On mobile it stays a near-full-screen overlay sheet.
 import { memo, useEffect, useMemo, useState } from "react";
-import { LayoutDashboard, X, Minimize2, Maximize2, Layers } from "lucide-react";
+import { LayoutDashboard, X, Minimize2, Maximize2, Layers, Plus } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import {
+  useContextPickStore,
+  type ContextItem,
+} from "@/features/chat/context/contextPick";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { cn } from "@/lib/cn";
@@ -41,6 +45,15 @@ interface Props {
 }
 
 const ACTIVE_BOARD_KEY = "cheers.viewboard.active"; // last-viewed board, restored on reload
+
+// Boards that map to a resource verb an agent can resolve (docs/design/RESOURCE_CONTEXT.md).
+// Audit is REST-only (no resource verb), so it isn't attachable as context.
+const ATTACHABLE_BOARDS: Record<string, { verb: string; kind: ContextItem["kind"] }> = {
+  plan: { verb: "channel.plan.read", kind: "plan" },
+  cost: { verb: "channel.usage.read", kind: "cost" },
+  sessions: { verb: "channel.sessions.read", kind: "sessions" },
+  activity: { verb: "channel.activity.read", kind: "activity" },
+};
 
 interface SessionOpt {
   session_id: string;
@@ -208,6 +221,25 @@ function ViewBoardDrawerImpl({
           ViewBoard
         </span>
         <div className="flex-1" />
+        {!minimal && activeBoard && ATTACHABLE_BOARDS[activeBoard.id] && (
+          <button
+            onClick={() => {
+              const meta = ATTACHABLE_BOARDS[activeBoard.id];
+              const scoped = activeBoard.sessionScoped && scope;
+              useContextPickStore.getState().add(channelId, {
+                id: scoped ? `${activeBoard.id}:${scope}` : activeBoard.id,
+                verb: meta.verb,
+                params: scoped ? { session_id: scope } : {},
+                label: activeBoard.title,
+                kind: meta.kind,
+              });
+            }}
+            title="Attach this board as context for your next message"
+            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        )}
         {onToggleMinimal && (
           <button
             onClick={onToggleMinimal}
