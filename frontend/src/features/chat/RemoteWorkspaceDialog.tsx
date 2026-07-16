@@ -1642,6 +1642,7 @@ export function RemoteWorkspaceDialog({
                                   undefined,
                                 path: ent.path,
                                 sessionId: effectiveSessionId || undefined,
+                                root: treeRoot ?? undefined,
                               })}
                               title={addToContextTitle(`${ent.name} (live reference)`)}
                               className="flex items-center p-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-indigo-300 disabled:opacity-40"
@@ -1811,6 +1812,7 @@ export function RemoteWorkspaceDialog({
                               undefined,
                             path: file.path,
                             sessionId: effectiveSessionId || undefined,
+                            root: treeRoot ?? undefined,
                           })
                         );
                         setAttached(true);
