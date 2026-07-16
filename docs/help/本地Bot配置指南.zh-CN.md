@@ -38,7 +38,7 @@
 
 ### 1.1 获取连接器二进制（预编译 Release）
 
-直接从项目的 [GitHub Releases](https://github.com/haowei2000/Cheers/releases/latest)
+直接从项目的 [GitHub Releases](https://github.com/ElePerson/Cheers/releases/latest)
 下载对应平台的二进制，无需 Rust 工具链（`release-connector` workflow 按 tag 发布
 `cce-acp-connector-{darwin,linux}-{arm64,amd64}` 四个产物）：
 
@@ -46,7 +46,7 @@
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"   # 写进 shell profile 长期生效
 cce-acp-connector --help
@@ -55,7 +55,7 @@ cce-acp-connector --help
 需要固定版本时，把 `latest/download` 换成 `download/connector-v<版本号>`
 （例如 `download/connector-v0.1.22`）。仓库还是**私有**时匿名 curl 会 404，
 有权限的用户改用 GitHub CLI 认证下载：
-`gh release download connector-v0.1.22 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`。
+`gh release download connector-v0.1.22 -R ElePerson/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector`。
 开发连接器本身的同学仍可用源码构建
 （`cargo build` → `target/debug/cce-acp-connector`）；下文命令默认
 `cce-acp-connector` 已在 `PATH` 上，两种方式均可。

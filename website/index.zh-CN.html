@@ -251,7 +251,7 @@
     <div class="nav-actions">
       <a class="icon-btn lang" href="./index.html" hreflang="en" lang="en" title="Switch to English">EN</a>
       <button class="icon-btn" id="themeToggle" title="切换浅色 / 深色" aria-label="切换浅色和深色主题">◐</button>
-      <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/ElePerson/Cheers">GitHub</a>
     </div>
   </div>
 </header>
@@ -412,7 +412,7 @@
             <li><span class="dot">3</span><span class="k">添加 Bot</span><span class="v">通过成员列表把一个智能体加入频道。</span></li>
             <li><span class="dot">4</span><span class="k">提问</span><span class="v"><code>@bot</code> 你的第一个问题，看它回复。</span></li>
           </ul>
-          <p style="margin-top:18px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.zh-CN.md">阅读完整用户指南 →</a></p>
+          <p style="margin-top:18px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/docs/help/README.zh-CN.md">阅读完整用户指南 →</a></p>
         </div>
       </div>
     </div>
@@ -461,15 +461,15 @@
       </div>
 
       <div class="grid grid-3">
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
           <span class="dt">架构总览 →</span>
           <span class="dd">为什么是两层架构，数据如何端到端流转。</span>
         </a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
           <span class="dt">网关协议 →</span>
           <span class="dd">浏览器与网关之间的实时协议。</span>
         </a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.zh-CN.md">
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.zh-CN.md">
           <span class="dt">Agent Bridge 接入指南 →</span>
           <span class="dd">注册 bot 并接入本地 ACP 智能体。</span>
         </a>
@@ -509,7 +509,7 @@ openssl rsa -in jwt_priv.pem -pubout -out jwt_pub.pem
 <span class="c"># 3. 启动核心栈</span>
 docker compose up -d
 <span class="c"># UI → http://localhost   ·   API → http://localhost:8000/health</span></pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.zh-CN.md">完整 Docker Compose 指南 →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/docs/help/docker-compose-deploy.zh-CN.md">完整 Docker Compose 指南 →</a></p>
       </div>
 
       <div class="panel" data-panel="helm" hidden>
@@ -526,7 +526,7 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
   --set-file secrets.jwtPrivateKey=jwt_priv.pem \
   --set-file secrets.jwtPublicKey=jwt_pub.pem
 <span class="c"># UI → http://localhost:30080  （账号 admin / admin12345）</span></pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md">Helm chart README →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/deploy/helm/cheers/README.md">Helm chart README →</a></p>
       </div>
 
       <div class="panel" data-panel="dev" hidden>
@@ -540,7 +540,7 @@ cd server && cargo run
 
 <span class="c"># 另开一个终端：React 前端</span>
 cd frontend && npm install && npm run dev</pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/community/CONTRIBUTING.zh-CN.md">贡献指南 →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/docs/community/CONTRIBUTING.zh-CN.md">贡献指南 →</a></p>
       </div>
     </div>
   </section>
@@ -553,14 +553,14 @@ cd frontend && npm install && npm run dev</pre>
         <p>英文是默认文档语言；多数指南都有中文镜像（<code>.zh-CN.md</code>）。</p>
       </div>
       <div class="docs-grid">
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.zh-CN.md"><span class="dt">📚 文档主页</span><span class="dd">用户、管理员与运维指南索引。</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/README.zh-CN.md"><span class="dt">📚 文档主页</span><span class="dd">用户、管理员与运维指南索引。</span></a>
         <a class="doc" href="./connector.zh-CN.html"><span class="dt">🔗 连接你的 AI 智能体</span><span class="dd">用 ACP 连接器把你自己的 Claude / Codex 接入 Cheers——安装、令牌、配置、更新。</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.zh-CN.md"><span class="dt">🐳 Docker Compose 部署</span><span class="dd">单机全栈、JWT 密钥、bot 配置、TLS、运维。</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md"><span class="dt">☸️ Helm Chart</span><span class="dd">Kubernetes 部署、values、密钥、ingress。（英文）</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md"><span class="dt">🏗️ 架构</span><span class="dd">系统设计、数据流与协议。（英文）</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/docker-compose-deploy.zh-CN.md"><span class="dt">🐳 Docker Compose 部署</span><span class="dd">单机全栈、JWT 密钥、bot 配置、TLS、运维。</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/deploy/helm/cheers/README.md"><span class="dt">☸️ Helm Chart</span><span class="dd">Kubernetes 部署、values、密钥、ingress。（英文）</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md"><span class="dt">🏗️ 架构</span><span class="dd">系统设计、数据流与协议。（英文）</span></a>
         <a class="doc" href="./plugin-dev.html"><span class="dt">🧩 插件开发</span><span class="dd">开发 Workbench 渲染器插件与环境模板。（英文）</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86%E8%AF%B4%E6%98%8E%E4%B9%A6.zh-CN.md"><span class="dt">🛠️ 系统管理说明书</span><span class="dd">工作区、频道、成员、bot、Agent Bridge。</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.zh-CN.md"><span class="dt">🔎 技术排查 Q&A</span><span class="dd">健康检查、日志、bot 无响应、预览问题。</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86%E8%AF%B4%E6%98%8E%E4%B9%A6.zh-CN.md"><span class="dt">🛠️ 系统管理说明书</span><span class="dd">工作区、频道、成员、bot、Agent Bridge。</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.zh-CN.md"><span class="dt">🔎 技术排查 Q&A</span><span class="dd">健康检查、日志、bot 无响应、预览问题。</span></a>
       </div>
     </div>
   </section>
@@ -571,10 +571,10 @@ cd frontend && npm install && npm run dev</pre>
     <div>🍻 <strong>Cheers</strong> —— 人类与 AI 智能体的开源协作平台。MIT 许可。</div>
     <div class="foot-links">
       <a href="./index.html">English</a>
-      <a href="https://github.com/haowei2000/Cheers">GitHub</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/README.zh-CN.md">README</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">许可证</a>
-      <a href="https://github.com/haowei2000/Cheers/security/advisories/new">报告安全漏洞</a>
+      <a href="https://github.com/ElePerson/Cheers">GitHub</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/README.zh-CN.md">README</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/LICENSE">许可证</a>
+      <a href="https://github.com/ElePerson/Cheers/security/advisories/new">报告安全漏洞</a>
     </div>
   </div>
 </footer>

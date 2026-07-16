@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } fro
 import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, WifiOff } from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
-import { useContextPickStore, toBundle } from "./context/contextPick";
+import { useContextPickStore, toBundle, type ContextItem } from "./context/contextPick";
 import { ContextPickBar } from "./context/ContextPickBar";
 import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
@@ -114,6 +114,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [workspaceFocus, setWorkspaceFocus] = useState<PresenceFocus[]>([]);
   // Composer session target: "" = Auto (mention routing → primary); else a session_id.
   const [selectedSessionId, setSelectedSessionId] = useState("");
+  // The owning bot of the pinned session (null for Auto) — narrows the composer's
+  // model chip to the single bot a pinned session actually targets.
+  const [selectedSessionBotId, setSelectedSessionBotId] = useState<string | null>(null);
   // Bots @mentioned in the current draft (from the composer), so we can show their
   // mode/config controls inline when the caller is allowed to change them.
   const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
@@ -160,6 +163,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // can't synthesize a phantom bubble in the newly opened channel.
   useEffect(() => {
     setSelectedSessionId("");
+    setSelectedSessionBotId(null);
     setMentionedBots([]);
     setCommands([]);
     setMembersOpen(false);
@@ -657,11 +661,51 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [refError, setRefError] = useState<string | null>(null);
   // Jump-to-message request from ViewBoard history items (activity rows, audit
   // cards). `nonce` lets a repeat click on the same row re-trigger the scroll.
-  // Best-effort: MessageList only scrolls when the message is loaded.
+  // If the target isn't in the loaded window (initial load is only the newest
+  // page), page older history in — bounded — until it appears, then focus; the
+  // old behavior just toasted "scroll up to load older history" at the user.
   const [focusMsg, setFocusMsg] = useState<{ msgId: string; nonce: number } | null>(null);
+  const messagesRef = useRef<Message[]>(messages);
+  messagesRef.current = messages;
+  const jumpBackfillRef = useRef(false);
+  // × 50/page — comfortably covers the Activity board's 200-event window.
+  const JUMP_BACKFILL_PAGES = 8;
   const jumpToMessage = useCallback(
-    (msgId: string) => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 })),
-    []
+    async (msgId: string) => {
+      const focus = () => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 }));
+      if (messagesRef.current.some((m) => m.msg_id === msgId)) return focus();
+      if (!channel || jumpBackfillRef.current) return;
+      jumpBackfillRef.current = true;
+      const toastId = toast.loading("Loading older history…");
+      try {
+        let oldest = messagesRef.current[0];
+        for (let page = 0; page < JUMP_BACKFILL_PAGES && oldest; page++) {
+          const res = await listMessages(channel.channel_id, {
+            before: oldest.msg_id,
+            limit: 50,
+          });
+          const batch = res.messages ?? res.data ?? [];
+          setMessages((prev) => mergeMessages(prev, batch));
+          setHasMore(res.meta?.has_more_before ?? false);
+          // Focus in the same batch as setMessages: MessageList's focus effect
+          // runs after the commit that renders the new rows, so the anchor exists.
+          if (batch.some((m) => m.msg_id === msgId)) return focus();
+          const sorted = sortMessages(batch);
+          if (!sorted.length || !(res.meta?.has_more_before ?? false)) break;
+          oldest = sorted[0];
+        }
+        toast("Couldn't find that message in this channel's history", {
+          icon: "🔍",
+          id: "jump-not-found",
+        });
+      } catch {
+        toast.error("Couldn't load older messages — try again", { id: "load-older-failed" });
+      } finally {
+        toast.dismiss(toastId);
+        jumpBackfillRef.current = false;
+      }
+    },
+    [channel]
   );
   // "Open the ViewBoard on THIS board" request (same nonce pattern as focusMsg) —
   // the session chip's "Manage sessions…" jumps straight to the Sessions board.
@@ -670,6 +714,37 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     setVbMinimal(false);
     setVbOpen(true);
     setFocusBoard((prev) => ({ id: "sessions", nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
+  // Add-context menu → open a side surface (untargeted) so the user can pick a
+  // file to attach from its own panel.
+  const browseWorkbench = useCallback(() => {
+    setWbTarget(undefined);
+    setWbOpen(true);
+  }, []);
+  const browseWorkspace = useCallback(() => {
+    setWsInit({});
+    setWsOpen(true);
+  }, []);
+  // A pending context chip → jump to where that resource actually lives: a
+  // Workbench file (`fs.read`) opens the Workbench focused on it; a bot's
+  // workspace file (`workspace.read`) opens the Remote workspace at that path.
+  const jumpToContextSource = useCallback((item: ContextItem) => {
+    if (item.verb === "fs.read") {
+      const path = item.params.path;
+      if (typeof path === "string") {
+        setWbTarget(path);
+        setWbOpen(true);
+      }
+    } else if (item.verb === "workspace.read") {
+      const botId = item.params.bot_id;
+      const path = item.params.path;
+      setWsInit({
+        botId: typeof botId === "string" ? botId : undefined,
+        path: typeof path === "string" ? path : undefined,
+      });
+      setWsOpen(true);
+    }
   }, []);
 
   // Stable handlers for the memoized drawers so a streaming re-render of ChannelView
@@ -688,26 +763,39 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             channelId={channel.channel_id}
             bots={switcherBots}
             value={selectedSessionId}
-            onChange={setSelectedSessionId}
+            onChange={(sid, botId) => {
+              setSelectedSessionId(sid);
+              setSelectedSessionBotId(botId ?? null);
+            }}
             sendResourceReq={sendResourceReq}
             onManageSessions={openSessionsBoard}
           />
-          {/* Model/mode + config for the @mentioned bot(s); with no live
-              mention, fall back to the channel's bots so the controls are
-              always reachable. */}
+          {/* Model/mode + config for the target bot(s). A pinned session routes
+              to exactly one bot (its own), so narrow to that bot and show its
+              session's model; otherwise the @mentioned bots, falling back to the
+              channel's bots so the controls are always reachable. */}
           <ComposerModelPopover
             channelId={channel.channel_id}
             bots={
-              mentionedBots.length > 0
-                ? mentionedBots.map((m) => ({ botId: m.id, name: m.label }))
-                : switcherBots
+              selectedSessionId && selectedSessionBotId
+                ? [
+                    {
+                      botId: selectedSessionBotId,
+                      name:
+                        switcherBots.find((b) => b.botId === selectedSessionBotId)?.name ??
+                        selectedSessionBotId,
+                    },
+                  ]
+                : mentionedBots.length > 0
+                  ? mentionedBots.map((m) => ({ botId: m.id, name: m.label }))
+                  : switcherBots
             }
             selectedSessionId={selectedSessionId}
           />
         </>
       ) : null,
     // sendResourceReq and openSessionsBoard are identity-stable (useCallback).
-    [channel, switcherBots, selectedSessionId, mentionedBots, sendResourceReq, openSessionsBoard]
+    [channel, switcherBots, selectedSessionId, selectedSessionBotId, mentionedBots, sendResourceReq, openSessionsBoard]
   );
 
   // In-flight bot turns, for the composer's send→stop morph. The array identity
@@ -1291,6 +1379,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           replyTo={replyTo}
           draftText={draftText}
           files={channelFiles}
+          onBrowseWorkbench={browseWorkbench}
+          onBrowseWorkspace={browseWorkspace}
+          onJumpToSource={jumpToContextSource}
         />
       )}
 

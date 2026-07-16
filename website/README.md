@@ -15,6 +15,8 @@ Pages:
   connector (connect your own Claude/Codex bot): install, token, config, keeping
   it updated, and the "bot can't see attached files → update the connector"
   fix. The two mirror each other via the 中文 / EN button; keep both in sync.
+- `mcp.html` — Cheers MCP tool reference: the 26 tools an external agent uses,
+  the request path, and post_message performance notes (English only for now).
 
 ## Preview locally
 
@@ -32,7 +34,7 @@ python3 -m http.server -d website 8080   # → http://localhost:8080
 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) publishes
 `website/` on every push to `main` that touches it (or on manual
 `workflow_dispatch`). One-time setup: repo Settings → Pages → Source =
-**"GitHub Actions"**. Live site: <https://haowei2000.github.io/Cheers/>
+**"GitHub Actions"**. Live site: <https://eleperson.github.io/Cheers/>
 
 Any other static host also works — the site is a handful of self-contained
 HTML files plus the `imgs/` screenshots, with no build step.
@@ -41,7 +43,7 @@ HTML files plus the `imgs/` screenshots, with no build step.
 
 - Light/dark theme follows the OS by default; the ◐ button cycles
   auto → light → dark and remembers the choice.
-- Documentation and repo links point at `https://github.com/haowei2000/Cheers`
+- Documentation and repo links point at `https://github.com/ElePerson/Cheers`
   — update them if the canonical repo URL changes.
 - Content is intentionally kept in sync with `README.md` (and
   `README.zh-CN.md` for the Chinese page); when features or the stack change,

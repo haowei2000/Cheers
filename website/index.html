@@ -245,13 +245,14 @@
       <a href="#tour">Screenshots</a>
       <a href="#users">For Users</a>
       <a href="#developers">For Developers</a>
+      <a href="./mcp.html">MCP Tools</a>
       <a href="#quickstart">Quick Start</a>
       <a href="#docs">Docs</a>
     </nav>
     <div class="nav-actions">
       <a class="icon-btn lang" href="./index.zh-CN.html" hreflang="zh-CN" lang="zh-CN" title="切换到中文版">中文</a>
       <button class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light and dark theme">◐</button>
-      <a class="btn btn-primary" href="https://github.com/haowei2000/Cheers">GitHub</a>
+      <a class="btn btn-primary" href="https://github.com/ElePerson/Cheers">GitHub</a>
     </div>
   </div>
 </header>
@@ -413,7 +414,7 @@
             <li><span class="dot">3</span><span class="k">Add a bot</span><span class="v">Use the member list to add an agent to the channel.</span></li>
             <li><span class="dot">4</span><span class="k">Ask it</span><span class="v"><code>@bot</code> your first question and see it reply.</span></li>
           </ul>
-          <p style="margin-top:18px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.md">Read the full user guide →</a></p>
+          <p style="margin-top:18px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/docs/help/README.md">Read the full user guide →</a></p>
         </div>
       </div>
     </div>
@@ -462,21 +463,25 @@
       </div>
 
       <div class="grid grid-3">
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md">
           <span class="dt">Architecture Overview →</span>
           <span class="dd">Why the two-tier split and how data flows end to end.</span>
         </a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/arch/WIRE_PROTOCOL.md">
           <span class="dt">Wire Protocol →</span>
           <span class="dd">The real-time protocol between browser and gateway.</span>
         </a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.md">
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.md">
           <span class="dt">Agent Bridge Guide →</span>
           <span class="dd">Register bots and connect local ACP-capable agents.</span>
         </a>
         <a class="doc" href="./plugin-dev.html">
           <span class="dt">Plugin Development →</span>
           <span class="dd">Build a workbench renderer plugin: one sandboxed HTML file.</span>
+        </a>
+        <a class="doc" href="./mcp.html">
+          <span class="dt">MCP Tool Reference →</span>
+          <span class="dd">The 26 tools an external agent uses to live inside a channel.</span>
         </a>
       </div>
     </div>
@@ -510,7 +515,7 @@ openssl rsa -in jwt_priv.pem -pubout -out jwt_pub.pem
 <span class="c"># 3. bring up the core stack</span>
 docker compose up -d
 <span class="c"># UI → http://localhost   ·   API → http://localhost:8000/health</span></pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.md">Full Docker Compose guide →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/docs/help/docker-compose-deploy.md">Full Docker Compose guide →</a></p>
       </div>
 
       <div class="panel" data-panel="helm" hidden>
@@ -527,7 +532,7 @@ helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
   --set-file secrets.jwtPrivateKey=jwt_priv.pem \
   --set-file secrets.jwtPublicKey=jwt_pub.pem
 <span class="c"># UI → http://localhost:30080  (sign in admin / admin12345)</span></pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md">Helm chart README →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/deploy/helm/cheers/README.md">Helm chart README →</a></p>
       </div>
 
       <div class="panel" data-panel="dev" hidden>
@@ -541,7 +546,7 @@ cd server && cargo run
 
 <span class="c"># in another terminal: the React frontend</span>
 cd frontend && npm install && npm run dev</pre>
-        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/haowei2000/Cheers/blob/main/docs/community/CONTRIBUTING.md">Contributing guide →</a></p>
+        <p style="margin-top:16px;font-size:14px;"><a href="https://github.com/ElePerson/Cheers/blob/main/docs/community/CONTRIBUTING.md">Contributing guide →</a></p>
       </div>
     </div>
   </section>
@@ -554,14 +559,14 @@ cd frontend && npm install && npm run dev</pre>
         <p>English is the default; most guides have a Chinese mirror (<code>.zh-CN.md</code>).</p>
       </div>
       <div class="docs-grid">
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/README.md"><span class="dt">📚 Documentation Home</span><span class="dd">Index of user, admin, and operations guides.</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/README.md"><span class="dt">📚 Documentation Home</span><span class="dd">Index of user, admin, and operations guides.</span></a>
         <a class="doc" href="./connector.html"><span class="dt">🔗 Connect your AI agent</span><span class="dd">Plug your own Claude / Codex into Cheers with the ACP connector — install, token, config, updates.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/docker-compose-deploy.md"><span class="dt">🐳 Docker Compose Deploy</span><span class="dd">Single-host stack, JWT keys, bot setup, TLS, ops.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/deploy/helm/cheers/README.md"><span class="dt">☸️ Helm Chart</span><span class="dd">Kubernetes deployment, values, secrets, ingress.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md"><span class="dt">🏗️ Architecture</span><span class="dd">System design, data flow, and protocols.</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/docker-compose-deploy.md"><span class="dt">🐳 Docker Compose Deploy</span><span class="dd">Single-host stack, JWT keys, bot setup, TLS, ops.</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/deploy/helm/cheers/README.md"><span class="dt">☸️ Helm Chart</span><span class="dd">Kubernetes deployment, values, secrets, ingress.</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/arch/ARCHITECTURE_OVERVIEW.md"><span class="dt">🏗️ Architecture</span><span class="dd">System design, data flow, and protocols.</span></a>
         <a class="doc" href="./plugin-dev.html"><span class="dt">🧩 Plugin Development</span><span class="dd">Build workbench renderer plugins and environment templates.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86%E8%AF%B4%E6%98%8E%E4%B9%A6.md"><span class="dt">🛠️ Admin Guide</span><span class="dd">Workspaces, channels, members, bots, Agent Bridge.</span></a>
-        <a class="doc" href="https://github.com/haowei2000/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.md"><span class="dt">🔎 Troubleshooting</span><span class="dd">Health checks, logs, bot no-response, preview issues.</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86%E8%AF%B4%E6%98%8E%E4%B9%A6.md"><span class="dt">🛠️ Admin Guide</span><span class="dd">Workspaces, channels, members, bots, Agent Bridge.</span></a>
+        <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&A.md"><span class="dt">🔎 Troubleshooting</span><span class="dd">Health checks, logs, bot no-response, preview issues.</span></a>
       </div>
     </div>
   </section>
@@ -571,10 +576,10 @@ cd frontend && npm install && npm run dev</pre>
   <div class="wrap foot-inner">
     <div>🍻 <strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
     <div class="foot-links">
-      <a href="https://github.com/haowei2000/Cheers">GitHub</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/README.md">README</a>
-      <a href="https://github.com/haowei2000/Cheers/blob/main/LICENSE">License</a>
-      <a href="https://github.com/haowei2000/Cheers/security/advisories/new">Report a vulnerability</a>
+      <a href="https://github.com/ElePerson/Cheers">GitHub</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/README.md">README</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/LICENSE">License</a>
+      <a href="https://github.com/ElePerson/Cheers/security/advisories/new">Report a vulnerability</a>
     </div>
   </div>
 </footer>

@@ -101,5 +101,5 @@ First tagged public-preview release.
 - Status: early public preview. Deployment hardening, permission boundaries,
   and wider agent-ecosystem integration are still evolving.
 
-[Unreleased]: https://github.com/haowei2000/Cheers/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/haowei2000/Cheers/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ElePerson/Cheers/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/ElePerson/Cheers/releases/tag/v0.1.0

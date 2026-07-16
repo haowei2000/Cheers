@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import {
-  Plus,
+  MessageSquarePlus,
   Check,
   X,
   ListChecks,
@@ -10,6 +10,9 @@ import {
   Boxes,
   DollarSign,
   CornerDownRight,
+  ArrowUpRight,
+  PanelRight,
+  FolderTree,
   type LucideIcon,
 } from "lucide-react";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
@@ -113,6 +116,16 @@ const QUICK: ContextItem[] = [
   { id: "cost", verb: "channel.usage.read", params: {}, label: "Cost", kind: "cost" },
 ];
 
+/** Which surface a pending context item can be jumped back to — a workbench
+ *  file (`fs.read`) opens the Workbench focused on it; a bot's workspace file
+ *  (`workspace.read`) opens the Remote workspace dialog at that path. Anything
+ *  else (channel reads: plan/activity/sessions/cost) has no file to jump to. */
+export function jumpTargetOf(it: ContextItem): "workbench" | "workspace" | null {
+  if (it.verb === "fs.read") return "workbench";
+  if (it.verb === "workspace.read") return "workspace";
+  return null;
+}
+
 /** In-panel "attach this to my next message" button (Viewboard / Workbench /
  *  a message). Pushes one item to the channel's pending context; shows a check
  *  once added. `disabled` (e.g. an already-pinned file) blocks the attach. */
@@ -146,7 +159,7 @@ export function AttachContextButton({
         "rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
       }
     >
-      {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Plus className="w-3.5 h-3.5" />}
+      {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
     </button>
   );
 }
@@ -156,11 +169,20 @@ export function ContextPickBar({
   replyTo,
   draftText,
   files,
+  onBrowseWorkbench,
+  onBrowseWorkspace,
+  onJumpToSource,
 }: {
   channelId: string;
   replyTo?: ReplyTargetLike | null;
   draftText?: string;
   files?: FileRef[];
+  /** Open the Workbench drawer so the user can pick a file to attach. */
+  onBrowseWorkbench?: () => void;
+  /** Open the Remote workspace dialog so the user can pick a workspace file. */
+  onBrowseWorkspace?: () => void;
+  /** Jump to a pending item's source (Workbench file / workspace file). */
+  onJumpToSource?: (item: ContextItem) => void;
 }) {
   const items = usePendingContext(channelId);
   const suggestions = useContextSuggestions(channelId, { replyTo, draftText, files });
@@ -190,7 +212,7 @@ export function ContextPickBar({
             >
               <Icon className="w-3 h-3" />
               <span className="max-w-[12rem] truncate">{sg.label}</span>
-              <Plus className="w-3 h-3" />
+              <MessageSquarePlus className="w-3 h-3" />
             </button>
             <button
               type="button"
@@ -207,6 +229,7 @@ export function ContextPickBar({
 
       {items.map((it) => {
         const Icon = KIND_ICON[it.kind];
+        const jumpTo = onJumpToSource && jumpTargetOf(it);
         return (
           <span
             key={it.id}
@@ -214,12 +237,23 @@ export function ContextPickBar({
           >
             <Icon className="w-3 h-3 text-zinc-400" />
             <span className="max-w-[12rem] truncate">{it.label}</span>
+            {jumpTo && (
+              <button
+                type="button"
+                onClick={() => onJumpToSource(it)}
+                aria-label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
+                title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
+                className="ml-0.5 rounded p-0.5 text-zinc-500 hover:text-indigo-300 hover:bg-zinc-700"
+              >
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => remove(channelId, it.id)}
               aria-label={`Remove ${it.label}`}
               title="Remove"
-              className="ml-0.5 rounded p-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700"
+              className="rounded p-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700"
             >
               <X className="w-3 h-3" />
             </button>
@@ -235,7 +269,7 @@ export function ContextPickBar({
           title={ADD_CONTEXT_MENU_TITLE}
           className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
         >
-          <Plus className="w-3 h-3" />
+          <MessageSquarePlus className="w-3 h-3" />
           {ADD_CONTEXT_MENU}
         </button>
         {open && (
@@ -263,9 +297,45 @@ export function ContextPickBar({
                 </button>
               );
             })}
-            <p className="px-2 pt-1.5 pb-0.5 text-[10px] text-zinc-500 border-t border-zinc-800 mt-1">
-              Files, messages & a bot's workspace files: add them from their own
-              panels (Workbench, a reply, the Remote workspace).
+            {(onBrowseWorkbench || onBrowseWorkspace) && (
+              <>
+                <p className="px-2 pt-2 pb-0.5 text-[10px] uppercase tracking-wide text-zinc-400 border-t border-zinc-800 mt-1">
+                  Browse &amp; attach
+                </p>
+                {onBrowseWorkbench && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onBrowseWorkbench();
+                    }}
+                    title="Open the Workbench to pick a file to attach"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-300 hover:bg-zinc-800"
+                  >
+                    <PanelRight className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="flex-1 text-left">Workbench files…</span>
+                    <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
+                  </button>
+                )}
+                {onBrowseWorkspace && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onBrowseWorkspace();
+                    }}
+                    title="Open the Remote workspace to pick a file to attach"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-300 hover:bg-zinc-800"
+                  >
+                    <FolderTree className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="flex-1 text-left">Workspace files…</span>
+                    <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
+                  </button>
+                )}
+              </>
+            )}
+            <p className="px-2 pt-1.5 pb-0.5 text-[10px] text-zinc-500">
+              Or attach a message from its reply action.
             </p>
           </PopoverPanel>
         )}

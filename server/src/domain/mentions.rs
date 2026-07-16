@@ -198,6 +198,77 @@ pub async fn resolve_mention_names(
     channel_id: Uuid,
     names: &[String],
 ) -> Result<Vec<Mention>, MentionParseError> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Plain (non-group) names resolve in ONE batched query instead of one round-trip
+    // per name — mirroring `validate_mention_ids`. Group tokens (@all/@bots/@humans)
+    // still expand per token via `expand_group_mention`.
+    let plain_names: Vec<String> = names
+        .iter()
+        .filter(|n| group_mention_scope(n).is_none())
+        .cloned()
+        .collect();
+
+    let name_to_mention: std::collections::HashMap<String, Mention> = if plain_names.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        let rows = sqlx::query(
+            "SELECT cm.member_id, cm.member_type,
+                    COALESCE(u.username, ba.username)         AS username,
+                    COALESCE(u.display_name, ba.display_name) AS display_name
+             FROM channel_memberships cm
+             LEFT JOIN users u
+               ON u.user_id = cm.member_id AND cm.member_type = 'user'
+             LEFT JOIN bot_accounts ba
+               ON ba.bot_id = cm.member_id AND cm.member_type = 'bot'
+             WHERE cm.channel_id = $1
+               AND (
+                 (cm.member_type = 'user' AND (u.username = ANY($2) OR u.display_name = ANY($2)))
+                 OR
+                 (cm.member_type = 'bot' AND (ba.username = ANY($2) OR ba.display_name = ANY($2)))
+               )",
+        )
+        .bind(channel_id.to_string())
+        .bind(&plain_names)
+        .fetch_all(db)
+        .await?;
+
+        // Key every returned member by both its username and display_name. First row
+        // wins on a name collision — ambiguous names were already resolved
+        // arbitrarily under the old per-name `LIMIT 1`.
+        let mut map: std::collections::HashMap<String, Mention> =
+            std::collections::HashMap::new();
+        for row in &rows {
+            let Some(member_id) = row
+                .try_get::<String, _>("member_id")
+                .ok()
+                .and_then(|s| s.parse::<Uuid>().ok())
+            else {
+                continue;
+            };
+            let member_type = match row.try_get::<String, _>("member_type").as_deref() {
+                Ok("bot") => MemberType::Bot,
+                Ok("user") => MemberType::User,
+                _ => continue,
+            };
+            let mention = Mention {
+                member_id,
+                member_type,
+            };
+            for key in ["username", "display_name"] {
+                if let Ok(Some(value)) = row.try_get::<Option<String>, _>(key) {
+                    map.entry(value).or_insert(mention);
+                }
+            }
+        }
+        map
+    };
+
+    // Second pass in input order: groups expand in place; plain names resolve from
+    // the batch map. The first unresolved name errors — preserving the old
+    // "first not found in order" semantics.
     let mut mentions = Vec::new();
     for name in names {
         if let Some(scope) = group_mention_scope(name) {
@@ -206,43 +277,10 @@ pub async fn resolve_mention_names(
             }
             continue;
         }
-        let row = sqlx::query(
-            "SELECT cm.member_id, cm.member_type
-             FROM channel_memberships cm
-             LEFT JOIN users u
-               ON u.user_id = cm.member_id AND cm.member_type = 'user'
-             LEFT JOIN bot_accounts ba
-               ON ba.bot_id = cm.member_id AND cm.member_type = 'bot'
-             WHERE cm.channel_id = $1
-               AND (
-                 (cm.member_type = 'user' AND (u.username = $2 OR u.display_name = $2))
-                 OR
-                 (cm.member_type = 'bot' AND (ba.username = $2 OR ba.display_name = $2))
-               )
-             LIMIT 1",
-        )
-        .bind(channel_id.to_string())
-        .bind(name)
-        .fetch_optional(db)
-        .await?;
-
-        let Some(row) = row else {
+        let Some(mention) = name_to_mention.get(name) else {
             return Err(MentionParseError::NameNotFound { name: name.clone() });
         };
-
-        let member_id: Uuid = row
-            .try_get::<String, _>("member_id")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .ok_or_else(|| MentionParseError::NameNotFound { name: name.clone() })?;
-
-        let member_type = match row.try_get::<String, _>("member_type").as_deref() {
-            Ok("bot") => MemberType::Bot,
-            Ok("user") => MemberType::User,
-            _ => return Err(MentionParseError::NameNotFound { name: name.clone() }),
-        };
-
-        push_unique(&mut mentions, member_id, member_type);
+        push_unique(&mut mentions, mention.member_id, mention.member_type);
     }
     Ok(mentions)
 }

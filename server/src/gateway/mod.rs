@@ -12,6 +12,7 @@ pub mod reclaimer;
 #[allow(dead_code)]
 pub mod redis_registry;
 pub mod registry;
+pub mod resource_effects;
 pub mod stream;
 pub mod transcription_worker;
 pub mod workspace_rpc;
