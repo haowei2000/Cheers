@@ -11,6 +11,8 @@ Pages:
 - `index.zh-CN.html` — Chinese mirror of the homepage; the two link to each
   other via the 中文 / EN button in the nav. Keep both in sync when editing.
 - `plugin-dev.html` — workbench renderer plugin guide (English only for now).
+- `mcp.html` — Cheers MCP tool reference: the 26 tools an external agent uses,
+  the request path, and post_message performance notes (English only for now).
 
 ## Preview locally
 

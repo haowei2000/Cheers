@@ -177,6 +177,10 @@ fn fallback_message_value(channel_id: Uuid) -> Value {
 }
 
 pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
+    // Perf instrumentation: total time spent in the DB-only create handler (authz +
+    // mention resolution + tx). Broadcast/bot-trigger happen at the WS boundary and
+    // are timed separately in agent_bridge — see docs on the post_message hot path.
+    let started = std::time::Instant::now();
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(|v| v.as_str())
@@ -283,6 +287,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     let files = load_message_file_refs(db, &file_ids)
         .await
         .map_err(|_| super::resource_error("INTERNAL_ERROR", "db error"))?;
+    let files_len = files.len();
 
     let mention_dtos = mention_dtos(&mentions);
     let dto = MessageDto {
@@ -305,6 +310,15 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         content_data: None,
         context_bundle,
     };
+
+    tracing::debug!(
+        %channel_id,
+        %msg_id,
+        mentions = mentions.len(),
+        files = files_len,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "messages.create db-path complete"
+    );
 
     Ok(serde_json::to_value(dto).unwrap_or_else(|_| {
         serde_json::json!({
