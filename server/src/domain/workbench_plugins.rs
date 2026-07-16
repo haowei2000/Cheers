@@ -24,8 +24,9 @@ fn plugin_id_ok(id: &str) -> bool {
         return false;
     }
     (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
-        && b.iter()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b'-'))
+        && b.iter().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b'-')
+        })
 }
 
 fn validate_match(m: &Value) -> Result<(), String> {
@@ -78,7 +79,12 @@ pub fn validate_manifest(plugin_id: &str, manifest: &Value) -> Result<(), String
         return Err("manifest.title must be a non-empty string (max 255 bytes)".into());
     }
     if let Some(p) = obj.get("protocol") {
-        if p.as_i64() != Some(PLUGIN_PROTOCOL) {
+        // Accept any JSON NUMBER equal to 1 (so `1.0` too): the frontend cannot be
+        // stricter — JSON.parse collapses 1.0 to 1 — and the two hosts must accept
+        // the same manifests. Strings ("1") are still not versions.
+        let is_v1 =
+            p.as_i64() == Some(PLUGIN_PROTOCOL) || p.as_f64() == Some(PLUGIN_PROTOCOL as f64);
+        if !is_v1 {
             return Err(format!(
                 "unsupported protocol {p} (this server accepts protocol {PLUGIN_PROTOCOL}; omit the field or set {PLUGIN_PROTOCOL})"
             ));
@@ -214,16 +220,39 @@ mod tests {
     fn rejects_unsupported_protocol() {
         let mut m = ok_manifest();
         m["protocol"] = json!(2);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("protocol"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("protocol"));
         m["protocol"] = json!("1"); // strings are not versions
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("protocol"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("protocol"));
+    }
+
+    #[test]
+    fn accepts_any_json_number_equal_to_1_as_protocol() {
+        // JSON.parse collapses 1.0 to 1, so the frontend cannot distinguish them —
+        // installs must not be stricter than session loads.
+        let mut m = ok_manifest();
+        m["protocol"] = json!(1.0);
+        assert_eq!(validate_manifest("md-checklist", &m), Ok(()));
+        m["protocol"] = json!(1.5);
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("protocol"));
+        m["protocol"] = json!("2");
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("protocol"));
     }
 
     #[test]
     fn rejects_legacy_panels_manifest() {
         let mut m = ok_manifest();
         m["panels"] = json!([{ "id": "notes", "title": "Notes" }]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("legacy"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("legacy"));
     }
 
     #[test]
@@ -240,9 +269,13 @@ mod tests {
     fn rejects_missing_or_empty_renderers() {
         let mut m = ok_manifest();
         m["renderers"] = json!([]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("renderers"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("renderers"));
         m.as_object_mut().unwrap().remove("renderers");
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("renderers"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("renderers"));
     }
 
     #[test]
@@ -252,11 +285,17 @@ mod tests {
             { "id": "dup", "title": "One" },
             { "id": "dup", "title": "Two" }
         ]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("duplicate"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("duplicate"));
         m["renderers"] = json!([{ "title": "no id" }]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("id"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("id"));
         m["renderers"] = json!([{ "id": "r" }]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("title"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("title"));
     }
 
     #[test]
@@ -267,10 +306,16 @@ mod tests {
                        "dataHas": ["rows"], "futureKey": { "anything": true } } }]);
         assert_eq!(validate_manifest("md-checklist", &m), Ok(()));
         m["renderers"] = json!([{ "id": "r", "title": "R", "match": { "dataKind": "tuple" } }]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("dataKind"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("dataKind"));
         m["renderers"] = json!([{ "id": "r", "title": "R", "match": { "format": [] } }]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("format"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("format"));
         m["renderers"] = json!([{ "id": "r", "title": "R", "match": { "requireAll": "x" } }]);
-        assert!(validate_manifest("md-checklist", &m).unwrap_err().contains("requireAll"));
+        assert!(validate_manifest("md-checklist", &m)
+            .unwrap_err()
+            .contains("requireAll"));
     }
 }

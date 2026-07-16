@@ -7,13 +7,18 @@
  *
  *   var host = cheersPlugin({
  *     onRender: function (file) {
- *       // { path, format, content, version, rendererId } — also re-sent when the
- *       // file changes externally and after a save conflict: always re-draw here.
+ *       // { path, format, content, version, rendererId } — sent in reply to your
+ *       // cheers:ready and re-sent after a conflicted save (the only two triggers,
+ *       // §5.2 — external edits do NOT re-render): always re-draw here.
  *     }
  *   });
  *   host.save(content)          // -> Promise<{version}>; rejects on failure (on a
  *                               //    version conflict a fresh onRender follows — let
- *                               //    the user reapply, don't blind-retry)
+ *                               //    the user reapply, don't blind-retry). At most ONE
+ *                               //    save may be in flight: the host does not correlate
+ *                               //    saves (cheers:saved carries no reqId), so calling
+ *                               //    save() again before the previous one settles
+ *                               //    rejects immediately.
  *   host.resource(name, params) // -> Promise<data> for the read-only channel.*
  *                               //    whitelist (channel.info / members / messages …)
  *   host.unsupported(reason)    // -> final verdict: this content can't be rendered
@@ -23,7 +28,7 @@
 function cheersPlugin(opts) {
   var reqId = 0;
   var pendingRes = {}; // reqId -> {resolve, reject}
-  var pendingSave = null; // single in-flight save; the host answers in order
+  var pendingSave = null; // the ONE allowed in-flight save (hosts do not correlate saves)
   window.addEventListener("message", function (e) {
     var m = e.data;
     if (!m || typeof m !== "object") return;
@@ -43,6 +48,13 @@ function cheersPlugin(opts) {
   var api = {
     save: function (content) {
       return new Promise(function (resolve, reject) {
+        if (pendingSave) {
+          // cheers:saved carries no correlation id, so overlapping saves could adopt
+          // each other's results. Reject loudly instead of queueing silently — await
+          // the previous save() before issuing the next one.
+          reject(new Error("save already in flight — await the previous save() first"));
+          return;
+        }
         pendingSave = { resolve: resolve, reject: reject };
         parent.postMessage({ type: "cheers:save", content: content }, "*");
       });

@@ -10,7 +10,7 @@
 | 文件 | 场景 | 说明 |
 |---|---|---|
 | [`md-checklist.plugin.html`](./md-checklist.plugin.html) | 通用 | 把 Markdown 待办(`- [ ]` / `- [x]`)渲染成可勾选清单,勾选写回 md。声明了**接受判断**(`match.requireAny` + 运行期 `cheers:unsupported`),只接受含待办行的 markdown。 |
-| [`lit-review.plugin.html`](./lit-review.plugin.html) | **科研** | 论文追踪表:把 `{ "papers": [...] }` 结构的 JSON 渲染成可编辑表格(标题/作者/期刊/年份/笔记 + 阅读状态下拉 + 星级评分),编辑写回 JSON。`match.jsonHas: ["papers"]` 预筛,运行期再验证 `papers` 是数组。 |
+| [`lit-review.plugin.html`](./lit-review.plugin.html) | **科研** | 论文追踪表:把 `{ "papers": [...] }` 结构的 JSON 渲染成可编辑表格(标题/作者/期刊/年份/笔记 + 阅读状态下拉 + 星级评分),编辑写回 JSON。`match.dataHas: ["papers"]` 预筛,运行期再验证 `papers` 是数组。 |
 | [`code-review.plugin.html`](./code-review.plugin.html) | **代码** | 代码评审清单:渲染 `## 文件路径` 分节、`- [ ] [P0/P1/P2] 描述` 的 markdown 评审记录,severity 徽章 + 顶部进度条,勾选就地改写该行并写回。`match.requireAny: ["[P0]","[P1]","[P2]"]`。 |
 
 ## 环境模板(数据)

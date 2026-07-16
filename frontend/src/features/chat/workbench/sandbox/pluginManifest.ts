@@ -4,8 +4,8 @@
 
 /** The protocol version this host implements (manifest `protocol` field). A manifest
  *  without `protocol` defaults to 1 — the documented default covering every plugin
- *  installed before the field existed. Hosts skip plugins declaring a HIGHER protocol
- *  (they'd speak messages we don't) instead of half-rendering them. */
+ *  installed before the field existed. Hosts skip plugins declaring any protocol other
+ *  than 1 (they'd speak messages we don't) instead of half-rendering them. */
 export const PLUGIN_PROTOCOL = 1;
 
 // What a renderer ACCEPTS — declared by the renderer, evaluated cheaply by the host to
@@ -58,12 +58,46 @@ export interface PluginMeta {
  *  server-side install validation). Also the sane ceiling for iframe srcDoc. */
 export const MAX_PLUGIN_BUNDLE_BYTES = 2 * 1024 * 1024;
 
-/** Shape-check a parsed plugin manifest. Returns an error message, or null when valid. */
+const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
+
+// Per-key match validation — mirrors the server's validate_match
+// (server/src/domain/workbench_plugins.rs). Known keys are type-checked; UNKNOWN keys
+// are allowed — hosts ignore them, which is what lets the vocabulary grow within
+// protocol 1. Session load and install are the same dev loop, so the two hosts must
+// accept exactly the same manifests.
+function validateMatch(m: unknown): string | null {
+  if (!m || typeof m !== "object" || Array.isArray(m)) return "renderer match must be an object";
+  const mo = m as Record<string, unknown>;
+  const f = mo.format;
+  if (f !== undefined) {
+    const ok =
+      typeof f === "string" ||
+      (Array.isArray(f) && f.length > 0 && f.every((x) => typeof x === "string"));
+    if (!ok) return "match.format must be a string or a non-empty array of strings";
+  }
+  if (mo.glob !== undefined && typeof mo.glob !== "string") return "match.glob must be a string";
+  for (const key of ["requireAll", "requireAny", "dataHas", "jsonHas"] as const) {
+    const v = mo[key];
+    if (v !== undefined && !(Array.isArray(v) && v.every((x) => typeof x === "string")))
+      return `match.${key} must be an array of strings`;
+  }
+  if (mo.dataKind !== undefined && mo.dataKind !== "object" && mo.dataKind !== "array")
+    return 'match.dataKind must be "object" or "array"';
+  return null;
+}
+
+/** Shape-check a parsed plugin manifest. Returns an error message, or null when valid.
+ *  Kept check-for-check in sync with the server's validate_manifest
+ *  (server/src/domain/workbench_plugins.rs): a manifest that session-loads here must
+ *  also install there, and vice versa. */
 export function validatePluginManifest(m: unknown): string | null {
   if (!m || typeof m !== "object" || Array.isArray(m)) return "manifest must be a JSON object";
   const o = m as Record<string, unknown>;
   if (typeof o.id !== "string" || !o.id.trim()) return "manifest.id must be a non-empty string";
-  if (typeof o.title !== "string" || !o.title.trim()) return "manifest.title must be a non-empty string";
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(o.id))
+    return "manifest.id must match ^[a-z0-9][a-z0-9._-]{0,63}$";
+  if (typeof o.title !== "string" || !o.title.trim() || utf8Bytes(o.title) > 255)
+    return "manifest.title must be a non-empty string (max 255 bytes)";
   if (o.protocol !== undefined && o.protocol !== PLUGIN_PROTOCOL)
     return `unsupported protocol ${JSON.stringify(o.protocol)} (this host implements protocol ${PLUGIN_PROTOCOL}; omit the field or set ${PLUGIN_PROTOCOL})`;
   if ("panels" in o)
@@ -74,12 +108,16 @@ export function validatePluginManifest(m: unknown): string | null {
   for (const r of o.renderers as unknown[]) {
     if (!r || typeof r !== "object" || Array.isArray(r)) return "each renderer must be an object";
     const rr = r as Record<string, unknown>;
-    if (typeof rr.id !== "string" || !rr.id.trim()) return "each renderer needs a non-empty string id";
-    if (typeof rr.title !== "string" || !rr.title.trim()) return "each renderer needs a non-empty string title";
+    if (typeof rr.id !== "string" || !rr.id.trim() || utf8Bytes(rr.id) > 64)
+      return "each renderer needs a non-empty string id (max 64 bytes)";
     if (seen.has(rr.id)) return `duplicate renderer id: ${rr.id}`;
     seen.add(rr.id);
-    if (rr.match !== undefined && (!rr.match || typeof rr.match !== "object" || Array.isArray(rr.match)))
-      return "renderer match must be an object when present";
+    if (typeof rr.title !== "string" || !rr.title.trim())
+      return "each renderer needs a non-empty string title";
+    if (rr.match !== undefined) {
+      const err = validateMatch(rr.match);
+      if (err) return err;
+    }
   }
   return null;
 }

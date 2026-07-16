@@ -62,7 +62,21 @@ describe("accepts — declared acceptance", () => {
     };
     const r = getRenderer("plugin:g:r", [p])!;
     expect(accepts(r, "reviews/a.md", "x")).toBe(true);
+    expect(accepts(r, "reviews/a/b.md", "x")).toBe(false); // * stops at "/"
     expect(accepts(r, "notes/a.md", "x")).toBe(false);
+  });
+
+  it("** in a glob crosses path segments (the \\u0000 placeholder path)", () => {
+    const p: PluginMeta = {
+      plugin_id: "g2",
+      title: "g2",
+      manifest: {
+        renderers: [{ id: "r", title: "r", match: { format: "markdown", glob: "reviews/**/*.md" } }],
+      },
+    };
+    const r = getRenderer("plugin:g2:r", [p])!;
+    expect(accepts(r, "reviews/a/b/c.md", "x")).toBe(true);
+    expect(accepts(r, "notes/a/b.md", "x")).toBe(false);
   });
 });
 

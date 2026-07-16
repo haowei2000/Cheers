@@ -120,8 +120,8 @@ a specific origin; the host, in turn, only accepts messages from your iframe).
 | plugin → host | `cheers:ready` | — | iframe loaded; "assign me work". Send it **after** your message listener is wired. |
 | host → plugin | `cheers:render` | `{ path, format, content, version, rendererId }` | Assigns **one** file. Sent in reply to your `cheers:ready`, and re-sent after a conflicted save — those are the only triggers (§5.2). `rendererId` says which of your manifest's renderers was picked. |
 | plugin → host | `cheers:unsupported` | `{ reason? }` | Runtime verdict: you inspected `content` and can't render it. The host hides your iframe and shows the reason. |
-| plugin → host | `cheers:save` | `{ content }` | Write the assigned file back (whole-content replace). |
-| host → plugin | `cheers:saved` | `{ ok, version, error? }` | Result of your save. On `ok`, adopt the new `version`. |
+| plugin → host | `cheers:save` | `{ content }` | Write the assigned file back (whole-content replace). At most **one** save in flight (§5.3). |
+| host → plugin | `cheers:saved` | `{ ok, version, error? }` | Result of your save. On `ok`, adopt the new `version`. Carries **no correlation id** — it answers "the" pending save, which is why only one may be in flight. |
 | plugin → host | `cheers:resource` | `{ reqId, resource, params }` | Read-only channel info (whitelist, §5.4). `reqId` is your correlation number. |
 | host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | Resource read result. |
 
@@ -155,6 +155,10 @@ the §5.4 resource whitelist covers channel data only, not file content.
   it last sent you. On conflict you get `cheers:saved {ok:false}` **followed by a fresh
   `cheers:render`** — re-render from the new content and let the user reapply. Do not
   retry the save blindly.
+- **One save in flight.** Hosts do **not** correlate saves: each `cheers:save` is
+  answered by an independent `cheers:saved` with no request id, and completion order is
+  not guaranteed. Plugins MUST wait for `cheers:saved` before sending the next
+  `cheers:save` (the SDK enforces this — an overlapping `save()` rejects).
 - **Safe rendering.** `content` is untrusted text (it may come from a bot or another
   member). Write it to the DOM with `textContent` or controlled form values — **never
   concatenate into `innerHTML`**.
@@ -229,8 +233,8 @@ files, there is no external loading in the sandbox:
 ```js
 var host = cheersPlugin({
   onRender: function (file) {
-    // { path, format, content, version, rendererId } — re-sent on external change
-    // and after a save conflict: always re-draw here.
+    // { path, format, content, version, rendererId } — sent on your ready and
+    // re-sent after a conflicted save (the only triggers, §5.2): always re-draw here.
   },
 });
 host.save(next).then(function (r) { /* r.version */ }).catch(function (e) { /* show e */ });
@@ -248,7 +252,7 @@ Complete working examples (upload as-is, or drop on the drawer to try):
   todo list → interactive checklist. The canonical *"markdown convention + narrow
   `match` + line-preserving rewrite"* recipe.
 - [`lit-review.plugin.html`](../arch/examples/lit-review.plugin.html) — paper-tracker
-  table over `{ "papers": [...] }` JSON (`match.jsonHas` pre-filter + runtime array
+  table over `{ "papers": [...] }` JSON (`match.dataHas` pre-filter + runtime array
   check + form-driven JSON writeback).
 - [`code-review.plugin.html`](../arch/examples/code-review.plugin.html) — markdown
   review findings (`## file` sections, `- [ ] [P0|P1|P2]` items) with severity badges.
@@ -263,9 +267,10 @@ Recipes in words:
 - **Claim a markdown convention** — declare `format:"markdown"` plus `requireAny`
   /`requireAll` markers for your convention; split content into lines on render, edit
   lines in place, `join("\n")` on save so non-convention lines survive byte-for-byte.
-- **Claim a JSON structure** — declare `jsonHas` for your top-level keys; on render,
-  `JSON.parse` in try/catch and verify shapes, `cheers:unsupported` when they don't
-  hold; save with `JSON.stringify(data, null, 2)`.
+- **Claim a JSON structure** — declare `dataHas` for your top-level keys (or
+  `dataKind:"array"` for a top-level array); on render, `JSON.parse` in try/catch and
+  verify shapes, `cheers:unsupported` when they don't hold; save with
+  `JSON.stringify(data, null, 2)`.
 - **Use channel context** — call the §5.4 resource helper, e.g. `channel.members` to
   resolve author ids to names in your UI. Data may be stale seconds later, and renders
   are rare (§5.2: on `ready` and after a conflicted save — never on external edits), so
