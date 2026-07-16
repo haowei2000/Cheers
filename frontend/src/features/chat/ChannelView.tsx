@@ -657,11 +657,51 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [refError, setRefError] = useState<string | null>(null);
   // Jump-to-message request from ViewBoard history items (activity rows, audit
   // cards). `nonce` lets a repeat click on the same row re-trigger the scroll.
-  // Best-effort: MessageList only scrolls when the message is loaded.
+  // If the target isn't in the loaded window (initial load is only the newest
+  // page), page older history in — bounded — until it appears, then focus; the
+  // old behavior just toasted "scroll up to load older history" at the user.
   const [focusMsg, setFocusMsg] = useState<{ msgId: string; nonce: number } | null>(null);
+  const messagesRef = useRef<Message[]>(messages);
+  messagesRef.current = messages;
+  const jumpBackfillRef = useRef(false);
+  // × 50/page — comfortably covers the Activity board's 200-event window.
+  const JUMP_BACKFILL_PAGES = 8;
   const jumpToMessage = useCallback(
-    (msgId: string) => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 })),
-    []
+    async (msgId: string) => {
+      const focus = () => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 }));
+      if (messagesRef.current.some((m) => m.msg_id === msgId)) return focus();
+      if (!channel || jumpBackfillRef.current) return;
+      jumpBackfillRef.current = true;
+      const toastId = toast.loading("Loading older history…");
+      try {
+        let oldest = messagesRef.current[0];
+        for (let page = 0; page < JUMP_BACKFILL_PAGES && oldest; page++) {
+          const res = await listMessages(channel.channel_id, {
+            before: oldest.msg_id,
+            limit: 50,
+          });
+          const batch = res.messages ?? res.data ?? [];
+          setMessages((prev) => mergeMessages(prev, batch));
+          setHasMore(res.meta?.has_more_before ?? false);
+          // Focus in the same batch as setMessages: MessageList's focus effect
+          // runs after the commit that renders the new rows, so the anchor exists.
+          if (batch.some((m) => m.msg_id === msgId)) return focus();
+          const sorted = sortMessages(batch);
+          if (!sorted.length || !(res.meta?.has_more_before ?? false)) break;
+          oldest = sorted[0];
+        }
+        toast("Couldn't find that message in this channel's history", {
+          icon: "🔍",
+          id: "jump-not-found",
+        });
+      } catch {
+        toast.error("Couldn't load older messages — try again", { id: "load-older-failed" });
+      } finally {
+        toast.dismiss(toastId);
+        jumpBackfillRef.current = false;
+      }
+    },
+    [channel]
   );
   // "Open the ViewBoard on THIS board" request (same nonce pattern as focusMsg) —
   // the session chip's "Manage sessions…" jumps straight to the Sessions board.
