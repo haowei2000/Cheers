@@ -245,7 +245,8 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // same-id session plugin shadows the installed one for this session, so existing
   // bindings transparently resolve to the fresh bundle while you iterate.
   const loadTemporaryPlugin = useCallback((html: string) => {
-    if (html.length > MAX_PLUGIN_BUNDLE_BYTES) {
+    const byteLength = new TextEncoder().encode(html).length;
+    if (byteLength > MAX_PLUGIN_BUNDLE_BYTES) {
       setNotice("Plugin bundle too large (max 2 MiB)");
       return;
     }
@@ -266,9 +267,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // One extension entry point, routed by extension: .json => template, .html => plugin.
   const loadExtensionFile = useCallback(
     (file: File) => {
-      if (file.name.endsWith(".json")) void file.text().then(loadTemporary);
-      else if (file.name.endsWith(".html")) void file.text().then(loadTemporaryPlugin);
-      else setNotice("Drop a .json template or a .html renderer plugin");
+      const name = file.name.toLowerCase();
+      if (name.endsWith(".json")) void file.text().then(loadTemporary);
+      else if (name.endsWith(".html") || name.endsWith(".htm")) void file.text().then(loadTemporaryPlugin);
+      else setNotice("Drop a .json template or a .html/.htm renderer plugin");
     },
     [loadTemporary, loadTemporaryPlugin]
   );
@@ -507,7 +509,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <input
             ref={fileRef}
             type="file"
-            accept=".json,.html,application/json,text/html"
+            accept=".json,.html,.htm,application/json,text/html"
             onChange={onPickFile}
             className="hidden"
           />
