@@ -11,6 +11,10 @@ Pages:
 - `index.zh-CN.html` — Chinese mirror of the homepage; the two link to each
   other via the 中文 / EN button in the nav. Keep both in sync when editing.
 - `plugin-dev.html` — workbench renderer plugin guide (English only for now).
+- `connector.html` / `connector.zh-CN.html` — user-facing guide to the ACP
+  connector (connect your own Claude/Codex bot): install, token, config, keeping
+  it updated, and the "bot can't see attached files → update the connector"
+  fix. The two mirror each other via the 中文 / EN button; keep both in sync.
 - `mcp.html` — Cheers MCP tool reference: the 26 tools an external agent uses,
   the request path, and post_message performance notes (English only for now).
 
