@@ -224,11 +224,11 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 选中 `bg-zinc-800 text-zinc-100`（导航列表可按 §2.8 的激活胶囊加 indigo 着色）。
 所有可交互行必须有 hover 态。
 
-### 2.16 错误提示——三级体系
+### 2.17 错误提示——三级体系
 
 级别由**用户当前工作还剩多少可用**决定，而不是技术严重程度——并且每个错误都
 必须给出口（Retry / Sign in again / Reload / Go back），不能只陈述失败。
-（英文版 §2.13–2.15 暂未镜像，本节编号与英文版对齐。）
+（英文版 §2.13–2.16 暂未镜像，本节编号与英文版对齐。）
 各层级的可交互设计稿（浏览器直接打开，含 live 演示）：
 [docs/design/ERROR_NOTIFICATIONS.html](../docs/design/ERROR_NOTIFICATIONS.html)。
 
@@ -290,5 +290,5 @@ Review 时直接打回：
 - [ ] `outline-none` 而没有替代的 focus 可见性
 - [ ] 原始枚举 / 字段名直接进 UI（`in_progress`、`system_admin`、`bot_id`）
 - [ ] §2 已有的模式（tab / 空态 / spinner）又发明新样式
-- [ ] `toast.error(String(e))`——用 `notify.error(messageOf(e))`（§2.16）
-- [ ] §2.16 已有对应级别时手写错误横条 / 整页错误标记；在调用点单独处理 401（归 client 分类器管）
+- [ ] `toast.error(String(e))`——用 `notify.error(messageOf(e))`（§2.17）
+- [ ] §2.17 已有对应级别时手写错误横条 / 整页错误标记；在调用点单独处理 401（归 client 分类器管）

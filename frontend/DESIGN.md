@@ -345,7 +345,38 @@ accent fill; the irreversible one gets a `…` suffix (`Delete…`) to signal a
 confirm step follows (§7 reversibility — prefer a confirm dialog to an
 inline red button that fires on first click). Consequences go in a `<Tip>`.
 
-### 2.16 Error notifications — three tiers
+### 2.16 Avatar stack (participant overview)
+
+"Who's here" at a glance — a channel/board's distinct participants as
+overlapping avatars, most-relevant first. Used by the Activity ViewBoard
+(`ActivityPanel.tsx`'s `ParticipantStrip`).
+
+```tsx
+<div className="flex items-center -space-x-2">
+  {ids.map((id) => (
+    <button
+      key={id}
+      className={cn(
+        "relative rounded-full ring-2 transition-all",
+        active ? "ring-indigo-500" : "ring-zinc-900",
+        dimmed && "opacity-50 hover:opacity-100"
+      )}
+    >
+      <Avatar size="xs" className="!w-6 !h-6" online={m.is_online ?? undefined} … />
+    </button>
+  ))}
+</div>
+{overflow > 0 && <span className="ml-1 text-[10px] text-zinc-400">+{overflow}</span>}
+```
+
+The `ring-zinc-900`/`ring-indigo-500` ring doubles as the overlap separator
+(resting) and the selected state (active) — don't add a second selection
+treatment. Cap the stack (10 is the Activity precedent) and show a plain
+`+N`, never render an unbounded row. If the stack drives a filter, clicking
+toggles membership in that filter's own selection state — don't invent a
+parallel one.
+
+### 2.17 Error notifications — three tiers
 
 Pick the tier by **how much of the user's current work is unusable**, not by
 technical severity — and every error names an exit (Retry / Sign in again /
@@ -386,6 +417,7 @@ Retry" rows.
 `ApiError` message to `Error: …`; use `notify.error(messageOf(e))`. Don't
 hand-roll full-page error markup when `<ErrorState>` fits.
 
+
 ---
 
 ## 3. Known gaps (extraction roadmap)
@@ -421,5 +453,5 @@ Reject in review:
 - [ ] `outline-none` without a replacement focus affordance
 - [ ] raw enum / field names in UI copy (`in_progress`, `system_admin`, `bot_id`)
 - [ ] new tab / empty-state / spinner styles when §2 already has one
-- [ ] `toast.error(String(e))` — use `notify.error(messageOf(e))` (§2.16)
-- [ ] hand-rolled error banners / full-page error markup when §2.16 has a tier for it; 401 handling at a call site (the client classifier owns it)
+- [ ] `toast.error(String(e))` — use `notify.error(messageOf(e))` (§2.17)
+- [ ] hand-rolled error banners / full-page error markup when §2.17 has a tier for it; 401 handling at a call site (the client classifier owns it)
