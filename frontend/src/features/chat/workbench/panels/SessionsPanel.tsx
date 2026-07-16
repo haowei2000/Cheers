@@ -16,6 +16,7 @@
 // the caller holds a session_create grant for) + optional working directory /
 // extra roots. All mutations refetch the board.
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { Layers, CircleDot, Plus, X, Bot as BotIcon, Info, Folder, ArrowUp } from "lucide-react";
 import {
@@ -127,7 +128,7 @@ function SessionCard({
       refetch();
       toast.success("Applied");
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setLocalBusy(false);
     }
@@ -407,7 +408,7 @@ function BotGroup({
       refetch();
       toast.success("Applied");
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setPromoting(false);
     }

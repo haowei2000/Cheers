@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import toast from "react-hot-toast";
+import { notify, messageOf } from "@/lib/notify";
 import { X, Plus } from "lucide-react";
 import {
   getBotGrants,
@@ -41,7 +41,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
     try {
       setData(await getBotGrants(botId));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     }
   }, [botId]);
   useEffect(() => {
@@ -54,7 +54,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
       await fn();
       await load();
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(null);
     }

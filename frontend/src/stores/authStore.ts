@@ -5,9 +5,14 @@ import type { User } from "@/types";
 interface AuthState {
   user: User | null;
   token: string | null;
+  /** The signed-in token was rejected by the server (401 / ws auth_err). While true,
+   *  App renders the full-screen "Session expired" takeover (DESIGN tier L) instead
+   *  of letting the user keep operating a dead session. Cleared on setAuth/logout. */
+  sessionExpired: boolean;
   setAuth: (user: User, token: string) => void;
   /** Swap just the token (e.g. the fresh token returned after a password change). */
   setToken: (token: string) => void;
+  markSessionExpired: () => void;
   logout: () => void;
 }
 
@@ -16,9 +21,11 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      setAuth: (user, token) => set({ user, token }),
-      setToken: (token) => set({ token }),
-      logout: () => set({ user: null, token: null }),
+      sessionExpired: false,
+      setAuth: (user, token) => set({ user, token, sessionExpired: false }),
+      setToken: (token) => set({ token, sessionExpired: false }),
+      markSessionExpired: () => set({ sessionExpired: true }),
+      logout: () => set({ user: null, token: null, sessionExpired: false }),
     }),
     { name: "auth" }
   )

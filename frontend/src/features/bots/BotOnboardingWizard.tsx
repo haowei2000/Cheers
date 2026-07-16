@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { notify, messageOf } from "@/lib/notify";
 import {
   Bot,
   Terminal,
@@ -29,7 +30,6 @@ import {
   type EnrollmentGuidance,
   type IssuedToken,
 } from "@/api/bots";
-import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { BotItem } from "@/types";
@@ -199,7 +199,7 @@ export function BotOnboardingWizard({
       setBot(resolved);
       setStep(1);
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -211,7 +211,7 @@ export function BotOnboardingWizard({
     try {
       setConfig(await getConnectorConfig(bot.bot_id, agentType));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -223,7 +223,7 @@ export function BotOnboardingWizard({
     try {
       setToken(await issueBotToken(bot.bot_id));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -641,7 +641,7 @@ function ScriptPanel({
     try {
       setCode(await mintEnrollmentCode(bot.bot_id, agentType));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -653,7 +653,7 @@ function ScriptPanel({
       await revokeEnrollmentCodes(bot.bot_id);
       setCode(null);
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -760,7 +760,7 @@ function AgentPanel({
     try {
       setCode(await mintEnrollmentCode(bot.bot_id, agentType));
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -772,7 +772,7 @@ function AgentPanel({
       await revokeEnrollmentCodes(bot.bot_id);
       setCode(null);
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }

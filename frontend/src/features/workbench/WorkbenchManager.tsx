@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Blocks, Package, Puzzle, Trash2, Upload, X } from "lucide-react";
+import { AlertCircle, Blocks, CircleCheck, Package, Puzzle, Trash2, Upload } from "lucide-react";
+import { Banner } from "@/components/ui/banner";
 import { useIsAdmin } from "@/stores/authStore";
 import {
   installPlugin,
@@ -94,22 +95,17 @@ export function WorkbenchManager() {
       </h2>
 
       {(error || notice) && (
-        <div
-          className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
-            error ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"
-          }`}
+        <Banner
+          severity={error ? "error" : "success"}
+          icon={error ? AlertCircle : CircleCheck}
+          className="mb-3"
+          onDismiss={() => {
+            setError(null);
+            setNotice(null);
+          }}
         >
-          <span className="flex-1">{error ?? notice}</span>
-          <button
-            onClick={() => {
-              setError(null);
-              setNotice(null);
-            }}
-            className="text-zinc-500 hover:text-zinc-300"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+          {error ?? notice}
+        </Banner>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">

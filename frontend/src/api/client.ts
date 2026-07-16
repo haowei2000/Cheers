@@ -1,3 +1,5 @@
+import { useAuthStore } from "@/stores/authStore";
+
 const API_BASE =
   (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ||
   "/api/v1";
@@ -22,6 +24,17 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+// Global session-expiry classifier: a 401 on any authenticated request means the
+// token is dead — flip the auth store so App shows the full-screen "Session
+// expired" takeover (with a sign-in exit), instead of stranding the user on a
+// page that keeps failing. `/auth/*` is exempt: there a 401 is a credential
+// error (wrong password, bad reset code), not an expired session.
+function classifyAuthFailure(path: string, status: number): void {
+  if (status !== 401 || path.startsWith("/auth/")) return;
+  const auth = useAuthStore.getState();
+  if (auth.token) auth.markSessionExpired();
+}
+
 export async function apiFetch(
   path: string,
   init?: RequestInit
@@ -34,6 +47,7 @@ export async function apiFetch(
       ...(init?.headers as Record<string, string> | undefined),
     },
   });
+  classifyAuthFailure(path, res.status);
   return res;
 }
 

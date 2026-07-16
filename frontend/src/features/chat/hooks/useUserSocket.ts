@@ -30,6 +30,9 @@ export function useUserSocket(onNotification: (data: unknown) => void) {
   const mountedRef = useRef(true);
   const cbRef = useRef(onNotification);
   cbRef.current = onNotification;
+  // Token rejected → reconnecting with it would just loop; stop and let the
+  // session-expired takeover (flipped below) be the exit.
+  const authFailedRef = useRef(false);
 
   const connect = useCallback(() => {
     if (!token || !mountedRef.current) return;
@@ -53,6 +56,8 @@ export function useUserSocket(onNotification: (data: unknown) => void) {
         return;
       }
       if (frame.type === "auth_err") {
+        authFailedRef.current = true;
+        useAuthStore.getState().markSessionExpired();
         ws.close();
         return;
       }
@@ -63,7 +68,8 @@ export function useUserSocket(onNotification: (data: unknown) => void) {
     };
 
     ws.onclose = () => {
-      if (!mountedRef.current || retryRef.current >= MAX_RETRIES) return;
+      if (!mountedRef.current || authFailedRef.current) return;
+      if (retryRef.current >= MAX_RETRIES) return;
       const delay = Math.min(BASE_DELAY * 2 ** retryRef.current, MAX_DELAY);
       retryRef.current += 1;
       timerRef.current = setTimeout(connect, delay);
@@ -74,6 +80,7 @@ export function useUserSocket(onNotification: (data: unknown) => void) {
 
   useEffect(() => {
     mountedRef.current = true;
+    authFailedRef.current = false; // fresh token → the ban no longer applies
     connect();
     return () => {
       mountedRef.current = false;
