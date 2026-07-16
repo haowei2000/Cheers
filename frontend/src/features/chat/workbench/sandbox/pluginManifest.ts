@@ -53,8 +53,9 @@ export interface PluginMeta {
   transient?: boolean;
 }
 
-/** Upper bound for a plugin bundle. Guards the session (temporary) load path; the
- *  server enforces the same cap on install. Also the sane ceiling for iframe srcDoc. */
+/** Upper bound for a plugin bundle, in UTF-8 bytes. Client-side cap for session
+ *  (temporary) loads, matching the cap the server will enforce at install (lands with
+ *  server-side install validation). Also the sane ceiling for iframe srcDoc. */
 export const MAX_PLUGIN_BUNDLE_BYTES = 2 * 1024 * 1024;
 
 /** Shape-check a parsed plugin manifest. Returns an error message, or null when valid. */

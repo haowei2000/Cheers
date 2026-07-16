@@ -118,7 +118,7 @@ a specific origin; the host, in turn, only accepts messages from your iframe).
 | Direction | `type` | Payload | When |
 |---|---|---|---|
 | plugin → host | `cheers:ready` | — | iframe loaded; "assign me work". Send it **after** your message listener is wired. |
-| host → plugin | `cheers:render` | `{ path, format, content, version, rendererId }` | Assigns **one** file. Re-sent when the file changes externally and after a save conflict. `rendererId` says which of your manifest's renderers was picked. |
+| host → plugin | `cheers:render` | `{ path, format, content, version, rendererId }` | Assigns **one** file. Sent in reply to your `cheers:ready`, and re-sent after a conflicted save — those are the only triggers (§5.2). `rendererId` says which of your manifest's renderers was picked. |
 | plugin → host | `cheers:unsupported` | `{ reason? }` | Runtime verdict: you inspected `content` and can't render it. The host hides your iframe and shows the reason. |
 | plugin → host | `cheers:save` | `{ content }` | Write the assigned file back (whole-content replace). |
 | host → plugin | `cheers:saved` | `{ ok, version, error? }` | Result of your save. On `ok`, adopt the new `version`. |
@@ -137,8 +137,14 @@ user edits in your UI ──▶ plugin: cheers:save {content}
         ├─ ok        → host: cheers:saved {ok:true, version}    (adopt version)
         └─ conflict  → host: cheers:saved {ok:false, error}
                        host: cheers:render {…fresh content/version}   (re-render)
-file changed by someone else (bot / another member) ──▶ host: cheers:render {…}
 ```
+
+Those are the **only** two `cheers:render` triggers: your `cheers:ready` and a
+conflicted save. A file changed by someone else (bot / another member) does **not**
+push a new render into an open iframe — you see the fresh content when the user
+reopens the file (remount → `ready` → `render`), or via the re-render that follows
+your own conflicted save. There is no way to re-read the assigned file yourself:
+the §5.4 resource whitelist covers channel data only, not file content.
 
 ### 5.3 Rules
 
@@ -261,8 +267,10 @@ Recipes in words:
   `JSON.parse` in try/catch and verify shapes, `cheers:unsupported` when they don't
   hold; save with `JSON.stringify(data, null, 2)`.
 - **Use channel context** — call the §5.4 resource helper, e.g. `channel.members` to
-  resolve author ids to names in your UI. Data may be stale seconds later; re-fetch on
-  each `cheers:render` rather than caching across renders.
+  resolve author ids to names in your UI. Data may be stale seconds later, and renders
+  are rare (§5.2: on `ready` and after a conflicted save — never on external edits), so
+  re-fetch via the resource helper when freshness matters rather than counting on a new
+  `cheers:render` to refresh it for you.
 
 ## 8. Install & bind
 
