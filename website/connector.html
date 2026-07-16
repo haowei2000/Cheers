@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Connect your AI agent — Cheers ACP Connector</title>
+<meta name="description" content="A friendly, step-by-step guide for connecting your own Claude or Codex agent to Cheers with the ACP connector: install, get a token, write one config file, start it, keep it updated, and fix the common 'the bot can't see my attached files' problem." />
+<link rel="alternate" hreflang="zh-CN" href="./connector.zh-CN.html" />
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --bg-soft: #f3f0e9;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --ink-soft: #55524b;
+    --ink-faint: #8a857c;
+    --border: #e7e2d7;
+    --accent: #c77d11;
+    --accent-strong: #a5650a;
+    --accent-tint: #fbeccf;
+    --code-bg: #1b1e24;
+    --code-ink: #e6e1d6;
+    --shadow: 0 1px 2px rgba(20,16,8,.04), 0 8px 24px rgba(20,16,8,.06);
+    --radius: 14px;
+    --maxw: 880px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"] {
+      --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
+      --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
+      --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
+      --code-bg: #0a0c10; --code-ink: #e6e1d6;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
+    --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
+    --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
+    --code-bg: #0a0c10; --code-ink: #e6e1d6;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-strong); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3 { line-height: 1.25; letter-spacing: -0.02em; }
+  code { font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace; font-size: .92em; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  header.nav {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; gap: 20px; height: 62px; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--ink); }
+  .brand .glass { font-size: 22px; }
+  .nav-links { display: flex; gap: 22px; margin-left: auto; }
+  .nav-links a { color: var(--ink-soft); font-size: 14.5px; font-weight: 500; }
+  .nav-links a:hover { color: var(--ink); text-decoration: none; }
+  .nav-actions { display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 9px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); color: var(--ink-soft); font-size: 14px;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--accent); text-decoration: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 14.5px;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #1a1305; }
+  .btn-primary:hover { background: var(--accent-strong); text-decoration: none; color: #1a1305; }
+  @media (max-width: 760px) { .nav-links { display: none; } }
+
+  article { padding: 48px 0 70px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12.5px; font-weight: 700; color: var(--accent-strong); }
+  article h1 { font-size: clamp(28px, 5vw, 42px); margin: 10px 0 12px; }
+  p.lead { font-size: 17.5px; color: var(--ink-soft); margin: 0 0 8px; }
+  article h2 { font-size: 24px; margin: 44px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+  article h3 { font-size: 18px; margin: 26px 0 8px; }
+  article p, article li { color: var(--ink-soft); font-size: 15.5px; }
+  article strong { color: var(--ink); }
+
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; margin: 16px 0; }
+  ol.steps > li { position: relative; padding-left: 44px; margin: 18px 0; }
+  ol.steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: -2px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent-tint); color: var(--accent-strong);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+  }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 14px 0; }
+  th { text-align: left; color: var(--ink); font-weight: 650; padding: 8px 10px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--ink-soft); vertical-align: top; }
+
+  pre.code {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 12px;
+    padding: 20px 22px; overflow-x: auto; font-size: 13px; line-height: 1.65; margin: 14px 0;
+    border: 1px solid #00000030;
+    font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre.code .c { color: #8a9bb0; }
+  pre.code .p { color: #e8a33d; }
+
+  .callout {
+    background: var(--accent-tint); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 12px; padding: 14px 18px; margin: 16px 0; font-size: 14.5px; color: var(--ink-soft);
+  }
+  .callout strong { color: var(--accent-strong); }
+
+  .docs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 16px 0; }
+  @media (max-width: 760px) { .docs-grid { grid-template-columns: 1fr; } }
+  .doc {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+  .doc:hover { border-color: var(--accent); text-decoration: none; }
+  .doc .dt { font-weight: 650; color: var(--ink); font-size: 14.5px; }
+  .doc .dd { color: var(--ink-soft); font-size: 13px; }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 36px 0;
+    color: var(--ink-faint); font-size: 14px;
+  }
+  .foot-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .foot-links a { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="./index.html"><span class="glass">🍻</span> Cheers</a>
+    <nav class="nav-links">
+      <a href="./index.html#features">Features</a>
+      <a href="./index.html#users">For Users</a>
+      <a href="./index.html#quickstart">Quick Start</a>
+      <a href="./index.html#docs">Docs</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="icon-btn lang" href="./connector.zh-CN.html" hreflang="zh-CN" lang="zh-CN" title="切换到中文版">中文</a>
+      <button class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light and dark theme">◐</button>
+      <a class="btn btn-primary" href="https://github.com/ElePerson/Cheers">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<article>
+  <div class="wrap">
+    <div class="eyebrow">User Guide</div>
+    <h1>Connect your AI agent</h1>
+    <p class="lead">The <strong>ACP connector</strong> is a small program you run on your own computer. It plugs your
+      personal Claude or Codex into a Cheers bot so it can read channels, see the files you attach, and reply — all
+      using your own agent subscription. This guide walks a non-developer through it: install, connect, keep it
+      updated, and fix the most common surprise.</p>
+
+    <div class="callout"><strong>The one thing to remember:</strong> when the connector is out of date, your bot
+      quietly loses new features — most visibly, it <em>stops seeing files you attach to a message</em>. If a bot
+      replies "please upload the files or give me the path" even though you attached them, jump to
+      <a href="#update">step 6 — keep it updated</a>.</div>
+
+    <h2 id="what">1. What the connector is (30-second version)</h2>
+    <p>Cheers has no AI built in. Instead, <strong>you bring your own agent</strong> and connect it from your machine.
+      Three pieces talk to each other:</p>
+<pre class="code">your browser ──▶ Cheers gateway (the server) ◀──── connector (runs on your PC) ──▶ your AI agent
+                                                    └ one config file = one bot</pre>
+    <ul>
+      <li>The <strong>gateway</strong> is the Cheers server your team already runs.</li>
+      <li>The <strong>connector</strong> (<code>cce-acp-connector</code>) is the little bridge you install and run.</li>
+      <li>Your <strong>agent</strong> is Claude or Codex, signed in with your own subscription — no extra API key needed.</li>
+    </ul>
+    <p>One config file describes one bot. Want two bots (say a Claude bot and a Codex bot)? Two files, run two of them.
+      They're fully independent.</p>
+
+    <h2 id="before">2. Before you start</h2>
+    <div class="tablewrap"><table>
+      <tr><th>You need</th><th>How to check</th></tr>
+      <tr><td>A Cheers server you can reach</td><td>Ask your admin for the address, e.g. <code>ws://localhost:8000</code> or your team's URL</td></tr>
+      <tr><td>Your agent installed</td><td>Run <code>command -v claude-agent-acp</code> (or <code>codex-acp</code>) — it should print a path</td></tr>
+      <tr><td>Your agent signed in</td><td>The folder <code>~/.claude</code> (or <code>~/.codex</code>) exists — that's your subscription login</td></tr>
+      <tr><td>Permission to manage a bot</td><td>You (or an admin) can open <strong>Settings → Bots</strong> in Cheers</td></tr>
+    </table></div>
+    <p>That's it — you do <strong>not</strong> need Rust, Docker, or an API key. Signing into your agent once is enough.</p>
+
+    <h2 id="install">3. Install the connector</h2>
+    <p>Download the prebuilt binary for your OS — no toolchain required. Paste this into a terminal:</p>
+<pre class="code"><span class="c"># pick the right file for your OS/CPU, download it, make it runnable</span>
+os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+mkdir -p ~/.cheers/bin ~/.cheers/workspace   <span class="c"># workspace = where the agent works — must exist, or the connector refuses to start</span>
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+export PATH="$HOME/.cheers/bin:$PATH"   <span class="c"># add this line to your ~/.zshrc so it sticks</span>
+cce-acp-connector --help                <span class="c"># prints help = success</span></pre>
+    <div class="callout"><strong>If the repo is private</strong>, plain <code>curl</code> returns a 404. Download with the
+      GitHub CLI instead, e.g.
+      <code>gh release download -R ElePerson/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector</code>
+      (with no tag, <code>gh</code> fetches the latest release).</div>
+
+    <h2 id="token">4. Create the bot and get its token</h2>
+    <p>A <strong>token</strong> is the connector's password to log in to the gateway as your bot. Get one in the UI:</p>
+    <ol class="steps">
+      <li><strong>Sign in to Cheers</strong> and open <strong>Settings → Bots</strong>.</li>
+      <li><strong>Create a bot</strong> (or open an existing one). Give it a name like <code>claude</code>, and set its
+        bridge/provider type to <em>generic / ACP</em>.</li>
+      <li><strong>Issue a token</strong> and copy it. Save it into a small file that only you can read:
+<pre class="code">mkdir -p ~/.cheers/secrets &amp;&amp; chmod 700 ~/.cheers/secrets
+<span class="c"># paste the token in place of PASTE_TOKEN_HERE:</span>
+printf '%s' 'PASTE_TOKEN_HERE' &gt; ~/.cheers/secrets/claude.token
+chmod 600 ~/.cheers/secrets/claude.token</pre>
+      </li>
+    </ol>
+    <div class="callout"><strong>Keep the token in a file, never inside the config.</strong> Config files get shared,
+      screenshotted, and committed to git — a token pasted inline leaks. Issuing a new token also <em>replaces</em> the
+      old one, so only one connector should use a bot at a time.</div>
+
+    <h2 id="config">5. Write one config file</h2>
+    <p>Create <code>~/.cheers/cheers-daemon.claude.toml</code>. This is the minimal form — the rest have sensible
+      defaults. Change the two URLs to match your gateway, and the <code>command</code> to your agent's path:</p>
+<pre class="code">version = 1
+
+[daemon]
+state_path = "state-claude.json"   <span class="c"># these are relative to this file's folder (~/.cheers)</span>
+log_dir    = "logs-claude"
+
+[accounts.claude.bridge]
+control_url    = "ws://localhost:8000/ws/agent-bridge/control"
+data_url       = "ws://localhost:8000/ws/agent-bridge/data"
+bot_token_file = "secrets/claude.token"   <span class="c"># the file from step 4 — never paste the token here</span>
+
+[accounts.claude.adapter]
+type    = "stdio"
+command = "/opt/homebrew/bin/claude-agent-acp"   <span class="c"># output of: command -v claude-agent-acp</span>
+args    = []
+
+[accounts.claude.policy.prompt]
+allow             = true
+allow_attachments = true    <span class="c"># ← lets the bot receive files you attach to a message</span>
+allow_images      = true
+
+[accounts.claude.policy.workspace]
+default_cwd   = "~/.cheers/workspace"
+allowed_roots = ["~/.cheers/workspace"]
+backend_may_set_cwd = true
+
+[accounts.claude.policy.env]
+inherit = false
+allow   = ["HOME", "PATH"]   <span class="c"># HOME lets the agent read your ~/.claude subscription login</span>
+
+[accounts.claude.policy.permission]
+forward_to_backend = true    <span class="c"># tool-use asks show up as an approval card in the channel</span>
+wait_timeout_ms    = 900000
+on_timeout         = "cancel"
+auto_allow         = false
+
+[accounts.claude.policy.mcp]
+inject_cheers = true         <span class="c"># gives the agent the Cheers tools (read files, post messages…)</span></pre>
+    <p class="lead" style="font-size:15px">The config folder ends up looking like this:</p>
+<pre class="code">~/.cheers/
+├─ cheers-daemon.claude.toml     <span class="c"># one file = one bot</span>
+├─ secrets/claude.token          <span class="c"># the token, chmod 600</span>
+├─ workspace/                    <span class="c"># where the agent works</span>
+└─ logs-claude/                  <span class="c"># its logs</span></pre>
+
+    <h3>Start it &amp; check it's online</h3>
+<pre class="code">cce-acp-connector start  --config ~/.cheers/cheers-daemon.claude.toml --name claude
+cce-acp-connector status --name claude          <span class="c"># → status=running</span>
+cce-acp-connector logs   --name claude --lines 40
+<span class="c"># expect "initialized ACP agent" + "BridgeRuntime started", no ERROR lines</span></pre>
+    <p>Now @-mention the bot in a Cheers channel. A reply means you're connected. 🎉 Because the token lives in a file,
+      restarts need no extra steps: <code>cce-acp-connector restart --name claude</code>.</p>
+
+    <h2 id="update">6. Keep it updated <span style="color:var(--accent-strong)">(important)</span></h2>
+    <p>New Cheers features often need a matching connector version. An <strong>outdated connector still connects and
+      runs fine</strong> — it just silently skips whatever it doesn't understand yet. The most common casualty is
+      <strong>attached context</strong>: the file chips show in the chat, but your bot never receives them and asks you
+      to upload the files. Updating fixes it.</p>
+
+    <h3>See whether you're behind</h3>
+<pre class="code">cce-acp-connector status --name claude
+<span class="c"># if a newer release exists you'll see an "update available:" line here,</span>
+<span class="c"># and a warning in the logs at startup.</span></pre>
+
+    <h3>Option A — turn on signed auto-update (connector ≥ 0.1.27)</h3>
+    <p>Add this to your config, then restart once. From then on the connector updates itself safely (it checks an
+      ed25519 signature and checksum, waits until it's idle, swaps in place, and rolls back if the new one is unhealthy):</p>
+<pre class="code">[update]
+auto = true</pre>
+    <div class="callout"><strong>Upgrading a very old install?</strong> Binaries older than <code>0.1.27</code> reject a
+      config that contains <code>[update]</code>. In that case update the binary <em>first</em> (Option B), then add the
+      <code>[update]</code> section.</div>
+
+    <h3>Option B — update by hand</h3>
+    <p>Re-run the download from <a href="#install">step 3</a> (it overwrites the old binary), then restart:</p>
+<pre class="code">os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+cce-acp-connector restart --name claude</pre>
+    <p>Auto-update is <strong>off by default</strong> on purpose — updating runs downloaded code, so the owner of the
+      machine opts in. You can hard-disable it anytime with <code>CHEERS_ACP_NO_SELF_UPDATE=1</code>.</p>
+
+    <h2 id="context">7. How attaching files works</h2>
+    <p>In the message composer, <strong>Add context</strong> lets you attach a file (or a line range like
+      <code>review.md:1-1</code>, or a file from a workspace). Each attachment becomes a small chip on your message.
+      When you send, Cheers passes those references to the bot's connector, which puts them into the agent's prompt so
+      it knows what you're pointing at.</p>
+    <ul>
+      <li>The bot resolves the reference on its side (it reads the file through the Cheers tools) — so it works even for
+        large files without pasting the whole thing.</li>
+      <li>For this to happen, the bot's config needs <code>allow_attachments = true</code> (it's in the template above)
+        <em>and</em> a <strong>current connector</strong>. Old connectors drop the references silently.</li>
+    </ul>
+
+    <h2 id="trouble">8. Troubleshooting</h2>
+    <div class="tablewrap"><table>
+      <tr><th>What you see</th><th>Likely cause</th><th>Fix</th></tr>
+      <tr><td><strong>Bot ignores files you attached</strong> — asks you to upload them or give a path, even though the chips are on your message</td><td>The connector is older than the version that renders attached context into the prompt</td><td><a href="#update">Update the connector</a> (≥ 0.1.28), then <code>restart</code>. Also confirm <code>allow_attachments = true</code>.</td></tr>
+      <tr><td><code>start</code> exits right away, log mentions the token</td><td>The token file is missing or empty</td><td>Re-do <a href="#token">step 4</a>; check <code>~/.cheers/secrets/&lt;name&gt;.token</code> exists and isn't empty</td></tr>
+      <tr><td><code>start</code> exits right away, log: <code>allowed_roots does not exist</code></td><td>The folder your config points at (<code>allowed_roots</code> / <code>default_cwd</code>) hasn't been created — it must exist before startup</td><td><code>mkdir -p ~/.cheers/workspace</code> (or whichever directory your config names), then <code>start</code> again</td></tr>
+      <tr><td>log: <code>command not found</code></td><td>Wrong path to your agent</td><td><code>command -v claude-agent-acp</code> and put the absolute path in <code>adapter.command</code></td></tr>
+      <tr><td>Agent starts but never replies / auth fails</td><td>The agent can't read your subscription login</td><td>Make sure <code>policy.env.allow</code> includes <code>HOME</code></td></tr>
+      <tr><td>Keeps reconnecting / never connects</td><td>Wrong gateway address, or gateway down</td><td>Check the two <code>ws://…</code> URLs with your admin; confirm the server is up</td></tr>
+      <tr><td><code>unsupported protocolVersion … Closing</code></td><td>Your agent's version doesn't match the connector</td><td>Update the agent (<code>claude-agent-acp</code> / <code>codex-acp</code>) to a current version</td></tr>
+      <tr><td>A tool action hangs "waiting for approval"</td><td><code>auto_allow = false</code> (the safe default)</td><td>Approve it on the channel's approval card, or set <code>auto_allow = true</code> to trust it locally</td></tr>
+    </table></div>
+
+    <h2 id="more">Read more</h2>
+    <div class="docs-grid">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%9C%AC%E5%9C%B0Bot%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md">
+        <span class="dt">📖 Local Bot Setup Guide</span>
+        <span class="dd">The full reference: every config field, multiple bots, token strategy, all options.</span>
+      </a>
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.md">
+        <span class="dt">🔌 Agent Bridge Guide</span>
+        <span class="dd">Concepts, creating a bot in the UI, and the containerized bot path.</span>
+      </a>
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&amp;A.md">
+        <span class="dt">🔎 Troubleshooting Q&amp;A</span>
+        <span class="dd">Health checks, logs, and what to do when a bot goes quiet.</span>
+      </a>
+    </div>
+  </div>
+</article>
+
+<footer>
+  <div class="foot-inner">
+    <div>🍻 <strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
+    <div class="foot-links">
+      <a href="./index.html">Home</a>
+      <a href="https://github.com/ElePerson/Cheers">GitHub</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/LICENSE">License</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Theme toggle: auto → light → dark, persisted (same key as index.html).
+  (function () {
+    var root = document.documentElement;
+    var saved = localStorage.getItem("cheers-theme");
+    if (saved) root.setAttribute("data-theme", saved);
+    document.getElementById("themeToggle").addEventListener("click", function () {
+      var order = ["auto", "light", "dark"];
+      var cur = root.getAttribute("data-theme") || "auto";
+      var next = order[(order.indexOf(cur) + 1) % order.length];
+      root.setAttribute("data-theme", next);
+      localStorage.setItem("cheers-theme", next);
+      this.title = "Theme: " + next + " (click to change)";
+    });
+  })();
+</script>
+</body>
+</html>

@@ -244,7 +244,7 @@ ACP Connector 适合把本机 stdio ACP agent 接到 Cheers。它本身负责：
 
 ### 4.1 安装 Rust ACP Connector
 
-推荐直接下载 [GitHub Releases](https://github.com/haowei2000/Cheers/releases/latest)
+推荐直接下载 [GitHub Releases](https://github.com/ElePerson/Cheers/releases/latest)
 上的预编译二进制（无需 Rust 工具链；`release-connector` workflow 会按平台发布
 `cce-acp-connector-{darwin,linux}-{arm64,amd64}` 四个产物）：
 
@@ -252,7 +252,7 @@ ACP Connector 适合把本机 stdio ACP agent 接到 Cheers。它本身负责：
 os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
-  "https://github.com/haowei2000/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
 ~/.cheers/bin/cce-acp-connector --help   # 建议把 ~/.cheers/bin 加进 PATH
 ```
@@ -264,7 +264,7 @@ chmod +x ~/.cheers/bin/cce-acp-connector
 > GitHub CLI 认证下载（先 `gh auth login`）：
 >
 > ```bash
-> gh release download connector-v0.1.22 -R haowei2000/Cheers \
+> gh release download connector-v0.1.22 -R ElePerson/Cheers \
 >   -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector
 > chmod +x ~/.cheers/bin/cce-acp-connector
 > ```
