@@ -229,6 +229,8 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 级别由**用户当前工作还剩多少可用**决定，而不是技术严重程度——并且每个错误都
 必须给出口（Retry / Sign in again / Reload / Go back），不能只陈述失败。
 （英文版 §2.13–2.15 暂未镜像，本节编号与英文版对齐。）
+各层级的可交互设计稿（浏览器直接打开，含 live 演示）：
+[docs/design/ERROR_NOTIFICATIONS.html](../docs/design/ERROR_NOTIFICATIONS.html)。
 
 | 级别 | 用户状态 | 形态 | 组件 |
 |---|---|---|---|

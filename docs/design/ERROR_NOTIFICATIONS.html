@@ -1,0 +1,580 @@
+<!--
+  Cheers 全局错误提示系统 — 可交互设计稿(2026-07,随 PR #216 落地)
+
+  直接用浏览器打开即可;每个层级都有 live 演示按钮。
+  规范正文见 frontend/DESIGN.md §2.16;本文件是其视觉/交互原型与决策记录。
+
+  调试参数(自动化截图/评审用):
+    ?only=<section-id>   只显示某一节:tier-s | tier-m | tier-l | routing | adoption
+    ?demo=<state>        载入即触发演示态:s | m | m2 | l | l2
+-->
+<meta charset="utf-8">
+<title>Cheers 全局错误提示系统 — 设计稿</title>
+<style>
+  /* ————— Cheers 产品 token(深色单主题,与 frontend/DESIGN.md 一致)————— */
+  /* 本页刻意保持深色:它展示的是一个 dark-only 产品的真实观感 */
+  :root {
+    --bg: #09090b;            /* zinc-950 app background */
+    --rail: #0f0f11;          /* workspace rail */
+    --surface: #18181b;       /* zinc-900 cards/dialogs/toasts */
+    --field: #27272a;         /* zinc-800 fields/soft buttons */
+    --hover: #3f3f46;         /* zinc-700 */
+    --t1: #fafafa;            /* zinc-50  primary text */
+    --t2: #d4d4d8;            /* zinc-300 body */
+    --t3: #a1a1aa;            /* zinc-400 muted floor */
+    --t-icon: #71717a;        /* zinc-500 functional icons only */
+    --deco: #52525b;          /* zinc-600 decorative */
+    --indigo: #6366f1;        /* accent 600 */
+    --indigo-hi: #818cf8;     /* links 400 */
+    --indigo-soft: rgba(99,102,241,.15);
+    --red-text: #f87171;      /* red-400 */
+    --red-300: #fca5a5;
+    --red-soft: rgba(69,10,10,.45);   /* red-950/45 soft fill */
+    --amber-text: #fbbf24;    /* amber-400 */
+    --amber-200: #fde68a;
+    --amber-soft: rgba(120,53,15,.40); /* amber-900/40 */
+    --emerald-text: #34d399;  /* emerald-400 */
+    --shadow-pop: 0 20px 25px -5px rgb(0 0 0 / .4), 0 8px 10px -6px rgb(0 0 0 / .4);
+    --divider: #27272a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  html { color-scheme: dark; }
+  body {
+    background: var(--bg); color: var(--t2);
+    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 48px 24px 96px; }
+
+  /* ————— 页面排版 ————— */
+  header.masthead { margin-bottom: 40px; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); }
+  h1 { font-size: 26px; font-weight: 650; color: var(--t1); margin: 8px 0 10px; letter-spacing: -.01em; text-wrap: balance; }
+  .lede { color: var(--t3); max-width: 62ch; }
+  section { margin-top: 56px; }
+  .sec-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--divider); padding-bottom: 10px; margin-bottom: 18px; }
+  .sec-head .tier { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--indigo-hi); background: var(--indigo-soft); padding: 2px 8px; border-radius: 999px; }
+  h2 { font-size: 17px; font-weight: 650; color: var(--t1); margin: 0; }
+  .sec-head .when { margin-left: auto; font-size: 12px; color: var(--t3); }
+  h3 { font-size: 13px; font-weight: 600; color: var(--t1); margin: 26px 0 8px; }
+  p { margin: 8px 0; max-width: 68ch; }
+  p.note { font-size: 12.5px; color: var(--t3); }
+  code { font-family: var(--mono); font-size: .92em; background: var(--field); padding: 1px 5px; border-radius: 4px; color: var(--t2); }
+  pre { background: var(--surface); border-radius: 12px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--t2); }
+  pre code { background: none; padding: 0; }
+  .cm { color: var(--t-icon); } .kw { color: var(--indigo-hi); } .str { color: var(--emerald-text); } .fn { color: var(--amber-text); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 12px 0; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--t3); font-weight: 600; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--divider); }
+  td { padding: 9px 12px 9px 0; border-bottom: 1px solid #1c1c1f; vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+
+  /* ————— 演示舞台:仿 Cheers 三栏骨架 ————— */
+  .stage { border-radius: 14px; overflow: hidden; background: var(--bg); box-shadow: inset 0 0 0 1px #1f1f23; margin: 14px 0 6px; }
+  .stage-inner { display: flex; height: 340px; position: relative; }
+  .rail { width: 44px; background: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 12px; flex: none; }
+  .rail i { width: 26px; height: 26px; border-radius: 8px; background: var(--field); }
+  .rail i.on { background: var(--indigo-soft); box-shadow: inset 0 0 0 1px rgba(129,140,248,.35); }
+  .side { width: 168px; background: var(--surface); padding: 12px 10px; flex: none; }
+  .side .hd { height: 10px; width: 70%; border-radius: 4px; background: var(--hover); margin: 4px 0 14px; }
+  .side .row { height: 8px; border-radius: 4px; background: var(--field); margin: 11px 4px; }
+  .side .row.w1{width:80%}.side .row.w2{width:60%}.side .row.w3{width:72%}.side .row.w4{width:50%}
+  .main { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
+  .chat { flex: 1; padding: 16px 18px; overflow: hidden; }
+  .msg { display: flex; gap: 10px; margin-bottom: 16px; }
+  .msg .av { width: 26px; height: 26px; border-radius: 8px; background: var(--field); flex: none; }
+  .msg .ln { height: 8px; border-radius: 4px; background: #1e1e21; margin-top: 6px; }
+  .composer { margin: 0 14px 14px; height: 44px; border-radius: 12px; background: rgba(39,39,42,.8); flex: none; }
+  .stage-caption { font-size: 12px; color: var(--t3); margin: 8px 2px 0; }
+
+  /* demo 控制按钮排 */
+  .demo-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+  .demo-controls .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--t3); align-self: center; margin-right: 4px; }
+  button.demo { font: inherit; font-size: 12px; font-weight: 500; color: var(--t2); background: var(--field); border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: background .1s, color .1s; }
+  button.demo:hover { background: var(--hover); color: var(--t1); }
+  button.demo:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--indigo); }
+
+  /* ————— 组件本体(与拟议 React 组件 1:1)————— */
+  svg.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  svg.ic.sm { width: 14px; height: 14px; }
+  svg.ic.lg { width: 30px; height: 30px; stroke-width: 1.6; }
+
+  /* Tier S — toast */
+  .toast-stack { position: absolute; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; z-index: 30; }
+  .toast { display: flex; align-items: flex-start; gap: 9px; max-width: 320px; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 10px 12px; font-size: 13px; color: var(--t2); animation: toast-in .18s ease-out; }
+  .toast .ti { margin-top: 1px; }
+  .toast.err .ti { color: var(--red-text); }
+  .toast.warn .ti { color: var(--amber-text); }
+  .toast.ok .ti { color: var(--emerald-text); }
+  .toast.info .ti { color: var(--indigo-hi); }
+  .toast .body { min-width: 0; }
+  .toast .act { margin-top: 5px; display: flex; gap: 12px; }
+  .toast .act button { font: inherit; font-size: 12px; font-weight: 600; color: var(--indigo-hi); background: none; border: 0; padding: 0; cursor: pointer; }
+  .toast .act button:hover { color: #a5b4fc; text-decoration: underline; }
+  .toast .x { margin-left: 2px; margin-top: 1px; background: none; border: 0; color: var(--t-icon); cursor: pointer; padding: 2px; border-radius: 4px; }
+  .toast .x:hover { color: var(--t2); background: var(--field); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none; } }
+
+  /* Tier M — banner */
+  .banner { display: flex; align-items: center; gap: 9px; margin: 10px 14px 0; padding: 8px 12px; border-radius: 10px; font-size: 13px; animation: toast-in .18s ease-out; }
+  .banner.err  { background: var(--red-soft);   color: var(--red-300); }
+  .banner.warn { background: var(--amber-soft); color: var(--amber-200); }
+  .banner.info { background: var(--indigo-soft); color: #c7d2fe; }
+  .banner .grow { flex: 1; min-width: 0; }
+  .banner button.b-act { font: inherit; font-size: 12px; font-weight: 600; border: 0; border-radius: 7px; padding: 4px 10px; cursor: pointer; flex: none; transition: background .1s; }
+  .banner.err  button.b-act { background: rgba(127,29,29,.55); color: #fecaca; }
+  .banner.err  button.b-act:hover { background: rgba(127,29,29,.85); }
+  .banner.warn button.b-act { background: rgba(120,53,15,.6); color: #fef3c7; }
+  .banner.warn button.b-act:hover { background: rgba(120,53,15,.9); }
+  .banner.info button.b-act { background: rgba(99,102,241,.25); color: #e0e7ff; }
+  .banner.info button.b-act:hover { background: rgba(99,102,241,.4); }
+  .banner .x { background: none; border: 0; color: inherit; opacity: .6; cursor: pointer; padding: 2px; border-radius: 4px; flex: none; }
+  .banner .x:hover { opacity: 1; }
+  .spin { animation: rot 1s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* Tier L — dialog & full-page */
+  .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 40; animation: fade .15s ease-out; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .dlg { background: var(--surface); border-radius: 14px; padding: 16px; width: 320px; max-width: calc(100% - 40px); box-shadow: var(--shadow-pop); }
+  .dlg .d-title { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600; color: var(--red-text); margin-bottom: 8px; }
+  .dlg .d-body { font-size: 13px; color: var(--t2); }
+  .dlg .d-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .btn { font: inherit; font-size: 12px; font-weight: 500; border: 0; border-radius: 7px; height: 28px; padding: 0 12px; cursor: pointer; transition: background .1s, color .1s; }
+  .btn.primary { background: var(--indigo); color: #fff; }
+  .btn.primary:hover { background: #4f46e5; }
+  .btn.secondary { background: var(--field); color: var(--t2); }
+  .btn.secondary:hover { background: var(--hover); color: var(--t1); }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--indigo); }
+
+  .takeover { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; z-index: 50; animation: fade .15s ease-out; }
+  .takeover .glyph { color: var(--t-icon); margin-bottom: 14px; }
+  .takeover .glyph.err { color: var(--red-text); }
+  .takeover .glyph.warn { color: var(--amber-text); }
+  .takeover h4 { font-size: 15px; font-weight: 600; color: var(--t1); margin: 0 0 6px; }
+  .takeover p { font-size: 12.5px; color: var(--t3); margin: 0 0 16px; max-width: 40ch; }
+  .takeover .row { display: flex; gap: 10px; }
+  .takeover .ghost-link { font-size: 12px; color: var(--t3); background: none; border: 0; cursor: pointer; align-self: center; padding: 6px 4px; }
+  .takeover .ghost-link:hover { color: var(--t2); text-decoration: underline; }
+
+  /* 决策表里的小色点 */
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 7px; vertical-align: baseline; }
+  .dot.s { background: var(--emerald-text); }
+  .dot.m { background: var(--amber-text); }
+  .dot.l { background: var(--red-text); }
+
+  .pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--field); color: var(--t3); }
+
+  /* 落地清单 */
+  ul.adopt { padding-left: 0; list-style: none; max-width: none; }
+  ul.adopt li { padding: 8px 0 8px 0; border-bottom: 1px solid #1c1c1f; font-size: 13px; display: flex; gap: 10px; align-items: baseline; }
+  ul.adopt li .file { font-family: var(--mono); font-size: 11.5px; color: var(--indigo-hi); flex: none; }
+  ul.adopt li .what { color: var(--t2); }
+  ul.adopt li .to { color: var(--t3); font-size: 12px; }
+
+  @media (max-width: 640px) {
+    .side { display: none; }
+    .stage-inner { height: 380px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toast, .banner, .overlay, .takeover { animation: none; }
+    .spin { animation: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Cheers · Design Proposal · 2026-07</div>
+    <h1>全局错误提示系统</h1>
+    <p class="lede">
+      一套按<strong style="color:var(--t2)">干扰程度</strong>分级的错误提示体系:轻(Toast)、中(Banner)、重(阻塞层)。
+      核心原则只有一条——<strong style="color:var(--t2)">每个错误都必须给用户一个出口</strong>:重试、重新登录、刷新,而不是只陈述失败。
+      所有样式严格沿用 DESIGN.md 的深色 zinc/indigo 体系,演示均为 1:1 还原。
+    </p>
+  </header>
+
+  <!-- ═══════════════ 原则 ═══════════════ -->
+  <section>
+    <div class="sec-head"><h2>0 · 分级原则</h2></div>
+    <p>级别由「用户还能不能继续当前工作」决定,而不是由错误在技术上多严重决定:</p>
+    <table>
+      <thead><tr><th>级别</th><th>用户状态</th><th>形态</th><th>典型场景</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="dot s"></span><strong style="color:var(--t1)">S · 轻</strong></td>
+          <td>可以继续工作,操作局部失败</td>
+          <td>Toast,右下角,自动消失,可带一个动作</td>
+          <td>保存失败、复制失败、发送失败(可重试)</td>
+        </tr>
+        <tr>
+          <td><span class="dot m"></span><strong style="color:var(--t1)">M · 中</strong></td>
+          <td>还能看,但当前上下文已降级</td>
+          <td>Banner,常驻在受影响区域顶部,状态解除自动收起</td>
+          <td>连接断开重连中、会话即将过期、只读降级</td>
+        </tr>
+        <tr>
+          <td><span class="dot l"></span><strong style="color:var(--t1)">L · 重</strong></td>
+          <td>必须先处理,才能继续</td>
+          <td>阻塞对话框 / 整页接管</td>
+          <td>登录已过期、应用崩溃、无访问权限</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">同一事件按状态升级:WebSocket 掉线 → M 级「重连中」banner;重连成功 → banner 自动消失 + S 级成功 toast;token 失效 → 直接 L 级整页接管。</p>
+  </section>
+
+  <!-- ═══════════════ Tier S ═══════════════ -->
+  <section id="tier-s">
+    <div class="sec-head">
+      <span class="tier">S</span><h2>Toast — 轻提示</h2>
+      <span class="when">react-hot-toast 增强,现有依赖零新增</span>
+    </div>
+    <p>在现有 <code>react-hot-toast</code> 上包一层 <code>notify</code>:统一四种语义色图标 + 可选<strong style="color:var(--t2)">动作按钮</strong>(现在的 toast 只能"看",不能"做")。错误类 6s 后消失,带动作的错误 10s,成功 3s。</p>
+
+    <div class="demo-controls">
+      <span class="lbl">试一试</span>
+      <button class="demo" onclick="spawnToast('err')">错误</button>
+      <button class="demo" onclick="spawnToast('errAct')">错误 + 重试</button>
+      <button class="demo" onclick="spawnToast('warn')">警告</button>
+      <button class="demo" onclick="spawnToast('ok')">成功</button>
+      <button class="demo" onclick="spawnToast('info')">信息 + 动作</button>
+    </div>
+
+    <div class="stage"><div class="stage-inner">
+      <div class="rail"><i class="on"></i><i></i><i></i></div>
+      <div class="side"><div class="hd"></div><div class="row w1"></div><div class="row w2"></div><div class="row w3"></div><div class="row w4"></div><div class="row w2"></div></div>
+      <div class="main">
+        <div class="chat">
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:55%"></div><div class="ln" style="width:38%"></div></div></div>
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:70%"></div><div class="ln" style="width:24%"></div></div></div>
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:45%"></div></div></div>
+        </div>
+        <div class="composer"></div>
+        <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+      </div>
+    </div></div>
+    <p class="stage-caption">位置沿用现状(右下),不遮挡输入框;同屏最多 3 条,后来者顶掉最旧的。</p>
+
+    <h3>规格</h3>
+    <table>
+      <tbody>
+        <tr><td>表面</td><td><code>bg-zinc-900 rounded-xl shadow-xl shadow-black/40</code> — 无边框,阴影分层(§2.4)</td></tr>
+        <tr><td>图标</td><td>error <code>AlertCircle text-red-400</code> · warning <code>TriangleAlert text-amber-400</code> · success <code>CircleCheck text-emerald-400</code> · info <code>Info text-indigo-400</code></td></tr>
+        <tr><td>动作</td><td>最多一个文字按钮,<code>text-indigo-400 font-semibold</code>;点击后 toast 立即关闭</td></tr>
+        <tr><td>文案</td><td>说清「什么失败了 + 怎么办」:"Couldn't save — check your connection",不要裸抛 <code>Request failed with status 500</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══════════════ Tier M ═══════════════ -->
+  <section id="tier-m">
+    <div class="sec-head">
+      <span class="tier">M</span><h2>Banner — 状态条</h2>
+      <span class="when">新组件 <code>&lt;Banner&gt;</code>,常驻直到状态解除</span>
+    </div>
+    <p>挂在受影响区域顶部(全局的挂在聊天区顶部,对话框内的挂在表单上方)。软色填充(danger/warning/indigo soft,§2.1),不打断输入,但一直可见。<strong style="color:var(--t2)">Banner 反映的是"状态"而非"事件"</strong>——状态解除时自动消失。</p>
+
+    <div class="demo-controls">
+      <span class="lbl">试一试</span>
+      <button class="demo" onclick="setBanner('reconnect')">连接断开</button>
+      <button class="demo" onclick="setBanner('expiring')">会话即将过期</button>
+      <button class="demo" onclick="setBanner('update')">新版本可用</button>
+      <button class="demo" onclick="setBanner(null)">清除</button>
+    </div>
+
+    <div class="stage"><div class="stage-inner">
+      <div class="rail"><i class="on"></i><i></i><i></i></div>
+      <div class="side"><div class="hd"></div><div class="row w1"></div><div class="row w2"></div><div class="row w3"></div><div class="row w4"></div></div>
+      <div class="main">
+        <div id="bannerSlot"></div>
+        <div class="chat">
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:60%"></div><div class="ln" style="width:30%"></div></div></div>
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:48%"></div></div></div>
+        </div>
+        <div class="composer"></div>
+      </div>
+    </div></div>
+    <p class="stage-caption">三种语义:error(红,已经坏了)/ warning(琥珀,快要坏 / 降级中)/ info(靛蓝,中性通知)。</p>
+
+    <h3>规格</h3>
+    <table>
+      <tbody>
+        <tr><td>表面</td><td>error <code>bg-red-950/45 text-red-300</code> · warning <code>bg-amber-900/40 text-amber-200</code> · info <code>bg-indigo-600/15 text-indigo-200</code>(全部无边框)</td></tr>
+        <tr><td>动作</td><td>同色系 soft 按钮(§2.1 danger/warning soft 配方),一条 banner 最多一个动作</td></tr>
+        <tr><td>关闭</td><td>可选 <code>X</code>;"重连中"这类进行时状态不给关闭按钮,解除时自动收起</td></tr>
+        <tr><td>层级</td><td>普通文档流(推挤内容),不用 overlay——用户必须能继续操作下面的界面</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══════════════ Tier L ═══════════════ -->
+  <section id="tier-l">
+    <div class="sec-head">
+      <span class="tier">L</span><h2>阻塞层 — 对话框 &amp; 整页接管</h2>
+      <span class="when">升级现有 <code>ErrorDialog</code> + 新组件 <code>&lt;ErrorState&gt;</code></span>
+    </div>
+    <p>两种形态:<strong style="color:var(--t2)">对话框</strong>用于"这一步被拒绝,读完确认"(现有 ErrorDialog,增加可选动作按钮);<strong style="color:var(--t2)">整页接管</strong>用于"当前视图已经无效"——登录过期、崩溃、无权限。你提的痛点在这里解决:<strong style="color:var(--red-300)">401 不再是死路,整页接管自带「重新登录」按钮,并记住回跳地址</strong>。</p>
+
+    <div class="demo-controls">
+      <span class="lbl">试一试</span>
+      <button class="demo" onclick="setBig('dialog')">阻塞对话框</button>
+      <button class="demo" onclick="setBig('expired')">登录已过期</button>
+      <button class="demo" onclick="setBig('crash')">应用崩溃</button>
+      <button class="demo" onclick="setBig('forbidden')">无访问权限</button>
+      <button class="demo" onclick="setBig(null)">清除</button>
+    </div>
+
+    <div class="stage"><div class="stage-inner" id="bigStage">
+      <div class="rail"><i class="on"></i><i></i><i></i></div>
+      <div class="side"><div class="hd"></div><div class="row w1"></div><div class="row w2"></div><div class="row w3"></div></div>
+      <div class="main">
+        <div class="chat">
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:62%"></div><div class="ln" style="width:35%"></div></div></div>
+          <div class="msg"><div class="av"></div><div style="flex:1"><div class="ln" style="width:44%"></div></div></div>
+        </div>
+        <div class="composer"></div>
+      </div>
+      <div id="bigSlot"></div>
+    </div></div>
+    <p class="stage-caption">整页接管 = 图标 + 一句话标题 + 一句话解释 + 主行动按钮(沿用 §2.9 EmptyState 的骨架,错误语义色)。</p>
+
+    <h3>规格</h3>
+    <table>
+      <tbody>
+        <tr><td>对话框</td><td>现有 <code>ErrorDialog</code> 增加 <code>action?: {label, onClick}</code> — 有 action 时主按钮在右,"Cancel" 在左;无 action 保持现在的 "Got it"</td></tr>
+        <tr><td>整页</td><td><code>&lt;ErrorState icon title description action/&gt;</code>:glyph <code>w-8 h-8</code> 语义色,标题 <code>text-sm font-semibold text-zinc-100</code>,说明 <code>text-xs text-zinc-400</code>,主按钮 <code>&lt;Button&gt;</code></td></tr>
+        <tr><td>登录过期</td><td>全屏 overlay(<code>bg-zinc-950</code>)盖住整个 app,防止误操作已失效的界面;「Sign in again」跳 <code>/login?next=当前路径</code></td></tr>
+        <tr><td>崩溃</td><td>顶层 React ErrorBoundary 渲染同一个 <code>ErrorState</code>,动作为「Reload」,附错误摘要(可折叠)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══════════════ 决策表 ═══════════════ -->
+  <section id="routing">
+    <div class="sec-head"><h2>1 · 什么错误走哪一级</h2></div>
+    <p>关键基础设施:API 层加一个<strong style="color:var(--t2)">全局错误分类器</strong>,HTTP 状态 → 级别 + 出口,一次映射,处处生效:</p>
+    <table>
+      <thead><tr><th>来源</th><th>级别</th><th>呈现</th><th>出口</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill">401</span> token 失效</td><td><span class="dot l"></span>L</td><td>整页接管「Session expired」</td><td>Sign in again(带 <code>?next=</code> 回跳)</td></tr>
+        <tr><td><span class="pill">403</span> 无权限(路由级)</td><td><span class="dot l"></span>L</td><td>面板级 <code>ErrorState</code>「No access」</td><td>Go back</td></tr>
+        <tr><td><span class="pill">403</span> 无权限(操作级)</td><td><span class="dot s"></span>S</td><td>error toast</td><td>—(说明缺什么权限)</td></tr>
+        <tr><td><span class="pill">404</span> 资源不存在</td><td><span class="dot l"></span>L</td><td>面板级 <code>ErrorState</code></td><td>Go back / 回首页</td></tr>
+        <tr><td><span class="pill">409/422</span> 校验、冲突</td><td><span class="dot s"></span>S</td><td>字段旁 inline 错误优先;无表单上下文时 toast</td><td>修正输入</td></tr>
+        <tr><td><span class="pill">429</span> 限流</td><td><span class="dot s"></span>S</td><td>warning toast「Too fast — retry in Ns」</td><td>自动倒计时</td></tr>
+        <tr><td><span class="pill">5xx</span> 服务端错误</td><td><span class="dot s"></span>S</td><td>error toast</td><td>Retry</td></tr>
+        <tr><td>网络失败 / fetch 抛错</td><td><span class="dot s"></span>S→M</td><td>单次失败 toast;连续失败升级为 banner</td><td>Retry</td></tr>
+        <tr><td>WebSocket 断开</td><td><span class="dot m"></span>M</td><td>「Reconnecting…」banner(进行时,无关闭钮)</td><td>自动重连;恢复后自动收起</td></tr>
+        <tr><td>消息被网关拒绝</td><td><span class="dot l"></span>L</td><td><code>ErrorDialog</code>(现状保留)</td><td>Got it / 修改后重发</td></tr>
+        <tr><td>React 渲染崩溃</td><td><span class="dot l"></span>L</td><td>ErrorBoundary → <code>ErrorState</code></td><td>Reload</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══════════════ API 草图 ═══════════════ -->
+  <section>
+    <div class="sec-head"><h2>2 · 代码形态(草图)</h2></div>
+    <p>三个新文件 + 一处改造,全部薄封装:</p>
+<pre><code><span class="cm">// lib/notify.tsx — Tier S:react-hot-toast 之上的语义层</span>
+notify.error(<span class="str">"Couldn't save changes"</span>, { action: { label: <span class="str">"Retry"</span>, onClick: retry } });
+notify.warning(<span class="str">"Rate limited — retrying in 5s"</span>);
+notify.success(<span class="str">"Invite link copied"</span>);
+
+<span class="cm">// components/ui/banner.tsx — Tier M:受控状态条</span>
+&lt;<span class="kw">Banner</span> severity=<span class="str">"warning"</span> icon={WifiOff}
+        action={{ label: <span class="str">"Retry now"</span>, onClick: reconnect }}&gt;
+  Connection lost — reconnecting…
+&lt;/<span class="kw">Banner</span>&gt;
+
+<span class="cm">// components/ui/error-state.tsx — Tier L:面板/整页错误态(EmptyState 的错误语义版)</span>
+&lt;<span class="kw">ErrorState</span> icon={Lock} title=<span class="str">"Session expired"</span>
+  description=<span class="str">"Sign in again to pick up where you left off."</span>
+  action={{ label: <span class="str">"Sign in again"</span>, onClick: goLogin }} /&gt;
+
+<span class="cm">// api 层改造 — 全局分类器:一次映射,处处生效</span>
+<span class="kw">function</span> <span class="fn">handleApiError</span>(err) {
+  <span class="kw">if</span> (err.status === 401) <span class="kw">return</span> authStore.<span class="fn">sessionExpired</span>();  <span class="cm">// → 整页接管,记住 next</span>
+  <span class="kw">if</span> (err.status === 429) <span class="kw">return</span> notify.<span class="fn">warning</span>(rateLimitMsg(err));
+  <span class="kw">if</span> (err.status &gt;= 500)  <span class="kw">return</span> notify.<span class="fn">error</span>(<span class="str">"Server error"</span>, { action: retryAction });
+  <span class="kw">throw</span> err;  <span class="cm">// 业务层自己处理 4xx 语义</span>
+}</code></pre>
+    <p class="note">改动量:notify ~80 行,Banner ~40 行,ErrorState ~40 行,api 分类器 ~30 行。ErrorDialog 加 action prop ~10 行。无新依赖。</p>
+  </section>
+
+  <!-- ═══════════════ 落地清单(由审计填充)═══════════════ -->
+  <section id="adoption">
+    <div class="sec-head"><h2>3 · 现有代码哪些能换上</h2></div>
+    <div id="adoptionBody">
+      <p>对 <code>frontend/src</code> 的全量审计结论(2026-07-16):<strong style="color:var(--t2)">toast 已是事实标准(<code>toast.error</code> 87 处 / 39 个文件),但 M 级和 L 级完全缺失</strong>——没有任何全局 401 处理、没有 ErrorBoundary、没有 Banner 组件。<code>ApiError.status</code> 在 client.ts 里已经存在,只是没人消费它,所以全局分类器可以只改一处就接管全部 18 个 API 模块。</p>
+
+      <h3>体检结果 → 对应层级</h3>
+      <table>
+        <thead><tr><th>现状</th><th>位置</th><th>去处</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>token 过期后原地反复弹 401 toast,不跳登录(<code>RequireAuth</code> 只看本地缓存 user)</td>
+            <td><code>api/client.ts</code> · <code>App.tsx:24</code></td>
+            <td><span class="dot l"></span>L · 整页接管 + Sign in again(<strong style="color:var(--red-300)">P0</strong>)</td>
+          </tr>
+          <tr>
+            <td>渲染崩溃 = 白屏,全应用无 ErrorBoundary</td>
+            <td><code>App.tsx</code>(缺失)</td>
+            <td><span class="dot l"></span>L · ErrorBoundary → ErrorState(<strong style="color:var(--red-300)">P0</strong>)</td>
+          </tr>
+          <tr>
+            <td>WebSocket 拿着死 token 静默重连,~2.5 分钟后彻底冻结,零提示</td>
+            <td><code>useChatRealtime.ts:267</code> · <code>useUserSocket.ts:65</code></td>
+            <td><span class="dot m"></span>M · 「Reconnecting…」banner;auth 拒绝时升 L(P1)</td>
+          </tr>
+          <tr>
+            <td>workspace 引导失败的手写红字面板</td>
+            <td><code>ChatLayout.tsx:184</code></td>
+            <td><span class="dot l"></span>L · 面板级 ErrorState + Retry(P1)</td>
+          </tr>
+          <tr>
+            <td>手写 ad-hoc 错误横条(<code>bg-red-500/10</code>,不合 DESIGN.md 规范)</td>
+            <td><code>WorkbenchManager.tsx:99</code></td>
+            <td><span class="dot m"></span>M · 换成共享 Banner(P1)</td>
+          </tr>
+          <tr>
+            <td>87 处 <code>toast.error</code>,其中 bots 系列 20+ 处是 <code>toast.error(String(e))</code>,把已人性化的报错又变回 <code>Error: …</code></td>
+            <td>39 个文件(bots/*、chat/*、settings/*、friends/*)</td>
+            <td><span class="dot s"></span>S · 换 <code>notify.error</code>;可重试操作补 action(P2,渐进)</td>
+          </tr>
+          <tr>
+            <td>发送失败的消息旁 inline「Failed to send + Retry」</td>
+            <td><code>MessageItem.tsx:136</code></td>
+            <td>✓ 已是正确形态,保留(inline 优先于 toast)</td>
+          </tr>
+          <tr>
+            <td>表单/字段级红字(~15 个文件,部分带 <code>role="alert"</code>)</td>
+            <td><code>PermissionCard</code>、<code>RegisterPage</code>、<code>FleetPage</code> 等</td>
+            <td>✓ 保留 inline;仅统一样式为 <code>text-red-400</code> 配方</td>
+          </tr>
+          <tr>
+            <td>静默吞错 <code>.catch(() =&gt; {})</code>(mark-read、后台轮询等)</td>
+            <td>~20 处</td>
+            <td>逐个判断:best-effort 的保留静默,用户主动操作的补 S 级</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>实施顺序</h3>
+      <table>
+        <thead><tr><th>阶段</th><th>内容</th><th>解决的痛点</th></tr></thead>
+        <tbody>
+          <tr><td><strong style="color:var(--red-300)">P0</strong></td><td>client.ts 全局分类器 + <code>authStore.sessionExpired</code> + 整页接管 + 顶层 ErrorBoundary</td><td>登录过期死路、崩溃白屏</td></tr>
+          <tr><td><strong style="color:var(--amber-200)">P1</strong></td><td>新增 <code>&lt;Banner&gt;</code> / <code>&lt;ErrorState&gt;</code>;WS 状态接 banner;ChatLayout / WorkbenchManager 换用</td><td>断线无感知、错误面板不统一</td></tr>
+          <tr><td><strong style="color:#c7d2fe">P2</strong></td><td><code>notify</code> 薄封装,87 处 toast 渐进迁移(先修 <code>String(e)</code> 系列),ErrorDialog 加 action</td><td>toast 只能看不能做、报错文案劣化</td></tr>
+        </tbody>
+      </table>
+      <p class="note">P0 不需要动 18 个 API 模块的任何调用点——分类器加在 <code>apiJson</code> 一处即可生效。</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  // —— SVG 图标(lucide 路径)——
+  const IC = {
+    err:  '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    warn: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    ok:   '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+    info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+    wifi: '<line x1="2" x2="22" y1="2" y2="22"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><line x1="12" x2="12.01" y1="20" y2="20"/>',
+    clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m14.5 9.5-5 5"/><path d="m9.5 9.5 5 5"/>',
+    spin: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+    x:    '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    rocket:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  };
+  const svg = (name, cls) => '<svg class="ic ' + (cls||'') + '" viewBox="0 0 24 24" aria-hidden="true">' + IC[name] + '</svg>';
+
+  // —— Tier S demo ——
+  const TOASTS = {
+    err:    { cls: 'err',  icon: 'err',  msg: "Couldn't save changes — check your connection.", life: 6000 },
+    errAct: { cls: 'err',  icon: 'err',  msg: "Message failed to send.", act: 'Retry', life: 10000 },
+    warn:   { cls: 'warn', icon: 'warn', msg: "Rate limited — retrying in 5s.", life: 6000 },
+    ok:     { cls: 'ok',   icon: 'ok',   msg: "Invite link copied.", life: 3000 },
+    info:   { cls: 'info', icon: 'info', msg: "New version available.", act: 'Reload', life: 8000 },
+  };
+  function spawnToast(kind) {
+    const t = TOASTS[kind], stack = document.getElementById('toastStack');
+    while (stack.children.length >= 3) stack.removeChild(stack.firstChild);
+    const el = document.createElement('div');
+    el.className = 'toast ' + t.cls;
+    el.innerHTML = '<span class="ti">' + svg(t.icon) + '</span>'
+      + '<div class="body">' + t.msg + (t.act ? '<div class="act"><button onclick="this.closest(\'.toast\').remove()">' + t.act + '</button></div>' : '') + '</div>'
+      + '<button class="x" aria-label="Dismiss" onclick="this.closest(\'.toast\').remove()">' + svg('x','sm') + '</button>';
+    stack.appendChild(el);
+    setTimeout(() => { el.remove(); }, t.life);
+  }
+
+  // —— Tier M demo ——
+  const BANNERS = {
+    reconnect: { cls: 'warn', icon: 'wifi',  msg: 'Connection lost — reconnecting…', spin: true, act: 'Retry now' },
+    expiring:  { cls: 'err',  icon: 'clock', msg: 'Your session expires in 5 minutes.', act: 'Extend session', x: true },
+    update:    { cls: 'info', icon: 'rocket', msg: 'A new version of Cheers is available.', act: 'Reload', x: true },
+  };
+  function setBanner(kind) {
+    const slot = document.getElementById('bannerSlot');
+    if (!kind) { slot.innerHTML = ''; return; }
+    const b = BANNERS[kind];
+    slot.innerHTML = '<div class="banner ' + b.cls + '" role="status">'
+      + (b.spin ? '<span class="spin" style="display:inline-flex">' + svg('spin') + '</span>' : svg(b.icon))
+      + '<span class="grow">' + b.msg + '</span>'
+      + (b.act ? '<button class="b-act">' + b.act + '</button>' : '')
+      + (b.x ? '<button class="x" aria-label="Dismiss" onclick="setBanner(null)">' + svg('x','sm') + '</button>' : '')
+      + '</div>';
+  }
+
+  // —— Tier L demo ——
+  const TAKEOVERS = {
+    expired: { icon: 'lock', tone: 'warn', title: 'Session expired',
+      desc: 'Sign in again to pick up where you left off — your draft is kept.',
+      act: 'Sign in again', ghost: null },
+    crash: { icon: 'err', tone: 'err', title: 'Something broke on our side',
+      desc: 'The app hit an unexpected error. Reloading usually fixes it.',
+      act: 'Reload', ghost: 'Copy error details' },
+    forbidden: { icon: 'shield', tone: 'err', title: "You don't have access to this workspace",
+      desc: 'Ask a workspace admin to invite you, or switch to another workspace.',
+      act: 'Go back', ghost: null },
+  };
+  function setBig(kind) {
+    const slot = document.getElementById('bigSlot');
+    if (!kind) { slot.innerHTML = ''; return; }
+    if (kind === 'dialog') {
+      slot.innerHTML = '<div class="overlay" onclick="if(event.target===this)setBig(null)">'
+        + '<div class="dlg" role="alertdialog" aria-modal="true">'
+        + '<div class="d-title">' + svg('err') + 'Message rejected</div>'
+        + '<div class="d-body">The gateway rejected this message: attachment exceeds the 25 MB limit. Remove the file and try again.</div>'
+        + '<div class="d-foot"><button class="btn secondary" onclick="setBig(null)">Cancel</button>'
+        + '<button class="btn primary" onclick="setBig(null)">Edit message</button></div>'
+        + '</div></div>';
+      return;
+    }
+    const t = TAKEOVERS[kind];
+    slot.innerHTML = '<div class="takeover">'
+      + '<div class="glyph ' + t.tone + '">' + svg(t.icon, 'lg') + '</div>'
+      + '<h4>' + t.title + '</h4><p>' + t.desc + '</p>'
+      + '<div class="row"><button class="btn primary" onclick="setBig(null)">' + t.act + '</button>'
+      + (t.ghost ? '<button class="ghost-link">' + t.ghost + '</button>' : '')
+      + '</div></div>';
+  }
+
+  // preview helper: ?demo=s|m|l pre-triggers demo states (used for automated screenshots)
+  const params = new URLSearchParams(location.search);
+  const only = params.get('only');
+  if (only) {
+    document.querySelectorAll('section, header.masthead').forEach(el => {
+      if (el.id !== only) el.style.display = 'none';
+    });
+    document.querySelector('#' + only).style.marginTop = '0';
+  }
+  const q = params.get('demo');
+  if (q === 's') { spawnToast('errAct'); spawnToast('warn'); spawnToast('ok'); }
+  if (q === 'm') { setBanner('reconnect'); }
+  if (q === 'm2') { setBanner('expiring'); }
+  if (q === 'l') { setBig('expired'); }
+  if (q === 'l2') { setBig('dialog'); }
+</script>

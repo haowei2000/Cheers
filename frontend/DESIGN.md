@@ -349,7 +349,10 @@ inline red button that fires on first click). Consequences go in a `<Tip>`.
 
 Pick the tier by **how much of the user's current work is unusable**, not by
 technical severity — and every error names an exit (Retry / Sign in again /
-Reload / Go back), never just a statement of failure.
+Reload / Go back), never just a statement of failure. Interactive mockup with
+live demos of every tier:
+[docs/design/ERROR_NOTIFICATIONS.html](../docs/design/ERROR_NOTIFICATIONS.html)
+(open in a browser).
 
 | Tier | User state | Form | Component |
 |---|---|---|---|
