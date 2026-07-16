@@ -79,14 +79,18 @@ async fn handle_connection(
     // next pipelined request on the same kept-alive connection.
     let mut buf: Vec<u8> = Vec::new();
     loop {
-        let request =
-            match timeout(LOOPBACK_IDLE_TIMEOUT, read_http_request(&mut stream, &mut buf)).await {
-                Ok(result) => match result? {
-                    Some(request) => request,
-                    None => return Ok(()), // client closed the idle connection cleanly
-                },
-                Err(_) => return Ok(()), // idle too long — drop the connection
-            };
+        let request = match timeout(
+            LOOPBACK_IDLE_TIMEOUT,
+            read_http_request(&mut stream, &mut buf),
+        )
+        .await
+        {
+            Ok(result) => match result? {
+                Some(request) => request,
+                None => return Ok(()), // client closed the idle connection cleanly
+            },
+            Err(_) => return Ok(()), // idle too long — drop the connection
+        };
         let keep_alive = request.wants_keep_alive();
 
         // Error responses always close: a bad method/token connection is not worth
