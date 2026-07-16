@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>连接你的 AI 智能体 — Cheers ACP 连接器</title>
+<meta name="description" content="面向普通用户的分步指南：如何用 ACP 连接器把你自己的 Claude 或 Codex 接入 Cheers——安装、拿令牌、写一个配置文件、启动、保持更新，以及修复最常见的“机器人看不到我附加的文件”问题。" />
+<link rel="alternate" hreflang="en" href="./connector.html" />
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --bg-soft: #f3f0e9;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --ink-soft: #55524b;
+    --ink-faint: #8a857c;
+    --border: #e7e2d7;
+    --accent: #c77d11;
+    --accent-strong: #a5650a;
+    --accent-tint: #fbeccf;
+    --code-bg: #1b1e24;
+    --code-ink: #e6e1d6;
+    --shadow: 0 1px 2px rgba(20,16,8,.04), 0 8px 24px rgba(20,16,8,.06);
+    --radius: 14px;
+    --maxw: 880px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="auto"] {
+      --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
+      --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
+      --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
+      --code-bg: #0a0c10; --code-ink: #e6e1d6;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --bg-soft: #141920; --card: #161b22; --ink: #e8e3d7;
+    --ink-soft: #b3ab9b; --ink-faint: #7d766a; --border: #262c36;
+    --accent: #e8a33d; --accent-strong: #f0b45a; --accent-tint: #2a2113;
+    --code-bg: #0a0c10; --code-ink: #e6e1d6;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-strong); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3 { line-height: 1.35; letter-spacing: -0.01em; }
+  code { font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace; font-size: .92em; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  header.nav {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; gap: 20px; height: 62px; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--ink); }
+  .brand .glass { font-size: 22px; }
+  .nav-links { display: flex; gap: 22px; margin-left: auto; }
+  .nav-links a { color: var(--ink-soft); font-size: 14.5px; font-weight: 500; }
+  .nav-links a:hover { color: var(--ink); text-decoration: none; }
+  .nav-actions { display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 9px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); color: var(--ink-soft); font-size: 14px;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--accent); text-decoration: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 14.5px;
+    border: 1px solid transparent; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #1a1305; }
+  .btn-primary:hover { background: var(--accent-strong); text-decoration: none; color: #1a1305; }
+  @media (max-width: 760px) { .nav-links { display: none; } }
+
+  article { padding: 48px 0 70px; }
+  .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12.5px; font-weight: 700; color: var(--accent-strong); }
+  article h1 { font-size: clamp(28px, 5vw, 42px); margin: 10px 0 12px; }
+  p.lead { font-size: 17.5px; color: var(--ink-soft); margin: 0 0 8px; }
+  article h2 { font-size: 24px; margin: 44px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+  article h3 { font-size: 18px; margin: 26px 0 8px; }
+  article p, article li { color: var(--ink-soft); font-size: 15.5px; }
+  article strong { color: var(--ink); }
+
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; margin: 16px 0; }
+  ol.steps > li { position: relative; padding-left: 44px; margin: 18px 0; }
+  ol.steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: -2px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent-tint); color: var(--accent-strong);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+  }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 14px 0; }
+  th { text-align: left; color: var(--ink); font-weight: 650; padding: 8px 10px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--ink-soft); vertical-align: top; }
+
+  pre.code {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 12px;
+    padding: 20px 22px; overflow-x: auto; font-size: 13px; line-height: 1.65; margin: 14px 0;
+    border: 1px solid #00000030;
+    font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre.code .c { color: #8a9bb0; }
+  pre.code .p { color: #e8a33d; }
+
+  .callout {
+    background: var(--accent-tint); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 12px; padding: 14px 18px; margin: 16px 0; font-size: 14.5px; color: var(--ink-soft);
+  }
+  .callout strong { color: var(--accent-strong); }
+
+  .docs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 16px 0; }
+  @media (max-width: 760px) { .docs-grid { grid-template-columns: 1fr; } }
+  .doc {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+  .doc:hover { border-color: var(--accent); text-decoration: none; }
+  .doc .dt { font-weight: 650; color: var(--ink); font-size: 14.5px; }
+  .doc .dd { color: var(--ink-soft); font-size: 13px; }
+
+  footer {
+    border-top: 1px solid var(--border); padding: 36px 0;
+    color: var(--ink-faint); font-size: 14px;
+  }
+  .foot-inner { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .foot-links a { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="./index.zh-CN.html"><span class="glass">🍻</span> Cheers</a>
+    <nav class="nav-links">
+      <a href="./index.zh-CN.html#features">功能</a>
+      <a href="./index.zh-CN.html#users">面向用户</a>
+      <a href="./index.zh-CN.html#quickstart">快速开始</a>
+      <a href="./index.zh-CN.html#docs">文档</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="icon-btn lang" href="./connector.html" hreflang="en" lang="en" title="Switch to English">EN</a>
+      <button class="icon-btn" id="themeToggle" title="切换 浅色 / 深色" aria-label="切换浅色和深色主题">◐</button>
+      <a class="btn btn-primary" href="https://github.com/ElePerson/Cheers">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<article>
+  <div class="wrap">
+    <div class="eyebrow">用户指南</div>
+    <h1>连接你的 AI 智能体</h1>
+    <p class="lead"><strong>ACP 连接器</strong>是一个跑在你自己电脑上的小程序。它把你个人的 Claude 或 Codex 接到一个 Cheers 机器人上，
+      让它能读频道、看到你附加的文件、并回复——全程用你自己的智能体订阅。本文面向非开发者，带你走一遍：安装、连接、保持更新，
+      并解决那个最常见的意外。</p>
+
+    <div class="callout"><strong>只需记住一件事：</strong>连接器一旦过期，你的机器人会悄悄失去新功能——最明显的就是
+      <em>看不到你附加到消息里的文件</em>。如果你明明附了文件，机器人却回复"请上传这些文件或提供路径"，直接跳到
+      <a href="#update">第 6 步——保持更新</a>。</div>
+
+    <h2 id="what">1. 连接器是什么（30 秒版）</h2>
+    <p>Cheers 本身不内置 AI。相反，<strong>你自带智能体</strong>，从你的电脑把它连进来。三个部件互相通信：</p>
+<pre class="code">你的浏览器 ──▶ Cheers 网关（服务器） ◀──── 连接器（跑在你电脑上） ──▶ 你的 AI 智能体
+                                          └ 一个配置文件 = 一个机器人</pre>
+    <ul>
+      <li><strong>网关</strong>是你团队已经在跑的 Cheers 服务器。</li>
+      <li><strong>连接器</strong>（<code>cce-acp-connector</code>）是你要安装并运行的小桥梁。</li>
+      <li>你的<strong>智能体</strong>是 Claude 或 Codex，用你自己的订阅登录——不需要额外的 API key。</li>
+    </ul>
+    <p>一个配置文件描述一个机器人。想要两个机器人（比如一个 Claude、一个 Codex）？两个文件，跑两份，彼此完全独立。</p>
+
+    <h2 id="before">2. 开始之前</h2>
+    <div class="tablewrap"><table>
+      <tr><th>你需要</th><th>怎么确认</th></tr>
+      <tr><td>能连上的 Cheers 服务器</td><td>问管理员要地址，比如 <code>ws://localhost:8000</code> 或团队的 URL</td></tr>
+      <tr><td>已安装智能体</td><td>运行 <code>command -v claude-agent-acp</code>（或 <code>codex-acp</code>），应打印出一个路径</td></tr>
+      <tr><td>智能体已登录</td><td>存在 <code>~/.claude</code>（或 <code>~/.codex</code>）目录——那就是你的订阅登录</td></tr>
+      <tr><td>有管理机器人的权限</td><td>你（或管理员）能在 Cheers 里打开 <strong>设置 → 机器人</strong></td></tr>
+    </table></div>
+    <p>就这些——你<strong>不</strong>需要 Rust、Docker，也不需要 API key。给智能体登录一次就够了。</p>
+
+    <h2 id="install">3. 安装连接器</h2>
+    <p>下载对应你系统的预编译二进制，无需任何工具链。把下面这段粘进终端：</p>
+<pre class="code"><span class="c"># 自动挑选对应系统/CPU 的文件、下载、赋予可执行权限</span>
+os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+mkdir -p ~/.cheers/bin ~/.cheers/workspace   <span class="c"># workspace 是智能体的工作目录——必须存在，否则连接器会拒绝启动</span>
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+export PATH="$HOME/.cheers/bin:$PATH"   <span class="c"># 把这行加进 ~/.zshrc 就能长期生效</span>
+cce-acp-connector --help                <span class="c"># 打印出帮助 = 成功</span></pre>
+    <div class="callout"><strong>如果仓库是私有的</strong>，直接 <code>curl</code> 会返回 404。改用 GitHub CLI 下载，例如
+      <code>gh release download -R ElePerson/Cheers -p "cce-acp-connector-$os-$arch" -O ~/.cheers/bin/cce-acp-connector</code>
+      （不带 tag 时 <code>gh</code> 会取最新的 release）。</div>
+
+    <h2 id="token">4. 创建机器人并拿到令牌</h2>
+    <p><strong>令牌（token）</strong>是连接器以你的机器人身份登录网关用的"密码"。在界面里获取：</p>
+    <ol class="steps">
+      <li><strong>登录 Cheers</strong>，打开 <strong>设置 → 机器人</strong>。</li>
+      <li><strong>创建一个机器人</strong>（或打开已有的）。取个名字如 <code>claude</code>，把 bridge/provider 类型设为
+        <em>generic / ACP</em>。</li>
+      <li><strong>签发令牌</strong>并复制。把它存进一个只有你能读的小文件：
+<pre class="code">mkdir -p ~/.cheers/secrets &amp;&amp; chmod 700 ~/.cheers/secrets
+<span class="c"># 把 PASTE_TOKEN_HERE 换成你复制的令牌：</span>
+printf '%s' 'PASTE_TOKEN_HERE' &gt; ~/.cheers/secrets/claude.token
+chmod 600 ~/.cheers/secrets/claude.token</pre>
+      </li>
+    </ol>
+    <div class="callout"><strong>令牌放文件里，绝不要写进配置文件。</strong>配置文件会被分享、截图、提交到 git——内联的令牌一定会泄露。
+      另外，重新签发会<em>作废</em>旧令牌，所以同一个机器人同一时间只能有一个连接器在用。</div>
+
+    <h2 id="config">5. 写一个配置文件</h2>
+    <p>创建 <code>~/.cheers/cheers-daemon.claude.toml</code>。这是最小形式——其余字段都有合理默认值。把两个 URL 改成你的网关地址，
+      把 <code>command</code> 改成你智能体的路径：</p>
+<pre class="code">version = 1
+
+[daemon]
+state_path = "state-claude.json"   <span class="c"># 相对于本文件所在目录（~/.cheers）</span>
+log_dir    = "logs-claude"
+
+[accounts.claude.bridge]
+control_url    = "ws://localhost:8000/ws/agent-bridge/control"
+data_url       = "ws://localhost:8000/ws/agent-bridge/data"
+bot_token_file = "secrets/claude.token"   <span class="c"># 第 4 步的文件——绝不在这里直接写令牌</span>
+
+[accounts.claude.adapter]
+type    = "stdio"
+command = "/opt/homebrew/bin/claude-agent-acp"   <span class="c"># command -v claude-agent-acp 的输出</span>
+args    = []
+
+[accounts.claude.policy.prompt]
+allow             = true
+allow_attachments = true    <span class="c"># ← 让机器人能收到你附加的文件</span>
+allow_images      = true
+
+[accounts.claude.policy.workspace]
+default_cwd   = "~/.cheers/workspace"
+allowed_roots = ["~/.cheers/workspace"]
+backend_may_set_cwd = true
+
+[accounts.claude.policy.env]
+inherit = false
+allow   = ["HOME", "PATH"]   <span class="c"># HOME 让智能体能读到你 ~/.claude 的订阅登录</span>
+
+[accounts.claude.policy.permission]
+forward_to_backend = true    <span class="c"># 工具调用请求会作为审批卡片出现在频道里</span>
+wait_timeout_ms    = 900000
+on_timeout         = "cancel"
+auto_allow         = false
+
+[accounts.claude.policy.mcp]
+inject_cheers = true         <span class="c"># 给智能体注入 Cheers 工具（读文件、发消息……）</span></pre>
+    <p class="lead" style="font-size:15px">配置目录最终长这样：</p>
+<pre class="code">~/.cheers/
+├─ cheers-daemon.claude.toml     <span class="c"># 一个文件 = 一个机器人</span>
+├─ secrets/claude.token          <span class="c"># 令牌，权限 600</span>
+├─ workspace/                    <span class="c"># 智能体的工作目录</span>
+└─ logs-claude/                  <span class="c"># 它的日志</span></pre>
+
+    <h3>启动并确认在线</h3>
+<pre class="code">cce-acp-connector start  --config ~/.cheers/cheers-daemon.claude.toml --name claude
+cce-acp-connector status --name claude          <span class="c"># → status=running</span>
+cce-acp-connector logs   --name claude --lines 40
+<span class="c"># 应看到 "initialized ACP agent" 和 "BridgeRuntime started"，没有 ERROR</span></pre>
+    <p>现在在 Cheers 频道里 @ 这个机器人。有回复就说明连上了。🎉 因为令牌存在文件里，重启不需要任何额外步骤：
+      <code>cce-acp-connector restart --name claude</code>。</p>
+
+    <h2 id="update">6. 保持更新 <span style="color:var(--accent-strong)">（重要）</span></h2>
+    <p>Cheers 的新功能往往需要相匹配的连接器版本。过期的连接器<strong>照样能连、照样能跑</strong>——它只是会悄悄跳过自己还看不懂的东西。
+      最常见的"受害者"就是<strong>附加的 context</strong>：文件小标签（chip）在聊天里显示得好好的，但机器人根本没收到，还反过来让你上传文件。
+      更新一下就能修好。</p>
+
+    <h3>先看你是不是落后了</h3>
+<pre class="code">cce-acp-connector status --name claude
+<span class="c"># 若有更新版本，这里会出现一行 "update available:"，</span>
+<span class="c"># 启动时的日志里也会有一条提醒。</span></pre>
+
+    <h3>方式 A —— 打开带签名的自动更新（连接器 ≥ 0.1.27）</h3>
+    <p>在配置里加上这段，然后重启一次。之后连接器会安全地自我更新（校验 ed25519 签名和 sha256、等空闲、原地替换，
+      新版本不健康还会自动回滚）：</p>
+<pre class="code">[update]
+auto = true</pre>
+    <div class="callout"><strong>升级很老的版本？</strong>低于 <code>0.1.27</code> 的二进制会拒绝含 <code>[update]</code> 的配置。
+      这种情况先用<em>方式 B</em> 更新二进制，再加 <code>[update]</code> 段。</div>
+
+    <h3>方式 B —— 手动更新</h3>
+    <p>重新跑一遍<a href="#install">第 3 步</a>的下载（会覆盖旧二进制），然后重启：</p>
+<pre class="code">os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -fsSL -o ~/.cheers/bin/cce-acp-connector \
+  "https://github.com/ElePerson/Cheers/releases/latest/download/cce-acp-connector-$os-$arch"
+chmod +x ~/.cheers/bin/cce-acp-connector
+cce-acp-connector restart --name claude</pre>
+    <p>自动更新<strong>默认关闭</strong>是有意为之——更新意味着执行下载来的代码，所以由机器主人自己选择开启。
+      你随时可以用 <code>CHEERS_ACP_NO_SELF_UPDATE=1</code> 彻底禁用它。</p>
+
+    <h2 id="context">7. 附加文件是怎么工作的</h2>
+    <p>在消息输入框里，<strong>Add context（添加上下文）</strong>让你附加一个文件（或像 <code>review.md:1-1</code> 这样的行范围，
+      或工作区里的某个文件）。每个附件会在你的消息上变成一个小标签。发送时，Cheers 把这些引用传给机器人的连接器，
+      连接器再把它们写进智能体的 prompt，让它知道你指的是什么。</p>
+    <ul>
+      <li>机器人在它那侧解析这些引用（通过 Cheers 工具去读文件）——所以大文件也不用整段粘贴。</li>
+      <li>要实现这一点，机器人的配置需要 <code>allow_attachments = true</code>（上面模板里已有），<em>并且</em>连接器要是
+        <strong>较新版本</strong>。旧连接器会静默丢弃这些引用。</li>
+    </ul>
+
+    <h2 id="trouble">8. 排障</h2>
+    <div class="tablewrap"><table>
+      <tr><th>你看到的现象</th><th>可能原因</th><th>处理</th></tr>
+      <tr><td><strong>机器人无视你附加的文件</strong>——让你上传或给路径，尽管消息上明明有小标签</td><td>连接器版本旧于"把附加 context 渲染进 prompt"的那一版</td><td><a href="#update">更新连接器</a>（≥ 0.1.28）后 <code>restart</code>；同时确认 <code>allow_attachments = true</code>。</td></tr>
+      <tr><td><code>start</code> 立刻退出，日志提到 token</td><td>令牌文件缺失或为空</td><td>重做<a href="#token">第 4 步</a>；确认 <code>~/.cheers/secrets/&lt;名字&gt;.token</code> 存在且非空</td></tr>
+      <tr><td><code>start</code> 立刻退出，日志：<code>allowed_roots does not exist</code></td><td>配置里 <code>allowed_roots</code> / <code>default_cwd</code> 指向的目录还没创建——启动前它必须存在</td><td><code>mkdir -p ~/.cheers/workspace</code>（或你配置里写的那个目录），再重新 <code>start</code></td></tr>
+      <tr><td>日志：<code>command not found</code></td><td>智能体路径不对</td><td><code>command -v claude-agent-acp</code>，把绝对路径填进 <code>adapter.command</code></td></tr>
+      <tr><td>智能体启动了但从不回复 / 鉴权失败</td><td>智能体读不到你的订阅登录</td><td>确保 <code>policy.env.allow</code> 里包含 <code>HOME</code></td></tr>
+      <tr><td>反复重连 / 一直连不上</td><td>网关地址不对，或网关没起</td><td>找管理员核对两个 <code>ws://…</code> URL；确认服务器在线</td></tr>
+      <tr><td><code>unsupported protocolVersion … Closing</code></td><td>你的智能体版本和连接器不匹配</td><td>把智能体（<code>claude-agent-acp</code> / <code>codex-acp</code>）更新到较新版本</td></tr>
+      <tr><td>某个工具动作卡在"等待审批"</td><td><code>auto_allow = false</code>（安全默认）</td><td>在频道的审批卡片上批准；或设 <code>auto_allow = true</code> 在本地信任它</td></tr>
+    </table></div>
+
+    <h2 id="more">延伸阅读</h2>
+    <div class="docs-grid">
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%9C%AC%E5%9C%B0Bot%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.zh-CN.md">
+        <span class="dt">📖 本地 Bot 配置指南</span>
+        <span class="dd">完整参考：每个配置字段、多机器人、令牌策略、全部选项。</span>
+      </a>
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/AgentBridge%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97.zh-CN.md">
+        <span class="dt">🔌 Agent Bridge 接入指南</span>
+        <span class="dd">概念、在界面里创建机器人、容器化机器人路径。</span>
+      </a>
+      <a class="doc" href="https://github.com/ElePerson/Cheers/blob/main/docs/help/%E6%8A%80%E6%9C%AF%E6%8E%92%E6%9F%A5Q&amp;A.zh-CN.md">
+        <span class="dt">🔎 技术排查 Q&amp;A</span>
+        <span class="dd">健康检查、日志，以及机器人不吭声时怎么办。</span>
+      </a>
+    </div>
+  </div>
+</article>
+
+<footer>
+  <div class="foot-inner">
+    <div>🍻 <strong>Cheers</strong> —— 面向人类与 AI 智能体的开源协作。MIT 许可。</div>
+    <div class="foot-links">
+      <a href="./index.zh-CN.html">首页</a>
+      <a href="https://github.com/ElePerson/Cheers">GitHub</a>
+      <a href="https://github.com/ElePerson/Cheers/blob/main/LICENSE">许可证</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // 主题切换：auto → light → dark，记忆选择（与 index 同一个 key）。
+  (function () {
+    var root = document.documentElement;
+    var saved = localStorage.getItem("cheers-theme");
+    if (saved) root.setAttribute("data-theme", saved);
+    document.getElementById("themeToggle").addEventListener("click", function () {
+      var order = ["auto", "light", "dark"];
+      var cur = root.getAttribute("data-theme") || "auto";
+      var next = order[(order.indexOf(cur) + 1) % order.length];
+      root.setAttribute("data-theme", next);
+      localStorage.setItem("cheers-theme", next);
+      this.title = "主题：" + next + "（点击切换）";
+    });
+  })();
+</script>
+</body>
+</html>

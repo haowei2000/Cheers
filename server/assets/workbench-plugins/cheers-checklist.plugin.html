@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Official workbench plugin (seeded by the gateway; `version` drives re-seeding).
+         Renders markdown todo lines (- [ ] / - [x]) as an interactive checklist. -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "cheers-checklist",
+        "protocol": 1,
+        "version": 1,
+        "title": "Checklist",
+        "renderers": [
+          {
+            "id": "checklist",
+            "title": "Checklist",
+            "match": {
+              "format": "markdown",
+              "requireAny": ["- [ ]", "- [x]", "- [X]", "* [ ]", "* [x]", "* [X]"]
+            }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; }
+      #root { padding: 8px 10px; }
+      .task { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+      .task span.done { color: #71717a; text-decoration: line-through; }
+      .line { white-space: pre-wrap; color: #a1a1aa; padding: 1px 0; }
+      #st { padding: 4px 10px; color: #71717a; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="st"></div>
+    <script>
+      /* inlined cheers-plugin-sdk v1 (docs/arch/examples/cheers-plugin-sdk.js) */
+      function cheersPlugin(opts) {
+        var reqId = 0, pendingRes = {}, pendingSave = null;
+        window.addEventListener("message", function (e) {
+          var m = e.data;
+          if (!m || typeof m !== "object") return;
+          if (m.type === "cheers:render") { if (opts.onRender) opts.onRender(m); }
+          else if (m.type === "cheers:saved") {
+            var p = pendingSave; pendingSave = null;
+            if (p) (m.ok ? p.resolve({ version: m.version }) : p.reject(new Error(m.error || "save failed")));
+          } else if (m.type === "cheers:resource:result") {
+            var r = pendingRes[m.reqId]; if (!r) return;
+            delete pendingRes[m.reqId];
+            (m.ok ? r.resolve(m.data) : r.reject(new Error(m.error || "resource error")));
+          }
+        });
+        var api = {
+          save: function (content) {
+            return new Promise(function (resolve, reject) {
+              pendingSave = { resolve: resolve, reject: reject };
+              parent.postMessage({ type: "cheers:save", content: content }, "*");
+            });
+          },
+          resource: function (name, params) {
+            return new Promise(function (resolve, reject) {
+              var id = ++reqId;
+              pendingRes[id] = { resolve: resolve, reject: reject };
+              parent.postMessage({ type: "cheers:resource", reqId: id, resource: name, params: params || {} }, "*");
+            });
+          },
+          unsupported: function (reason) { parent.postMessage({ type: "cheers:unsupported", reason: reason }, "*"); },
+        };
+        parent.postMessage({ type: "cheers:ready" }, "*");
+        return api;
+      }
+
+      var lines = [];
+      var TASK = /^(\s*[-*]\s+)\[([ xX])\]\s+(.*)$/;
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+
+      var host = cheersPlugin({
+        onRender: function (file) {
+          lines = String(file.content || "").split("\n");
+          if (!lines.some(function (l) { return TASK.test(l); })) {
+            host.unsupported("no - [ ] / - [x] task lines found");
+            return;
+          }
+          render();
+        },
+      });
+
+      function save() {
+        host.save(lines.join("\n"))
+          .then(function (r) { setStatus("Saved v" + r.version); })
+          .catch(function (e) { setStatus("Save failed: " + e.message); }); // conflict → fresh render follows
+      }
+
+      function render() {
+        var root = document.getElementById("root");
+        root.innerHTML = "";
+        lines.forEach(function (line, i) {
+          var mt = line.match(TASK);
+          if (mt) {
+            var row = document.createElement("label"); row.className = "task";
+            var cb = document.createElement("input"); cb.type = "checkbox";
+            cb.checked = mt[2].toLowerCase() === "x";
+            var txt = document.createElement("span");
+            txt.textContent = mt[3]; /* textContent: untrusted text stays inert */
+            if (cb.checked) txt.className = "done";
+            cb.onchange = function () {
+              lines[i] = mt[1] + "[" + (cb.checked ? "x" : " ") + "] " + mt[3];
+              render(); save();
+            };
+            row.appendChild(cb); row.appendChild(txt); root.appendChild(row);
+          } else {
+            var p = document.createElement("div"); p.className = "line";
+            p.textContent = line; /* non-task lines survive byte-for-byte */
+            root.appendChild(p);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

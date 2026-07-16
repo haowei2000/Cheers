@@ -1,8 +1,11 @@
 # 渲染器插件开发指南
 
-> **Language**: [English](../developer/PLUGIN_DEVELOPMENT.md) | 中文(本文,设计原文)
+> **Language**: [English(规范版)](../developer/PLUGIN_DEVELOPMENT.md) | 中文(本文,设计原文)
+>
+> ⚠️ **规范以英文版为准**:协议消息表、manifest 校验规则、Troubleshooting 都维护在
+> [PLUGIN_DEVELOPMENT.md](../developer/PLUGIN_DEVELOPMENT.md);本文保留设计动机与中文语境,两边冲突时以英文版为准。
 
-> 状态:**v1 已实现**。host 侧 `render/save` 协议已落地——工作台 **File 面板**里选中一个文件,用顶部「渲染器」下拉选内置 lens 或已装插件;绑定(`path → renderer id`)存进 `.workbench.json`。旧的 `panels`/`init` 沙箱(场景插件)仍并存。代码:`renderers/registry.ts`、`renderers/RendererHost.tsx`、`sandbox/SandboxRenderer.tsx`、`panels/FilePanel.tsx`。
+> 状态:**v1 已实现**。host 侧 `render/save` 协议已落地——工作台 **File 面板**里选中一个文件,用顶部「渲染器」下拉选内置 lens 或已装插件;绑定(`path → renderer id`)存进 `.workbench.json`。旧的 `panels`/`init` 沙箱(场景插件)**已退役**(上传会被拒绝,示例已删除)。代码:`renderers/registry.ts`、`renderers/RendererHost.tsx`、`sandbox/SandboxRenderer.tsx`、`panels/FilePanel.tsx`。
 > 关联:[[WORKBENCH]]「关系与边界」· [[context-and-environment]]
 
 ## 0. 一分钟心智模型
@@ -43,11 +46,13 @@
 | `title` | 给人看的名字 |
 | `renderers[]` | 这个插件提供的渲染器,可多个 |
 | `renderers[].id` | 渲染器在插件内唯一 |
-| `renderers[].match.format` | `markdown` / `json` / `toml` / `xml` / `text`。host 按扩展名归类(`.md`→markdown,无扩展名→text)。 |
+| `renderers[].match.format` | `markdown` / `json` / `yaml` / `toml` / `xml` / `text`(可为数组)。host 按扩展名归类(`.md`→markdown,`.yaml`/`.yml`→yaml,无扩展名→text)。 |
 | `renderers[].match.glob` | (可选)按路径窄化,如 `"reviews/*.md"` |
 | `renderers[].match.requireAll` | (可选)内容必须**全部包含**这些子串。用于「md 含某些标题」,如 `["## 待办","## 进行中"]`。 |
 | `renderers[].match.requireAny` | (可选)内容至少包含**其一**,如 `["- [ ]","- [x]"]`(待办行)。 |
-| `renderers[].match.jsonHas` | (可选,仅 json)解析后的对象必须**含全部**这些顶层键,如 `["columns","cards"]`。 |
+| `renderers[].match.jsonHas` | (可选,仅 json)解析后的对象必须**含全部**这些顶层键,如 `["columns","cards"]`。**已弃用**:新 manifest 用 `dataHas`。 |
+
+> **协议 1 补充(规范见英文版)**:manifest 顶层可声明 `"protocol": 1`(缺省即 1);`match.format` 可为字符串**数组**;新增 `dataHas`(结构化内容顶层键,格式无关,取代 `jsonHas`)与 `dataKind`(`"object" | "array"`,声明顶层形状——认领「JSON 数组」的唯一方式)。服务端安装时校验 manifest(错误表见英文版 §8);bundle ≤ 2 MiB。
 
 > **`match` = 你声明「我接受什么」**。host 拿文件内容廉价评估(子串/JSON 键,**不**启动你的沙箱),据此决定你**是否出现在该文件的渲染器候选里**——所以一个需要 `## ` 标题的渲染器,不会被推荐给一篇纯散文。
 >
@@ -202,6 +207,7 @@ var info = await res("channel.info", {});   // → { ok, data }
 
 ## 7. 安装与绑定
 
+- **试用/开发**(人人):把 `.html` 拖进工作台抽屉(或点「Load extension」选文件)——**仅本浏览器会话**生效,渲染器立即进入匹配文件的候选列表(⏱ 标记);同 id 会话插件会遮蔽已安装版本,方便迭代调试,刷新即消失。
 - **安装**(admin):设置 → Workbench extensions → 上传 `.html`(进 `workbench_plugins` 表,全频道可见)。
 - **绑定**:打开某文件时,工作台按 `.workbench.json` 的 `bindings[path]` 选渲染器;没有就默认「原文」(textarea)或让用户从候选里挑,选择持久化进 `.workbench.json`(`path → rendererId`)。**绑定不进文件**,文件始终是纯内容。
 

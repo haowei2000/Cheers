@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use futures_util::{SinkExt, StreamExt};
-use rand::Rng;
+use rand::RngExt;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::net::TcpStream;
@@ -436,7 +436,7 @@ pub fn compute_backoff(attempt: u32, opts: ReconnectOptions) -> Duration {
         .base_ms
         .saturating_mul(2_u64.saturating_pow(attempt.saturating_sub(1)));
     let capped = exp.min(opts.max_ms);
-    let jitter = rand::thread_rng().gen_range(0.5..=1.0);
+    let jitter = rand::rng().random_range(0.5..=1.0);
     Duration::from_millis((capped as f64 * jitter).round() as u64)
 }
 

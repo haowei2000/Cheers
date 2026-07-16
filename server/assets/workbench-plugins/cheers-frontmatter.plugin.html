@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Official workbench plugin (seeded by the gateway; `version` drives re-seeding).
+         Edits a markdown file's frontmatter (--- fenced, flat `key: value` lines) as a
+         form. Deliberately line-based — no YAML parser in the sandbox: unparseable
+         frontmatter lines are shown read-only and survive byte-for-byte; the body below
+         the closing fence is never touched. -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "cheers-frontmatter",
+        "protocol": 1,
+        "version": 1,
+        "title": "Frontmatter form",
+        "renderers": [
+          {
+            "id": "form",
+            "title": "Frontmatter",
+            "match": { "format": "markdown", "requireAll": ["---"] }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 12px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; }
+      #form { padding: 8px 10px; display: grid; grid-template-columns: minmax(80px, max-content) 1fr; gap: 4px 10px; align-items: center; }
+      label { color: #a1a1aa; font-family: ui-monospace, monospace; font-size: 11px; }
+      input { background: #18181b; color: #e4e4e7; border: 1px solid #27272a; border-radius: 4px; padding: 3px 6px; font: inherit; }
+      input:focus { outline: none; border-color: #6366f1; }
+      .raw { grid-column: 1 / -1; color: #71717a; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; }
+      #body { margin: 4px 10px 8px; padding: 6px 8px; border-top: 1px dashed #27272a; color: #71717a; font-size: 11px; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+      #st { padding: 0 10px 6px; color: #71717a; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div id="form"></div>
+    <div id="body"></div>
+    <div id="st"></div>
+    <script>
+      /* inlined cheers-plugin-sdk v1 (docs/arch/examples/cheers-plugin-sdk.js) */
+      function cheersPlugin(opts) {
+        var reqId = 0, pendingRes = {}, pendingSave = null;
+        window.addEventListener("message", function (e) {
+          var m = e.data;
+          if (!m || typeof m !== "object") return;
+          if (m.type === "cheers:render") { if (opts.onRender) opts.onRender(m); }
+          else if (m.type === "cheers:saved") {
+            var p = pendingSave; pendingSave = null;
+            if (p) (m.ok ? p.resolve({ version: m.version }) : p.reject(new Error(m.error || "save failed")));
+          } else if (m.type === "cheers:resource:result") {
+            var r = pendingRes[m.reqId]; if (!r) return;
+            delete pendingRes[m.reqId];
+            (m.ok ? r.resolve(m.data) : r.reject(new Error(m.error || "resource error")));
+          }
+        });
+        var api = {
+          save: function (content) {
+            return new Promise(function (resolve, reject) {
+              pendingSave = { resolve: resolve, reject: reject };
+              parent.postMessage({ type: "cheers:save", content: content }, "*");
+            });
+          },
+          resource: function (name, params) {
+            return new Promise(function (resolve, reject) {
+              var id = ++reqId;
+              pendingRes[id] = { resolve: resolve, reject: reject };
+              parent.postMessage({ type: "cheers:resource", reqId: id, resource: name, params: params || {} }, "*");
+            });
+          },
+          unsupported: function (reason) { parent.postMessage({ type: "cheers:unsupported", reason: reason }, "*"); },
+        };
+        parent.postMessage({ type: "cheers:ready" }, "*");
+        return api;
+      }
+
+      var KV = /^([A-Za-z0-9_-]+):[ \t]?(.*)$/;
+      // fmLines: the lines BETWEEN the fences, edited in place; body: everything from
+      // the closing fence line onward, never touched.
+      var fmLines = [], body = "";
+
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+
+      var host = cheersPlugin({
+        onRender: function (file) {
+          var content = String(file.content || "");
+          // Runtime verdict (stricter than the substring match): a leading --- fence
+          // with a closing fence line.
+          if (content.slice(0, 4) !== "---\n") {
+            host.unsupported("no leading --- frontmatter fence");
+            return;
+          }
+          var rest = content.slice(4);
+          var close = rest.split("\n").findIndex(function (l) { return l.trim() === "---"; });
+          if (close < 0) {
+            host.unsupported("no closing --- fence");
+            return;
+          }
+          var restLines = rest.split("\n");
+          fmLines = restLines.slice(0, close);
+          body = restLines.slice(close).join("\n"); // starts with the closing fence
+          render();
+        },
+      });
+
+      function save() {
+        host.save("---\n" + fmLines.join("\n") + (fmLines.length ? "\n" : "") + body)
+          .then(function (r) { setStatus("Saved v" + r.version); })
+          .catch(function (e) { setStatus("Save failed: " + e.message); });
+      }
+
+      function render() {
+        var form = document.getElementById("form");
+        form.innerHTML = "";
+        fmLines.forEach(function (line, i) {
+          var kv = line.match(KV);
+          if (kv) {
+            var lab = document.createElement("label");
+            lab.textContent = kv[1];
+            var inp = document.createElement("input");
+            inp.value = kv[2]; /* value assignment: untrusted text stays inert */
+            inp.onchange = function () {
+              fmLines[i] = kv[1] + ": " + inp.value;
+              save();
+            };
+            form.appendChild(lab);
+            form.appendChild(inp);
+          } else {
+            // Nested/complex YAML we don't parse: visible, read-only, preserved as-is.
+            var raw = document.createElement("div");
+            raw.className = "raw";
+            raw.textContent = line;
+            form.appendChild(raw);
+          }
+        });
+        var bodyEl = document.getElementById("body");
+        var preview = body.split("\n").slice(1, 21); // skip the closing fence line
+        bodyEl.textContent = preview.join("\n");
+        bodyEl.title = "body (read-only here — edit in Raw or with the Markdown renderer)";
+      }
+    </script>
+  </body>
+</html>

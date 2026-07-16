@@ -1,5 +1,6 @@
 import { ResourceError } from "../hooks/useChatRealtime";
 import type { FsClient } from "./fsClient";
+import { formatFor, isStructuredPath } from "./jsonFile";
 import { getLens } from "./lens/registry";
 // side effect: register the built-in lenses. validateManifest gates every view on
 // getLens(), so validation must be self-sufficient wherever it's imported — without
@@ -51,10 +52,16 @@ export function validateManifest(m: unknown): m is TemplateManifest {
 }
 
 // Scaffold a manifest's starter files. Create-only (if_version=0): re-seeding never
-// clobbers data a user/bot already wrote — it just fills the gaps.
+// clobbers data a user/bot already wrote — it just fills the gaps. Object seeds
+// serialize by the TARGET path's format (a .yaml seed must not get JSON text).
 export async function seedManifest(fs: FsClient, m: TemplateManifest): Promise<void> {
   for (const [path, value] of Object.entries(m.seed ?? {})) {
-    const content = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    const content =
+      typeof value === "string"
+        ? value
+        : isStructuredPath(path)
+          ? formatFor(path).serialize(value)
+          : JSON.stringify(value, null, 2);
     try {
       await fs.write(path, content, 0);
     } catch (e) {

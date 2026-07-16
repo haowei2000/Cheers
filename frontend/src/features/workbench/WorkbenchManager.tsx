@@ -146,9 +146,24 @@ export function WorkbenchManager() {
               >
                 <Puzzle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />
                 <span className="text-xs text-zinc-200 truncate flex-1">{p.title}</span>
+                {p.origin === "system" && (
+                  <span
+                    title="Official plugin, seeded by the gateway release. Updates ship with releases; it can't be overwritten by upload (copy under a new id to customize). Deleting it sticks until a release carries a newer version."
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 flex-shrink-0"
+                  >
+                    Official
+                  </span>
+                )}
                 <code className="text-[10px] text-zinc-400 truncate max-w-[80px]">{p.plugin_id}</code>
                 <button
                   onClick={async () => {
+                    if (
+                      p.origin === "system" &&
+                      !window.confirm(
+                        `Remove official plugin "${p.title}"? It stays removed across restarts and only returns when a gateway release ships a newer version of it.`
+                      )
+                    )
+                      return;
                     await deletePlugin(p.plugin_id);
                     await reload();
                   }}

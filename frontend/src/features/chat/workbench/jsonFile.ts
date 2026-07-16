@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parse as yamlParse } from "yaml";
 import { ResourceError } from "../hooks/useChatRealtime";
 import type { FsClient } from "./fsClient";
+import { applyEdits } from "./yamlDoc";
 
 export function errMsg(e: unknown): string {
   if (e instanceof ResourceError) return `${e.code}: ${e.message}`;
@@ -8,22 +10,35 @@ export function errMsg(e: unknown): string {
 }
 
 // ── Format layer: string <-> data, chosen by file extension ──────────────────
-// JSON for structured boards, plain text for Markdown / prompts. (YAML can be
-// added as another Format later; XML intentionally unsupported.)
+// JSON and YAML for structured boards, plain text for Markdown / prompts.
+// (XML intentionally unsupported.) `serialize` receives the previously loaded
+// text so a format can round-trip what plain data can't carry — YAML uses it
+// to preserve comments/blank lines across machine rewrites (see yamlDoc.ts).
 interface Format {
   parse: (s: string) => unknown;
-  serialize: (d: unknown) => string;
+  serialize: (d: unknown, prevText?: string) => string;
 }
 const JSON_FMT: Format = {
   parse: (s) => (s.trim() ? JSON.parse(s) : null),
   serialize: (d) => JSON.stringify(d, null, 2),
 };
+const YAML_FMT: Format = {
+  parse: (s) => (s.trim() ? (yamlParse(s) as unknown) : null),
+  serialize: (d, prevText) => applyEdits(prevText ?? "", d),
+};
 const TEXT_FMT: Format = {
   parse: (s) => s,
   serialize: (d) => (typeof d === "string" ? d : String(d)),
 };
+export function isStructuredPath(path: string): boolean {
+  const p = path.toLowerCase();
+  return p.endsWith(".json") || p.endsWith(".yaml") || p.endsWith(".yml");
+}
 export function formatFor(path: string): Format {
-  return path.endsWith(".json") ? JSON_FMT : TEXT_FMT;
+  const p = path.toLowerCase();
+  if (p.endsWith(".json")) return JSON_FMT;
+  if (p.endsWith(".yaml") || p.endsWith(".yml")) return YAML_FMT;
+  return TEXT_FMT;
 }
 
 // Generic file-backed state: load a workspace file (parsed by its format), edit in
@@ -34,14 +49,19 @@ export function useFile<T>(fs: FsClient, path: string, fallback: T) {
   const [data, setData] = useState<T>(fallback);
   const [version, setVersion] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // Last text loaded from / written to the server — the serialize round-trip context
+  // (YAML patches this text to keep comments; JSON/TEXT ignore it).
+  const rawRef = useRef<string>("");
 
   const load = useCallback(async () => {
     try {
       const f = await fs.read(path);
+      rawRef.current = f.content;
       setData(fmt.parse(f.content) as T);
       setVersion(f.version);
     } catch (e) {
       if (e instanceof ResourceError && e.code === "NOT_FOUND") {
+        rawRef.current = "";
         setVersion(null);
         setData(fallback);
       } else {
@@ -59,7 +79,9 @@ export function useFile<T>(fs: FsClient, path: string, fallback: T) {
     async (next: T) => {
       setStatus(null);
       try {
-        const r = await fs.write(path, fmt.serialize(next), version ?? 0);
+        const body = fmt.serialize(next, rawRef.current);
+        const r = await fs.write(path, body, version ?? 0);
+        rawRef.current = body;
         setData(next);
         setVersion(r.version);
         setStatus("Saved");

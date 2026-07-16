@@ -486,6 +486,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       <option value="">Auto</option>
                       {options.map((r) => (
                         <option key={r.id} value={r.id}>
+                          {/* ⏱ = session-loaded (temporary) plugin, mirroring the scenario picker */}
+                          {r.source === "plugin" &&
+                          plugins.find((p) => p.plugin_id === r.pluginId)?.transient
+                            ? "⏱ "
+                            : ""}
                           {r.title}
                           {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
                         </option>

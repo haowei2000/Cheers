@@ -37,9 +37,14 @@ boards are automatically **shared human↔bot state**.
 ```
 
 - **Lenses (built-in renderers)**: `table` (array of row objects; columns from
-  `config`), `kanban` (`{columns:[{name,items:[]}]}`), `markdown` (a string),
+  `config`, else inferred from the union of row keys), `kanban`
+  (`{columns:[{name,items:[]}]}`), `markdown` (a string),
   `chart` (`{xLabel?, yLabel?, series:[{name, points:[[x,y],…]}]}`, view-only).
   Unknown lens ids fail validation — data can never smuggle in code.
+- **Formats**: structured lenses accept `.json` **and** `.yaml`/`.yml` files. YAML
+  writes are comment-preserving (the lens patches the parsed document instead of
+  re-serializing), so a board can carry `# comments` for humans/bots and survive UI
+  edits; seeds targeting a `.yaml` path serialize as YAML.
 - **On activation** the workbench seeds the files (create-only), writes
   `bindings[file] = "builtin:<lens>"` + `configs[file] = config` into
   `.workbench.json` (create-only — a user's explicit binding is never overwritten),
@@ -56,8 +61,10 @@ boards are automatically **shared human↔bot state**.
   `examples/research.json`, `examples/lit-review.json`.
 
 Code renderers (sandboxed iframe plugins) are the separate, heavier kind — shipped as
-`.html` via `/workbench/plugins`; see
-[docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md) and
+`.html` via `/workbench/plugins`, or dropped on the drawer for a **session-only
+temporary load** (the plugin dev loop — ⏱ in pickers, gone on reload); see
+[docs/developer/PLUGIN_DEVELOPMENT.md](../../../../../docs/developer/PLUGIN_DEVELOPMENT.md)
+(normative), plus [docs/arch/WORKBENCH.md](../../../../../docs/arch/WORKBENCH.md) and
 [docs/arch/RENDERER_PLUGIN.md](../../../../../docs/arch/RENDERER_PLUGIN.md).
 
 ---

@@ -1767,6 +1767,10 @@ impl RuntimeContext {
             .await
             .pending_resources
             .insert(request.req_id.clone(), tx);
+        // Perf instrumentation: wall-clock of the connector→gateway→connector round-trip
+        // for one resource call (the WS hop). Compare with the gateway-side
+        // `messages.create db-path complete` span to see which hop dominates latency.
+        let started = std::time::Instant::now();
         tracing::debug!(%req_id, %resource, "loopback resource_req sent");
         self.io
             .send_data(DataOutbound::ResourceReq {
@@ -1792,6 +1796,13 @@ impl RuntimeContext {
             error: Some("resource response timed out".to_string()),
             code: Some("RESOURCE_TIMEOUT".to_string()),
         });
+        tracing::debug!(
+            %req_id,
+            %resource,
+            ok = response.ok,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "loopback resource round-trip complete"
+        );
         // inbox_deliver / inbox_stage create a channel file; record its id on the
         // active run so the Done reply attaches it as a chat attachment.
         if response.ok && (resource == "channel.files.create" || resource == "channel.files.stage")

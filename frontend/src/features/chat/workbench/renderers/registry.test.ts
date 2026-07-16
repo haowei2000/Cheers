@@ -32,6 +32,8 @@ describe("formatOf", () => {
     expect(formatOf("a.md")).toBe("markdown");
     expect(formatOf("a.MARKDOWN")).toBe("markdown");
     expect(formatOf("a.json")).toBe("json");
+    expect(formatOf("a.yaml")).toBe("yaml");
+    expect(formatOf("a.YML")).toBe("yaml");
     expect(formatOf("a.toml")).toBe("toml");
     expect(formatOf("noext")).toBe("text");
   });
@@ -62,7 +64,21 @@ describe("accepts — declared acceptance", () => {
     };
     const r = getRenderer("plugin:g:r", [p])!;
     expect(accepts(r, "reviews/a.md", "x")).toBe(true);
+    expect(accepts(r, "reviews/a/b.md", "x")).toBe(false); // * stops at "/"
     expect(accepts(r, "notes/a.md", "x")).toBe(false);
+  });
+
+  it("** in a glob crosses path segments (the \\u0000 placeholder path)", () => {
+    const p: PluginMeta = {
+      plugin_id: "g2",
+      title: "g2",
+      manifest: {
+        renderers: [{ id: "r", title: "r", match: { format: "markdown", glob: "reviews/**/*.md" } }],
+      },
+    };
+    const r = getRenderer("plugin:g2:r", [p])!;
+    expect(accepts(r, "reviews/a/b/c.md", "x")).toBe(true);
+    expect(accepts(r, "notes/a/b.md", "x")).toBe(false);
   });
 });
 
@@ -82,22 +98,131 @@ describe("candidatesFor — content-aware, specificity-ordered", () => {
     );
   });
 
-  it("excludes config-needing builtins (table/kanban) from the picker", () => {
-    // json with `columns`: the plugin board is offered; built-in table/kanban are NOT (pickable=false)
+  it("excludes shape-uncertain builtins (kanban) and non-matching table from the picker", () => {
+    // json OBJECT with `columns`: the plugin board is offered; built-in kanban stays
+    // unpickable and built-in table doesn't accept objects (dataKind: array)
     const ids = idsOf("b.json", '{"columns":[]}', [kanban]);
     expect(ids).toContain("plugin:kb:board");
     expect(ids).not.toContain("builtin:table");
     expect(ids).not.toContain("builtin:kanban");
-    // json that no renderer accepts → empty candidate list
+    // json object that no renderer accepts → empty candidate list
     expect(idsOf("b.json", '{"x":1}', [kanban])).toEqual([]);
+  });
+});
+
+describe("yaml as a structured format", () => {
+  it("builtin table is offered for JSON and YAML arrays, never for objects", () => {
+    expect(idsOf("rows.json", '[{"a":1}]', [])).toContain("builtin:table");
+    expect(idsOf("rows.yaml", "- a: 1\n- a: 2\n", [])).toContain("builtin:table");
+    expect(idsOf("obj.yaml", "a: 1\n", [])).not.toContain("builtin:table");
+    expect(idsOf("prose.yaml", "just a scalar string", [])).not.toContain("builtin:table");
+  });
+
+  it("table needs rows that are plain objects — null/scalar rows are never offered", () => {
+    // `- name: a` + a bare `-` parses to [{name:"a"}, null]: ONE bad row disqualifies
+    // (rendering null rows used to throw all the way to the root ErrorBoundary)
+    expect(idsOf("rows.yaml", "- name: a\n-\n", [])).not.toContain("builtin:table");
+    // scalar rows: a table would fabricate per-character columns and a cell edit would
+    // spread the string into {"0":…} corruption on save
+    expect(idsOf("rows.yaml", "- alpha\n- beta\n", [])).not.toContain("builtin:table");
+    expect(idsOf("rows.json", "[1, 2]", [])).not.toContain("builtin:table");
+    expect(idsOf("rows.json", '[["a"],["b"]]', [])).not.toContain("builtin:table");
+    // an empty array has nothing to tabulate (and no keys to infer columns from)
+    expect(idsOf("rows.json", "[]", [])).not.toContain("builtin:table");
+    // arrays of plain objects keep being offered, json and yaml alike
+    expect(idsOf("rows.json", '[{"a":1},{"b":2}]', [])).toContain("builtin:table");
+    expect(idsOf("rows.yaml", "- name: a\n- name: b\n", [])).toContain("builtin:table");
+  });
+
+  it("dataHas matches parsed YAML top-level keys (chart via `series`)", () => {
+    expect(idsOf("m.yaml", "series:\n  - name: s\n    points: []\n", [])).toContain("builtin:chart");
+    expect(idsOf("m.yaml", "other: 1\n", [])).not.toContain("builtin:chart");
+  });
+
+  it("jsonHas stays frozen to JSON — it never matches YAML", () => {
+    const p: PluginMeta = {
+      plugin_id: "jh",
+      title: "jh",
+      manifest: {
+        id: "jh",
+        title: "jh",
+        renderers: [{ id: "r", title: "R", match: { format: ["json", "yaml"], jsonHas: ["columns"] } }],
+      },
+    };
+    expect(idsOf("b.json", '{"columns":[]}', [p])).toContain("plugin:jh:r");
+    expect(idsOf("b.yaml", "columns: []\n", [p])).not.toContain("plugin:jh:r");
   });
 });
 
 describe("getRenderer", () => {
   it("resolves built-ins (incl. unpickable) and plugin renderers", () => {
     expect(getRenderer("builtin:markdown", [])?.lensId).toBe("markdown");
-    expect(getRenderer("builtin:table", [])?.pickable).toBe(false);
+    expect(getRenderer("builtin:kanban", [])?.pickable).toBe(false);
     expect(getRenderer("plugin:md-checklist:checklist", [checklist])?.title).toBe("Checklist");
     expect(getRenderer("nope", [])).toBeUndefined();
+  });
+});
+
+describe("protocol-1 match vocabulary", () => {
+  const plug = (id: string, match: object): PluginMeta => ({
+    plugin_id: id,
+    title: id,
+    manifest: { id, title: id, renderers: [{ id: "r", title: "R", match }] },
+  });
+  const one = (p: PluginMeta) => getRenderer(`plugin:${p.plugin_id}:r`, [p])!;
+
+  it("format accepts a list of coarse formats", () => {
+    const r = one(plug("multi", { format: ["markdown", "json"] }));
+    expect(accepts(r, "a.md", "x")).toBe(true);
+    expect(accepts(r, "a.json", "{}")).toBe(true);
+    expect(accepts(r, "a.toml", "x")).toBe(false);
+  });
+
+  it("dataHas gates on parsed top-level keys (like jsonHas, but format-agnostic)", () => {
+    const r = one(plug("dh", { format: "json", dataHas: ["series"] }));
+    expect(accepts(r, "m.json", '{"series":[]}')).toBe(true);
+    expect(accepts(r, "m.json", '{"other":1}')).toBe(false);
+    expect(accepts(r, "m.json", "not json")).toBe(false);
+  });
+
+  it("dataKind claims the top-level shape — the only way to claim an array", () => {
+    const arr = one(plug("arr", { format: "json", dataKind: "array" }));
+    expect(accepts(arr, "rows.json", "[{\"a\":1}]")).toBe(true);
+    expect(accepts(arr, "rows.json", '{"a":1}')).toBe(false);
+    const obj = one(plug("obj", { format: "json", dataKind: "object" }));
+    expect(accepts(obj, "o.json", '{"a":1}')).toBe(true);
+    expect(accepts(obj, "o.json", "[1]")).toBe(false);
+    expect(accepts(obj, "o.json", "null")).toBe(false);
+  });
+
+  it("jsonHas keeps its frozen semantics (deprecated alias)", () => {
+    const r = one(plug("jh", { format: "json", jsonHas: ["columns"] }));
+    expect(accepts(r, "b.json", '{"columns":[]}')).toBe(true);
+    expect(accepts(r, "b.json", "[1,2]")).toBe(false); // arrays never satisfy jsonHas
+  });
+
+  it("dataHas/dataKind raise specificity like jsonHas does", () => {
+    const kind = one(plug("k", { format: "json", dataKind: "array" }));
+    const keys = one(plug("d", { format: "json", dataHas: ["a", "b"] }));
+    const plain = one(plug("p", { format: "json" }));
+    expect(specificity(kind)).toBeGreaterThan(specificity(plain));
+    expect(specificity(keys)).toBeGreaterThan(specificity(kind));
+  });
+
+  it("a manifest declaring an unimplemented protocol contributes nothing", () => {
+    const future: PluginMeta = {
+      plugin_id: "future",
+      title: "Future",
+      manifest: {
+        id: "future",
+        title: "Future",
+        protocol: 2,
+        renderers: [{ id: "r", title: "R", match: { format: "markdown" } }],
+      },
+    };
+    expect(idsOf("a.md", "x", [future])).toEqual(["builtin:markdown"]);
+    // explicit protocol 1 is the default and fully served
+    const v1: PluginMeta = { ...future, plugin_id: "v1", manifest: { ...future.manifest, id: "v1", protocol: 1 } };
+    expect(idsOf("a.md", "x", [v1])).toContain("plugin:v1:r");
   });
 });

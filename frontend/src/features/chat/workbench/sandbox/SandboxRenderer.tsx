@@ -37,13 +37,18 @@ export function SandboxRenderer({
     let alive = true;
     setBundle(null);
     setErr(null);
+    // Session-loaded (transient) plugins carry their bundle inline — no server fetch.
+    if (plugin.bundle != null) {
+      setBundle(plugin.bundle);
+      return;
+    }
     fetchBundle(plugin.plugin_id)
       .then((b) => alive && setBundle(b))
       .catch((e) => alive && setErr(String(e)));
     return () => {
       alive = false;
     };
-  }, [plugin.plugin_id]);
+  }, [plugin.plugin_id, plugin.bundle]);
 
   useEffect(() => {
     // Read the assigned file and tell the plugin to render it. A missing file renders

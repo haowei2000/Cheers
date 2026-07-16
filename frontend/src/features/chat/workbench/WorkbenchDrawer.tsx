@@ -12,7 +12,7 @@ import { getBuiltinEnvironments, WORKBENCH_CONFIG_PATH } from "./environmentRegi
 import { seedManifest, validateManifest, type TemplateManifest } from "./manifest";
 import { FilePanel } from "./panels/FilePanel";
 import { listGlobalTemplates } from "./templatesApi";
-import { listPlugins, type PluginMeta } from "./sandbox/api";
+import { listPlugins, parsePluginHtml, MAX_PLUGIN_BUNDLE_BYTES, type PluginMeta } from "./sandbox/api";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
 import "./environments";
@@ -84,15 +84,18 @@ function parseCfg(content: string): WbConfig {
 // Scenarios come from three places:
 //  - GLOBAL templates (DATA, admin-installed, lens-rendered) — shared by every channel
 //  - SESSION templates (DATA, temporarily uploaded here, this browser session only)
-//  - SERVER-LEVEL plugins (CODE, admin-installed, sandboxed iframe renderers)
+//  - SERVER-LEVEL plugins (CODE, sandboxed iframe renderers): admin-installed or
+//    official (seeded by the gateway release, origin='system')
 // Installing global templates / plugins lives in Settings → Workbench extensions (admin);
-// the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone.
+// the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone
+// (.json template or .html plugin — the plugin dev loop).
 function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
   const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
   const [serverPlugins, setServerPlugins] = useState<PluginMeta[]>([]);
+  const [sessionPlugins, setSessionPlugins] = useState<PluginMeta[]>([]);
   const [busy, setBusy] = useState(false);
   /** Drag-over highlight — deliberately separate from `busy` (which gates controls). */
   const [dragOver, setDragOver] = useState(false);
@@ -239,24 +242,58 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     [activate]
   );
 
+  // Temporary plugin: parse the .html's embedded manifest and keep it in THIS session
+  // only (bundle inline, never installed) — the plugin dev loop, no admin needed. A
+  // same-id session plugin shadows the installed one for this session, so existing
+  // bindings transparently resolve to the fresh bundle while you iterate.
+  const loadTemporaryPlugin = useCallback((html: string) => {
+    const byteLength = new TextEncoder().encode(html).length;
+    if (byteLength > MAX_PLUGIN_BUNDLE_BYTES) {
+      setNotice("Plugin bundle too large (max 2 MiB)");
+      return;
+    }
+    try {
+      const { id, title, manifest } = parsePluginHtml(html);
+      setSessionPlugins((prev) => [
+        { plugin_id: id, title, manifest, bundle: html, transient: true },
+        ...prev.filter((p) => p.plugin_id !== id),
+      ]);
+      setNotice(
+        `Loaded plugin temporarily: ${title} (this session only; to install globally go to Settings → Workbench extensions)`
+      );
+    } catch (e) {
+      setNotice(errMsg(e));
+    }
+  }, []);
+
+  // One extension entry point, routed by extension: .json => template, .html => plugin.
+  const loadExtensionFile = useCallback(
+    (file: File) => {
+      const name = file.name.toLowerCase();
+      if (name.endsWith(".json")) void file.text().then(loadTemporary);
+      else if (name.endsWith(".html") || name.endsWith(".htm")) void file.text().then(loadTemporaryPlugin);
+      else setNotice("Drop a .json template or a .html/.htm renderer plugin");
+    },
+    [loadTemporary, loadTemporaryPlugin]
+  );
+
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
       const file = e.dataTransfer.files?.[0];
-      if (file && file.name.endsWith(".json")) void file.text().then(loadTemporary);
-      else setNotice("Drop a .json template file");
+      if (file) loadExtensionFile(file);
     },
-    [loadTemporary]
+    [loadExtensionFile]
   );
 
   const onPickFile = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) void file.text().then(loadTemporary);
+      if (file) loadExtensionFile(file);
       e.target.value = "";
     },
-    [loadTemporary]
+    [loadExtensionFile]
   );
 
   // Session templates first so a temporary upload overrides a same-id global for this session.
@@ -267,6 +304,15 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     return [...byId.values()];
   }, [sessionTemplates, globalTemplates]);
   const sessionIds = useMemo(() => new Set(sessionTemplates.map((t) => t.id)), [sessionTemplates]);
+
+  // Session plugins first: a temporary upload shadows a same-id installed plugin for
+  // this session. Dedup at the PluginMeta level — renderer ids are composite
+  // (plugin:<pid>:<rid>), so it must happen before renderer expansion.
+  const plugins = useMemo(() => {
+    const byId = new Map<string, PluginMeta>();
+    for (const p of [...sessionPlugins, ...serverPlugins]) if (!byId.has(p.plugin_id)) byId.set(p.plugin_id, p);
+    return [...byId.values()];
+  }, [sessionPlugins, serverPlugins]);
 
   const selectedId = cfg.environment ?? null;
 
@@ -325,14 +371,14 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       sendResourceReq,
       pinned,
       togglePin,
-      plugins: serverPlugins,
+      plugins,
       bindings,
       setBinding,
       configs,
       openTarget: focus,
       filesTick,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, serverPlugins, bindings, setBinding, configs, focus, filesTick]
+    [channelId, fs, sendResourceReq, pinned, togglePin, plugins, bindings, setBinding, configs, focus, filesTick]
   );
 
   // Desktop: the original card chrome, placed in the work area — hidden (but
@@ -420,10 +466,10 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <button
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            title="Load a temporary template: pick a manifest .json, this session only (install globally in Settings → Workbench extensions)"
+            title="Load a temporary extension: a template .json or a renderer plugin .html, this session only (install globally in Settings → Workbench extensions)"
             className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
           >
-            <Clock className="w-3.5 h-3.5" /> Load template
+            <Clock className="w-3.5 h-3.5" /> Load extension
           </button>
           {pinned.length > 0 && (
             <div className="relative">
@@ -462,7 +508,13 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           )}
           </>
           )}
-          <input ref={fileRef} type="file" accept=".json,application/json" onChange={onPickFile} className="hidden" />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,.html,.htm,application/json,text/html"
+            onChange={onPickFile}
+            className="hidden"
+          />
           <div className="flex-1" />
           <button
             onClick={toggleCollapsed}
@@ -489,7 +541,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           <div className="px-3 py-1.5 text-[11px] text-zinc-400 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
             <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
             <span className="flex-1">
-              No scenarios yet — drop a .json template here, use "Load template", or
+              No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or
             </span>
             <button
               onClick={() => loadTemporary(JSON.stringify(researchExample))}

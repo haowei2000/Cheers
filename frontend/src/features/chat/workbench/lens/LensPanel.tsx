@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Save } from "lucide-react";
 import type { FsClient } from "../fsClient";
 import type { ViewDef } from "../manifest";
-import { useFile } from "../jsonFile";
+import { isStructuredPath, useFile } from "../jsonFile";
 import { getLens } from "./registry";
 
 // Host for one built-in lens over one file: load (parsed by format) -> lens -> save on
@@ -11,7 +11,7 @@ import { getLens } from "./registry";
 // stale snapshot can't be written back over a concurrent agent write).
 export function LensPanel({ fs, view, reloadTick }: { fs: FsClient; view: ViewDef; reloadTick?: number }) {
   const lens = getLens(view.lens);
-  const fallback: unknown = view.file.endsWith(".json") ? null : "";
+  const fallback: unknown = isStructuredPath(view.file) ? null : "";
   const { data, setData, save, status, reload } = useFile<unknown>(fs, view.file, fallback);
 
   // Live-push: the Desk changed on the server (a bot finished writing) — re-pull a

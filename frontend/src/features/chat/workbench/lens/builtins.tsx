@@ -2,15 +2,49 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
 
-// ── table: array of row objects, columns declared in config ──────────────────
+// ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
   columns: { key: string; label: string; options?: string[] }[];
 }
+// A tabular row is a PLAIN OBJECT. YAML happily parses `- alpha` to a string row and a
+// bare `-` to null; the registry no longer offers the table for those, but the lens
+// still guards every row itself (a template binding or a file edited after binding can
+// hand it anything) — Object.keys(null) throws to the root ErrorBoundary, and
+// Object.keys("alpha") fabricates per-character index columns.
+function isPlainRow(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+// Without a template config (the pickable path — any JSON/YAML array), infer the
+// columns from the union of row keys, first-seen order. Non-object rows contribute
+// nothing. `options` dropdowns remain a config-only feature. Exported for tests.
+export function inferColumns(rows: unknown[]): TableConfig["columns"] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (!isPlainRow(r)) continue;
+    for (const k of Object.keys(r))
+      if (!seen.has(k)) {
+        seen.add(k);
+        keys.push(k);
+      }
+  }
+  return (keys.length ? keys : ["value"]).map((k) => ({ key: k, label: k }));
+}
+// Pure cell edit, exported for tests. REFUSES to touch a non-object row: spreading a
+// string ({..."alpha"}) silently becomes {"0":"a","1":"l",…} and Save would write that
+// corruption into the user's file — null tells the caller to no-op instead.
+export function updateRowCell(rows: unknown[], i: number, key: string, v: string): unknown[] | null {
+  if (!isPlainRow(rows[i])) return null;
+  return rows.map((r, j) => (j === i && isPlainRow(r) ? { ...r, [key]: v } : r));
+}
 function TableLens({ data, config, onChange }: LensProps) {
-  const columns = (config as TableConfig | undefined)?.columns ?? [];
-  const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
-  const update = (i: number, key: string, v: string) =>
-    onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)));
+  const rows = Array.isArray(data) ? (data as unknown[]) : [];
+  const configured = (config as TableConfig | undefined)?.columns;
+  const columns = configured?.length ? configured : inferColumns(rows);
+  const update = (i: number, key: string, v: string) => {
+    const next = updateRowCell(rows, i, key, v);
+    if (next) onChange(next);
+  };
   const add = () =>
     onChange([...rows, Object.fromEntries(columns.map((c) => [c.key, c.options?.[0] ?? ""]))]);
   const del = (i: number) => onChange(rows.filter((_, j) => j !== i));
@@ -31,7 +65,11 @@ function TableLens({ data, config, onChange }: LensProps) {
             <tr key={i} className="border-t border-zinc-800/60">
               {columns.map((c) => (
                 <td key={c.key} className="p-1">
-                  {c.options ? (
+                  {!isPlainRow(r) ? (
+                    // null/scalar row: read-only placeholder — an input would promise an
+                    // edit that update() must refuse. Delete (index-based) still works.
+                    <span className="text-zinc-500">—</span>
+                  ) : c.options ? (
                     <select value={String(r[c.key] ?? "")} onChange={(e) => update(i, c.key, e.target.value)} className="bg-zinc-800 text-zinc-200 rounded px-1 outline-none">
                       {c.options.map((o) => (
                         <option key={o}>{o}</option>

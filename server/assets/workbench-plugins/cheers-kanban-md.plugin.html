@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- Official workbench plugin (seeded by the gateway; `version` drives re-seeding).
+         Renders a markdown convention as a kanban board: `## Heading` = column,
+         `- [ ] card` / `- [x] card` = card. Everything else survives byte-for-byte. -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "cheers-kanban-md",
+        "protocol": 1,
+        "version": 1,
+        "title": "Kanban (markdown)",
+        "renderers": [
+          {
+            "id": "kanban",
+            "title": "Kanban",
+            "match": {
+              "format": "markdown",
+              "requireAll": ["## "],
+              "requireAny": ["- [ ]", "- [x]", "- [X]", "* [ ]", "* [x]", "* [X]"]
+            }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 12px system-ui, sans-serif; background: #0a0a0a; color: #e4e4e7; }
+      #board { display: flex; gap: 8px; padding: 8px 10px; overflow-x: auto; align-items: flex-start; }
+      .col { min-width: 180px; max-width: 260px; flex: 1; background: #111113; border: 1px solid #27272a; border-radius: 8px; padding: 6px; }
+      .col h3 { margin: 0 0 6px; font-size: 12px; color: #a1a1aa; font-weight: 600; }
+      .card { background: #18181b; border: 1px solid #27272a; border-radius: 6px; padding: 5px 6px; margin-bottom: 5px; display: flex; gap: 6px; align-items: flex-start; }
+      .card span { flex: 1; word-break: break-word; }
+      .card span.done { color: #71717a; text-decoration: line-through; }
+      .card button { background: none; border: 0; color: #52525b; cursor: pointer; padding: 0 2px; font-size: 11px; }
+      .card button:hover { color: #e4e4e7; }
+      #st { padding: 0 10px 6px; color: #71717a; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div id="board"></div>
+    <div id="st"></div>
+    <script>
+      /* inlined cheers-plugin-sdk v1 (docs/arch/examples/cheers-plugin-sdk.js) */
+      function cheersPlugin(opts) {
+        var reqId = 0, pendingRes = {}, pendingSave = null;
+        window.addEventListener("message", function (e) {
+          var m = e.data;
+          if (!m || typeof m !== "object") return;
+          if (m.type === "cheers:render") { if (opts.onRender) opts.onRender(m); }
+          else if (m.type === "cheers:saved") {
+            var p = pendingSave; pendingSave = null;
+            if (p) (m.ok ? p.resolve({ version: m.version }) : p.reject(new Error(m.error || "save failed")));
+          } else if (m.type === "cheers:resource:result") {
+            var r = pendingRes[m.reqId]; if (!r) return;
+            delete pendingRes[m.reqId];
+            (m.ok ? r.resolve(m.data) : r.reject(new Error(m.error || "resource error")));
+          }
+        });
+        var api = {
+          save: function (content) {
+            return new Promise(function (resolve, reject) {
+              pendingSave = { resolve: resolve, reject: reject };
+              parent.postMessage({ type: "cheers:save", content: content }, "*");
+            });
+          },
+          resource: function (name, params) {
+            return new Promise(function (resolve, reject) {
+              var id = ++reqId;
+              pendingRes[id] = { resolve: resolve, reject: reject };
+              parent.postMessage({ type: "cheers:resource", reqId: id, resource: name, params: params || {} }, "*");
+            });
+          },
+          unsupported: function (reason) { parent.postMessage({ type: "cheers:unsupported", reason: reason }, "*"); },
+        };
+        parent.postMessage({ type: "cheers:ready" }, "*");
+        return api;
+      }
+
+      var TASK = /^(\s*[-*]\s+)\[([ xX])\]\s+(.*)$/;
+      var HEAD = /^##\s+(.*)$/;
+      // Model: preamble lines + sections [{ heading, body: lines[] }]. Serializing is a
+      // plain join, so every non-card line survives byte-for-byte.
+      var pre = [], sections = [];
+
+      function setStatus(t) { document.getElementById("st").textContent = t; }
+
+      function parse(content) {
+        pre = []; sections = [];
+        var cur = null;
+        String(content || "").split("\n").forEach(function (line) {
+          var h = line.match(HEAD);
+          if (h) { cur = { heading: line, name: h[1], body: [] }; sections.push(cur); }
+          else if (cur) cur.body.push(line);
+          else pre.push(line);
+        });
+      }
+
+      function serialize() {
+        var out = pre.slice();
+        sections.forEach(function (s) { out.push(s.heading); out.push.apply(out, s.body); });
+        return out.join("\n");
+      }
+
+      var host = cheersPlugin({
+        onRender: function (file) {
+          parse(file.content);
+          var cards = 0;
+          sections.forEach(function (s) { s.body.forEach(function (l) { if (TASK.test(l)) cards++; }); });
+          if (!sections.length || !cards) {
+            host.unsupported("needs ## column headings with - [ ] card lines");
+            return;
+          }
+          render();
+        },
+      });
+
+      function save() {
+        host.save(serialize())
+          .then(function (r) { setStatus("Saved v" + r.version); })
+          .catch(function (e) { setStatus("Save failed: " + e.message); });
+      }
+
+      // Move a card line to a neighbor column: remove it here, insert after the target's
+      // last card line (or right after its heading when it has none yet).
+      function moveCard(fromSec, bodyIdx, dir) {
+        var toSec = sections[sections.indexOf(fromSec) + dir];
+        if (!toSec) return;
+        var line = fromSec.body.splice(bodyIdx, 1)[0];
+        var at = -1;
+        toSec.body.forEach(function (l, i) { if (TASK.test(l)) at = i; });
+        toSec.body.splice(at + 1, 0, line);
+        render();
+        save();
+      }
+
+      function render() {
+        var board = document.getElementById("board");
+        board.innerHTML = "";
+        sections.forEach(function (sec, si) {
+          var col = document.createElement("div"); col.className = "col";
+          var h = document.createElement("h3");
+          h.textContent = sec.name; /* textContent: untrusted text stays inert */
+          col.appendChild(h);
+          sec.body.forEach(function (line, li) {
+            var mt = line.match(TASK);
+            if (!mt) return;
+            var card = document.createElement("div"); card.className = "card";
+            var cb = document.createElement("input"); cb.type = "checkbox";
+            cb.checked = mt[2].toLowerCase() === "x";
+            cb.onchange = function () {
+              sec.body[li] = mt[1] + "[" + (cb.checked ? "x" : " ") + "] " + mt[3];
+              render(); save();
+            };
+            var txt = document.createElement("span");
+            txt.textContent = mt[3];
+            if (cb.checked) txt.className = "done";
+            var left = document.createElement("button");
+            left.type = "button"; left.textContent = "◀"; left.title = "Move left";
+            left.disabled = si === 0;
+            left.onclick = function () { moveCard(sec, li, -1); };
+            var right = document.createElement("button");
+            right.type = "button"; right.textContent = "▶"; right.title = "Move right";
+            right.disabled = si === sections.length - 1;
+            right.onclick = function () { moveCard(sec, li, 1); };
+            card.appendChild(cb); card.appendChild(txt); card.appendChild(left); card.appendChild(right);
+            col.appendChild(card);
+          });
+          board.appendChild(col);
+        });
+      }
+    </script>
+  </body>
+</html>
