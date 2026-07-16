@@ -5,6 +5,12 @@ import {
   useContextPickStore,
   workspaceContextItem,
 } from "@/features/chat/context/contextPick";
+import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
+import {
+  ADD_TO_CONTEXT,
+  ADDED_TO_CONTEXT,
+  addToContextTitle,
+} from "@/features/chat/context/contextLabels";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
@@ -1619,6 +1625,30 @@ export function RemoteWorkspaceDialog({
                             )}
                           </div>
                         )}
+                        {/* Per-FILE hover action: add this file to context without
+                            opening it. A workspace.read reference is text-only (bot +
+                            path, no content capture), so the tree row has everything
+                            it needs — no read required. */}
+                        {!ent.is_dir && botId && (
+                          <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/row:flex items-center">
+                            <AttachContextButton
+                              channelId={channelId}
+                              item={workspaceContextItem({
+                                botId,
+                                botName:
+                                  selectedBot?.display_name ||
+                                  selectedBot?.username ||
+                                  (memberNames && memberNames.get(botId)) ||
+                                  undefined,
+                                path: ent.path,
+                                sessionId: effectiveSessionId || undefined,
+                                root: treeRoot ?? undefined,
+                              })}
+                              title={addToContextTitle(`${ent.name} (live reference)`)}
+                              className="flex items-center p-0.5 rounded bg-zinc-800 text-zinc-400 hover:text-indigo-300 disabled:opacity-40"
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1782,15 +1812,18 @@ export function RemoteWorkspaceDialog({
                               undefined,
                             path: file.path,
                             sessionId: effectiveSessionId || undefined,
+                            root: treeRoot ?? undefined,
                           })
                         );
                         setAttached(true);
                         window.setTimeout(() => setAttached(false), 1500);
                       }}
-                      title="Attach a reference to this file (which bot + path) as context — the recipient reads the live version on demand"
+                      title={addToContextTitle(
+                        "this workspace file as a live reference — the recipient reads it on demand"
+                      )}
                       className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
                     >
-                      <Paperclip className="w-3 h-3" /> {attached ? "Attached" : "Attach"}
+                      <Paperclip className="w-3 h-3" /> {attached ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT}
                     </button>
                   )}
                 </div>

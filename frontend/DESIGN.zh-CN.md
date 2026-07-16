@@ -224,6 +224,42 @@ className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:te
 选中 `bg-zinc-800 text-zinc-100`（导航列表可按 §2.8 的激活胶囊加 indigo 着色）。
 所有可交互行必须有 hover 态。
 
+### 2.17 错误提示——三级体系
+
+级别由**用户当前工作还剩多少可用**决定，而不是技术严重程度——并且每个错误都
+必须给出口（Retry / Sign in again / Reload / Go back），不能只陈述失败。
+（英文版 §2.13–2.16 暂未镜像，本节编号与英文版对齐。）
+各层级的可交互设计稿（浏览器直接打开，含 live 演示）：
+[docs/design/ERROR_NOTIFICATIONS.html](../docs/design/ERROR_NOTIFICATIONS.html)。
+
+| 级别 | 用户状态 | 形态 | 组件 |
+|---|---|---|---|
+| **S · 轻** | 可以继续工作 | toast，右下角，自动消失 | `notify.error/warning/success/info`（`src/lib/notify.tsx`），可带一个动作 `{ label, onClick }` |
+| **M · 中** | 还能看，但上下文已降级 | 常驻软色条，置于受影响区域顶部；反映"状态"，状态解除即卸载 | `<Banner severity icon action onDismiss>`（`src/components/ui/banner.tsx`） |
+| **L · 重** | 必须先处理 | 阻塞对话框 · 面板/整页错误态 | `<ErrorDialog action?>` · `<ErrorState>`（`src/components/ui/error-state.tsx`） |
+
+已有的全局接线——扩展它，不要重建：
+
+- **登录过期**：任何带 token 请求的 401（`api/client.ts` 分类器，`/auth/*` 豁免）
+  或 ws `auth_err` 都会置位 `authStore.sessionExpired` → `App` 渲染全屏
+  **Session expired** 接管页，"Sign in again" 经 `/login?redirect=…` 回跳。
+  **不要在调用点单独处理 401。**
+- **渲染崩溃**：顶层 `ErrorBoundary`（`main.tsx`）渲染 `ErrorState`
+  （Reload + 复制错误详情）。无理由不要加页面级 boundary。
+- **连接断开**：`useChatRealtime().status` 驱动 ChannelView 的
+  「Connection lost」`<Banner>`（1.5s 宽限再显示；重订阅后自动收起；
+  "Retry now" = `reconnectNow`）。
+
+状态 → 级别速查：`401` → L 接管（自动）· 路由级 `403`/`404` → 面板内
+`<ErrorState>` · 校验 `409`/`422` → 优先字段旁 inline（§2.3 错误 ring +
+`text-red-400`），无表单才 toast · `429`/`5xx`/网络 → `notify.error`，可重试
+就带 Retry 动作 · ws 断开 → M 级 banner。错误有锚点（某条消息、某个字段）时
+inline 优先于 toast——保留 `MessageItem` 式的「Failed to send + Retry」行。
+
+**不要**：`toast.error(String(e))`——会把已人性化的 `ApiError` 文案退化回
+`Error: …`；用 `notify.error(messageOf(e))`。`<ErrorState>` 能覆盖时不要手写
+整页错误标记。
+
 ---
 
 ## 3. 已知缺口（组件抽取路线图）
@@ -254,3 +290,5 @@ Review 时直接打回：
 - [ ] `outline-none` 而没有替代的 focus 可见性
 - [ ] 原始枚举 / 字段名直接进 UI（`in_progress`、`system_admin`、`bot_id`）
 - [ ] §2 已有的模式（tab / 空态 / spinner）又发明新样式
+- [ ] `toast.error(String(e))`——用 `notify.error(messageOf(e))`（§2.17）
+- [ ] §2.17 已有对应级别时手写错误横条 / 整页错误标记；在调用点单独处理 401（归 client 分类器管）

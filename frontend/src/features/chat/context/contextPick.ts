@@ -286,15 +286,23 @@ export function workspaceContextItem(args: {
   botName?: string;
   path: string;
   sessionId?: string;
+  /** The canonical browse root `path` is relative to (the connector's `treeRoot`).
+   *  Carried in the reference so resolution reads the SAME file the picker showed —
+   *  without it the broker passes no root and the connector falls back to its default
+   *  cwd / first allowed root, which can resolve a different same-named file. */
+  root?: string;
 }): ContextItem {
   const base = args.path.split("/").pop() || args.path;
   const who = args.botName?.trim() || args.botId;
   return {
-    id: `ws:${args.botId}:${args.path}`,
+    // Root is part of the identity — the same relative path under two roots is two
+    // different files, so they must not dedup to one chip.
+    id: `ws:${args.botId}:${args.root ?? ""}:${args.path}`,
     verb: "workspace.read",
     params: {
       bot_id: args.botId,
       path: args.path,
+      ...(args.root ? { root: args.root } : {}),
       ...(args.sessionId ? { session_id: args.sessionId } : {}),
     },
     label: `${base} (@${who} workspace)`,

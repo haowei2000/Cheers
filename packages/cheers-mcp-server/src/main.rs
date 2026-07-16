@@ -254,6 +254,12 @@ fn build_resource_call(
         "list_members" => with_channel(client, args, "channel.members"),
         "messages_index" => with_channel(client, args, "channel.messages.index"),
         "get_context" => with_channel(client, args, "channel.context"),
+        // Channel-scoped read verbs the composer's "Add context" quick-pick offers as
+        // references (plan / sessions / cost). The recipient resolves them through
+        // these tools; without a mapping the reference is dead (unknown tools reject).
+        "read_plan" => with_channel(client, args, "channel.plan.read"),
+        "read_sessions" => with_channel(client, args, "channel.sessions.read"),
+        "read_cost" => with_channel(client, args, "channel.usage.read"),
         "inbox_list" => with_channel(client, args, "channel.files"),
         "read_messages" => {
             let mut params = Map::new();
@@ -514,6 +520,7 @@ fn build_resource_call(
             copy_required(args, &mut params, "bot_id", "bot_id")?;
             copy_required(args, &mut params, "path", "path")?;
             copy_optional(args, &mut params, "session_id", "session_id");
+            copy_optional(args, &mut params, "root", "root");
             Ok(ResourceCall {
                 resource: "workspace.read",
                 params,
@@ -611,6 +618,9 @@ fn tool_definitions() -> Vec<Value> {
             number_prop("limit", "Default 50, max 200.", Some(1), Some(200)),
         ], vec!["channel_id"]), true, false),
         tool("get_context", "Get channel context", "Condensed channel context bundle (topic, pinned info, summary).", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("read_plan", "Read the channel plan", "Read the channel's live plan / progress board (the agent's task list and status). Use this to resolve a \"plan\" context reference someone handed you.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("read_sessions", "List channel agent sessions", "List the bot sessions active in this channel (id, bot, mode). Use this to resolve a \"sessions\" context reference.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
+        tool("read_cost", "Read channel usage / cost", "Read token-usage / cost totals for this channel. Use this to resolve a \"cost\" context reference.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("leave_channel", "Leave a channel", "Remove yourself from a channel you are a member of (like a human member leaving). Not allowed for DMs. You stop receiving that channel's tasks immediately; a human has to re-invite you to get you back, so only leave when you are sure your work there is done.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), false, true),
         tool("inbox_list", "List chat attachments (inbox)", "List files people UPLOADED to this channel's chat (pdf/csv/images/docx). Each has a FILE_ID (uuid); open one with inbox_open. Read-only; these are NOT your workspace files — save your own work with desk_* instead.", object_schema(vec![channel_id_prop()], vec!["channel_id"]), true, false),
         tool("inbox_open", "Open a chat attachment by file_id", "Open a channel attachment by its FILE_ID (from inbox_list). Text files (csv/txt/md/json) return content directly. Binaries (image/pdf/zip/docx) first return kind:\"binary\"; re-open with as_base64:true to get the raw bytes as base64 (<=8MB) through THIS tool, then decode them locally (e.g. write to a file and unzip). Do NOT try to fetch download_url yourself — it is an authenticated human-UI endpoint and you have no gateway session for it (you would just get 401). Attachments are read-only — to edit, copy the content into your workspace with desk_write.", object_schema(vec![
@@ -685,6 +695,7 @@ fn tool_definitions() -> Vec<Value> {
             string_prop("bot_id", "member_id (uuid) of the bot whose workspace file to read — the owner named in the reference."),
             string_prop("path", "File path within that bot's workspace, from the reference."),
             string_prop("session_id", "Optional session id from the reference, scoping which workspace root to read."),
+            string_prop("root", "Optional workspace root the path is relative to, from the reference. Pass it through verbatim so you read the exact file the reference points at."),
         ], vec!["channel_id", "bot_id", "path"]), true, false),
     ]
 }

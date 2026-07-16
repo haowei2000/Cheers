@@ -125,7 +125,7 @@ describe("workspaceContextItem (remote workspace reference)", () => {
       path: "src/main.rs",
       sessionId: "sess-1",
     });
-    expect(it.id).toBe("ws:bot-A:src/main.rs");
+    expect(it.id).toBe("ws:bot-A::src/main.rs"); // empty root segment when none given
     expect(it.verb).toBe("workspace.read"); // consumer-governed ref, not a snapshot
     expect(it.params).toEqual({ bot_id: "bot-A", path: "src/main.rs", session_id: "sess-1" });
     expect(it.label).toBe("main.rs (@codex workspace)");
@@ -136,6 +136,15 @@ describe("workspaceContextItem (remote workspace reference)", () => {
     const it = workspaceContextItem({ botId: "b", path: "f.txt" });
     expect("session_id" in it.params).toBe(false);
     expect(it.label).toBe("f.txt (@b workspace)"); // botId fallback for name
+  });
+
+  it("carries the browse root (identity + params) so resolution reads the same file", () => {
+    const it = workspaceContextItem({ botId: "b", path: "a.md", root: "/home/w/proj" });
+    expect(it.id).toBe("ws:b:/home/w/proj:a.md"); // root is part of the identity
+    expect(it.params).toMatchObject({ bot_id: "b", path: "a.md", root: "/home/w/proj" });
+    // same path under a different root must NOT dedup to the same chip
+    const other = workspaceContextItem({ botId: "b", path: "a.md", root: "/other" });
+    expect(other.id).not.toBe(it.id);
   });
 });
 

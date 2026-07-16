@@ -9,6 +9,7 @@ import {
   useContextPickStore,
   type ContextItem,
 } from "@/features/chat/context/contextPick";
+import { addToContextTitle } from "@/features/chat/context/contextLabels";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { cn } from "@/lib/cn";
@@ -234,7 +235,7 @@ function ViewBoardDrawerImpl({
                 kind: meta.kind,
               });
             }}
-            title="Attach this board as context for your next message"
+            title={addToContextTitle("this board")}
             className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
           >
             <Plus className="w-3.5 h-3.5" />

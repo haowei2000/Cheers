@@ -1,33 +1,33 @@
-// Activity — the channel's HISTORY at two zoom levels (Codex-sidebar-style):
-// a NODE RAIL on the left compresses the whole channel into one scannable
-// column (one node per episode), and a DETAIL pane on the right expands just the
-// selected episode. An "episode" is a causal unit — a human's @mention plus the
-// bot turn / approvals / file writes that follow it (see activityEpisodes.ts) —
-// so the board reads as "what happened", not a firehose of rows. Three lenses:
-// Episodes (one node per episode), Highlights (only episodes that made a
-// decision / artifact), All (every event, low-signal bursts collapsed to ×N).
-// Clicking a message in the detail pane jumps the chat to it (ctx.onJumpToMessage).
-// Sourced from `channel.activity.read` (messages ∪ operations) + REST
-// listChannelMembers (id → name + avatar_url). All content is inert text.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+// Activity — the channel's collaboration history as a FLOW LIST. One row per
+// episode (a causal unit: a human's @mention plus the bot turns / approvals /
+// file writes that follow — see activityEpisodes.ts). The collapsed row is a
+// single line: a relay chain of avatars (trigger human → the bots involved),
+// the trigger excerpt, and the time — so scanning the column reads as "who
+// asked which bots to do what, when". Exactly one episode expands inline
+// (indigo-tinted block): a muted outcome summary plus the message rows hung on
+// a left rule; hovering a message row reveals a jump arrow that scrolls the
+// chat to the original message (ctx.onJumpToMessage). Three lenses: Flow
+// (newest auto-expanded), Highlights (only episodes with a decision/artifact),
+// All (every episode expanded). Sourced from `channel.activity.read`
+// (messages ∪ operations) + REST listChannelMembers. All content is inert text.
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
-  AtSign,
-  FileText,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
   Filter,
   Paperclip,
   Pencil,
   Search,
   ShieldCheck,
-  Check,
-  ChevronDown,
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SurfaceSpinner } from "@/components/ui/spinner";
+import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
 import { cn } from "@/lib/cn";
-import { avatarColor } from "@/lib/format";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
@@ -40,11 +40,9 @@ import {
 } from "../viewBoard";
 import {
   buildEpisodes,
-  collapseEpisode,
   isNotableEpisode,
   type ActivityEvent,
   type Episode,
-  type EventKind,
   type NormEvent,
 } from "./activityEpisodes";
 
@@ -59,14 +57,20 @@ function fmtTime(ts?: string | null): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** Whole-minute span between two ISO stamps, e.g. "8 min" / "" if <1min. */
+/** Span between two ISO stamps at a readable unit: "8 min" / "3 h" / "6 d"
+ *  ("" if <1min). Long-running episodes (a bot thread spanning days) would
+ *  otherwise read as "8213 min". */
 function fmtSpan(a?: string | null, b?: string | null): string {
   if (!a || !b) return "";
   const t0 = Date.parse(a);
   const t1 = Date.parse(b);
   if (Number.isNaN(t0) || Number.isNaN(t1)) return "";
   const min = Math.round(Math.abs(t1 - t0) / 60000);
-  return min >= 1 ? `${min} min` : "";
+  if (min < 1) return "";
+  if (min < 120) return `${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h} h`;
+  return `${Math.round(h / 24)} d`;
 }
 
 type MemberLookup = (id?: string | null) => MemberItem | undefined;
@@ -75,7 +79,7 @@ function nameOf(member: MemberItem | undefined, id?: string | null): string {
   return member?.display_name || member?.username || short(id) || "unknown";
 }
 
-type Lens = "episodes" | "highlights" | "all";
+type Lens = "flow" | "highlights" | "all";
 
 // ── episode helpers that need the member map (kept out of the pure module) ──
 function episodeTitle(ep: Episode, memberOf: MemberLookup): string {
@@ -84,13 +88,15 @@ function episodeTitle(ep: Episode, memberOf: MemberLookup): string {
   return `${nameOf(dom, ep.dominantActorId)} activity`;
 }
 
-/** Human-readable one-liner of what an episode produced, for the rail sub-label. */
+/** Outcome one-liner for the expanded header: "6 messages · 2 approvals · 10 writes · 12 min". */
 function episodeSummary(ep: Episode): string {
   const p: string[] = [];
-  if (ep.counts.messages) p.push(`${ep.counts.messages} msg`);
+  if (ep.counts.messages) p.push(`${ep.counts.messages} message${ep.counts.messages > 1 ? "s" : ""}`);
   if (ep.counts.approvals) p.push(`${ep.counts.approvals} approval${ep.counts.approvals > 1 ? "s" : ""}`);
   if (ep.counts.writes) p.push(`${ep.counts.writes} write${ep.counts.writes > 1 ? "s" : ""}`);
   if (ep.counts.files) p.push(`${ep.counts.files} file${ep.counts.files > 1 ? "s" : ""}`);
+  const span = fmtSpan(ep.startTs, ep.endTs);
+  if (span) p.push(span);
   return p.join(" · ");
 }
 
@@ -101,194 +107,175 @@ function episodeTouches(ep: Episode, selected: Set<string>): boolean {
   return false;
 }
 
-// ── the node rail ───────────────────────────────────────────────────────────
-// One node per row: a small marker + a SHORT type label ("claude turn",
-// "approval", "10 writes"). Everything else (excerpt, counts, time) lives in the
-// hover bubble + the detail pane — the rail itself stays scannable at a glance.
-interface RailMarker {
-  bar?: boolean; // gray burst bar (writes / ops) vs. a colored dot
-  color?: string; // dot fill (brand color) via inline style
-  cls?: string; // dot fill via tailwind class (per-actor hash / semantic)
-}
-interface RailTip {
-  id?: string | null;
-  name: string;
-  time: string;
-  summary: string;
-}
-interface RailItem {
-  key: string;
-  episodeId: string;
-  marker: RailMarker;
-  label: string;
-  tip: RailTip;
-}
-
-/** Dot fill for an actor: brand color for known agents, else a stable hash. */
-function actorMarker(id?: string | null, name?: string): RailMarker {
-  const brand = agentIconFor(name);
-  if (brand) return { color: brand.bg };
-  return { cls: avatarColor(id ?? name ?? "") };
-}
-
-function Marker({ marker }: { marker: RailMarker }) {
-  if (marker.bar) return <span className="w-4 h-[3px] rounded-full bg-zinc-600 flex-shrink-0" />;
-  return (
-    <span
-      className={cn("w-2 h-2 rounded-full flex-shrink-0", marker.cls)}
-      style={marker.color ? { backgroundColor: marker.color } : undefined}
-    />
-  );
-}
-
-/** One episode → one rail node ("{bot} turn", or the human's name for a
- *  human-only run). Used by the Episodes + Highlights lenses. */
-function episodeItem(ep: Episode, memberOf: MemberLookup): RailItem {
-  const dom = memberOf(ep.dominantActorId);
-  const domName = nameOf(dom, ep.dominantActorId);
-  const hasBot = !!ep.dominantActorId && dom?.member_type === "bot";
-  const trig = memberOf(ep.triggerActorId);
-  const label = hasBot ? `${domName} turn` : nameOf(trig, ep.triggerActorId);
-  const summary = [episodeTitle(ep, memberOf), episodeSummary(ep)].filter(Boolean).join(" · ");
-  return {
-    key: ep.id,
-    episodeId: ep.id,
-    marker: actorMarker(ep.dominantActorId ?? ep.triggerActorId, hasBot ? domName : label),
-    label,
-    tip: {
-      id: ep.dominantActorId ?? ep.triggerActorId,
-      name: hasBot ? domName : nameOf(trig, ep.triggerActorId),
-      time: fmtTime(ep.startTs),
-      summary,
-    },
+/** The bots in this episode's relay chain, in order of first appearance —
+ *  mentioned-by-the-trigger first (intent), then whoever actually spoke/acted.
+ *  Uses the events' own type tags so a bot that already left the channel
+ *  (missing from the member map) still shows in the chain. */
+function episodeBots(ep: Episode): string[] {
+  const bots: string[] = [];
+  const push = (id?: string | null) => {
+    if (id && !bots.includes(id)) bots.push(id);
   };
-}
-
-/** One collapsed run → one rail node. Used by the All lens. */
-function runItem(run: ReturnType<typeof collapseEpisode>[number], memberOf: MemberLookup): RailItem {
-  const actor = memberOf(run.actorId);
-  const name = nameOf(actor, run.actorId);
-  let marker: RailMarker;
-  let label: string;
-  switch (run.kind) {
-    case "write":
-      marker = { bar: true };
-      label = `${run.count} write${run.count > 1 ? "s" : ""}`;
-      break;
-    case "op":
-      marker = { bar: true };
-      label = `${run.count} op${run.count > 1 ? "s" : ""}`;
-      break;
-    case "approval":
-      marker = { cls: "bg-emerald-500" };
-      label = "approval";
-      break;
-    case "file":
-      marker = { cls: "bg-sky-500" };
-      label = "file";
-      break;
-    case "bot_msg":
-      marker = actorMarker(run.actorId, name);
-      label = `${name} turn`;
-      break;
-    default: // trigger / user_msg
-      marker = actorMarker(run.actorId, name);
-      label = run.count > 1 ? `${name} ×${run.count}` : name;
+  for (const n of ep.events) {
+    if (n.kind === "trigger") {
+      for (const m of n.mentions) if (m.member_type === "bot") push(m.member_id);
+    } else if (n.actorType === "bot") {
+      push(n.actorId);
+    }
   }
-  return {
-    key: run.key,
-    episodeId: run.episodeId,
-    marker,
-    label,
-    tip: { id: run.actorId, name, time: fmtTime(run.ts), summary: run.sample || label },
-  };
+  return bots;
 }
 
-function RailRow({
-  item,
-  active,
-  onSelect,
-  onHover,
-  onLeave,
-}: {
-  item: RailItem;
-  active: boolean;
-  onSelect: () => void;
-  onHover: (rect: DOMRect, item: RailItem) => void;
-  onLeave: () => void;
-}) {
+// ── relay chain: trigger avatar → the bots involved ────────────────────────
+const CHAIN_BOT_CAP = 3;
+
+function ChainAvatars({ ep, memberOf }: { ep: Episode; memberOf: MemberLookup }) {
+  const lead = ep.triggerActorId ?? ep.dominantActorId;
+  const bots = episodeBots(ep).filter((id) => id !== lead);
+  const shown = bots.slice(0, CHAIN_BOT_CAP);
+  const leadMember = memberOf(lead);
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      onMouseEnter={(e) => onHover(e.currentTarget.getBoundingClientRect(), item)}
-      onMouseLeave={onLeave}
-      className={cn(
-        "w-full text-left flex items-center gap-2.5 rounded-md px-2 py-1 transition-colors",
-        active ? "bg-indigo-600/15" : "hover:bg-zinc-800/40"
+    <span className="flex items-center flex-shrink-0">
+      <Avatar
+        name={nameOf(leadMember, lead)}
+        src={leadMember?.avatar_url ?? undefined}
+        id={lead ?? ep.id}
+        size="xs"
+        className="!w-4 !h-4"
+      />
+      {shown.length > 0 && <ArrowRight className="w-3 h-3 text-zinc-600 flex-shrink-0" />}
+      {shown.map((id, i) => {
+        const mem = memberOf(id);
+        return (
+          <Avatar
+            key={id}
+            name={nameOf(mem, id)}
+            src={mem?.avatar_url ?? undefined}
+            id={id}
+            size="xs"
+            className={cn("!w-4 !h-4", i > 0 && "-ml-1 ring-1 ring-zinc-900")}
+          />
+        );
+      })}
+      {bots.length > shown.length && (
+        <span className="ml-0.5 text-[10px] text-zinc-400">+{bots.length - shown.length}</span>
       )}
-    >
-      <Marker marker={item.marker} />
-      <span className={cn("min-w-0 flex-1 truncate text-[11px]", active ? "text-zinc-100" : "text-zinc-400")}>
-        {item.label}
-      </span>
-    </button>
+    </span>
   );
 }
 
-/** Fixed-position hover bubble — escapes the rail's scroll clipping. */
-function RailTooltip({ rect, item, memberOf }: { rect: DOMRect; item: RailItem; memberOf: MemberLookup }) {
-  return (
-    <div
-      style={{ position: "fixed", left: Math.round(rect.right + 8), top: Math.round(rect.top - 4), zIndex: 60 }}
-      className="w-52 max-w-[calc(100vw-1rem)] rounded-lg bg-zinc-800 shadow-xl shadow-black/40 p-2.5 pointer-events-none"
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <Avatar
-          name={item.tip.name}
-          src={memberOf(item.tip.id)?.avatar_url ?? undefined}
-          id={item.tip.id ?? item.key}
-          size="xs"
-          className="!w-4 !h-4"
-        />
-        <span className="text-xs font-medium text-zinc-100 truncate">{item.tip.name}</span>
-        {item.tip.time && <span className="ml-auto text-[10px] text-zinc-400 flex-shrink-0">{item.tip.time}</span>}
-      </div>
-      {item.tip.summary && <div className="text-[11px] text-zinc-400 leading-snug">{item.tip.summary}</div>}
-    </div>
-  );
+// ── expanded detail: the episode's events hung on a left rule ───────────────
+interface MutedItem {
+  kind: "write" | "approval";
+  actorId?: string | null;
+  count: number;
 }
-
-// ── detail pane: the selected episode, fully expanded ───────────────────────
 type DetailRow =
   | { type: "event"; n: NormEvent }
-  | { type: "writeRun"; count: number; actorId?: string | null; seq: number };
+  | { type: "muted"; items: MutedItem[]; seq: number };
 
-/** Fold consecutive write/op events into one summary row; keep messages
- *  individually rendered (so each stays jump-to-able). */
+/** Fold consecutive non-message events (writes/ops + approvals) into ONE muted
+ *  summary row — "claude wrote 10 files · haowei approved ×2" — and keep
+ *  messages individually rendered (each stays jump-to-able). Chronological —
+ *  the flow reads top-down like the conversation it summarizes. */
 function detailRows(ep: Episode): DetailRow[] {
   const rows: DetailRow[] = [];
   for (const n of ep.events) {
-    if (n.kind === "write" || n.kind === "op") {
+    if (n.kind === "write" || n.kind === "op" || n.kind === "approval") {
+      const kind: MutedItem["kind"] = n.kind === "approval" ? "approval" : "write";
       const last = rows[rows.length - 1];
-      if (last && last.type === "writeRun" && last.actorId === n.actorId) {
-        last.count += 1;
+      if (last && last.type === "muted") {
+        const item = last.items.find((it) => it.kind === kind && it.actorId === n.actorId);
+        if (item) item.count += 1;
+        else last.items.push({ kind, actorId: n.actorId, count: 1 });
         last.seq = n.seq;
       } else {
-        rows.push({ type: "writeRun", count: 1, actorId: n.actorId, seq: n.seq });
+        rows.push({ type: "muted", items: [{ kind, actorId: n.actorId, count: 1 }], seq: n.seq });
       }
     } else {
       rows.push({ type: "event", n });
     }
   }
-  return rows.reverse(); // newest-first, matching the rest of the board
+  return rows;
 }
 
-function KindIcon({ kind }: { kind: EventKind }) {
-  if (kind === "approval") return <ShieldCheck className="w-3.5 h-3.5 text-emerald-400/80" />;
-  if (kind === "file") return <Paperclip className="w-3.5 h-3.5 text-zinc-400" />;
-  if (kind === "trigger") return <AtSign className="w-3.5 h-3.5 text-indigo-300/80" />;
-  return <FileText className="w-3.5 h-3.5 text-zinc-500" />;
+/** Bot senders read by brand color (claude clay, codex green, …) so a
+ *  multi-bot thread scans by name color without repeating avatars per row.
+ *  Lightened toward white so the darker brand hues clear the contrast floor
+ *  on the zinc-900 surface. */
+function senderColor(name: string): string | undefined {
+  const bg = agentIconFor(name)?.bg;
+  return bg ? `color-mix(in srgb, ${bg} 62%, white)` : undefined;
+}
+
+/** Inline-highlight @mentions inside an excerpt (the handoff cue: a bot
+ *  @-ing another bot reads at a glance). Pure text styling — still inert. */
+const MENTION_RE = /(@[\p{L}\p{N}_.-]+)/gu;
+function renderExcerpt(text: string): ReactNode {
+  if (!text.includes("@")) return text;
+  return text.split(MENTION_RE).map((part, i) =>
+    part.startsWith("@") ? (
+      <span key={i} className="text-indigo-300">
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
+
+function MessageRow({
+  n,
+  memberOf,
+  onJump,
+}: {
+  n: NormEvent;
+  memberOf: MemberLookup;
+  onJump?: (msgId: string) => void;
+}) {
+  const actor = memberOf(n.actorId);
+  const name = nameOf(actor, n.actorId);
+  const brand = n.actorType === "bot" ? senderColor(name) : undefined;
+  const clickable = Boolean(n.msgId && onJump);
+
+  return (
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={() => n.msgId && onJump?.(n.msgId)}
+      title={clickable ? "Jump to this message" : undefined}
+      className={cn(
+        "group w-full flex items-baseline gap-1.5 py-[3px] text-left rounded",
+        clickable && "hover:bg-zinc-800/40"
+      )}
+    >
+      <span
+        className={cn("text-[11px] font-medium flex-shrink-0", !brand && "text-zinc-300")}
+        style={brand ? { color: brand } : undefined}
+      >
+        {name}
+      </span>
+      <span className="flex-1 min-w-0 truncate text-[11px] text-zinc-400">{renderExcerpt(n.excerpt)}</span>
+      {n.fileCount > 0 && (
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 flex-shrink-0">
+          <Paperclip className="w-2.5 h-2.5" />
+          {n.fileCount}
+        </span>
+      )}
+      {/* Hover swaps the timestamp for the jump arrow — one trailing slot, no shift. */}
+      <span
+        className={cn(
+          "text-[10px] text-zinc-400 tabular-nums flex-shrink-0",
+          clickable && "group-hover:hidden"
+        )}
+      >
+        {fmtTime(n.ts)}
+      </span>
+      {clickable && (
+        <ArrowUpRight className="w-3 h-3 self-center flex-shrink-0 text-indigo-300 hidden group-hover:block" />
+      )}
+    </button>
+  );
 }
 
 function EpisodeDetail({
@@ -300,123 +287,140 @@ function EpisodeDetail({
   memberOf: MemberLookup;
   onJump?: (msgId: string) => void;
 }) {
-  const trigger = memberOf(ep.triggerActorId);
-  const dom = memberOf(ep.dominantActorId);
   const rows = useMemo(() => detailRows(ep), [ep]);
-  const span = fmtSpan(ep.startTs, ep.endTs);
-
-  // The first bot the trigger addressed, for the "X → @Y" header line.
-  const firstMention = ep.events.find((n) => n.kind === "trigger")?.mentions[0];
-  const mentioned = firstMention ? memberOf(firstMention.member_id) : dom;
-
+  const summary = episodeSummary(ep);
   return (
-    <div className="rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 bg-zinc-900/50 border-b border-zinc-800">
-        <Avatar
-          name={nameOf(trigger ?? dom, ep.triggerActorId ?? ep.dominantActorId)}
-          src={(trigger ?? dom)?.avatar_url ?? undefined}
-          id={ep.triggerActorId ?? ep.dominantActorId ?? ep.id}
-          size="xs"
-        />
-        <span className="text-xs text-zinc-200 min-w-0 truncate">
-          <span className="font-medium">
-            {nameOf(trigger ?? dom, ep.triggerActorId ?? ep.dominantActorId)}
-          </span>
-          {ep.triggerActorId && mentioned && (
-            <>
-              <span className="text-zinc-600"> → </span>
-              <span className="text-indigo-300">@{nameOf(mentioned, firstMention?.member_id)}</span>
-            </>
-          )}
-        </span>
-        <span className="ml-auto text-[10px] text-zinc-400 tabular-nums whitespace-nowrap flex-shrink-0">
-          {fmtTime(ep.startTs)}
-          {span && ` · ${span}`}
-        </span>
-      </div>
-
-      <div className="px-3 py-1">
+    <div className="px-3 pb-2">
+      {summary && <div className="pl-[26px] pb-1 text-[10px] text-zinc-400">{summary}</div>}
+      <div className="ml-[7px] border-l-2 border-zinc-800 pl-3">
         {rows.map((row, i) => {
-          if (row.type === "writeRun") {
-            const actor = memberOf(row.actorId);
+          if (row.type === "muted") {
+            const Icon = row.items.some((it) => it.kind === "write") ? Pencil : ShieldCheck;
             return (
-              <div key={`w-${row.seq}-${i}`} className="flex items-center gap-2 py-1.5 border-b border-zinc-900 last:border-0">
-                <span className="w-5 flex justify-center flex-shrink-0">
-                  <Pencil className="w-3.5 h-3.5 text-zinc-500" />
-                </span>
-                <span className="text-[11px] text-zinc-400">
-                  <span className="text-zinc-300">{nameOf(actor, row.actorId)}</span> wrote{" "}
-                  {row.count} file{row.count > 1 ? "s" : ""}
+              <div key={`m-${row.seq}-${i}`} className="flex items-baseline gap-1.5 py-[3px]">
+                <Icon className="w-3 h-3 text-zinc-500 self-center flex-shrink-0" />
+                <span className="min-w-0 truncate text-[10px] text-zinc-400">
+                  {row.items.map((it, j) => (
+                    <span key={j}>
+                      {j > 0 && " · "}
+                      <span className="text-zinc-300">{nameOf(memberOf(it.actorId), it.actorId)}</span>{" "}
+                      {it.kind === "write"
+                        ? `wrote ${it.count} file${it.count > 1 ? "s" : ""}`
+                        : `approved${it.count > 1 ? ` ×${it.count}` : ""}`}
+                    </span>
+                  ))}
                 </span>
               </div>
             );
           }
-          const n = row.n;
-          const actor = memberOf(n.actorId);
-          const isMsg = n.kind === "trigger" || n.kind === "user_msg" || n.kind === "bot_msg" || n.kind === "file";
-          const clickable = Boolean(n.msgId && onJump);
+          return <MessageRow key={row.n.msgId ?? `e-${row.n.seq}-${i}`} n={row.n} memberOf={memberOf} onJump={onJump} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── one episode in the flow list: collapsed line + inline expansion ─────────
+function FlowEpisode({
+  ep,
+  memberOf,
+  expanded,
+  onToggle,
+  onJump,
+}: {
+  ep: Episode;
+  memberOf: MemberLookup;
+  expanded: boolean;
+  onToggle?: () => void;
+  onJump?: (msgId: string) => void;
+}) {
+  return (
+    <div className={cn(expanded && "bg-indigo-600/[0.08]")}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className={cn(
+          "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
+          !expanded && "hover:bg-zinc-800/40"
+        )}
+      >
+        <ChainAvatars ep={ep} memberOf={memberOf} />
+        <span
+          className={cn(
+            "flex-1 min-w-0 truncate text-[11px]",
+            expanded ? "text-zinc-100" : "text-zinc-400"
+          )}
+        >
+          {episodeTitle(ep, memberOf)}
+        </span>
+        <span className="text-[10px] text-zinc-400 tabular-nums flex-shrink-0">{fmtTime(ep.startTs)}</span>
+      </button>
+      {expanded && <EpisodeDetail ep={ep} memberOf={memberOf} onJump={onJump} />}
+    </div>
+  );
+}
+
+// ── participant strip: "who's here", recency-ordered avatar stack ──────────
+// A collaboration-focused overview the flow list alone doesn't give you: every
+// human/bot that's touched this channel, most-recently-active first, with
+// presence — and a one-click way to spotlight just their activity (reuses the
+// same `selected` filter the list/MemberFilter already read).
+const PARTICIPANT_STRIP_CAP = 10;
+
+function ParticipantStrip({
+  ids,
+  memberOf,
+  selected,
+  onToggle,
+}: {
+  ids: string[];
+  memberOf: MemberLookup;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const shown = ids.slice(0, PARTICIPANT_STRIP_CAP);
+  const overflow = ids.length - shown.length;
+  const dim = selected.size > 0;
+  const online = ids.reduce((n, id) => n + (memberOf(id)?.is_online ? 1 : 0), 0);
+
+  return (
+    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 flex-shrink-0">
+      <div className="flex items-center -space-x-2">
+        {shown.map((id) => {
+          const mem = memberOf(id);
+          const name = nameOf(mem, id);
+          const active = selected.has(id);
           return (
             <button
-              key={n.msgId ?? `e-${n.seq}-${i}`}
+              key={id}
               type="button"
-              disabled={!clickable}
-              onClick={() => n.msgId && onJump?.(n.msgId)}
-              title={clickable ? "Jump to this message" : undefined}
+              onClick={() => onToggle(id)}
+              title={`${name}${mem?.is_online != null ? (mem.is_online ? " · online" : " · offline") : ""}`}
+              aria-label={`Filter by ${name}`}
+              aria-pressed={active}
               className={cn(
-                "w-full text-left flex items-start gap-2 py-1.5 border-b border-zinc-900 last:border-0",
-                clickable && "hover:bg-zinc-800/40 rounded"
+                "relative rounded-full ring-2 transition-all",
+                active ? "ring-indigo-500" : "ring-zinc-900",
+                dim && !active && "opacity-50 hover:opacity-100"
               )}
             >
-              {isMsg ? (
-                <Avatar
-                  name={nameOf(actor, n.actorId)}
-                  src={actor?.avatar_url ?? undefined}
-                  id={n.actorId ?? String(n.seq)}
-                  size="xs"
-                  className="mt-0.5 flex-shrink-0"
-                />
-              ) : (
-                <span className="w-5 flex justify-center mt-0.5 flex-shrink-0">
-                  <KindIcon kind={n.kind} />
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-[11px] font-medium text-zinc-300 truncate">
-                    {nameOf(actor, n.actorId)}
-                  </span>
-                  {n.kind === "approval" && (
-                    <span className="text-[10px] text-emerald-400/80">approval</span>
-                  )}
-                  {n.fileCount > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400">
-                      <Paperclip className="w-2.5 h-2.5" />
-                      {n.fileCount}
-                    </span>
-                  )}
-                  <span className="ml-auto text-[10px] text-zinc-400 tabular-nums flex-shrink-0">
-                    {fmtTime(n.ts)}
-                  </span>
-                </div>
-                {n.excerpt && <div className="text-[11px] text-zinc-400 truncate mt-px">{n.excerpt}</div>}
-                {n.mentions.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {n.mentions.map((m) => (
-                      <span
-                        key={m.member_id}
-                        className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[10px] bg-indigo-500/10 text-indigo-300/90"
-                      >
-                        <AtSign className="w-2.5 h-2.5" />
-                        {nameOf(memberOf(m.member_id), m.member_id)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Avatar
+                name={name}
+                src={mem?.avatar_url ?? undefined}
+                id={id}
+                online={mem?.is_online ?? undefined}
+                size="xs"
+                className="!w-6 !h-6"
+              />
             </button>
           );
         })}
       </div>
+      {overflow > 0 && (
+        <span className="ml-1 text-[10px] text-zinc-400 flex-shrink-0">+{overflow}</span>
+      )}
+      {online > 0 && <span className="ml-1.5 text-[10px] text-zinc-400 flex-shrink-0">{online} online</span>}
     </div>
   );
 }
@@ -426,10 +430,10 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
   const [events, setEvents] = useState<ActivityEvent[] | null>(null);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [lens, setLens] = useState<Lens>("episodes");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lens, setLens] = useState<Lens>("flow");
+  // undefined = auto (newest episode expanded); null = user collapsed everything.
+  const [expandedId, setExpandedId] = useState<string | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [hover, setHover] = useState<{ rect: DOMRect; item: RailItem } | null>(null);
 
   const toggleMember = useCallback((id: string) => {
     setSelected((prev) => {
@@ -478,6 +482,23 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
     [events, isBot]
   );
 
+  // Distinct participants across the WHOLE channel (not lens-filtered), most-
+  // recently-active first — episodes are already newest-first, so the first
+  // time an id shows up while walking them is its most recent activity.
+  const participantIds = useMemo(() => {
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const ep of allEpisodes) {
+      for (const id of ep.participants) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          order.push(id);
+        }
+      }
+    }
+    return order;
+  }, [allEpisodes]);
+
   // Member filter → then the lens filter (Highlights drops chatter-only episodes).
   const episodes = useMemo(() => {
     let eps = allEpisodes;
@@ -486,32 +507,28 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
     return eps;
   }, [allEpisodes, selected, lens]);
 
-  // Keep a valid selection: default to the newest episode; re-point if it vanished.
-  useEffect(() => {
-    if (!episodes.length) {
-      if (selectedId !== null) setSelectedId(null);
-      return;
-    }
-    if (!selectedId || !episodes.some((ep) => ep.id === selectedId)) {
-      setSelectedId(episodes[0].id);
-    }
-  }, [episodes, selectedId]);
-
-  const selectedEpisode = episodes.find((ep) => ep.id === selectedId) ?? episodes[0] ?? null;
-
-  // Rail items: one node per episode (episodes/highlights), or one per collapsed
-  // run (all). Each is a short typed label; details live in the hover bubble.
-  const railItems = useMemo<RailItem[]>(() => {
-    if (lens === "all") return episodes.flatMap((ep) => collapseEpisode(ep).map((run) => runItem(run, memberOf)));
-    return episodes.map((ep) => episodeItem(ep, memberOf));
-  }, [episodes, lens, memberOf]);
-
-  const onHover = useCallback((rect: DOMRect, item: RailItem) => setHover({ rect, item }), []);
-  const onLeave = useCallback(() => setHover(null), []);
+  // Auto-expand the newest episode until the user picks/collapses one themselves.
+  const effectiveExpanded =
+    lens === "all" ? null : expandedId === undefined ? (episodes[0]?.id ?? null) : expandedId;
+  const toggleEpisode = useCallback(
+    (id: string) => setExpandedId((prev) => {
+      const cur = prev === undefined ? (episodes[0]?.id ?? null) : prev;
+      return cur === id ? null : id;
+    }),
+    [episodes]
+  );
 
   return (
     <ViewBoardShell title="Activity" icon={Activity} loading={loading} onRefresh={() => void load()}>
       <div className="flex flex-col h-full min-h-0">
+        {participantIds.length > 1 && (
+          <ParticipantStrip
+            ids={participantIds}
+            memberOf={memberOf}
+            selected={selected}
+            onToggle={toggleMember}
+          />
+        )}
         {events == null ? (
           <div className="flex-1">
             <SurfaceSpinner />
@@ -533,41 +550,24 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-[minmax(112px,38%)_1fr] flex-1 min-h-0" onMouseLeave={onLeave}>
-            {/* Rail — the whole channel, one short node per row. */}
-            <div className="overflow-y-auto border-r border-zinc-900 p-1.5 space-y-0.5">
-              <div className="px-1 pb-1 text-[10px] uppercase tracking-wide text-zinc-400">
-                rail · whole channel
-              </div>
-              {railItems.map((item) => (
-                <RailRow
-                  key={item.key}
-                  item={item}
-                  active={item.episodeId === selectedId}
-                  onSelect={() => setSelectedId(item.episodeId)}
-                  onHover={onHover}
-                  onLeave={onLeave}
-                />
-              ))}
-            </div>
-
-            {/* Detail — the selected episode, expanded. */}
-            <div className="overflow-y-auto p-2">
-              {selectedEpisode ? (
-                <EpisodeDetail ep={selectedEpisode} memberOf={memberOf} onJump={ctx.onJumpToMessage} />
-              ) : (
-                <div className="px-3 py-6 text-center text-xs text-zinc-400">
-                  Select an episode to see its detail.
-                </div>
-              )}
-            </div>
+          <div className="flex-1 min-h-0 overflow-y-auto py-1">
+            {episodes.map((ep) => (
+              <FlowEpisode
+                key={ep.id}
+                ep={ep}
+                memberOf={memberOf}
+                expanded={lens === "all" || effectiveExpanded === ep.id}
+                onToggle={lens === "all" ? undefined : () => toggleEpisode(ep.id)}
+                onJump={ctx.onJumpToMessage}
+              />
+            ))}
           </div>
         )}
 
-        {/* Footer: lens tabs (left) + member filter (right) — mirrors the mock. */}
+        {/* Footer: lens tabs (left) + member filter (right). */}
         <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-zinc-800 flex-shrink-0">
           <div className="flex items-center gap-0.5 rounded-full bg-zinc-900/60 p-0.5">
-            {(["episodes", "highlights", "all"] as Lens[]).map((l) => (
+            {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <button
                 key={l}
                 type="button"
@@ -594,19 +594,11 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
           )}
         </div>
       </div>
-      {/* Portalled to <body>: the ViewBoard window is a transformed,
-          overflow-hidden containing block that would otherwise clip a fixed
-          child (and re-anchor its coordinates). */}
-      {hover &&
-        createPortal(
-          <RailTooltip rect={hover.rect} item={hover.item} memberOf={memberOf} />,
-          document.body
-        )}
     </ViewBoardShell>
   );
 }
 
-// ── member filter (unchanged behavior; avatars from last redesign) ──────────
+// ── member filter (shared popover primitive; avatars with presence) ─────────
 function FilterChip({
   active,
   onClick,
@@ -619,11 +611,12 @@ function FilterChip({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] whitespace-nowrap flex-shrink-0 border transition-colors ${
+      className={cn(
+        "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] whitespace-nowrap flex-shrink-0 border transition-colors",
         active
           ? "border-zinc-600 bg-zinc-800 text-zinc-200"
           : "border-transparent bg-zinc-900/60 text-zinc-400 hover:text-zinc-200"
-      }`}
+      )}
     >
       {children}
     </button>
@@ -647,25 +640,8 @@ function MemberFilter({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-activity-filter-root]")) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   const ql = q.trim().toLowerCase();
   const shown = useMemo(
@@ -679,7 +655,7 @@ function MemberFilter({
   );
 
   return (
-    <div className="relative flex-shrink-0" data-activity-filter-root>
+    <div ref={rootRef} className="relative flex-shrink-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -698,12 +674,7 @@ function MemberFilter({
       </button>
 
       {open && (
-        <div
-          className={cn(
-            "absolute right-0 z-50 w-60 max-w-[calc(100vw-2rem)] rounded-xl bg-zinc-900 shadow-xl shadow-black/40",
-            openUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          )}
-        >
+        <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
           <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-zinc-800">
             <Search className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
             <input
@@ -739,6 +710,7 @@ function MemberFilter({
                       name={nameOf(memberOf(mem.member_id), mem.member_id)}
                       src={mem.avatar_url ?? undefined}
                       id={mem.member_id}
+                      online={mem.is_online ?? undefined}
                       size="xs"
                       className="!w-4 !h-4"
                     />
@@ -776,7 +748,7 @@ function MemberFilter({
               </button>
             </div>
           )}
-        </div>
+        </PopoverPanel>
       )}
     </div>
   );

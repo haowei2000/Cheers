@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
 import { SlidersHorizontal, Lock } from "lucide-react";
 import {
@@ -127,7 +128,7 @@ function BotInlineSettings({
       onApplied?.();
       toast.success("Applied");
     } catch (e) {
-      toast.error(String(e));
+      notify.error(messageOf(e));
     } finally {
       setBusy(false);
     }

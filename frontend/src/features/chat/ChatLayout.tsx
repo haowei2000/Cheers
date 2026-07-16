@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listChannels, listDms } from "@/api/channels";
 import toast from "react-hot-toast";
-import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { useChatStore } from "@/stores/chatStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -182,14 +182,12 @@ export default function ChatLayout() {
   // Shown in the main area when the mount-time load failed, so a dead gateway
   // surfaces a reason + retry instead of silent empty states.
   const bootstrapErrorPanel = (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <p className="max-w-xs text-sm text-red-400">
-        Couldn't load your workspaces. Check the gateway connection, then retry.
-      </p>
-      <Button size="sm" onClick={loadWorkspaces}>
-        Retry
-      </Button>
-    </div>
+    <ErrorState
+      className="flex-1"
+      title="Couldn't load your workspaces"
+      description="Check the gateway connection, then retry."
+      action={{ label: "Retry", onClick: loadWorkspaces }}
+    />
   );
 
   if (isMobile) {

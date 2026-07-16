@@ -21,6 +21,11 @@ import {
   type ReplyTargetLike,
   type FileRef,
 } from "./contextPick";
+import {
+  ADD_CONTEXT_MENU,
+  ADD_CONTEXT_MENU_TITLE,
+  ADDED_TO_CONTEXT_TITLE,
+} from "./contextLabels";
 
 // Composer "add context" bar (docs/design/RESOURCE_CONTEXT.md, F1): renders the
 // pending resource picks as removable chips and an "add context" menu. In-panel
@@ -89,8 +94,12 @@ export function MessageContextChips({
   );
 }
 
-// v1 quick attaches: channel-scoped Viewboard resources (one click, no browsing).
-// File / message picking and in-panel attach arrive in the next slice.
+// Quick attaches = the CHANNEL-SCOPED reads that need no target to pick (one click,
+// no browsing): plan, recent decisions, sessions, cost. The remaining context kinds
+// need a specific target — a file (Workbench), a message (reply), or a remote-
+// workspace file (RemoteWorkspace dialog) — so they attach from their own panels,
+// not this menu. (Keep in sync with the readable channel verbs in the resource
+// registry + the sanitize allowlist.)
 const QUICK: ContextItem[] = [
   { id: "plan", verb: "channel.plan.read", params: {}, label: "Plan", kind: "plan" },
   {
@@ -100,6 +109,8 @@ const QUICK: ContextItem[] = [
     label: "Recent decisions",
     kind: "activity",
   },
+  { id: "sessions", verb: "channel.sessions.read", params: {}, label: "Sessions", kind: "sessions" },
+  { id: "cost", verb: "channel.usage.read", params: {}, label: "Cost", kind: "cost" },
 ];
 
 /** In-panel "attach this to my next message" button (Viewboard / Workbench /
@@ -129,7 +140,7 @@ export function AttachContextButton({
       type="button"
       disabled={disabled || added}
       onClick={() => add(channelId, item)}
-      title={disabled ? disabledTitle ?? "Unavailable" : added ? "Added to context" : title}
+      title={disabled ? disabledTitle ?? "Unavailable" : added ? ADDED_TO_CONTEXT_TITLE : title}
       className={
         className ??
         "rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
@@ -221,16 +232,16 @@ export function ContextPickBar({
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          title="Attach Cheers resources (plan, decisions, …) as context for this message"
+          title={ADD_CONTEXT_MENU_TITLE}
           className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
         >
           <Plus className="w-3 h-3" />
-          Add context
+          {ADD_CONTEXT_MENU}
         </button>
         {open && (
-          <PopoverPanel placement="up" align="start" className="w-52 p-1">
+          <PopoverPanel placement="up" align="start" className="w-56 p-1">
             <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-zinc-400">
-              Attach to this message
+              Add to context
             </p>
             {QUICK.map((q) => {
               const Icon = KIND_ICON[q.kind];
@@ -252,6 +263,10 @@ export function ContextPickBar({
                 </button>
               );
             })}
+            <p className="px-2 pt-1.5 pb-0.5 text-[10px] text-zinc-500 border-t border-zinc-800 mt-1">
+              Files, messages & a bot's workspace files: add them from their own
+              panels (Workbench, a reply, the Remote workspace).
+            </p>
           </PopoverPanel>
         )}
       </div>

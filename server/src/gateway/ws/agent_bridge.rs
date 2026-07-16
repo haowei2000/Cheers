@@ -1997,6 +1997,10 @@ async fn broker_workspace_read(state: &AppState, reader_bot_id: Uuid, frame: &Va
         return bridge_frames::resource_res_err(req_id, "INVALID_PARAMS", "path required");
     };
     let session_id = uuid_param("session_id");
+    // The root the ref's `path` is relative to (from the picker's `treeRoot`). Without
+    // it the read falls back to the connector's default cwd / first allowed root, which
+    // can resolve a different same-named file — so pass it through when present.
+    let root = str_param("root");
 
     match crate::api::workspace::read_workspace_file_as_bot(
         state,
@@ -2004,7 +2008,7 @@ async fn broker_workspace_read(state: &AppState, reader_bot_id: Uuid, frame: &Va
         reader_bot_id,
         channel_id,
         &path,
-        None,
+        root.as_deref(),
         session_id,
     )
     .await
