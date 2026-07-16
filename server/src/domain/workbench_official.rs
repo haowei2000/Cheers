@@ -90,6 +90,12 @@ pub async fn seed(db: &PgPool) -> Result<(), sqlx::Error> {
             continue;
         }
         let version = manifest.get("version").and_then(Value::as_i64).unwrap_or(1);
+        // Stored in an INT column — a wrapping `as i32` on an out-of-range version would
+        // go negative and re-seed on every startup (resurrecting admin deletions).
+        let Ok(version_i32) = i32::try_from(version) else {
+            warn!(plugin = %id, version, "official plugin version does not fit i32; skipping");
+            continue;
+        };
 
         let seeded: Option<i32> = sqlx::query_scalar(
             "SELECT seeded_version FROM workbench_official_plugin_state WHERE plugin_id = $1",
@@ -105,10 +111,7 @@ pub async fn seed(db: &PgPool) -> Result<(), sqlx::Error> {
 
         match decide(version, seeded.map(i64::from), origin.as_deref()) {
             Action::Install => {
-                let title = manifest
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .unwrap_or(&id);
+                let title = manifest.get("title").and_then(Value::as_str).unwrap_or(&id);
                 workbench_plugins::install(
                     db,
                     &id,
@@ -126,14 +129,15 @@ pub async fn seed(db: &PgPool) -> Result<(), sqlx::Error> {
                      DO UPDATE SET seeded_version = $2, seeded_at = NOW()",
                 )
                 .bind(&id)
-                .bind(version as i32)
+                .bind(version_i32)
                 .execute(db)
                 .await?;
                 info!(plugin = %id, version, "official workbench plugin seeded");
             }
             Action::Noop => {}
             Action::SkipAdminClaimed => {
-                warn!(plugin = %id, "official plugin id is admin-claimed; leaving their row alone");
+                // Documented steady state (admin claimed the id), not a problem — info, not warn.
+                info!(plugin = %id, "official plugin id is admin-claimed; leaving their row alone");
             }
         }
     }
@@ -151,11 +155,17 @@ mod tests {
         for bundle in OFFICIAL {
             let m = extract_manifest(bundle).expect("manifest extracts");
             let id = m.get("id").and_then(Value::as_str).expect("has id");
-            assert!(id.starts_with("cheers-"), "official ids use the cheers- prefix: {id}");
-            workbench_plugins::validate_manifest(id, &m).expect("manifest validates");
             assert!(
-                m.get("version").and_then(Value::as_i64).is_some(),
-                "official manifests carry an integer version (drives re-seeding): {id}"
+                id.starts_with("cheers-"),
+                "official ids use the cheers- prefix: {id}"
+            );
+            workbench_plugins::validate_manifest(id, &m).expect("manifest validates");
+            let version = m.get("version").and_then(Value::as_i64).unwrap_or_else(|| {
+                panic!("official manifests carry an integer version (drives re-seeding): {id}")
+            });
+            assert!(
+                i32::try_from(version).is_ok(),
+                "official manifest version must fit the INT seeded_version column: {id}"
             );
         }
     }

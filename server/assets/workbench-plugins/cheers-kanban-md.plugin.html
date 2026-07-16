@@ -15,7 +15,11 @@
           {
             "id": "kanban",
             "title": "Kanban",
-            "match": { "format": "markdown", "requireAll": ["## "], "requireAny": ["- [ ]", "- [x]", "- [X]"] }
+            "match": {
+              "format": "markdown",
+              "requireAll": ["## "],
+              "requireAny": ["- [ ]", "- [x]", "- [X]", "* [ ]", "* [x]", "* [X]"]
+            }
           }
         ]
       }

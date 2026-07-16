@@ -39,8 +39,10 @@ COPY server/assets ./assets
 # the empty stub binary (exits 0 immediately → CrashLoopBackOff). Touch the real
 # sources so their mtime beats the stubs and both crates actually recompile.
 # assets too: include_str! deps are tracked via dep-info mtimes — an assets-only
-# change would otherwise be skipped by the same stale-artifact check.
-RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \( -name '*.rs' -o -path '*/assets/*' \) -exec touch {} + \
+# change would otherwise be skipped by the same stale-artifact check. The find
+# starts at the RELATIVE path `assets`, so entries print as `assets/...` —
+# the pattern must be 'assets/*' (a '*/assets/*' pattern would never match).
+RUN find src assets /app/packages/cheers-acp-connector-rs/bridge-protocol/src \( -name '*.rs' -o -path 'assets/*' \) -exec touch {} + \
     && cargo build --release
 
 # ── runtime ──────────────────────────────────────────────────────────────────

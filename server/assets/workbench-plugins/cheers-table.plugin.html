@@ -109,9 +109,11 @@
 
       // Columns = union of row keys, first-seen order. Empty file => one starter column.
       function columns() {
-        var cols = [], seen = {};
+        // Set, not {}: a plain object inherits Object.prototype, so row keys like
+        // "constructor" or "toString" would look already-seen and lose their column.
+        var cols = [], seen = new Set();
         rows.forEach(function (r) {
-          Object.keys(r).forEach(function (k) { if (!seen[k]) { seen[k] = 1; cols.push(k); } });
+          Object.keys(r).forEach(function (k) { if (!seen.has(k)) { seen.add(k); cols.push(k); } });
         });
         return cols.length ? cols : ["value"];
       }
