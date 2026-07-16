@@ -525,7 +525,7 @@ const GUIDANCE_TEMPLATE: &str = r#"You are being connected to a Cheers chat work
 
    CHEERS_ENROLL_CODE='{ENROLL_CODE}' bash <(curl -fsSL {INSTALL_URL})
 
-2. The script finds `cce-acp-connector` on PATH, or downloads the prebuilt binary — first from this Cheers server itself (no GitHub access needed), then from the GitHub release (https://github.com/haowei2000/Cheers/releases). Only if no downloaded binary runs on this platform, build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
+2. The script finds `cce-acp-connector` on PATH, or downloads the prebuilt binary — first from this Cheers server itself (no GitHub access needed), then from the GitHub release (https://github.com/ElePerson/Cheers/releases). Only if no downloaded binary runs on this platform, build it once from the Cheers repo (packages/cheers-acp-connector-rs: `cargo build --release`), then re-run with CHEERS_CONNECTOR_BIN=/path/to/target/release/cce-acp-connector.
 
 3. The bot's agent adapter (e.g. `claude-agent-acp` for Claude) must be installed too — the script auto-installs it via npm when missing (needs node/npm). If the script reports the adapter missing, install it (`npm install -g @agentclientprotocol/claude-agent-acp`) and run the finish command the script printed — do NOT re-run the one-liner, the code is single-use.
 

@@ -75,8 +75,8 @@ and every `v*.*.*` tag:
 
 | Image | Tags |
 |---|---|
-| `ghcr.io/haowei2000/cheers-gateway` | `main`, `latest`, semver (`0.1.0`, `0.1`), `sha-<short>` |
-| `ghcr.io/haowei2000/cheers-frontend` | `main`, `latest`, semver (`0.1.0`, `0.1`), `sha-<short>` |
+| `ghcr.io/eleperson/cheers-gateway` | `main`, `latest`, semver (`0.1.0`, `0.1`), `sha-<short>` |
+| `ghcr.io/eleperson/cheers-frontend` | `main`, `latest`, semver (`0.1.0`, `0.1`), `sha-<short>` |
 
 To install from GHCR instead of building + loading local images (skip step 1
 of the local-dev path):
@@ -84,9 +84,9 @@ of the local-dev path):
 ```bash
 helm upgrade --install cheers deploy/helm/cheers -n cheers --create-namespace \
   -f deploy/helm/cheers/values-dev.yaml \
-  --set gateway.image.repository=ghcr.io/haowei2000/cheers-gateway \
+  --set gateway.image.repository=ghcr.io/eleperson/cheers-gateway \
   --set gateway.image.tag=main \
-  --set frontend.image.repository=ghcr.io/haowei2000/cheers-frontend \
+  --set frontend.image.repository=ghcr.io/eleperson/cheers-frontend \
   --set frontend.image.tag=main \
   --set-file secrets.jwtPrivateKey=/tmp/jwt_priv.pem \
   --set-file secrets.jwtPublicKey=/tmp/jwt_pub.pem
