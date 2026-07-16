@@ -176,7 +176,7 @@ impl Config {
             connector_release_repo: env::var("CHEERS_CONNECTOR_RELEASE_REPO")
                 .ok()
                 .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "haowei2000/Cheers".into()),
+                .unwrap_or_else(|| "ElePerson/Cheers".into()),
             connector_release_version: env::var("CHEERS_CONNECTOR_RELEASE_VERSION")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
