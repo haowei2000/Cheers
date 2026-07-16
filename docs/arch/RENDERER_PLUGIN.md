@@ -50,7 +50,9 @@
 | `renderers[].match.glob` | (可选)按路径窄化,如 `"reviews/*.md"` |
 | `renderers[].match.requireAll` | (可选)内容必须**全部包含**这些子串。用于「md 含某些标题」,如 `["## 待办","## 进行中"]`。 |
 | `renderers[].match.requireAny` | (可选)内容至少包含**其一**,如 `["- [ ]","- [x]"]`(待办行)。 |
-| `renderers[].match.jsonHas` | (可选,仅 json)解析后的对象必须**含全部**这些顶层键,如 `["columns","cards"]`。 |
+| `renderers[].match.jsonHas` | (可选,仅 json)解析后的对象必须**含全部**这些顶层键,如 `["columns","cards"]`。**已弃用**:新 manifest 用 `dataHas`。 |
+
+> **协议 1 补充(规范见英文版)**:manifest 顶层可声明 `"protocol": 1`(缺省即 1);`match.format` 可为字符串**数组**;新增 `dataHas`(结构化内容顶层键,格式无关,取代 `jsonHas`)与 `dataKind`(`"object" | "array"`,声明顶层形状——认领「JSON 数组」的唯一方式)。服务端安装时校验 manifest(错误表见英文版 §8);bundle ≤ 2 MiB。
 
 > **`match` = 你声明「我接受什么」**。host 拿文件内容廉价评估(子串/JSON 键,**不**启动你的沙箱),据此决定你**是否出现在该文件的渲染器候选里**——所以一个需要 `## ` 标题的渲染器,不会被推荐给一篇纯散文。
 >

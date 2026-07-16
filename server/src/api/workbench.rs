@@ -46,6 +46,8 @@ pub async fn get_bundle(
 }
 
 /// PUT /api/v1/workbench/plugins/:id — install/update (admin). Body: { title, manifest, bundle }.
+/// The manifest is validated against the protocol-1 shape (docs/developer/PLUGIN_DEVELOPMENT.md);
+/// a broken/legacy plugin is rejected here with a named reason, never served half-working.
 pub async fn install_plugin(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -53,29 +55,35 @@ pub async fn install_plugin(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
     require_admin(&claims)?;
-    let title = body
+    let manifest = body
+        .get("manifest")
+        .ok_or_else(|| AppError::BadRequest("plugin manifest is required".into()))?;
+    domain::workbench_plugins::validate_manifest(&plugin_id, manifest)
+        .map_err(AppError::BadRequest)?;
+    let manifest_str = manifest.to_string();
+    if manifest_str.len() > domain::workbench_plugins::MAX_MANIFEST_BYTES {
+        return Err(AppError::PayloadTooLarge("plugin manifest exceeds 64 KiB".into()));
+    }
+    let bundle = body.get("bundle").and_then(Value::as_str).unwrap_or("");
+    if bundle.trim().is_empty() {
+        return Err(AppError::BadRequest("plugin bundle is required".into()));
+    }
+    if bundle.len() > domain::workbench_plugins::MAX_BUNDLE_BYTES {
+        return Err(AppError::PayloadTooLarge("plugin bundle exceeds 2 MiB".into()));
+    }
+    // validate_manifest guarantees a non-empty manifest.title; it wins over body.title
+    // (the two came apart only because the upload UI sends both).
+    let title = manifest
         .get("title")
         .and_then(Value::as_str)
         .unwrap_or(&plugin_id)
         .to_string();
-    let manifest = body
-        .get("manifest")
-        .map(|m| m.to_string())
-        .unwrap_or_else(|| "{}".to_string());
-    let bundle = body
-        .get("bundle")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    if bundle.trim().is_empty() {
-        return Err(AppError::BadRequest("plugin bundle is required".into()));
-    }
     domain::workbench_plugins::install(
         &state.db,
         &plugin_id,
         &title,
-        &manifest,
-        &bundle,
+        &manifest_str,
+        bundle,
         &claims.sub,
     )
     .await?;

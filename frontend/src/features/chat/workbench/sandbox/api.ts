@@ -5,6 +5,7 @@ import { validatePluginManifest, type PluginManifest, type PluginMeta } from "./
 // re-exported here so consumers keep one import site for everything plugin-related.
 export {
   MAX_PLUGIN_BUNDLE_BYTES,
+  PLUGIN_PROTOCOL,
   validatePluginManifest,
   type PluginManifest,
   type PluginMeta,

@@ -43,13 +43,25 @@ describe("validatePluginManifest", () => {
     expect(validatePluginManifest({ ...ok, title: "" })).toMatch(/title/);
   });
 
-  it("rejects missing or empty renderers (incl. retired panels-only manifests)", () => {
+  it("rejects missing or empty renderers", () => {
     expect(validatePluginManifest({ id: "x", title: "X" })).toMatch(/renderers/);
     expect(validatePluginManifest({ id: "x", title: "X", renderers: [] })).toMatch(/renderers/);
-    // a legacy scenario plugin declares panels but no renderers — same rejection path
+  });
+
+  it("rejects retired panels manifests with a dedicated message", () => {
     expect(
       validatePluginManifest({ id: "x", title: "X", panels: [{ id: "notes", title: "Notes" }] })
-    ).toMatch(/renderers/);
+    ).toMatch(/legacy|panels/);
+    // even alongside renderers — a mixed manifest is a legacy manifest
+    expect(
+      validatePluginManifest({ ...ok, panels: [] })
+    ).toMatch(/legacy|panels/);
+  });
+
+  it("accepts protocol 1 (or absent) and rejects anything else", () => {
+    expect(validatePluginManifest({ ...ok, protocol: 1 })).toBeNull();
+    expect(validatePluginManifest({ ...ok, protocol: 2 })).toMatch(/protocol/);
+    expect(validatePluginManifest({ ...ok, protocol: "1" })).toMatch(/protocol/);
   });
 
   it("rejects malformed renderer entries", () => {
