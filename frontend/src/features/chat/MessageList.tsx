@@ -40,7 +40,7 @@ interface Props {
   selectedIds?: ReadonlySet<string>;
   /** Jump request from outside (ViewBoard history items): scroll the message into
    *  view and flash it. `nonce` distinguishes repeat jumps to the same message.
-   *  Best-effort — silently ignored when the message isn't in the loaded window. */
+   *  The sender (ChannelView) backfills history first, so the target is loaded. */
   focusMsg?: { msgId: string; nonce: number } | null;
 }
 
@@ -64,21 +64,33 @@ export function MessageList({
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // External jump (ViewBoard history rows): scroll to the anchored row + flash.
-  // Best-effort — if the message isn't in the loaded window there is no anchor
-  // and the jump is a silent no-op (lightweight by design).
+  // ChannelView backfills older pages before focusing, so by the time focusMsg
+  // lands the message is loaded — no anchor now means the row exists but isn't
+  // rendered (e.g. a resolved approval folded into the bot turn's trace).
   useEffect(() => {
     if (!focusMsg) return;
     const el = containerRef.current?.querySelector(
       `[data-msg-id="${CSS.escape(focusMsg.msgId)}"]`
     );
     if (!el) {
-      toast("Message isn't loaded — scroll up to load older history", { icon: "🔍" });
+      toast("This message isn't shown in the channel view", { icon: "🔍", id: "jump-hidden" });
       return;
     }
     el.scrollIntoView({ block: "center", behavior: "smooth" });
     setHighlightId(focusMsg.msgId);
+    // content-visibility rows above the target materialize their real heights
+    // during the smooth scroll (backfilled pages arrive with 80px estimates),
+    // drifting the anchor — one instant corrective pass after it settles.
+    const settle = setTimeout(() => {
+      containerRef.current
+        ?.querySelector(`[data-msg-id="${CSS.escape(focusMsg.msgId)}"]`)
+        ?.scrollIntoView({ block: "center" });
+    }, 700);
     const t = setTimeout(() => setHighlightId(null), 1800);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(settle);
+      clearTimeout(t);
+    };
   }, [focusMsg]);
 
   // Resolved approvals are folded into each bot turn's trace, not shown as their own rows.
