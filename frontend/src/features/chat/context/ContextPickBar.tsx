@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import {
-  Plus,
+  MessageSquarePlus,
   Check,
   X,
   ListChecks,
@@ -146,7 +146,7 @@ export function AttachContextButton({
         "rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
       }
     >
-      {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Plus className="w-3.5 h-3.5" />}
+      {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
     </button>
   );
 }
@@ -190,7 +190,7 @@ export function ContextPickBar({
             >
               <Icon className="w-3 h-3" />
               <span className="max-w-[12rem] truncate">{sg.label}</span>
-              <Plus className="w-3 h-3" />
+              <MessageSquarePlus className="w-3 h-3" />
             </button>
             <button
               type="button"
@@ -235,7 +235,7 @@ export function ContextPickBar({
           title={ADD_CONTEXT_MENU_TITLE}
           className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
         >
-          <Plus className="w-3 h-3" />
+          <MessageSquarePlus className="w-3 h-3" />
           {ADD_CONTEXT_MENU}
         </button>
         {open && (

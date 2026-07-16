@@ -417,6 +417,30 @@ Retry" rows.
 `ApiError` message to `Error: …`; use `notify.error(messageOf(e))`. Don't
 hand-roll full-page error markup when `<ErrorState>` fits.
 
+### 2.18 Action icons — semantic convention
+
+One glyph, one action family. A `+`-shaped icon is not a generic "do
+something here" mark — it specifically means **create a brand-new resource**.
+Attaching, uploading, or adding an *existing* thing each has its own glyph, so
+two different actions never share a mark on the same surface (the bug this
+codifies: the Workbench file panel once drew *create-file* and *add-to-context*
+both as a bare `Plus`).
+
+| Action family | Icon | Applies to |
+|---|---|---|
+| Create a new resource | `Plus` (bare) | file, folder, session, channel, DM, workspace, permission rule/grant, table row, kanban task |
+| Create rooted at a folder | `FolderPlus` | a session rooted at a directory (RemoteWorkspace tree) |
+| Attach / upload a file to the message | `Paperclip` | composer "Attach file" (upload / pick channel file), channel files |
+| Add a Cheers resource to context | `MessageSquarePlus` | workbench file, ViewBoard, workspace-file reference, suggested-context chip, the composer "Add context" menu — the bundle rides your *next message* |
+| Add a selected passage to context | `TextQuote` | a ranged `fs.read` excerpt — a labeled sub-variant of add-to-context (keeps its "quote a passage" meaning) |
+| Add a person | `UserPlus` | add friend, invite member (decorative adornments on member-search inputs use it too) |
+| `+N` count / overflow | literal `+N` text, **no icon** | avatar-stack overflow, diff added-lines — a quantity, not an action |
+
+Add-to-context is centralized in `AttachContextButton`
+(`src/features/chat/context/ContextPickBar.tsx`) — reuse it rather than
+hand-drawing an attach glyph. `Paperclip` is reserved: it never means
+"add to context" (that pipeline is resource references, not uploaded files).
+
 
 ---
 
@@ -455,3 +479,5 @@ Reject in review:
 - [ ] new tab / empty-state / spinner styles when §2 already has one
 - [ ] `toast.error(String(e))` — use `notify.error(messageOf(e))` (§2.17)
 - [ ] hand-rolled error banners / full-page error markup when §2.17 has a tier for it; 401 handling at a call site (the client classifier owns it)
+- [ ] `Plus` on anything that isn't "create a brand-new resource" — add-to-context is `MessageSquarePlus`, attach-file is `Paperclip`, add-person is `UserPlus` (§2.18)
+- [ ] a new add-to-context affordance drawn with any glyph other than `MessageSquarePlus` (or `TextQuote` for a ranged passage) — or bypassing `AttachContextButton` (§2.18)
