@@ -56,10 +56,12 @@ async fn deliver(
         "{intro}\n\n    {code}\n\n{CODE_TTL_TEXT}\nIf you didn't request this, you can ignore this email."
     );
     if config.brevo_api_key.is_some() && config.email_from_email.is_some() {
+        // A provider IS configured — never write the code to the logs on this path,
+        // even on a send failure (a transient 5xx/429/timeout must not leak the live
+        // code into logs in prod). Log success/failure without the code and return.
         match send_brevo(config, to_email, subject, intro, code, &text).await {
             Ok(()) => {
                 tracing::info!(target: "cheers::email", to = %to_email, kind, "email sent via Brevo");
-                return;
             }
             Err(e) => {
                 tracing::error!(
@@ -67,14 +69,17 @@ async fn deliver(
                     to = %to_email,
                     kind,
                     error = %e,
-                    "Brevo delivery failed — falling back to log delivery"
+                    "Brevo delivery failed — code NOT delivered (no log fallback when a provider is configured)"
                 );
             }
         }
+        return;
     }
-    // Dev/staging delivery: the code is visible in the gateway logs
-    // (`docker logs cheers-gateway-1 | grep cheers::email`). Only taken when Brevo
-    // is unconfigured or the send above failed.
+    // Local-dev delivery: NO email provider is configured at all, so the code is
+    // written to the gateway logs to keep the flow exercisable
+    // (`docker logs cheers-gateway-1 | grep cheers::email`). This branch is never
+    // reached once BREVO_API_KEY + EMAIL_FROM_EMAIL are set, so the code is never
+    // logged in a provider-configured (prod/staging) environment.
     tracing::info!(
         target: "cheers::email",
         to = %to_email,

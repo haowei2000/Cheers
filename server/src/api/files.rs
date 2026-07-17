@@ -55,6 +55,72 @@ fn safe_filename(raw: &str) -> Result<String, AppError> {
     Ok(name.to_string())
 }
 
+/// Defense-in-depth: normalize a caller-supplied `content_type` to a known-safe
+/// MIME type before persisting it. The serve side (`infra::http::file_response`)
+/// already forces active types to download, so this only hardens the stored value
+/// — an unrecognized type collapses to `application/octet-stream` rather than
+/// being trusted verbatim. Never rejects: legit files just get a generic type.
+fn normalize_content_type(raw: &str) -> String {
+    // Drop parameters (e.g. `; charset=utf-8`) and match the bare MIME base.
+    let base = raw
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    const ALLOWED: &[&str] = &[
+        // Images (svg+xml is downloaded, not rendered, by the serve side).
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/svg+xml",
+        "image/bmp",
+        "image/tiff",
+        "image/avif",
+        "image/heic",
+        // Documents / text.
+        "application/pdf",
+        "application/json",
+        "application/rtf",
+        "application/zip",
+        "text/plain",
+        "text/csv",
+        "text/markdown",
+        // Office (legacy + OOXML + OpenDocument).
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "application/vnd.oasis.opendocument.presentation",
+        // Audio.
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/webm",
+        "audio/ogg",
+        "audio/flac",
+        "audio/aac",
+        "audio/x-m4a",
+        // Video.
+        "video/mp4",
+        "video/webm",
+        "video/quicktime",
+        "video/ogg",
+        "video/x-msvideo",
+    ];
+    if ALLOWED.contains(&base.as_str()) {
+        base
+    } else {
+        "application/octet-stream".to_string()
+    }
+}
+
 fn resolve_expires_in(seconds: Option<i64>) -> i64 {
     const MIN_SECONDS: i64 = 60;
     const MAX_SECONDS: i64 = 7 * 24 * 60 * 60;
@@ -331,11 +397,13 @@ pub async fn upload_file(
         return Err(AppError::BadRequest("empty file".into()));
     }
     let filename = safe_filename(&q.filename)?;
-    let content_type = q
-        .content_type
-        .clone()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let content_type = normalize_content_type(
+        q.content_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("application/octet-stream"),
+    );
     let size_bytes =
         i32::try_from(body.len()).map_err(|_| AppError::BadRequest("file too large".into()))?;
     let file_id = Uuid::new_v4().to_string();
@@ -417,6 +485,7 @@ pub async fn request_presign(
     .ok_or_else(|| AppError::Forbidden("not a channel member".into()))?;
 
     let filename = safe_filename(&body.filename)?;
+    let content_type = normalize_content_type(&body.content_type);
     let file_id = Uuid::new_v4().to_string();
     let object_key = format!("uploads/{}/{}", file_id, filename);
     let requested_size = body.size.unwrap_or(body.size_bytes);
@@ -438,7 +507,7 @@ pub async fn request_presign(
     .bind(&object_key)
     .bind(&state.config.s3_bucket)
     .bind(&filename)
-    .bind(&body.content_type)
+    .bind(&content_type)
     .bind(size_bytes)
     .bind(expires_at)
     .execute(&state.db)
@@ -449,7 +518,7 @@ pub async fn request_presign(
     Ok(Json(json!({
         "file_id": file_id,
         "upload_url": upload_url,
-        "headers": { "Content-Type": body.content_type },
+        "headers": { "Content-Type": content_type },
         "expires_in": expires_in_seconds,
         "object_key": object_key,
     })))

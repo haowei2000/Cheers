@@ -472,14 +472,20 @@ function MessageBody({
     return <p className="text-sm text-red-400 italic">{message.error}</p>;
   }
 
+  // While a bubble is streaming, re-parsing the whole accumulated Markdown +
+  // re-highlighting the growing code block every animation frame is ~O(len^2)
+  // main-thread work. Render the in-flight text as plain whitespace-pre-wrap and
+  // only switch to full Markdown + highlighting once the turn finalizes
+  // (_streaming clears), which leaves completed messages rendered exactly as before.
   const hasMarkdown =
-    content.includes("```") ||
-    content.includes("**") ||
-    content.includes("*") ||
-    content.includes("#") ||
-    content.includes("[") ||
-    content.includes("\n") ||
-    content.includes("`");
+    !message._streaming &&
+    (content.includes("```") ||
+      content.includes("**") ||
+      content.includes("*") ||
+      content.includes("#") ||
+      content.includes("[") ||
+      content.includes("\n") ||
+      content.includes("`"));
 
   return (
     <div className="relative">

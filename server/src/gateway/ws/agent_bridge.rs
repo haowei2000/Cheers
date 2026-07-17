@@ -905,6 +905,30 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
 /// a log-write failure must never disrupt the live agent. Streaming text chunks
 /// are dropped here (the bot's message already carries the text).
 async fn handle_acp_event_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    // The channel_id is bot-supplied and must not be trusted: only record,
+    // promote (plan/usage/commands stores) and broadcast into channels the bot is
+    // actually a member of (mirrors handle_trace_frame / handle_permission_request_frame).
+    // Otherwise a self-registered bot could spoof artifact updates and board signals
+    // into arbitrary channels. A present channel_id must pass the membership check
+    // before any store write / acp_event_log insert / broadcast below.
+    if let Some(channel_id) = frame
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<Uuid>().ok())
+    {
+        if ensure_bot_channel_member(&state.db, bot.bot_id, channel_id)
+            .await
+            .is_err()
+        {
+            tracing::debug!(
+                bot_id = %bot.bot_id,
+                %channel_id,
+                "acp_event dropped: bot not a member of target channel"
+            );
+            return;
+        }
+    }
+
     let name = frame
         .get("name")
         .or_else(|| frame.get("kind"))
@@ -1100,6 +1124,59 @@ async fn handle_trace_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
         .await;
 }
 
+/// Short TTL for the in-process [`bot_event_policy::load_rules`] cache. `allowed_seers`
+/// runs on the hot connector read loop (once per `bot_trace` frame), so an uncached
+/// `load_rules` would issue a DB SELECT per frame at ~1 RTT each. Expiry-only: entries
+/// are not invalidated on rule writes — a few seconds of staleness for a live-visibility
+/// decision is acceptable, and the durable `*.read` verbs remain authoritative.
+const POLICY_RULES_TTL: std::time::Duration = std::time::Duration::from_secs(3);
+
+#[allow(clippy::type_complexity)]
+fn policy_rules_cache() -> &'static std::sync::Mutex<
+    std::collections::HashMap<
+        Uuid,
+        (
+            std::time::Instant,
+            Vec<crate::domain::bot_event_policy::Rule>,
+        ),
+    >,
+> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                Uuid,
+                (
+                    std::time::Instant,
+                    Vec<crate::domain::bot_event_policy::Rule>,
+                ),
+            >,
+        >,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// TTL-cached wrapper over [`bot_event_policy::load_rules`]. Serves a cloned copy of the
+/// bot's rules on a cache hit within [`POLICY_RULES_TTL`]; otherwise refreshes from the
+/// DB and repopulates. Preserves `load_rules`' error contract so the caller can fail-open.
+async fn cached_load_rules(
+    state: &AppState,
+    bot_id: Uuid,
+) -> Result<Vec<crate::domain::bot_event_policy::Rule>, crate::errors::AppError> {
+    let now = std::time::Instant::now();
+    if let Ok(guard) = policy_rules_cache().lock() {
+        if let Some((at, rules)) = guard.get(&bot_id) {
+            if now.duration_since(*at) < POLICY_RULES_TTL {
+                return Ok(rules.clone());
+            }
+        }
+    }
+    let rules = crate::domain::bot_event_policy::load_rules(&state.db, &bot_id.to_string()).await?;
+    if let Ok(mut guard) = policy_rules_cache().lock() {
+        guard.insert(bot_id, (now, rules.clone()));
+    }
+    Ok(rules)
+}
+
 /// Live per-subscriber SEE (docs/arch/ACP_EVENT_TAXONOMY.md): the online channel
 /// users allowed to SEE an agent event of `event_class` for `bot`. Platform admins
 /// bypass; absent rules → members allowed (the default). Fail-open on a rules error
@@ -1114,11 +1191,10 @@ async fn allowed_seers(
     if online.is_empty() {
         return Vec::new();
     }
-    let rules =
-        match crate::domain::bot_event_policy::load_rules(&state.db, &bot_id.to_string()).await {
-            Ok(r) => r,
-            Err(_) => return online,
-        };
+    let rules = match cached_load_rules(state, bot_id).await {
+        Ok(r) => r,
+        Err(_) => return online,
+    };
     // Fast path: `resolve_access` for `See` only ever consults `see`-capability rules
     // for this event_class, and the membership default for `See` is always allow. So
     // with no matching `see` rule, everyone online is a seer — skip the channel-role

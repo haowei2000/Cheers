@@ -979,23 +979,31 @@ async fn handle_peer_message(
 async fn handle_peer_notification(
     account_id: &str,
     event_tx: &mpsc::Sender<RuntimeEvent>,
-    value: Value,
+    mut value: Value,
 ) -> anyhow::Result<()> {
     let method = value.get("method").and_then(Value::as_str).unwrap_or("");
     if method != "session/update" {
         tracing::debug!(account = %account_id, method, "ACP peer notification (not session/update; ignored)");
         return Ok(());
     }
-    let params = value.get("params").cloned().unwrap_or(Value::Null);
-    let acp_session_id = params
-        .get("sessionId")
+    // Read only the small sessionId out of the borrowed value...
+    let acp_session_id = value
+        .get("params")
+        .and_then(|params| params.get("sessionId"))
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
     if acp_session_id.is_empty() {
         return Ok(());
     }
-    let update = params.get("update").cloned().unwrap_or(Value::Null);
+    // ...then MOVE the (potentially large) update subtree out of the owned value
+    // instead of deep-cloning it — session/update is the highest-frequency event
+    // and tool_call_update carries the bulky tool output.
+    let update = value
+        .get_mut("params")
+        .and_then(|params| params.get_mut("update"))
+        .map(Value::take)
+        .unwrap_or(Value::Null);
     tracing::debug!(
         account = %account_id,
         session = %acp_session_id,

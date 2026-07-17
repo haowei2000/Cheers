@@ -1967,8 +1967,14 @@ impl RuntimeContext {
                 )
                 .await?;
                 let (final_text, file_ids) = {
-                    let guard = run.lock().await;
-                    (guard.text.clone(), guard.created_file_ids.clone())
+                    let mut guard = run.lock().await;
+                    // Move the accumulated text out (turn is over; the run is about
+                    // to be dropped from the shared maps below) so the whole streamed
+                    // response isn't deep-cloned just to hand it to the Done frame.
+                    (
+                        std::mem::take(&mut guard.text),
+                        guard.created_file_ids.clone(),
+                    )
                 };
                 let terminal_ack = self
                     .io

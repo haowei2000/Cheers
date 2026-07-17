@@ -51,9 +51,16 @@ impl FixedWindowLimiter {
     /// Record one failed attempt for `key`, opening or extending its window.
     pub fn record_failure(&self, key: &str) {
         let now = Instant::now();
-        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
+        // Bound memory under a spoofed-key flood: evict only already-expired windows
+        // (never live ones), so a flood of throwaway keys can't reset the counters of
+        // clients with in-progress windows. If the map is STILL over the cap afterwards
+        // — a sustained flood of >100k *live* distinct keys — fall back to a hard clear
+        // so memory stays bounded (retain-only would free nothing and grow unbounded).
         if self.hits.len() > 100_000 {
-            self.hits.clear();
+            self.hits.retain(|_, v| v.reset_at > now);
+            if self.hits.len() > 100_000 {
+                self.hits.clear();
+            }
         }
         let mut e = self.hits.entry(key.to_string()).or_insert_with(|| Window {
             count: 0,
@@ -79,9 +86,16 @@ impl FixedWindowLimiter {
     /// dispatch fan-out) where concurrent callers race on the same key.
     pub fn try_hit(&self, key: &str) -> bool {
         let now = Instant::now();
-        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
+        // Bound memory under a spoofed-key flood: evict only already-expired windows
+        // (never live ones), so a flood of throwaway keys can't reset the counters of
+        // clients with in-progress windows. If the map is STILL over the cap afterwards
+        // — a sustained flood of >100k *live* distinct keys — fall back to a hard clear
+        // so memory stays bounded (retain-only would free nothing and grow unbounded).
         if self.hits.len() > 100_000 {
-            self.hits.clear();
+            self.hits.retain(|_, v| v.reset_at > now);
+            if self.hits.len() > 100_000 {
+                self.hits.clear();
+            }
         }
         let mut e = self.hits.entry(key.to_string()).or_insert_with(|| Window {
             count: 0,
@@ -139,11 +153,19 @@ impl MinIntervalLimiter {
     /// Record that `key` just acted (set its "last" to now). Call this only after
     /// the guarded action succeeds — see [`peek`](Self::peek).
     pub fn record(&self, key: &str) {
-        // Bound memory under a spoofed-key flood: hard-clear if the map blows up.
+        let now = Instant::now();
+        // Bound memory under a spoofed-key flood: evict only entries whose interval has
+        // already elapsed (never live ones), so a flood of throwaway keys can't clear a
+        // client's in-flight interval and let it act again early. If still over the cap
+        // after that (a flood of >100k live keys), hard-clear so memory stays bounded.
         if self.last.len() > 100_000 {
-            self.last.clear();
+            self.last
+                .retain(|_, v| now.saturating_duration_since(*v) < self.interval);
+            if self.last.len() > 100_000 {
+                self.last.clear();
+            }
         }
-        self.last.insert(key.to_string(), Instant::now());
+        self.last.insert(key.to_string(), now);
     }
 
     /// Convenience for callers gating a cheap, always-succeeding action: peek and,

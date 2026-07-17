@@ -339,7 +339,8 @@ pub async fn create_user(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let hash = bcrypt::hash(&body.password, bcrypt::DEFAULT_COST)
+    let hash = crate::infra::crypto::hash_password(body.password.clone())
+        .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
     let user_id = Uuid::new_v4().to_string();
 

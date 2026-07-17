@@ -204,17 +204,28 @@ pub async fn list_channels(
              LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id
                     AND wm.user_id = $1 AND wm.status = 'active'
              CROSS JOIN LATERAL (
+                 -- Bounded unread scan: cap at the newest 100 unread messages so a
+                 -- huge backlog can't force an unbounded count. `unread_count` is
+                 -- therefore min(actual, 100) (99+ semantics); `mention_count`
+                 -- is computed over the same capped window via a single LEFT JOIN
+                 -- (PK (msg_id, member_id) ⇒ at most one match per message) rather
+                 -- than a per-row correlated EXISTS.
                  SELECT count(*) AS unread_count,
-                        count(*) FILTER (WHERE EXISTS (
-                            SELECT 1 FROM message_mentions mm
-                            WHERE mm.msg_id = m.msg_id
-                              AND mm.member_id = $1 AND mm.member_type = 'user'
-                        )) AS mention_count
+                        count(mm.msg_id) AS mention_count
                  FROM messages m
-                 WHERE m.channel_id = c.channel_id
-                   AND m.is_partial = FALSE
-                   AND m.sender_id <> $1
-                   AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                 LEFT JOIN message_mentions mm
+                        ON mm.msg_id = m.msg_id
+                       AND mm.member_id = $1 AND mm.member_type = 'user'
+                 WHERE m.msg_id IN (
+                     SELECT m2.msg_id
+                     FROM messages m2
+                     WHERE m2.channel_id = c.channel_id
+                       AND m2.is_partial = FALSE
+                       AND m2.sender_id <> $1
+                       AND m2.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                     ORDER BY m2.created_at DESC
+                     LIMIT 100
+                 )
              ) counts
              WHERE c.type != 'dm'
                AND wm.user_id IS NULL
@@ -249,18 +260,30 @@ pub async fn list_channels(
          LEFT JOIN workspace_memberships wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $1
                 AND wm.status = 'active'
          CROSS JOIN LATERAL (
+             -- Bounded unread scan: cap at the newest 100 unread messages so a huge
+             -- backlog can't force an unbounded count. `unread_count` is min(actual,
+             -- 100) (99+ semantics); `mention_count` is computed over the same
+             -- capped window via a single LEFT JOIN (PK (msg_id, member_id) ⇒ at most
+             -- one match per message) rather than a per-row correlated EXISTS. The
+             -- non-member guard (`cm.member_id IS NOT NULL`) stays inside the window:
+             -- a non-member's window is empty, so both counts are 0 as before.
              SELECT count(*) AS unread_count,
-                    count(*) FILTER (WHERE EXISTS (
-                        SELECT 1 FROM message_mentions mm
-                        WHERE mm.msg_id = m.msg_id
-                          AND mm.member_id = $1 AND mm.member_type = 'user'
-                    )) AS mention_count
+                    count(mm.msg_id) AS mention_count
              FROM messages m
-             WHERE cm.member_id IS NOT NULL
-               AND m.channel_id = c.channel_id
-               AND m.is_partial = FALSE
-               AND m.sender_id <> $1
-               AND m.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+             LEFT JOIN message_mentions mm
+                    ON mm.msg_id = m.msg_id
+                   AND mm.member_id = $1 AND mm.member_type = 'user'
+             WHERE m.msg_id IN (
+                 SELECT m2.msg_id
+                 FROM messages m2
+                 WHERE cm.member_id IS NOT NULL
+                   AND m2.channel_id = c.channel_id
+                   AND m2.is_partial = FALSE
+                   AND m2.sender_id <> $1
+                   AND m2.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                 ORDER BY m2.created_at DESC
+                 LIMIT 100
+             )
          ) counts
          WHERE c.type != 'dm'
            AND (cm.member_id IS NOT NULL
@@ -349,11 +372,19 @@ pub async fn list_dms(
         "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.purpose, c.auto_assist,
                 c.allow_member_invites, c.allow_bot_adds,
                 COALESCE((
+                    -- Bounded unread scan: cap at the newest 100 unread messages so a
+                    -- huge backlog can't force an unbounded count (min(actual, 100),
+                    -- i.e. 99+ semantics).
                     SELECT count(*) FROM messages msg
-                    WHERE msg.channel_id = c.channel_id
-                      AND msg.is_partial = FALSE
-                      AND msg.sender_id <> $1
-                      AND msg.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                    WHERE msg.msg_id IN (
+                        SELECT m2.msg_id FROM messages m2
+                        WHERE m2.channel_id = c.channel_id
+                          AND m2.is_partial = FALSE
+                          AND m2.sender_id <> $1
+                          AND m2.created_at > COALESCE(cm.last_read_at, 'epoch'::timestamptz)
+                        ORDER BY m2.created_at DESC
+                        LIMIT 100
+                    )
                 ), 0) AS unread_count,
                 COALESCE(
                   (SELECT COALESCE(u.display_name, u.username) FROM channel_memberships m
@@ -1116,6 +1147,32 @@ pub async fn decline_channel_invite(
     Ok(Json(json!({"declined": true})))
 }
 
+/// Revoke a user's channel-scoped ACP approval authority when they leave / are
+/// removed: their approver delegations (`approval_delegations`) and any per-user
+/// RESPOND overrides (`bot_event_access`) for this channel. Parameterized;
+/// harmless no-op when `user_id` is a bot (neither table holds bot user rows).
+async fn purge_channel_approval_authority(
+    state: &AppState,
+    channel_id: &str,
+    user_id: &str,
+) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM approval_delegations WHERE channel_id = $1 AND user_id = $2")
+        .bind(channel_id)
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
+    sqlx::query(
+        "DELETE FROM bot_event_access
+         WHERE channel_id = $1 AND subject_kind = 'user' AND subject_id = $2
+           AND capability = 'respond'",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
 pub async fn remove_channel_member(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
@@ -1134,6 +1191,11 @@ pub async fn remove_channel_member(
         .bind(&member_id)
         .execute(&state.db)
         .await?;
+    // A removed member must not retain approval authority in this channel: drop any
+    // approver delegations they held (approval_delegations) and any per-user RESPOND
+    // overrides (bot_event_access) — otherwise a stale row would still let them
+    // resolve this channel's ACP permission requests. No-op for bots.
+    purge_channel_approval_authority(&state, &channel_id, &member_id).await?;
     if let Ok(cid) = Uuid::parse_str(&channel_id) {
         // Membership checks happen at subscribe time, so removal must cut any
         // LIVE subscriptions too — otherwise the removed member keeps receiving
@@ -1252,6 +1314,9 @@ pub async fn leave_channel(
         .execute(&state.db)
         .await?;
     }
+    // Same authority purge as remove_channel_member: a member who leaves must not
+    // keep approver delegations or per-user RESPOND overrides in this channel.
+    purge_channel_approval_authority(&state, &channel_id, &claims.sub).await?;
     // Same reverse edge as remove_channel_member: cut the leaver's live
     // subscriptions so they stop receiving new frames immediately.
     if let (Ok(cid), Ok(uid)) = (Uuid::parse_str(&channel_id), Uuid::parse_str(&claims.sub)) {
