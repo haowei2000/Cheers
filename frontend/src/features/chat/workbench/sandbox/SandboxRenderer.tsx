@@ -20,6 +20,7 @@ export function SandboxRenderer({
   path,
   readChannel,
   onOpen,
+  onCompose,
 }: {
   fs: FsClient;
   plugin: PluginMeta;
@@ -31,6 +32,9 @@ export function SandboxRenderer({
    *  routing — the host parses/validates the locator and every read behind the jump
    *  still passes the existing authz; the plugin gains no data access from this. */
   onOpen?: (uri: string) => void;
+  /** host API: PREFILL the channel composer (cheers:compose). Never sends — the human
+   *  reviews and presses send, which is what turns the suggestion into an action. */
+  onCompose?: (text: string) => void;
 }) {
   const [bundle, setBundle] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -86,6 +90,7 @@ export function SandboxRenderer({
         resource?: string;
         params?: Record<string, unknown>;
         uri?: string;
+        text?: string;
       };
       if (!m || typeof m !== "object") return;
       if (m.type === "cheers:ready") {
@@ -108,6 +113,15 @@ export function SandboxRenderer({
         // handler — pre-existing plugins may send this before every surface supports it.
         const uri = typeof m.uri === "string" ? m.uri.trim() : "";
         if (onOpen && uri.startsWith("cheers:") && uri.length <= 2048) onOpen(uri);
+      } else if (m.type === "cheers:compose") {
+        // host API: PREFILL the channel composer — never send. Shape-gated (string,
+        // control chars stripped, length cap); the human reviews and presses send.
+        const text =
+          typeof m.text === "string"
+            ? // eslint-disable-next-line no-control-regex
+              m.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim()
+            : "";
+        if (onCompose && text && text.length <= 4000) onCompose(text);
       } else if (m.type === "cheers:unsupported") {
         // the renderer inspected the content and can't render it (its final judgment)
         setUnsupported(typeof m.reason === "string" ? m.reason : "");
@@ -130,7 +144,7 @@ export function SandboxRenderer({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen]);
+  }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen, onCompose]);
 
   if (err) return <div className="p-3 text-amber-400 text-xs">Failed to load renderer: {err}</div>;
   if (bundle === null) return <div className="p-3 text-zinc-400 text-xs">Loading renderer…</div>;

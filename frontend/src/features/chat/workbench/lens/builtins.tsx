@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
+import { isComposing } from "@/lib/ime";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
@@ -158,7 +159,7 @@ function KanbanLens({ data, onChange }: LensProps) {
               <input
                 value={drafts[ci] ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [ci]: e.target.value })}
-                onKeyDown={(e) => e.key === "Enter" && addItem(ci)}
+                onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && addItem(ci)}
                 placeholder="+ Task"
                 className="bg-transparent flex-1 text-zinc-300 outline-none placeholder:text-zinc-400"
               />

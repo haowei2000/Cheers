@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { SurfaceSpinner } from "@/components/ui/spinner";
+import { isComposing } from "@/lib/ime";
 import {
   listFriends,
   removeFriend,
@@ -342,7 +343,7 @@ function AddTab() {
               setId(e.target.value);
               setResult(null);
             }}
-            onKeyDown={(e) => e.key === "Enter" && lookup()}
+            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
             // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
             className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"

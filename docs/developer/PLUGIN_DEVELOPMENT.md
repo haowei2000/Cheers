@@ -141,6 +141,7 @@ a specific origin; the host, in turn, only accepts messages from your iframe).
 | plugin → host | `cheers:resource` | `{ reqId, resource, params }` | Read-only channel info (whitelist, §5.4). `reqId` is your correlation number. |
 | host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | Resource read result. |
 | plugin → host | `cheers:open` | `{ uri }` | Ask the host to navigate the **user's view** to a `cheers:` locator — `cheers:ws/<bot>/<path>#L<n>[-L<n>]` opens the workspace browser at that file/line (after an existence probe), `cheers:desk/<path>` focuses the workbench file browser, `cheers:inbox/<file_id>` opens channel files. Fire-and-forget (no reply). Pure UI routing: the host parses strictly, every read behind the jump passes the normal authz, and an unresolvable locator shows the user an error. Hosts that don't support it ignore the message (the protocol-1 growth rule) — safe to send unconditionally. |
+| plugin → host | `cheers:compose` | `{ text }` | **PREFILL** the channel composer with a suggested message — **never sends**. An empty draft is filled; a typed draft gets the text appended on a new line (user text is never lost); `@label` tokens matching channel members register as routable mentions. The human reviews, edits, and presses send — that keystroke is what turns a plugin suggestion into a channel action, keeping side effects human-in-the-loop and audit-visible. Shape-gated by the host (≤4000 chars, control chars stripped). Fire-and-forget; unsupported hosts ignore it. |
 
 ### 5.2 Lifecycle
 

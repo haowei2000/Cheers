@@ -74,6 +74,11 @@ function cheersPlugin(opts) {
       // desk file, attachment). Fire-and-forget; hosts without support ignore it.
       parent.postMessage({ type: "cheers:open", uri: uri }, "*");
     },
+    compose: function (text) {
+      // PREFILL the channel composer with a suggested message — never sends; the
+      // human reviews and presses send. Fire-and-forget; unsupported hosts ignore it.
+      parent.postMessage({ type: "cheers:compose", text: text }, "*");
+    },
   };
   parent.postMessage({ type: "cheers:ready" }, "*");
   return api;

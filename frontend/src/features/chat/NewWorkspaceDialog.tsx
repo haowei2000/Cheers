@@ -3,6 +3,7 @@ import { createWorkspace } from "@/api/workspaces";
 import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { isComposing } from "@/lib/ime";
 
 // Create a team workspace, add it to the rail, and switch to it.
 export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
@@ -33,7 +34,7 @@ export function NewWorkspaceDialog({ onClose }: { onClose: () => void }) {
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void submit()}
+          onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
           placeholder="Workspace name…"
           className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />

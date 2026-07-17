@@ -621,6 +621,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
   const [wsInit, setWsInit] = useState<{ botId?: string; path?: string; line?: number }>({});
+  // Composer prefill (a plugin's cheers:compose — G4): suggestion only, never a send.
+  const [composePrefill, setComposePrefill] = useState<{ text: string; seq: number } | null>(null);
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
 
   // The work lane is the bounded canvas the instrument windows drag/resize +
@@ -942,7 +944,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           );
           return;
         }
-        setWsInit({ botId, path: resolved, line: loc.line });
+        // A directory loc opens the folder view (the dialog's deep-link already falls
+        // back to listing); a line anchor only makes sense on a file.
+        setWsInit({ botId, path: resolved.path, line: resolved.kind === "file" ? loc.line : undefined });
         setWsOpen(true);
       } catch (e) {
         const offline = String(e).includes("offline");
@@ -955,6 +959,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     },
     [channel, botLabels]
   );
+
+  // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
+  // reviews, edits, and presses send; that keystroke is what makes it a channel action.
+  const composeMessage = useCallback((text: string) => {
+    setComposePrefill((p) => ({ text, seq: (p?.seq ?? 0) + 1 }));
+  }, []);
 
   const handleSend = useCallback(
     async (
@@ -1472,6 +1482,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         toolbar={composerToolbar}
         onMentionsChange={setMentionedBots}
         onTextChange={setDraftText}
+        prefill={composePrefill}
         streamingCount={streamingIds.length}
         onStopStreaming={stopStreaming}
         onSend={handleSend}
@@ -1556,6 +1567,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           openFilePath={wbTarget}
           filesTick={boardTick.files}
           onOpenLocator={openLocator}
+          onCompose={composeMessage}
         />
 
         {/* Channel files lives in the lane too, so it floats/drags/resizes like the
