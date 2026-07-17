@@ -44,6 +44,7 @@ import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { parseLocator } from "./locator";
+import { locateWorkspaceFile } from "./wsLocate";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, Channel, PermissionContentData, MemberItem } from "@/types";
 
@@ -930,10 +931,18 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         }
       }
       // Probe before navigating (same reasoning as resolveAndOpenRef): landing the user
-      // in a browser for a file that isn't reachable is worse than a clear error.
+      // in a browser for a file that isn't reachable is worse than a clear error. Bot-
+      // written paths carry root-basis uncertainty, so the probe is TOLERANT — exact
+      // path first, then bounded root-offset corrections (see wsLocate.ts).
       try {
-        await getWorkspaceFile(channel.channel_id, botId, loc.path);
-        setWsInit({ botId, path: loc.path, line: loc.line });
+        const resolved = await locateWorkspaceFile(channel.channel_id, botId, loc.path);
+        if (!resolved) {
+          setRefError(
+            `Couldn't find "${loc.path}" in that bot's workspace — not at that path, not one level up, not under any top-level folder.\nThe file may have moved or been renamed; ask the bot to refresh the loc fields in its map file.`
+          );
+          return;
+        }
+        setWsInit({ botId, path: resolved, line: loc.line });
         setWsOpen(true);
       } catch (e) {
         const offline = String(e).includes("offline");
