@@ -156,7 +156,7 @@ async fn flow2_create_message_assigns_contiguous_seq_and_since_seq_backfills(db:
             &registry,
             &bot_locator,
             CreateMessageParams {
-            context_bundle: None,
+                context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: format!("msg {i}"),
@@ -321,7 +321,7 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
     let bot = Uuid::new_v4();
 
     let make_params = || DispatchParams {
-            context_bundle: None,
+        context_bundle: None,
         trigger_msg_id: trigger,
         trigger_seq: 0,
         bot_id: bot,
@@ -1687,7 +1687,7 @@ async fn phasea_activity_read_desc_returns_latest_first(db: PgPool) {
             &registry,
             &bot_locator,
             CreateMessageParams {
-            context_bundle: None,
+                context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: format!("m{i}"),
@@ -1771,7 +1771,7 @@ async fn messages_search_matches_escapes_and_paginates(db: PgPool) {
             &registry,
             &bot_locator,
             CreateMessageParams {
-            context_bundle: None,
+                context_bundle: None,
                 user_id: user,
                 channel_id: ch,
                 content: content.to_string(),
@@ -2945,7 +2945,10 @@ async fn f4_bot_post_message_context_bundle_sanitized(db: PgPool) {
     .await;
     assert_eq!(r["ok"], true, "post should succeed: {r}");
     let bundle = &r["data"]["context_bundle"];
-    assert_eq!(bundle["origin"], "bot", "origin must be stamped bot: {bundle}");
+    assert_eq!(
+        bundle["origin"], "bot",
+        "origin must be stamped bot: {bundle}"
+    );
     let items = bundle["items"].as_array().expect("items array");
     assert_eq!(items.len(), 1, "write verb must be dropped: {bundle}");
     assert_eq!(items[0]["verb"], "channel.plan.read");
@@ -3025,12 +3028,14 @@ async fn fleet_membership_requires_active_status(db: PgPool) {
     // Personal-workspace owner path (no membership row) still passes.
     let owner = seed_user(&db).await;
     let personal = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (workspace_id, name, owner_user_id) VALUES ($1, 'personal', $2)")
-        .bind(personal.to_string())
-        .bind(owner.to_string())
-        .execute(&db)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO workspaces (workspace_id, name, owner_user_id) VALUES ($1, 'personal', $2)",
+    )
+    .bind(personal.to_string())
+    .bind(owner.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
     assert!(
         is_workspace_member(&db, personal, owner).await.unwrap(),
         "personal-workspace owner must have access without a membership row"
@@ -3078,11 +3083,18 @@ async fn fs_read_line_range_slice(db: PgPool) {
     let r = dispatch(
         &db,
         who,
-        &req("fs.read", serde_json::json!({ "channel_id": cid, "path": "notes/p.md" })),
+        &req(
+            "fs.read",
+            serde_json::json!({ "channel_id": cid, "path": "notes/p.md" }),
+        ),
     )
     .await;
     assert_eq!(r["data"]["content"], "a\nb\nc\nd\ne");
-    assert!(r["data"]["start_line"].is_null(), "no range → no start_line: {}", r["data"]);
+    assert!(
+        r["data"]["start_line"].is_null(),
+        "no range → no start_line: {}",
+        r["data"]
+    );
 }
 
 /// AUTHZ: a human-attached bundle with an inline snapshot is persisted PREVIEW-
@@ -3108,7 +3120,10 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
         }]
     });
     let dto = messages::create_message(
-        &db, &fanout, &registry, &bot_locator,
+        &db,
+        &fanout,
+        &registry,
+        &bot_locator,
         CreateMessageParams {
             context_bundle: Some(bundle),
             user_id: user,
@@ -3133,9 +3148,17 @@ async fn human_bundle_persists_without_preview(db: PgPool) {
             .await
             .unwrap();
     let stored = stored.expect("bundle stored");
-    assert!(stored["items"][0].get("preview").is_none(), "row strips preview: {stored}");
+    assert!(
+        stored["items"][0].get("preview").is_none(),
+        "row strips preview: {stored}"
+    );
     assert_eq!(stored["items"][0]["label"], "m.rs", "keeps label/locator");
-    assert!(dto.context_bundle.unwrap()["items"][0].get("preview").is_none(), "dto strips preview");
+    assert!(
+        dto.context_bundle.unwrap()["items"][0]
+            .get("preview")
+            .is_none(),
+        "dto strips preview"
+    );
 }
 
 /// AUTHZ: the shared deliver-time finalizer re-authorizes a bundle against the
@@ -3161,7 +3184,11 @@ async fn finalize_drops_refs_target_cannot_read_and_dedups(db: PgPool) {
     });
     let filtered = finalize_bundle_for_target(&db, &bundle, Principal::bot(target), ch_a).await;
     let items = filtered["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1, "cross-channel dropped + dup collapsed: {filtered}");
+    assert_eq!(
+        items.len(),
+        1,
+        "cross-channel dropped + dup collapsed: {filtered}"
+    );
     assert_eq!(items[0]["label"], "A", "first (in-channel) kept");
 }
 
@@ -3174,7 +3201,9 @@ async fn finalize_drops_refs_target_cannot_read_and_dedups(db: PgPool) {
 #[sqlx::test]
 async fn workspace_read_broker_authz_member_grant_and_deny(db: PgPool) {
     use server::api::workspace::authorize_bot_workspace_read;
-    use server::domain::bot_event_policy::{upsert_rule, Capability, EV_WORKSPACE_READ, SUBJECT_BOT};
+    use server::domain::bot_event_policy::{
+        upsert_rule, Capability, EV_WORKSPACE_READ, SUBJECT_BOT,
+    };
 
     let ws = seed_workspace(&db).await;
     let ch = seed_channel(&db, ws).await;
@@ -3193,7 +3222,10 @@ async fn workspace_read_broker_authz_member_grant_and_deny(db: PgPool) {
     let err = authorize_bot_workspace_read(&db, owner, outsider, ch)
         .await
         .expect_err("non-member reader denied");
-    assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
+    assert!(
+        matches!(err, server::errors::AppError::Forbidden(_)),
+        "{err:?}"
+    );
 
     // Owner posts a deny rule targeting the reader → denied despite membership.
     upsert_rule(
@@ -3213,7 +3245,10 @@ async fn workspace_read_broker_authz_member_grant_and_deny(db: PgPool) {
     let err = authorize_bot_workspace_read(&db, owner, reader, ch)
         .await
         .expect_err("deny rule overrides default");
-    assert!(matches!(err, server::errors::AppError::Forbidden(_)), "{err:?}");
+    assert!(
+        matches!(err, server::errors::AppError::Forbidden(_)),
+        "{err:?}"
+    );
 }
 
 /// P4: the bot-grants management lifecycle. An owner authors a `workspace_read` deny
@@ -3242,20 +3277,35 @@ async fn bot_grants_workspace_read_deny_then_delete_restores_default(db: PgPool)
 
     // Owner authors a deny (what `upsert_bot_grant` writes for grant=workspace_read).
     upsert_rule(
-        &db, &owner.to_string(), &ch.to_string(), SUBJECT_BOT, &reader.to_string(),
-        EV_WORKSPACE_READ, Capability::Initiate, false, "owner", None,
+        &db,
+        &owner.to_string(),
+        &ch.to_string(),
+        SUBJECT_BOT,
+        &reader.to_string(),
+        EV_WORKSPACE_READ,
+        Capability::Initiate,
+        false,
+        "owner",
+        None,
     )
     .await
     .unwrap();
     assert!(
-        authorize_bot_workspace_read(&db, owner, reader, ch).await.is_err(),
+        authorize_bot_workspace_read(&db, owner, reader, ch)
+            .await
+            .is_err(),
         "authored deny gates the read"
     );
 
     // Owner removes it (what `delete_bot_grant` does) → back to member-allow.
     let removed = delete_rule(
-        &db, &owner.to_string(), &ch.to_string(), SUBJECT_BOT, &reader.to_string(),
-        EV_WORKSPACE_READ, Capability::Initiate,
+        &db,
+        &owner.to_string(),
+        &ch.to_string(),
+        SUBJECT_BOT,
+        &reader.to_string(),
+        EV_WORKSPACE_READ,
+        Capability::Initiate,
     )
     .await
     .unwrap();

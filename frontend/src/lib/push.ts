@@ -32,6 +32,12 @@ export function setActivePushChannel(id: string | null): void {
   activeChannelId = id;
 }
 
+/** The channel currently rendered, if any — the desktop notification path
+ * applies the same "don't nag about what's on screen" suppression as the SW. */
+export function getActivePushChannel(): string | null {
+  return activeChannelId;
+}
+
 // ── ChatLayout presence (deep links need its store→URL mirroring) ──────────
 
 let chatLayoutMounted = 0;
@@ -110,6 +116,14 @@ function openChannelFromPush(
       // Not a member anymore / stale notification — drop the target quietly.
       pendingFocus = null;
     });
+}
+
+/** Route a cheers:// desktop deep link to its channel, reusing the push open
+ *  path (ChatLayout mirrors the store selection to the URL). allowRedirect=true
+ *  matches the SW click path so a link landing on a non-ChatLayout route still
+ *  reaches /chat. */
+export function openDeepLinkChannel(channelId: string, msgId: string | null): void {
+  openChannelFromPush(channelId, msgId, true);
 }
 
 // ── SW message bridge ───────────────────────────────────────────────────────

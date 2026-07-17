@@ -486,17 +486,21 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
                       className="bg-zinc-800 text-zinc-300 text-[11px] rounded px-1 py-0.5 outline-none max-w-[110px]"
                     >
                       <option value="">Auto</option>
-                      {options.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {/* ⏱ = session-loaded (temporary) plugin, mirroring the scenario picker */}
-                          {r.source === "plugin" &&
-                          plugins.find((p) => p.plugin_id === r.pluginId)?.transient
-                            ? "⏱ "
-                            : ""}
-                          {r.title}
-                          {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
-                        </option>
-                      ))}
+                      {options.map((r) => {
+                        // ⏱ = session-loaded (temporary); 💻 = installed on this Mac
+                        // (personal) — mirrors the scenario picker's markers.
+                        const p = r.source === "plugin"
+                          ? plugins.find((pl) => pl.plugin_id === r.pluginId)
+                          : undefined;
+                        const mark = p?.transient ? "⏱ " : p?.origin === "personal" ? "💻 " : "";
+                        return (
+                          <option key={r.id} value={r.id}>
+                            {mark}
+                            {r.title}
+                            {r.source === "plugin" ? ` · ${r.pluginId}` : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   )}
                   {/* export bridge: download this context file as a real file */}

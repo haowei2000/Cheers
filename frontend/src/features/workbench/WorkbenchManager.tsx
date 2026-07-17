@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Blocks, CircleCheck, Package, Puzzle, Trash2, Upload } from "lucide-react";
+import { AlertCircle, Blocks, CircleCheck, Laptop, Package, Puzzle, Trash2, Upload } from "lucide-react";
 import { Banner } from "@/components/ui/banner";
 import { useIsAdmin } from "@/stores/authStore";
+import { isTauri } from "@/lib/serverConfig";
+import {
+  installPersonalPlugin,
+  listPersonalPlugins,
+  removePersonalPlugin,
+} from "@/lib/desktop";
 import {
   installPlugin,
   listPlugins,
   deletePlugin,
   parsePluginHtml,
+  MAX_PLUGIN_BUNDLE_BYTES,
   type PluginMeta,
 } from "@/features/chat/workbench/sandbox/api";
 import {
@@ -21,29 +28,86 @@ import { validateManifest, type TemplateManifest } from "@/features/chat/workben
 //  - Templates — DATA, declarative .json manifest (scenarios). Inert, no sandbox.
 // Both are global: install once, every user sees them. Non-admins never see this section;
 // they get ad-hoc/one-off templates via the workbench drawer's temporary upload instead.
+/** A personal plugin as shown in this manager — id + title parsed from the
+ *  on-disk bundle (the bundle itself stays on the Rust side). */
+interface PersonalEntry {
+  id: string;
+  title: string;
+}
+
 export function WorkbenchManager() {
   const isAdmin = useIsAdmin();
+  const desktop = isTauri();
 
   const [plugins, setPlugins] = useState<PluginMeta[]>([]);
   const [templates, setTemplates] = useState<TemplateManifest[]>([]);
+  const [personal, setPersonal] = useState<PersonalEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const pluginRef = useRef<HTMLInputElement>(null);
   const tplRef = useRef<HTMLInputElement>(null);
+  const personalRef = useRef<HTMLInputElement>(null);
+
+  const reloadPersonal = useCallback(async () => {
+    if (!desktop) return;
+    const entries: PersonalEntry[] = [];
+    for (const p of await listPersonalPlugins()) {
+      try {
+        const { id, title } = parsePluginHtml(p.content);
+        entries.push({ id, title });
+      } catch {
+        // A bundle that no longer parses is simply not listed.
+      }
+    }
+    setPersonal(entries);
+  }, [desktop]);
 
   const reload = useCallback(async () => {
     try {
-      const [p, t] = await Promise.all([listPlugins(), listGlobalTemplates()]);
-      setPlugins(p);
-      setTemplates(t);
+      if (isAdmin) {
+        const [p, t] = await Promise.all([listPlugins(), listGlobalTemplates()]);
+        setPlugins(p);
+        setTemplates(t);
+      }
+      await reloadPersonal();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [isAdmin, reloadPersonal]);
 
   useEffect(() => {
-    if (isAdmin) void reload();
-  }, [isAdmin, reload]);
+    if (isAdmin || desktop) void reload();
+  }, [isAdmin, desktop, reload]);
+
+  const onUploadPersonal = useCallback(
+    async (html: string) => {
+      setError(null);
+      try {
+        const { id, title } = parsePluginHtml(html);
+        const bytes = new TextEncoder().encode(html).length;
+        if (bytes > MAX_PLUGIN_BUNDLE_BYTES) {
+          setError("Plugin bundle too large (max 2 MiB)");
+          return;
+        }
+        if (
+          !window.confirm(
+            `Install "${title}" on this Mac?\n\n` +
+              "This plugin's code runs in an isolated sandbox — it can't read your login " +
+              "token or the rest of the app. But the sandbox does NOT block network access: " +
+              "a plugin can send the file content it renders to the internet. Only install " +
+              "renderers you trust."
+          )
+        )
+          return;
+        await installPersonalPlugin(id, html);
+        setNotice(`Installed on this Mac: ${title}`);
+        await reloadPersonal();
+      } catch (e) {
+        setError(`Plugin install failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [reloadPersonal]
+  );
 
   const onUploadPlugin = useCallback(
     async (html: string) => {
@@ -85,7 +149,9 @@ export function WorkbenchManager() {
     [reload]
   );
 
-  if (!isAdmin) return null;
+  // Admins manage the global (server) extensions; desktop users additionally get
+  // the personal (this-Mac) card. Nothing to show for a non-admin on the web.
+  if (!isAdmin && !desktop) return null;
 
   return (
     <section>
@@ -109,7 +175,8 @@ export function WorkbenchManager() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {/* Plugins — CODE (sandboxed) */}
+        {/* Plugins — CODE (sandboxed), admin/global */}
+        {isAdmin && (
         <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Puzzle className="w-4 h-4 text-amber-400" />
@@ -177,7 +244,10 @@ export function WorkbenchManager() {
           </ul>
         </div>
 
-        {/* Templates — DATA (inert) */}
+        )}
+
+        {/* Templates — DATA (inert), admin/global */}
+        {isAdmin && (
         <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-indigo-400" />
@@ -231,6 +301,65 @@ export function WorkbenchManager() {
             ))}
           </ul>
         </div>
+        )}
+
+        {/* Personal plugins — CODE (sandboxed), THIS Mac only (desktop app) */}
+        {desktop && (
+          <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Laptop className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-semibold text-zinc-100">On this Mac (personal)</h3>
+              <button
+                type="button"
+                onClick={() => personalRef.current?.click()}
+                className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+              >
+                <Upload className="w-3.5 h-3.5" /> Install .html
+              </button>
+              <input
+                ref={personalRef}
+                type="file"
+                accept=".html,.htm,text/html"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void f.text().then(onUploadPersonal);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+            <p className="text-[11px] text-zinc-400">
+              Renderer plugins installed only for you, on this machine — no admin needed.
+              Stored in <code className="text-zinc-300">~/.cheers/plugins</code>; other members
+              won't see them (a file bound to one falls back to raw for them).
+            </p>
+            <ul className="space-y-1">
+              {personal.length === 0 && (
+                <li className="text-xs text-zinc-400">Nothing installed on this Mac.</li>
+              )}
+              {personal.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex items-center gap-2 rounded-lg bg-zinc-950/60 px-2.5 py-1.5"
+                >
+                  <Laptop className="w-3.5 h-3.5 text-emerald-400/70 flex-shrink-0" />
+                  <span className="text-xs text-zinc-200 truncate flex-1">{p.title}</span>
+                  <code className="text-[10px] text-zinc-400 truncate max-w-[80px]">{p.id}</code>
+                  <button
+                    onClick={async () => {
+                      await removePersonalPlugin(p.id);
+                      await reloadPersonal();
+                    }}
+                    title="Uninstall from this Mac"
+                    className="text-zinc-500 hover:text-red-400"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </section>
   );

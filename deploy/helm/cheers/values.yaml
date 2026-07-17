@@ -19,7 +19,11 @@ gateway:
   # Non-secret env. Secret env (DB pw, S3 keys, admin pw, JWT) come from the Secret.
   adminUsername: admin
   adminDisplayName: "Demo Admin"
-  corsAllowedOrigins: "" # empty = allow all (dev). Set explicit origins in prod.
+  # Empty = the gateway's localhost dev allowlist. Prod must set explicit
+  # origins, and must include the desktop shell's webview origins
+  # "tauri://localhost,http://tauri.localhost" for the macOS app to connect
+  # (the same list also gates the WebSocket Origin check).
+  corsAllowedOrigins: ""
   # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
   # every client request passes the bundled frontend nginx (which sets
   # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if

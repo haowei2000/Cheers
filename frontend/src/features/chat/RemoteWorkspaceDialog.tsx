@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { FsTreeIcon } from "./FsTreeIcon";
+import { LocalOpen } from "@/features/desktop/LocalOpen";
 import {
   useContextPickStore,
   workspaceContextItem,
@@ -1800,6 +1801,16 @@ export function RemoteWorkspaceDialog({
                   >
                     <Download className="w-3 h-3" /> Download
                   </button>
+                  {/* Desktop shell: open this file in a local editor/Finder.
+                      Local connector → the real file in place; remote → a
+                      downloaded copy. Renders null in a plain browser. */}
+                  {treeRoot !== null && (
+                    <LocalOpen
+                      absPath={joinAbs(treeRoot, file.path)}
+                      filename={file.filename}
+                      getBytesB64={() => file.content_b64 || null}
+                    />
+                  )}
                   {/* Attach this workspace file as context: a reference (which
                       bot + path), NOT a snapshot. The recipient bot reads the live
                       file on demand under its own permission (workspace.read). */}

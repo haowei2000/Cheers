@@ -139,7 +139,11 @@ impl WebPushSender {
             .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
             .header(
                 reqwest::header::AUTHORIZATION,
-                format!("vapid t={}, k={}", self.vapid_jwt(&aud), self.public_key_b64),
+                format!(
+                    "vapid t={}, k={}",
+                    self.vapid_jwt(&aud),
+                    self.public_key_b64
+                ),
             )
             .body(body)
             .send()
@@ -180,8 +184,7 @@ fn encrypt_aes128gcm(
     salt: &[u8; 16],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, PushError> {
-    let shared =
-        p256::ecdh::diffie_hellman(as_secret.to_nonzero_scalar(), ua_public.as_affine());
+    let shared = p256::ecdh::diffie_hellman(as_secret.to_nonzero_scalar(), ua_public.as_affine());
     let ua_pub_point = ua_public.to_encoded_point(false);
     let as_pub_point = as_secret.public_key().to_encoded_point(false);
 
@@ -215,8 +218,7 @@ fn encrypt_aes128gcm(
     record.extend_from_slice(plaintext);
     record.push(0x02);
 
-    let cipher =
-        Aes128Gcm::new_from_slice(&cek).map_err(|_| PushError::Crypto("cek length"))?;
+    let cipher = Aes128Gcm::new_from_slice(&cek).map_err(|_| PushError::Crypto("cek length"))?;
     let ct = cipher
         .encrypt(Nonce::from_slice(&nonce), record.as_slice())
         .map_err(|_| PushError::Crypto("aes-gcm encrypt"))?;

@@ -12,6 +12,13 @@ import {
 import { ErrorState } from "@/components/ui/error-state";
 import { useAuthStore } from "@/stores/authStore";
 import { initPushBridge } from "@/lib/push";
+import { initDeepLinks } from "@/lib/deepLink";
+import { getServerBase, isTauri } from "@/lib/serverConfig";
+import { ServerPicker } from "@/features/desktop/ServerPicker";
+
+const QuickPanel = lazy(() =>
+  import("@/features/desktop/QuickPanel").then((m) => ({ default: m.QuickPanel }))
+);
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
 const RegisterPage = lazy(() => import("@/features/auth/RegisterPage"));
@@ -91,12 +98,40 @@ function SessionExpiredTakeover() {
 }
 
 export default function App() {
+  // The quick panel loads the SPA in its own window with ?quickpanel=1. It's a
+  // lean composer with no ChatLayout, so the main-window-only bridges must NOT
+  // run there: initDeepLinks in a ChatLayout-less window would redirect and
+  // hijack the panel (see openChannelFromPush's redirect fallback). This guard
+  // sits before the effects because effects run even ahead of the early return.
+  const isQuickPanel =
+    isTauri() && new URLSearchParams(window.location.search).has("quickpanel");
+
   // Web Push bridge: SW message listener + cold-start deep link. App-level so
   // a notification click reaching a window on ANY route (Settings, Friends,
   // /login) still gets handled; see openChannelFromPush's redirect fallback.
   useEffect(() => {
+    if (isQuickPanel) return;
     initPushBridge();
-  }, []);
+  }, [isQuickPanel]);
+  // cheers:// deep links (desktop): drain the cold-start link + listen for warm
+  // opens, routing through the push channel-open path.
+  useEffect(() => {
+    if (isQuickPanel) return;
+    return initDeepLinks();
+  }, [isQuickPanel]);
+
+  if (isQuickPanel) {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <QuickPanel />
+      </Suspense>
+    );
+  }
+  // Desktop shell without a configured server: nothing can load (every URL
+  // derives from the server base), so the picker takes over the whole app.
+  if (isTauri() && !getServerBase()) {
+    return <ServerPicker />;
+  }
   return (
     <Suspense fallback={<Spinner />}>
       <Routes>

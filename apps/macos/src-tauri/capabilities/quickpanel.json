@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quickpanel",
+  "description": "Quick-panel window: minimal core plus self-dismiss (core:window allow-hide) for the Esc/blur close. No shell/notification/dialog — the panel only composes and sends a message through the gateway REST API (fetch), and app-defined commands need no entry here.",
+  "windows": ["quickpanel"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide"
+  ]
+}

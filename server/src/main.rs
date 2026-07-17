@@ -86,7 +86,9 @@ async fn main() -> anyhow::Result<()> {
     // Web Push (PWA notifications): disabled unless a VAPID key is configured.
     let web_push = infra::web_push::WebPushSender::from_config(&config).map(Arc::new);
     if web_push.is_none() {
-        tracing::info!("VAPID_PRIVATE_KEY unset — Web Push disabled (in-app WS notifications only)");
+        tracing::info!(
+            "VAPID_PRIVATE_KEY unset — Web Push disabled (in-app WS notifications only)"
+        );
     }
 
     let state = AppState {

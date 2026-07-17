@@ -1,4 +1,5 @@
 import { apiJson } from "./client";
+import { serverOrigin } from "@/lib/serverConfig";
 
 /** A shareable workspace invite link (admin-managed). */
 export interface InviteLink {
@@ -71,7 +72,9 @@ export async function acceptInviteLink(token: string): Promise<AcceptInviteResul
   return apiJson<AcceptInviteResult>(`/invite-links/${token}/accept`, { method: "POST" });
 }
 
-/** Compose the shareable URL for a link token. */
+/** Compose the shareable URL for a link token. serverOrigin(), not
+ * window.location.origin: a shared link must point at the web deployment —
+ * in the desktop shell the window origin is tauri://localhost. */
 export function inviteUrl(token: string): string {
-  return `${window.location.origin}/invite/${token}`;
+  return `${serverOrigin()}/invite/${token}`;
 }

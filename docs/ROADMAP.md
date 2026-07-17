@@ -117,16 +117,19 @@ message-path transport is 2–10 ms — the wait is model inference — so a nat
 app buys no meaningful latency, only push/share/widget affordances. Build
 native only when a concrete PWA limit blocks a proven usage pattern.
 
-### Desktop = connector host, NOT another chat window
+### Desktop = the chat shell + the connector's graphical home
 
-If/when a desktop client is built, its identity is **the graphical home of the
-connector daemon**, shipped as a thin shell (e.g. Tauri) around the existing
-frontend. Its value, in priority order:
+**Status: M0+M1 in progress (`apps/macos`, Tauri v2).** The desktop client
+hosts the SAME built frontend as the web deployment (chat shell included —
+no UI rewrite), adds tray residency + native notifications (WKWebView has no
+Web Push, so nudges arrive over the user-scoped WS), and differentiates as
+**the graphical home of the connector daemon**. Its value, in priority order:
 
-1. **Daemon lifecycle** — bundle `cce-acp-connector`, auto-start, revive on
-   crash/logout (today's systemd-linger pitfall), GUI editing of
-   `allowed_roots`/TOML. This converts connector onboarding from ops work into
-   "install an app", and is the only item that *requires* a native artifact.
+1. **Daemon lifecycle (M1, in progress)** — bundle `cce-acp-connector` as a
+   sidecar, start-with-app + revive on crash (the macOS answer to the
+   systemd-linger pitfall), GUI start/stop/status/logs and TOML editing. This
+   converts connector onboarding from ops work into "install an app", and is
+   the only item that *requires* a native artifact.
 2. **Same-machine fast path (data plane only)** — when the desktop app detects
    a co-located connector, bypass the gateway round-trip for bulk data:
    open/transfer workspace files directly (the local ops already exist in

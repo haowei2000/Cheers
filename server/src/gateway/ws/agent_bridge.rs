@@ -1360,14 +1360,8 @@ async fn handle_terminal_frame(
 /// mention rows costs one indexed query and only runs on success. Fire-and-
 /// forget: spawns immediately, never blocks the connector read loop.
 fn spawn_bot_mention_pushes(state: &AppState, bot_id: Uuid, msg_id: Uuid) {
-    if state.web_push.is_none() {
-        return;
-    }
     let state = state.clone();
     tokio::spawn(async move {
-        let Some(sender) = state.web_push.clone() else {
-            return;
-        };
         let rows = sqlx::query(
             "SELECT mm.member_id, m.channel_id, m.content
              FROM message_mentions mm
@@ -1405,8 +1399,13 @@ fn spawn_bot_mention_pushes(state: &AppState, bot_id: Uuid, msg_id: Uuid) {
         });
         for row in &rows {
             let user_id: String = row.try_get("member_id").unwrap_or_default();
-            crate::infra::web_push::push_to_user(&state.db, &sender, &user_id, payload.clone())
-                .await;
+            // Desktop shell: user-scoped WS frame (works without VAPID).
+            crate::api::notifications::push_notification(&state, &user_id, payload.clone()).await;
+            // Browsers/PWA: Web Push, when configured.
+            if let Some(sender) = state.web_push.as_ref() {
+                crate::infra::web_push::push_to_user(&state.db, sender, &user_id, payload.clone())
+                    .await;
+            }
         }
     });
 }
@@ -1588,11 +1587,12 @@ async fn handle_permission_request_frame(
         .broadcast_channel_to_users(channel_id, wire, allowed)
         .await;
 
-    // Out-of-app nudge: Web Push the approver set (bot owner + active
-    // delegates) so a pending card reaches people who are away from the tab.
-    // The card is already durable and fanned out above — this is fire-and-
-    // forget and must not sit between the frame and its fan-out.
-    if state.web_push.is_some() {
+    // Out-of-app nudge to the approver set (bot owner + active delegates) so a
+    // pending card reaches people who are away from the tab: Web Push AND a
+    // user-scoped WS frame (desktop shell) — the WS half runs even without a
+    // VAPID key. The card is already durable and fanned out above — this is
+    // fire-and-forget and must not sit between the frame and its fan-out.
+    {
         let mut approvers: Vec<String> = Vec::new();
         if let Some(owner) = bot.owner_id.as_deref() {
             approvers.push(owner.to_string());
@@ -1613,17 +1613,36 @@ async fn handle_permission_request_frame(
         // Truncate agent-supplied text (a body can be a multi-KB command):
         // push services cap the message at 4096 bytes, and the notification
         // banner only needs a teaser — the full card is in the channel.
-        crate::infra::web_push::spawn_push_to_users(
-            state,
-            approvers,
-            json!({
-                "kind": "permission_request",
-                "channel_id": channel_id,
-                "msg_id": msg_id,
-                "title": title.chars().take(120).collect::<String>(),
-                "body": body.chars().take(200).collect::<String>(),
-            }),
-        );
+        let nudge = json!({
+            "kind": "permission_request",
+            "channel_id": channel_id,
+            "msg_id": msg_id,
+            "title": title.chars().take(120).collect::<String>(),
+            "body": body.chars().take(200).collect::<String>(),
+        });
+        // The desktop shell gets extra fields the browser/PWA push copy doesn't:
+        // request_id (to resolve), the tool preview (target path/command for a
+        // local stat + git status), and options (allow/reject option_ids). These
+        // stay OFF the Web Push copy below, which has a hard 4 KB payload cap.
+        let desktop_nudge = {
+            let mut n = nudge.clone();
+            if let Some(obj) = n.as_object_mut() {
+                obj.insert(
+                    "request_id".into(),
+                    frame.get("request_id").cloned().unwrap_or(Value::Null),
+                );
+                obj.insert("tool".into(), frame.get("tool").cloned().unwrap_or(Value::Null));
+                obj.insert(
+                    "options".into(),
+                    frame.get("options").cloned().unwrap_or_else(|| json!([])),
+                );
+            }
+            n
+        };
+        // Web Push for browsers/PWA (capped copy), user-scoped WS frame for the
+        // desktop shell (no Push API in WKWebView) with the enriched copy.
+        crate::api::notifications::spawn_notify_users_ws(state, approvers.clone(), desktop_nudge);
+        crate::infra::web_push::spawn_push_to_users(state, approvers, nudge);
     }
 
     Ok(msg_id)
@@ -2060,12 +2079,7 @@ fn resolve_bot_acp_security(binding_config: Option<&Value>) -> Option<Value> {
 async fn broker_workspace_read(state: &AppState, reader_bot_id: Uuid, frame: &Value) -> Value {
     let req_id = frame.get("req_id").and_then(Value::as_str).unwrap_or("");
     let params = frame.get("params").cloned().unwrap_or(Value::Null);
-    let str_param = |k: &str| {
-        params
-            .get(k)
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    };
+    let str_param = |k: &str| params.get(k).and_then(Value::as_str).map(str::to_string);
     let uuid_param = |k: &str| str_param(k).and_then(|s| Uuid::parse_str(&s).ok());
 
     let Some(owner_bot_id) = uuid_param("bot_id") else {

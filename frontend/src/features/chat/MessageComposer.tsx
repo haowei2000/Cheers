@@ -18,6 +18,7 @@ import {
   FileText,
   Upload,
   FolderOpen,
+  Camera,
   AudioLines,
   Loader2,
   Square,
@@ -26,6 +27,13 @@ import {
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { isComposing } from "@/lib/ime";
+import { isTauri } from "@/lib/serverConfig";
+import {
+  captureScreenshot,
+  onQuickAttach,
+  takePendingQuickAttach,
+  releaseQuickAttach,
+} from "@/lib/desktopQuick";
 import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { isAudioFile } from "./fileUtils";
@@ -296,6 +304,62 @@ function MessageComposerImpl({
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
+
+  // Desktop-only: upload a single File already produced natively (a screenshot,
+  // or a file handed in via Finder "Open With") through the SAME channel upload
+  // path as the file picker — nothing bypasses the gateway.
+  async function uploadNativeFile(file: File) {
+    if (!channelId) return;
+    setUploading(true);
+    try {
+      const info = await uploadFile(channelId, file);
+      setAttachments((prev) => [...prev, info]);
+    } catch {
+      toast.error(`Couldn't attach ${file.name} — try again`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function takeScreenshot() {
+    try {
+      const file = await captureScreenshot();
+      if (file) await uploadNativeFile(file);
+    } catch {
+      toast.error("Screen capture failed");
+    }
+  }
+
+  // Finder "Open With → Cheers" (or `open -a Cheers <file>`) hands a file to the
+  // running app; attach it to the open channel. Desktop-only. With no channel
+  // open we tell Rust to STASH incoming files (not emit into the void); once a
+  // channel opens we drain the stash and take over the live stream — so a file
+  // opened at cold start (or before any channel) survives.
+  useEffect(() => {
+    if (!isTauri()) return;
+    if (!channelId) {
+      void releaseQuickAttach();
+      return;
+    }
+    let unlisten = () => {};
+    let cancelled = false;
+    // Drain anything stashed while no composer was listening…
+    void takePendingQuickAttach().then((files) => {
+      if (cancelled) return;
+      for (const f of files) void uploadNativeFile(f);
+    });
+    // …then handle live opens for this channel.
+    void onQuickAttach((file) => void uploadNativeFile(file)).then((u) =>
+      cancelled ? u() : (unlisten = u)
+    );
+    return () => {
+      cancelled = true;
+      unlisten();
+      void releaseQuickAttach();
+    };
+    // channelId is read fresh inside uploadNativeFile via closure on each event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
 
   function removeAttachment(fileId: string) {
     setAttachments((prev) => prev.filter((a) => a.file_id !== fileId));
@@ -824,6 +888,19 @@ function MessageComposerImpl({
                   <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
                   Pick a channel file
                 </button>
+                {isTauri() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachMenuOpen(false);
+                      void takeScreenshot();
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-zinc-500" />
+                    Take screenshot
+                  </button>
+                )}
               </PopoverPanel>
             )}
           </div>

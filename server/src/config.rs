@@ -13,6 +13,12 @@ const DEV_DEFAULT_ORIGINS: &[&str] = &[
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:30080",
+    // The desktop shell (apps/macos, Tauri): its webview origin. macOS uses
+    // the tauri: scheme; http://tauri.localhost is Windows', kept for parity.
+    // Prod deployments set CORS_ALLOWED_ORIGINS and must include these two
+    // for the desktop app to connect (same env also gates the WS Origin check).
+    "tauri://localhost",
+    "http://tauri.localhost",
 ];
 
 /// RS256 keypair, parsed **once at startup** (fail-fast) and reused for every

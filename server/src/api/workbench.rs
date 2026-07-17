@@ -57,7 +57,9 @@ pub async fn install_plugin(
     require_admin(&claims)?;
     // Official (gateway-seeded) plugins are managed by releases — an admin PUT here
     // would be silently clobbered on the next version bump. Refuse instead.
-    if domain::workbench_plugins::get_origin(&state.db, &plugin_id).await?.as_deref()
+    if domain::workbench_plugins::get_origin(&state.db, &plugin_id)
+        .await?
+        .as_deref()
         == Some("system")
     {
         return Err(AppError::BadRequest(
@@ -72,14 +74,18 @@ pub async fn install_plugin(
         .map_err(AppError::BadRequest)?;
     let manifest_str = manifest.to_string();
     if manifest_str.len() > domain::workbench_plugins::MAX_MANIFEST_BYTES {
-        return Err(AppError::PayloadTooLarge("plugin manifest exceeds 64 KiB".into()));
+        return Err(AppError::PayloadTooLarge(
+            "plugin manifest exceeds 64 KiB".into(),
+        ));
     }
     let bundle = body.get("bundle").and_then(Value::as_str).unwrap_or("");
     if bundle.trim().is_empty() {
         return Err(AppError::BadRequest("plugin bundle is required".into()));
     }
     if bundle.len() > domain::workbench_plugins::MAX_BUNDLE_BYTES {
-        return Err(AppError::PayloadTooLarge("plugin bundle exceeds 2 MiB".into()));
+        return Err(AppError::PayloadTooLarge(
+            "plugin bundle exceeds 2 MiB".into(),
+        ));
     }
     // validate_manifest guarantees a non-empty manifest.title; it wins over body.title
     // (the two came apart only because the upload UI sends both).

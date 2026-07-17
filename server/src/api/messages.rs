@@ -119,25 +119,28 @@ pub async fn send_message(
         "send_message persisted and broadcasted"
     );
 
-    // Web Push the @mentioned humans (kind=mention). The message is already
-    // durable + broadcast — this is a fire-and-forget out-of-app nudge.
+    // Out-of-app nudge to the @mentioned humans (kind=mention): Web Push for
+    // browsers/PWA plus a user-scoped WS frame for the desktop shell. The
+    // message is already durable + broadcast — both are fire-and-forget.
     let mention_targets: Vec<String> = dto
         .mentions
         .iter()
         .filter(|m| m.member_type == "user" && m.member_id != user_id.to_string())
         .map(|m| m.member_id.clone())
         .collect();
-    crate::infra::web_push::spawn_push_to_users(
+    let nudge = serde_json::json!({
+        "kind": "mention",
+        "channel_id": channel_id,
+        "msg_id": dto.msg_id,
+        "sender_name": dto.sender_name,
+        "body": dto.content.chars().take(200).collect::<String>(),
+    });
+    crate::api::notifications::spawn_notify_users_ws(
         &state,
-        mention_targets,
-        serde_json::json!({
-            "kind": "mention",
-            "channel_id": channel_id,
-            "msg_id": dto.msg_id,
-            "sender_name": dto.sender_name,
-            "body": dto.content.chars().take(200).collect::<String>(),
-        }),
+        mention_targets.clone(),
+        nudge.clone(),
     );
+    crate::infra::web_push::spawn_push_to_users(&state, mention_targets, nudge);
 
     Ok((StatusCode::CREATED, Json(dto)))
 }

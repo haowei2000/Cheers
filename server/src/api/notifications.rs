@@ -52,6 +52,23 @@ pub async fn push_notification(state: &AppState, user_id: &str, data: Value) {
     }
 }
 
+/// Fire-and-forget `notification` frames to a set of users. The desktop shell
+/// consumes `kind: permission_request | mention` from the user-scoped socket
+/// (WKWebView has no Push API, so Web Push can't reach it); web clients ignore
+/// kinds they don't know. Independent of the Web Push config — this fires even
+/// when VAPID is unset. Spawns immediately: never sits on a frame hot path.
+pub fn spawn_notify_users_ws(state: &AppState, user_ids: Vec<String>, data: Value) {
+    if user_ids.is_empty() {
+        return;
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        for user_id in user_ids {
+            push_notification(&state, &user_id, data.clone()).await;
+        }
+    });
+}
+
 /// GET /api/v1/notifications — the caller's pending invitations (workspace + channel),
 /// newest first.
 pub async fn list_notifications(

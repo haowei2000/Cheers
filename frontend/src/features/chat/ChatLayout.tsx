@@ -7,12 +7,55 @@ import { ErrorState } from "@/components/ui/error-state";
 import { useChatStore } from "@/stores/chatStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { markChatLayoutMounted } from "@/lib/push";
+import { getActivePushChannel, markChatLayoutMounted } from "@/lib/push";
+import { notifyNative } from "@/lib/desktop";
+import { permissionContext } from "@/lib/desktopApproval";
+import { isTauri } from "@/lib/serverConfig";
 import { useUserSocket } from "./hooks/useUserSocket";
+import { useTrayLiveness } from "@/features/desktop/useTrayLiveness";
 import type { NotificationItem } from "@/api/notifications";
+import type { PermissionContentData, PermissionOption } from "@/types";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
 import { ChannelView } from "./ChannelView";
+
+// Human-readable byte size for the native banner context line.
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
+
+// Best-effort filesystem path a permission request targets, for local stat +
+// git status. Prefer the tool's working directory, then the first edit/read
+// location (which may arrive as a bare string or a `{ path }` object).
+function toolTargetPath(
+  tool: PermissionContentData["tool"] | undefined
+): string | null {
+  if (!tool) return null;
+  if (typeof tool.cwd === "string" && tool.cwd.trim()) return tool.cwd;
+  const locs = tool.locations;
+  if (Array.isArray(locs)) {
+    for (const l of locs) {
+      if (typeof l === "string" && l.trim()) return l;
+      if (
+        l &&
+        typeof l === "object" &&
+        typeof (l as { path?: unknown }).path === "string" &&
+        (l as { path: string }).path.trim()
+      ) {
+        return (l as { path: string }).path;
+      }
+    }
+  }
+  return null;
+}
 
 export default function ChatLayout() {
   const {
@@ -28,6 +71,9 @@ export default function ChatLayout() {
     hydrateSelection,
   } = useChatStore();
   const isMobile = useIsMobile();
+  // Desktop tray + dock badge (no-op in the browser). Derives unread + pending
+  // + agent-busy and pushes to the native shell.
+  useTrayLiveness(selectedWorkspaceId, channels);
   const location = useLocation();
   const navigate = useNavigate();
   const { workspaceId: urlWorkspaceId, channelId: urlChannelId } = useParams();
@@ -42,6 +88,65 @@ export default function ChatLayout() {
     void refreshNotifications();
   }, [refreshNotifications]);
   useUserSocket((raw) => {
+    // Desktop shell: permission_request / mention nudges arrive on this
+    // user-scoped socket (the gateway mirrors its Web Push payloads here —
+    // WKWebView has no Push API). Same suppression as the service worker:
+    // don't nag about a channel that's focused on screen. Web ignores these
+    // kinds, as before.
+    const nudge = raw as {
+      kind?: string;
+      channel_id?: string;
+      title?: string;
+      body?: string;
+      sender_name?: string | null;
+      // Desktop-only enrichment fields the gateway adds to the WS copy (kept off
+      // the 4 KB Web Push copy): the tool preview lets us stat the target path.
+      request_id?: string;
+      tool?: PermissionContentData["tool"];
+      options?: PermissionOption[];
+    } | null;
+    if (nudge?.kind === "permission_request" || nudge?.kind === "mention") {
+      if (
+        isTauri() &&
+        !(document.hasFocus() && nudge.channel_id === getActivePushChannel())
+      ) {
+        const title =
+          nudge.kind === "mention"
+            ? nudge.sender_name
+              ? `${nudge.sender_name} mentioned you`
+              : "You were mentioned"
+            : nudge.title || "Approval needed";
+        // For an approval, enrich the banner body with local context (repo
+        // branch + dirty state, file size) statted from the tool's target
+        // path. Best-effort: if the path is unknown or the stat fails, the
+        // banner still fires with the plain body.
+        const targetPath =
+          nudge.kind === "permission_request" ? toolTargetPath(nudge.tool) : null;
+        void (async () => {
+          let body = nudge.body ?? "";
+          if (targetPath) {
+            const ctx = await permissionContext(targetPath);
+            if (ctx) {
+              const parts: string[] = [];
+              if (ctx.branch) {
+                parts.push(
+                  ctx.dirty ? `${ctx.branch} (uncommitted)` : ctx.branch
+                );
+              }
+              if (!ctx.exists) parts.push("new path");
+              else if (!ctx.is_dir && ctx.size != null) {
+                parts.push(formatBytes(ctx.size));
+              }
+              if (parts.length) {
+                body = body ? `${body}\n${parts.join(" · ")}` : parts.join(" · ");
+              }
+            }
+          }
+          await notifyNative(title, body);
+        })();
+      }
+      return;
+    }
     const n = raw as NotificationItem | null;
     if (!n || (n.kind !== "workspace_invite" && n.kind !== "channel_invite")) return;
     upsertNotification(n);
