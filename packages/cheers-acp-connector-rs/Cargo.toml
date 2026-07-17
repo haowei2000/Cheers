@@ -61,6 +61,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+similar = { version = "3.1.1", default-features = false, features = ["text"] }
 
 [dev-dependencies]
 tempfile = "3"

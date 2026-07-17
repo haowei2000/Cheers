@@ -756,6 +756,72 @@ fn tool_call_diff_paths(tool: &Value) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+/// Cap on the unified diff attached to an approval card.
+///
+/// The diff is normally tiny (a one-line edit is ~200 bytes however big the file
+/// is), but a newly-added or wholly-rewritten file diffs to its entire contents —
+/// so this is a backstop, not the common case. It bounds both the WS frame and the
+/// trace row the card is persisted into. `DiffView` has its own render-side
+/// collapsing, so this only has to keep the payload sane.
+const DIFF_PREVIEW_MAX_BYTES: usize = 16 * 1024;
+
+/// Render the ACP `content` diff blocks as one `git diff`-style unified diff.
+///
+/// codex hands us the FULL old and new text of every changed file (measured: a
+/// one-line edit to a 49KB file arrives as a 101KB payload — 2.1x the file), so
+/// forwarding those verbatim would bloat every approval frame and its persisted
+/// row. Diffing here, where the text already is, ships only the ~200 bytes that
+/// actually answer "what does this write do?" — in the exact format the card's
+/// `DiffView` already renders.
+fn tool_call_unified_diff(tool: &Value) -> Option<String> {
+    let blocks = tool.get("content")?.as_array()?;
+    let mut out = String::new();
+    for block in blocks {
+        if block.get("type").and_then(Value::as_str) != Some("diff") {
+            continue;
+        }
+        let Some(path) = block.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        // add => oldText null; delete => newText "". Both diff correctly as
+        // all-additions / all-deletions against an empty side.
+        let old = block.get("oldText").and_then(Value::as_str).unwrap_or("");
+        let new = block.get("newText").and_then(Value::as_str).unwrap_or("");
+        if old == new {
+            continue;
+        }
+        let body = similar::TextDiff::from_lines(old, new)
+            .unified_diff()
+            .context_radius(3)
+            .header(&format!("a/{path}"), &format!("b/{path}"))
+            .to_string();
+        // `DiffView` splits files on `diff --git`; similar emits only ---/+++.
+        out.push_str(&format!("diff --git a/{path} b/{path}\n{body}"));
+        if out.len() > DIFF_PREVIEW_MAX_BYTES {
+            // `truncation_boundary` cuts just after a newline, so the marker must
+            // not add another or the render gains a blank line.
+            out.truncate(truncation_boundary(&out, DIFF_PREVIEW_MAX_BYTES));
+            out.push_str("… diff truncated — approve only if you trust the paths above\n");
+            break;
+        }
+    }
+    (!out.trim().is_empty()).then_some(out)
+}
+
+/// Largest line boundary at or before `max` that is also a char boundary, so
+/// truncating can neither split a UTF-8 sequence nor leave half a diff line.
+fn truncation_boundary(text: &str, max: usize) -> usize {
+    text[..text
+        .char_indices()
+        .map(|(i, _)| i)
+        .take_while(|i| *i <= max)
+        .last()
+        .unwrap_or(0)]
+        .rfind('\n')
+        .map(|i| i + 1)
+        .unwrap_or(0)
+}
+
 /// One human line for a file edit: the bare path for a single file, else a counted
 /// list ("3 files: a.rs, b.rs, c.rs").
 fn diff_path_summary(paths: &[&str]) -> Option<String> {
@@ -831,11 +897,10 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
     // rawInput carries the actual command / file path / content the agent wants
     // to run — the single most useful thing for a human approver to see.
     let raw_input = tool.get("rawInput").or_else(|| tool.get("raw_input"));
-    // NOTE: the diff blocks (`content`) are deliberately NOT forwarded. codex puts
-    // the full old+new text of every changed file in there, so a large edit would
-    // bloat the permission frame and the trace row it is persisted into. The paths
-    // below are the bounded part an approver actually needs.
-    //
+    // The diff blocks themselves (`content`) are NOT forwarded — they carry the
+    // full old+new text of every changed file. `tool_call_unified_diff` distils
+    // them into a compact patch instead: same information, a fraction of the size.
+    let diff = tool_call_unified_diff(tool);
     // ACP `locations` is the canonical "what does this touch" field, but codex
     // never fills it — derive it from the diff blocks so the paths are always
     // available structurally, not just in the body line.
@@ -864,6 +929,7 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
     Some(serde_json::json!({
         "title": title,
         "kind": kind,
+        "diff": diff,
         "raw_input": raw_input,
         "locations": locations,
         "status": status,
@@ -1165,12 +1231,13 @@ mod tests {
         let tool = permission_tool_from_params(&merged).expect("tool");
         assert_eq!(tool["title"], "Editing files");
         assert_eq!(tool["locations"][0]["path"], "/work/hello.txt");
-        // The diff bodies stay out of the frame: codex sends the whole old+new
-        // text of every file, which would bloat the card and its persisted row.
+        // The approver sees the actual change, as a git-style patch.
+        let diff = tool["diff"].as_str().expect("diff");
+        assert!(diff.starts_with("diff --git a//work/hello.txt b//work/hello.txt\n"));
+        assert!(diff.contains("-original content"));
+        assert!(diff.contains("+patched"));
+        // The raw old/new blocks stay out — only the distilled patch is forwarded.
         assert!(tool.get("content").is_none());
-        assert!(!serde_json::to_string(&tool)
-            .unwrap()
-            .contains("original content"));
         // The request's own fields win: it is the newer of the two.
         assert_eq!(tool["status"], "pending");
         assert_eq!(tool["kind"], "edit");
@@ -1196,6 +1263,111 @@ mod tests {
         );
         let tool = permission_tool_from_params(&merged).expect("tool");
         assert_eq!(tool["locations"].as_array().expect("locations").len(), 2);
+    }
+
+    #[test]
+    fn diff_is_far_smaller_than_the_text_codex_sends() {
+        // The whole reason we diff here: codex ships the full old AND new text of
+        // every changed file. Measured against real codex, a one-line edit to a
+        // 49KB file arrives as a 101KB payload. The card must not carry that.
+        let old: String = (0..600).map(|i| format!("line {i}\n")).collect();
+        let new = old.replace("line 3\n", "line 3 CHANGED\n");
+        let mut snapshot = codex_edit_tool_call_update();
+        snapshot["content"] = json!([
+            { "type": "diff", "path": "/work/big.ts", "oldText": old, "newText": new }
+        ]);
+        let merged = merge_tool_call_snapshot(&codex_edit_permission_request(), &snapshot);
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        let diff = tool["diff"].as_str().expect("diff");
+
+        assert!(diff.contains("-line 3\n"), "shows what goes");
+        assert!(diff.contains("+line 3 CHANGED\n"), "shows what arrives");
+        assert!(
+            !diff.contains("line 500"),
+            "untouched lines are not shipped"
+        );
+        assert!(
+            diff.len() < old.len() / 10,
+            "diff ({} bytes) must be a fraction of the file ({} bytes)",
+            diff.len(),
+            old.len()
+        );
+    }
+
+    #[test]
+    fn an_oversized_diff_is_truncated_not_streamed_whole() {
+        // A newly-added or wholly-rewritten file diffs to its entire contents, so
+        // the cap is what keeps the frame (and its trace row) bounded.
+        let new: String = (0..20_000)
+            .map(|i| format!("brand new line {i}\n"))
+            .collect();
+        assert!(
+            new.len() > DIFF_PREVIEW_MAX_BYTES * 4,
+            "fixture must exceed the cap"
+        );
+        let mut snapshot = codex_edit_tool_call_update();
+        snapshot["content"] = json!([
+            // `add` is exactly this shape: no old side.
+            { "type": "diff", "path": "/work/new.ts", "oldText": null, "newText": new }
+        ]);
+        let merged = merge_tool_call_snapshot(&codex_edit_permission_request(), &snapshot);
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        let diff = tool["diff"].as_str().expect("diff");
+
+        assert!(diff.len() < DIFF_PREVIEW_MAX_BYTES + 200, "capped");
+        assert!(diff.contains("… diff truncated"), "truncation is visible");
+        assert!(diff.contains("+brand new line 0"), "still shows the start");
+        // Truncation must land on a line boundary, never mid-line.
+        let last_real = diff.lines().rev().nth(1).expect("a line before the marker");
+        assert!(
+            last_real.starts_with('+') || last_real.starts_with('@'),
+            "truncated at a clean line, got {last_real:?}"
+        );
+    }
+
+    #[test]
+    fn a_deleted_file_diffs_as_all_deletions() {
+        let mut snapshot = codex_edit_tool_call_update();
+        // `delete` is oldText=contents, newText="".
+        snapshot["content"] = json!([
+            { "type": "diff", "path": "/work/gone.ts", "oldText": "a\nb\n", "newText": "" }
+        ]);
+        let merged = merge_tool_call_snapshot(&codex_edit_permission_request(), &snapshot);
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        let diff = tool["diff"].as_str().expect("diff");
+        assert!(diff.contains("-a"));
+        assert!(diff.contains("-b"));
+    }
+
+    #[test]
+    fn a_multi_file_diff_is_split_per_file_for_the_renderer() {
+        let mut snapshot = codex_edit_tool_call_update();
+        snapshot["content"] = json!([
+            { "type": "diff", "path": "/work/a.rs", "oldText": "a\n", "newText": "A\n" },
+            { "type": "diff", "path": "/work/b.rs", "oldText": "b\n", "newText": "B\n" },
+            // A no-op block must not produce an empty section.
+            { "type": "diff", "path": "/work/same.rs", "oldText": "s\n", "newText": "s\n" },
+            { "type": "terminal", "terminalId": "t1" },
+        ]);
+        let merged = merge_tool_call_snapshot(&codex_edit_permission_request(), &snapshot);
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        let diff = tool["diff"].as_str().expect("diff");
+        // `DiffView` splits sections on `diff --git`, so there must be one per file.
+        assert_eq!(diff.matches("diff --git ").count(), 2);
+        assert!(!diff.contains("same.rs"), "unchanged file is skipped");
+    }
+
+    #[test]
+    fn a_command_approval_carries_no_diff() {
+        let params = json!({
+            "toolCall": {
+                "kind": "execute",
+                "toolCallId": "call_1",
+                "rawInput": { "command": "echo hi", "cwd": "/work" }
+            }
+        });
+        let tool = permission_tool_from_params(&params).expect("tool");
+        assert!(tool["diff"].is_null());
     }
 
     #[test]

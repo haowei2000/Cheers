@@ -339,6 +339,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "similar",
  "tempfile",
  "tokio",
  "tokio-tungstenite",
@@ -2210,6 +2211,12 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "rand_core 0.6.4",
 ]
+
+[[package]]
+name = "similar"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6505efef05804732ed8a3f2d4f279429eb485bd69d5b0cc6b19cc02005cda16"
 
 [[package]]
 name = "slab"
