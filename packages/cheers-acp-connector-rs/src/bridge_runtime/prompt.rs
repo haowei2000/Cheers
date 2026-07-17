@@ -700,6 +700,72 @@ fn codex_request_params(params: &Value) -> Option<&Value> {
         .and_then(|c| c.get("params"))
 }
 
+/// The `toolCallId` a `session/request_permission` is asking about, so the caller
+/// can look up the matching `tool_call` snapshot it saw earlier in the turn.
+pub(super) fn permission_tool_call_id(params: &Value) -> Option<&str> {
+    let tool = params.get("toolCall").or_else(|| params.get("tool"))?;
+    tool.get("toolCallId")
+        .or_else(|| tool.get("tool_call_id"))
+        .and_then(Value::as_str)
+}
+
+/// Fold the earlier `tool_call` snapshot back into a permission request's
+/// `toolCall`.
+///
+/// ACP sends a `ToolCallUpdate` (a delta) on `session/request_permission`, so the
+/// request itself may carry nothing but `{ toolCallId, kind, status }` — the
+/// title/diff/rawInput were announced in the `session/update` that opened the same
+/// tool call. Fields present on the REQUEST win: it is the newer of the two.
+pub(super) fn merge_tool_call_snapshot(params: &Value, snapshot: &Value) -> Value {
+    let mut merged = params.clone();
+    let Some(tool_call) = merged
+        .get_mut("toolCall")
+        .and_then(|value| value.as_object_mut())
+    else {
+        return merged;
+    };
+    let Some(snapshot) = snapshot.as_object() else {
+        return merged;
+    };
+    for (key, value) in snapshot {
+        // `sessionUpdate` is the notification's own discriminator ("tool_call"),
+        // not part of the tool call — it would be noise on the card.
+        if key == "sessionUpdate" || value.is_null() {
+            continue;
+        }
+        tool_call
+            .entry(key.clone())
+            .or_insert_with(|| value.clone());
+    }
+    merged
+}
+
+/// Paths an ACP tool call touches, read from its `content` diff blocks
+/// (`{ type: "diff", path, oldText, newText }`) — how codex reports a file edit.
+fn tool_call_diff_paths(tool: &Value) -> Vec<&str> {
+    tool.get("content")
+        .and_then(Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|block| block.get("type").and_then(Value::as_str) == Some("diff"))
+                .filter_map(|block| block.get("path").and_then(Value::as_str))
+                .filter(|path| !path.trim().is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One human line for a file edit: the bare path for a single file, else a counted
+/// list ("3 files: a.rs, b.rs, c.rs").
+fn diff_path_summary(paths: &[&str]) -> Option<String> {
+    match paths.len() {
+        0 => None,
+        1 => Some(paths[0].to_string()),
+        n => Some(format!("{n} files: {}", paths.join(", "))),
+    }
+}
+
 pub(super) fn permission_body_from_params(params: &Value) -> String {
     let codex = codex_request_params(params);
     // Prefer codex's explicit human-readable reason (e.g. "Do you want to allow
@@ -722,6 +788,16 @@ pub(super) fn permission_body_from_params(params: &Value) -> String {
         .filter(|s| !s.trim().is_empty())
     {
         return command.to_string();
+    }
+    // A file edit has no `command`, and codex leaves `reason` null for one inside
+    // the workspace — so without the paths this fell through to the generic line
+    // below and the approver was asked to allow a write to files we never named.
+    if let Some(summary) = params
+        .get("toolCall")
+        .map(|tool| diff_path_summary(&tool_call_diff_paths(tool)))
+        .unwrap_or_default()
+    {
+        return summary;
     }
     params
         .get("message")
@@ -755,7 +831,23 @@ pub(super) fn permission_tool_from_params(params: &Value) -> Option<Value> {
     // rawInput carries the actual command / file path / content the agent wants
     // to run — the single most useful thing for a human approver to see.
     let raw_input = tool.get("rawInput").or_else(|| tool.get("raw_input"));
-    let locations = tool.get("locations");
+    // NOTE: the diff blocks (`content`) are deliberately NOT forwarded. codex puts
+    // the full old+new text of every changed file in there, so a large edit would
+    // bloat the permission frame and the trace row it is persisted into. The paths
+    // below are the bounded part an approver actually needs.
+    //
+    // ACP `locations` is the canonical "what does this touch" field, but codex
+    // never fills it — derive it from the diff blocks so the paths are always
+    // available structurally, not just in the body line.
+    let diff_paths = tool_call_diff_paths(tool);
+    let locations = tool.get("locations").cloned().or_else(|| {
+        (!diff_paths.is_empty()).then(|| {
+            diff_paths
+                .iter()
+                .map(|path| serde_json::json!({ "path": path }))
+                .collect()
+        })
+    });
     let status = tool.get("status").and_then(Value::as_str);
     let tool_call_id = tool
         .get("toolCallId")
@@ -1010,6 +1102,169 @@ mod tests {
         assert_eq!(tool["command"], "/bin/zsh -lc 'echo X > /tmp/y'");
         assert_eq!(tool["cwd"], "/work");
         assert_eq!(tool["kind"], "execute");
+    }
+
+    /// The `session/update` codex sends when it opens a file edit — captured from
+    /// a real codex-acp 1.1.2 run. This is where the detail lives.
+    fn codex_edit_tool_call_update() -> Value {
+        json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_pths",
+            "title": "Editing files",
+            "kind": "edit",
+            "status": "in_progress",
+            "content": [{
+                "type": "diff",
+                "oldText": "original content\n",
+                "newText": "patched\n",
+                "path": "/work/hello.txt",
+                "_meta": { "kind": "update" }
+            }]
+        })
+    }
+
+    /// The `session/request_permission` that follows it — a DELTA, carrying no
+    /// title, no rawInput, and a `_meta.codex.params` with a null `reason`.
+    fn codex_edit_permission_request() -> Value {
+        json!({
+            "sessionId": "sess_1",
+            "toolCall": { "toolCallId": "call_pths", "kind": "edit", "status": "pending" },
+            "options": [],
+            "_meta": { "codex": { "params": {
+                "threadId": "t1",
+                "turnId": "u1",
+                "itemId": "call_pths",
+                "startedAtMs": 1784254565496i64,
+                "reason": null,
+                "grantRoot": null
+            }}}
+        })
+    }
+
+    #[test]
+    fn edit_permission_without_its_snapshot_shows_nothing() {
+        // Documents the bug: on its own, codex's edit approval carries no detail
+        // at all. Everything below depends on merging the earlier snapshot back in.
+        let params = codex_edit_permission_request();
+        let tool = permission_tool_from_params(&params).expect("tool");
+        assert!(tool["title"].is_null());
+        assert!(tool["raw_input"].is_null());
+        assert!(tool["locations"].is_null());
+        assert_eq!(
+            permission_body_from_params(&params),
+            "ACP agent requested permission to continue."
+        );
+    }
+
+    #[test]
+    fn merged_edit_permission_keeps_title_diff_and_path() {
+        let merged = merge_tool_call_snapshot(
+            &codex_edit_permission_request(),
+            &codex_edit_tool_call_update(),
+        );
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        assert_eq!(tool["title"], "Editing files");
+        assert_eq!(tool["locations"][0]["path"], "/work/hello.txt");
+        // The diff bodies stay out of the frame: codex sends the whole old+new
+        // text of every file, which would bloat the card and its persisted row.
+        assert!(tool.get("content").is_none());
+        assert!(!serde_json::to_string(&tool)
+            .unwrap()
+            .contains("original content"));
+        // The request's own fields win: it is the newer of the two.
+        assert_eq!(tool["status"], "pending");
+        assert_eq!(tool["kind"], "edit");
+        // `sessionUpdate` is the notification's discriminator, not tool-call data.
+        assert!(tool.get("sessionUpdate").is_none());
+        // No reason and no command — the path is the only concrete thing to show.
+        assert_eq!(permission_body_from_params(&merged), "/work/hello.txt");
+    }
+
+    #[test]
+    fn merged_edit_summarizes_every_path_of_a_multi_file_diff() {
+        let mut snapshot = codex_edit_tool_call_update();
+        snapshot["content"] = json!([
+            { "type": "diff", "path": "/work/a.rs", "oldText": "a", "newText": "A" },
+            { "type": "diff", "path": "/work/b.rs", "oldText": "b", "newText": "B" },
+            // Non-diff blocks (e.g. codex's terminal blocks) must not count as paths.
+            { "type": "terminal", "terminalId": "t1" },
+        ]);
+        let merged = merge_tool_call_snapshot(&codex_edit_permission_request(), &snapshot);
+        assert_eq!(
+            permission_body_from_params(&merged),
+            "2 files: /work/a.rs, /work/b.rs"
+        );
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        assert_eq!(tool["locations"].as_array().expect("locations").len(), 2);
+    }
+
+    #[test]
+    fn permission_tool_call_id_is_read_from_the_request() {
+        assert_eq!(
+            permission_tool_call_id(&codex_edit_permission_request()),
+            Some("call_pths")
+        );
+        assert_eq!(permission_tool_call_id(&json!({ "options": [] })), None);
+        // snake_case variants of both the wrapper and the id.
+        assert_eq!(
+            permission_tool_call_id(&json!({ "tool": { "tool_call_id": "call_2" } })),
+            Some("call_2")
+        );
+    }
+
+    #[test]
+    fn snapshot_never_overwrites_the_requests_own_fields() {
+        // A stale snapshot must not resurrect an old status/title over the live
+        // request — the request is authoritative for anything it actually sends.
+        let request = json!({
+            "toolCall": {
+                "toolCallId": "call_1",
+                "kind": "execute",
+                "status": "pending",
+                "title": "live title",
+                "rawInput": { "command": "live", "cwd": "/work" }
+            }
+        });
+        let snapshot = json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_1",
+            "kind": "edit",
+            "status": "in_progress",
+            "title": "stale title",
+            "rawInput": { "command": "stale" }
+        });
+        let tool =
+            permission_tool_from_params(&merge_tool_call_snapshot(&request, &snapshot)).expect("t");
+        assert_eq!(tool["title"], "live title");
+        assert_eq!(tool["status"], "pending");
+        assert_eq!(tool["kind"], "execute");
+        assert_eq!(tool["raw_input"]["command"], "live");
+    }
+
+    #[test]
+    fn command_approval_is_unchanged_by_the_edit_path() {
+        // The execute path must keep preferring codex's normalized command, and
+        // must not grow locations it never had.
+        let params = json!({
+            "toolCall": {
+                "kind": "execute",
+                "status": "pending",
+                "toolCallId": "call_1",
+                "rawInput": { "command": "echo X > /tmp/y", "cwd": "/work" }
+            },
+            "_meta": { "codex": { "params": {
+                "command": "/bin/zsh -lc 'echo X > /tmp/y'",
+                "cwd": "/work"
+            }}}
+        });
+        let tool = permission_tool_from_params(&params).expect("tool");
+        assert_eq!(tool["command"], "/bin/zsh -lc 'echo X > /tmp/y'");
+        assert_eq!(tool["cwd"], "/work");
+        assert!(tool["locations"].is_null());
+        assert_eq!(
+            permission_body_from_params(&params),
+            "/bin/zsh -lc 'echo X > /tmp/y'"
+        );
     }
 
     #[test]

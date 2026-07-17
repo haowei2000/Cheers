@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1868,6 +1868,7 @@ impl RuntimeContext {
             text: String::new(),
             created_file_ids: Vec::new(),
             streaming_started: false,
+            tool_call_snapshots: VecDeque::new(),
         }));
         {
             let mut shared = self.shared.lock().await;
@@ -2319,6 +2320,13 @@ impl RuntimeContext {
             return Ok(());
         };
 
+        // Keep the tool-call detail before it scrolls past: the permission request
+        // that follows carries only a delta and would otherwise render an approval
+        // card with no title, no diff and no path. See `tool_call_snapshots`.
+        if matches!(kind, "tool_call" | "tool_call_update") {
+            run.lock().await.remember_tool_call(&update);
+        }
+
         // Generic complete-stream passthrough (docs/arch/ACP_EVENT_TAXONOMY.md):
         // forward every NON-streaming session/update to the gateway verbatim so
         // Cheers sees the full ACP event surface (the gateway's acp_events registry
@@ -2698,6 +2706,68 @@ struct ActiveRun {
     /// False until adapter.prompt() is called; guards against codex-acp replaying
     /// prior-session history as agent_message_chunk notifications during load_session.
     streaming_started: bool,
+    /// Last-known `tool_call` snapshot per `toolCallId`, newest last.
+    ///
+    /// ACP's `session/request_permission` carries a `ToolCallUpdate` — a DELTA, not
+    /// a snapshot — so the detail (title, the diff `content`, `rawInput`) is only
+    /// ever sent in the earlier `session/update` that announced the same
+    /// `toolCallId`. codex leans on this hard: its edit approvals arrive as a bare
+    /// `{ toolCallId, kind: "edit", status }`. Without the prior snapshot there is
+    /// nothing to show, so we keep it here and merge it back in
+    /// (`merge_tool_call_snapshot`) when the permission request lands.
+    ///
+    /// Scoped to the run so it dies with the turn; capped so a long agentic turn
+    /// can't grow it without bound (diffs are held verbatim).
+    tool_call_snapshots: VecDeque<(String, Value)>,
+}
+
+/// How many `tool_call` snapshots one run keeps. A permission request follows its
+/// own `tool_call` update almost immediately, so this only has to survive whatever
+/// parallel tool calls the agent interleaves — small, but not one.
+const TOOL_CALL_SNAPSHOT_CAP: usize = 32;
+
+impl ActiveRun {
+    /// Record (or fold into) the snapshot for `tool_call` / `tool_call_update`.
+    /// `tool_call_update` is a delta: merge its fields over what we already have so
+    /// a later status-only update can't erase the title/content we need.
+    fn remember_tool_call(&mut self, update: &Value) {
+        let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
+            return;
+        };
+        if let Some(existing) = self
+            .tool_call_snapshots
+            .iter_mut()
+            .find(|(known, _)| known == id)
+        {
+            merge_object_fields(&mut existing.1, update);
+            return;
+        }
+        if self.tool_call_snapshots.len() >= TOOL_CALL_SNAPSHOT_CAP {
+            self.tool_call_snapshots.pop_front();
+        }
+        self.tool_call_snapshots
+            .push_back((id.to_string(), update.clone()));
+    }
+
+    fn tool_call_snapshot(&self, id: &str) -> Option<&Value> {
+        self.tool_call_snapshots
+            .iter()
+            .find(|(known, _)| known == id)
+            .map(|(_, snapshot)| snapshot)
+    }
+}
+
+/// Overlay `src`'s object fields onto `dst`, ignoring nulls (an absent field in an
+/// ACP delta means "unchanged", and serde renders it as null).
+fn merge_object_fields(dst: &mut Value, src: &Value) {
+    let (Some(dst), Some(src)) = (dst.as_object_mut(), src.as_object()) else {
+        return;
+    };
+    for (key, value) in src {
+        if !value.is_null() {
+            dst.insert(key.clone(), value.clone());
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2784,6 +2854,158 @@ use signing::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_run() -> ActiveRun {
+        ActiveRun {
+            task_id: "t".to_string(),
+            msg_id: "m".to_string(),
+            channel_id: "c".to_string(),
+            provider_session_key: "p".to_string(),
+            acp_session_id: "s".to_string(),
+            session_id: None,
+            delta_seq: 0,
+            trace_seq: 0,
+            text: String::new(),
+            created_file_ids: Vec::new(),
+            streaming_started: false,
+            tool_call_snapshots: VecDeque::new(),
+        }
+    }
+
+    #[test]
+    fn tool_call_snapshot_is_kept_for_the_permission_request_that_follows() {
+        let mut run = empty_run();
+        run.remember_tool_call(&json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_1",
+            "title": "Editing files",
+            "kind": "edit",
+            "content": [{ "type": "diff", "path": "/work/a.rs" }]
+        }));
+        let snapshot = run.tool_call_snapshot("call_1").expect("snapshot");
+        assert_eq!(snapshot["title"], "Editing files");
+        assert_eq!(snapshot["content"][0]["path"], "/work/a.rs");
+        assert!(run.tool_call_snapshot("call_missing").is_none());
+    }
+
+    #[test]
+    fn a_status_only_update_does_not_erase_the_detail() {
+        // tool_call_update is a delta: codex sends status-only follow-ups, and
+        // clobbering the snapshot with one would lose the diff we need.
+        let mut run = empty_run();
+        run.remember_tool_call(&json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_1",
+            "title": "Editing files",
+            "content": [{ "type": "diff", "path": "/work/a.rs" }]
+        }));
+        run.remember_tool_call(&json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call_1",
+            "status": "completed",
+            "title": null
+        }));
+        let snapshot = run.tool_call_snapshot("call_1").expect("snapshot");
+        assert_eq!(snapshot["title"], "Editing files");
+        assert_eq!(snapshot["content"][0]["path"], "/work/a.rs");
+        assert_eq!(snapshot["status"], "completed");
+        assert_eq!(run.tool_call_snapshots.len(), 1, "must fold, not append");
+    }
+
+    #[test]
+    fn tool_call_snapshots_are_capped_and_evict_oldest_first() {
+        let mut run = empty_run();
+        for i in 0..(TOOL_CALL_SNAPSHOT_CAP + 5) {
+            run.remember_tool_call(&json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": format!("call_{i}"),
+                "title": format!("call {i}"),
+            }));
+        }
+        assert_eq!(run.tool_call_snapshots.len(), TOOL_CALL_SNAPSHOT_CAP);
+        assert!(run.tool_call_snapshot("call_0").is_none(), "oldest evicted");
+        let newest = format!("call_{}", TOOL_CALL_SNAPSHOT_CAP + 4);
+        assert!(run.tool_call_snapshot(&newest).is_some(), "newest kept");
+    }
+
+    #[test]
+    fn a_real_codex_edit_approval_survives_the_whole_seam() {
+        // Both payloads below are verbatim from a real codex-acp 1.1.2 run
+        // (read-only mode, editing a file in the workspace). This walks the exact
+        // sequence the runtime does — cache the session/update, then build the card
+        // from the permission request that follows — because the two halves being
+        // individually correct is not the same as them meeting properly.
+        let mut run = empty_run();
+        run.remember_tool_call(&json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_pthsrGeF1WljUYNJAjSHPqzA",
+            "title": "Editing files",
+            "kind": "edit",
+            "status": "in_progress",
+            "content": [{
+                "type": "diff",
+                "oldText": "original content\n",
+                "newText": "patched\n",
+                "path": "/tmp/acp-probe/hello.txt",
+                "_meta": { "kind": "update" }
+            }]
+        }));
+        let request = json!({
+            "sessionId": "019f6ddb-c09b-79f0-bf2d-272177801258",
+            "toolCall": {
+                "toolCallId": "call_pthsrGeF1WljUYNJAjSHPqzA",
+                "kind": "edit",
+                "status": "pending"
+            },
+            "options": [
+                { "optionId": "allow_once", "name": "Allow Once", "kind": "allow_once" },
+                { "optionId": "reject_once", "name": "Reject", "kind": "reject_once" }
+            ],
+            "_meta": { "codex": { "params": {
+                "threadId": "019f6ddb-c09b-79f0-bf2d-272177801258",
+                "turnId": "019f6ddb-c1b0-73b0-b0ee-0b0dc346089a",
+                "itemId": "call_pthsrGeF1WljUYNJAjSHPqzA",
+                "startedAtMs": 1784254565496i64,
+                "reason": null,
+                "grantRoot": null
+            }}}
+        });
+
+        let tool_call_id = permission_tool_call_id(&request).expect("id");
+        let snapshot = run
+            .tool_call_snapshot(tool_call_id)
+            .expect("snapshot")
+            .clone();
+        let merged = merge_tool_call_snapshot(&request, &snapshot);
+
+        // What the approver ends up seeing, instead of the old
+        // "ACP agent requested permission to continue." with an empty tool.
+        assert_eq!(
+            permission_body_from_params(&merged),
+            "/tmp/acp-probe/hello.txt"
+        );
+        let tool = permission_tool_from_params(&merged).expect("tool");
+        assert_eq!(tool["title"], "Editing files");
+        assert_eq!(tool["kind"], "edit");
+        assert_eq!(tool["status"], "pending");
+        assert_eq!(tool["locations"][0]["path"], "/tmp/acp-probe/hello.txt");
+        // The approve/deny wiring must keep working off the request's own options.
+        assert_eq!(
+            permission_option_id_for_resolution(&merged, "allow").as_deref(),
+            Some("allow_once")
+        );
+        assert_eq!(
+            permission_option_id_for_resolution(&merged, "deny").as_deref(),
+            Some("reject_once")
+        );
+    }
+
+    #[test]
+    fn an_update_without_a_tool_call_id_is_ignored() {
+        let mut run = empty_run();
+        run.remember_tool_call(&json!({ "sessionUpdate": "tool_call", "title": "no id" }));
+        assert!(run.tool_call_snapshots.is_empty());
+    }
 
     #[test]
     fn prompt_builder_uses_trigger_text_and_attachment_summary() {
