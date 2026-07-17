@@ -309,6 +309,11 @@ pin 的 `codemap/conventions.md` 只剩发现层（一行）：
 #       kind: area | module | file | symbol
 #       label: short human-readable name
 #       loc: cheers:ws/@<your-handle>/<repo-relative-path>#L<n>[-L<n>]
+#            <your-handle> = the EXACT name this channel @-mentions
+#            you by (you see it in messages addressed to you, e.g.
+#            '@deng please ...'). NEVER guess it and never copy a
+#            handle from an example - a wrong handle breaks every
+#            jump. Unsure? Omit loc rather than invent one.
 #       summary: what it does / what matters; <=200 chars; facts only
 #       status: explored | partial | stale
 #       tags: [optional, short]
@@ -338,6 +343,10 @@ pin 的 `codemap/conventions.md` 只剩发现层（一行）：
   和 `status` 三态一起构成诚实性协议。
 - **负面指令给了替代动作**：不是光说 "never rewrite the whole file"，而是紧跟
   "append at end / desk_edit single lines" ——告诉它**改用什么**，比禁止更有效。
+- **handle 的来源写死、宁缺毋滥**（实战教训：bot 猜了个 `@backend`）：派发
+  prompt 并不告诉 bot 自己的 mention 名，它唯一可靠的来源是**触发消息里别人
+  @ 它的那个名字**——提示词明说这一点，并禁止猜测/照抄示例，不确定就不写 `loc`。
+  解析侧配套兜底：频道只有一个 bot 时，错误 handle 直接落到它（存在性探测照旧）。
 - 全文 ~2.4KB，不到 256KB 预算的 1%，一次性成本。
 
 ## 6. 缺口与补丁（分阶段）

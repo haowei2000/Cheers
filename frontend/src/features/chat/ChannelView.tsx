@@ -911,15 +911,23 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       if (botId.startsWith("@")) {
         const handle = botId.slice(1).toLowerCase();
         const hits = [...botLabels.entries()].filter(([, label]) => label.toLowerCase() === handle);
-        if (hits.length !== 1) {
+        if (hits.length === 1) {
+          botId = hits[0][0];
+        } else if (hits.length === 0 && botLabels.size === 1) {
+          // Wrong/stale/invented handle, but the channel has exactly ONE bot: the map is
+          // channel-local, so the intent is unambiguous — resolve to it and let the
+          // existence probe below gate the jump. (Agents do invent handles; a map full
+          // of them should still be navigable in the common single-bot channel.)
+          botId = [...botLabels.keys()][0];
+        } else {
+          const known = [...botLabels.values()].map((l) => `@${l}`).join(", ") || "(none)";
           setRefError(
             hits.length === 0
-              ? `No bot named "@${handle}" in this channel — the locator may be stale (bots can be renamed).`
+              ? `No bot named "@${handle}" in this channel — bots here: ${known}.\nThe locator may be stale or invented; ask the bot to fix the loc fields in its map file.`
               : `More than one bot answers to "@${handle}" here — open the workspace browser and pick one.`
           );
           return;
         }
-        botId = hits[0][0];
       }
       // Probe before navigating (same reasoning as resolveAndOpenRef): landing the user
       // in a browser for a file that isn't reachable is worse than a clear error.
