@@ -943,7 +943,10 @@ function openDetail(id) {
       return '<div class="edge-item" data-goto="' + esc(other.id) + '"><span class="dir">' + (out ? "→" : "←") + '</span>' +
         '<span class="dot ' + dotCls(other.status) + '"></span><span>' + esc(other.label) + "</span>" +
         '<span class="ek">' + (x.e.kind === "data" ? "数据" : "调用") + (x.e.label ? " · " + esc(x.e.label) : "") + "</span></div>";
-    }).join("") || '<div class="hint">无</div>') + "</div>";
+    }).join("") || '<div class="hint">无</div>') + "</div>" +
+
+    '<div class="d-sec"><button class="btn-soft" id="askBot" style="width:100%">💬 让 bot 讲讲这个模块</button>' +
+    '<div class="hint">预填聊天输入框（cheers:compose），不代发——检查后自己按发送</div></div>';
   drawer.classList.add("open");
 
   drawer.querySelector("#dClose").addEventListener("click", function () { drawer.classList.remove("open"); selected = null; render(); });
@@ -959,6 +962,17 @@ function openDetail(id) {
   });
   var copyBtn = drawer.querySelector("#copyLoc");
   if (copyBtn) copyBtn.addEventListener("click", function () { copyText(String(n.loc)); });
+  drawer.querySelector("#askBot").addEventListener("click", function () {
+    // 提及从节点 loc 的 handle 推导（写 loc 的 bot = 懂这块代码的 bot）；没有 loc 就
+    // 不带提及，让用户自己 @。预填不代发——发送权始终在人。
+    var hm = n.loc ? /^cheers:ws\/@([^/]+)\//.exec(String(n.loc)) : null;
+    var text = (hm ? "@" + hm[1] + " " : "") +
+      "请讲讲 " + n.label + "（codemap 节点 " + n.id + "）：它负责什么、最近的改动、" +
+      "有什么要注意的？先读 codemap/map.yaml 里它的条目和注释再回答。";
+    if (DEMO) { toast("demo：将预填「" + esc(text.slice(0, 48)) + "…」"); return; }
+    parent.postMessage({ type: "cheers:compose", text: text }, "*");
+    toast("已预填到输入框——检查后按发送（需 host 支持 cheers:compose）");
+  });
   drawer.querySelector("#saveSum").addEventListener("click", function () {
     saveField(id, "summary", drawer.querySelector("#sumEdit").value.trim());
   });

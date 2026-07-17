@@ -74,6 +74,13 @@ interface Props {
   /** Fires with the raw draft text on change, so the parent can derive suggested
       context (F3 — e.g. a filename mentioned in the draft). */
   onTextChange?: (text: string) => void;
+  /** External PREFILL request (a renderer plugin's cheers:compose, or any host
+      surface that suggests a message). Never sends: an empty draft is filled, a
+      typed draft gets the text appended on a new line — user text is never lost.
+      `seq` bumps per request so the same text can be prefilled again. Any `@label`
+      tokens matching `mentionables` are registered as picked mentions, so the
+      suggested command routes to its bot when the user presses send. */
+  prefill?: { text: string; seq: number } | null;
   /** Bot turns currently streaming in the channel. With an empty draft the send
       button morphs into Stop; a typed draft always keeps Send (concurrent sends
       are legal in a channel chat). */
@@ -138,6 +145,7 @@ function MessageComposerImpl({
   toolbar,
   onMentionsChange,
   onTextChange,
+  prefill,
   streamingCount = 0,
   onStopStreaming,
   onSend,
@@ -158,6 +166,32 @@ function MessageComposerImpl({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // External prefill (see Props.prefill): fill empty / append to typed, register any
+  // @label mentions so routing works, focus with the cursor at the end. NEVER sends.
+  const prefillSeq = useRef(0);
+  useEffect(() => {
+    if (!prefill || prefill.seq === prefillSeq.current) return;
+    prefillSeq.current = prefill.seq;
+    setText((t) => (t.trim() ? `${t}\n${prefill.text}` : prefill.text));
+    const mentioned = mentionables.filter((m) => prefill.text.includes(`@${m.label}`));
+    if (mentioned.length) {
+      setPicked((prev) => {
+        const have = new Set(prev.map((p) => p.id));
+        return [...prev, ...mentioned.filter((m) => !have.has(m.id))];
+      });
+    }
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      requestAnimationFrame(() => {
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
   const attachRef = useRef<HTMLDivElement>(null);
   // Voice-to-deaf-bot guard state (used further below): audio attachments the
   // transcribe-then-send flow completed, and the paused-send warning.

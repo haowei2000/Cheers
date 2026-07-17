@@ -46,7 +46,7 @@ Devin 的 codemap 是 **agent 边探索边维护的代码库认知地图**，不
 | 实时刷新（R4） | `filesTick` 只热刷内置 lens 和 Raw 编辑器；**沙箱插件不会重收 `cheers:render`**（协议 1 合并后复核过 `SandboxRenderer`，仍未接） | ⚠️ 缺口 G1 |
 | 点节点跳代码（R5） | 三个半成品：① context chip 的 `{verb,params}` → `jumpToContextSource` 跳 Workbench/工作区；② 消息里反引号路径 → `resolveAndOpenRef` + 服务端 `resolveRef` 按来源 bot 跨 inbox/desk/workspace **启发式**解析（带存在性探测与清晰报错）；③ `RemoteWorkspaceDialog` 的 `initialBotId/initialPath` 深链 | ⚠️ 缺口 G2：无**确定性文本定位符**、无**行号锚点**、未暴露给插件 |
 | 大 repo（>256KB） | 单文件 ≤256KB；插件只能读被指派的那一个文件 | ⚠️ 缺口 G3（v2） |
-| 节点发起提问（R6） | 插件无任何触达聊天输入的通道 | ⚠️ 缺口 G4（v2） |
+| 节点发起提问（R6） | `cheers:compose` 预填输入框（**已实现**）：空草稿填入/有草稿换行追加、`@名字` 注册为可路由提及、绝不代发 | ✅ G4 已落地 |
 
 > G1 的定性随协议 1 变了：英文规范（PLUGIN_DEVELOPMENT.md §5.2 与 SDK 注释）
 > 现在**明文规定** render 只有两个触发点（回应 `cheers:ready`、冲突保存之后），
@@ -400,8 +400,11 @@ pin 的 `codemap/conventions.md` 只剩发现层（一行）：
    `codemap/map.yaml`（索引）+ `codemap/modules/<id>.yaml`，突破 256KB。
    协议 1 明确「host 忽略未知 manifest 键」，`reads` 可以在协议 1 内增补而不 bump 版本。
    host 在代理层按 glob 白名单放行 `fs.read`，仍然只读、仍然本频道。
-4. **G4（对话入口）**：`cheers:compose { text }` —— 只**预填**聊天输入框，
-   绝不代发。点节点 →「问 bot：解释 gateway.resource」→ 用户自己按发送。
+4. **G4（对话入口）——已实现**：`cheers:compose { text }` 只**预填**聊天输入框，
+   绝不代发：空草稿填入、已有草稿换行追加（用户文字永不丢）、文本里匹配成员的
+   `@名字` 注册进 picked（否则光有文本路由不到 bot——提及的真源是 picker 状态）；
+   host 侧 ≤4000 字符 + 剥控制符。codemap 详情抽屉的「让 bot 讲讲这个模块」用它，
+   提及从节点 `loc` 的 handle 推导（写 loc 的 bot = 懂这块代码的 bot）。
    发消息的主体始终是人，避开沙箱插件代用户说话的信任问题。
 5. （可选）**行号漂移兜底**：locator 增加 `q=<pct-encoded 片段>`，查看器行号
    未命中时按内容搜索定位。

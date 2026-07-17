@@ -32,6 +32,10 @@ export interface WorkbenchContext {
    *  features/chat/locator.ts). Handed to renderer plugins as the cheers:open host
    *  API; implemented by ChannelView, which owns every jump surface. UI routing only. */
   openLocator?: (uri: string) => void;
+  /** PREFILL the channel composer with a suggested message (the cheers:compose host
+   *  API). Never sends — the human reviews and presses send; that keystroke is what
+   *  turns a plugin suggestion into a channel action. */
+  composeMessage?: (text: string) => void;
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the tree
    *  and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;

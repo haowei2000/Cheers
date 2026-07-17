@@ -53,6 +53,7 @@ export function RendererHost({
         path={path}
         readChannel={readChannel}
         onOpen={ctx.openLocator}
+        onCompose={ctx.composeMessage}
       />
     );
   }

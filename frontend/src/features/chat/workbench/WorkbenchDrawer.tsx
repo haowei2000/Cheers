@@ -31,6 +31,9 @@ interface Props {
    *  host API). Owned by ChannelView — it holds every jump surface (workspace dialog,
    *  channel files, this drawer's own deep-link). */
   onOpenLocator?: (uri: string) => void;
+  /** Prefill the channel composer (the renderer plugins' cheers:compose host API).
+   *  Never sends — owned by ChannelView, which holds the composer. */
+  onCompose?: (text: string) => void;
 }
 
 interface WbConfig {
@@ -93,7 +96,7 @@ function parseCfg(content: string): WbConfig {
 // Installing global templates / plugins lives in Settings → Workbench extensions (admin);
 // the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone
 // (.json template or .html plugin — the plugin dev loop).
-function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick, onOpenLocator }: Props) {
+function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick, onOpenLocator, onCompose }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -382,8 +385,9 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       openTarget: focus,
       filesTick,
       openLocator: onOpenLocator,
+      composeMessage: onCompose,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, plugins, bindings, setBinding, configs, focus, filesTick, onOpenLocator]
+    [channelId, fs, sendResourceReq, pinned, togglePin, plugins, bindings, setBinding, configs, focus, filesTick, onOpenLocator, onCompose]
   );
 
   // Desktop: the original card chrome, placed in the work area — hidden (but
