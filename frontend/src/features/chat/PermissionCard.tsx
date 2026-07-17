@@ -126,6 +126,13 @@ export function PermissionCard({
   const subtitle = `${message.sender_name || "The agent"} is requesting permission.`;
   const impact = data.body && data.body !== command ? data.body : null;
 
+  // The patch the agent wants to write, distilled by the connector from the ACP
+  // tool call. Unlike the staged diff below it needs no fetch — it arrives on the
+  // card — so it renders inline: on a file-edit approval it IS the thing to review.
+  const agentDiff =
+    typeof tool?.diff === "string" && tool.diff.trim() ? tool.diff : null;
+  const isEdit = tool?.kind === "edit";
+
   // "View staged diff" is offered only for a real `git commit` whose tool call
   // carries a working directory to diff against.
   const cwd =
@@ -330,12 +337,17 @@ export function PermissionCard({
       {command && (
         <div className="px-3 py-2.5 border-b border-zinc-800 bg-zinc-950/40">
           <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1.5">
-            Command
+            {isEdit ? "Changes" : "Command"}
           </p>
           <pre className="m-0 text-xs font-mono text-zinc-300 bg-black/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
             {command}
           </pre>
           {impact && <p className="text-xs text-zinc-400 mt-2">{impact}</p>}
+          {agentDiff && (
+            <div className="mt-2 rounded bg-black/30 overflow-hidden">
+              <DiffView diff={agentDiff} className="max-h-72" />
+            </div>
+          )}
           {canViewStagedDiff && (
             <div className="mt-2">
               <button

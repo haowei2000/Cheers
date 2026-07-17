@@ -109,7 +109,7 @@ function sectionTitle(headerLines: string[]): string {
  * hunk headers as we go. Text before the first `diff --git` (a bare hunk diff,
  * e.g. `git diff` inside one file) becomes a single untitled section.
  */
-function parseSections(diff: string): FileSection[] {
+export function parseSections(diff: string): FileSection[] {
   const raw = diff.replace(/\n$/, "").split("\n");
   const sections: FileSection[] = [];
   let cur: FileSection | null = null;

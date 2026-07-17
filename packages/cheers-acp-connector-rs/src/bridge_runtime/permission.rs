@@ -24,6 +24,21 @@ impl RuntimeContext {
             let _ = respond_to.send(PermissionOutcome::Cancelled);
             return Ok(());
         };
+        // ACP hands us a ToolCallUpdate (a DELTA) here, so codex's edit approvals
+        // arrive as a bare `{ toolCallId, kind: "edit", status }` — the title and
+        // the diff were sent earlier, in the `session/update` that opened the same
+        // tool call. Fold that snapshot back in before building the card, or the
+        // approver is asked to allow a write without being shown the file.
+        let params = match permission_tool_call_id(&params) {
+            Some(tool_call_id) => {
+                let snapshot = run.lock().await.tool_call_snapshot(tool_call_id).cloned();
+                match snapshot {
+                    Some(snapshot) => merge_tool_call_snapshot(&params, &snapshot),
+                    None => params,
+                }
+            }
+            None => params,
+        };
         // Auto-approve locally when configured: the gateway already enforces
         // resource authz (channel membership + role), so the per-tool ACP prompt
         // is redundant. Without this, forward_to_backend waits for a backend

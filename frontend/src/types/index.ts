@@ -100,6 +100,10 @@ export interface PermissionContentData {
     kind?: string | null;
     raw_input?: unknown;
     locations?: unknown;
+    /** `git diff`-style patch for a file-edit approval, distilled by the connector
+     *  from the agent's full old/new text (which is far too big to forward) and
+     *  capped. Renders with `DiffView`. */
+    diff?: string | null;
     // Normalized by the connector from the agent's _meta (e.g. codex's
     // `_meta.codex.params.command`/`cwd`) — cleaner than raw_input.command.
     command?: string | null;
