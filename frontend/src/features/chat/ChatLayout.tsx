@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
 import { listChannels, listDms } from "@/api/channels";
 import toast from "react-hot-toast";
@@ -24,10 +24,12 @@ export default function ChatLayout() {
     setPersonalWorkspace,
     setChannels,
     selectWorkspace,
+    hydrateSelection,
   } = useChatStore();
   const isMobile = useIsMobile();
   const location = useLocation();
   const navigate = useNavigate();
+  const { workspaceId: urlWorkspaceId, channelId: urlChannelId } = useParams();
 
   // Notification center bootstrap: hydrate the inbox once, then keep it live over a
   // user-scoped socket (invites arrive even with no channel open). Kept here because
@@ -52,6 +54,52 @@ export default function ChatLayout() {
   // Mobile-only workspace/nav drawer (the desktop rail, slid in from the left).
   const [navOpen, setNavOpen] = useState(false);
 
+  // ── URL ⇄ store selection sync ───────────────────────────────────────────────
+  // The path owns the open workspace/channel: it's what survives a reload and what a
+  // shared link carries. Every in-app selection still goes through the store (rail,
+  // sidebar, dialogs), so the two are kept in step by a pair of effects. They can't
+  // ping-pong: the first only runs when the *path* changed (its deps are the params),
+  // the second only when the store disagrees with the path, and applying either makes
+  // them agree.
+  //
+  // appliedPathRef records the last selection we reconciled, so a path we wrote
+  // ourselves doesn't bounce back as an incoming change and undo a fresh selection.
+  const appliedPathRef = useRef<string | null>(null);
+
+  // Path → store: on mount, and on browser back/forward.
+  useEffect(() => {
+    const key = `${urlWorkspaceId ?? ""}/${urlChannelId ?? ""}`;
+    if (appliedPathRef.current === key) return;
+    appliedPathRef.current = key;
+    // Bare /chat names no selection — leave the store alone and let the bootstrap
+    // below pick the default, rather than blanking an already-good selection (this
+    // is the path InvitePage/RegisterPage arrive on after joining a workspace).
+    if (!urlWorkspaceId) return;
+    hydrateSelection(urlWorkspaceId, urlChannelId ?? null);
+  }, [urlWorkspaceId, urlChannelId, hydrateSelection]);
+
+  // Store → path: mirror any in-app selection back out.
+  useEffect(() => {
+    if (!selectedWorkspaceId) return;
+    const want = `/chat/${selectedWorkspaceId}${
+      selectedChannelId ? `/${selectedChannelId}` : ""
+    }`;
+    if (want === location.pathname) return;
+    appliedPathRef.current = `${selectedWorkspaceId}/${selectedChannelId ?? ""}`;
+    // replace, not push: on mobile the conversation screen is itself a pushed history
+    // entry (see openChatScreen), so a second entry per channel switch would make Back
+    // land on the previous channel instead of popping to the channel list. `state` is
+    // carried through for the same reason — dropping it would strip that push flag and
+    // bounce the user out of the conversation they just opened.
+    navigate(want, { replace: true, state: location.state });
+  }, [
+    selectedWorkspaceId,
+    selectedChannelId,
+    location.pathname,
+    location.state,
+    navigate,
+  ]);
+
   // Load workspaces + the personal workspace on mount. The personal workspace is the
   // user's home (DMs + private space), so it's the default selection. On failure we
   // raise bootstrapFailed and show a retry panel in the main area instead of the
@@ -63,7 +111,18 @@ export default function ChatLayout() {
       .then(([ws, personal]) => {
         setWorkspaces(ws);
         if (personal) setPersonalWorkspace(personal);
-        if (!selectedWorkspaceId) {
+        // Read the selection fresh instead of through this callback's closure: the
+        // path hydrates the store while this request is in flight, so a captured
+        // `null` here would overwrite the workspace the URL just restored.
+        const current = useChatStore.getState().selectedWorkspaceId;
+        const known =
+          !!current &&
+          (current === personal?.workspace_id ||
+            ws.some((w) => w.workspace_id === current));
+        // Fall back to the home workspace when nothing is selected, or when the path
+        // named one this account can't see (a stale link, or someone else's). Without
+        // the membership check the rail would sit on a workspace that renders empty.
+        if (!known) {
           selectWorkspace(personal?.workspace_id ?? ws[0]?.workspace_id ?? null);
         }
         setBootstrapFailed(false);
@@ -74,7 +133,7 @@ export default function ChatLayout() {
           "Couldn't load your workspaces — check the gateway connection, then retry."
         );
       });
-  }, [selectedWorkspaceId, setWorkspaces, setPersonalWorkspace, selectWorkspace]);
+  }, [setWorkspaces, setPersonalWorkspace, selectWorkspace]);
   useEffect(() => {
     loadWorkspaces();
     // Run once on mount; the Retry button re-invokes loadWorkspaces directly.

@@ -99,8 +99,11 @@ export default function App() {
         <Route path="/reset" element={<ResetPasswordPage />} />
         {/* Public: the landing page itself routes signed-out visitors to auth. */}
         <Route path="/invite/:token" element={<InvitePage />} />
+        {/* The open workspace/channel live in the path so they survive a reload and
+            can be shared as a link; both are optional because /chat is the generic
+            entry point (ChatLayout then redirects to the personal workspace). */}
         <Route
-          path="/chat/*"
+          path="/chat/:workspaceId?/:channelId?"
           element={
             <RequireAuth>
               <ChatLayout />

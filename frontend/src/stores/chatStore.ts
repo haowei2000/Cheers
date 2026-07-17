@@ -25,6 +25,15 @@ interface ChatState {
   patchChannel: (id: string, patch: Partial<Channel>) => void;
   /** Add a channel if absent, else patch it (used when a DM is found-or-created). */
   upsertChannel: (ch: Channel) => void;
+  /**
+   * Apply an explicit workspace+channel pair. Used to seed the store from the URL,
+   * which owns the selection across reloads and shared links (see ChatLayout).
+   * Unlike selectWorkspace this never derives the channel from
+   * lastChannelByWorkspace — the URL already names one, and deriving would clobber
+   * it — but it does refresh that memory, so a later A→B→A switch still restores
+   * whatever the URL opened.
+   */
+  hydrateSelection: (workspaceId: string | null, channelId: string | null) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -71,12 +80,27 @@ export const useChatStore = create<ChatState>()(
             ? { channels: s.channels.map((c) => (c.channel_id === ch.channel_id ? { ...c, ...ch } : c)) }
             : { channels: [...s.channels, ch] }
         ),
+      hydrateSelection: (workspaceId, channelId) =>
+        set((s) => {
+          const map = { ...s.lastChannelByWorkspace };
+          if (workspaceId) {
+            if (channelId) map[workspaceId] = channelId;
+            else delete map[workspaceId];
+          }
+          return {
+            selectedWorkspaceId: workspaceId,
+            selectedChannelId: channelId,
+            lastChannelByWorkspace: map,
+          };
+        }),
     }),
     {
       name: "cheers.chat.selection",
       // Only the cross-session channel memory is persisted. Workspaces/channels are
-      // server data refetched on mount, and the live selection is derived on load
-      // (ChatLayout selects the personal workspace, which restores its last channel).
+      // server data refetched on mount, and the live selection is restored from the
+      // URL (/chat/:workspaceId/:channelId), which is its source of truth across
+      // reloads — persisting it here too would give a shared link two competing
+      // answers for what to open.
       partialize: (s) => ({ lastChannelByWorkspace: s.lastChannelByWorkspace }),
     }
   )
