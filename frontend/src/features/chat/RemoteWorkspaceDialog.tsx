@@ -178,6 +178,7 @@ export function RemoteWorkspaceDialog({
   onClose,
   initialBotId,
   initialPath,
+  initialLine,
   sessionId,
   workspaceTick,
   workspaceSignal,
@@ -190,6 +191,10 @@ export function RemoteWorkspaceDialog({
   onClose: () => void;
   initialBotId?: string;
   initialPath?: string;
+  /** 1-based line anchor for the deep-linked `initialPath` (a locator `#L<n>`) — the
+   *  editor selects and centers it. Applies only to that file, never to files the
+   *  user opens by browsing. */
+  initialLine?: number;
   /** Scope the browse to a session's root set (`cwd` + additionalDirectories). */
   sessionId?: string;
   /** Broadcast the caller's own workspace focus (bot + path) so peers see it; `null`
@@ -1873,6 +1878,9 @@ export function RemoteWorkspaceDialog({
                         }}
                         path={file.filename}
                         className="w-full h-full"
+                        // locator line anchor: only for the deep-linked file, not files
+                        // the user browses to afterwards
+                        scrollToLine={file.path === initialPath ? initialLine : undefined}
                       />
                     </Suspense>
                   ) : isImage ? (

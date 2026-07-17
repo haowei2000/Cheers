@@ -19,6 +19,7 @@ export function SandboxRenderer({
   rendererId,
   path,
   readChannel,
+  onOpen,
 }: {
   fs: FsClient;
   plugin: PluginMeta;
@@ -26,6 +27,10 @@ export function SandboxRenderer({
   path: string;
   // host API: a whitelisted, channel-scoped reader for channel.* verbs (info/members/…)
   readChannel: (resource: string, params: Record<string, unknown>) => Promise<unknown>;
+  /** host API: navigate the USER's view to a `cheers:` locator (cheers:open). Pure UI
+   *  routing — the host parses/validates the locator and every read behind the jump
+   *  still passes the existing authz; the plugin gains no data access from this. */
+  onOpen?: (uri: string) => void;
 }) {
   const [bundle, setBundle] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -80,6 +85,7 @@ export function SandboxRenderer({
         reqId?: number;
         resource?: string;
         params?: Record<string, unknown>;
+        uri?: string;
       };
       if (!m || typeof m !== "object") return;
       if (m.type === "cheers:ready") {
@@ -95,6 +101,13 @@ export function SandboxRenderer({
               "*"
             )
           );
+      } else if (m.type === "cheers:open") {
+        // host API: navigate the user's view to a cheers: locator. Shape-gated here
+        // (string, scheme prefix, sane length); the handler parses strictly and shows
+        // a clear error for anything unresolvable. No-op when the host didn't wire a
+        // handler — pre-existing plugins may send this before every surface supports it.
+        const uri = typeof m.uri === "string" ? m.uri.trim() : "";
+        if (onOpen && uri.startsWith("cheers:") && uri.length <= 2048) onOpen(uri);
       } else if (m.type === "cheers:unsupported") {
         // the renderer inspected the content and can't render it (its final judgment)
         setUnsupported(typeof m.reason === "string" ? m.reason : "");
@@ -117,7 +130,7 @@ export function SandboxRenderer({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [fs, plugin.plugin_id, rendererId, path, readChannel]);
+  }, [fs, plugin.plugin_id, rendererId, path, readChannel, onOpen]);
 
   if (err) return <div className="p-3 text-amber-400 text-xs">Failed to load renderer: {err}</div>;
   if (bundle === null) return <div className="p-3 text-zinc-400 text-xs">Loading renderer…</div>;
