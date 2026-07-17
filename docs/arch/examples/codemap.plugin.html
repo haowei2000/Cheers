@@ -1,0 +1,1153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Codemap renderer</title>
+<!-- 内嵌 manifest：host 上传时用 DOMParser 惰性解析，不执行（协议 1） -->
+<script type="application/json" id="cheers-plugin">
+{
+  "id": "codemap",
+  "protocol": 1,
+  "title": "Codemap",
+  "renderers": [
+    { "id": "map", "title": "代码地图",
+      "match": { "format": "yaml", "glob": "codemap/*.yaml", "dataHas": ["codemap", "nodes"] } }
+  ]
+}
+</script>
+<style>
+  /* 对齐 Cheers 设计 token（frontend/DESIGN.md，dark-only） */
+  :root {
+    color-scheme: dark;
+    --bg: #09090b; --card: #18181b; --field: #27272a; --hover: #3f3f46; --divider: #27272a;
+    --t-hi: #f4f4f5; --t-body: #d4d4d8; --t-mut: #a1a1aa; --t-icon: #71717a; --deco: #52525b;
+    --indigo: #4f46e5; --indigo-r: #6366f1; --indigo-tx: #a5b4fc; --indigo-lk: #818cf8;
+    --ok: #10b981; --warn: #fbbf24; --danger: #f87171;
+    font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--t-body); font-size: 13px; line-height: 1.5; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--indigo-r); }
+  input, textarea { font: inherit; color: var(--t-body); background: var(--bg); border: 0; border-radius: 6px; }
+  ::placeholder { color: var(--t-mut); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  .frame { height: 100vh; display: flex; flex-direction: column; }
+  .demo-banner {
+    display: none; padding: 4px 12px; font-size: 11px; color: var(--warn);
+    background: rgba(120, 53, 15, .35); border-bottom: 1px solid var(--divider);
+  }
+  .demo-banner.show { display: block; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-bottom: 1px solid var(--divider); flex-wrap: wrap;
+  }
+  .toolbar input[type="search"] { background: var(--field); padding: 4px 10px; width: 180px; border-radius: 8px; font-size: 12px; }
+  .btn-soft { background: var(--field); color: var(--t-body); border-radius: 8px; padding: 4px 10px; font-size: 12px; transition: background .15s; }
+  .btn-soft:hover { background: var(--hover); color: var(--t-hi); }
+  .btn-indigo { background: rgba(79,70,229,.15); color: #c7d2fe; border-radius: 8px; padding: 4px 10px; font-size: 12px; transition: background .15s; }
+  .btn-indigo:hover { background: rgba(79,70,229,.3); }
+  .btn-indigo:disabled, .btn-soft:disabled { opacity: .5; cursor: default; }
+  .legend { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--t-mut); flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.part { background: var(--t-mut); }
+  .live { margin-left: auto; font-size: 11px; color: var(--t-mut); display: flex; gap: 8px; align-items: center; }
+
+  .main { display: flex; min-height: 0; flex: 1; position: relative; }
+  .map-wrap { position: relative; flex: 1; overflow: hidden; min-height: 320px; }
+  svg.map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  svg.map.panning { cursor: grabbing; }
+
+  .hull { fill: rgba(24, 24, 27, .7); }
+  .hull-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; fill: var(--t-mut); text-transform: uppercase; }
+  .hull-sub { font-size: 10px; fill: var(--t-mut); }
+  .edge { fill: none; stroke: var(--deco); stroke-width: 1.5; }
+  .edge.data { stroke-dasharray: 4 4; }
+  .edge.hi { stroke: var(--indigo-lk); stroke-width: 2; }
+  .edge.dim, .nodeg.dim, .fileg.dim { opacity: .15; }
+  .nodeg { cursor: pointer; }
+  .node-rect { fill: var(--field); transition: fill .15s; }
+  .nodeg:hover .node-rect { fill: var(--hover); }
+  .nodeg.sel .node-rect { stroke: var(--indigo-r); stroke-width: 2; }
+  .node-label { font-size: 12.5px; font-weight: 600; fill: var(--t-hi); }
+  .node-files { font-size: 10px; fill: var(--t-mut); }
+  .focus-ring { fill: none; stroke: var(--indigo-r); stroke-width: 2; animation: fring 1.6s infinite; }
+  @keyframes fring { 0%,100% { opacity: .9 } 50% { opacity: .25 } }
+  .focus-tag { font-size: 10px; fill: var(--indigo-tx); }
+  .fileg { cursor: pointer; }
+  .file-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; fill: var(--t-mut); }
+  .file-line { font-family: ui-monospace, Menlo, monospace; font-size: 9px; fill: var(--t-icon); }
+  .flink { stroke: #3f3f46; stroke-width: 1; fill: none; }
+
+  .maphint {
+    position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    font-size: 11px; color: var(--t-mut); background: rgba(24,24,27,.85);
+    padding: 3px 10px; border-radius: 999px; pointer-events: none; max-width: 92%; text-align: center;
+  }
+  .hovercard {
+    position: absolute; display: none; width: max-content; max-width: 280px;
+    background: var(--card); border-radius: 10px; padding: 9px 11px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.55); pointer-events: none; z-index: 20;
+    font-size: 12px; line-height: 1.5;
+  }
+  .hovercard .hc-h { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--t-hi); font-size: 12.5px; }
+  .hovercard .hc-st { font-size: 10px; border-radius: 999px; padding: 0 7px; background: var(--field); color: var(--t-mut); }
+  .hovercard .hc-sum { color: var(--t-body); margin-top: 4px; }
+  .hovercard .hc-loc { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--indigo-lk); margin-top: 5px; word-break: break-all; }
+  .hovercard .hc-hint { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider); font-size: 10px; color: var(--t-mut); }
+
+  .zoomctl {
+    position: absolute; left: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px;
+    background: var(--card); border-radius: 10px; padding: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  }
+  .zoomctl button { width: 28px; height: 26px; border-radius: 7px; color: var(--t-body); font-size: 14px; }
+  .zoomctl button:hover { background: var(--hover); color: var(--t-hi); }
+  .minimap {
+    position: absolute; right: 10px; bottom: 10px; width: 140px; height: 90px;
+    background: var(--card); border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+    overflow: hidden; cursor: pointer;
+  }
+  .minimap svg { width: 100%; height: 100%; display: block; }
+  .mm-node { fill: var(--t-icon); }
+  .mm-node.ok { fill: var(--ok); } .mm-node.warn { fill: var(--warn); }
+  .mm-view { fill: rgba(99,102,241,.12); stroke: var(--indigo-r); stroke-width: 1; }
+
+  /* 详情抽屉（点节点打开；编辑写回 map.yaml） */
+  .drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 85%);
+    background: var(--card); border-left: 1px solid var(--divider);
+    transform: translateX(105%); transition: transform .18s ease-out;
+    overflow-y: auto; z-index: 30; box-shadow: -6px 0 24px rgba(0,0,0,.4);
+  }
+  .drawer.open { transform: none; }
+  .d-sec { padding: 11px 13px; border-bottom: 1px solid var(--divider); }
+  .drawer h2 { font-size: 14px; font-weight: 600; color: var(--t-hi); display: flex; align-items: center; gap: 8px; }
+  .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; background: var(--field); color: var(--t-mut); border-radius: 999px; padding: 1px 8px; }
+  .d-close { margin-left: auto; color: var(--t-mut); border-radius: 6px; padding: 0 7px; font-size: 14px; }
+  .d-close:hover { background: var(--field); color: var(--t-hi); }
+  .slabel { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--t-mut); margin-bottom: 6px; }
+  .status-seg { display: flex; background: var(--field); border-radius: 8px; padding: 2px; gap: 2px; }
+  .status-seg button { flex: 1; border-radius: 6px; font-size: 11px; padding: 3px 0; color: var(--t-mut); display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .status-seg button.on { background: var(--bg); color: var(--t-hi); }
+  .loc-box { background: var(--bg); border-radius: 8px; padding: 7px 9px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--indigo-lk); word-break: break-all; line-height: 1.45; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .hint { font-size: 11px; color: var(--t-mut); margin-top: 6px; }
+  textarea.sum-edit { width: 100%; background: var(--bg); border-radius: 8px; padding: 8px 9px; font-size: 12px; resize: vertical; min-height: 60px; line-height: 1.5; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { background: var(--field); border-radius: 999px; padding: 1px 9px; font-size: 11px; color: var(--t-body); }
+  .stale-note { margin-top: 8px; font-size: 11px; color: var(--warn); background: rgba(120,53,15,.4); border-radius: 8px; padding: 6px 9px; }
+  .edge-item { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .edge-item:hover { background: rgba(63,63,70,.5); }
+  .edge-item .dir { color: var(--t-icon); font-family: ui-monospace, Menlo, monospace; }
+  .edge-item .ek { margin-left: auto; font-size: 10px; color: var(--t-mut); }
+
+  .statusbar {
+    display: flex; align-items: center; gap: 12px; padding: 6px 12px;
+    border-top: 1px solid var(--divider); font-size: 11px; color: var(--t-mut); flex-wrap: wrap;
+  }
+  .budget { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+  .budget .track { width: 80px; height: 4px; border-radius: 999px; background: var(--field); overflow: hidden; }
+  .budget .fill { height: 100%; background: var(--indigo-r); border-radius: 999px; }
+
+  /* 空文件：初始化引导 */
+  .empty {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px; text-align: center; padding: 24px; z-index: 40; background: var(--bg);
+  }
+  .empty.show { display: flex; }
+  .empty .t { font-size: 15px; font-weight: 600; color: var(--t-hi); }
+  .empty .d { font-size: 12px; color: var(--t-mut); max-width: 420px; }
+
+  .toasts { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center; }
+  .toast { background: var(--field); color: var(--t-body); border-radius: 10px; padding: 7px 13px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.5); max-width: 90%; animation: rise .18s ease-out; }
+  .toast b { color: var(--t-hi); }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="demo-banner" id="demoBanner">预览模式（standalone demo）：未连接工作台 host，展示样例数据；保存只改本地。拖进工作台抽屉即可渲染真实的 codemap/map.yaml。</div>
+
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="搜索模块 / 文件…" aria-label="搜索节点" />
+    <button class="btn-soft" id="expandAll">展开文件</button>
+    <button class="btn-soft" id="collapseAll">收起文件</button>
+    <span class="legend">
+      <span><span class="dot ok"></span> 已探明</span>
+      <span><span class="dot part"></span> 部分</span>
+      <span><span class="dot warn"></span> 待核对</span>
+    </span>
+    <span class="live"><span id="updated">—</span></span>
+  </div>
+
+  <div class="main">
+    <div class="map-wrap" id="mapWrap">
+      <svg class="map" id="map" role="application" aria-label="代码地图画布">
+        <defs>
+          <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1" fill="#1c1c1f"></circle>
+          </pattern>
+          <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0.5 L7.5,4 L0,7.5" fill="none" stroke="#52525b" stroke-width="1.4"/>
+          </marker>
+          <marker id="arrHi" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0.5 L7.5,4 L0,7.5" fill="none" stroke="#818cf8" stroke-width="1.6"/>
+          </marker>
+        </defs>
+        <rect x="0" y="0" width="100%" height="100%" fill="url(#grid)"></rect>
+        <g id="world"></g>
+      </svg>
+      <div class="maphint">hover 看摘要 · 点击节点看详情/编辑 · ▸N 角标展开文件 · 拖拽平移/整理 · 滚轮缩放</div>
+      <div class="hovercard" id="hovercard" aria-hidden="true"></div>
+      <div class="zoomctl">
+        <button id="zin" aria-label="放大">＋</button>
+        <button id="zout" aria-label="缩小">－</button>
+        <button id="zfit" aria-label="适应画布" title="适应画布">⤢</button>
+      </div>
+      <div class="minimap" id="minimap" title="minimap：点击定位"><svg id="mmSvg"></svg></div>
+
+      <div class="empty" id="empty">
+        <div class="t">还没有地图</div>
+        <div class="d">这个文件是空的。初始化会写入一份带英文维护指南（注释形式）的 YAML 骨架——bot 下次 desk_read 这个文件时就知道怎么维护它。</div>
+        <button class="btn-indigo" id="initBtn">初始化 map.yaml</button>
+      </div>
+    </div>
+
+    <aside class="drawer" id="drawer" aria-label="节点详情"></aside>
+  </div>
+
+  <div class="statusbar">
+    <span id="counts">—</span>
+    <span id="schemaTag">codemap:1</span>
+    <span class="budget">
+      <span>体积</span>
+      <span class="track"><span class="fill" id="budgetFill" style="width:0%"></span></span>
+      <span id="budgetTxt">—</span>
+    </span>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+/* ═══════════════════ cheers-plugin-sdk v1（照 docs/arch/examples/cheers-plugin-sdk.js 内联） ═══════════════════ */
+function cheersPlugin(opts) {
+  var reqId = 0;
+  var pendingRes = {};
+  var pendingSave = null; // 单一在途 save：host 不关联 save（cheers:saved 无 reqId）
+  window.addEventListener("message", function (e) {
+    var m = e.data;
+    if (!m || typeof m !== "object") return;
+    if (m.type === "cheers:render") {
+      if (opts.onRender) opts.onRender(m);
+    } else if (m.type === "cheers:saved") {
+      var p = pendingSave;
+      pendingSave = null;
+      if (p) (m.ok ? p.resolve({ version: m.version }) : p.reject(new Error(m.error || "save failed")));
+    } else if (m.type === "cheers:resource:result") {
+      var r = pendingRes[m.reqId];
+      if (!r) return;
+      delete pendingRes[m.reqId];
+      (m.ok ? r.resolve(m.data) : r.reject(new Error(m.error || "resource error")));
+    }
+  });
+  var api = {
+    save: function (content) {
+      return new Promise(function (resolve, reject) {
+        if (pendingSave) { reject(new Error("save already in flight — await the previous save() first")); return; }
+        pendingSave = { resolve: resolve, reject: reject };
+        parent.postMessage({ type: "cheers:save", content: content }, "*");
+      });
+    },
+    resource: function (name, params) {
+      return new Promise(function (resolve, reject) {
+        var id = ++reqId;
+        pendingRes[id] = { resolve: resolve, reject: reject };
+        parent.postMessage({ type: "cheers:resource", reqId: id, resource: name, params: params || {} }, "*");
+      });
+    },
+    unsupported: function (reason) {
+      parent.postMessage({ type: "cheers:unsupported", reason: reason }, "*");
+    },
+  };
+  parent.postMessage({ type: "cheers:ready" }, "*");
+  return api;
+}
+
+/* ═══════════════════ 初始化骨架：内嵌给 AI 的英文维护指南（注释即提示词） ═══════════════════
+   为什么放文件里而不是 pin：pin 的文件体进每条 prompt（持续付费）；写在文件头的注释
+   只在 bot 真正 desk_read 这个文件时被读到——自描述数据，零 prompt 税，且所有写路径
+   （desk_edit / 内置 lens 的保注释写回 / 本渲染器的行级 patch）都保得住它。 */
+var INIT_SKELETON = [
+  "# =================================================================",
+  "# CODEMAP - an agent-maintained map of this repository.",
+  "# Humans see this file rendered as an interactive graph in the",
+  "# Workbench; you (the agent) are its maintainer. Keep it truthful.",
+  "#",
+  "# WHEN TO UPDATE (in the same turn as the work, not batched):",
+  "#   - explored new code       -> add or refine the nodes you touched",
+  "#   - changed code            -> update those summaries, or set",
+  "#                                status: stale if you didn't re-verify",
+  "#   - starting work somewhere -> put those node ids in `focus:`,",
+  "#                                and clear them when you move on",
+  "#",
+  "# SCHEMA (structure is the contract; comments are yours to use):",
+  "#   nodes:               # a MAP keyed by node id - never a list",
+  "#     <id>:              # dotted path: a.b.c is a child of a.b;",
+  "#                        # segment chars [a-z0-9_-] only, so file",
+  "#                        # names need '_' (fs.rs -> fs_rs), and the",
+  "#                        # real name goes in `label`",
+  "#       kind: area | module | file | symbol",
+  "#       label: short human-readable name",
+  "#       loc: cheers:ws/@<your-handle>/<repo-relative-path>#L<n>[-L<n>]",
+  "#       summary: what it does / what matters; <=200 chars; facts only",
+  "#       status: explored | partial | stale",
+  "#       tags: [optional, short]",
+  "#   edges:",
+  "#     - { from: <id>, to: <id>, kind: calls|data, label: short }",
+  "#",
+  "# HOW TO EDIT:",
+  "#   - append NEW nodes at the end of the file (desk_append) -",
+  "#     `nodes:` is intentionally the last top-level key",
+  "#   - change EXISTING nodes with desk_edit, replacing single lines;",
+  "#     each node's unique '  <id>:' line is your anchor - never",
+  "#     rewrite the whole file",
+  "#   - comments survive every write path; leave margin notes freely",
+  "#     (e.g. '# TODO: auth branch unverified')",
+  "#   - granularity: areas + modules always; files only when they",
+  "#     matter; symbols only for hot paths. Keep the file under 256 KB",
+  "#   - unsure? prefer `status: partial` over invented detail",
+  "# =================================================================",
+  "codemap: 1",
+  'repo: ""       # owner/name - fill in on your first write',
+  'updated: ""    # ISO-8601 - refresh on every write',
+  "focus: []",
+  "edges: []",
+  "nodes:",
+  "  # (empty - append your first node below, e.g.",
+  "  #   gateway:",
+  "  #     kind: area",
+  "  #     label: Gateway",
+  "  #     summary: ...",
+  "  #     status: partial )",
+  "",
+].join("\n");
+
+/* ═══════════════════ 受限 YAML 子集解析（本 schema 专用；沙箱不能外链库） ═══════════════════
+   支持：顶层标量 / 行内数组、nodes 两层 map、edges 的 `- { k: v, ... }` 行内对象、
+   注释、双引号标量。超出子集（锚点、多文档、块标量…）→ cheers:unsupported。 */
+function stripComment(s) {
+  // 去掉行尾 " #" 注释（引号内的 # 与 loc 里的 …#L64 不受影响：只认「空白+#」且不在引号内）
+  var inQ = false;
+  for (var i = 0; i < s.length; i++) {
+    var c = s[i];
+    if (c === '"') inQ = !inQ;
+    else if (c === "#" && !inQ && i > 0 && (s[i - 1] === " " || s[i - 1] === "\t")) return s.slice(0, i).replace(/[ \t]+$/, "");
+  }
+  return s;
+}
+function parseScalar(v) {
+  v = v.trim();
+  if (v === "" || v === "~" || v === "null") return null;
+  if (v === "{}") return {};
+  if (v === "[]") return [];
+  if (v[0] === '"') {
+    var out = "", i = 1;
+    for (; i < v.length; i++) {
+      if (v[i] === "\\") { out += v[i + 1]; i++; }
+      else if (v[i] === '"') break;
+      else out += v[i];
+    }
+    return out;
+  }
+  if (v[0] === "[") {
+    var inner = v.slice(1, v.lastIndexOf("]"));
+    if (!inner.trim()) return [];
+    return inner.split(",").map(function (x) { return parseScalar(x); });
+  }
+  if (v === "true") return true;
+  if (v === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+  return v; // 平文本（YAML 1.2：yes/no 是字符串——照规范）
+}
+function parseInlineObj(v) {
+  // - { from: a, to: b, kind: calls, label: sqlx }
+  var inner = v.trim().replace(/^\{/, "").replace(/\}$/, "");
+  var obj = {};
+  inner.split(",").forEach(function (pair) {
+    var ci = pair.indexOf(":");
+    if (ci < 0) return;
+    obj[pair.slice(0, ci).trim()] = parseScalar(pair.slice(ci + 1));
+  });
+  return obj;
+}
+function parseMapYaml(text) {
+  // return { data, error }
+  var doc = { };
+  var lines = text.split("\n");
+  var ctx = null;        // "nodes" | "edges" | null
+  var curNode = null;
+  for (var ln = 0; ln < lines.length; ln++) {
+    var raw = lines[ln];
+    if (/^\s*#/.test(raw) || !raw.trim()) continue;      // 整行注释/空行
+    if (/^---/.test(raw)) return { error: "multi-document YAML is outside the supported subset (line " + (ln + 1) + ")" };
+    var line = stripComment(raw);
+    if (!line.trim()) continue;
+    if (/[&*]\S/.test(line.trim()[0] || "")) return { error: "YAML anchors/aliases are outside the supported subset (line " + (ln + 1) + ")" };
+    var indent = line.match(/^ */)[0].length;
+
+    if (indent === 0) {
+      var ci = line.indexOf(":");
+      if (ci < 0) return { error: "expected `key:` at line " + (ln + 1) };
+      var key = line.slice(0, ci).trim();
+      var val = line.slice(ci + 1);
+      if (key === "nodes" && !val.trim()) { doc.nodes = {}; ctx = "nodes"; curNode = null; continue; }
+      if (key === "edges" && !val.trim()) { doc.edges = []; ctx = "edges"; continue; }
+      ctx = null; curNode = null;
+      doc[key] = parseScalar(val);
+      if (key === "nodes" && doc[key] && typeof doc[key] === "object") ctx = "nodes";
+      if (key === "edges" && Array.isArray(doc[key])) ctx = "edges";
+      continue;
+    }
+    if (ctx === "edges" && indent === 2 && line.trim()[0] === "-") {
+      doc.edges.push(parseInlineObj(line.trim().slice(1)));
+      continue;
+    }
+    if (ctx === "nodes" && indent === 2) {
+      var ci2 = line.indexOf(":");
+      if (ci2 < 0) return { error: "expected node id at line " + (ln + 1) };
+      var id = line.slice(0, ci2).trim();
+      var rest = line.slice(ci2 + 1).trim();
+      if (rest === "{}" || rest === "") { curNode = {}; }
+      else return { error: "node value must be a block map (line " + (ln + 1) + ")" };
+      if (!/^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/i.test(id)) return { error: "bad node id `" + id + "` (line " + (ln + 1) + ")" };
+      doc.nodes[id] = curNode;
+      continue;
+    }
+    if (ctx === "nodes" && curNode && indent >= 4) {
+      var ci3 = line.indexOf(":");
+      if (ci3 < 0) return { error: "expected `field:` at line " + (ln + 1) };
+      curNode[line.slice(0, ci3).trim()] = parseScalar(line.slice(ci3 + 1));
+      continue;
+    }
+    return { error: "unsupported structure at line " + (ln + 1) + ": " + line.trim().slice(0, 40) };
+  }
+  return { data: doc };
+}
+
+/* ═══════════════════ 行级 patch（保注释写回：只动目标行，其余字节原样） ═══════════════════ */
+function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function quoteIfNeeded(v) {
+  if (/[#:]|^\s|\s$|^["'&*[{]|^$/.test(v) || /^(yes|no|on|off|true|false|null|~)$/i.test(v) || /^-?\d/.test(v)) {
+    return '"' + v.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  }
+  return v;
+}
+function patchNodeField(text, id, field, value) {
+  var lines = text.split("\n");
+  var anchor = new RegExp("^  " + escRe(id) + ":\\s*(#.*)?$");
+  var start = -1;
+  for (var i = 0; i < lines.length; i++) if (anchor.test(stripComment(lines[i]) + "")) { start = i; break; }
+  if (start < 0) return null;
+  var fieldRe = new RegExp("^(    " + escRe(field) + ":)([^#]*)(#.*)?$");
+  for (var j = start + 1; j < lines.length; j++) {
+    var l = lines[j];
+    if (l.trim() && !/^\s*#/.test(l) && l.match(/^ */)[0].length < 4) break;   // 出块
+    var m = l.match(fieldRe);
+    if (m) {
+      var comment = m[3] ? " " + m[3].trim() : "";
+      lines[j] = m[1] + " " + quoteIfNeeded(value) + comment;
+      return lines.join("\n");
+    }
+  }
+  // 块内没有这个字段 → 插到 id 行后
+  lines.splice(start + 1, 0, "    " + field + ": " + quoteIfNeeded(value));
+  return lines.join("\n");
+}
+function patchTopField(text, field, value) {
+  var lines = text.split("\n");
+  var re = new RegExp("^(" + escRe(field) + ":)([^#]*)(#.*)?$");
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(re);
+    if (m) {
+      var comment = m[3] ? " " + m[3].trim() : "";
+      lines[i] = m[1] + " " + quoteIfNeeded(value) + comment;
+      return lines.join("\n");
+    }
+  }
+  return text;
+}
+
+/* ═══════════════════ 状态 ═══════════════════ */
+var STATUS_TXT = { explored: "已探明", partial: "部分", stale: "待核对" };
+var host = null;              // SDK 实例（standalone 时为 shim）
+var DEMO = false;
+var rawText = "";             // 当前文件全文（patch 的基底）
+var fileVersion = 0;
+var filePath = "codemap/map.yaml";
+var model = null;             // { meta, nodes: {id -> node}, edges: [] }
+var selected = null;
+var expanded = {};            // id -> bool（会话内）
+var dragPos = {};             // id -> {x,y} 会话内版面微调（configs 通道落地前不持久化）
+var view = { k: 1, tx: 0, ty: 0 };
+var fitted = false;
+var saveBusy = false;
+
+/* ═══════════════════ 模型构建与确定性布局 ═══════════════════ */
+function buildModel(doc) {
+  var nodes = doc.nodes || {};
+  var ids = Object.keys(nodes);
+  var m = { meta: doc, nodes: {}, edges: Array.isArray(doc.edges) ? doc.edges : [], areas: [], modules: [], childrenOf: {} };
+  ids.forEach(function (id) {
+    var n = Object.assign({ id: id }, nodes[id]);
+    n.kind = n.kind || "module";
+    n.status = ["explored", "partial", "stale"].indexOf(n.status) >= 0 ? n.status : "partial";
+    n.label = n.label != null ? String(n.label) : id.split(".").pop();
+    n.summary = n.summary != null ? String(n.summary) : "";
+    n.tags = Array.isArray(n.tags) ? n.tags : [];
+    m.nodes[id] = n;
+  });
+  ids.forEach(function (id) {
+    var seg = id.split(".");
+    var parent = seg.slice(0, -1).join(".");
+    if (parent && m.nodes[parent]) (m.childrenOf[parent] = m.childrenOf[parent] || []).push(id);
+  });
+  Object.values(m.nodes).forEach(function (n) {
+    if (n.kind === "area") m.areas.push(n.id);
+    else if (n.kind === "module" || !n.id.includes(".")) {
+      // 顶层无 area 声明的节点也当模块画
+      if (n.kind !== "file" && n.kind !== "symbol") m.modules.push(n.id);
+    } else if (n.kind === "module") m.modules.push(n.id);
+  });
+  // 卫星 = 模块的 file/symbol 子节点
+  m.satsOf = {};
+  m.modules.forEach(function (mid) {
+    m.satsOf[mid] = (m.childrenOf[mid] || []).filter(function (cid) {
+      var k = m.nodes[cid].kind;
+      return k === "file" || k === "symbol";
+    });
+  });
+  return m;
+}
+function areaOf(id) { return id.split(".")[0]; }
+function layout(m) {
+  // 确定性打包布局：每个区域一个「块」（模块按 id 纵排，>5 个换双列），块按首次
+  // 出现顺序从左到右流式排布、超过目标行宽换行——目标行宽随总量自适应，让整体
+  // 逼近合理宽高比。之前的「一区一列」在多区域扁平地图上会摊成一字长蛇。
+  var order = [], byArea = {};
+  m.modules.forEach(function (id) {
+    var a = areaOf(id);
+    if (!byArea[a]) { byArea[a] = []; order.push(a); }
+    byArea[a].push(id);
+  });
+  var blocks = order.map(function (a) {
+    var ids = byArea[a].slice().sort();
+    var cols = ids.length > 5 ? 2 : 1;
+    var rows = Math.ceil(ids.length / cols);
+    var maxW = 0;
+    ids.forEach(function (id) { maxW = Math.max(maxW, nodeW(m.nodes[id])); });
+    // 展开了卫星的块要占更高的行，免得下一行 hull 压到卫星标签
+    var hasOpenSats = ids.some(function (id) { return expanded[id] && (m.satsOf[id] || []).length; });
+    return {
+      a: a, ids: ids, cols: cols, colW: maxW + 36, maxW: maxW,
+      w: cols * (maxW + 36) + 24,
+      h: rows * 92 + 60 + (hasOpenSats ? 118 : 0),
+    };
+  });
+  var totalW = 0;
+  blocks.forEach(function (b) { totalW += b.w + 70; });
+  var target = Math.max(760, Math.min(1500, Math.sqrt(totalW * 340)));
+  var pos = {}, x = 0, y = 0, rowH = 0;
+  blocks.forEach(function (b) {
+    if (x > 0 && x + b.w > target) { x = 0; y += rowH + 88; rowH = 0; }
+    b.ids.forEach(function (id, i) {
+      var c = i % b.cols, r = Math.floor(i / b.cols);
+      pos[id] = { x: x + 18 + c * b.colW + b.maxW / 2, y: y + 46 + r * 92 };
+    });
+    x += b.w + 70;
+    rowH = Math.max(rowH, b.h);
+  });
+  Object.keys(dragPos).forEach(function (id) { if (pos[id]) pos[id] = dragPos[id]; });
+  return { pos: pos, cols: order };
+}
+
+/* ═══════════════════ 几何 ═══════════════════ */
+var NODE_H = 32;
+function nodeW(n) {
+  var w = 0;
+  for (var i = 0; i < n.label.length; i++) w += n.label.charCodeAt(i) > 255 ? 12.5 : 7.2;
+  var sats = (model.satsOf[n.id] || []).length;
+  return Math.max(86, w + 52 + (sats ? 26 : 0));
+}
+function nodeRect(n, p) { var w = nodeW(n); return { x: p.x - w / 2, y: p.y - NODE_H / 2, w: w, h: NODE_H }; }
+function borderPoint(n, p, tx, ty) {
+  var r = nodeRect(n, p), dx = tx - p.x, dy = ty - p.y;
+  if (!dx && !dy) return { x: p.x, y: p.y };
+  var sx = (r.w / 2 + 4) / Math.abs(dx || 1e-9), sy = (r.h / 2 + 4) / Math.abs(dy || 1e-9);
+  var s = Math.min(sx, sy);
+  return { x: p.x + dx * s, y: p.y + dy * s };
+}
+function satAnchor(p, i, total) {
+  var spread = Math.min(170, 52 * Math.max(1, total - 1) + 20);
+  var a = Math.PI / 2 + (total === 1 ? 0 : (i / (total - 1) - 0.5) * (spread / 100));
+  return { x: p.x + Math.cos(a) * 168, y: p.y + Math.sin(a) * 80 };
+}
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+
+/* ═══════════════════ 渲染 ═══════════════════ */
+var world = document.getElementById("world");
+var mapEl = document.getElementById("map");
+var wrap = document.getElementById("mapWrap");
+var L = null; // 当前 layout
+function dotColor(s) { return s === "explored" ? "var(--ok)" : s === "stale" ? "var(--warn)" : "var(--t-mut)"; }
+function dotCls(s) { return s === "explored" ? "ok" : s === "stale" ? "warn" : "part"; }
+function matches(n, s) {
+  if (!s) return true;
+  if (n.label.toLowerCase().includes(s) || (n.summary || "").toLowerCase().includes(s)) return true;
+  return (model.satsOf[n.id] || []).some(function (cid) { return model.nodes[cid].label.toLowerCase().includes(s); });
+}
+function render() {
+  hideHoverCard();
+  if (!model) return;
+  L = layout(model);
+  var s = document.getElementById("q").value.trim().toLowerCase();
+  var html = "";
+  var focus = Array.isArray(model.meta.focus) ? model.meta.focus : [];
+
+  // 区域 hull
+  L.cols.forEach(function (a) {
+    var mem = model.modules.filter(function (id) { return areaOf(id) === a; });
+    if (!mem.length) return;
+    var x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+    mem.forEach(function (id) {
+      var r = nodeRect(model.nodes[id], L.pos[id]);
+      x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y);
+      x2 = Math.max(x2, r.x + r.w); y2 = Math.max(y2, r.y + r.h);
+      if (expanded[id]) (model.satsOf[id] || []).forEach(function (cid, i) {
+        var p = satAnchor(L.pos[id], i, model.satsOf[id].length);
+        x1 = Math.min(x1, p.x - 10); y1 = Math.min(y1, p.y - 10);
+        x2 = Math.max(x2, p.x + 120); y2 = Math.max(y2, p.y + 14);
+      });
+    });
+    var areaNode = model.nodes[a];
+    var label = areaNode && areaNode.kind === "area" ? areaNode.label : a;
+    var sub = areaNode && areaNode.summary ? areaNode.summary : "";
+    html += '<rect class="hull" x="' + (x1 - 26) + '" y="' + (y1 - 46) + '" width="' + (x2 - x1 + 52) + '" height="' + (y2 - y1 + 72) + '" rx="16"></rect>' +
+      '<text class="hull-label" x="' + (x1 - 10) + '" y="' + (y1 - 26) + '">' + esc(label) + "</text>" +
+      (sub ? '<text class="hull-sub" x="' + (x1 - 10) + '" y="' + (y1 - 12) + '">' + esc(sub.slice(0, 40)) + "</text>" : "");
+  });
+
+  // 边
+  model.edges.forEach(function (e, i) {
+    var a = model.nodes[e.from], b = model.nodes[e.to];
+    if (!a || !b || !L.pos[e.from] || !L.pos[e.to]) return;
+    var dim = !matches(a, s) || !matches(b, s);
+    var p1 = borderPoint(a, L.pos[e.from], L.pos[e.to].x, L.pos[e.to].y);
+    var p2 = borderPoint(b, L.pos[e.to], L.pos[e.from].x, L.pos[e.from].y);
+    var mx = (p1.x + p2.x) / 2;
+    html += '<path class="edge ' + (e.kind === "data" ? "data" : "") + (dim ? " dim" : "") + '" data-edge="' + i + '" d="M' + p1.x + "," + p1.y + " C" + mx + "," + p1.y + " " + mx + "," + p2.y + " " + p2.x + "," + p2.y + '" marker-end="url(#arr)"></path>';
+  });
+
+  // 卫星（file/symbol 子节点）
+  model.modules.forEach(function (id) {
+    if (!expanded[id]) return;
+    var dim = !matches(model.nodes[id], s);
+    (model.satsOf[id] || []).forEach(function (cid, i) {
+      var f = model.nodes[cid];
+      var p = satAnchor(L.pos[id], i, model.satsOf[id].length);
+      var from = borderPoint(model.nodes[id], L.pos[id], p.x, p.y);
+      var lineTag = f.loc && /#L\d+/.test(f.loc) ? f.loc.match(/#(L[\d-L]*\d)/)[1] : "";
+      html += '<g class="fileg' + (dim ? " dim" : "") + '" data-file="' + esc(cid) + '">' +
+        '<path class="flink" d="M' + from.x + "," + from.y + " L" + (p.x - 8) + "," + p.y + '"></path>' +
+        '<circle cx="' + p.x + '" cy="' + p.y + '" r="5" fill="' + dotColor(f.status) + '"></circle>' +
+        '<text class="file-label" x="' + (p.x + 10) + '" y="' + (p.y + 3.5) + '">' + esc(f.label) + "</text>" +
+        (lineTag ? '<text class="file-line" x="' + (p.x + 10) + '" y="' + (p.y + 15) + '">' + esc(lineTag) + "</text>" : "") +
+        "</g>";
+    });
+  });
+
+  // 模块节点
+  model.modules.forEach(function (id) {
+    var n = model.nodes[id];
+    var p = L.pos[id];
+    var r = nodeRect(n, p);
+    var dim = !matches(n, s);
+    var isFocus = focus.indexOf(id) >= 0;
+    var sats = (model.satsOf[id] || []).length;
+    html += '<g class="nodeg' + (selected === id ? " sel" : "") + (dim ? " dim" : "") + '" data-node="' + esc(id) + '">' +
+      (isFocus ? '<rect class="focus-ring" x="' + (r.x - 5) + '" y="' + (r.y - 5) + '" width="' + (r.w + 10) + '" height="' + (r.h + 10) + '" rx="12"></rect>' +
+        '<text class="focus-tag" x="' + (r.x + 2) + '" y="' + (r.y - 11) + '">⚡ agent 正在这里</text>' : "") +
+      '<rect class="node-rect" x="' + r.x + '" y="' + r.y + '" width="' + r.w + '" height="' + r.h + '" rx="8"></rect>' +
+      '<circle cx="' + (r.x + 15) + '" cy="' + p.y + '" r="4.5" fill="' + dotColor(n.status) + '"></circle>' +
+      '<text class="node-label" x="' + (r.x + 27) + '" y="' + (p.y + 4.5) + '">' + esc(n.label) + "</text>" +
+      (sats ? '<g data-role="expander"><rect x="' + (r.x + r.w - 30) + '" y="' + (r.y + 5) + '" width="26" height="' + (r.h - 10) + '" rx="5" fill="none" pointer-events="all"></rect>' +
+        '<text class="node-files" x="' + (r.x + r.w - 26) + '" y="' + (p.y + 4) + '">' + (expanded[id] ? "▾" : "▸") + sats + "</text></g>" : "") +
+      "</g>";
+  });
+
+  world.innerHTML = html;
+  world.setAttribute("transform", "translate(" + view.tx + "," + view.ty + ") scale(" + view.k + ")");
+
+  world.querySelectorAll(".edge").forEach(function (pEl) {
+    var e = model.edges[+pEl.dataset.edge];
+    pEl.addEventListener("mouseenter", function () {
+      pEl.classList.add("hi"); pEl.setAttribute("marker-end", "url(#arrHi)");
+      var a = model.nodes[e.from], b = model.nodes[e.to];
+      showTip(a.label + " → " + b.label + " · " + (e.kind === "data" ? "数据" : "调用") + (e.label ? " · " + e.label : ""),
+        ((L.pos[e.from].x + L.pos[e.to].x) / 2) * view.k + view.tx,
+        (Math.min(L.pos[e.from].y, L.pos[e.to].y) - 26) * view.k + view.ty);
+    });
+    pEl.addEventListener("mouseleave", function () { pEl.classList.remove("hi"); pEl.setAttribute("marker-end", "url(#arr)"); hideTip(); });
+  });
+
+  updateChrome();
+  drawMinimap();
+}
+function updateChrome() {
+  var staleN = Object.values(model.nodes).filter(function (n) { return n.status === "stale"; }).length;
+  document.getElementById("counts").textContent =
+    model.modules.length + " 模块 · " + model.edges.length + " 边" + (staleN ? " · " + staleN + " 待核对" : "");
+  var bytes = new Blob([rawText]).size;
+  var pct = Math.min(100, bytes / (256 * 1024) * 100);
+  document.getElementById("budgetFill").style.width = pct.toFixed(1) + "%";
+  document.getElementById("budgetTxt").textContent = (bytes / 1024).toFixed(1) + " KB / 256 KB";
+  var up = model.meta.updated ? String(model.meta.updated) : "";
+  document.getElementById("updated").textContent =
+    (up ? "更新于 " + up : "尚无更新时间") + " · v" + fileVersion + (DEMO ? " · demo" : "");
+}
+
+/* tooltip / hovercard */
+var tipEl = null;
+function showTip(text, x, y) {
+  hideTip();
+  tipEl = document.createElement("div");
+  tipEl.style.cssText = "position:absolute;left:" + x + "px;top:" + Math.max(4, y) + "px;transform:translateX(-50%);pointer-events:none;font-size:11px;background:var(--field);border-radius:6px;padding:2px 8px;box-shadow:0 2px 8px rgba(0,0,0,.5);white-space:nowrap;z-index:10";
+  tipEl.textContent = text;
+  wrap.appendChild(tipEl);
+}
+function hideTip() { if (tipEl) { tipEl.remove(); tipEl = null; } }
+var hovercard = document.getElementById("hovercard");
+var hoverEl = null;
+function hideHoverCard() { hoverEl = null; hovercard.style.display = "none"; }
+function showHoverCard(el) {
+  var id = el.dataset.node || el.dataset.file;
+  var n = model.nodes[id];
+  if (!n) return;
+  var sats = (model.satsOf[id] || []).length;
+  hovercard.innerHTML =
+    '<div class="hc-h"><span class="dot ' + dotCls(n.status) + '"></span>' + esc(n.label) +
+    '<span class="hc-st">' + STATUS_TXT[n.status] + "</span></div>" +
+    (n.summary ? '<div class="hc-sum">' + esc(n.summary) + "</div>" : "") +
+    (n.loc ? '<div class="hc-loc">' + esc(String(n.loc).replace("cheers:ws/", "")) + "</div>" : "") +
+    '<div class="hc-hint">点击查看详情/编辑' + (sats ? " · ▸" + sats + " 展开文件" : "") + " · 拖动整理版面</div>";
+  hovercard.style.display = "block";
+  var r = el.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  var cw = hovercard.offsetWidth, ch = hovercard.offsetHeight;
+  var x = Math.max(8, Math.min(r.x - wr.x + r.width / 2 - cw / 2, wr.width - cw - 8));
+  var y = r.y - wr.y - ch - 10;
+  if (y < 8) y = r.y - wr.y + r.height + 10;
+  hovercard.style.left = x + "px";
+  hovercard.style.top = y + "px";
+}
+mapEl.addEventListener("mouseover", function (e) {
+  if (gesture) return;
+  var g = e.target.closest("[data-node],[data-file]");
+  if (g && g !== hoverEl) { hoverEl = g; showHoverCard(g); }
+});
+mapEl.addEventListener("mouseout", function (e) {
+  if (!hoverEl) return;
+  var to = e.relatedTarget;
+  if (!to || !(to.closest && to.closest("[data-node],[data-file]") === hoverEl)) hideHoverCard();
+});
+
+/* ═══════════════════ minimap / 视图 ═══════════════════ */
+function worldBounds() {
+  // 布局永远跟当前 model 重算：fit() 可能在 model 被替换后、render() 之前被调用，
+  // 一个过期的 L 里没有新节点的坐标（读 undefined.x 会把整次渲染炸掉）。layout()
+  // 对几十个节点是纯算术，重算的代价可以忽略。
+  L = layout(model);
+  var x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+  model.modules.forEach(function (id) {
+    var r = nodeRect(model.nodes[id], L.pos[id]);
+    x1 = Math.min(x1, r.x - 40); y1 = Math.min(y1, r.y - 60);
+    x2 = Math.max(x2, r.x + r.w + 40); y2 = Math.max(y2, r.y + r.h + 60);
+  });
+  if (x1 > x2) { x1 = 0; y1 = 0; x2 = 800; y2 = 500; }
+  return { x1: x1, y1: y1, x2: x2, y2: y2 };
+}
+function drawMinimap() {
+  if (!model || !L) return;
+  var b = worldBounds();
+  var mm = document.getElementById("mmSvg");
+  var W = 140, H = 90;
+  var k = Math.min(W / (b.x2 - b.x1), H / (b.y2 - b.y1)) * 0.92;
+  var ox = (W - (b.x2 - b.x1) * k) / 2 - b.x1 * k;
+  var oy = (H - (b.y2 - b.y1) * k) / 2 - b.y1 * k;
+  var html = "";
+  model.modules.forEach(function (id) {
+    var n = model.nodes[id];
+    var r = nodeRect(n, L.pos[id]);
+    html += '<rect class="mm-node ' + (n.status === "explored" ? "ok" : n.status === "stale" ? "warn" : "") + '" x="' + (r.x * k + ox) + '" y="' + (r.y * k + oy) + '" width="' + Math.max(4, r.w * k) + '" height="' + Math.max(2.5, r.h * k) + '" rx="1.5"></rect>';
+  });
+  var vw = wrap.clientWidth, vh = wrap.clientHeight;
+  var wx1 = -view.tx / view.k, wy1 = -view.ty / view.k;
+  var wx2 = (vw - view.tx) / view.k, wy2 = (vh - view.ty) / view.k;
+  html += '<rect class="mm-view" x="' + (wx1 * k + ox) + '" y="' + (wy1 * k + oy) + '" width="' + ((wx2 - wx1) * k) + '" height="' + ((wy2 - wy1) * k) + '" rx="2"></rect>';
+  mm.innerHTML = html;
+  mm._map = { k: k, ox: ox, oy: oy };
+}
+document.getElementById("minimap").addEventListener("pointerdown", function (e) {
+  var mm = document.getElementById("mmSvg");
+  if (!mm._map) return;
+  var r = mm.getBoundingClientRect();
+  centerOn((e.clientX - r.left - mm._map.ox) / mm._map.k, (e.clientY - r.top - mm._map.oy) / mm._map.k, false);
+});
+function centerOn(wx, wy, animate) {
+  var target = { k: view.k, tx: wrap.clientWidth / 2 - wx * view.k, ty: wrap.clientHeight / 2 - wy * view.k };
+  if (animate === false) { view = target; render(); return; }
+  var from = { k: view.k, tx: view.tx, ty: view.ty };
+  var t0 = performance.now();
+  (function step(t) {
+    var p = Math.min(1, (t - t0) / 260), e2 = 1 - Math.pow(1 - p, 3);
+    view = { k: from.k + (target.k - from.k) * e2, tx: from.tx + (target.tx - from.tx) * e2, ty: from.ty + (target.ty - from.ty) * e2 };
+    render();
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
+function fit() {
+  var b = worldBounds();
+  var k = Math.min(wrap.clientWidth / (b.x2 - b.x1), wrap.clientHeight / (b.y2 - b.y1), 1.4) * 0.96;
+  // 给左下角缩放控件让位，但只在有横向富余时让——别把右边挤出画面
+  var slack = Math.max(0, (wrap.clientWidth - (b.x2 - b.x1) * k) / 2);
+  view = {
+    k: k,
+    tx: (wrap.clientWidth - (b.x2 - b.x1) * k) / 2 - b.x1 * k + Math.min(36, slack),
+    ty: (wrap.clientHeight - (b.y2 - b.y1) * k) / 2 - b.y1 * k,
+  };
+  render();
+}
+function zoomAt(factor, cx, cy) {
+  var k2 = Math.min(2.6, Math.max(0.3, view.k * factor));
+  view.tx = cx - (cx - view.tx) * (k2 / view.k);
+  view.ty = cy - (cy - view.ty) * (k2 / view.k);
+  view.k = k2;
+  render();
+}
+mapEl.addEventListener("wheel", function (e) {
+  e.preventDefault();
+  var r = mapEl.getBoundingClientRect();
+  zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+document.getElementById("zin").addEventListener("click", function () { zoomAt(1.25, wrap.clientWidth / 2, wrap.clientHeight / 2); });
+document.getElementById("zout").addEventListener("click", function () { zoomAt(0.8, wrap.clientWidth / 2, wrap.clientHeight / 2); });
+document.getElementById("zfit").addEventListener("click", fit);
+
+/* ═══════════════════ 指针交互：平移 / 拖节点 / 点击 ═══════════════════ */
+var gesture = null;
+mapEl.addEventListener("pointerdown", function (e) {
+  var nodeEl = e.target.closest("[data-node]");
+  var fileEl = e.target.closest("[data-file]");
+  mapEl.setPointerCapture(e.pointerId);
+  hideHoverCard();
+  if (nodeEl) {
+    var id = nodeEl.dataset.node;
+    gesture = { mode: "node", id: id, startX: e.clientX, startY: e.clientY, orig: { x: L.pos[id].x, y: L.pos[id].y }, moved: false, expander: !!e.target.closest('[data-role="expander"]') };
+  } else if (fileEl) {
+    gesture = { mode: "file", id: fileEl.dataset.file, startX: e.clientX, startY: e.clientY, moved: false };
+  } else {
+    gesture = { mode: "pan", startX: e.clientX, startY: e.clientY, orig: { tx: view.tx, ty: view.ty }, moved: false };
+    mapEl.classList.add("panning");
+  }
+});
+mapEl.addEventListener("pointermove", function (e) {
+  if (!gesture) return;
+  var dx = e.clientX - gesture.startX, dy = e.clientY - gesture.startY;
+  if (Math.abs(dx) + Math.abs(dy) > 3) gesture.moved = true;
+  if (gesture.mode === "pan") {
+    view.tx = gesture.orig.tx + dx; view.ty = gesture.orig.ty + dy;
+    world.setAttribute("transform", "translate(" + view.tx + "," + view.ty + ") scale(" + view.k + ")");
+    drawMinimap();
+  } else if (gesture.mode === "node" && gesture.moved) {
+    dragPos[gesture.id] = { x: gesture.orig.x + dx / view.k, y: gesture.orig.y + dy / view.k };
+    render();
+  }
+});
+function endGesture() {
+  if (!gesture) return;
+  mapEl.classList.remove("panning");
+  var g = gesture; gesture = null;
+  if (g.moved) return;
+  if (g.mode === "node") {
+    var n = model.nodes[g.id];
+    if (g.expander && (model.satsOf[g.id] || []).length) { expanded[g.id] = !expanded[g.id]; render(); }
+    else openDetail(g.id);
+  } else if (g.mode === "file") {
+    openDetail(g.id);
+  }
+}
+mapEl.addEventListener("pointerup", endGesture);
+mapEl.addEventListener("pointercancel", endGesture);
+
+/* ═══════════════════ 详情抽屉（编辑 = 行级 patch 写回） ═══════════════════ */
+var drawer = document.getElementById("drawer");
+function openDetail(id) {
+  selected = id;
+  render();
+  var n = model.nodes[id];
+  if (!n) return;
+  // 前瞻：向 host 递 cheers:open（G2 落地后自动生效；当前 host 会忽略未知消息）
+  if (n.loc && !DEMO) parent.postMessage({ type: "cheers:open", uri: String(n.loc) }, "*");
+  var rel = model.edges.map(function (e, i) { return { e: e, i: i }; })
+    .filter(function (x) { return x.e.from === id || x.e.to === id; });
+  drawer.innerHTML =
+    '<div class="d-sec"><h2><span class="dot ' + dotCls(n.status) + '"></span>' + esc(n.label) +
+    ' <span class="kind">' + esc(n.kind) + '</span><button class="d-close" id="dClose" aria-label="关闭">✕</button></h2>' +
+    '<div class="hint" style="margin-top:2px">id <span class="mono">' + esc(id) + "</span></div></div>" +
+
+    '<div class="d-sec"><div class="slabel">状态</div><div class="status-seg">' +
+    ["explored", "partial", "stale"].map(function (s) {
+      return '<button data-s="' + s + '" class="' + (n.status === s ? "on" : "") + '"><span class="dot ' + dotCls(s) + '"></span>' + STATUS_TXT[s] + "</button>";
+    }).join("") + "</div>" +
+    (n.status === "stale" ? '<div class="stale-note">⚠ bot 标记：改动后未核对，摘要可能过时</div>' : "") + "</div>" +
+
+    (n.loc ? '<div class="d-sec"><div class="slabel">位置 · Cheers Locator</div><div class="loc-box">' + esc(n.loc) + "</div>" +
+      '<div class="row"><button class="btn-indigo" id="copyLoc" style="flex:1">复制 locator</button></div>' +
+      '<div class="hint">粘贴到聊天即可让人/bot 定位；「点击直达」等 host 的 cheers:open 落地后自动生效</div></div>' : "") +
+
+    '<div class="d-sec"><div class="slabel">摘要（写回 map.yaml，注释保留）</div>' +
+    '<textarea class="sum-edit" id="sumEdit">' + esc(n.summary) + "</textarea>" +
+    '<div class="row"><button class="btn-soft" id="saveSum">保存</button><span class="hint" id="saveState" style="align-self:center"></span></div></div>' +
+
+    (n.tags.length ? '<div class="d-sec"><div class="slabel">标签</div><div class="tags">' +
+      n.tags.map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("") + "</div></div>" : "") +
+
+    '<div class="d-sec"><div class="slabel">关系（' + rel.length + "）</div>" +
+    (rel.map(function (x) {
+      var out = x.e.from === id;
+      var other = model.nodes[out ? x.e.to : x.e.from];
+      if (!other) return "";
+      return '<div class="edge-item" data-goto="' + esc(other.id) + '"><span class="dir">' + (out ? "→" : "←") + '</span>' +
+        '<span class="dot ' + dotCls(other.status) + '"></span><span>' + esc(other.label) + "</span>" +
+        '<span class="ek">' + (x.e.kind === "data" ? "数据" : "调用") + (x.e.label ? " · " + esc(x.e.label) : "") + "</span></div>";
+    }).join("") || '<div class="hint">无</div>') + "</div>";
+  drawer.classList.add("open");
+
+  drawer.querySelector("#dClose").addEventListener("click", function () { drawer.classList.remove("open"); selected = null; render(); });
+  drawer.querySelectorAll(".status-seg button").forEach(function (b) {
+    b.addEventListener("click", function () { saveField(id, "status", b.dataset.s); });
+  });
+  drawer.querySelectorAll(".edge-item").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var gid = el.dataset.goto;
+      openDetail(gid);
+      if (L.pos[gid]) centerOn(L.pos[gid].x, L.pos[gid].y);
+    });
+  });
+  var copyBtn = drawer.querySelector("#copyLoc");
+  if (copyBtn) copyBtn.addEventListener("click", function () { copyText(String(n.loc)); });
+  drawer.querySelector("#saveSum").addEventListener("click", function () {
+    saveField(id, "summary", drawer.querySelector("#sumEdit").value.trim());
+  });
+}
+function copyText(t) {
+  // 沙箱 iframe 里 navigator.clipboard 可能被拒 → execCommand 兜底
+  var done = function () { toast("已复制 <b class='mono'>" + esc(t) + "</b>"); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done, function () { legacyCopy(t) ? done() : toast("复制失败——请手动选择文本"); });
+  } else legacyCopy(t) ? done() : toast("复制失败——请手动选择文本");
+}
+function legacyCopy(t) {
+  var ta = document.createElement("textarea");
+  ta.value = t; ta.style.cssText = "position:fixed;opacity:0";
+  document.body.appendChild(ta); ta.select();
+  var ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+/* 编辑保存：行级 patch → save（单在途；冲突时 host 会重发 render，让用户基于新版重试） */
+function saveField(id, field, value) {
+  if (saveBusy) { toast("上一次保存还在进行中，请稍候"); return; }
+  var patched = patchNodeField(rawText, id, field, value);
+  if (patched == null) { toast("在文件里找不到节点 <b>" + esc(id) + "</b> 的锚点行——文件可能已被改动"); return; }
+  patched = patchTopField(patched, "updated", new Date().toISOString());
+  saveBusy = true;
+  var st = drawer.querySelector("#saveState");
+  if (st) st.textContent = "保存中…";
+  var doSave = DEMO
+    ? Promise.resolve({ version: fileVersion + 1 })
+    : host.save(patched);
+  doSave.then(function (r) {
+    saveBusy = false;
+    fileVersion = r.version;
+    applyText(patched, r.version);      // 成功：本地即权威（host 不回发 render）
+    openDetail(id);
+    var st2 = drawer.querySelector("#saveState");
+    if (st2) st2.textContent = "已保存 v" + r.version;
+    toast((DEMO ? "demo：" : "") + "<b>" + esc(field) + "</b> 已写回 map.yaml（行级 patch，注释保留）");
+  }, function (err) {
+    saveBusy = false;
+    var st2 = drawer.querySelector("#saveState");
+    if (st2) st2.textContent = "保存失败";
+    // VERSION_CONFLICT：host 马上重发最新 render；提示用户基于新版重新应用（照 SDK 规则不盲重试）
+    toast("保存失败：" + esc(err.message) + "——若是版本冲突，画面将自动刷新为最新版，请重新编辑");
+  });
+}
+
+/* ═══════════════════ 渲染入口：host render / demo ═══════════════════ */
+function applyText(text, version) {
+  rawText = text;
+  fileVersion = version;
+  document.getElementById("empty").classList.toggle("show", !text.trim());
+  if (!text.trim()) { model = null; world.innerHTML = ""; document.getElementById("counts").textContent = "空文件"; return; }
+  var res = parseMapYaml(text);
+  if (res.error) { if (host) host.unsupported(res.error); return; }
+  if (res.data.codemap !== 1) { if (host) host.unsupported("expected `codemap: 1`, got " + JSON.stringify(res.data.codemap)); return; }
+  var keepView = model !== null;
+  model = buildModel(res.data);
+  if (!keepView || !fitted) { fitted = true; requestAnimationFrame(fitWhenReady); }
+  else render();
+}
+function fitWhenReady() {
+  if (wrap.clientWidth < 60 || wrap.clientHeight < 60) { requestAnimationFrame(fitWhenReady); return; }
+  fit();
+}
+var gotRender = false;
+host = cheersPlugin({
+  onRender: function (f) {
+    gotRender = true;
+    DEMO = false;
+    document.getElementById("demoBanner").classList.remove("show");
+    filePath = f.path;
+    applyText(String(f.content || ""), f.version || 0);
+  },
+});
+
+/* 空文件初始化：写入带英文维护指南的骨架 */
+document.getElementById("initBtn").addEventListener("click", function () {
+  var doSave = DEMO ? Promise.resolve({ version: 1 }) : host.save(INIT_SKELETON);
+  doSave.then(function (r) {
+    applyText(INIT_SKELETON, r.version);
+    toast("已初始化 map.yaml——英文维护指南就在文件头部注释里，bot 一读便知");
+  }, function (err) { toast("初始化失败：" + esc(err.message)); });
+});
+
+/* 工具栏 */
+document.getElementById("q").addEventListener("input", render);
+document.getElementById("expandAll").addEventListener("click", function () {
+  model && model.modules.forEach(function (id) { if ((model.satsOf[id] || []).length) expanded[id] = true; });
+  render();
+});
+document.getElementById("collapseAll").addEventListener("click", function () { expanded = {}; render(); });
+new ResizeObserver(function () { if (model && fitted) drawMinimap(); }).observe(wrap);
+
+function toast(html) {
+  var box = document.getElementById("toasts");
+  var t = document.createElement("div");
+  t.className = "toast"; t.innerHTML = html;
+  box.appendChild(t);
+  setTimeout(function () { t.style.opacity = "0"; t.style.transition = "opacity .3s"; setTimeout(function () { t.remove(); }, 320); }, 3600);
+}
+
+/* ═══════════════════ standalone 预览（未连接 host 时的演示） ═══════════════════ */
+var SAMPLE_YAML = [
+  "# =================================================================",
+  "# CODEMAP - an agent-maintained map of this repository.  (sample)",
+  "# =================================================================",
+  "codemap: 1",
+  "repo: ElePerson/Cheers",
+  'updated: "2026-07-16T12:00:00Z"',
+  "focus: [gateway.resource]",
+  "edges:",
+  "  - { from: frontend.workbench, to: gateway.resource, kind: calls, label: fs.* over WS }",
+  "  - { from: connector.tools, to: gateway.resource, kind: calls, label: desk_* }",
+  "  - { from: frontend.chat, to: gateway.api, kind: calls, label: REST }",
+  "  - { from: gateway.api, to: gateway.domain, kind: data, label: prompt bundle }",
+  "  - { from: gateway.resource, to: gateway.db, kind: data, label: sqlx }",
+  "nodes:",
+  "  gateway:",
+  "    kind: area",
+  "    label: Gateway",
+  "    summary: server/ - Rust",
+  "    status: explored",
+  "  gateway.api:",
+  "    kind: module",
+  "    label: api",
+  "    loc: cheers:ws/@backend/server/src/api/workspace.rs#L826",
+  "    summary: HTTP 路由层：workspace / messages / auth 各端点",
+  "    status: explored",
+  "  gateway.resource:",
+  "    kind: module",
+  "    label: resource",
+  "    loc: cheers:ws/@backend/server/src/resource/fs.rs#L564-L600",
+  "    summary: fs.* 动词的鉴权与实现，乐观锁与 256KB 上限都在这里",
+  "    status: explored",
+  "    tags: [hot, security]",
+  "    # VERSION_CONFLICT branch still unverified - continue here",
+  "  gateway.resource.fs_rs:",
+  "    kind: file",
+  "    label: fs.rs",
+  "    loc: cheers:ws/@backend/server/src/resource/fs.rs#L564",
+  "    summary: MAX_FILE_BYTES 与写入鉴权",
+  "    status: explored",
+  "  gateway.resource.files_rs:",
+  "    kind: file",
+  "    label: files.rs",
+  "    loc: cheers:ws/@backend/server/src/resource/files.rs#L16",
+  "    summary: TEXT_CAP 常量",
+  "    status: explored",
+  "  gateway.domain:",
+  "    kind: module",
+  "    label: domain",
+  "    loc: cheers:ws/@backend/server/src/domain/context_bundle.rs#L110",
+  "    summary: context_bundle - pin/引用组装进每次 bot prompt",
+  "    status: explored",
+  "  gateway.db:",
+  "    kind: module",
+  "    label: db",
+  "    summary: sqlx 迁移随 gateway 启动执行",
+  "    status: partial",
+  "  frontend:",
+  "    kind: area",
+  "    label: Frontend",
+  "    summary: frontend/ - React",
+  "    status: partial",
+  "  frontend.chat:",
+  "    kind: module",
+  "    label: chat",
+  "    loc: cheers:ws/@webdev/frontend/src/features/chat/ChannelView.tsx#L831",
+  "    summary: ChannelView / 消息流 / ref 解析（resolveAndOpenRef）",
+  "    status: stale",
+  "  frontend.workbench:",
+  "    kind: module",
+  "    label: workbench",
+  "    loc: cheers:ws/@webdev/frontend/src/features/chat/workbench/panels/FilePanel.tsx#L141",
+  "    summary: 文件中心工作台：FilePanel + 渲染器插件沙箱",
+  "    status: partial",
+  "  connector:",
+  "    kind: area",
+  "    label: Connector",
+  "    summary: cheers-mcp-server - MCP 桥",
+  "    status: explored",
+  "  connector.tools:",
+  "    kind: module",
+  "    label: tools",
+  "    loc: cheers:ws/@backend/packages/cheers-mcp-server/src/main.rs#L656",
+  "    summary: desk_* / inbox_* 工具面：bot 触达频道文件的唯一通道",
+  "    status: explored",
+  "",
+].join("\n");
+
+setTimeout(function () {
+  if (gotRender) return;    // 真 host 已接管
+  DEMO = true;
+  document.getElementById("demoBanner").classList.add("show");
+  applyText(SAMPLE_YAML, 3);
+}, 500);
+</script>
+</body>
+</html>

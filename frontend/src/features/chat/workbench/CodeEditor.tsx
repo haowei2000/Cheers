@@ -152,6 +152,10 @@ interface CodeEditorProps {
   onChange: (next: string) => void;
   path: string;
   className?: string;
+  /** 1-based line to select and center on open — a locator `#L<n>` anchor. Out-of-range
+   *  clamps to the last line (lines drift as code changes; a stale anchor still lands
+   *  nearby instead of erroring). Selection-only: never dirties the buffer. */
+  scrollToLine?: number;
 }
 
 // Uncontrolled-with-sync: CodeMirror owns the document, we push external changes in only
@@ -159,7 +163,7 @@ interface CodeEditorProps {
 // keeps the cursor/selection intact while typing — our own edits round-trip back as `value`
 // equal to the doc, so the sync effect no-ops. onChange/path changes rebuild only the tiny
 // bits that depend on them, not the whole view.
-export function CodeEditor({ value, onChange, path, className }: CodeEditorProps) {
+export function CodeEditor({ value, onChange, path, className, scrollToLine }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Latest callback/path read through refs so the EditorView is built ONCE (not torn down
@@ -233,6 +237,20 @@ export function CodeEditor({ value, onChange, path, className }: CodeEditorProps
       annotations: syncAnnotation.of(true),
     });
   }, [value, path]);
+
+  // Line anchor (locator #L<n>): select the target line and center it. Runs after the
+  // mount effect above (declaration order), so the view always exists. Selection-only —
+  // no doc change, so the updateListener never fires onChange and the buffer stays clean.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || scrollToLine == null) return;
+    const n = Math.max(1, Math.min(Math.floor(scrollToLine), view.state.doc.lines));
+    const line = view.state.doc.line(n);
+    view.dispatch({
+      selection: { anchor: line.from, head: line.to },
+      effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+    });
+  }, [scrollToLine, path]);
 
   return <div ref={hostRef} className={className} />;
 }

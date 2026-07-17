@@ -27,6 +27,10 @@ interface Props {
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the
    *  tree and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;
+  /** Navigate the user's view to a `cheers:` locator (the renderer plugins' cheers:open
+   *  host API). Owned by ChannelView — it holds every jump surface (workspace dialog,
+   *  channel files, this drawer's own deep-link). */
+  onOpenLocator?: (uri: string) => void;
 }
 
 interface WbConfig {
@@ -89,7 +93,7 @@ function parseCfg(content: string): WbConfig {
 // Installing global templates / plugins lives in Settings → Workbench extensions (admin);
 // the drawer only CONSUMES them, and offers a no-persistence temporary upload to anyone
 // (.json template or .html plugin — the plugin dev loop).
-function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick }: Props) {
+function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFilePath, filesTick, onOpenLocator }: Props) {
   const fs = useMemo(() => makeFsClient(sendResourceReq, channelId), [sendResourceReq, channelId]);
   const [cfg, setCfg] = useState<WbConfig>({});
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
@@ -377,8 +381,9 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       configs,
       openTarget: focus,
       filesTick,
+      openLocator: onOpenLocator,
     }),
-    [channelId, fs, sendResourceReq, pinned, togglePin, plugins, bindings, setBinding, configs, focus, filesTick]
+    [channelId, fs, sendResourceReq, pinned, togglePin, plugins, bindings, setBinding, configs, focus, filesTick, onOpenLocator]
   );
 
   // Desktop: the original card chrome, placed in the work area — hidden (but

@@ -43,6 +43,7 @@ const RemoteWorkspaceDialog = lazy(() =>
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
+import { parseLocator } from "./locator";
 import { useAuthStore } from "@/stores/authStore";
 import type { Message, Channel, PermissionContentData, MemberItem } from "@/types";
 
@@ -618,7 +619,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [filesOpen, setFilesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
-  const [wsInit, setWsInit] = useState<{ botId?: string; path?: string }>({});
+  const [wsInit, setWsInit] = useState<{ botId?: string; path?: string; line?: number }>({});
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
 
   // The work lane is the bounded canvas the instrument windows drag/resize +
@@ -873,6 +874,66 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         }
       } catch (e) {
         setRefError(`Failed to open "${base}": ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [channel, botLabels]
+  );
+
+  // Resolve a `cheers:` locator (the DETERMINISTIC cousin of resolveAndOpenRef's
+  // provenance heuristic — the locator names its store explicitly) and take the user
+  // there: desk → Workbench deep-link, ws → existence-probe then the workspace browser
+  // at the anchored line, inbox → channel files. Pure UI routing: every read behind
+  // the jump still passes the existing authz. Fed by renderer plugins via cheers:open.
+  const openLocator = useCallback(
+    async (uri: string) => {
+      if (!channel) return;
+      const loc = parseLocator(uri);
+      if (!loc) {
+        setRefError(`Unrecognized locator:\n${uri.slice(0, 200)}`);
+        return;
+      }
+      if (loc.kind === "desk") {
+        setWbTarget(loc.path);
+        setWbOpen(true);
+        return;
+      }
+      if (loc.kind === "inbox") {
+        setFilesFocus(loc.fileId);
+        setFilesOpen(true);
+        return;
+      }
+      if (loc.kind === "msg") {
+        setRefError("Message locators (cheers:msg/…) aren't supported yet.");
+        return;
+      }
+      // ws: "@handle" resolves through this channel's bot members; anything else is a bot id.
+      let botId = loc.bot;
+      if (botId.startsWith("@")) {
+        const handle = botId.slice(1).toLowerCase();
+        const hits = [...botLabels.entries()].filter(([, label]) => label.toLowerCase() === handle);
+        if (hits.length !== 1) {
+          setRefError(
+            hits.length === 0
+              ? `No bot named "@${handle}" in this channel — the locator may be stale (bots can be renamed).`
+              : `More than one bot answers to "@${handle}" here — open the workspace browser and pick one.`
+          );
+          return;
+        }
+        botId = hits[0][0];
+      }
+      // Probe before navigating (same reasoning as resolveAndOpenRef): landing the user
+      // in a browser for a file that isn't reachable is worse than a clear error.
+      try {
+        await getWorkspaceFile(channel.channel_id, botId, loc.path);
+        setWsInit({ botId, path: loc.path, line: loc.line });
+        setWsOpen(true);
+      } catch (e) {
+        const offline = String(e).includes("offline");
+        setRefError(
+          offline
+            ? `Can't open "${loc.path}": that bot's connector is currently offline.`
+            : `Couldn't open "${loc.path}" in that workspace: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
     },
     [channel, botLabels]
@@ -1434,6 +1495,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             onClose={() => setWsOpen(false)}
             initialBotId={wsInit.botId}
             initialPath={wsInit.path}
+            initialLine={wsInit.line}
             // Default the browse to the composer's active session ("" = Auto → no
             // session scope → the dialog shows the bot's full allowed roots).
             sessionId={selectedSessionId || undefined}
@@ -1476,6 +1538,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           sendResourceReq={sendResourceReq}
           openFilePath={wbTarget}
           filesTick={boardTick.files}
+          onOpenLocator={openLocator}
         />
 
         {/* Channel files lives in the lane too, so it floats/drags/resizes like the

@@ -52,6 +52,7 @@ export function RendererHost({
         rendererId={renderer.rendererId ?? ""}
         path={path}
         readChannel={readChannel}
+        onOpen={ctx.openLocator}
       />
     );
   }

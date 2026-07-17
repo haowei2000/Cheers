@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Codemap 渲染器 · 设计稿 v3（概览 + hover + 一击跳转）</title>
+<style>
+  /* ── Cheers 设计 token（对齐 frontend/DESIGN.md，dark-only） ───────────── */
+  :root {
+    color-scheme: dark;
+    --bg:        #09090b;  /* zinc-950 / body */
+    --card:      #18181b;  /* zinc-900 卡片 */
+    --field:     #27272a;  /* zinc-800 字段/chip */
+    --hover:     #3f3f46;  /* zinc-700 hover */
+    --divider:   #27272a;
+    --t-hi:      #f4f4f5;  /* zinc-100 */
+    --t-body:    #d4d4d8;  /* zinc-300 */
+    --t-mut:     #a1a1aa;  /* zinc-400 —— 次要文字下限 */
+    --t-icon:    #71717a;  /* zinc-500 仅图标 */
+    --deco:      #52525b;  /* zinc-600 纯装饰（边线） */
+    --indigo:    #4f46e5;
+    --indigo-r:  #6366f1;
+    --indigo-tx: #a5b4fc;
+    --indigo-lk: #818cf8;
+    --ok:        #10b981;  /* emerald-500 */
+    --warn:      #fbbf24;  /* amber-400 */
+    font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--t-body); font-size: 13px; line-height: 1.5; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: none; box-shadow: 0 0 0 2px var(--indigo-r);
+  }
+  input, textarea { font: inherit; color: var(--t-body); background: var(--bg); border: 0; border-radius: 6px; }
+  ::placeholder { color: var(--t-mut); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  /* ── 顶部：工作台上下文（示意） ──────────────────────────────────────── */
+  .wb-chrome {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    background: var(--card); border-bottom: 1px solid var(--divider); flex-wrap: wrap;
+  }
+  .wb-chrome .crumb { font-size: 12px; color: var(--t-mut); }
+  .wb-chrome .crumb b { color: var(--t-body); font-weight: 600; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--field); border-radius: 6px; padding: 2px 8px;
+    font-size: 12px; color: var(--t-body);
+  }
+  .chip.mono { font-size: 11px; }
+  .seg { display: inline-flex; background: var(--field); border-radius: 8px; padding: 2px; }
+  .seg button { padding: 2px 10px; border-radius: 6px; font-size: 12px; color: var(--t-mut); }
+  .seg button.on { background: var(--indigo); color: #fff; }
+  .badge-demo {
+    margin-left: auto; font-size: 11px; color: var(--warn);
+    background: rgba(120, 53, 15, .4); padding: 2px 8px; border-radius: 999px;
+  }
+
+  /* ── 渲染器工具栏 ────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--divider); flex-wrap: wrap;
+  }
+  .toolbar input[type="search"] {
+    background: var(--field); padding: 5px 10px; width: 200px; border-radius: 8px; font-size: 12px;
+  }
+  .btn-soft {
+    background: var(--field); color: var(--t-body); border-radius: 8px;
+    padding: 5px 10px; font-size: 12px; transition: background .15s;
+  }
+  .btn-soft:hover { background: var(--hover); color: var(--t-hi); }
+  .btn-indigo {
+    background: rgba(79, 70, 229, .15); color: #c7d2fe; border-radius: 8px;
+    padding: 5px 10px; font-size: 12px; transition: background .15s;
+  }
+  .btn-indigo:hover { background: rgba(79, 70, 229, .3); }
+  .legend { display: flex; gap: 12px; align-items: center; font-size: 11px; color: var(--t-mut); flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; flex: none; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.part { background: var(--t-mut); }
+  .legend .ln { color: var(--deco); }
+  .live { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--t-mut); }
+  .pulse { width: 7px; height: 7px; border-radius: 999px; background: var(--ok); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+  /* ── 主区：地图画布 + 侧栏 ───────────────────────────────────────────── */
+  .main { display: flex; min-height: 0; flex: 1; }
+  .map-wrap { position: relative; flex: 1; overflow: hidden; min-height: 540px; }
+  /* 绝对定位铺满：.map-wrap 的高度来自 min-height（height:auto），
+     svg 的 height:100% 会解析失败回落到默认 150px —— inset:0 不吃这个亏 */
+  svg.map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  svg.map.panning { cursor: grabbing; }
+
+  /* SVG 内元素样式 */
+  .hull { fill: rgba(24, 24, 27, .7); }
+  .hull-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; fill: var(--t-mut); text-transform: uppercase; }
+  .hull-path { font-size: 10px; fill: var(--t-mut); }
+  .edge { fill: none; stroke: var(--deco); stroke-width: 1.5; }
+  .edge.data { stroke-dasharray: 4 4; }
+  .edge.hi { stroke: var(--indigo-lk); stroke-width: 2; }
+  .edge.dim, .nodeg.dim, .fileg.dim { opacity: .15; }
+  .nodeg { cursor: pointer; }
+  .node-rect { fill: var(--field); rx: 8; transition: fill .15s; }
+  .nodeg:hover .node-rect { fill: var(--hover); }
+  .nodeg.sel .node-rect { stroke: var(--indigo-r); stroke-width: 2; }
+  .node-label { font-size: 12.5px; font-weight: 600; fill: var(--t-hi); }
+  .node-files { font-size: 10px; fill: var(--t-mut); }
+  .focus-ring { fill: none; stroke: var(--indigo-r); stroke-width: 2; animation: fring 1.6s infinite; }
+  @keyframes fring { 0%,100% { opacity: .9 } 50% { opacity: .25 } }
+  .focus-tag { font-size: 10px; fill: var(--indigo-tx); }
+  .fileg { cursor: pointer; }
+  .file-dot { stroke: none; }
+  .file-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; fill: var(--t-mut); }
+  .file-line { font-family: ui-monospace, Menlo, monospace; font-size: 9px; fill: var(--t-icon); }
+  .flink { stroke: #3f3f46; stroke-width: 1; fill: none; }
+
+  /* 画布浮层：缩放控件 + minimap */
+  .zoomctl {
+    position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 4px;
+    background: var(--card); border-radius: 10px; padding: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  }
+  .zoomctl button { width: 30px; height: 28px; border-radius: 7px; color: var(--t-body); font-size: 14px; }
+  .zoomctl button:hover { background: var(--hover); color: var(--t-hi); }
+  .minimap {
+    position: absolute; right: 12px; bottom: 12px; width: 160px; height: 102px;
+    background: var(--card); border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+    overflow: hidden; cursor: pointer;
+  }
+  .minimap svg { width: 100%; height: 100%; display: block; }
+  .mm-node { fill: var(--t-icon); }
+  .mm-node.ok { fill: var(--ok); } .mm-node.warn { fill: var(--warn); }
+  .mm-view { fill: rgba(99, 102, 241, .12); stroke: var(--indigo-r); stroke-width: 1; }
+  .maphint {
+    position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+    font-size: 11px; color: var(--t-mut); background: rgba(24,24,27,.85);
+    padding: 3px 10px; border-radius: 999px; pointer-events: none;
+  }
+  /* hover 摘要卡：IDE hover 式的信息卡，跟随节点出现 */
+  .hovercard {
+    position: absolute; display: none; width: max-content; max-width: 280px;
+    background: var(--card); border-radius: 10px; padding: 9px 11px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.55); pointer-events: none; z-index: 20;
+    font-size: 12px; line-height: 1.5;
+  }
+  .hovercard .hc-h { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--t-hi); font-size: 12.5px; }
+  .hovercard .hc-st { font-size: 10px; border-radius: 999px; padding: 0 7px; background: var(--field); color: var(--t-mut); }
+  .hovercard .hc-sum { color: var(--t-body); margin-top: 4px; }
+  .hovercard .hc-loc {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px;
+    color: var(--indigo-lk); margin-top: 5px; word-break: break-all;
+  }
+  .hovercard .hc-hint {
+    margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--divider);
+    font-size: 10px; color: var(--t-mut);
+  }
+
+  /* ── 侧栏 ────────────────────────────────────────────────────────────── */
+  .side {
+    width: 320px; flex: none; background: var(--card); border-left: 1px solid var(--divider);
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .side-sec { padding: 12px 14px; border-bottom: 1px solid var(--divider); }
+  .side h2 { font-size: 14px; font-weight: 600; color: var(--t-hi); display: flex; align-items: center; gap: 8px; }
+  .kind {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    background: var(--field); color: var(--t-mut); border-radius: 999px; padding: 1px 8px;
+  }
+  .slabel { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--t-mut); margin-bottom: 6px; }
+  .status-seg { display: flex; background: var(--field); border-radius: 8px; padding: 2px; gap: 2px; }
+  .status-seg button { flex: 1; border-radius: 6px; font-size: 11px; padding: 3px 0; color: var(--t-mut); display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .status-seg button.on { background: var(--bg); color: var(--t-hi); }
+  .loc-box {
+    background: var(--bg); border-radius: 8px; padding: 7px 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+    color: var(--indigo-lk); word-break: break-all; line-height: 1.45;
+  }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .hint { font-size: 11px; color: var(--t-mut); margin-top: 6px; }
+  textarea.sum-edit {
+    width: 100%; background: var(--bg); border-radius: 8px; padding: 8px 9px;
+    font-size: 12px; resize: vertical; min-height: 64px; line-height: 1.5;
+  }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { background: var(--field); border-radius: 999px; padding: 1px 9px; font-size: 11px; color: var(--t-body); }
+  .tag.add { color: var(--t-mut); cursor: pointer; } .tag.add:hover { background: var(--hover); }
+  .edge-item, .file-item {
+    display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 6px;
+    font-size: 12px; cursor: pointer;
+  }
+  .edge-item:hover, .file-item:hover { background: rgba(63, 63, 70, .5); }
+  .edge-item .dir { color: var(--t-icon); font-family: ui-monospace, Menlo, monospace; }
+  .edge-item .ek, .file-item .lines { margin-left: auto; font-size: 10px; color: var(--t-mut); font-family: ui-monospace, Menlo, monospace; }
+  .file-item .fname { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+  .meta { font-size: 11px; color: var(--t-mut); }
+  .stale-note {
+    margin-top: 8px; font-size: 11px; color: var(--warn);
+    background: rgba(120, 53, 15, .4); border-radius: 8px; padding: 6px 9px; display: flex; gap: 6px;
+  }
+  .phase2 { font-size: 10px; color: var(--t-mut); background: var(--field); border-radius: 999px; padding: 0 7px; }
+
+  /* ── 底部状态条 ──────────────────────────────────────────────────────── */
+  .statusbar {
+    display: flex; align-items: center; gap: 14px; padding: 7px 14px;
+    border-top: 1px solid var(--divider); font-size: 11px; color: var(--t-mut); flex-wrap: wrap;
+  }
+  .budget { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .budget .track { width: 90px; height: 4px; border-radius: 999px; background: var(--field); overflow: hidden; }
+  .budget .fill { height: 100%; width: 38%; background: var(--indigo-r); border-radius: 999px; }
+
+  /* ── 弹层：远程工作区（跳转演示） ─────────────────────────────────────── */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: none;
+    align-items: center; justify-content: center; padding: 24px; z-index: 50;
+  }
+  .overlay.show { display: flex; }
+  .dialog {
+    background: var(--card); border-radius: 12px; width: min(680px, 100%);
+    box-shadow: 0 8px 40px rgba(0,0,0,.6); overflow: hidden;
+  }
+  .dialog-h { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--divider); }
+  .dialog-h .t { font-size: 13px; font-weight: 600; color: var(--t-hi); }
+  .dialog-h .close { margin-left: auto; color: var(--t-mut); border-radius: 6px; padding: 2px 8px; }
+  .dialog-h .close:hover { background: var(--field); color: var(--t-hi); }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6; padding: 10px 0; overflow-x: auto; }
+  .cl { display: flex; white-space: pre; }
+  .cl .ln { width: 52px; flex: none; text-align: right; padding-right: 14px; color: var(--t-mut); user-select: none; }
+  .cl .src { color: var(--t-body); padding-right: 16px; }
+  .cl.hl { background: rgba(79, 70, 229, .15); }
+  .cl.hl .ln { color: var(--indigo-tx); }
+  .dialog-f { padding: 10px 16px; border-top: 1px solid var(--divider); font-size: 11px; color: var(--t-mut); }
+  .dialog-f .mono { color: var(--indigo-lk); }
+
+  /* ── Toast ───────────────────────────────────────────────────────────── */
+  .toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center; }
+  .toast {
+    background: var(--field); color: var(--t-body); border-radius: 10px; padding: 8px 14px;
+    font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.5); max-width: 560px;
+    animation: rise .18s ease-out;
+  }
+  .toast b { color: var(--t-hi); }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+
+  .frame { height: 100vh; display: flex; flex-direction: column; }
+  @media (max-width: 980px) {
+    .frame { height: auto; min-height: 100vh; }   /* 窄屏改整页滚动，避免侧栏挤压/重叠 */
+    .main { flex-direction: column; }
+    .side { width: auto; border-left: 0; border-top: 1px solid var(--divider); overflow-y: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- 工作台上下文（示意）：这个 mockup 设计的是下方渲染器区域 -->
+  <div class="wb-chrome">
+    <span class="crumb">工作台 · <b>#cheers-dev</b></span>
+    <span class="chip mono">codemap/map.yaml</span>
+    <span class="chip">渲染器：代码地图 · codemap ▾</span>
+    <span class="seg">
+      <button>Pin</button><button class="on">Preview</button><button>Raw</button>
+    </span>
+    <span class="badge-demo">设计稿 mockup · 样例数据</span>
+  </div>
+
+  <!-- 渲染器工具栏 -->
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="搜索模块 / 文件…" aria-label="搜索节点" />
+    <button class="btn-soft" id="expandAll">展开文件</button>
+    <button class="btn-soft" id="collapseAll">收起文件</button>
+    <span class="legend">
+      <span><span class="dot ok"></span> 已探明</span>
+      <span><span class="dot part"></span> 部分</span>
+      <span><span class="dot warn"></span> 待核对</span>
+      <span><span class="ln">——</span> 调用 · <span class="ln">- -</span> 数据</span>
+    </span>
+    <span class="live">
+      <span class="pulse"></span><span id="updated">bot 更新于 2 分钟前 · v12</span>
+      <button class="btn-indigo" id="demo">▶ 模拟 bot 更新</button>
+    </span>
+  </div>
+
+  <!-- 地图画布 + 侧栏 -->
+  <div class="main">
+    <div class="map-wrap" id="mapWrap">
+      <svg class="map" id="map" role="application" aria-label="代码地图画布">
+        <defs>
+          <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="1" fill="#1c1c1f"></circle>
+          </pattern>
+          <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0.5 L7.5,4 L0,7.5" fill="none" stroke="#52525b" stroke-width="1.4"/>
+          </marker>
+          <marker id="arrHi" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0.5 L7.5,4 L0,7.5" fill="none" stroke="#818cf8" stroke-width="1.6"/>
+          </marker>
+        </defs>
+        <rect id="mapBg" x="0" y="0" width="100%" height="100%" fill="url(#grid)"></rect>
+        <g id="world"></g>
+      </svg>
+      <div class="maphint">hover 看摘要 · 点击节点跳转到代码 · ▸N 角标展开文件 · 拖拽平移/整理 · 滚轮缩放</div>
+      <div class="hovercard" id="hovercard" aria-hidden="true"></div>
+      <div class="zoomctl">
+        <button id="zin" aria-label="放大">＋</button>
+        <button id="zout" aria-label="缩小">－</button>
+        <button id="zfit" aria-label="适应画布" title="适应画布">⤢</button>
+      </div>
+      <div class="minimap" id="minimap" title="minimap：点击定位"><svg id="mmSvg"></svg></div>
+    </div>
+
+    <aside class="side" id="side" aria-label="节点详情"><!-- JS --></aside>
+  </div>
+
+  <!-- 底部状态条 -->
+  <div class="statusbar">
+    <span id="counts">11 模块 · 6 边 · 1 待核对</span>
+    <span>schema codemap:1</span>
+    <span class="budget">
+      <span>map.yaml 体积</span>
+      <span class="track"><span class="fill"></span></span>
+      <span>96 KB / 256 KB</span>
+    </span>
+  </div>
+</div>
+
+<!-- 跳转演示：远程工作区定位到行 -->
+<div class="overlay" id="wsOverlay" role="dialog" aria-modal="true" aria-label="远程工作区">
+  <div class="dialog">
+    <div class="dialog-h">
+      <span class="t" id="wsTitle">远程工作区</span>
+      <button class="close" id="wsClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="code" id="wsCode"><!-- JS --></div>
+    <div class="dialog-f">
+      已定位到 <span class="mono" id="wsAnchor"></span> ——
+      点击链路：渲染器 <span class="mono">cheers:open{uri}</span> → host 校验 → <span class="mono">resolveLocator</span> → 存在性探测（workspace.read）→ 打开并滚动到行
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+/* ───────────────────────── 样例数据（本仓库真实结构 + 版面坐标） ─────────────────────────
+   真实插件中：结构由 bot 维护（map.yaml）；节点坐标是「人的版面」，持久化到
+   .workbench.json 的 configs["codemap/map.yaml"].layout —— bot 不碰版面。 */
+const DATA = {
+  focus: "gw.resource",
+  areas: [
+    { id: "gw", name: "Gateway", path: "server/ · Rust" },
+    { id: "fe", name: "Frontend", path: "frontend/ · React" },
+    { id: "cx", name: "Connector", path: "cheers-mcp-server · MCP 桥" },
+  ],
+  nodes: [
+    { id: "gw.api", area: "gw", x: 300, y: 140, label: "api", status: "explored", tags: ["entry"],
+      summary: "HTTP 路由层：workspace / messages / auth 各端点",
+      loc: "cheers:ws/@backend/server/src/api/workspace.rs#L826",
+      files: [ { n: "workspace.rs", l: "L826", s: "explored" }, { n: "messages.rs", l: "L139", s: "explored" } ] },
+    { id: "gw.resource", area: "gw", x: 190, y: 330, label: "resource", status: "explored", tags: ["hot", "security"],
+      summary: "fs.* 动词的鉴权与实现，乐观锁与 256KB 上限都在这里",
+      loc: "cheers:ws/@backend/server/src/resource/fs.rs#L564-L600",
+      files: [ { n: "fs.rs", l: "L564", s: "explored" }, { n: "files.rs", l: "L16", s: "explored" } ] },
+    { id: "gw.domain", area: "gw", x: 360, y: 430, label: "domain", status: "explored", tags: [],
+      summary: "context_bundle：把 pin/引用组装进每次 bot prompt",
+      loc: "cheers:ws/@backend/server/src/domain/context_bundle.rs#L110",
+      files: [ { n: "context_bundle.rs", l: "L110", s: "explored" } ] },
+    { id: "gw.auth", area: "gw", x: 120, y: 520, label: "auth / jwt", status: "partial", tags: [],
+      summary: "RSA JWT 签发与校验（登录字段是 login）",
+      loc: "cheers:ws/@backend/server/src/auth/mod.rs#L1", files: [] },
+    { id: "gw.db", area: "gw", x: 330, y: 590, label: "db", status: "partial", tags: [],
+      summary: "sqlx 迁移随 gateway 启动执行",
+      loc: "cheers:ws/@backend/server/migrations#L1", files: [] },
+
+    { id: "fe.chat", area: "fe", x: 700, y: 150, label: "chat", status: "stale", tags: ["hot"],
+      summary: "ChannelView / 消息流 / ref 解析（resolveAndOpenRef）",
+      loc: "cheers:ws/@webdev/frontend/src/features/chat/ChannelView.tsx#L831",
+      files: [ { n: "ChannelView.tsx", l: "L831", s: "stale" }, { n: "MessageList.tsx", l: "L1", s: "explored" } ] },
+    { id: "fe.workbench", area: "fe", x: 660, y: 340, label: "workbench", status: "partial", tags: [],
+      summary: "文件中心工作台：FilePanel + 渲染器插件沙箱",
+      loc: "cheers:ws/@webdev/frontend/src/features/chat/workbench/panels/FilePanel.tsx#L141",
+      files: [ { n: "FilePanel.tsx", l: "L141", s: "explored" }, { n: "SandboxRenderer.tsx", l: "L48", s: "partial" }, { n: "registry.ts", l: "L43", s: "partial" } ] },
+    { id: "fe.stores", area: "fe", x: 820, y: 470, label: "stores / api", status: "partial", tags: [],
+      summary: "WS resource 桥 + REST client",
+      loc: "cheers:ws/@webdev/frontend/src/api/client.ts#L1", files: [] },
+    { id: "fe.fleet", area: "fe", x: 640, y: 560, label: "fleet", status: "partial", tags: [],
+      summary: "多 bot 会话总览（FleetView）",
+      loc: "cheers:ws/@webdev/frontend/src/features/fleet#L1", files: [] },
+
+    { id: "cx.tools", area: "cx", x: 1080, y: 230, label: "tools", status: "explored", tags: ["entry"],
+      summary: "desk_* / inbox_* 工具面：bot 触达频道文件的唯一通道",
+      loc: "cheers:ws/@backend/packages/cheers-mcp-server/src/main.rs#L656",
+      files: [ { n: "main.rs", l: "L656", s: "explored" } ] },
+    { id: "cx.transport", area: "cx", x: 1080, y: 420, label: "transport", status: "partial", tags: [],
+      summary: "对 gateway 的 WS 连接与重连（loopback keep-alive）",
+      loc: "cheers:ws/@backend/packages/cheers-mcp-server/src/main.rs#L1", files: [] },
+  ],
+  edges: [
+    { from: "fe.workbench", to: "gw.resource", kind: "calls", label: "fs.* over WS" },
+    { from: "cx.tools",     to: "gw.resource", kind: "calls", label: "desk_* → fs.*" },
+    { from: "fe.chat",      to: "gw.api",      kind: "calls", label: "REST" },
+    { from: "gw.api",       to: "gw.domain",   kind: "data",  label: "prompt bundle" },
+    { from: "gw.resource",  to: "gw.db",       kind: "data",  label: "sqlx" },
+    { from: "fe.stores",    to: "gw.api",      kind: "calls", label: "auth/REST" },
+  ],
+  meta: {
+    "gw.resource": { by: "@backend", at: "2 分钟前" },
+    "fe.chat":     { by: "@webdev",  at: "1 小时前" },
+  },
+};
+const STATUS_TXT = { explored: "已探明", partial: "部分", stale: "待核对" };
+const nodeById = {};
+DATA.nodes.forEach(n => { nodeById[n.id] = n; n.expanded = false; });
+
+let selected = "gw.resource";
+let version = 12;
+let view = { k: 1, tx: 0, ty: 0 };   // world → screen: s = w*k + t
+
+/* ───────────────────────── 几何工具 ───────────────────────── */
+const NODE_H = 32;
+function nodeW(n) {
+  // 近似文本宽：latin ~7.2px/字，CJK ~12.5px/字（12.5px 加粗）
+  let w = 0;
+  for (const ch of n.label) w += ch.charCodeAt(0) > 255 ? 12.5 : 7.2;
+  return Math.max(86, w + 52 + (n.files.length ? 26 : 0));
+}
+function nodeRect(n) { const w = nodeW(n); return { x: n.x - w / 2, y: n.y - NODE_H / 2, w, h: NODE_H }; }
+function borderPoint(n, tx, ty) {
+  // 从 n 中心指向 (tx,ty) 的射线与节点矩形边界的交点（外扩 4px）
+  const r = nodeRect(n), dx = tx - n.x, dy = ty - n.y;
+  if (!dx && !dy) return { x: n.x, y: n.y };
+  const sx = (r.w / 2 + 4) / Math.abs(dx || 1e-9), sy = (r.h / 2 + 4) / Math.abs(dy || 1e-9);
+  const s = Math.min(sx, sy);
+  return { x: n.x + dx * s, y: n.y + dy * s };
+}
+function fileAnchor(n, i, total) {
+  // 卫星文件：扇形挂在节点下方（横向拉宽，避免 3+ 文件时标签互相重叠）
+  const spread = Math.min(170, 52 * Math.max(1, total - 1) + 20);
+  const a = Math.PI / 2 + (total === 1 ? 0 : (i / (total - 1) - 0.5) * (spread / 100));
+  const rad = 80;
+  return { x: n.x + Math.cos(a) * rad * 2.1, y: n.y + Math.sin(a) * rad };
+}
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+
+/* ───────────────────────── 地图渲染 ───────────────────────── */
+const world = document.getElementById("world");
+const map = document.getElementById("map");
+const wrap = document.getElementById("mapWrap");
+function dotColor(s) { return s === "explored" ? "var(--ok)" : s === "stale" ? "var(--warn)" : "var(--t-mut)"; }
+function matches(n, s) {
+  return !s || n.label.toLowerCase().includes(s) || n.summary.toLowerCase().includes(s)
+    || n.files.some(f => f.n.toLowerCase().includes(s));
+}
+
+function render() {
+  hideHoverCard();   // world 重建，hover 目标失效
+  const s = document.getElementById("q").value.trim().toLowerCase();
+  let html = "";
+
+  // 区域 hull（自动包住成员节点，含展开的卫星）
+  for (const a of DATA.areas) {
+    const mem = DATA.nodes.filter(n => n.area === a.id);
+    let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+    for (const n of mem) {
+      const r = nodeRect(n);
+      x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y);
+      x2 = Math.max(x2, r.x + r.w); y2 = Math.max(y2, r.y + r.h);
+      if (n.expanded) n.files.forEach((f, i) => {
+        const p = fileAnchor(n, i, n.files.length);
+        x1 = Math.min(x1, p.x - 10); y1 = Math.min(y1, p.y - 10);
+        x2 = Math.max(x2, p.x + 120); y2 = Math.max(y2, p.y + 14);
+      });
+    }
+    html += `<rect class="hull" x="${x1 - 26}" y="${y1 - 46}" width="${x2 - x1 + 52}" height="${y2 - y1 + 72}" rx="16"></rect>
+      <text class="hull-label" x="${x1 - 10}" y="${y1 - 26}">${a.name}</text>
+      <text class="hull-path" x="${x1 - 10}" y="${y1 - 12}">${a.path}</text>`;
+  }
+
+  // 边（在节点下层）
+  DATA.edges.forEach((e, i) => {
+    const a = nodeById[e.from], b = nodeById[e.to];
+    const dim = !matches(a, s) || !matches(b, s);
+    const p1 = borderPoint(a, b.x, b.y), p2 = borderPoint(b, a.x, a.y);
+    const mx = (p1.x + p2.x) / 2;
+    html += `<path class="edge ${e.kind === "data" ? "data" : ""} ${dim ? "dim" : ""}" data-edge="${i}"
+      d="M${p1.x},${p1.y} C${mx},${p1.y} ${mx},${p2.y} ${p2.x},${p2.y}" marker-end="url(#arr)"></path>`;
+  });
+
+  // 文件卫星（展开时）
+  for (const n of DATA.nodes) {
+    if (!n.expanded) continue;
+    const dim = !matches(n, s);
+    n.files.forEach((f, i) => {
+      const p = fileAnchor(n, i, n.files.length);
+      const from = borderPoint(n, p.x, p.y);
+      html += `<g class="fileg ${dim ? "dim" : ""}" data-file="${n.id}:${i}">
+        <path class="flink" d="M${from.x},${from.y} L${p.x - 8},${p.y}"></path>
+        <circle class="file-dot" cx="${p.x}" cy="${p.y}" r="5" fill="${dotColor(f.s)}"></circle>
+        <text class="file-label" x="${p.x + 10}" y="${p.y + 3.5}">${esc(f.n)}</text>
+        <text class="file-line" x="${p.x + 10}" y="${p.y + 15}">${f.l}</text>
+      </g>`;
+    });
+  }
+
+  // 模块节点
+  for (const n of DATA.nodes) {
+    const r = nodeRect(n);
+    const dim = !matches(n, s);
+    const isFocus = DATA.focus === n.id;
+    html += `<g class="nodeg ${selected === n.id ? "sel" : ""} ${dim ? "dim" : ""}" data-node="${n.id}">
+      ${isFocus ? `<rect class="focus-ring" x="${r.x - 5}" y="${r.y - 5}" width="${r.w + 10}" height="${r.h + 10}" rx="12"></rect>
+        <text class="focus-tag" x="${r.x + 2}" y="${r.y - 11}">⚡ agent 正在这里</text>` : ""}
+      <rect class="node-rect" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="8"></rect>
+      <circle cx="${r.x + 15}" cy="${n.y}" r="4.5" fill="${dotColor(n.status)}"></circle>
+      <text class="node-label" x="${r.x + 27}" y="${n.y + 4.5}">${esc(n.label)}</text>
+      ${n.files.length ? `<g data-role="expander"><rect x="${r.x + r.w - 30}" y="${r.y + 5}" width="26" height="${r.h - 10}" rx="5" fill="none" pointer-events="all"></rect><text class="node-files" x="${r.x + r.w - 26}" y="${n.y + 4}">${n.expanded ? "▾" : "▸"}${n.files.length}</text></g>` : ""}
+    </g>`;
+  }
+
+  world.innerHTML = html;
+  world.setAttribute("transform", `translate(${view.tx},${view.ty}) scale(${view.k})`);
+
+  // 边悬停
+  world.querySelectorAll(".edge").forEach(p => {
+    const e = DATA.edges[+p.dataset.edge];
+    p.addEventListener("mouseenter", () => {
+      p.classList.add("hi"); p.setAttribute("marker-end", "url(#arrHi)");
+      const a = nodeById[e.from], b = nodeById[e.to];
+      showTip(`${a.label} → ${b.label} · ${e.kind === "calls" ? "调用" : "数据"} · ${e.label}`,
+        ((a.x + b.x) / 2) * view.k + view.tx, (Math.min(a.y, b.y) - 26) * view.k + view.ty);
+    });
+    p.addEventListener("mouseleave", () => { p.classList.remove("hi"); p.setAttribute("marker-end", "url(#arr)"); hideTip(); });
+  });
+
+  drawMinimap();
+}
+
+/* tooltip（屏幕坐标） */
+let tipEl = null;
+function showTip(text, x, y) {
+  hideTip();
+  tipEl = document.createElement("div");
+  tipEl.className = "chip";
+  tipEl.style.cssText = `position:absolute;left:${x}px;top:${Math.max(4, y)}px;transform:translateX(-50%);pointer-events:none;font-size:11px;box-shadow:0 2px 8px rgba(0,0,0,.5);white-space:nowrap;z-index:10`;
+  tipEl.textContent = text;
+  wrap.appendChild(tipEl);
+}
+function hideTip() { if (tipEl) { tipEl.remove(); tipEl = null; } }
+
+/* ───────────────────────── hover 摘要卡（节点 / 文件） ─────────────────────────
+   节点是「概览」：结构一眼看全；细节（摘要/位置/状态）hover 即得，点击才跳转。 */
+const hovercard = document.getElementById("hovercard");
+let hoverEl = null;
+function hideHoverCard() { hoverEl = null; hovercard.style.display = "none"; }
+function showHoverCard(el) {
+  const wr = wrap.getBoundingClientRect();
+  let html = "";
+  if (el.hasAttribute("data-node")) {
+    const n = nodeById[el.dataset.node];
+    html = `<div class="hc-h"><span class="dot ${dotCls(n.status)}"></span>${esc(n.label)}<span class="hc-st">${STATUS_TXT[n.status]}</span></div>
+      <div class="hc-sum">${esc(n.summary)}</div>
+      <div class="hc-loc">${esc(n.loc.replace("cheers:ws/", ""))}</div>
+      <div class="hc-hint">点击跳转到代码${n.files.length ? ` · ▸${n.files.length} 展开文件` : ""} · 拖动整理版面</div>`;
+  } else {
+    const [nid, idx] = el.dataset.file.split(":");
+    const n = nodeById[nid]; const f = n.files[+idx];
+    html = `<div class="hc-h"><span class="dot ${dotCls(f.s)}"></span><span class="mono">${esc(f.n)}</span><span class="hc-st">${f.l}</span></div>
+      <div class="hc-sum">${esc(n.label)} 模块 · ${STATUS_TXT[f.s]}</div>
+      <div class="hc-hint">点击跳转到代码</div>`;
+  }
+  hovercard.innerHTML = html;
+  hovercard.style.display = "block";
+  const r = el.getBoundingClientRect();
+  const cw = hovercard.offsetWidth, ch = hovercard.offsetHeight;
+  let x = r.x - wr.x + r.width / 2 - cw / 2;
+  x = Math.max(8, Math.min(x, wr.width - cw - 8));
+  let y = r.y - wr.y - ch - 10;
+  if (y < 8) y = r.y - wr.y + r.height + 10;   // 上方放不下就贴到下方
+  hovercard.style.left = x + "px";
+  hovercard.style.top = y + "px";
+}
+map.addEventListener("mouseover", (e) => {
+  if (gesture) return;                        // 拖拽中不弹卡
+  const g = e.target.closest("[data-node],[data-file]");
+  if (g && g !== hoverEl) { hoverEl = g; showHoverCard(g); }
+});
+map.addEventListener("mouseout", (e) => {
+  if (!hoverEl) return;
+  const to = e.relatedTarget;
+  if (!to || !(to.closest && to.closest("[data-node],[data-file]") === hoverEl)) hideHoverCard();
+});
+
+/* ───────────────────────── minimap ───────────────────────── */
+function worldBounds() {
+  let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+  for (const n of DATA.nodes) {
+    const r = nodeRect(n);
+    x1 = Math.min(x1, r.x - 40); y1 = Math.min(y1, r.y - 60);
+    x2 = Math.max(x2, r.x + r.w + 40); y2 = Math.max(y2, r.y + r.h + 60);
+  }
+  return { x1, y1, x2, y2 };
+}
+function drawMinimap() {
+  const b = worldBounds();
+  const mm = document.getElementById("mmSvg");
+  const W = 160, H = 102;
+  const k = Math.min(W / (b.x2 - b.x1), H / (b.y2 - b.y1)) * 0.92;
+  const ox = (W - (b.x2 - b.x1) * k) / 2 - b.x1 * k;
+  const oy = (H - (b.y2 - b.y1) * k) / 2 - b.y1 * k;
+  let html = "";
+  for (const n of DATA.nodes) {
+    const r = nodeRect(n);
+    html += `<rect class="mm-node ${n.status === "explored" ? "ok" : n.status === "stale" ? "warn" : ""}"
+      x="${r.x * k + ox}" y="${r.y * k + oy}" width="${Math.max(4, r.w * k)}" height="${Math.max(2.5, r.h * k)}" rx="1.5"></rect>`;
+  }
+  // 视口框：屏幕范围反算回 world
+  const vw = wrap.clientWidth, vh = wrap.clientHeight;
+  const wx1 = (0 - view.tx) / view.k, wy1 = (0 - view.ty) / view.k;
+  const wx2 = (vw - view.tx) / view.k, wy2 = (vh - view.ty) / view.k;
+  html += `<rect class="mm-view" x="${wx1 * k + ox}" y="${wy1 * k + oy}" width="${(wx2 - wx1) * k}" height="${(wy2 - wy1) * k}" rx="2"></rect>`;
+  mm.innerHTML = html;
+  mm._map = { k, ox, oy };
+}
+document.getElementById("minimap").addEventListener("pointerdown", (e) => {
+  const mm = document.getElementById("mmSvg");
+  const { k, ox, oy } = mm._map;
+  const r = mm.getBoundingClientRect();
+  const wx = (e.clientX - r.left - ox) / k, wy = (e.clientY - r.top - oy) / k;
+  centerOn(wx, wy, false);
+});
+
+/* ───────────────────────── 视图变换 ───────────────────────── */
+function centerOn(wx, wy, animate = true) {
+  const target = { k: view.k, tx: wrap.clientWidth / 2 - wx * view.k, ty: wrap.clientHeight / 2 - wy * view.k };
+  if (!animate) { view = target; render(); return; }
+  const from = { ...view }; const t0 = performance.now();
+  (function step(t) {
+    const p = Math.min(1, (t - t0) / 260), e = 1 - Math.pow(1 - p, 3);
+    view = { k: from.k + (target.k - from.k) * e, tx: from.tx + (target.tx - from.tx) * e, ty: from.ty + (target.ty - from.ty) * e };
+    render();
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
+function fit() {
+  const b = worldBounds();
+  const k = Math.min(wrap.clientWidth / (b.x2 - b.x1), wrap.clientHeight / (b.y2 - b.y1), 1.4) * 0.96;
+  view = {
+    k,
+    // +40：给左下角缩放控件留出空隙，别压住最左侧节点
+    tx: (wrap.clientWidth - (b.x2 - b.x1) * k) / 2 - b.x1 * k + 40,
+    ty: (wrap.clientHeight - (b.y2 - b.y1) * k) / 2 - b.y1 * k,
+  };
+  render();
+}
+function zoomAt(factor, cx, cy) {
+  const k2 = Math.min(2.6, Math.max(0.35, view.k * factor));
+  view.tx = cx - (cx - view.tx) * (k2 / view.k);
+  view.ty = cy - (cy - view.ty) * (k2 / view.k);
+  view.k = k2;
+  render();
+}
+map.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = map.getBoundingClientRect();
+  zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+document.getElementById("zin").addEventListener("click", () => zoomAt(1.25, wrap.clientWidth / 2, wrap.clientHeight / 2));
+document.getElementById("zout").addEventListener("click", () => zoomAt(0.8, wrap.clientWidth / 2, wrap.clientHeight / 2));
+document.getElementById("zfit").addEventListener("click", fit);
+
+/* ───────────────────────── 指针交互：平移 / 拖节点 / 点击（pointer events + capture） ── */
+let gesture = null; // {mode:"pan"|"node", id?, startX, startY, orig, moved}
+map.addEventListener("pointerdown", (e) => {
+  const nodeEl = e.target.closest("[data-node]");
+  const fileEl = e.target.closest("[data-file]");
+  map.setPointerCapture(e.pointerId);
+  hideHoverCard();
+  if (nodeEl) {
+    const n = nodeById[nodeEl.dataset.node];
+    gesture = { mode: "node", id: n.id, startX: e.clientX, startY: e.clientY, orig: { x: n.x, y: n.y }, moved: false,
+      expander: !!e.target.closest('[data-role="expander"]') };
+  } else if (fileEl) {
+    gesture = { mode: "file", id: fileEl.dataset.file, startX: e.clientX, startY: e.clientY, moved: false };
+  } else {
+    gesture = { mode: "pan", startX: e.clientX, startY: e.clientY, orig: { tx: view.tx, ty: view.ty }, moved: false };
+    map.classList.add("panning");
+  }
+});
+map.addEventListener("pointermove", (e) => {
+  if (!gesture) return;
+  const dx = e.clientX - gesture.startX, dy = e.clientY - gesture.startY;
+  if (Math.abs(dx) + Math.abs(dy) > 3) gesture.moved = true;
+  if (gesture.mode === "pan") {
+    view.tx = gesture.orig.tx + dx; view.ty = gesture.orig.ty + dy;
+    world.setAttribute("transform", `translate(${view.tx},${view.ty}) scale(${view.k})`);
+    drawMinimap();
+  } else if (gesture.mode === "node" && gesture.moved) {
+    const n = nodeById[gesture.id];
+    n.x = gesture.orig.x + dx / view.k; n.y = gesture.orig.y + dy / view.k;
+    render();
+  }
+});
+function endGesture(e) {
+  if (!gesture) return;
+  map.classList.remove("panning");
+  const g = gesture; gesture = null;
+  if (g.moved) {
+    if (g.mode === "node") toast(`版面已调整——真实插件中坐标持久化到 <b class="mono">.workbench.json</b> 的 configs（bot 不碰版面）`);
+    return;
+  }
+  // 未移动 → 视为点击。节点点击 = 直接跳转到代码（概览 → 一击到源码）；
+  // ▸N 角标点击 = 展开/收起卫星文件（单击已被「跳转」占用）。
+  if (g.mode === "node") {
+    const n = nodeById[g.id];
+    if (g.expander && n.files.length) { n.expanded = !n.expanded; render(); }
+    else { select(g.id); openWs(n); }
+  } else if (g.mode === "file") {
+    const [nid, idx] = g.id.split(":");
+    const n = nodeById[nid]; const f = n.files[+idx];
+    select(nid);
+    openWsFile(n, f);
+  }
+}
+map.addEventListener("pointerup", endGesture);
+map.addEventListener("pointercancel", endGesture);
+
+/* ───────────────────────── 侧栏 ───────────────────────── */
+const side = document.getElementById("side");
+function select(id) { selected = id; render(); renderSide(); }
+function dotCls(s) { return s === "explored" ? "ok" : s === "stale" ? "warn" : "part"; }
+function renderSide() {
+  const n = nodeById[selected];
+  const meta = DATA.meta[n.id] || { by: "@backend", at: "刚刚" };
+  const rel = DATA.edges.filter(e => e.from === n.id || e.to === n.id);
+  const area = DATA.areas.find(a => a.id === n.area);
+  side.innerHTML = `
+    <div class="side-sec">
+      <h2>${n.label} <span class="kind">module</span></h2>
+      <div class="hint" style="margin-top:2px">${area.name} · id <span class="mono">${n.id}</span></div>
+    </div>
+
+    <div class="side-sec">
+      <div class="slabel">状态</div>
+      <div class="status-seg" role="group" aria-label="节点状态">
+        ${["explored", "partial", "stale"].map(s => `
+          <button data-s="${s}" class="${n.status === s ? "on" : ""}">
+            <span class="dot ${dotCls(s)}"></span>${STATUS_TXT[s]}</button>`).join("")}
+      </div>
+      ${n.status === "stale" ? `<div class="stale-note">⚠ bot 改动相关代码后尚未核对本节点——摘要可能过时</div>` : ""}
+    </div>
+
+    <div class="side-sec">
+      <div class="slabel">位置 · Cheers Locator</div>
+      <div class="loc-box">${n.loc}</div>
+      <div class="row">
+        <button class="btn-indigo" id="jump" style="flex:1">↗ 跳转到代码</button>
+        <button class="btn-soft" id="copyLoc">复制</button>
+      </div>
+      <div class="hint">打开 @${n.loc.split("/")[1].replace("@", "")} 的远程工作区并定位到 ${n.loc.includes("#") ? n.loc.split("#")[1] : "文件"}（cheers:open → resolveLocator）</div>
+    </div>
+
+    ${n.files.length ? `<div class="side-sec">
+      <div class="slabel">文件（${n.files.length} · 点击跳转）</div>
+      ${n.files.map((f, i) => `<div class="file-item" data-f="${i}">
+        <span class="dot ${dotCls(f.s)}"></span><span class="fname">${f.n}</span><span class="lines">${f.l}</span></div>`).join("")}
+    </div>` : ""}
+
+    <div class="side-sec">
+      <div class="slabel">摘要（可改，写回 map.yaml）</div>
+      <textarea class="sum-edit" id="sumEdit">${n.summary}</textarea>
+      <div class="row">
+        <button class="btn-soft" id="saveSum">保存</button>
+        <span class="hint" id="saveState" style="align-self:center"></span>
+      </div>
+    </div>
+
+    <div class="side-sec">
+      <div class="slabel">标签</div>
+      <div class="tags">${n.tags.map(t => `<span class="tag">${t}</span>`).join("")}<span class="tag add">＋ 添加</span></div>
+    </div>
+
+    <div class="side-sec">
+      <div class="slabel">关系（${rel.length}）</div>
+      ${rel.map(e => {
+        const out = e.from === n.id;
+        const other = nodeById[out ? e.to : e.from];
+        return `<div class="edge-item" data-goto="${other.id}">
+          <span class="dir">${out ? "→" : "←"}</span>
+          <span class="dot ${dotCls(other.status)}"></span><span>${other.label}</span>
+          <span class="ek">${e.kind === "calls" ? "调用" : "数据"} · ${e.label}</span></div>`;
+      }).join("") || '<div class="hint">无</div>'}
+    </div>
+
+    <div class="side-sec">
+      <button class="btn-soft" id="askBot" style="width:100%">💬 让 bot 讲讲这个模块 <span class="phase2">Phase 2</span></button>
+    </div>
+
+    <div class="side-sec" style="border-bottom:0">
+      <div class="meta">由 <b style="color:var(--t-body)">${meta.by}</b> 维护 · 更新于 ${meta.at} · map v${version}</div>
+    </div>`;
+
+  side.querySelectorAll(".status-seg button").forEach(b =>
+    b.addEventListener("click", () => { n.status = b.dataset.s; render(); renderSide(); updateCounts(); toast(`状态改为「${STATUS_TXT[n.status]}」→ <b>cheers:save</b> 写回 map.yaml`); }));
+  side.querySelectorAll(".edge-item").forEach(el =>
+    el.addEventListener("click", () => { const id = el.dataset.goto; select(id); centerOn(nodeById[id].x, nodeById[id].y); }));
+  side.querySelectorAll(".file-item").forEach(el =>
+    el.addEventListener("click", () => openWsFile(n, n.files[+el.dataset.f])));
+  side.querySelector("#jump").addEventListener("click", () => openWs(n));
+  side.querySelector("#copyLoc").addEventListener("click", () => toast(`已复制 <b class="mono">${n.loc}</b>`));
+  side.querySelector("#saveSum").addEventListener("click", () => {
+    n.summary = side.querySelector("#sumEdit").value;
+    version += 1;
+    side.querySelector("#saveState").textContent = `已保存 v${version}`;
+    document.getElementById("updated").textContent = `你更新于 刚刚 · v${version}`;
+    render();
+    toast(`<b>cheers:save</b> → 乐观锁写入成功（v${version}）——bot 下次 desk_read 就能看到你的修正`);
+  });
+  side.querySelector("#askBot").addEventListener("click", () =>
+    toast(`<b>cheers:compose</b>（Phase 2）→ 只预填输入框：「@backend 讲讲 ${n.id} 的现状」，发送权在你`));
+}
+
+/* ───────────────────────── 跳转演示（远程工作区 mock） ───────────────────────── */
+const WS_CODE_FS = [
+  [560, "    }"], [561, "}"], [562, ""],
+  [563, "/// Channel workspace files are TEXT boards, deliberately small."],
+  [564, "const MAX_FILE_BYTES: usize = 256 * 1024;"],
+  [565, ""],
+  [566, "pub async fn write(ctx: &Ctx, p: WriteParams) -> Result<Written> {"],
+  [567, "    authorize_channel_role(ctx, &p.channel_id, Role::Member)?;"],
+  [568, "    if p.content.len() > MAX_FILE_BYTES {"],
+  [569, "        return Err(ResourceError::code(\"CONTENT_TOO_LARGE\"));"],
+  [570, "    }"],
+  [571, "    // optimistic lock: if_version 0 = create-only"],
+  [572, "    let cur = current_version(ctx, &p.channel_id, &p.path).await?;"],
+  [573, "    if p.if_version != cur {"],
+  [574, "        return Err(ResourceError::code(\"VERSION_CONFLICT\"));"],
+  [575, "    }"],
+];
+function genericCode(anchor) {
+  const from = Math.max(1, anchor - 4);
+  const out = [];
+  for (let ln = from; ln < from + 15; ln++) {
+    out.push([ln, ln === anchor ? "// ← locator 命中行（mock 内容示意）" : "…"]);
+  }
+  return out;
+}
+function showWsDialog(bot, path, anchorStr, lines) {
+  document.getElementById("wsTitle").textContent = `远程工作区 · ${bot} — ${path}`;
+  document.getElementById("wsAnchor").textContent = "#" + anchorStr;
+  const hlFrom = parseInt(anchorStr.replace("L", ""), 10);
+  const hlTo = anchorStr.includes("-") ? parseInt(anchorStr.split("-")[1].replace("L", ""), 10) : hlFrom;
+  document.getElementById("wsCode").innerHTML = lines.map(([ln, src]) =>
+    `<div class="cl ${ln >= hlFrom && ln <= hlTo ? "hl" : ""}"><span class="ln">${ln}</span><span class="src">${esc(src)}</span></div>`).join("");
+  document.getElementById("wsOverlay").classList.add("show");
+}
+function openWs(n) {
+  const [pathPart, anchor] = n.loc.replace("cheers:ws/", "").split("#");
+  const bot = pathPart.split("/")[0];
+  const path = pathPart.slice(bot.length + 1);
+  const a = anchor || "L1";
+  showWsDialog(bot, path, a, path.endsWith("fs.rs") ? WS_CODE_FS : genericCode(parseInt(a.replace("L", ""), 10)));
+}
+function openWsFile(n, f) {
+  const [pathPart] = n.loc.replace("cheers:ws/", "").split("#");
+  const bot = pathPart.split("/")[0];
+  const dir = pathPart.slice(bot.length + 1).split("/").slice(0, -1).join("/");
+  const path = (dir ? dir + "/" : "") + f.n;
+  showWsDialog(bot, path, f.l, f.n === "fs.rs" ? WS_CODE_FS : genericCode(parseInt(f.l.replace("L", ""), 10)));
+}
+document.getElementById("wsClose").addEventListener("click", () => document.getElementById("wsOverlay").classList.remove("show"));
+document.getElementById("wsOverlay").addEventListener("click", (e) => { if (e.target.id === "wsOverlay") e.target.classList.remove("show"); });
+
+/* ───────────────────────── 搜索 / 展开收起 ───────────────────────── */
+document.getElementById("q").addEventListener("input", render);
+document.getElementById("expandAll").addEventListener("click", () => { DATA.nodes.forEach(n => { if (n.files.length) n.expanded = true; }); render(); });
+document.getElementById("collapseAll").addEventListener("click", () => { DATA.nodes.forEach(n => n.expanded = false); render(); });
+
+/* ───────────────────────── 模拟 bot 更新（演示 G1 热刷新） ───────────────────────── */
+let demoStep = 0;
+function updateCounts() {
+  const staleN = DATA.nodes.filter(n => n.status === "stale").length;
+  document.getElementById("counts").textContent = `11 模块 · 6 边 · ${staleN} 待核对`;
+}
+document.getElementById("demo").addEventListener("click", () => {
+  demoStep = (demoStep % 3) + 1;
+  if (demoStep === 1) {
+    const n = nodeById["fe.workbench"];
+    n.status = "explored";
+    n.summary = "文件中心工作台：FilePanel + 沙箱渲染器；filesTick 热刷新链路已核对";
+    DATA.focus = "fe.workbench";
+    DATA.meta["fe.workbench"] = { by: "@webdev", at: "刚刚" };
+    toast(`bot <b>desk_edit</b> 了 map.yaml → Desk 推送信号 → host 重发 <b>cheers:render</b>（缺口 G1）→ 地图原地更新`);
+  } else if (demoStep === 2) {
+    nodeById["gw.api"].status = "stale";
+    DATA.focus = "gw.api";
+    toast(`bot 改了 <b>gw.api</b> 的代码但未核对地图 → 按约定先标「待核对」`);
+  } else {
+    nodeById["gw.api"].status = "explored";
+    DATA.focus = "gw.resource";
+    toast(`bot 核对完毕 → <b>gw.api</b> 恢复「已探明」，focus 回到 gw.resource`);
+  }
+  version += 1;
+  document.getElementById("updated").textContent = `bot 更新于 刚刚 · v${version}`;
+  updateCounts();
+  const f = nodeById[DATA.focus];
+  render(); renderSide();
+  centerOn(f.x, f.y);   // 镜头跟随 agent 焦点
+});
+
+/* ───────────────────────── Toast ───────────────────────── */
+function toast(html) {
+  const box = document.getElementById("toasts");
+  const t = document.createElement("div");
+  t.className = "toast"; t.innerHTML = html;
+  box.appendChild(t);
+  setTimeout(() => { t.style.opacity = "0"; t.style.transition = "opacity .3s"; setTimeout(() => t.remove(), 320); }, 3600);
+}
+
+/* ───────────────────────── init（v2：节点+地图） ───────────────────────── */
+nodeById["gw.resource"].expanded = true;    // 初始给一个展开示例
+nodeById["fe.workbench"].expanded = true;   // 三文件的例子，验证卫星标签间距
+// 容器在脚本执行时可能还没完成布局（clientWidth/Height = 0 → k=0 全图不可见），
+// 等拿到真实尺寸再 fit
+let fitted = false;
+(function fitWhenReady(tries) {
+  if ((wrap.clientWidth < 60 || wrap.clientHeight < 60) && tries < 120) {
+    requestAnimationFrame(() => fitWhenReady(tries + 1));
+    return;
+  }
+  fitted = true;
+  fit();
+})(0);
+renderSide();
+new ResizeObserver(() => {
+  if (!fitted || view.k <= 0.01) return;   // 首次 fit 前不动
+  if (wrap.clientWidth > 60 && wrap.clientHeight > 60) drawMinimap();
+}).observe(wrap);
+</script>
+</body>
+</html>

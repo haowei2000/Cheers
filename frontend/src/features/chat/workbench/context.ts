@@ -28,6 +28,10 @@ export interface WorkbenchContext {
   /** Deep-link target: a file path the browser should auto-open (e.g. a clicked Desk
    *  ref in a bot reply, or a just-activated scenario's first file). */
   openTarget?: string | null;
+  /** Navigate the user's view to a `cheers:` locator (desk / ws / inbox — see
+   *  features/chat/locator.ts). Handed to renderer plugins as the cheers:open host
+   *  API; implemented by ChannelView, which owns every jump surface. UI routing only. */
+  openLocator?: (uri: string) => void;
   /** Live-push tick for the Desk ("files" board): bump → the browser re-pulls the tree
    *  and reloads a clean open file (unsaved edits are never clobbered). */
   filesTick?: number;

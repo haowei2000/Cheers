@@ -73,6 +73,7 @@
 | host → plugin | `cheers:saved` | `{ ok, version, error? }` | 乐观锁写入结果;`ok` 时更新你手里的 `version` |
 | plugin → host | `cheers:resource` | `{ reqId, resource, params }` | **host API**:读频道信息(见下白名单),`channel_id` 由 host 强制为当前频道 |
 | host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | 读取结果 |
+| plugin → host | `cheers:open` | `{ uri }` | 请求把**用户的视图**导航到一个 `cheers:` 定位符:`cheers:ws/<bot>/<路径>#L<行>` 打开远程工作区并定位到行(先做存在性探测),`cheers:desk/<路径>` 聚焦工作台文件,`cheers:inbox/<file_id>` 打开频道文件。发出即忘、无回执;纯 UI 路由——host 严格解析,跳转背后的每次读取照常鉴权,解析不了给用户看清晰报错。不支持的 host 直接忽略(协议 1 的"忽略未知"生长规则),可以无条件发。 |
 
 ### 3.1 Host API:读频道信息
 
