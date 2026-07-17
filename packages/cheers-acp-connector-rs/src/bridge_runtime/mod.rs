@@ -2709,12 +2709,22 @@ struct ActiveRun {
     /// Last-known `tool_call` snapshot per `toolCallId`, newest last.
     ///
     /// ACP's `session/request_permission` carries a `ToolCallUpdate` — a DELTA, not
-    /// a snapshot — so the detail (title, the diff `content`, `rawInput`) is only
-    /// ever sent in the earlier `session/update` that announced the same
-    /// `toolCallId`. codex leans on this hard: its edit approvals arrive as a bare
-    /// `{ toolCallId, kind: "edit", status }`. Without the prior snapshot there is
-    /// nothing to show, so we keep it here and merge it back in
-    /// (`merge_tool_call_snapshot`) when the permission request lands.
+    /// a snapshot ("All fields except the tool call ID are optional - only changed
+    /// fields need to be included"), so the detail (title, the diff `content`,
+    /// `rawInput`) may only ever be sent in the earlier `session/update` that
+    /// announced the same `toolCallId`. The spec's own example of a permission
+    /// request is a bare `{"toolCallId": "call_001"}`, so tracking this is the
+    /// client's job, not the agent's oversight.
+    ///
+    /// Keeping it is the canonical client behaviour: Zed (the reference client)
+    /// upserts the permission request's `ToolCallUpdate` into the tool call it
+    /// already holds (`AcpThread::request_tool_call_authorization` ->
+    /// `upsert_tool_call_inner` -> `update_fields`), and the SDK ships the same
+    /// merge as `ToolCall::update`.
+    ///
+    /// Agents differ in how much they lean on it — claude-code-acp and opencode
+    /// send self-contained requests, codex sends the bare minimum — so the client
+    /// has to cope with all of them.
     ///
     /// Scoped to the run so it dies with the turn; capped so a long agentic turn
     /// can't grow it without bound (diffs are held verbatim).

@@ -1371,6 +1371,67 @@ mod tests {
     }
 
     #[test]
+    fn opencode_sends_a_self_contained_edit_and_needs_no_snapshot() {
+        // opencode 1.18.3 builds the permission request from `pendingToolCall` +
+        // `permissionContent`, so it arrives with title/kind/locations AND the diff
+        // `content` already on it — the same canonical ACP shape codex only sends
+        // in the earlier session/update. The card must work with no snapshot.
+        let params = json!({
+            "sessionId": "s1",
+            "toolCall": {
+                "toolCallId": "call_oc",
+                "title": "Edit hello.txt",
+                "kind": "edit",
+                "status": "pending",
+                "locations": [{ "path": "/work/hello.txt" }],
+                "rawInput": { "filePath": "/work/hello.txt" },
+                "content": [{
+                    "type": "diff",
+                    "path": "/work/hello.txt",
+                    "oldText": "original content\n",
+                    "newText": "patched\n"
+                }]
+            },
+            "options": [{ "optionId": "once", "kind": "allow_once", "name": "Allow once" }]
+        });
+        let tool = permission_tool_from_params(&params).expect("tool");
+        assert_eq!(tool["title"], "Edit hello.txt");
+        // The agent's own locations must be preserved, not overwritten by ours.
+        assert_eq!(tool["locations"][0]["path"], "/work/hello.txt");
+        let diff = tool["diff"].as_str().expect("diff");
+        assert!(diff.contains("-original content"));
+        assert!(diff.contains("+patched"));
+        assert_eq!(permission_body_from_params(&params), "/work/hello.txt");
+    }
+
+    #[test]
+    fn claude_code_acp_edit_still_reads_from_raw_input() {
+        // claude-code-acp 0.16.2 sends `{ toolCallId, title, rawInput }` — no kind,
+        // no content. It has always worked; the edit path must not regress it.
+        let params = json!({
+            "toolCall": {
+                "toolCallId": "toolu_1",
+                "title": "Edit `/work/hello.txt`",
+                "rawInput": {
+                    "file_path": "/work/hello.txt",
+                    "old_string": "original content",
+                    "new_string": "patched"
+                }
+            }
+        });
+        let tool = permission_tool_from_params(&params).expect("tool");
+        assert_eq!(tool["title"], "Edit `/work/hello.txt`");
+        assert_eq!(tool["raw_input"]["file_path"], "/work/hello.txt");
+        // No ACP diff content, so no synthesized patch — the card falls back to
+        // rendering rawInput, which is what it did before any of this.
+        assert!(tool["diff"].is_null());
+        assert_eq!(
+            permission_body_from_params(&params),
+            "ACP agent requested permission to continue."
+        );
+    }
+
+    #[test]
     fn permission_tool_call_id_is_read_from_the_request() {
         assert_eq!(
             permission_tool_call_id(&codex_edit_permission_request()),
