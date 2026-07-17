@@ -16,6 +16,13 @@ use uuid::Uuid;
 /// a pooled-but-idle MCP socket can't leak a task/fd for the life of the session.
 const LOOPBACK_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Hard ceiling on a single loopback request body. The only legitimate client is
+/// the local MCP bridge, whose resource calls are small JSON payloads, so a few
+/// MiB is generous. Without this cap a local process could set an arbitrary
+/// `Content-Length` and force the connection task to buffer that many bytes on the
+/// heap before the token is even checked.
+const MAX_LOOPBACK_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub struct LoopbackHandle {
     pub url: String,
@@ -233,6 +240,21 @@ async fn read_http_request(
         .get("content-length")
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
+    // Reject an oversized body from the declared Content-Length BEFORE draining it,
+    // so a local process can't force us to buffer an arbitrary amount of heap. We
+    // still write a proper 413 and then close (returning Err drops the connection).
+    if content_length > MAX_LOOPBACK_BODY_BYTES {
+        write_http_json(
+            stream,
+            413,
+            false,
+            &json!({ "ok": false, "code": "PAYLOAD_TOO_LARGE", "error": "loopback request body too large" }),
+        )
+        .await?;
+        return Err(anyhow!(
+            "loopback request body too large: {content_length} bytes (max {MAX_LOOPBACK_BODY_BYTES})"
+        ));
+    }
     let body_start = header_end + 4;
     let body_end = body_start + content_length;
     while buf.len() < body_end {
@@ -280,6 +302,7 @@ async fn write_http_json(
         200 => "OK",
         401 => "Unauthorized",
         405 => "Method Not Allowed",
+        413 => "Payload Too Large",
         _ => "Error",
     };
     // Content-Length is always present, so the client can frame the body and reuse

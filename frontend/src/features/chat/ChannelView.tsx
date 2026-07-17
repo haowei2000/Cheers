@@ -147,6 +147,17 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
   // Channel file index (id + name) built from loaded messages' attachments — no
   // extra fetch. Powers F3 filename suggestions (draft names a file → offer it).
+  // Attachments never change during streaming, but `flushDeltas` swaps the whole
+  // `messages` array identity every rAF, so keying this off `messages` would rebuild
+  // the nested O(messages × attachments) index on every token delta. Instead key off a
+  // cheap signature of just the messages that HAVE files (id + count) — it only changes
+  // when attachments actually change, keeping both the work AND the value identity stable
+  // across deltas. (Cheap enough to compute inline each render.)
+  let channelFilesKey = `${messages.length}`;
+  for (const m of messages) {
+    const n = m.files?.length ?? 0;
+    if (n) channelFilesKey += `|${m.msg_id}:${n}`;
+  }
   const channelFiles = useMemo(() => {
     const byId = new Map<string, { file_id: string; filename: string }>();
     for (const m of messages) {
@@ -158,7 +169,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       }
     }
     return Array.from(byId.values());
-  }, [messages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelFilesKey]);
 
   // A different channel means a different session set — drop any prior target.
   // Also drop any buffered stream deltas + cancel a pending flush so a stale frame
@@ -577,6 +589,20 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       return () => clearTimeout(t);
     }
     setShowConnBanner(rtStatus === "offline");
+  }, [rtStatus]);
+
+  // If the realtime connection drops mid-stream, a bot bubble can be left with
+  // `_streaming: true` indefinitely (no done frame arrives), which the streaming
+  // fast-path renders as plain pre-wrap text. Finalize any lingering stream when we
+  // go offline so it falls back to full Markdown; reconnect catch-up then reconciles
+  // it with the persisted server state.
+  useEffect(() => {
+    if (rtStatus !== "offline") return;
+    setMessages((prev) =>
+      prev.some((m) => m._streaming)
+        ? prev.map((m) => (m._streaming ? { ...m, _streaming: false } : m))
+        : prev
+    );
   }, [rtStatus]);
 
   // Re-flatten the palette when bot labels resolve after the initial fetch.

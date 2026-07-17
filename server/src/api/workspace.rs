@@ -286,16 +286,21 @@ pub async fn resolve_ref(
 
     // 2. Desk (context_files): prefer an exact path, else fall back to basename
     //    (a Desk file the bot mentioned by name, e.g. `todo.md` for `notes/todo.md`).
+    // `base` is a literal filename here; escape LIKE metacharacters so a name
+    // containing `%`/`_`/`\` matches by value instead of acting as a wildcard.
+    // The `path = $3` exact-match branch keeps the raw `base` (parameter $3).
+    let base_like = crate::domain::messages::escape_like_pattern(base);
     let desk = sqlx::query_as::<_, (String, Option<String>)>(
         "SELECT path, content FROM context_files
          WHERE channel_id = $1 AND is_dir = FALSE
-           AND (path = $2 OR path = $3 OR path LIKE '%/' || $3)
+           AND (path = $2 OR path = $3 OR path LIKE '%/' || $4 ESCAPE '\\')
          ORDER BY (path = $2) DESC, length(path) ASC
          LIMIT 1",
     )
     .bind(channel_id.to_string())
     .bind(r)
     .bind(base)
+    .bind(&base_like)
     .fetch_optional(&state.db)
     .await
     .map_err(AppError::Db)?;

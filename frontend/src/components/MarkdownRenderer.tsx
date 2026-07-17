@@ -1,4 +1,4 @@
-import { useContext, useMemo } from "react";
+import { memo, useContext, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PathOpenContext, looksLikePath } from "@/features/chat/workspaceLink";
@@ -46,7 +46,7 @@ function CodeBlock({
   );
 }
 
-export function MarkdownRenderer({ content, className }: Props) {
+export const MarkdownRenderer = memo(function MarkdownRenderer({ content, className }: Props) {
   const onPath = useContext(PathOpenContext);
   // react-markdown v10 dropped the `className` prop (passing it throws). Wrap in a styled
   // div instead so "prose" + caller classes still apply.
@@ -92,4 +92,4 @@ export function MarkdownRenderer({ content, className }: Props) {
     </ReactMarkdown>
     </div>
   );
-}
+});

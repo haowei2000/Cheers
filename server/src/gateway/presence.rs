@@ -10,13 +10,66 @@
 
 use serde_json::json;
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
     gateway::{realtime::frame::WireFrame, registry::BotLocator},
 };
+
+/// 每频道 bot 成员名单（DB channel_memberships 查询结果）的进程内短 TTL 缓存。
+///
+/// 成员名单是慢变量，而在线与否由内存 registry（BotLocator）实时判定。连接抖动风暴下
+/// broadcast_presence 会被高频调用，缓存把 DB 查询从 O(事件) 降到 O(去重频道/TTL 窗口)，
+/// 同时 online/offline 信号仍逐次实时计算，presence 不会因缓存而变陈旧。
+const BOT_ROSTER_TTL: Duration = Duration::from_secs(2);
+
+struct RosterEntry {
+    members: Vec<String>,
+    fetched_at: Instant,
+}
+
+fn roster_cache() -> &'static Mutex<HashMap<Uuid, RosterEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<Uuid, RosterEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 取频道的 bot 成员名单：命中未过期缓存直接返回，否则查 DB 并刷新缓存。
+/// 查询失败时与原行为一致——返回空且不写入缓存（下次调用重试）。
+async fn channel_bot_members(db: &PgPool, channel_id: Uuid) -> Vec<String> {
+    {
+        let cache = roster_cache().lock().unwrap();
+        if let Some(entry) = cache.get(&channel_id) {
+            if entry.fetched_at.elapsed() < BOT_ROSTER_TTL {
+                return entry.members.clone();
+            }
+        }
+    }
+    let fetched: Result<Vec<String>, _> = sqlx::query_scalar(
+        "SELECT member_id FROM channel_memberships
+         WHERE channel_id = $1 AND member_type = 'bot'",
+    )
+    .bind(channel_id.to_string())
+    .fetch_all(db)
+    .await;
+    match fetched {
+        Ok(member_ids) => {
+            let mut cache = roster_cache().lock().unwrap();
+            cache.insert(
+                channel_id,
+                RosterEntry {
+                    members: member_ids.clone(),
+                    fetched_at: Instant::now(),
+                },
+            );
+            member_ids
+        }
+        Err(_) => Vec::new(),
+    }
+}
 
 /// 计算并广播一个频道的全量在线名单（用户 + bot）。
 pub async fn broadcast_presence(state: &AppState, channel_id: Uuid) {
@@ -52,14 +105,8 @@ pub async fn channel_online_bots(
     bot_locator: &Arc<dyn BotLocator>,
     channel_id: Uuid,
 ) -> Vec<String> {
-    let member_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT member_id FROM channel_memberships
-         WHERE channel_id = $1 AND member_type = 'bot'",
-    )
-    .bind(channel_id.to_string())
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    // 成员名单走短 TTL 缓存（慢变量）；在线状态每次实时判定（快变量）。
+    let member_ids = channel_bot_members(db, channel_id).await;
 
     let mut online = Vec::new();
     for id in member_ids {

@@ -62,8 +62,10 @@ pub async fn authenticate(
 
     let hashed: String = row.try_get("password_hash").map_err(AppError::Db)?;
 
-    // Python passlib 使用 bcrypt（$2b$ 前缀）
-    let ok = bcrypt::verify(password, &hashed)
+    // Python passlib 使用 bcrypt（$2b$ 前缀）。bcrypt 是 CPU 密集（~200-300ms），
+    // 放到 spawn_blocking 线程池执行，避免阻塞 tokio worker。
+    let ok = crate::infra::crypto::verify_password(password.to_string(), hashed)
+        .await
         .map_err(|_| AppError::Unauthorized("invalid credentials".into()))?;
 
     if !ok {

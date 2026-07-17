@@ -16,13 +16,15 @@ data:
       index index.html;
 
       # Security headers (audit M2): clickjacking + MIME-sniff + referrer + a
-      # minimal CSP. CSP is intentionally narrow (no script-src lockdown) to
-      # avoid breaking the Vite SPA; tighten with nonces later. No location here
-      # defines its own add_header, so these inherit to every response.
+      # hardened CSP. The production Vite build emits only external hashed module
+      # scripts (no inline <script>), so script-src 'self' is safe; style-src keeps
+      # 'unsafe-inline' because the SPA injects runtime styles. API + WS are proxied
+      # same-origin (/api, /ws) so connect-src 'self' ws: wss:' covers them. No
+      # location here defines its own add_header, so these inherit to every response.
       add_header X-Content-Type-Options "nosniff" always;
       add_header X-Frame-Options "DENY" always;
       add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-      add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
 
       location / {
         try_files $uri $uri/ /index.html;
@@ -40,7 +42,7 @@ data:
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-        add_header Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
       }
 
       location /api {

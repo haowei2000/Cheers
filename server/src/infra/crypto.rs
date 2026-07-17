@@ -106,6 +106,30 @@ pub fn decrypt_secret(master_key: &[u8; 32], blob_b64: &str) -> anyhow::Result<S
     Ok(String::from_utf8(plaintext)?)
 }
 
+// ── Password hashing (bcrypt, off the async reactor) ─────────────────────────
+//
+// bcrypt at DEFAULT_COST burns ~200-300ms of CPU per call. Running it directly
+// on a tokio worker blocks that thread from making progress on other tasks, so
+// a burst of logins/registrations can starve the whole runtime. These helpers
+// move the CPU work onto the blocking-thread pool via `spawn_blocking`, which
+// wants owned data — callers hand over owned `String`s.
+
+/// Hash a password with bcrypt at `DEFAULT_COST`, off the async reactor.
+/// Returns the same `bcrypt::BcryptError` the underlying call would.
+pub async fn hash_password(plain: String) -> Result<String, bcrypt::BcryptError> {
+    tokio::task::spawn_blocking(move || bcrypt::hash(&plain, bcrypt::DEFAULT_COST))
+        .await
+        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+}
+
+/// Verify a password against a bcrypt hash, off the async reactor.
+/// Returns the same `bcrypt::BcryptError` the underlying call would.
+pub async fn verify_password(plain: String, hash: String) -> Result<bool, bcrypt::BcryptError> {
+    tokio::task::spawn_blocking(move || bcrypt::verify(&plain, &hash))
+        .await
+        .map_err(|e| bcrypt::BcryptError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+}
+
 /// A short, unambiguous one-time code for email flows (e.g. password reset). 8 chars
 /// from a 31-symbol alphabet (no 0/O/1/I/L) → ~31^8 ≈ 8.5e11 combos, fits the
 /// `email_codes.code` column (VARCHAR(10)). Pair with a short TTL + rate limiting.

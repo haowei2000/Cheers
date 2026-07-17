@@ -183,6 +183,12 @@ struct Marker {
     /// can't put the connector into a swap/rollback loop.
     #[serde(default)]
     blocked_versions: Vec<String>,
+    /// Highest version this connector has ever applied. Persisted so a hostile
+    /// gateway can't force a downgrade to a superseded — but still correctly
+    /// signed — historical build that merely happens to be newer than whatever
+    /// is running right now. Monotonic: only ever moves forward.
+    #[serde(default)]
+    highest_applied: Option<String>,
 }
 
 fn marker_path(state_dir: &Path) -> PathBuf {
@@ -485,9 +491,19 @@ impl SelfUpdater {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(300))
             .build()?;
-        let manifest_bytes = fetch(&client, &format!("{base}/connector-manifest.json")).await?;
+        let manifest_bytes = fetch(
+            &client,
+            &format!("{base}/connector-manifest.json"),
+            MAX_METADATA_BYTES,
+        )
+        .await?;
         let sig_b64 = String::from_utf8(
-            fetch(&client, &format!("{base}/connector-manifest.json.sig")).await?,
+            fetch(
+                &client,
+                &format!("{base}/connector-manifest.json.sig"),
+                MAX_METADATA_BYTES,
+            )
+            .await?,
         )
         .context("manifest signature is not UTF-8")?;
         let manifest = verify_and_parse_manifest(&manifest_bytes, &sig_b64, self.pubkey_pem())?;
@@ -500,6 +516,22 @@ impl SelfUpdater {
                 manifest.version,
                 current_version()
             ));
+        }
+
+        // Client-side monotonic anti-downgrade: a manifest may be older than the
+        // highest version we've ever applied yet still newer than what's running
+        // (e.g. a bad manual downgrade, or a rollback that restored an older
+        // binary). The signed manifest can't carry a per-client floor, so we keep
+        // one on disk and refuse anything at or below it. This blocks a hostile
+        // gateway from pinning us to a superseded, correctly-signed build.
+        if let Some(highest) = read_marker(&self.state_dir).and_then(|m| m.highest_applied) {
+            if !version_is_newer(&manifest.version, &highest) {
+                return Err(anyhow!(
+                    "signed manifest is for {} which is not newer than the highest \
+                     version ever applied ({highest}) — refusing (anti-downgrade)",
+                    manifest.version
+                ));
+            }
         }
 
         let suffix = platform_asset_suffix().expect("checked in disabled_reason");
@@ -532,7 +564,7 @@ impl SelfUpdater {
                 .get(asset)
                 .ok_or_else(|| anyhow!("manifest has no asset {asset}"))?
                 .sha256;
-            let bytes = fetch(&client, &format!("{base}/{asset}")).await?;
+            let bytes = fetch(&client, &format!("{base}/{asset}"), MAX_BINARY_BYTES).await?;
             let actual = sha256_hex(&bytes);
             if &actual != expected {
                 return Err(anyhow!(
@@ -601,6 +633,17 @@ impl SelfUpdater {
                 previous_exe = Some(old);
             }
         }
+        let prev_marker = read_marker(&self.state_dir);
+        let blocked_versions = prev_marker
+            .as_ref()
+            .map(|m| m.blocked_versions.clone())
+            .unwrap_or_default();
+        // Advance the monotonic floor to the version we're applying (never let it
+        // move backward — read_marker may carry a higher one).
+        let highest_applied = match prev_marker.and_then(|m| m.highest_applied) {
+            Some(prev) if !version_is_newer(version, &prev) => Some(prev),
+            _ => Some(version.to_string()),
+        };
         write_marker(
             &self.state_dir,
             &Marker {
@@ -608,9 +651,8 @@ impl SelfUpdater {
                 previous_exe,
                 attempts: 0,
                 confirmed: false,
-                blocked_versions: read_marker(&self.state_dir)
-                    .map(|m| m.blocked_versions)
-                    .unwrap_or_default(),
+                blocked_versions,
+                highest_applied,
             },
         )?;
         tracing::info!(version = %version, "self-update: binaries swapped, restarting");
@@ -618,8 +660,20 @@ impl SelfUpdater {
     }
 }
 
-async fn fetch(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
-    let resp = client
+/// Download cap for the manifest and its signature — both are tiny JSON/sig.
+const MAX_METADATA_BYTES: usize = 64 * 1024;
+/// Download cap for a single binary asset.
+const MAX_BINARY_BYTES: usize = 128 * 1024 * 1024;
+
+/// GET `url` into memory, refusing to buffer more than `max_bytes`. The cap is
+/// enforced twice: against an advertised `Content-Length` before reading (fast
+/// reject) and against the running byte count while streaming (defends against a
+/// lying or absent `Content-Length` — localhost gateways are plain http, so a
+/// MITM/hostile proxy could otherwise stream a multi-GB body and OOM us). All
+/// signature/sha256 verification still happens on the caller side, after this
+/// bounded download returns.
+async fn fetch(client: &reqwest::Client, url: &str, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
+    let mut resp = client
         .get(url)
         .send()
         .await
@@ -627,7 +681,27 @@ async fn fetch(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
     if !resp.status().is_success() {
         return Err(anyhow!("GET {url} returned HTTP {}", resp.status()));
     }
-    Ok(resp.bytes().await?.to_vec())
+    if let Some(len) = resp.content_length() {
+        if len > max_bytes as u64 {
+            return Err(anyhow!(
+                "GET {url}: Content-Length {len} exceeds cap of {max_bytes} bytes"
+            ));
+        }
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .with_context(|| format!("read body of {url}"))?
+    {
+        if buf.len() + chunk.len() > max_bytes {
+            return Err(anyhow!(
+                "GET {url}: response body exceeds cap of {max_bytes} bytes"
+            ));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
 }
 
 /// Replace this process with `exe`, keeping argv (daemon metadata matches on
@@ -785,6 +859,7 @@ mod tests {
                 attempts: 0,
                 confirmed: false,
                 blocked_versions: vec![],
+                highest_applied: None,
             },
         )
         .expect("write marker");
@@ -807,6 +882,7 @@ mod tests {
                 attempts: 1,
                 confirmed: false,
                 blocked_versions: vec![],
+                highest_applied: None,
             },
         )
         .expect("write marker");

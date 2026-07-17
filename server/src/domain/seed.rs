@@ -11,7 +11,6 @@
 
 use std::env;
 
-use bcrypt::{hash, DEFAULT_COST};
 use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -37,7 +36,9 @@ pub async fn ensure_admin_user(db: &PgPool) -> anyhow::Result<()> {
     let username = env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".to_string());
     let display_name =
         env::var("ADMIN_DISPLAY_NAME").unwrap_or_else(|_| "Administrator".to_string());
-    let password_hash = hash(&password, DEFAULT_COST)?;
+    // Startup-only (runs once against an empty users table), but route through the
+    // spawn_blocking helper anyway so no bcrypt call runs on an async worker thread.
+    let password_hash = crate::infra::crypto::hash_password(password.clone()).await?;
     let user_id = Uuid::new_v4().to_string();
 
     sqlx::query(

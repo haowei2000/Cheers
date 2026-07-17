@@ -262,7 +262,8 @@ pub async fn register(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let hash = bcrypt::hash(&body.password, bcrypt::DEFAULT_COST)
+    let hash = crate::infra::crypto::hash_password(body.password.clone())
+        .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
     let user_id = Uuid::new_v4();
 
@@ -336,12 +337,16 @@ pub async fn change_password(
     .ok_or(AppError::NotFound)?;
 
     let hashed: String = row.try_get("password_hash").map_err(AppError::Db)?;
-    if !bcrypt::verify(&body.current_password, &hashed).unwrap_or(false) {
+    if !crate::infra::crypto::verify_password(body.current_password.clone(), hashed)
+        .await
+        .unwrap_or(false)
+    {
         return Err(AppError::Unauthorized(
             "current password is incorrect".into(),
         ));
     }
-    let new_hash = bcrypt::hash(&body.new_password, bcrypt::DEFAULT_COST)
+    let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
+        .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
 
     // Revoke all existing tokens (other devices) by bumping the version.
@@ -496,7 +501,8 @@ pub async fn reset_password(
     .ok_or(AppError::NotFound)?;
     let user_id: String = user.try_get("user_id").map_err(AppError::Db)?;
 
-    let hash = bcrypt::hash(&body.new_password, bcrypt::DEFAULT_COST)
+    let hash = crate::infra::crypto::hash_password(body.new_password.clone())
+        .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
     sqlx::query(
         "UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE user_id = $1",

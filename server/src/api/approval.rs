@@ -173,6 +173,22 @@ pub async fn resolve_permission(
     let pending = approval::find_pending(&state.db, channel_id, &request_id)
         .await?
         .ok_or(AppError::NotFound)?;
+    // Authorization gate: a current channel member (or a platform admin) may proceed
+    // to the fine-grained approver/RESPOND check below; additionally the bot OWNER may
+    // always resolve their own bot's request even without joining the channel ("the
+    // owner may always resolve", see below). A REMOVED member is neither a member nor
+    // the owner, so this — together with the delegation/RESPOND purge on member removal
+    // (remove_channel_member / leave_channel) — stops a stale grant from letting an
+    // ex-member resolve.
+    if ensure_member(&state, channel_id, uid, &claims.role)
+        .await
+        .is_err()
+        && approval::bot_owner(&state.db, pending.bot_id).await? != Some(uid)
+    {
+        return Err(AppError::Forbidden(
+            "not authorized to resolve this bot's permission".into(),
+        ));
+    }
 
     if pending
         .content_data
