@@ -29,6 +29,7 @@ import {
 import { TextQuote } from "lucide-react";
 import { candidatesFor, getRenderer, type RendererDesc } from "../renderers/registry";
 import { RendererHost } from "../renderers/RendererHost";
+import { isComposing } from "@/lib/ime";
 
 // Click-gated: the CodeMirror editor (its own chunk, incl. md/json language packs) only
 // downloads when a user actually opens Raw mode — keeps it off the chat critical path, like
@@ -248,6 +249,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         value={newName}
         onChange={(e) => setNewName(e.target.value)}
         onKeyDown={(e) => {
+          if (isComposing(e)) return;
           if (e.key === "Enter") {
             e.preventDefault();
             void submitCreate();

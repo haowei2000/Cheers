@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
+import { isComposing } from "@/lib/ime";
 import { uploadFile, transcribeFile, getFileStatus } from "@/api/files";
 import type { FileInfo } from "@/types";
 import { isAudioFile } from "./fileUtils";
@@ -505,6 +506,9 @@ function MessageComposerImpl({
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // Every branch below claims Enter/Arrow/Escape, all of which belong to the
+    // IME candidate popup while it is up.
+    if (isComposing(e)) return;
     if (picker && activeCount) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
