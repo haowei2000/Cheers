@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ops Board · 运维看板设计稿 v3（克制卡片 + 图标）</title>
+<style>
+  /* Cheers 设计 token（frontend/DESIGN.md，dark-only） */
+  :root {
+    color-scheme: dark;
+    --bg: #09090b; --card: #18181b; --field: #27272a; --hover: #3f3f46; --divider: #27272a;
+    --t-hi: #f4f4f5; --t-body: #d4d4d8; --t-mut: #a1a1aa; --t-icon: #71717a;
+    --indigo: #4f46e5; --indigo-r: #6366f1; --indigo-tx: #a5b4fc; --indigo-lk: #818cf8;
+    --ok: #10b981; --ok-tx: #34d399; --warn: #fbbf24; --danger: #f87171;
+    font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--t-body); font-size: 13px; line-height: 1.5; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--indigo-r); }
+  input { font: inherit; color: var(--t-body); background: var(--bg); border: 0; border-radius: 6px; }
+  ::placeholder { color: var(--t-mut); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .frame { min-height: 100vh; display: flex; flex-direction: column; }
+  svg.ic { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -2px; }
+
+  /* 工作台上下文（示意） */
+  .wb-chrome { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: var(--card); border-bottom: 1px solid var(--divider); flex-wrap: wrap; }
+  .wb-chrome .crumb { font-size: 12px; color: var(--t-mut); }
+  .wb-chrome .crumb b { color: var(--t-body); font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--field); border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+  .chip.mono { font-size: 11px; }
+  .badge-demo { margin-left: auto; font-size: 11px; color: var(--warn); background: rgba(120,53,15,.4); padding: 2px 8px; border-radius: 999px; }
+
+  /* 工具栏 + 摘要条 */
+  .toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--divider); flex-wrap: wrap; }
+  .toolbar input[type="search"] { background: var(--field); padding: 5px 10px; width: 200px; border-radius: 8px; font-size: 12px; }
+  .fchip { border-radius: 999px; padding: 3px 11px; font-size: 12px; color: var(--t-mut); background: var(--field); transition: background .15s; }
+  .fchip:hover { background: var(--hover); color: var(--t-hi); }
+  .fchip.on { background: var(--indigo); color: #fff; }
+  .live { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--t-mut); }
+  .pulse { width: 7px; height: 7px; border-radius: 999px; background: var(--ok); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  .btn-indigo { background: rgba(79,70,229,.15); color: #c7d2fe; border-radius: 8px; padding: 5px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-indigo:hover { background: rgba(79,70,229,.3); }
+  .btn-soft { background: var(--field); color: var(--t-body); border-radius: 8px; padding: 5px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-soft:hover { background: var(--hover); color: var(--t-hi); }
+
+  .summary { display: flex; gap: 10px; padding: 10px 14px 0; flex-wrap: wrap; }
+  .stat { background: var(--card); border-radius: 10px; padding: 7px 13px; display: flex; align-items: center; gap: 8px; color: var(--t-mut); }
+  .stat .n { font-size: 16px; font-weight: 700; color: var(--t-hi); }
+  .stat .l { font-size: 11px; }
+  .stat .n.ok { color: var(--ok-tx); } .stat .n.warn { color: var(--warn); }
+  .stat .hl { font-size: 13px; font-weight: 600; color: var(--indigo-tx); }
+
+  /* 服务器卡片墙 —— 克制：名字 + 环境徽章 + 状态图标，其余进抽屉 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 12px 14px 90px; }
+  .srv { background: var(--card); border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: background .15s, opacity .2s, box-shadow .15s; }
+  .srv:hover { background: #1d1d21; }
+  .srv.sel { box-shadow: 0 0 0 2px var(--indigo-r); }
+  .srv.dim { opacity: .25; }
+  .srv-h { display: flex; align-items: center; gap: 8px; }
+  .srv-h .name { font-family: ui-monospace, Menlo, monospace; font-size: 14px; font-weight: 700; color: var(--t-hi); }
+  .srv-h .ico { color: var(--t-icon); display: flex; }
+  .flag { margin-left: auto; display: flex; align-items: center; gap: 7px; color: var(--t-icon); }
+  .flag .warn { color: var(--warn); }
+  .avatar { width: 20px; height: 20px; border-radius: 999px; background: var(--indigo); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .envs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .envchip { display: inline-flex; align-items: center; gap: 7px; background: rgba(39,39,42,.55); border-radius: 999px; padding: 4px 11px; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .dot.healthy { background: var(--ok); } .dot.degraded { background: var(--warn); }
+  .dot.down { background: var(--danger); } .dot.deploying { background: var(--indigo-r); animation: pulse 1.2s infinite; }
+  .dot.unknown { background: var(--t-icon); }
+  .envchip .envname { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--t-mut); }
+  .envchip .ver { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--t-hi); }
+  .envchip .zap { color: var(--indigo-tx); opacity: 0; transition: opacity .12s; display: flex; padding: 1px; border-radius: 4px; }
+  .srv:hover .envchip .zap { opacity: 1; }
+  .envchip .zap:hover { background: rgba(79,70,229,.25); }
+
+  /* 详情抽屉 —— 细节的家 */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(330px, 90%); background: var(--card); border-left: 1px solid var(--divider); transform: translateX(105%); transition: transform .18s ease-out; overflow-y: auto; z-index: 30; box-shadow: -6px 0 24px rgba(0,0,0,.4); }
+  .drawer.open { transform: none; }
+  .d-sec { padding: 12px 14px; border-bottom: 1px solid var(--divider); }
+  .drawer h2 { font-size: 14px; font-weight: 600; color: var(--t-hi); display: flex; align-items: center; gap: 8px; }
+  .d-close { margin-left: auto; color: var(--t-mut); border-radius: 6px; padding: 0 7px; font-size: 14px; }
+  .d-close:hover { background: var(--field); color: var(--t-hi); }
+  .slabel { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--t-mut); margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+  .hint { font-size: 11px; color: var(--t-mut); margin-top: 6px; }
+  .row { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+  .kv { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 2px 0; color: var(--t-body); }
+  .kv .ic { color: var(--t-icon); }
+  .hist { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 12px; }
+  .hist .when { color: var(--t-mut); font-size: 11px; width: 60px; flex: none; }
+  .ver { font-family: ui-monospace, Menlo, monospace; color: var(--t-hi); }
+  .meta { font-size: 11px; color: var(--t-mut); }
+  .link-item { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--indigo-lk); }
+  .link-item:hover { background: rgba(63,63,70,.5); }
+  .note-box { margin-top: 6px; font-size: 12px; color: var(--t-body); background: var(--bg); border-radius: 8px; padding: 7px 10px; display: flex; gap: 8px; }
+  .note-box .ic { color: var(--t-icon); margin-top: 2px; }
+  .note-box.warn { color: var(--warn); } .note-box.warn .ic { color: var(--warn); }
+
+  /* 假 composer（演示 cheers:compose 预填） */
+  .composer { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%) translateY(130%); width: min(680px, 92%); background: var(--card); border-radius: 14px; padding: 10px 12px; box-shadow: 0 8px 32px rgba(0,0,0,.6); z-index: 40; transition: transform .2s ease-out; }
+  .composer.show { transform: translateX(-50%) translateY(0); }
+  .composer .cap { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--t-mut); margin-bottom: 6px; display: flex; }
+  .composer .cap .x { margin-left: auto; cursor: pointer; color: var(--t-icon); }
+  .composer .box { display: flex; gap: 8px; align-items: center; background: var(--field); border-radius: 10px; padding: 8px 11px; }
+  .composer .text { flex: 1; font-size: 13px; color: var(--t-hi); }
+  .composer .text .m { color: var(--indigo-tx); font-weight: 600; }
+  .composer .send { background: var(--indigo); color: #fff; border-radius: 8px; padding: 5px 14px; font-size: 12px; font-weight: 600; }
+  .composer .send:hover { background: #6053e8; }
+
+  .statusbar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 14px; padding: 7px 14px; border-top: 1px solid var(--divider); background: var(--bg); font-size: 11px; color: var(--t-mut); }
+  .budget { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+  .budget .track { width: 80px; height: 4px; border-radius: 999px; background: var(--field); overflow: hidden; }
+  .budget .fill { height: 100%; width: 9%; background: var(--indigo-r); border-radius: 999px; }
+
+  .toasts { position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center; }
+  .toast { background: var(--field); color: var(--t-body); border-radius: 10px; padding: 7px 13px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.5); max-width: 92%; animation: rise .18s ease-out; }
+  .toast b { color: var(--t-hi); }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <div class="wb-chrome">
+    <span class="crumb">工作台 · <b>#ops</b></span>
+    <span class="chip mono">ops/servers.yaml</span>
+    <span class="chip">渲染器：运维看板 · ops-board ▾</span>
+    <span class="badge-demo">设计稿 mockup · 样例数据</span>
+  </div>
+
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="搜索服务器 / 版本 / 负责人…" aria-label="搜索" />
+    <button class="fchip on" data-f="all">全部</button>
+    <button class="fchip" data-f="issues">仅异常</button>
+    <button class="fchip" data-f="prod">仅 prod</button>
+    <span class="live">
+      <span class="pulse"></span><span id="updated">@ops 维护 · 2 分钟前 · v31</span>
+      <button class="btn-indigo" id="demo">▶ 模拟 bot 更新</button>
+    </span>
+  </div>
+
+  <div class="summary" id="summary"><!-- JS --></div>
+  <div class="grid" id="grid"><!-- JS --></div>
+  <aside class="drawer" id="drawer" aria-label="服务器详情"></aside>
+
+  <div class="composer" id="composer" aria-hidden="true">
+    <div class="cap">预填到频道输入框（cheers:compose · 不代发） <span class="x" id="composerX">✕</span></div>
+    <div class="box">
+      <div class="text" id="composerText"></div>
+      <button class="send" id="composerSend">发送</button>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span id="counts">—</span>
+    <span>servers:1</span>
+    <span class="budget"><span>体积</span><span class="track"><span class="fill"></span></span><span>22.8 KB / 256 KB</span></span>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+/* ── lucide 风格描边图标（与主站 lucide-react 同语言） ── */
+var PATHS = {
+  server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
+  msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  note: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+};
+function ic(name, size, cls) {
+  return '<svg class="ic ' + (cls || "") + '" width="' + (size || 14) + '" height="' + (size || 14) + '" viewBox="0 0 24 24">' + PATHS[name] + "</svg>";
+}
+
+var STATUS_TXT = { healthy: "正常", degraded: "降级", down: "宕机", deploying: "部署中", unknown: "失联" };
+var DATA = {
+  oncall: "@alice",
+  servers: [
+    { id: "web-1", host: "hetzner-fsn1", ssh: "my-hetzner", via: "@ops", owner: "@alice", tags: ["公网", "caddy"],
+      note: "TLS 证书 8 月中旬到期，记得续期前先看 Caddy 自动 ACME 日志",
+      envs: [
+        { name: "prod", status: "healthy", version: "v1.4.2", deployed: "2 天前", by: "@alice",
+          history: [["2 天前", "v1.4.2", "@alice"], ["6 天前", "v1.4.1", "@bob"], ["12 天前", "v1.4.0", "@alice"]],
+          links: [["部署配置", "cheers:ws/@ops/deploy/web-1/docker-compose.yml#L12"], ["Caddy 日志快照", "cheers:ws/@ops/snapshots/web-1/caddy.log"]] },
+        { name: "test", status: "degraded", version: "v1.5.0-rc1", deployed: "3 小时前", by: "@bob",
+          note: "健康检查偶发 5xx——@ops 正在盯",
+          history: [["3 小时前", "v1.5.0-rc1", "@bob"]],
+          links: [["部署配置", "cheers:ws/@ops/deploy/web-1/docker-compose.test.yml#L8"]] },
+      ] },
+    { id: "web-2", host: "hetzner-nbg1", ssh: "web2", via: "@ops", owner: "@bob", tags: ["公网"],
+      envs: [
+        { name: "prod", status: "healthy", version: "v1.4.2", deployed: "2 天前", by: "@ops",
+          history: [["2 天前", "v1.4.2", "@ops"]], links: [["部署配置", "cheers:ws/@ops/deploy/web-2/docker-compose.yml#L12"]] },
+      ] },
+    { id: "worker-1", host: "hetzner-fsn1", ssh: "my-hetzner", via: "@ops", owner: "@carol", tags: ["队列"],
+      envs: [
+        { name: "prod", status: "healthy", version: "v1.4.2", deployed: "2 天前", by: "@ops", history: [], links: [] },
+        { name: "test", status: "healthy", version: "v1.5.0-rc1", deployed: "1 天前", by: "@carol", history: [], links: [] },
+      ] },
+    { id: "db-1", host: "hetzner-fsn1 · pg16", ssh: "my-hetzner", via: "@ops", owner: "@alice", tags: ["内网", "备份 ✓"],
+      note: "每日 03:00 备份到 rustfs，最近一次校验 7-15",
+      envs: [
+        { name: "prod", status: "healthy", version: "pg 16.4", deployed: "30 天前", by: "@ops", history: [], links: [["备份脚本", "cheers:ws/@ops/deploy/db-1/backup.sh#L1"]] },
+      ] },
+    { id: "staging-1", host: "hetzner-hel1", ssh: "staging", via: "@ops", owner: "@bob", tags: ["实验"],
+      envs: [
+        { name: "test", status: "deploying", version: "v1.5.0-rc2", deployed: "刚刚", by: "@bob",
+          note: "rc2 正在滚动发布", history: [], links: [] },
+      ] },
+    { id: "cn-mirror", host: "aliyun-sh", ssh: "aliyun-sh", via: "@ops-cn", owner: "@carol", tags: ["镜像站"],
+      note: "@ops 不可达（境内网络）——由控制机 @ops-cn 负责；ssh 超时 3 次，最近一次 20:12",
+      envs: [
+        { name: "prod", status: "unknown", version: "v1.4.1?", deployed: "9 天前", by: "@ops-cn", history: [], links: [] },
+      ] },
+  ],
+};
+
+var selected = null;
+var filter = "all";
+var version = 31;
+
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+function initial(name) { return name.replace("@", "").slice(0, 1).toUpperCase(); }
+function worst(s) {
+  var rank = { down: 0, unknown: 1, degraded: 2, deploying: 3, healthy: 4 };
+  return s.envs.slice().sort(function (a, b) { return rank[a.status] - rank[b.status]; })[0].status;
+}
+
+/* ── 摘要条（图标 + 数字） ── */
+function renderSummary() {
+  var envs = [];
+  DATA.servers.forEach(function (s) { envs = envs.concat(s.envs); });
+  var ok = envs.filter(function (e) { return e.status === "healthy"; }).length;
+  var attn = envs.length - ok;
+  document.getElementById("summary").innerHTML =
+    '<div class="stat">' + ic("server", 15) + '<span class="n">' + DATA.servers.length + '</span><span class="l">服务器</span></div>' +
+    '<div class="stat">' + ic("check", 15) + '<span class="n ok">' + ok + '</span><span class="l">环境正常</span></div>' +
+    (attn ? '<div class="stat">' + ic("alert", 15) + '<span class="n warn">' + attn + '</span><span class="l">需关注</span></div>' : "") +
+    '<div class="stat">' + ic("user", 15) + '<span class="l">值班</span><span class="hl">' + DATA.oncall + "</span></div>" +
+    '<div class="stat">' + ic("terminal", 15) + '<span class="l">控制机</span><span class="hl">@ops</span><span class="l">可达 5/6 · @ops-cn 负责境内</span></div>';
+  document.getElementById("counts").textContent =
+    DATA.servers.length + " 服务器 · " + envs.length + " 环境" + (attn ? " · " + attn + " 需关注" : "");
+}
+
+/* ── 卡片：名字 + 环境徽章 + 状态图标，细节全进抽屉 ── */
+function matches(s, q) {
+  if (!q) return true;
+  var hay = (s.id + " " + s.host + " " + s.owner + " " + s.envs.map(function (e) { return e.version + " " + e.status; }).join(" ")).toLowerCase();
+  return hay.includes(q);
+}
+function passFilter(s) {
+  if (filter === "issues") return s.envs.some(function (e) { return e.status !== "healthy"; });
+  if (filter === "prod") return s.envs.some(function (e) { return e.name === "prod"; });
+  return true;
+}
+function render() {
+  var q = document.getElementById("q").value.trim().toLowerCase();
+  var grid = document.getElementById("grid");
+  grid.innerHTML = DATA.servers.map(function (s) {
+    var dim = !matches(s, q) || !passFilter(s);
+    var issue = s.envs.some(function (e) { return e.status !== "healthy" && e.status !== "deploying"; });
+    return '<div class="srv' + (selected === s.id ? " sel" : "") + (dim ? " dim" : "") + '" data-id="' + s.id + '">' +
+      '<div class="srv-h"><span class="ico">' + ic("server", 15) + '</span><span class="name">' + esc(s.id) + "</span>" +
+      '<span class="flag">' +
+      (issue ? '<span class="warn" title="有环境需要关注">' + ic("alert", 14) + "</span>" : "") +
+      (s.note ? '<span title="' + esc(s.note) + '">' + ic("note", 13) + "</span>" : "") +
+      '<span class="avatar" title="负责人 ' + esc(s.owner) + '">' + initial(s.owner) + "</span></div>" +
+      '<div class="envs">' +
+      s.envs.map(function (e, i) {
+        var tip = STATUS_TXT[e.status] + " · " + e.deployed + " · " + e.by + (e.note ? "\n" + e.note : "");
+        return '<span class="envchip" title="' + esc(tip) + '"><span class="dot ' + e.status + '"></span>' +
+          '<span class="envname">' + e.name + '</span><span class="ver">' + esc(e.version) + "</span>" +
+          '<button class="zap" data-srv="' + s.id + '" data-env="' + i + '" title="部署（预填命令）">' + ic("zap", 12) + "</button></span>";
+      }).join("") +
+      "</div></div>";
+  }).join("");
+
+  grid.querySelectorAll(".srv").forEach(function (el) {
+    el.addEventListener("click", function (ev) {
+      var zapBtn = ev.target.closest(".zap");
+      if (zapBtn) {
+        ev.stopPropagation();
+        var srv = DATA.servers.find(function (x) { return x.id === zapBtn.dataset.srv; });
+        prefillDeploy(srv, srv.envs[+zapBtn.dataset.env]);
+        return;
+      }
+      openDetail(el.dataset.id);
+    });
+  });
+  renderSummary();
+}
+
+/* ── 抽屉：细节的家（连接 / 环境 / 历史 / 链接 / 备注 / 动作） ── */
+function openDetail(id) {
+  selected = id;
+  render();
+  var s = DATA.servers.find(function (x) { return x.id === id; });
+  var d = document.getElementById("drawer");
+  d.innerHTML =
+    '<div class="d-sec"><h2>' + ic("server", 16) + '<span class="mono">' + esc(s.id) + "</span>" +
+    '<button class="d-close" id="dClose">✕</button></h2>' +
+    '<div class="hint">' + esc(s.host) + (s.tags.length ? " · " + s.tags.map(esc).join(" · ") : "") + "</div></div>" +
+
+    '<div class="d-sec"><div class="slabel">' + ic("terminal", 12) + "连接</div>" +
+    '<div class="kv">' + ic("terminal", 13) + '<span class="mono">ssh ' + esc(s.ssh) + "</span></div>" +
+    '<div class="kv">' + ic("zap", 13) + "<span>经控制机 <b style=\"color:var(--indigo-tx)\">" + esc(s.via) + "</b></span></div>" +
+    '<div class="kv">' + ic("user", 13) + "<span>负责人 " + esc(s.owner) + "</span></div>" +
+    '<div class="hint">链接指向控制机上的 deploy 仓库/快照——locator 到不了远端文件系统</div></div>' +
+
+    s.envs.map(function (e, i) {
+      return '<div class="d-sec"><div class="slabel"><span class="dot ' + e.status + '"></span>' + e.name + " · " + STATUS_TXT[e.status] + "</div>" +
+        '<div class="kv"><span class="ver" style="font-size:14px">' + esc(e.version) + "</span></div>" +
+        '<div class="kv">' + ic("clock", 13) + "<span>" + esc(e.deployed) + " 由 " + esc(e.by) + " 部署</span></div>" +
+        (e.note ? '<div class="note-box' + (e.status === "degraded" || e.status === "down" ? " warn" : "") + '">' + ic(e.status === "healthy" ? "msg" : "alert", 13) + "<span>" + esc(e.note) + "</span></div>" : "") +
+        (e.history.length ? '<div class="slabel" style="margin-top:10px">' + ic("history", 12) + "最近部署</div>" +
+          e.history.map(function (h) {
+            return '<div class="hist"><span class="when">' + esc(h[0]) + '</span><span class="ver">' + esc(h[1]) + '</span><span class="meta">' + esc(h[2]) + "</span></div>";
+          }).join("") : "") +
+        (e.links.length ? '<div class="slabel" style="margin-top:10px">' + ic("file", 12) + "链接</div>" +
+          e.links.map(function (l) {
+            return '<div class="link-item" data-loc="' + esc(l[1]) + '">' + ic("file", 13) + esc(l[0]) + "</div>";
+          }).join("") : "") +
+        '<div class="row">' +
+        '<button class="btn-indigo" data-deploy="' + i + '">' + ic("zap", 13) + "部署到 " + e.name + "</button>" +
+        (e.name === "test" ? '<button class="btn-soft" data-promote="' + i + '">' + ic("up", 13) + "晋级 prod</button>" : "") +
+        "</div></div>";
+    }).join("") +
+
+    (s.note ? '<div class="d-sec"><div class="slabel">' + ic("note", 12) + "bot 页边笔记</div>" +
+      '<div class="note-box">' + ic("msg", 13) + "<span>" + esc(s.note) + "</span></div></div>" : "") +
+
+    '<div class="d-sec"><button class="btn-soft" id="askOps" style="width:100%;justify-content:center">' + ic("msg", 13) + "让 " + esc(s.via) + " 检查这台服务器</button>" +
+    '<div class="hint" style="text-align:center">预填输入框（cheers:compose），不代发</div></div>' +
+    '<div class="d-sec" style="border-bottom:0"><div class="hint">由 <b style="color:var(--t-body)">@ops</b> 维护 · ops/servers.yaml · v' + version + "</div></div>";
+  d.classList.add("open");
+
+  d.querySelector("#dClose").addEventListener("click", function () { d.classList.remove("open"); selected = null; render(); });
+  d.querySelectorAll("[data-deploy]").forEach(function (b) {
+    b.addEventListener("click", function () { prefillDeploy(s, s.envs[+b.dataset.deploy]); });
+  });
+  d.querySelectorAll("[data-promote]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var e = s.envs[+b.dataset.promote];
+      prefill(s.via + " promote " + s.id + " " + esc(e.version) + " test→prod，先跑冒烟再切流量");
+    });
+  });
+  d.querySelectorAll(".link-item").forEach(function (el) {
+    el.addEventListener("click", function () { toast("<b>cheers:open</b> → " + esc(el.dataset.loc)); });
+  });
+  d.querySelector("#askOps").addEventListener("click", function () {
+    prefill(s.via + " 检查一下 " + s.id + "（ssh " + s.ssh + "）的健康状态和磁盘/内存水位，把结果更新进 ops/servers.yaml");
+  });
+}
+
+/* ── 假 composer（cheers:compose 演示） ── */
+var pendingDeploy = null;
+function prefillDeploy(s, e) {
+  pendingDeploy = { s: s, e: e };
+  prefill(s.via + " deploy " + s.id + " " + e.name + "（ssh " + s.ssh + "，沿用当前版本流程，完成后更新看板）");
+}
+function prefill(text) {
+  var el = document.getElementById("composerText");
+  el.innerHTML = text.replace(/@([\w-]+)/g, '<span class="m">@$1</span>');
+  document.getElementById("composer").classList.add("show");
+}
+document.getElementById("composerX").addEventListener("click", function () {
+  document.getElementById("composer").classList.remove("show");
+  pendingDeploy = null;
+});
+document.getElementById("composerSend").addEventListener("click", function () {
+  document.getElementById("composer").classList.remove("show");
+  toast("mockup：消息已「发送」——真实环境中控制机 bot 执行后会把结果写回 ops/servers.yaml");
+  if (pendingDeploy) {
+    var p = pendingDeploy; pendingDeploy = null;
+    p.e.status = "deploying"; p.e.by = "@you"; p.e.deployed = "刚刚";
+    render(); if (selected) openDetail(selected);
+    setTimeout(function () {
+      p.e.status = "healthy";
+      version += 1;
+      document.getElementById("updated").textContent = "@ops 维护 · 刚刚 · v" + version;
+      render(); if (selected) openDetail(selected);
+      toast("@ops 部署完成 → <b>desk_edit</b> 更新 servers.yaml → 看板刷新");
+    }, 2600);
+  }
+});
+
+/* ── 工具栏 ── */
+document.getElementById("q").addEventListener("input", render);
+document.querySelectorAll(".fchip").forEach(function (c) {
+  c.addEventListener("click", function () {
+    document.querySelectorAll(".fchip").forEach(function (x) { x.classList.remove("on"); });
+    c.classList.add("on");
+    filter = c.dataset.f;
+    render();
+  });
+});
+document.getElementById("demo").addEventListener("click", function () {
+  var e = DATA.servers[0].envs[1];
+  if (e.status === "degraded") { e.status = "healthy"; e.note = null; toast("bot 复查：web-1/test 5xx 消失 → 标回「正常」"); }
+  else { e.status = "degraded"; e.note = "健康检查偶发 5xx——@ops 正在盯"; toast("bot 巡检发现 web-1/test 偶发 5xx → 标「降级」+ 页边笔记"); }
+  version += 1;
+  document.getElementById("updated").textContent = "@ops 维护 · 刚刚 · v" + version;
+  render(); if (selected) openDetail(selected);
+});
+
+function toast(html) {
+  var box = document.getElementById("toasts");
+  var t = document.createElement("div");
+  t.className = "toast"; t.innerHTML = html;
+  box.appendChild(t);
+  setTimeout(function () { t.style.opacity = "0"; t.style.transition = "opacity .3s"; setTimeout(function () { t.remove(); }, 320); }, 3800);
+}
+
+render();
+</script>
+</body>
+</html>
