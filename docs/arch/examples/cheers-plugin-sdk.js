@@ -69,6 +69,11 @@ function cheersPlugin(opts) {
     unsupported: function (reason) {
       parent.postMessage({ type: "cheers:unsupported", reason: reason }, "*");
     },
+    open: function (uri) {
+      // Navigate the USER's view to a `cheers:` locator (workspace file at a line,
+      // desk file, attachment). Fire-and-forget; hosts without support ignore it.
+      parent.postMessage({ type: "cheers:open", uri: uri }, "*");
+    },
   };
   parent.postMessage({ type: "cheers:ready" }, "*");
   return api;

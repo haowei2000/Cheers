@@ -140,6 +140,7 @@ a specific origin; the host, in turn, only accepts messages from your iframe).
 | host → plugin | `cheers:saved` | `{ ok, version, error? }` | Result of your save. On `ok`, adopt the new `version`. Carries **no correlation id** — it answers "the" pending save, which is why only one may be in flight. |
 | plugin → host | `cheers:resource` | `{ reqId, resource, params }` | Read-only channel info (whitelist, §5.4). `reqId` is your correlation number. |
 | host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | Resource read result. |
+| plugin → host | `cheers:open` | `{ uri }` | Ask the host to navigate the **user's view** to a `cheers:` locator — `cheers:ws/<bot>/<path>#L<n>[-L<n>]` opens the workspace browser at that file/line (after an existence probe), `cheers:desk/<path>` focuses the workbench file browser, `cheers:inbox/<file_id>` opens channel files. Fire-and-forget (no reply). Pure UI routing: the host parses strictly, every read behind the jump passes the normal authz, and an unresolvable locator shows the user an error. Hosts that don't support it ignore the message (the protocol-1 growth rule) — safe to send unconditionally. |
 
 ### 5.2 Lifecycle
 
