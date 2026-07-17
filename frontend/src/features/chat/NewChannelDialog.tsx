@@ -6,6 +6,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { isComposing } from "@/lib/ime";
 
 // Create a channel in the given workspace, then add it to the store and select it
 // (it opens in the normal chat view). Mirrors the NewDmDialog pattern.
@@ -64,7 +65,7 @@ export function NewChannelDialog({
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void submit()}
+            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void submit()}
             placeholder="Channel name…"
             className="flex-1 bg-transparent py-2 text-sm text-zinc-200 outline-none"
           />

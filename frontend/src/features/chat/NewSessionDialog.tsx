@@ -12,6 +12,7 @@ import { getWorkspaceMeta, type WorkspaceMeta } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { bustBotControls } from "./sessionControlsCache";
+import { isComposing } from "@/lib/ime";
 
 export function NewSessionDialog({
   channelId,
@@ -102,7 +103,7 @@ export function NewSessionDialog({
             placeholder={meta?.default_cwd ?? "/abs/workdir"}
             list="ws-allowed-roots"
             onChange={(e) => setCwd(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void create()}
+            onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && void create()}
             className="w-full rounded-lg bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           {/* Datalist = suggestions, not a constraint: any path under an allowed root works. */}
