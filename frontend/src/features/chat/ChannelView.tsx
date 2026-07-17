@@ -942,7 +942,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           );
           return;
         }
-        setWsInit({ botId, path: resolved, line: loc.line });
+        // A directory loc opens the folder view (the dialog's deep-link already falls
+        // back to listing); a line anchor only makes sense on a file.
+        setWsInit({ botId, path: resolved.path, line: resolved.kind === "file" ? loc.line : undefined });
         setWsOpen(true);
       } catch (e) {
         const offline = String(e).includes("offline");

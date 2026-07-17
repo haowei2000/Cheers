@@ -317,6 +317,11 @@ pin 的 `codemap/conventions.md` 只剩发现层（一行）：
 #            '@deng please ...'). NEVER guess it and never copy a
 #            handle from an example - a wrong handle breaks every
 #            jump. Unsure? Omit loc rather than invent one.
+#            The path part is relative to YOUR workspace root:
+#            VERIFY it exists (e.g. `ls <path>`) before writing it -
+#            a guessed path is a broken jump. Prefer a representative
+#            FILE plus #L<line> even for modules; a bare directory
+#            loc only opens the folder view.
 #       summary: what it does / what matters; <=200 chars; facts only
 #       status: explored | partial | stale
 #       tags: [optional, short]
@@ -350,6 +355,10 @@ pin 的 `codemap/conventions.md` 只剩发现层（一行）：
   prompt 并不告诉 bot 自己的 mention 名，它唯一可靠的来源是**触发消息里别人
   @ 它的那个名字**——提示词明说这一点，并禁止猜测/照抄示例，不确定就不写 `loc`。
   解析侧配套兜底：频道只有一个 bot 时，错误 handle 直接落到它（存在性探测照旧）。
+- **verify-before-write**（实战教训二：目录 loc + 根基准漂移双杀）：要求 bot 写
+  `loc` 前实际 `ls` 验证路径、优先"代表性文件 + 行号"而非裸目录——bot 有工具，
+  就该让它自证，这比任何解析侧纠偏都便宜。解析侧同时补齐：目录 locator 合法
+  （跳文件夹视图），文件接口 miss 后用目录列表二次确认（两种 connector 行为都兜住）。
 - 全文 ~2.4KB，不到 256KB 预算的 1%，一次性成本。
 
 ## 6. 缺口与补丁（分阶段）
