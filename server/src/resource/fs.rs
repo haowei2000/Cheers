@@ -767,8 +767,14 @@ mod tests {
 
     #[test]
     fn open_ended_and_open_start() {
-        assert_eq!(slice_lines("l1\nl2\nl3", Some(2), None).unwrap().0, "l2\nl3");
-        assert_eq!(slice_lines("l1\nl2\nl3", None, Some(2)).unwrap().0, "l1\nl2");
+        assert_eq!(
+            slice_lines("l1\nl2\nl3", Some(2), None).unwrap().0,
+            "l2\nl3"
+        );
+        assert_eq!(
+            slice_lines("l1\nl2\nl3", None, Some(2)).unwrap().0,
+            "l1\nl2"
+        );
     }
 
     #[test]

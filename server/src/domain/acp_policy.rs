@@ -54,15 +54,7 @@ pub fn allows_with_rules(
     let Some(class) = acp_events::classify(acp_event_name).and_then(|e| e.event_class) else {
         return true;
     };
-    bot_event_policy::resolve_access(
-        rules,
-        channel_id,
-        user_id,
-        role,
-        matched_groups,
-        class,
-        cap,
-    )
+    bot_event_policy::resolve_access(rules, channel_id, user_id, role, matched_groups, class, cap)
 }
 
 #[cfg(test)]

@@ -83,6 +83,20 @@ async fn main() -> anyhow::Result<()> {
     let stream_registry = StreamRegistry::new();
     let workspace_rpc = Arc::new(gateway::workspace_rpc::WorkspaceRpc::new());
 
+    // Web Push (PWA notifications): disabled unless a VAPID key is configured.
+    let web_push = infra::web_push::WebPushSender::from_config(&config).map(Arc::new);
+    if web_push.is_none() {
+        tracing::info!(
+            "VAPID_PRIVATE_KEY unset — Web Push disabled (in-app WS notifications only)"
+        );
+    }
+
+    // OS push — direct APNs (store app) or relay (self-hosted); optional.
+    let push = server::notify::PushTransport::from_env().map(Arc::new);
+    if push.is_none() {
+        tracing::info!("push not configured (APNS_* or PUSH_RELAY_URL) — OS push disabled");
+    }
+
     let state = AppState {
         db,
         config: config.clone(),
@@ -93,6 +107,8 @@ async fn main() -> anyhow::Result<()> {
         bot_registry,
         stream_registry,
         workspace_rpc,
+        web_push,
+        push,
     };
 
     // Orphan-placeholder reclaimer (flow 8 gap): finalize placeholders that

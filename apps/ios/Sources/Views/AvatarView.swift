@@ -6,14 +6,17 @@ struct AvatarView: View {
     let seedId: String
     let name: String?
     var size: CGFloat = 44
+    /// Neutral (grayscale) fill instead of the identity-hash color. Used on the
+    /// chat page to keep it to a two-color palette (accent + neutral).
+    var monochrome: Bool = false
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(Theme.avatarColor(for: seedId))
+                .fill(monochrome ? Theme.bgSelected : Theme.avatarColor(for: seedId))
             Text(Theme.initials(name))
                 .font(.system(size: size * 0.36, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(monochrome ? Theme.textSecondary : .white)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

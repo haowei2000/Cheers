@@ -737,11 +737,33 @@ mod tests {
         assert!(!resolve_bot_workspace_read(&deny, "c1", "readerBot"));
         // A wildcard bot deny restricts everyone; a specific allow un-restricts one.
         let star_deny_plus_allow = vec![
-            rule("c1", SUBJECT_BOT, "*", EV_WORKSPACE_READ, Capability::Initiate, false),
-            rule("c1", SUBJECT_BOT, "readerBot", EV_WORKSPACE_READ, Capability::Initiate, true),
+            rule(
+                "c1",
+                SUBJECT_BOT,
+                "*",
+                EV_WORKSPACE_READ,
+                Capability::Initiate,
+                false,
+            ),
+            rule(
+                "c1",
+                SUBJECT_BOT,
+                "readerBot",
+                EV_WORKSPACE_READ,
+                Capability::Initiate,
+                true,
+            ),
         ];
-        assert!(resolve_bot_workspace_read(&star_deny_plus_allow, "c1", "readerBot"));
-        assert!(!resolve_bot_workspace_read(&star_deny_plus_allow, "c1", "otherBot"));
+        assert!(resolve_bot_workspace_read(
+            &star_deny_plus_allow,
+            "c1",
+            "readerBot"
+        ));
+        assert!(!resolve_bot_workspace_read(
+            &star_deny_plus_allow,
+            "c1",
+            "otherBot"
+        ));
     }
 
     #[test]

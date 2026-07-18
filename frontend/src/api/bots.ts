@@ -170,6 +170,33 @@ export async function revokeEnrollmentCodes(
   return apiJson(`/bots/${botId}/enrollment`, { method: "DELETE" });
 }
 
+/** Result of redeeming an enrollment code: a ready-to-run config plus the
+ * rotated token (once) and the relative token_file the config references. */
+export interface RedeemedEnrollment {
+  bot_id: string;
+  account_id: string;
+  agent_type: string;
+  token: string;
+  token_prefix: string;
+  token_file: string;
+  control_url: string;
+  data_url: string;
+  config_toml: string;
+  reachability: Reachability;
+  note?: string;
+}
+
+/** Redeem an enrollment code (single-use; authenticated by the code itself, so
+ * no bearer needed). Returns the generated config + token to write to disk. */
+export async function redeemEnrollmentCode(
+  code: string
+): Promise<RedeemedEnrollment> {
+  return apiJson<RedeemedEnrollment>("/enrollment/redeem", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
 export interface ConnectorDiscovery {
   public_base: string;
   configured: boolean;

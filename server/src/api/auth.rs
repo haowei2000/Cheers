@@ -363,6 +363,10 @@ pub async fn change_password(
     if let Ok(uid) = claims.sub.parse::<Uuid>() {
         state.fanout.kick_user(uid);
     }
+    // Push subscriptions belong to devices, not sessions — a password change
+    // (typically "device lost/compromised") must silence them all; the user's
+    // own device re-enables via the Settings toggle.
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
 
     // Mint a fresh token at the new version so the current caller stays signed in.
     let new_version = row.try_get::<i32, _>("token_version").unwrap_or(0) as i64 + 1;
@@ -391,6 +395,9 @@ pub async fn logout(
     if let Ok(uid) = claims.sub.parse::<Uuid>() {
         state.fanout.kick_user(uid);
     }
+    // Logout revokes every session, so no device should keep receiving
+    // lock-screen pushes either.
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -516,6 +523,9 @@ pub async fn reset_password(
     if let Ok(uid) = user_id.parse::<Uuid>() {
         state.fanout.kick_user(uid);
     }
+    // …and push subscriptions: a compromised-credential reset must silence
+    // every previously-enrolled device.
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
     // Burn this + any other live reset codes for the email.
     sqlx::query(
         "UPDATE email_codes SET used = TRUE

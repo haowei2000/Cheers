@@ -60,12 +60,15 @@ enum Theme {
     // Status
     static let online = Color(hex: 0x10B981)                                   // emerald-500
     static let danger = Color.cheers(light: 0xDC2626, dark: 0xF87171)         // red-600 / red-400
+    static let warning = Color.cheers(light: 0xD97706, dark: 0xFBBF24)        // amber-600 / amber-400
+    static let mention = Color(hex: 0xE11D48)                                  // rose-600 (constant)
 
-    // Bubbles (Telegram-style rendering per design map §5.2b)
-    static let bubbleOwn = Color(hex: 0x4F46E5)                                // indigo-600
-    static let bubbleOwnText = Color.white
-    static let bubbleOther = Color.cheers(light: 0xF4F4F5, dark: 0x27272A)    // zinc-100 / zinc-800
+    // Bubbles — ONE color for every message; sender is shown by side + avatar,
+    // never by bubble color (no bright accent fills at all).
+    static let bubbleOther = Color.cheers(light: 0xE7E7EA, dark: 0x27272A)    // ~zinc-200 / zinc-800 (clear of the app bg)
     static let bubbleOtherText = Color.cheers(light: 0x27272A, dark: 0xE4E4E7)
+    static let bubbleOwn = bubbleOther
+    static let bubbleOwnText = bubbleOtherText
 
     /// Deterministic avatar palette — must match `AVATAR_COLORS` in
     /// frontend/src/lib/format.ts so avatar colors agree across platforms.

@@ -16,6 +16,14 @@ final class ChatModel {
     private(set) var isSending = false
     var errorMessage: String?
     var composerText = ""
+    /// Message being replied to (set by the bubble context menu); sent as
+    /// reply_to_msg_id and cleared on success.
+    var replyTo: MessageDto?
+    /// Composer session target: nil = Auto (route by @mention to each bot's
+    /// primary), else pins delivery to one bot session.
+    var selectedSessionId: String?
+    /// Bot members of this channel — the session/model picker's candidate bots.
+    private(set) var botMembers: [ChannelMemberDto] = []
 
     /// Bumped whenever a change should scroll the view to the bottom.
     private(set) var scrollToBottomTick = 0
@@ -68,6 +76,7 @@ final class ChatModel {
                     members.map { ($0.memberId, $0.name) },
                     uniquingKeysWith: { first, _ in first }
                 )
+                botMembers = members.filter { $0.memberType == "bot" }
             }
             messages = sorted(response.messages.map(withResolvedSender))
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
@@ -130,9 +139,10 @@ final class ChatModel {
         do {
             let sent = try await api.sendMessage(
                 channelId: channel.channelId,
-                SendMessageRequest(content: text)
+                SendMessageRequest(content: text, replyToMsgId: replyTo?.msgId, sessionId: selectedSessionId)
             )
             composerText = ""
+            replyTo = nil
             upsert(sent)
             scrollToBottomTick += 1
         } catch {

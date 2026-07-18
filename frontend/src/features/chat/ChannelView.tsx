@@ -18,6 +18,11 @@ import {
 import { SessionChip } from "./SessionChip";
 import { ComposerModelPopover } from "./ComposerModelPopover";
 import { stopTurn } from "./stopTurn";
+import {
+  consumePushFocusMsg,
+  onPushTarget,
+  setActivePushChannel,
+} from "@/lib/push";
 import { useChatRealtime, type PresenceFocus } from "./hooks/useChatRealtime";
 import { WorkbenchDrawer } from "./workbench/WorkbenchDrawer";
 import { ViewBoardDrawer } from "./workbench/ViewBoardDrawer";
@@ -737,6 +742,31 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     },
     [channel]
   );
+  // Web Push integration: report the open channel to the SW bridge (so a
+  // notification for a channel the user is already viewing is suppressed), and
+  // consume a clicked notification's target — jump straight to the card. The
+  // onPushTarget subscription covers a click landing while this channel is
+  // already mounted; the readiness gate covers arriving via navigation: the
+  // consume must wait for THIS channel's initial history (consuming while
+  // messages still holds the previous channel — or nothing — would hand
+  // jumpToMessage a stale backfill cursor and burn the one-shot target).
+  const channelIdForPush = channel?.channel_id;
+  const pushHistoryReady = !loading && !isPreview && messages.length > 0;
+  useEffect(() => {
+    if (!channelIdForPush) return;
+    setActivePushChannel(channelIdForPush);
+    return () => setActivePushChannel(null);
+  }, [channelIdForPush]);
+  useEffect(() => {
+    if (!channelIdForPush || !pushHistoryReady) return;
+    const check = () => {
+      const msgId = consumePushFocusMsg(channelIdForPush);
+      if (msgId) void jumpToMessage(msgId);
+    };
+    check();
+    return onPushTarget(check);
+  }, [channelIdForPush, pushHistoryReady, jumpToMessage]);
+
   // "Open the ViewBoard on THIS board" request (same nonce pattern as focusMsg) —
   // the session chip's "Manage sessions…" jumps straight to the Sessions board.
   const [focusBoard, setFocusBoard] = useState<{ id: string; nonce: number } | null>(null);

@@ -208,7 +208,9 @@ pub async fn dispatch(
         "bot_processing",
         json!({ "bot_id": params.bot_id, "channel_id": params.channel_id }),
     );
-    fanout.broadcast_channel(params.channel_id, processing).await;
+    fanout
+        .broadcast_channel(params.channel_id, processing)
+        .await;
 
     tracing::info!(
         bot_id = %params.bot_id,

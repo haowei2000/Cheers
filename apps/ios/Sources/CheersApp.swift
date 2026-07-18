@@ -2,12 +2,15 @@ import SwiftUI
 
 @main
 struct CheersApp: App {
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
     @State private var appModel = AppModel()
+    @State private var shellModel = ShellModel()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(appModel)
+                .environment(shellModel)
                 .tint(Theme.accent)
         }
     }
@@ -22,7 +25,7 @@ struct RootView: View {
             if app.session == nil {
                 LoginView()
             } else {
-                ConversationListView()
+                AppShellView()
             }
         }
         .animation(.easeInOut(duration: 0.2), value: app.session == nil)

@@ -425,10 +425,12 @@ pub async fn suspend_user(
         return Err(AppError::NotFound);
     }
     // A ban takes effect NOW: tear down the user's live WS sessions (mirrors the
-    // bot kill-switch, which kicks the connector on disable).
+    // bot kill-switch, which kicks the connector on disable) and their push
+    // subscriptions (the sender also filters suspended users as a backstop).
     if let Ok(uid) = user_id.parse::<Uuid>() {
         state.fanout.kick_user(uid);
     }
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
     Ok(Json(json!({ "user_id": user_id, "suspended": true })))
 }
 

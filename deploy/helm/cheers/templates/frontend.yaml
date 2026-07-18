@@ -45,6 +45,29 @@ data:
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
       }
 
+      # Service worker: must never be cached long — a cached sw.js pins every
+      # client to a stale precache manifest until heuristic expiry. no-cache
+      # makes each registration update-check revalidate at the origin.
+      location = /sw.js {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+      }
+
+      # PWA manifest: correct MIME (nginx's types map lacks .webmanifest) and
+      # the same no-cache policy so installs pick up icon/name changes promptly.
+      location = /manifest.webmanifest {
+        types { }
+        default_type application/manifest+json;
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+      }
+
       location /api {
         proxy_pass http://{{ $gw }};
         proxy_set_header Host $host;

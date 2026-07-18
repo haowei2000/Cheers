@@ -1,23 +1,24 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingPanel } from "@/components/ui/floating-panel";
 import { FsTreeIcon } from "./FsTreeIcon";
+import { LocalOpen } from "@/features/desktop/LocalOpen";
 import {
   useContextPickStore,
   workspaceContextItem,
 } from "@/features/chat/context/contextPick";
 import { AttachContextButton } from "@/features/chat/context/ContextPickBar";
 import {
-  ADD_TO_CONTEXT,
-  ADDED_TO_CONTEXT,
   addToContextTitle,
 } from "@/features/chat/context/contextLabels";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import {
   ArrowUp,
   Bot,
+  Check,
   File,
   FolderTree,
   Download,
+  Lock,
   MessageSquarePlus,
   FileText,
   Folder,
@@ -1768,11 +1769,16 @@ export function RemoteWorkspaceDialog({
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2 px-2 py-1.5 border-b border-zinc-800 text-xs">
-                  <span className="text-zinc-200 truncate flex-1" title={file.path}>
+                {/* Header actions are icon-only (+ hover tooltip) so the row
+                    stays on one line in a narrow panel; the filename shrinks
+                    first (min-w-0) and every action is shrink-0. */}
+                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 text-xs">
+                  <span className="text-zinc-200 truncate flex-1 min-w-0" title={file.path}>
                     {file.filename}
                   </span>
-                  <span className="text-zinc-400">{file.size_bytes}B</span>
+                  <span className="text-zinc-500 shrink-0 tabular-nums mr-0.5">
+                    {file.size_bytes}B
+                  </span>
                   {file.is_text &&
                     (canWrite ? (
                       dirty && (
@@ -1780,26 +1786,37 @@ export function RemoteWorkspaceDialog({
                           onClick={() => doSave(etag ?? undefined)}
                           disabled={busy}
                           title="Save changes back to the bot's machine"
-                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-zinc-100 disabled:opacity-40"
+                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded bg-emerald-700 hover:bg-emerald-600 text-zinc-100 disabled:opacity-40"
                         >
-                          <Save className="w-3 h-3" /> Save
+                          <Save className="w-3.5 h-3.5" />
                         </button>
                       )
                     ) : (
                       <span
-                        className="text-amber-400 text-[11px] shrink-0"
+                        className="shrink-0 w-7 h-7 flex items-center justify-center text-amber-400"
                         title="This bot's owner hasn't granted you write access to its workspace."
                       >
-                        write requires a grant from the bot owner
+                        <Lock className="w-3.5 h-3.5" />
                       </span>
                     ))}
                   <button
                     onClick={() => downloadWorkspaceFile(file)}
                     title="Download this file"
-                    className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
+                    className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-800 text-zinc-300"
                   >
-                    <Download className="w-3 h-3" /> Download
+                    <Download className="w-3.5 h-3.5" />
                   </button>
+                  {/* Desktop shell: one icon button per available opener (Finder
+                      + installed editors). Local connector → the real file in
+                      place; remote → a downloaded copy. Renders nothing in a
+                      plain browser. */}
+                  {treeRoot !== null && (
+                    <LocalOpen
+                      absPath={joinAbs(treeRoot, file.path)}
+                      filename={file.filename}
+                      getBytesB64={() => file.content_b64 || null}
+                    />
+                  )}
                   {/* Attach this workspace file as context: a reference (which
                       bot + path), NOT a snapshot. The recipient bot reads the live
                       file on demand under its own permission (workspace.read). */}
@@ -1826,9 +1843,13 @@ export function RemoteWorkspaceDialog({
                       title={addToContextTitle(
                         "this workspace file as a live reference — the recipient reads it on demand"
                       )}
-                      className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-zinc-300"
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-800 text-zinc-300"
                     >
-                      <MessageSquarePlus className="w-3 h-3" /> {attached ? ADDED_TO_CONTEXT : ADD_TO_CONTEXT}
+                      {attached ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <MessageSquarePlus className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   )}
                 </div>

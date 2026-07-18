@@ -793,7 +793,10 @@ mod tests {
         let (ec, cap) = bot_grant_key("workspace_read").unwrap();
         assert_eq!(ec, bot_event_policy::EV_WORKSPACE_READ);
         assert_eq!(cap, Capability::Initiate);
-        assert!(bot_grant_key("see").is_err(), "human caps are not bot grants");
+        assert!(
+            bot_grant_key("see").is_err(),
+            "human caps are not bot grants"
+        );
         assert!(bot_grant_key("bogus").is_err());
     }
 
@@ -801,12 +804,18 @@ mod tests {
     fn bot_grant_kind_round_trips_and_ignores_others() {
         // Reverse mapping must recover exactly the two grants and reject anything
         // else — e.g. a human INITIATE·prompt rule must NOT read back as a grant.
-        assert_eq!(bot_grant_kind(bot_event_policy::EV_PROMPT, "dispatch"), Some("dispatch"));
+        assert_eq!(
+            bot_grant_kind(bot_event_policy::EV_PROMPT, "dispatch"),
+            Some("dispatch")
+        );
         assert_eq!(
             bot_grant_kind(bot_event_policy::EV_WORKSPACE_READ, "initiate"),
             Some("workspace_read")
         );
-        assert_eq!(bot_grant_kind(bot_event_policy::EV_PROMPT, "initiate"), None);
+        assert_eq!(
+            bot_grant_kind(bot_event_policy::EV_PROMPT, "initiate"),
+            None
+        );
         assert_eq!(bot_grant_kind("see", "see"), None);
     }
 }

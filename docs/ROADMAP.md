@@ -94,8 +94,58 @@ F0 foundation → F1 human picker → F2 bot handoff → F3 suggested context.
 ### Features
 
 - [ ] DingTalk integration.
-- [ ] iOS app.
-- [ ] Android app.
+- [x] PWA + Web Push: installable web app; approval requests and @mentions
+      reach the approver's lock screen and deep-link back to the pending card.
+- [ ] iOS app — **deferred behind the PWA**: revisit only if mobile approval
+      usage proves the demand *and* a PWA hard limit (share sheet, widgets,
+      push reliability) actually bites.
+- [ ] Android app — same gate as iOS.
+
+## Client Strategy & Boundaries
+
+Where each client surface starts and stops. Decided 2026-07 alongside the
+PWA/Web Push work; the guiding split: **the gateway is the control plane and
+sole source of truth; local machines are the data plane** (see
+[arch/ARCHITECTURE_OVERVIEW.md](arch/ARCHITECTURE_OVERVIEW.md)).
+
+### Mobile = consume + approve (PWA, not native)
+
+The mobile jobs are: approve a blocked permission request, glance at running
+work, reply when mentioned. All three are covered by the PWA + Web Push
+pipeline (`frontend/src/sw.ts`, gateway `infra/web_push.rs`). Measured reality:
+message-path transport is 2–10 ms — the wait is model inference — so a native
+app buys no meaningful latency, only push/share/widget affordances. Build
+native only when a concrete PWA limit blocks a proven usage pattern.
+
+### Desktop = the chat shell + the connector's graphical home
+
+**Status: M0+M1 in progress (`apps/macos`, Tauri v2).** The desktop client
+hosts the SAME built frontend as the web deployment (chat shell included —
+no UI rewrite), adds tray residency + native notifications (WKWebView has no
+Web Push, so nudges arrive over the user-scoped WS), and differentiates as
+**the graphical home of the connector daemon**. Its value, in priority order:
+
+1. **Daemon lifecycle (M1, in progress)** — bundle `cce-acp-connector` as a
+   sidecar, start-with-app + revive on crash (the macOS answer to the
+   systemd-linger pitfall), GUI start/stop/status/logs and TOML editing. This
+   converts connector onboarding from ops work into "install an app", and is
+   the only item that *requires* a native artifact.
+2. **Same-machine fast path (data plane only)** — when the desktop app detects
+   a co-located connector, bypass the gateway round-trip for bulk data:
+   open/transfer workspace files directly (the local ops already exist in
+   `bridge_runtime::handle_workspace_req`; they lack only a local entry point —
+   extend `loopback.rs` with a discoverable port+token under `CHEERS_ACP_HOME`),
+   attach to live terminal/output streams, and show approval context (command,
+   diff) read straight from the local daemon.
+3. Tray + global hotkey, "open in local editor" for agent-touched files.
+
+**Red lines** (violating these forfeits the product's core value):
+
+- Messages and permission *decisions* always go through the gateway — never a
+  local bypass. Persistence, multi-device sync, other members' visibility, and
+  the audit trail all hang off the gateway being the single source of truth.
+- No UI rewrite: the desktop shell hosts the same built frontend.
+- The same-machine link carries *data* (files, streams, context), not *control*.
 
 ## Related Documentation
 

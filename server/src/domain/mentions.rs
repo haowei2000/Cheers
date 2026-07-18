@@ -238,8 +238,7 @@ pub async fn resolve_mention_names(
         // Key every returned member by both its username and display_name. First row
         // wins on a name collision — ambiguous names were already resolved
         // arbitrarily under the old per-name `LIMIT 1`.
-        let mut map: std::collections::HashMap<String, Mention> =
-            std::collections::HashMap::new();
+        let mut map: std::collections::HashMap<String, Mention> = std::collections::HashMap::new();
         for row in &rows {
             let Some(member_id) = row
                 .try_get::<String, _>("member_id")

@@ -12,6 +12,14 @@ spec:
       {{- include "cheers.selectorLabels" (dict "ctx" . "component" "gateway") | nindent 6 }}
   template:
     metadata:
+      annotations:
+        # Roll the pods when chart-managed secret values change (e.g. enabling
+        # Web Push by adding secrets.vapidPrivateKey): the env wiring uses
+        # `optional: true`, so the pod template alone would be byte-identical
+        # and `helm upgrade` would otherwise leave the old process running
+        # without the new key. Covers only secrets.create=true; with an
+        # existingSecret, rotate + `kubectl rollout restart` manually.
+        checksum/secret: {{ toYaml .Values.secrets | sha256sum }}
       labels:
         {{- include "cheers.selectorLabels" (dict "ctx" . "component" "gateway") | nindent 8 }}
     spec:
@@ -59,6 +67,14 @@ spec:
             - name: JWT_PUBLIC_KEY
               valueFrom:
                 secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: JWT_PUBLIC_KEY }
+            {{- /* optional: absent from the Secret ⇒ Web Push disabled (gateway logs it). */}}
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "cheers.secretName" . }}, key: VAPID_PRIVATE_KEY, optional: true }
+            {{- if .Values.gateway.vapidSubject }}
+            - name: VAPID_SUBJECT
+              value: {{ .Values.gateway.vapidSubject | quote }}
+            {{- end }}
             - name: PORT
               value: {{ .Values.gateway.port | quote }}
             - name: DATABASE_URL

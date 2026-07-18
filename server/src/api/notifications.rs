@@ -45,11 +45,37 @@ pub struct NotificationDto {
 /// reads it back). No-op if `user_id` isn't a UUID or the user has no live socket.
 pub async fn push_notification(state: &AppState, user_id: &str, data: Value) {
     if let Ok(uid) = Uuid::parse_str(user_id) {
+        // OS push mirror of the live frame (fire-and-forget; §5.3 invites push
+        // at default priority with a minimized payload).
+        let title = data
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("a workspace")
+            .to_string();
+        crate::notify::push_to_user(state, uid, crate::notify::PushKind::Invite { title });
+
         state
             .fanout
             .broadcast_user(uid, WireFrame::user("notification", data))
             .await;
     }
+}
+
+/// Fire-and-forget `notification` frames to a set of users. The desktop shell
+/// consumes `kind: permission_request | mention` from the user-scoped socket
+/// (WKWebView has no Push API, so Web Push can't reach it); web clients ignore
+/// kinds they don't know. Independent of the Web Push config — this fires even
+/// when VAPID is unset. Spawns immediately: never sits on a frame hot path.
+pub fn spawn_notify_users_ws(state: &AppState, user_ids: Vec<String>, data: Value) {
+    if user_ids.is_empty() {
+        return;
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
+        for user_id in user_ids {
+            push_notification(&state, &user_id, data.clone()).await;
+        }
+    });
 }
 
 /// GET /api/v1/notifications — the caller's pending invitations (workspace + channel),

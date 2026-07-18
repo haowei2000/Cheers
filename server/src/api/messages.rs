@@ -93,6 +93,7 @@ pub async fn send_message(
         None => None,
     };
 
+    let mention_ids_for_push = body.mention_ids.clone();
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
@@ -113,11 +114,38 @@ pub async fn send_message(
     )
     .await?;
 
+    // OS push: DM partners + @-mentioned users (design §5.3); regular channel
+    // traffic never pushes. Spawned inside — the send path is untouched.
+    crate::notify::push_message_fanout(&state, channel_id, user_id, mention_ids_for_push);
+
     info!(
         message_id = %dto.msg_id,
         channel_id = %channel_id,
         "send_message persisted and broadcasted"
     );
+
+    // Out-of-app nudge to the @mentioned humans (kind=mention): Web Push for
+    // browsers/PWA plus a user-scoped WS frame for the desktop shell. The
+    // message is already durable + broadcast — both are fire-and-forget.
+    let mention_targets: Vec<String> = dto
+        .mentions
+        .iter()
+        .filter(|m| m.member_type == "user" && m.member_id != user_id.to_string())
+        .map(|m| m.member_id.clone())
+        .collect();
+    let nudge = serde_json::json!({
+        "kind": "mention",
+        "channel_id": channel_id,
+        "msg_id": dto.msg_id,
+        "sender_name": dto.sender_name,
+        "body": dto.content.chars().take(200).collect::<String>(),
+    });
+    crate::api::notifications::spawn_notify_users_ws(
+        &state,
+        mention_targets.clone(),
+        nudge.clone(),
+    );
+    crate::infra::web_push::spawn_push_to_users(&state, mention_targets, nudge);
 
     Ok((StatusCode::CREATED, Json(dto)))
 }

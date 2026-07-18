@@ -126,6 +126,24 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/notifications",
             get(api::notifications::list_notifications),
         )
+        // Web Push (PWA): VAPID key + the caller's push-subscription registry.
+        .route(
+            "/api/v1/push/vapid-public-key",
+            get(api::push::vapid_public_key),
+        )
+        .route(
+            "/api/v1/push/subscriptions",
+            post(api::push::subscribe).delete(api::push::unsubscribe),
+        )
+        // OS push device registration (docs/arch/MOBILE_APP_DESIGN.md §5.2)
+        .route(
+            "/api/v1/users/me/devices",
+            post(api::devices::register_device),
+        )
+        .route(
+            "/api/v1/users/me/devices/:push_token",
+            delete(api::devices::delete_device),
+        )
         .route(
             "/api/v1/workspaces/:workspace_id",
             patch(api::workspaces::update_workspace).delete(api::workspaces::delete_workspace),

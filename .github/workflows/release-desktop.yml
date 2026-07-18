@@ -1,0 +1,92 @@
+name: release-desktop
+
+# Publish the macOS desktop app (.dmg + .app tarball) so users can install
+# Cheers Desktop without a toolchain. Trigger by pushing a tag like
+# `desktop-v0.1.0` (the workflow runs from the tagged commit, so tagging a
+# feature-branch head works for preview releases).
+#
+# Apple-silicon only for now (macos-14 runner = arm64): an Intel build needs a
+# cross-compiled sidecar + universal bundle, deferred until someone asks.
+#
+# UNSIGNED: there is no Developer ID signing/notarization yet, so Gatekeeper
+# will warn on first launch. The release notes carry the right-click → Open
+# escape hatch. Signing lands with a proper release pipeline later.
+
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: write # create the release + upload assets
+
+jobs:
+  build:
+    name: build macOS (arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/macos/src-tauri
+            packages/cheers-acp-connector-rs
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            frontend/package-lock.json
+            apps/macos/package-lock.json
+
+      - name: Install npm dependencies
+        run: |
+          npm --prefix frontend ci
+          npm --prefix apps/macos ci
+
+      # npm run build = build-sidecar.sh (stages the connector as a Tauri
+      # sidecar) + tauri build (whose beforeBuildCommand builds the frontend).
+      - name: Build the app
+        run: npm --prefix apps/macos run build
+
+      - name: Package assets
+        run: |
+          BUNDLE=apps/macos/src-tauri/target/release/bundle
+          mkdir dist-assets
+          # End-user-legible names: this build targets macOS on Apple Silicon,
+          # so the system is obvious from the filename (not "aarch64").
+          cp "$BUNDLE"/dmg/Cheers_*.dmg dist-assets/Cheers-macOS-AppleSilicon.dmg
+          tar -C "$BUNDLE/macos" -czf dist-assets/Cheers-macOS-AppleSilicon.app.tar.gz Cheers.app
+          shasum -a 256 dist-assets/* | tee dist-assets/SHA256SUMS.txt
+          ls -l dist-assets
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Cheers Desktop (macOS · Apple Silicon)
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            dist-assets/*
+          body: |
+            ## Cheers Desktop — macOS (Apple Silicon)
+
+            **For:** an Apple-silicon Mac (M1/M2/M3…) on **macOS 11+**.
+            Intel Macs are **not** built yet.
+
+            **Unsigned preview** — on first launch, right-click Cheers → Open
+            (or clear quarantine: `xattr -dr com.apple.quarantine /Applications/Cheers.app`).
+
+            **Install:** open `Cheers-macOS-AppleSilicon.dmg` and drag Cheers to
+            Applications. The `cheers://` link scheme and Finder "Open With →
+            Cheers" register on first launch of the installed app.
+
+            | Download | System |
+            |---|---|
+            | `Cheers-macOS-AppleSilicon.dmg` | macOS 11+, Apple Silicon — installer |
+            | `Cheers-macOS-AppleSilicon.app.tar.gz` | macOS 11+, Apple Silicon — bare .app |

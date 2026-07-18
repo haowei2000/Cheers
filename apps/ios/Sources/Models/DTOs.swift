@@ -55,6 +55,24 @@ enum JSONValue: Codable, Equatable, Hashable {
         if case .bool(let b) = self { return b }
         return nil
     }
+
+    var numberValue: Double? {
+        if case .number(let n) = self { return n }
+        return nil
+    }
+
+    var arrayValue: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+
+    /// First non-empty string among the given keys (for `command ?? cmd`-style fallbacks).
+    func firstString(_ keys: String...) -> String? {
+        for key in keys {
+            if let s = self[key]?.stringValue, !s.isEmpty { return s }
+        }
+        return nil
+    }
 }
 
 // MARK: - Auth (server/src/api/auth.rs)
@@ -294,6 +312,183 @@ struct SendMessageRequest: Encodable {
         case fileIds = "file_ids"
         case mentionIds = "mention_ids"
         case sessionId = "session_id"
+    }
+}
+
+// MARK: - Notifications / invites (server/src/api/notifications.rs)
+
+struct NotificationDto: Decodable, Identifiable {
+    /// "workspace_invite" | "channel_invite".
+    let kind: String
+    let workspaceId: String
+    let channelId: String?
+    let title: String
+    let invitedBy: String?
+    let invitedAt: String?
+    let role: String
+
+    var id: String { "\(kind):\(channelId ?? workspaceId)" }
+    var isChannelInvite: Bool { kind == "channel_invite" }
+
+    enum CodingKeys: String, CodingKey {
+        case kind, title, role
+        case workspaceId = "workspace_id"
+        case channelId = "channel_id"
+        case invitedBy = "invited_by"
+        case invitedAt = "invited_at"
+    }
+}
+
+// MARK: - Bots / agents (server/src/api/bots.rs)
+
+struct BotDto: Decodable, Identifiable {
+    let botId: String
+    let username: String?
+    let displayName: String?
+    let avatarUrl: String?
+    let description: String?
+    let isDisabled: Bool?
+    let isOnline: Bool?
+    let canManage: Bool?
+    let statusText: String?
+    let statusEmoji: String?
+
+    var id: String { botId }
+    var name: String { displayName ?? username ?? "Agent" }
+    var online: Bool { isOnline ?? false }
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case username
+        case displayName = "display_name"
+        case avatarUrl = "avatar_url"
+        case description
+        case isDisabled = "is_disabled"
+        case isOnline = "is_online"
+        case canManage = "can_manage"
+        case statusText = "status_text"
+        case statusEmoji = "status_emoji"
+    }
+}
+
+// MARK: - Sessions & bot settings (server/src/api/session_control.rs)
+
+struct SessionInfo: Decodable, Identifiable {
+    let sessionId: String
+    let role: String?
+    let isPrimary: Bool?
+    let status: String?
+
+    var id: String { sessionId }
+    var tag: String { role ?? String(sessionId.prefix(6)) }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case role
+        case isPrimary = "is_primary"
+        case status
+    }
+}
+
+struct SessionListResponse: Decodable { let sessions: [SessionInfo] }
+
+struct ConfigChoice: Decodable, Identifiable {
+    let value: String
+    let name: String?
+    var id: String { value }
+}
+
+struct ConfigOption: Decodable, Identifiable {
+    let optionId: String
+    let name: String?
+    let currentValue: String?
+    let options: [ConfigChoice]?
+
+    var id: String { optionId }
+    var isModel: Bool { optionId.lowercased().contains("model") }
+
+    enum CodingKeys: String, CodingKey {
+        case optionId = "id"
+        case name
+        case currentValue = "current_value"
+        case options
+    }
+}
+
+struct SessionControls: Decodable {
+    let canSetMode: Bool?
+    let canSetConfigOption: Bool?
+    let allowedModes: [String]?
+    let currentMode: String?
+    let configOptions: [ConfigOption]?
+
+    enum CodingKeys: String, CodingKey {
+        case canSetMode = "can_set_mode"
+        case canSetConfigOption = "can_set_config_option"
+        case allowedModes = "allowed_modes"
+        case currentMode = "current_mode"
+        case configOptions = "config_options"
+    }
+}
+
+struct SetConfigOptionRequest: Encodable {
+    let configId: String
+    let value: String
+    enum CodingKeys: String, CodingKey {
+        case configId = "config_id"
+        case value
+    }
+}
+
+// MARK: - Permission audit (ViewBoard Audit board — server/src/api/approval.rs)
+
+struct AuditEvent: Decodable, Identifiable {
+    let eventType: String
+    let botId: String?
+    let requestId: String?
+    let actorId: String?
+    let targetUserId: String?
+    let decision: String?
+    let createdAt: String?
+
+    var id: String { "\(requestId ?? "")\(eventType)\(createdAt ?? "")" }
+
+    enum CodingKeys: String, CodingKey {
+        case eventType = "event_type"
+        case botId = "bot_id"
+        case requestId = "request_id"
+        case actorId = "actor_id"
+        case targetUserId = "target_user_id"
+        case decision
+        case createdAt = "created_at"
+    }
+}
+
+struct AuditResponse: Decodable {
+    let events: [AuditEvent]
+}
+
+// MARK: - Create channel / DM (server/src/api/channels.rs)
+
+struct ChannelCreateRequest: Encodable {
+    let workspaceId: String
+    let name: String
+    let type: String          // "public" | "private"
+    var purpose: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case workspaceId = "workspace_id"
+        case name, type, purpose
+    }
+}
+
+struct DmCreateRequest: Encodable {
+    var targetUserId: String? = nil
+    var targetBotId: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case targetUserId = "target_user_id"
+        case targetBotId = "target_bot_id"
     }
 }
 
