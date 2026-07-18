@@ -11,6 +11,7 @@ pub mod domain;
 pub mod errors;
 pub mod gateway;
 pub mod infra;
+pub mod notify;
 pub mod resource;
 pub mod router;
 

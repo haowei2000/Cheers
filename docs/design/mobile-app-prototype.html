@@ -1,0 +1,1057 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheers Mobile — Interactive Prototype</title>
+<style>
+  /* ============ page chrome (not part of the app design) ============ */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #0c0c0e;
+    color: #e4e4e7;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .page-head {
+    padding: 14px 20px 10px;
+    display: flex; flex-direction: column; gap: 10px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    flex: none;
+  }
+  .page-head h1 { font-size: 15px; font-weight: 600; color: #f4f4f5; }
+  .page-head h1 span { color: #71717a; font-weight: 400; }
+  .switch { display: flex; gap: 6px; flex-wrap: wrap; }
+  .switch button {
+    font: inherit; font-size: 12px; color: #a1a1aa;
+    background: #202023; border: 0; border-radius: 8px;
+    padding: 6px 11px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .switch button:hover { background: #2b2b30; color: #e4e4e7; }
+  .switch button.on { background: rgba(79,70,229,.22); color: #a5b4fc; }
+  .caption { font-size: 12px; color: #8f8f98; max-width: 900px; line-height: 1.5; }
+  .stage { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .scaler { transform-origin: center center; }
+
+  /* ============ phone frame ============ */
+  .phone {
+    width: 390px; height: 844px;
+    background: var(--bg-app);
+    border-radius: 47px;
+    outline: 1px solid rgba(255,255,255,.09);
+    box-shadow: 0 24px 80px rgba(0,0,0,.55);
+    overflow: hidden; position: relative;
+    display: none; flex-direction: column;
+    font-size: 15px; color: var(--text-2);
+  }
+  .phone.on { display: flex; }
+
+  /* ============ tokens — dark (canonical) ============ */
+  .phone {
+    --bg-app: #09090B;         /* zinc-950 */
+    --bg-surface: #18181B;     /* zinc-900 */
+    --bg-raised: #27272A;      /* zinc-800 */
+    --bg-selected: #3F3F46;    /* zinc-700 */
+    --bg-inset: #09090B;
+    --text-1: #F4F4F5;
+    --text-2: #E4E4E7;
+    --text-sec: #A1A1AA;       /* zinc-400 — muted-text floor (dark) */
+    --icon-muted: #71717A;     /* zinc-500 — icons only */
+    --text-faint: #52525B;     /* decorative only */
+    --accent: #4F46E5;
+    --link: #818CF8;
+    --bot-bg: #312E81;
+    --bot-fg: #A5B4FC;
+    --online: #10B981;
+    --danger: #F87171;
+    --danger-soft: rgba(127,29,29,.4);
+    --mention: #E11D48;
+    --warn: #FBBF24;
+    --warn-soft: rgba(120,53,15,.4);
+    --bubble-own: #4F46E5;
+    --bubble-own-text: #FFFFFF;
+    --bubble-other: #27272A;
+    --bubble-other-text: #E4E4E7;
+    --divider: rgba(255,255,255,.06);
+    --card-shadow: none;
+    --approve-bg: #E4E4E7;     /* light pill on dark */
+    --approve-fg: #18181B;
+    --sheet-grabber: #3F3F46;
+  }
+  /* ============ tokens — light (Theme.swift derived mapping) ============ */
+  .phone.light {
+    --bg-app: #FAFAFA;         /* zinc-50 */
+    --bg-surface: #FFFFFF;
+    --bg-raised: #F4F4F5;      /* zinc-100 */
+    --bg-selected: #E4E4E7;    /* zinc-200 */
+    --bg-inset: #F4F4F5;
+    --text-1: #18181B;
+    --text-2: #27272A;
+    --text-sec: #52525B;       /* zinc-600 — muted-text floor (light) */
+    --icon-muted: #71717A;
+    --text-faint: #A1A1AA;
+    --link: #4F46E5;
+    --bot-bg: #E0E7FF;
+    --bot-fg: #4338CA;
+    --danger: #DC2626;
+    --warn: #D97706;
+    --bubble-other: #F4F4F5;
+    --bubble-other-text: #27272A;
+    --divider: rgba(0,0,0,.07);
+    --card-shadow: 0 1px 3px rgba(0,0,0,.08);
+    --approve-bg: #18181B;
+    --approve-fg: #FAFAFA;
+    --sheet-grabber: #D4D4D8;
+  }
+
+  /* ============ status bar / dynamic island / home indicator ============ */
+  .statusbar {
+    flex: none; height: 54px; display: flex; align-items: flex-end;
+    justify-content: space-between; padding: 0 30px 6px; position: relative;
+    font-size: 14px; font-weight: 600; color: var(--text-1);
+  }
+  .island {
+    position: absolute; top: 11px; left: 50%; transform: translateX(-50%);
+    width: 118px; height: 34px; border-radius: 17px; background: #000;
+  }
+  .sb-right { display: flex; align-items: center; gap: 6px; }
+  .sig { display: flex; align-items: flex-end; gap: 1.5px; height: 11px; }
+  .sig i { width: 3px; background: var(--text-1); border-radius: 1px; display: block; }
+  .sig i:nth-child(1){height:4px} .sig i:nth-child(2){height:6px}
+  .sig i:nth-child(3){height:8px} .sig i:nth-child(4){height:11px}
+  .batt { width: 24px; height: 12px; border: 1px solid var(--text-sec); border-radius: 3.5px; position: relative; }
+  .batt::after { content:""; position:absolute; inset: 1.5px; right: 6px; background: var(--text-1); border-radius: 1.5px; }
+  .batt::before { content:""; position:absolute; right:-3.5px; top: 3px; width: 2px; height: 5px; background: var(--text-sec); border-radius: 0 1px 1px 0; }
+  .home-ind {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    width: 140px; height: 5px; border-radius: 3px; background: var(--text-1); opacity: .35; z-index: 60;
+  }
+
+  /* ============ shared app pieces ============ */
+  .body { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  svg.i { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  svg.i.sm { width: 16px; height: 16px; }
+  svg.i.xs { width: 13px; height: 13px; stroke-width: 2; }
+
+  .avatar {
+    border-radius: 50%; color: #fff; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; flex: none; position: relative;
+  }
+  .avatar.lg { width: 50px; height: 50px; font-size: 17px; }
+  .avatar.md { width: 40px; height: 40px; font-size: 14px; }
+  .avatar.sm { width: 30px; height: 30px; font-size: 11px; }
+  .presence {
+    position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px;
+    border-radius: 50%; border: 2.5px solid var(--bg-app); background: var(--online);
+  }
+  .presence.off { background: var(--text-faint); }
+
+  .bot-pill {
+    font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    background: var(--bot-bg); color: var(--bot-fg);
+    border-radius: 4px; padding: 1.5px 4px; flex: none;
+  }
+  .badge {
+    min-width: 20px; height: 20px; border-radius: 10px; padding: 0 6px;
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+  }
+  .badge.mention { background: var(--mention); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.g { background: var(--online); } .dot.a { background: var(--warn); } .dot.z { background: var(--text-faint); } .dot.r { background: var(--danger); }
+  .mono { font-family: "SF Mono", Menlo, "Roboto Mono", Consolas, monospace; }
+
+  /* large-title header */
+  .big-head { flex: none; padding: 4px 16px 10px; }
+  .big-head h2 { font-size: 32px; font-weight: 700; color: var(--text-1); letter-spacing: -.02em; }
+  .search {
+    margin-top: 10px; display: flex; align-items: center; gap: 8px;
+    background: var(--bg-raised); border-radius: 12px; padding: 9px 12px;
+    color: var(--icon-muted); font-size: 16px;
+  }
+  .search span { color: var(--text-sec); }
+
+  /* title row with drawer menu button */
+  .title-row { display: flex; align-items: center; gap: 12px; }
+  .menu-btn { color: var(--text-sec); display: flex; align-items: center; }
+  .hb-badge {
+    position: absolute; top: -4px; right: -5px; min-width: 17px; height: 17px;
+    border-radius: 9px; padding: 0 4px; background: var(--mention); color: #fff;
+    font-size: 10px; font-weight: 700; display: flex; align-items: center;
+    justify-content: center; border: 2px solid var(--bg-app);
+  }
+  .hbtn { position: relative; }
+
+  /* ============ left drawer (Telegram / Claude-app style) ============ */
+  .drawer {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 318px; z-index: 30;
+    background: var(--bg-surface); display: flex; flex-direction: column;
+    border-radius: 0 24px 24px 0;
+    box-shadow: 28px 0 70px rgba(0,0,0,.5);
+  }
+  .dr-strip { display: flex; gap: 14px; padding: 16px 18px 12px; align-items: flex-start; }
+  .dr-ws { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 46px; }
+  .dr-ws .sq {
+    width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center;
+    justify-content: center; color: #fff; font-weight: 600; font-size: 16px; position: relative;
+  }
+  .dr-ws.sel .sq { outline: 2px solid var(--accent); outline-offset: 2.5px; }
+  .dr-ws .nm { font-size: 10.5px; color: var(--text-sec); max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dr-ws.sel .nm { color: var(--link); font-weight: 600; }
+  .dr-ws .sq .nub {
+    position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; border-radius: 9px;
+    padding: 0 4px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg-surface);
+  }
+  .dr-head { display: flex; align-items: center; gap: 8px; padding: 4px 18px 12px; border-bottom: .5px solid var(--divider); }
+  .dr-head b { font-size: 19px; font-weight: 700; color: var(--text-1); }
+  .dr-head .meta { font-size: 12px; color: var(--text-sec); margin-top: 1px; }
+  .dr-sec { font-size: 11.5px; font-weight: 700; letter-spacing: .07em; color: var(--text-sec); text-transform: uppercase; padding: 14px 18px 6px; }
+  .dr-list { flex: 1; overflow: hidden; }
+  .dr-row { display: flex; align-items: center; gap: 11px; padding: 8px 18px; }
+  .dr-row .glyph { width: 30px; height: 30px; border-radius: 9px; background: var(--bg-raised); color: var(--text-sec); display: flex; align-items: center; justify-content: center; flex: none; font-size: 14px; font-weight: 600; }
+  .dr-row b { font-size: 15px; font-weight: 500; color: var(--text-2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-row.sel { background: var(--bg-raised); }
+  .dr-row.sel b { color: var(--text-1); font-weight: 600; }
+  .dr-nav { flex: none; border-top: .5px solid var(--divider); padding: 8px 12px 0; display: flex; gap: 7px; }
+  .dr-navchip {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--bg-raised); border-radius: 10px; padding: 8px 4px;
+    font-size: 12.5px; font-weight: 500; color: var(--text-2); position: relative;
+  }
+  .dr-navchip svg { width: 15px; height: 15px; }
+  .dr-navchip .nub {
+    position: absolute; top: -5px; right: -4px; min-width: 16px; height: 16px; border-radius: 8px;
+    padding: 0 4px; background: var(--mention); color: #fff; font-size: 9.5px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg-surface);
+  }
+  .dr-navchip .dot { position: absolute; top: -2px; right: -1px; }
+  .dr-foot {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px 24px;
+  }
+  .dr-foot .ico { width: 40px; height: 40px; border-radius: 12px; background: var(--bg-raised); color: var(--text-sec); display: flex; align-items: center; justify-content: center; }
+  .dr-newch {
+    margin-left: auto; display: flex; align-items: center; gap: 7px; white-space: nowrap;
+    background: var(--approve-bg); color: var(--approve-fg);
+    font-size: 14px; font-weight: 600; border-radius: 22px; padding: 11px 15px;
+  }
+
+  /* conversation rows */
+  .rows { flex: 1; overflow: hidden; }
+  .row { display: flex; gap: 12px; padding: 10px 16px; align-items: center; }
+  .row + .row { border-top: .5px solid var(--divider); }
+  .row .mid { flex: 1; min-width: 0; }
+  .row .l1 { display: flex; align-items: center; gap: 6px; }
+  .row .l1 b { font-size: 16px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws-tag { font-size: 10px; font-weight: 600; color: var(--text-sec); background: var(--bg-raised); border-radius: 4px; padding: 1.5px 5px; flex: none; }
+  .row .prev { font-size: 14.5px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .row .prev .who { color: var(--text-2); }
+  .row .end { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
+  .row .time { font-size: 12.5px; color: var(--text-sec); }
+  .typing-prev { color: var(--link); font-style: italic; }
+
+  /* floating compose button */
+  .fab {
+    position: absolute; right: 18px; bottom: 100px; width: 54px; height: 54px;
+    border-radius: 50%; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 22px rgba(79,70,229,.45); z-index: 5;
+  }
+
+  /* tab bar */
+  .tabbar {
+    flex: none; display: flex; padding: 8px 10px 26px;
+    background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+    backdrop-filter: blur(10px); border-top: .5px solid var(--divider);
+  }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--icon-muted); position: relative; }
+  .tab span { font-size: 10px; font-weight: 500; }
+  .tab.on { color: var(--link); }
+  .phone.light .tab.on { color: var(--accent); }
+  .tab .tab-badge {
+    position: absolute; top: -4px; left: calc(50% + 6px);
+    min-width: 17px; height: 17px; border-radius: 9px; padding: 0 5px;
+    background: var(--mention); color: #fff; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tab .tab-badge.ind { background: var(--accent); }
+
+  /* ============ chat screen ============ */
+  .chat-head {
+    flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 12px 10px;
+    background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+    border-bottom: .5px solid var(--divider);
+  }
+  .hbtn {
+    width: 36px; height: 36px; border-radius: 50%; background: var(--bg-raised);
+    color: var(--text-2); display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .chat-head .t { flex: 1; min-width: 0; text-align: center; }
+  .chat-head .t b { font-size: 16.5px; font-weight: 600; color: var(--text-1); display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .chat-head .t .sub { font-size: 12.5px; color: var(--text-sec); display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 1px; }
+  .msgs { flex: 1; overflow: hidden; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 3px; }
+  .day { align-self: center; font-size: 11.5px; font-weight: 500; color: var(--text-sec); background: var(--bg-raised); border-radius: 10px; padding: 3px 10px; margin: 8px 0; }
+  .mrow { display: flex; gap: 8px; max-width: 88%; }
+  .mrow.own { align-self: flex-end; flex-direction: row-reverse; }
+  .mrow.other { align-self: flex-start; }
+  .mrow.cont { margin-left: 38px; }
+  .sender { font-size: 12.5px; font-weight: 600; margin: 6px 0 2px 2px; display: flex; align-items: center; gap: 6px; }
+  .bubble { border-radius: 16px; padding: 8px 12px; font-size: 15.5px; line-height: 1.42; position: relative; }
+  .bubble.own { background: var(--bubble-own); color: var(--bubble-own-text); border-bottom-right-radius: 6px; }
+  .bubble.other { background: var(--bubble-other); color: var(--bubble-other-text); border-bottom-left-radius: 6px; box-shadow: var(--card-shadow); }
+  .bubble .stamp { font-size: 10.5px; opacity: .62; float: right; margin: 8px -2px -2px 8px; }
+  .mention-tok { color: #c7d2fe; background: rgba(255,255,255,.14); border-radius: 4px; padding: 0 3px; font-weight: 500; }
+  .bubble.other .mention-tok { color: var(--link); background: rgba(79,70,229,.14); }
+  .code {
+    background: var(--bg-inset); border-radius: 8px; padding: 8px 10px; margin: 6px 0 4px;
+    font-size: 12.5px; line-height: 1.5; color: var(--text-2); overflow: hidden; white-space: pre;
+  }
+  .phone.light .code { background: #18181B; color: #E4E4E7; }
+  .code .cm { color: var(--text-sec); }
+  .caret { display: inline-block; width: 7px; height: 15px; background: var(--link); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(1) infinite; border-radius: 1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .trace-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-sec); margin: 4px 0 2px 40px; }
+  .quiet-line { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-sec); align-self: center; margin: 6px 0; }
+  .quiet-line .mono { font-size: 11.5px; }
+  .newpill {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 132px;
+    background: var(--bg-raised); color: var(--text-2); font-size: 12.5px; font-weight: 500;
+    border-radius: 15px; padding: 6px 13px; display: flex; gap: 5px; align-items: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35); z-index: 4;
+  }
+
+  /* composer */
+  .composer-zone { flex: none; padding: 6px 12px 26px; display: flex; flex-direction: column; gap: 7px; background: color-mix(in srgb, var(--bg-surface) 92%, transparent); border-top: .5px solid var(--divider); }
+  .ctl-chips { display: flex; gap: 7px; }
+  .cchip {
+    display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500;
+    background: var(--bg-raised); color: var(--text-sec); border-radius: 8px; padding: 6px 9px;
+  }
+  .cchip.on { background: rgba(79,70,229,.18); color: var(--bot-fg); }
+  .phone.light .cchip.on { background: rgba(79,70,229,.12); color: #4338CA; }
+  .composer { display: flex; align-items: flex-end; gap: 9px; }
+  .comp-card {
+    flex: 1; display: flex; align-items: center; gap: 9px;
+    background: var(--bg-raised); border-radius: 20px; padding: 9px 13px; color: var(--icon-muted);
+  }
+  .comp-card .ph { flex: 1; font-size: 16px; color: var(--text-sec); }
+  .send-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+  .stop-glyph { width: 13px; height: 13px; border-radius: 3px; background: #fff; }
+
+  /* approval — inline card */
+  .appr-card {
+    align-self: stretch; margin: 6px 26px 6px 38px;
+    background: var(--bg-surface); border-radius: 14px; padding: 12px 13px;
+    box-shadow: var(--card-shadow);
+  }
+  .phone.light .appr-card { box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  .appr-card .hd { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-1); }
+  .appr-card .hd .shield { color: var(--warn); }
+  .appr-cmd {
+    margin-top: 8px; background: var(--bg-inset); border-radius: 8px; padding: 8px 10px;
+    font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .phone.light .appr-cmd { background: #18181B; color: #E4E4E7; }
+  .appr-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .appr-foot .meta { font-size: 11.5px; color: var(--text-sec); }
+  .review-btn {
+    font-size: 13px; font-weight: 600; background: var(--approve-bg); color: var(--approve-fg);
+    border-radius: 9px; padding: 7px 14px;
+  }
+
+  /* ============ bottom sheet ============ */
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 20; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--bg-surface); border-radius: 22px 22px 0 0;
+    padding: 8px 16px 0; display: flex; flex-direction: column;
+    box-shadow: 0 -12px 40px rgba(0,0,0,.4);
+  }
+  .grabber { width: 38px; height: 5px; border-radius: 3px; background: var(--sheet-grabber); align-self: center; margin-bottom: 10px; }
+  .sheet h3 { font-size: 17px; font-weight: 600; color: var(--text-1); }
+  .sheet .sub { font-size: 13px; color: var(--text-sec); margin-top: 2px; }
+  .sheet .sub a { color: var(--link); text-decoration: none; font-weight: 500; }
+  .cmd-block {
+    margin-top: 12px; background: var(--bg-inset); border-radius: 10px; padding: 11px 12px;
+    font-size: 12.5px; line-height: 1.55; color: var(--text-2); overflow: hidden;
+  }
+  .phone.light .cmd-block { background: #18181B; color: #E4E4E7; }
+  .lazy-row {
+    margin-top: 8px; display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-raised); border-radius: 10px; padding: 10px 12px;
+    font-size: 13px; color: var(--text-2);
+  }
+  .lazy-row .mono { font-size: 12px; color: var(--text-sec); }
+  .opts { margin-top: 12px; display: flex; flex-direction: column; }
+  .opt { display: flex; align-items: center; gap: 11px; padding: 11px 2px; font-size: 15px; color: var(--text-2); }
+  .opt + .opt { border-top: .5px solid var(--divider); }
+  .radio { width: 21px; height: 21px; border-radius: 50%; border: 2px solid var(--text-faint); flex: none; }
+  .radio.on { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 5.5px, transparent 6px); }
+  .sheet-foot { display: flex; gap: 10px; padding: 14px 0 30px; margin-top: 6px; border-top: .5px solid var(--divider); }
+  .deny-btn {
+    flex: 1; height: 48px; border-radius: 13px; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 600; color: var(--text-sec); background: var(--bg-raised);
+  }
+  .approve-btn {
+    flex: 2; height: 48px; border-radius: 13px; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: var(--approve-fg); background: var(--approve-bg);
+  }
+
+  /* ============ activity screen ============ */
+  .sec-head { font-size: 11.5px; font-weight: 700; letter-spacing: .07em; color: var(--text-sec); text-transform: uppercase; padding: 16px 16px 8px; display: flex; align-items: center; gap: 6px; }
+  .act-card { margin: 0 12px 8px; background: var(--bg-surface); border-radius: 14px; padding: 12px 13px; box-shadow: var(--card-shadow); position: relative; overflow: hidden; }
+  .act-card.pending::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--warn); }
+  .act-card .l1 { display: flex; align-items: center; gap: 9px; }
+  .act-card .l1 b { font-size: 14.5px; font-weight: 600; color: var(--text-1); flex: 1; }
+  .act-card .age { font-size: 12px; color: var(--text-sec); }
+  .act-card .cmd { margin-top: 7px; font-size: 12px; color: var(--text-sec); background: var(--bg-inset); border-radius: 7px; padding: 6px 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .phone.light .act-card .cmd { background: #F4F4F5; color: #52525B; }
+  .act-card .where { margin-top: 7px; font-size: 12px; color: var(--text-sec); }
+  .act-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-sm { font-size: 13.5px; font-weight: 600; border-radius: 9px; padding: 8px 16px; }
+  .btn-sm.pri { background: var(--accent); color: #fff; }
+  .btn-sm.ghost { background: var(--bg-raised); color: var(--text-sec); }
+  .recent-row { display: flex; align-items: center; gap: 9px; padding: 9px 18px; font-size: 13.5px; color: var(--text-sec); }
+  .recent-row .ok { color: var(--online); }
+
+  /* ============ agents screen ============ */
+  .fleet-strip { display: flex; gap: 7px; padding: 2px 16px 10px; }
+  .fchip { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-sec); background: var(--bg-raised); border-radius: 9px; padding: 7px 11px; }
+  .fchip.warn-link { background: var(--warn-soft); color: var(--warn); }
+  .phone.light .fchip.warn-link { background: #FEF3C7; color: #B45309; }
+  .bot-group { padding: 4px 0 6px; }
+  .bot-hd { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; }
+  .bot-hd b { font-size: 15.5px; font-weight: 600; color: var(--text-1); }
+  .bot-hd .owner { font-size: 12px; color: var(--text-sec); margin-left: auto; }
+  .sess { display: flex; align-items: center; gap: 10px; padding: 9px 16px 9px 24px; }
+  .sess + .sess { border-top: .5px solid var(--divider); }
+  .sess .mid { flex: 1; min-width: 0; }
+  .sess .tag { font-size: 14px; font-weight: 500; color: var(--text-2); display: flex; gap: 7px; align-items: center; }
+  .sess .cwd { font-size: 12px; color: var(--text-sec); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+  .sess .meta { font-size: 12px; color: var(--text-sec); text-align: right; flex: none; }
+  .sess .meta .warn-t { color: var(--warn); font-weight: 500; }
+  .chev { color: var(--text-faint); flex: none; }
+
+  /* ============ workspace sheet ============ */
+  .ws-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px; }
+  .ws-row + .ws-row { border-top: .5px solid var(--divider); }
+  .ws-row .sq { width: 40px; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 15px; flex: none; }
+  .ws-row .mid { flex: 1; min-width: 0; }
+  .ws-row b { font-size: 15.5px; font-weight: 600; color: var(--text-1); display: block; }
+  .ws-row .d { font-size: 12.5px; color: var(--text-sec); margin-top: 1px; }
+  .ws-row .check { color: var(--link); }
+  .ws-new { display: flex; align-items: center; gap: 12px; padding: 13px 2px; color: var(--link); font-size: 15px; font-weight: 500; }
+  .ws-new + .ws-new { border-top: .5px solid var(--divider); }
+
+  /* ============ context menu ============ */
+  .blurred { filter: blur(7px) brightness(.75); }
+  .menu-stage { position: absolute; inset: 0; z-index: 25; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; padding: 0 16px; }
+  .menu-bubble { max-width: 82%; }
+  .ctx-menu {
+    margin-top: 10px; width: 250px; background: var(--bg-raised); border-radius: 14px;
+    overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.5);
+  }
+  .ctx-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; font-size: 15.5px; color: var(--text-1); }
+  .ctx-item + .ctx-item { border-top: .5px solid rgba(255,255,255,.08); }
+  .ctx-item.danger { color: var(--danger); }
+  .ctx-item svg.i { width: 19px; height: 19px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Cheers Mobile — Interactive Prototype <span>· Expo app design · 390×844 · docs/arch/MOBILE_APP_DESIGN.md</span></h1>
+  <div class="switch" id="switch"></div>
+  <div class="caption" id="caption"></div>
+</div>
+
+<div class="stage"><div class="scaler" id="scaler">
+
+<!-- ============================================================
+     SVG symbol defs
+============================================================ -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></symbol>
+    <symbol id="ic-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="ic-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.7-.8L3 20l1.1-5.2a8 8 0 0 1-.6-3.3A8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3Z"/></symbol>
+    <symbol id="ic-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1Z"/></symbol>
+    <symbol id="ic-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="ic-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.5"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="ic-back" viewBox="0 0 24 24"><path d="m14.5 5-7 7 7 7"/></symbol>
+    <symbol id="ic-chev-r" viewBox="0 0 24 24"><path d="m9.5 5 7 7-7 7"/></symbol>
+    <symbol id="ic-chev-d" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="ic-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></symbol>
+    <symbol id="ic-send" viewBox="0 0 24 24"><path d="m4 12 16-8-5.5 16-3-6.5L4 12Z"/></symbol>
+    <symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 2.8 4.5 5.6v5.6c0 4.7 3.2 8.3 7.5 9.9 4.3-1.6 7.5-5.2 7.5-9.9V5.6L12 2.8Z"/></symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="ic-reply" viewBox="0 0 24 24"><path d="M9.5 14.5 4 9.5 9.5 4.5"/><path d="M4 9.5h9.5A6.5 6.5 0 0 1 20 16v3"/></symbol>
+    <symbol id="ic-fwd" viewBox="0 0 24 24"><path d="M14.5 14.5 20 9.5 14.5 4.5"/><path d="M20 9.5h-9.5A6.5 6.5 0 0 0 4 16v3"/></symbol>
+    <symbol id="ic-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 7V4.5h4V7M6.5 7l1 13h9l1-13"/></symbol>
+    <symbol id="ic-hash" viewBox="0 0 24 24"><path d="M9 4 7 20M17 4l-2 16M4.5 9h16M3.5 15h16"/></symbol>
+    <symbol id="ic-home" viewBox="0 0 24 24"><path d="m3.5 11 8.5-7.5L20.5 11V20a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 20Z"/></symbol>
+    <symbol id="ic-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.15-1.4l2-1.55-2-3.45-2.35.95A7 7 0 0 0 14 5.1L13.7 2.6h-3.4L10 5.1a7 7 0 0 0-2.5 1.45L5.15 5.6l-2 3.45 2 1.55A7 7 0 0 0 5 12c0 .5.05.95.15 1.4l-2 1.55 2 3.45 2.35-.95A7 7 0 0 0 10 18.9l.3 2.5h3.4l.3-2.5a7 7 0 0 0 2.5-1.45l2.35.95 2-3.45-2-1.55c.1-.45.15-.9.15-1.4Z"/></symbol>
+    <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 10a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/></symbol>
+    <symbol id="ic-arrdown" viewBox="0 0 24 24"><path d="M12 4v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="ic-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+    <symbol id="ic-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="ic-userplus" viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20.5a7 7 0 0 1 14 0M19 8v6M22 11h-6"/></symbol>
+  </defs>
+</svg>
+
+<!-- ============================================================
+     1. CHATS (dark)
+============================================================ -->
+<div class="phone" id="s-chats">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="big-head">
+      <div class="title-row">
+        <div class="hbtn"><svg class="i sm"><use href="#ic-menu"/></svg><span class="hb-badge">2</span></div>
+        <div class="search" style="flex:1;margin-top:0"><svg class="i sm"><use href="#ic-search"/></svg><span>Search</span></div>
+      </div>
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="avatar lg" style="background:#4F46E5">CC<span class="presence"></span></div>
+        <div class="mid">
+          <div class="l1"><b>claude-code</b><span class="bot-pill">BOT</span><span class="ws-tag">Cheers</span></div>
+          <div class="prev typing-prev">▍Running cargo test — 128/143 passed…</div>
+        </div>
+        <div class="end"><span class="time">14:32</span><span class="badge">2</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#2563EB">#</div>
+        <div class="mid">
+          <div class="l1"><b>#release</b><span class="ws-tag">Cheers</span></div>
+          <div class="prev"><span class="who">haowei:</span> tag v0.1.28 when CI is green</div>
+        </div>
+        <div class="end"><span class="time">12:47</span><span class="badge mention">@1</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#059669">DE<span class="presence"></span></div>
+        <div class="mid">
+          <div class="l1"><b>deng</b><span class="bot-pill">BOT</span></div>
+          <div class="prev">post_message dispatched to #release</div>
+        </div>
+        <div class="end"><span class="time">13:05</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#DB2777">MX<span class="presence off"></span></div>
+        <div class="mid">
+          <div class="l1"><b>Muxi</b></div>
+          <div class="prev">周五一起过方案？</div>
+        </div>
+        <div class="end"><span class="time">11:20</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#7C3AED">#</div>
+        <div class="mid">
+          <div class="l1"><b>#research-papers</b><span class="ws-tag">Research</span></div>
+          <div class="prev"><span class="who">codex:</span> summarized 3 new papers</div>
+        </div>
+        <div class="end"><span class="time">Yesterday</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#0891B2">#</div>
+        <div class="mid">
+          <div class="l1"><b>#general</b><span class="ws-tag">Cheers</span></div>
+          <div class="prev">Welcome deng to the channel</div>
+        </div>
+        <div class="end"><span class="time">Yesterday</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#D97706">CX<span class="presence off"></span></div>
+        <div class="mid">
+          <div class="l1"><b>codex</b><span class="bot-pill">BOT</span></div>
+          <div class="prev">Session idle — ~/Projects/Paper</div>
+        </div>
+        <div class="end"><span class="time">Tue</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     2. CHAT — active bot turn (dark)
+============================================================ -->
+<div class="phone" id="s-chat">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="chat-head">
+      <div class="hbtn"><svg class="i sm"><use href="#ic-back"/></svg></div>
+      <div class="t">
+        <b>#cheers-dev</b>
+        <div class="sub"><span class="dot g"></span>claude-code · running</div>
+      </div>
+      <div class="hbtn"><svg class="i sm"><use href="#ic-more"/></svg></div>
+    </div>
+    <div class="msgs">
+      <div class="day">Today</div>
+      <div class="mrow other">
+        <div class="avatar sm" style="background:#059669;align-self:flex-end">DE</div>
+        <div>
+          <div class="sender" style="color:#34D399">deng <span class="bot-pill">BOT</span></div>
+          <div class="bubble other">Nightly summary posted to #release. Two PRs still waiting on review.<span class="stamp">09:58</span></div>
+        </div>
+      </div>
+      <div class="mrow own">
+        <div class="bubble own"><span class="mention-tok">@claude-code</span> run the test suite and fix whatever breaks<span class="stamp">10:02</span></div>
+      </div>
+      <div class="mrow other">
+        <div class="avatar sm" style="background:#4F46E5;align-self:flex-end">CC</div>
+        <div>
+          <div class="sender" style="color:#818CF8">claude-code <span class="bot-pill">BOT</span></div>
+          <div class="bubble other">Found the failing case — <span class="mono" style="font-size:13px">ws_reconnect</span> asserts a 3s backoff but the new jitter makes it 3.2s. Patching the tolerance.<span class="stamp">10:04</span></div>
+        </div>
+      </div>
+      <div class="trace-line"><svg class="i xs"><use href="#ic-bot"/></svg> Agent steps · 4 <svg class="i xs"><use href="#ic-chev-r"/></svg></div>
+      <div class="mrow other">
+        <div class="avatar sm" style="background:#4F46E5;align-self:flex-end">CC</div>
+        <div>
+          <div class="bubble other">
+            <div class="code mono"><span class="cm">$</span> cargo test --workspace
+<span class="cm">running 143 tests…</span></div>
+            Re-running the suite — 128/143 passed so far<span class="caret"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="newpill"><svg class="i xs"><use href="#ic-arrdown"/></svg> New messages</div>
+    <div class="composer-zone">
+      <div class="ctl-chips">
+        <div class="cchip on"><svg class="i xs"><use href="#ic-bot"/></svg> claude-code · main <svg class="i xs"><use href="#ic-chev-d"/></svg></div>
+        <div class="cchip">sonnet-5 <svg class="i xs"><use href="#ic-chev-d"/></svg></div>
+      </div>
+      <div class="composer">
+        <div class="comp-card">
+          <svg class="i"><use href="#ic-plus"/></svg>
+          <span class="ph">Message #cheers-dev</span>
+          <svg class="i"><use href="#ic-mic"/></svg>
+        </div>
+        <div class="send-btn"><div class="stop-glyph"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     3. CHAT — inline approval card (dark)
+============================================================ -->
+<div class="phone" id="s-approval-inline">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="chat-head">
+      <div class="hbtn"><svg class="i sm"><use href="#ic-back"/></svg></div>
+      <div class="t">
+        <b>#cheers-dev</b>
+        <div class="sub"><span class="dot a"></span>claude-code · waiting for approval</div>
+      </div>
+      <div class="hbtn"><svg class="i sm"><use href="#ic-more"/></svg></div>
+    </div>
+    <div class="msgs">
+      <div class="quiet-line"><svg class="i xs" style="color:var(--online)"><use href="#ic-check"/></svg> Allowed: <span class="mono">Read Cargo.toml</span> · 10:12</div>
+      <div class="mrow own">
+        <div class="bubble own">tests are green — publish the gateway crate<span class="stamp">10:15</span></div>
+      </div>
+      <div class="mrow other">
+        <div class="avatar sm" style="background:#4F46E5;align-self:flex-end">CC</div>
+        <div>
+          <div class="sender" style="color:#818CF8">claude-code <span class="bot-pill">BOT</span></div>
+          <div class="bubble other">Dry run passed. Publishing needs your sign-off:<span class="stamp">10:16</span></div>
+        </div>
+      </div>
+      <div class="appr-card">
+        <div class="hd"><svg class="i sm shield"><use href="#ic-shield"/></svg> claude-code requests permission</div>
+        <div class="appr-cmd mono">/bin/zsh -lc "cargo publish -p cheers-gateway"</div>
+        <div class="appr-foot">
+          <span class="meta">Run command · 30s ago</span>
+          <span class="review-btn">Review</span>
+        </div>
+      </div>
+    </div>
+    <div class="composer-zone">
+      <div class="ctl-chips">
+        <div class="cchip on"><svg class="i xs"><use href="#ic-bot"/></svg> claude-code · main <svg class="i xs"><use href="#ic-chev-d"/></svg></div>
+        <div class="cchip">sonnet-5 <svg class="i xs"><use href="#ic-chev-d"/></svg></div>
+      </div>
+      <div class="composer">
+        <div class="comp-card">
+          <svg class="i"><use href="#ic-plus"/></svg>
+          <span class="ph">Message #cheers-dev</span>
+          <svg class="i"><use href="#ic-mic"/></svg>
+        </div>
+        <div class="send-btn"><svg class="i" style="width:19px;height:19px"><use href="#ic-send"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     4. APPROVAL SHEET (dark)
+============================================================ -->
+<div class="phone" id="s-approval-sheet">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="chat-head">
+      <div class="hbtn"><svg class="i sm"><use href="#ic-back"/></svg></div>
+      <div class="t"><b>#cheers-dev</b><div class="sub"><span class="dot a"></span>claude-code · waiting for approval</div></div>
+      <div class="hbtn"><svg class="i sm"><use href="#ic-more"/></svg></div>
+    </div>
+    <div class="msgs">
+      <div class="mrow own"><div class="bubble own">tests are green — publish the gateway crate<span class="stamp">10:15</span></div></div>
+      <div class="mrow other">
+        <div class="avatar sm" style="background:#4F46E5;align-self:flex-end">CC</div>
+        <div><div class="bubble other">Dry run passed. Publishing needs your sign-off:<span class="stamp">10:16</span></div></div>
+      </div>
+    </div>
+    <div class="dim"></div>
+    <div class="sheet">
+      <div class="grabber"></div>
+      <h3><svg class="i sm" style="color:var(--warn);vertical-align:-2px"><use href="#ic-shield"/></svg> claude-code requests permission</h3>
+      <div class="sub">Run command · in <a href="#">#cheers-dev</a></div>
+      <div class="cmd-block mono">/bin/zsh -lc "cargo publish -p cheers-gateway"
+<span style="color:var(--text-sec)">cwd ~/Projects/Cheers/server</span></div>
+      <div class="lazy-row"><span>View staged diff</span><span class="mono">+214 −38 · 6 files</span></div>
+      <div class="opts">
+        <div class="opt"><div class="radio on"></div> Allow once</div>
+        <div class="opt"><div class="radio"></div> Allow for this session</div>
+        <div class="opt"><div class="radio"></div> Always allow <span class="mono" style="font-size:13px">cargo publish</span></div>
+      </div>
+      <div class="sheet-foot">
+        <div class="deny-btn">Deny</div>
+        <div class="approve-btn">Approve</div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     5. ACTIVITY (dark)
+============================================================ -->
+<div class="phone" id="s-activity">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="big-head"><div class="title-row"><div class="hbtn"><svg class="i sm"><use href="#ic-back"/></svg></div><h2>Activity</h2></div></div>
+    <div class="rows">
+      <div class="sec-head"><svg class="i xs" style="color:var(--warn)"><use href="#ic-shield"/></svg> Needs approval</div>
+      <div class="act-card pending">
+        <div class="l1"><div class="avatar sm" style="background:#4F46E5">CC</div><b>Run command</b><span class="age">2m</span></div>
+        <div class="cmd mono">cargo publish -p cheers-gateway</div>
+        <div class="where">claude-code · #cheers-dev · Cheers</div>
+        <div class="act-actions"><span class="btn-sm pri">Review</span><span class="btn-sm ghost">Deny</span></div>
+      </div>
+      <div class="act-card pending">
+        <div class="l1"><div class="avatar sm" style="background:#D97706">CX</div><b>Edit file</b><span class="age">8m</span></div>
+        <div class="cmd mono">server/src/notify/mod.rs · +42 −7</div>
+        <div class="where">codex · #dev · Personal</div>
+        <div class="act-actions"><span class="btn-sm pri">Review</span><span class="btn-sm ghost">Deny</span></div>
+      </div>
+      <div class="sec-head">Invites</div>
+      <div class="act-card">
+        <div class="l1"><div class="avatar sm" style="background:#2563EB">HW</div><b>#ops — Cheers</b><span class="age">1h</span></div>
+        <div class="where">haowei invited you to join</div>
+        <div class="act-actions"><span class="btn-sm pri">Accept</span><span class="btn-sm ghost">Decline</span></div>
+      </div>
+      <div class="sec-head">Recent</div>
+      <div class="recent-row"><svg class="i xs ok"><use href="#ic-check"/></svg> Allowed: <span class="mono" style="font-size:12px">Read Cargo.toml</span> · 1h</div>
+      <div class="recent-row"><svg class="i xs ok"><use href="#ic-check"/></svg> Accepted invite to #research-papers · Yesterday</div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     6. AGENTS (dark)
+============================================================ -->
+<div class="phone" id="s-agents">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="big-head"><div class="title-row"><div class="hbtn"><svg class="i sm"><use href="#ic-back"/></svg></div><h2>Agents</h2></div></div>
+    <div class="fleet-strip">
+      <div class="fchip"><span class="dot g"></span>2 running</div>
+      <div class="fchip warn-link"><span class="dot a"></span>1 waiting</div>
+      <div class="fchip"><span class="dot z"></span>3 idle</div>
+    </div>
+    <div class="rows">
+      <div class="bot-group">
+        <div class="bot-hd"><div class="avatar md" style="background:#4F46E5">CC<span class="presence"></span></div><b>claude-code</b><span class="bot-pill">BOT</span><span class="owner">yours</span></div>
+        <div class="sess">
+          <span class="dot g"></span>
+          <div class="mid"><div class="tag">main</div><div class="cwd mono">&#8206;~/Projects/Cheers</div></div>
+          <div class="meta">#cheers-dev<br>running · 2m</div>
+          <svg class="i sm chev"><use href="#ic-chev-r"/></svg>
+        </div>
+        <div class="sess">
+          <span class="dot a"></span>
+          <div class="mid"><div class="tag">release</div><div class="cwd mono">&#8206;~/Projects/Cheers-release</div></div>
+          <div class="meta">#release<br><span class="warn-t">waiting on approval</span></div>
+          <svg class="i sm chev"><use href="#ic-chev-r"/></svg>
+        </div>
+      </div>
+      <div class="bot-group">
+        <div class="bot-hd"><div class="avatar md" style="background:#D97706">CX<span class="presence"></span></div><b>codex</b><span class="bot-pill">BOT</span><span class="owner">yours</span></div>
+        <div class="sess">
+          <span class="dot g"></span>
+          <div class="mid"><div class="tag">papers</div><div class="cwd mono">&#8206;~/Projects/Paper</div></div>
+          <div class="meta">#research-papers<br>running · 12m</div>
+          <svg class="i sm chev"><use href="#ic-chev-r"/></svg>
+        </div>
+        <div class="sess">
+          <span class="dot z"></span>
+          <div class="mid"><div class="tag">scratch</div><div class="cwd mono">&#8206;~/Projects/Paper/notes</div></div>
+          <div class="meta">DM · idle · 1h</div>
+          <svg class="i sm chev"><use href="#ic-chev-r"/></svg>
+        </div>
+      </div>
+      <div class="bot-group">
+        <div class="bot-hd"><div class="avatar md" style="background:#059669">DE<span class="presence off"></span></div><b>deng</b><span class="bot-pill">BOT</span><span class="owner">shared</span></div>
+        <div class="sess">
+          <span class="dot z"></span>
+          <div class="mid"><div class="tag">nightly</div><div class="cwd mono">&#8206;~/bots/deng</div></div>
+          <div class="meta">#release · idle · 3h</div>
+          <svg class="i sm chev"><use href="#ic-chev-r"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     7. LEFT DRAWER over Chats (dark)
+============================================================ -->
+<div class="phone" id="s-drawer">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="big-head">
+      <div class="title-row">
+        <div class="hbtn"><svg class="i sm"><use href="#ic-menu"/></svg><span class="hb-badge">2</span></div>
+        <div class="search" style="flex:1;margin-top:0"><svg class="i sm"><use href="#ic-search"/></svg><span>Search</span></div>
+      </div>
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="avatar lg" style="background:#4F46E5">CC<span class="presence"></span></div>
+        <div class="mid"><div class="l1"><b>claude-code</b><span class="bot-pill">BOT</span></div><div class="prev typing-prev">▍Running cargo test…</div></div>
+        <div class="end"><span class="time">14:32</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#2563EB">#</div>
+        <div class="mid"><div class="l1"><b>#release</b></div><div class="prev"><span class="who">haowei:</span> tag v0.1.28…</div></div>
+        <div class="end"><span class="time">12:47</span></div>
+      </div>
+    </div>
+    <div class="dim"></div>
+    <div class="drawer">
+      <div class="dr-strip">
+        <div class="dr-ws"><div class="sq" style="background:var(--bg-raised);color:var(--text-sec)"><svg class="i"><use href="#ic-grid"/></svg></div><div class="nm">All</div></div>
+        <div class="dr-ws"><div class="sq" style="background:#059669"><svg class="i"><use href="#ic-home"/></svg><span class="nub">1</span></div><div class="nm">Personal</div></div>
+        <div class="dr-ws sel"><div class="sq" style="background:#4F46E5">C<span class="nub">3</span></div><div class="nm">Cheers</div></div>
+        <div class="dr-ws"><div class="sq" style="background:#7C3AED">R</div><div class="nm">Research</div></div>
+        <div class="dr-ws"><div class="sq" style="background:var(--bg-raised);color:var(--text-sec)"><svg class="i"><use href="#ic-plus"/></svg></div><div class="nm">Add</div></div>
+      </div>
+      <div class="dr-head">
+        <div style="flex:1"><b>Cheers</b><div class="meta">5 channels · 2 bots · 4 members</div></div>
+        <svg class="i" style="color:var(--icon-muted)"><use href="#ic-gear"/></svg>
+      </div>
+      <div class="dr-list">
+        <div class="dr-sec">Channels</div>
+        <div class="dr-row sel"><div class="glyph">#</div><b>cheers-dev</b><span class="badge">2</span></div>
+        <div class="dr-row"><div class="glyph">#</div><b>release</b><span class="badge mention">@1</span></div>
+        <div class="dr-row"><div class="glyph">#</div><b>general</b></div>
+        <div class="dr-row"><div class="glyph">#</div><b>ops</b></div>
+        <div class="dr-sec">Direct messages</div>
+        <div class="dr-row"><div class="avatar sm" style="background:#4F46E5">CC<span class="presence" style="border-color:var(--bg-surface)"></span></div><b>claude-code</b><span class="bot-pill">BOT</span></div>
+        <div class="dr-row"><div class="avatar sm" style="background:#059669">DE<span class="presence" style="border-color:var(--bg-surface)"></span></div><b>deng</b><span class="bot-pill">BOT</span></div>
+        <div class="dr-row"><div class="avatar sm" style="background:#DB2777">MX</div><b>Muxi</b></div>
+      </div>
+      <div class="dr-nav">
+        <div class="dr-navchip"><svg class="i"><use href="#ic-inbox"/></svg>Activity<span class="nub">2</span></div>
+        <div class="dr-navchip"><svg class="i"><use href="#ic-bot"/></svg>Agents<span class="dot a"></span></div>
+        <div class="dr-navchip"><svg class="i"><use href="#ic-userplus"/></svg>Friends</div>
+      </div>
+      <div class="dr-foot">
+        <div class="avatar sm" style="background:#2563EB">HW</div>
+        <div class="ico"><svg class="i sm"><use href="#ic-gear"/></svg></div>
+        <div class="dr-newch"><svg class="i xs"><use href="#ic-plus"/></svg> New chat</div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     8. LONG-PRESS CONTEXT MENU (dark)
+============================================================ -->
+<div class="phone" id="s-context-menu">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="blurred" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="chat-head">
+        <div class="hbtn"><svg class="i sm"><use href="#ic-back"/></svg></div>
+        <div class="t"><b>#release</b><div class="sub">Cheers · 8 members</div></div>
+        <div class="hbtn"><svg class="i sm"><use href="#ic-more"/></svg></div>
+      </div>
+      <div class="msgs">
+        <div class="day">Today</div>
+        <div class="mrow other">
+          <div class="avatar sm" style="background:#059669;align-self:flex-end">DE</div>
+          <div><div class="sender" style="color:#34D399">deng <span class="bot-pill">BOT</span></div>
+          <div class="bubble other">CI is green on main. Changelog draft is ready.<span class="stamp">12:40</span></div></div>
+        </div>
+        <div class="mrow other cont"><div class="bubble other">Two PRs merged since the last tag.<span class="stamp">12:41</span></div></div>
+      </div>
+      <div class="composer-zone">
+        <div class="composer">
+          <div class="comp-card"><svg class="i"><use href="#ic-plus"/></svg><span class="ph">Message #release</span><svg class="i"><use href="#ic-mic"/></svg></div>
+          <div class="send-btn"><svg class="i" style="width:19px;height:19px"><use href="#ic-send"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="menu-stage">
+      <div class="menu-bubble">
+        <div class="bubble own" style="box-shadow:0 14px 40px rgba(0,0,0,.5)">tag v0.1.28 when CI is green and ping <span class="mention-tok">@deng</span><span class="stamp">12:47</span></div>
+      </div>
+      <div class="ctx-menu">
+        <div class="ctx-item">Reply <svg class="i"><use href="#ic-reply"/></svg></div>
+        <div class="ctx-item">Forward <svg class="i"><use href="#ic-fwd"/></svg></div>
+        <div class="ctx-item">Copy text <svg class="i"><use href="#ic-copy"/></svg></div>
+        <div class="ctx-item danger">Delete <svg class="i"><use href="#ic-trash"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind"></div>
+</div>
+
+<!-- ============================================================
+     9. CHATS — light mode variant
+============================================================ -->
+<div class="phone light" id="s-chats-light">
+  <div class="statusbar"><span>9:41</span><div class="island"></div>
+    <div class="sb-right"><div class="sig"><i></i><i></i><i></i><i></i></div><div class="batt"></div></div></div>
+  <div class="body">
+    <div class="big-head">
+      <div class="title-row">
+        <div class="hbtn"><svg class="i sm"><use href="#ic-menu"/></svg><span class="hb-badge">2</span></div>
+        <div class="search" style="flex:1;margin-top:0"><svg class="i sm"><use href="#ic-search"/></svg><span>Search</span></div>
+      </div>
+    </div>
+    <div class="rows">
+      <div class="row">
+        <div class="avatar lg" style="background:#4F46E5">CC<span class="presence" style="border-color:#FAFAFA"></span></div>
+        <div class="mid">
+          <div class="l1"><b>claude-code</b><span class="bot-pill">BOT</span><span class="ws-tag">Cheers</span></div>
+          <div class="prev typing-prev">▍Running cargo test — 128/143 passed…</div>
+        </div>
+        <div class="end"><span class="time">14:32</span><span class="badge">2</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#2563EB">#</div>
+        <div class="mid">
+          <div class="l1"><b>#release</b><span class="ws-tag">Cheers</span></div>
+          <div class="prev"><span class="who">haowei:</span> tag v0.1.28 when CI is green</div>
+        </div>
+        <div class="end"><span class="time">12:47</span><span class="badge mention">@1</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#059669">DE<span class="presence" style="border-color:#FAFAFA"></span></div>
+        <div class="mid">
+          <div class="l1"><b>deng</b><span class="bot-pill">BOT</span></div>
+          <div class="prev">post_message dispatched to #release</div>
+        </div>
+        <div class="end"><span class="time">13:05</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#DB2777">MX<span class="presence off" style="border-color:#FAFAFA"></span></div>
+        <div class="mid">
+          <div class="l1"><b>Muxi</b></div>
+          <div class="prev">周五一起过方案？</div>
+        </div>
+        <div class="end"><span class="time">11:20</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#7C3AED">#</div>
+        <div class="mid">
+          <div class="l1"><b>#research-papers</b><span class="ws-tag">Research</span></div>
+          <div class="prev"><span class="who">codex:</span> summarized 3 new papers</div>
+        </div>
+        <div class="end"><span class="time">Yesterday</span></div>
+      </div>
+      <div class="row">
+        <div class="avatar lg" style="background:#0891B2">#</div>
+        <div class="mid">
+          <div class="l1"><b>#general</b><span class="ws-tag">Cheers</span></div>
+          <div class="prev">Welcome deng to the channel</div>
+        </div>
+        <div class="end"><span class="time">Yesterday</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="home-ind" style="background:#18181B"></div>
+</div>
+
+</div></div>
+
+<script>
+  const SCREENS = [
+    ["chats",          "1 · Chats",          "Home — just the flat cross-workspace list: no title bar, no tab bar, no floating buttons. One compact row holds the badged menu button (pending approvals) and search; the menu button or an edge swipe opens the drawer (screen 7), which holds ALL navigation. Unread badge = indigo, mention = rose; a streaming bot turn previews live."],
+    ["chat",           "2 · Chat · bot turn","The core surface — Claude-app-style header (circular back, centered title + live bot status, all actions collapsed into the ⋯ button), bubbles per the iOS reference (own #4f46e5, 16pt radius + 6pt tail), day chips, collapsed 'Agent steps' trace line, live streaming with caret, Session/Model chips above the composer, Send becomes Stop during a turn."],
+    ["approval-inline","3 · Inline approval","A pending permission request renders as a compact card in the stream — title, one-line mono command, Review. Earlier resolved requests collapse to a quiet trace line. No radios inside a 360pt bubble."],
+    ["approval-sheet", "4 · Approval sheet", "The killer feature and push deep-link target — command in a black inset, lazy staged-diff row, allow-option radios, sticky full-width 48pt Deny/Approve above the home indicator."],
+    ["activity",       "5 · Activity",       "The 'what needs me' inbox, reached from the drawer — pending approvals always on top (amber edge), then invites with inline Accept/Decline, then quiet recents. The pending count also badges the home screen's menu button. This is where notifications land."],
+    ["agents",         "6 · Agents",         "Fleet observability, reached from the drawer — summary strip (running / waiting / idle), bots grouped with their live sessions: status dot, session tag, middle-truncated cwd, channel, last activity."],
+    ["drawer",         "7 · Drawer",         "Swipe in from the left edge (or tap the menu button) → the drawer, Claude-app style: workspace strip on top (unread counts, + to add or join), the selected workspace's channels and DMs in the middle, then a compact navigation chip row — Activity (badged), Agents, Friends — and a slim footer with profile, settings and New chat. With no tab bar, the drawer is the app's single navigation hub."],
+    ["context-menu",   "8 · Context menu",   "Long-press a message → native context menu (UIMenu / Material) over the blurred chat: Reply, Forward, Copy, Delete. Swipe-right on a bubble is the reply shortcut."],
+    ["chats-light",    "9 · Light mode",     "The same Chats screen through the light token mapping derived in apps/ios Theme.swift — zinc ramp inverted, indigo accent and avatar palette constant, elevation gains soft shadows."],
+  ];
+  const sw = document.getElementById("switch");
+  const cap = document.getElementById("caption");
+  let current = 0;
+  function show(id) {
+    current = Math.max(0, SCREENS.findIndex(s => s[0] === id));
+    document.querySelectorAll(".phone").forEach(p => p.classList.toggle("on", p.id === "s-" + id));
+    [...sw.children].forEach((b, i) => b.classList.toggle("on", SCREENS[i][0] === id));
+    const s = SCREENS.find(s => s[0] === id);
+    cap.textContent = s ? s[2] : "";
+    try { history.replaceState(null, "", "?screen=" + id); } catch (e) {}
+  }
+  SCREENS.forEach(([id, label]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.onclick = () => show(id);
+    sw.appendChild(b);
+  });
+  function fit() {
+    const stage = document.querySelector(".stage");
+    const s = Math.min(1, (stage.clientHeight - 18) / 844, (stage.clientWidth - 18) / 390);
+    document.getElementById("scaler").style.transform = "scale(" + s + ")";
+  }
+  window.addEventListener("resize", fit);
+  document.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") show(SCREENS[Math.min(SCREENS.length - 1, current + 1)][0]);
+    if (e.key === "ArrowLeft")  show(SCREENS[Math.max(0, current - 1)][0]);
+  });
+  const q = new URLSearchParams(location.search).get("screen");
+  show(SCREENS.some(s => s[0] === q) ? q : "chats");
+  fit();
+</script>
+</body>
+</html>

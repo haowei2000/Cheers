@@ -45,6 +45,15 @@ pub struct NotificationDto {
 /// reads it back). No-op if `user_id` isn't a UUID or the user has no live socket.
 pub async fn push_notification(state: &AppState, user_id: &str, data: Value) {
     if let Ok(uid) = Uuid::parse_str(user_id) {
+        // OS push mirror of the live frame (fire-and-forget; §5.3 invites push
+        // at default priority with a minimized payload).
+        let title = data
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("a workspace")
+            .to_string();
+        crate::notify::push_to_user(state, uid, crate::notify::PushKind::Invite { title });
+
         state
             .fanout
             .broadcast_user(uid, WireFrame::user("notification", data))

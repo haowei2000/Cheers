@@ -150,6 +150,11 @@ struct APIClient: Sendable {
         _ = try await send(request)
     }
 
+    func deleteEmpty(_ path: String) async throws {
+        let request = try makeRequest("DELETE", path)
+        _ = try await send(request)
+    }
+
     // MARK: Auth
 
     func login(login loginName: String, password: String) async throws -> LoginResponse {
@@ -211,5 +216,138 @@ struct APIClient: Sendable {
 
     func sendMessage(channelId: String, _ body: SendMessageRequest) async throws -> MessageDto {
         try await postJSON("/channels/\(channelId)/messages", body: body, as: MessageDto.self)
+    }
+
+    // MARK: Files
+
+    /// Raw file bytes (Bearer-authed). `download` serves the original; otherwise
+    /// the inline preview (a PDF rendition for office docs).
+    func fileData(fileId: String, download: Bool = true) async throws -> Data {
+        let request = try makeRequest("GET", "/files/\(fileId)/\(download ? "download" : "preview")")
+        return try await send(request)
+    }
+
+    // MARK: Approvals (ACP permission resolution)
+
+    /// Resolve a pending permission request by option id (allow/reject).
+    /// `delivered=false` means the decision was recorded but the agent's
+    /// connector/session was offline to receive it.
+    func resolvePermission(
+        channelId: String,
+        requestId: String,
+        optionId: String
+    ) async throws -> ResolveResponse {
+        let encoded = requestId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? requestId
+        return try await postJSON(
+            "/channels/\(channelId)/permissions/\(encoded)/resolve",
+            body: ResolvePermissionRequest(optionId: optionId),
+            as: ResolveResponse.self
+        )
+    }
+}
+
+struct ResolvePermissionRequest: Encodable {
+    let optionId: String
+    enum CodingKeys: String, CodingKey { case optionId = "option_id" }
+}
+
+extension APIClient {
+    // MARK: Notifications / invites
+
+    func listNotifications() async throws -> [NotificationDto] {
+        try await getJSON("/notifications", as: [NotificationDto].self)
+    }
+
+    func acceptWorkspaceInvite(workspaceId: String) async throws {
+        try await postEmpty("/workspaces/\(workspaceId)/accept")
+    }
+
+    func declineWorkspaceInvite(workspaceId: String) async throws {
+        try await postEmpty("/workspaces/\(workspaceId)/decline")
+    }
+
+    func acceptChannelInvite(channelId: String) async throws {
+        try await postEmpty("/channels/\(channelId)/accept")
+    }
+
+    func declineChannelInvite(channelId: String) async throws {
+        try await postEmpty("/channels/\(channelId)/decline")
+    }
+
+    // MARK: Agents
+
+    func listBots() async throws -> [BotDto] {
+        try await getJSON("/bots", as: [BotDto].self)
+    }
+
+    // MARK: Create channel / DM
+
+    func createChannel(workspaceId: String, name: String, isPrivate: Bool, purpose: String?) async throws -> ChannelDto {
+        try await postJSON(
+            "/channels",
+            body: ChannelCreateRequest(workspaceId: workspaceId, name: name, type: isPrivate ? "private" : "public", purpose: purpose),
+            as: ChannelDto.self
+        )
+    }
+
+    func createDM(botId: String) async throws -> ChannelDto {
+        try await postJSON("/channels/dm", body: DmCreateRequest(targetBotId: botId), as: ChannelDto.self)
+    }
+
+    func createDM(userId: String) async throws -> ChannelDto {
+        try await postJSON("/channels/dm", body: DmCreateRequest(targetUserId: userId), as: ChannelDto.self)
+    }
+
+    // MARK: Push devices (OS notifications)
+
+    func registerDevice(token: String, name: String?) async throws {
+        struct Body: Encodable {
+            let pushToken: String
+            let platform: String
+            let deviceName: String?
+            enum CodingKeys: String, CodingKey {
+                case pushToken = "push_token"
+                case platform
+                case deviceName = "device_name"
+            }
+        }
+        _ = try await postJSON(
+            "/users/me/devices",
+            body: Body(pushToken: token, platform: "ios", deviceName: name),
+            as: OkResponse.self
+        )
+    }
+
+    func deleteDevice(token: String) async throws {
+        try await deleteEmpty("/users/me/devices/\(token)")
+    }
+
+    // MARK: ViewBoard (Audit)
+
+    func permissionAudit(channelId: String, limit: Int = 50) async throws -> [AuditEvent] {
+        let query = [URLQueryItem(name: "limit", value: String(limit))]
+        return try await getJSON("/channels/\(channelId)/permissions/audit", query: query, as: AuditResponse.self).events
+    }
+
+    // MARK: Sessions & bot settings
+
+    func listSessions(channelId: String, botId: String) async throws -> [SessionInfo] {
+        try await getJSON("/channels/\(channelId)/bots/\(botId)/sessions", as: SessionListResponse.self).sessions
+    }
+
+    func sessionControls(channelId: String, botId: String) async throws -> SessionControls {
+        try await getJSON("/channels/\(channelId)/bots/\(botId)/session-controls", as: SessionControls.self)
+    }
+
+    func setSessionMode(channelId: String, botId: String, sessionId: String, mode: String) async throws {
+        _ = try await postJSON("/channels/\(channelId)/bots/\(botId)/sessions/\(sessionId)/mode", body: ["mode": mode], as: OkResponse.self)
+    }
+
+    func setSessionConfig(channelId: String, botId: String, sessionId: String, configId: String, value: String) async throws {
+        _ = try await postJSON(
+            "/channels/\(channelId)/bots/\(botId)/sessions/\(sessionId)/config-option",
+            body: SetConfigOptionRequest(configId: configId, value: value),
+            as: OkResponse.self
+        )
     }
 }

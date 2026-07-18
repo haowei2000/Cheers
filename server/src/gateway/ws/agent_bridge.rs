@@ -1492,6 +1492,37 @@ async fn handle_permission_request_frame(
         .await
         .map_err(crate::gateway::log_db_err("permission_request: commit tx"))?;
 
+    // OS push — the approval is THE mobile use case (design §5.3): notify the
+    // bot's owner (primary approver) with a time-sensitive, actionable banner
+    // carrying the default allow/reject option ids. Fire-and-forget.
+    if let Some(owner) = bot
+        .owner_id
+        .as_deref()
+        .and_then(|raw| raw.parse::<Uuid>().ok())
+    {
+        let (approve_option_id, reject_option_id) =
+            crate::notify::approval_option_ids(&content_data["options"]);
+        crate::notify::push_to_user(
+            state,
+            owner,
+            crate::notify::PushKind::PermissionRequest {
+                channel_id,
+                request_id: frame
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                bot_name: bot
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| bot.username.clone()),
+                title: title.to_string(),
+                approve_option_id,
+                reject_option_id,
+            },
+        );
+    }
+
     // Audit the request itself so `approval_audit` holds the full
     // requested → resolved/timeout chain in one place (resolve and timeout are
     // already audited; this closes the gap at card creation). Best-effort: an

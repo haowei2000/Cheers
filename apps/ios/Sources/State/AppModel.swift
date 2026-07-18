@@ -13,7 +13,7 @@ struct UserSession: Equatable {
 @MainActor
 @Observable
 final class AppModel {
-    static let defaultServerURL = "http://localhost:30080/api/v1"
+    static let defaultServerURL = "https://www.tocheers.com/api/v1"
 
     private enum Keys {
         static let token = "access_token"
@@ -102,7 +102,9 @@ final class AppModel {
 
     func logout() async {
         if let api {
-            // Best-effort server-side revocation; local sign-out proceeds regardless.
+            // Best-effort: stop pushes for this device, then revoke the session
+            // server-side; local sign-out proceeds regardless.
+            await PushRouter.deleteRegistration(using: api)
             try? await api.logout()
         }
         clearSession()

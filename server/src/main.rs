@@ -91,6 +91,12 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // OS push — direct APNs (store app) or relay (self-hosted); optional.
+    let push = server::notify::PushTransport::from_env().map(Arc::new);
+    if push.is_none() {
+        tracing::info!("push not configured (APNS_* or PUSH_RELAY_URL) — OS push disabled");
+    }
+
     let state = AppState {
         db,
         config: config.clone(),
@@ -102,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         stream_registry,
         workspace_rpc,
         web_push,
+        push,
     };
 
     // Orphan-placeholder reclaimer (flow 8 gap): finalize placeholders that

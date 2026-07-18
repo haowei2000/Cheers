@@ -23,6 +23,21 @@
 		CE000000000000000000020E /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010E /* MessageBubble.swift */; };
 		CE000000000000000000020F /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010F /* ComposerView.swift */; };
 		CE0000000000000000000210 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000110 /* SettingsView.swift */; };
+		CE0000000000000000000211 /* ShellModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000112 /* ShellModel.swift */; };
+		CE0000000000000000000212 /* ActivityModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000113 /* ActivityModel.swift */; };
+		CE0000000000000000000213 /* AgentsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000114 /* AgentsModel.swift */; };
+		CE0000000000000000000214 /* Approval.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000115 /* Approval.swift */; };
+		CE0000000000000000000215 /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000116 /* AppShellView.swift */; };
+		CE0000000000000000000216 /* DrawerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000117 /* DrawerView.swift */; };
+		CE0000000000000000000217 /* ChatsHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000118 /* ChatsHomeView.swift */; };
+		CE0000000000000000000218 /* ShellComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000119 /* ShellComponents.swift */; };
+		CE0000000000000000000219 /* PlaceholderScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011A /* PlaceholderScreens.swift */; };
+		CE000000000000000000021A /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011B /* ActivityView.swift */; };
+		CE000000000000000000021B /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011C /* AgentsView.swift */; };
+		CE000000000000000000021C /* ApprovalCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011D /* ApprovalCardView.swift */; };
+		CE000000000000000000021D /* ApprovalSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011E /* ApprovalSheetView.swift */; };
+		CE000000000000000000021E /* PushRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011F /* PushRouter.swift */; };
+		CE000000000000000000021F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000120 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +57,21 @@
 		CE000000000000000000010E /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
 		CE000000000000000000010F /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000110 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000112 /* ShellModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellModel.swift; sourceTree = "<group>"; };
+		CE0000000000000000000113 /* ActivityModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityModel.swift; sourceTree = "<group>"; };
+		CE0000000000000000000114 /* AgentsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsModel.swift; sourceTree = "<group>"; };
+		CE0000000000000000000115 /* Approval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Approval.swift; sourceTree = "<group>"; };
+		CE0000000000000000000116 /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000117 /* DrawerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000118 /* ChatsHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsHomeView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000119 /* ShellComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellComponents.swift; sourceTree = "<group>"; };
+		CE000000000000000000011A /* PlaceholderScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderScreens.swift; sourceTree = "<group>"; };
+		CE000000000000000000011B /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
+		CE000000000000000000011C /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
+		CE000000000000000000011D /* ApprovalCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCardView.swift; sourceTree = "<group>"; };
+		CE000000000000000000011E /* ApprovalSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSheetView.swift; sourceTree = "<group>"; };
+		CE000000000000000000011F /* PushRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRouter.swift; sourceTree = "<group>"; };
+		CE0000000000000000000120 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE0000000000000000000111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CE0000000000000000000402 /* Cheers.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cheers.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -78,6 +108,7 @@
 			children = (
 				CE0000000000000000000101 /* CheersApp.swift */,
 				CE0000000000000000000111 /* Info.plist */,
+				CE0000000000000000000120 /* Assets.xcassets */,
 				CE0000000000000000000304 /* Support */,
 				CE0000000000000000000305 /* Models */,
 				CE0000000000000000000306 /* Networking */,
@@ -92,6 +123,7 @@
 			children = (
 				CE0000000000000000000102 /* Theme.swift */,
 				CE0000000000000000000103 /* KeychainStore.swift */,
+				CE000000000000000000011F /* PushRouter.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -100,6 +132,7 @@
 			isa = PBXGroup;
 			children = (
 				CE0000000000000000000104 /* DTOs.swift */,
+				CE0000000000000000000115 /* Approval.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -119,6 +152,9 @@
 				CE0000000000000000000107 /* AppModel.swift */,
 				CE0000000000000000000108 /* ConversationListModel.swift */,
 				CE0000000000000000000109 /* ChatModel.swift */,
+				CE0000000000000000000112 /* ShellModel.swift */,
+				CE0000000000000000000113 /* ActivityModel.swift */,
+				CE0000000000000000000114 /* AgentsModel.swift */,
 			);
 			path = State;
 			sourceTree = "<group>";
@@ -133,6 +169,15 @@
 				CE000000000000000000010E /* MessageBubble.swift */,
 				CE000000000000000000010F /* ComposerView.swift */,
 				CE0000000000000000000110 /* SettingsView.swift */,
+				CE0000000000000000000116 /* AppShellView.swift */,
+				CE0000000000000000000117 /* DrawerView.swift */,
+				CE0000000000000000000118 /* ChatsHomeView.swift */,
+				CE0000000000000000000119 /* ShellComponents.swift */,
+				CE000000000000000000011A /* PlaceholderScreens.swift */,
+				CE000000000000000000011B /* ActivityView.swift */,
+				CE000000000000000000011C /* AgentsView.swift */,
+				CE000000000000000000011D /* ApprovalCardView.swift */,
+				CE000000000000000000011E /* ApprovalSheetView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -195,6 +240,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CE000000000000000000021F /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -221,6 +267,20 @@
 				CE000000000000000000020E /* MessageBubble.swift in Sources */,
 				CE000000000000000000020F /* ComposerView.swift in Sources */,
 				CE0000000000000000000210 /* SettingsView.swift in Sources */,
+				CE0000000000000000000211 /* ShellModel.swift in Sources */,
+				CE0000000000000000000212 /* ActivityModel.swift in Sources */,
+				CE0000000000000000000213 /* AgentsModel.swift in Sources */,
+				CE0000000000000000000214 /* Approval.swift in Sources */,
+				CE0000000000000000000215 /* AppShellView.swift in Sources */,
+				CE0000000000000000000216 /* DrawerView.swift in Sources */,
+				CE0000000000000000000217 /* ChatsHomeView.swift in Sources */,
+				CE0000000000000000000218 /* ShellComponents.swift in Sources */,
+				CE0000000000000000000219 /* PlaceholderScreens.swift in Sources */,
+				CE000000000000000000021A /* ActivityView.swift in Sources */,
+				CE000000000000000000021B /* AgentsView.swift in Sources */,
+				CE000000000000000000021C /* ApprovalCardView.swift in Sources */,
+				CE000000000000000000021D /* ApprovalSheetView.swift in Sources */,
+				CE000000000000000000021E /* PushRouter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

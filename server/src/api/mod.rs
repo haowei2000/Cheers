@@ -5,6 +5,7 @@ pub mod avatars;
 pub mod bot_permission;
 pub mod bots;
 pub mod channels;
+pub mod devices;
 pub mod enrollment;
 pub mod files;
 pub mod fleet;

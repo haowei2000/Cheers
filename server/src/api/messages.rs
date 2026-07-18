@@ -93,6 +93,7 @@ pub async fn send_message(
         None => None,
     };
 
+    let mention_ids_for_push = body.mention_ids.clone();
     let dto = messages::create_message(
         &state.db,
         &state.fanout,
@@ -112,6 +113,10 @@ pub async fn send_message(
         },
     )
     .await?;
+
+    // OS push: DM partners + @-mentioned users (design §5.3); regular channel
+    // traffic never pushes. Spawned inside — the send path is untouched.
+    crate::notify::push_message_fanout(&state, channel_id, user_id, mention_ids_for_push);
 
     info!(
         message_id = %dto.msg_id,
