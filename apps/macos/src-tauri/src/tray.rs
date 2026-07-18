@@ -79,9 +79,21 @@ fn rebuild_menu(app: &AppHandle, pending: u32, agents: &[TrayAgent]) -> tauri::R
     };
     // Disabled (informational) header + roster rows: ids carry the `tray:`
     // prefix but are never actionable — the global handler ignores them.
-    menu.append(&MenuItem::with_id(app, "tray:hdr", header, false, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "tray:hdr",
+        header,
+        false,
+        None::<&str>,
+    )?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&MenuItem::with_id(app, "tray:agents", "Agents", false, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "tray:agents",
+        "Agents",
+        false,
+        None::<&str>,
+    )?)?;
     if agents.is_empty() {
         menu.append(&MenuItem::with_id(
             app,
@@ -105,8 +117,20 @@ fn rebuild_menu(app: &AppHandle, pending: u32, agents: &[TrayAgent]) -> tauri::R
         }
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&MenuItem::with_id(app, "open", "Open Cheers", true, None::<&str>)?)?;
-    menu.append(&MenuItem::with_id(app, "quit", "Quit Cheers", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "open",
+        "Open Cheers",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "quit",
+        "Quit Cheers",
+        true,
+        None::<&str>,
+    )?)?;
 
     if let Some(tray) = app.tray_by_id("main-tray") {
         tray.set_menu(Some(menu))?;

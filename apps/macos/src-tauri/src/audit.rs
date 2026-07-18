@@ -136,11 +136,15 @@ fn classify_session_update(raw: &str) -> Option<(AuditKind, String, Option<Strin
         .and_then(Value::as_str)
         .or_else(|| v.pointer("/locations/0/path").and_then(Value::as_str));
     if let Some(p) = path {
-        let diff = v
-            .get("content")
-            .and_then(Value::as_array)
-            .and_then(|a| a.iter().find_map(|c| c.get("newText").and_then(Value::as_str)));
-        return Some((AuditKind::FileWrite, format!("{tool} {p}"), diff.map(str::to_string)));
+        let diff = v.get("content").and_then(Value::as_array).and_then(|a| {
+            a.iter()
+                .find_map(|c| c.get("newText").and_then(Value::as_str))
+        });
+        return Some((
+            AuditKind::FileWrite,
+            format!("{tool} {p}"),
+            diff.map(str::to_string),
+        ));
     }
     // Bare status delta with no new payload → skip (avoids per-toolCallId dupes).
     if su == "tool_call_update" && v.get("status").is_some() && input.is_none() {
@@ -188,7 +192,11 @@ fn classify(line: &str, msg: &str, level: &str) -> Option<(AuditKind, String, Op
     }
     if msg.starts_with("initialized ACP agent") {
         let agent = field(line, "agent").unwrap_or("agent");
-        return Some((AuditKind::Lifecycle, format!("Initialized ACP agent ({agent})"), None));
+        return Some((
+            AuditKind::Lifecycle,
+            format!("Initialized ACP agent ({agent})"),
+            None,
+        ));
     }
     if msg.starts_with("Rust BridgeRuntime started") {
         return Some((AuditKind::Lifecycle, "Bridge runtime started".into(), None));
@@ -197,7 +205,11 @@ fn classify(line: &str, msg: &str, level: &str) -> Option<(AuditKind, String, Op
         let method = field(line, "method").unwrap_or("").trim_matches('"');
         if method == "session/prompt" {
             let id = field(line, "id").unwrap_or("?");
-            return Some((AuditKind::Prompt, format!("Prompt dispatched (turn #{id})"), None));
+            return Some((
+                AuditKind::Prompt,
+                format!("Prompt dispatched (turn #{id})"),
+                None,
+            ));
         }
         return None;
     }
@@ -238,12 +250,17 @@ fn classify(line: &str, msg: &str, level: &str) -> Option<(AuditKind, String, Op
     }
     if msg.starts_with("LB resource_req") {
         let res = field(line, "resource").unwrap_or("");
-        return Some((AuditKind::ResourceRequest, format!("Resource request: {res}"), None));
+        return Some((
+            AuditKind::ResourceRequest,
+            format!("Resource request: {res}"),
+            None,
+        ));
     }
     if level == "ERROR" {
         return Some((AuditKind::Error, msg.chars().take(200).collect(), None));
     }
-    if msg.starts_with("[acp stderr]") && (level == "WARN" || msg.to_lowercase().contains("error")) {
+    if msg.starts_with("[acp stderr]") && (level == "WARN" || msg.to_lowercase().contains("error"))
+    {
         return Some((AuditKind::Error, msg.chars().take(200).collect(), None));
     }
     None
@@ -305,7 +322,10 @@ fn read_tail(path: &PathBuf, max_bytes: u64) -> std::io::Result<String> {
 /// The log path comes from the instance's daemon.json (connector-owned, same
 /// trust model as `connector_logs`) — never from webview input.
 #[tauri::command]
-pub fn connector_audit_timeline(name: String, lines: Option<u32>) -> Result<Vec<AuditEvent>, String> {
+pub fn connector_audit_timeline(
+    name: String,
+    lines: Option<u32>,
+) -> Result<Vec<AuditEvent>, String> {
     let path = crate::connector::stdout_log_path_for(&name)
         .ok_or("no log recorded for this connector (never started?)")?;
     if !path.is_file() {
@@ -361,7 +381,10 @@ mod tests {
         let line = "2026-06-23T02:17:10.000000Z  INFO Backend resolved ACP permission request account=demo request_id=abc outcome=Selected { option_id: \"allow\" }";
         let ev = parse_audit_log(line);
         assert_eq!(ev[0].kind, AuditKind::PermissionDecision);
-        assert_eq!(ev[0].extra.as_deref(), Some("Selected { option_id: \"allow\" }"));
+        assert_eq!(
+            ev[0].extra.as_deref(),
+            Some("Selected { option_id: \"allow\" }")
+        );
         assert_eq!(ev[0].account.as_deref(), Some("demo"));
     }
 

@@ -342,7 +342,8 @@ pub fn connector_health(name: String) -> Option<ConnectorHealth> {
     if !pid_alive(m.pid) {
         return None;
     }
-    let (cpu_pct, mem_bytes, process_count, leader_state) = sample_group(m.pid, m.process_group_id)?;
+    let (cpu_pct, mem_bytes, process_count, leader_state) =
+        sample_group(m.pid, m.process_group_id)?;
     let status = classify_health(cpu_pct, mem_bytes, leader_state.as_deref());
     Some(ConnectorHealth {
         pid: m.pid,
@@ -639,8 +640,9 @@ pub async fn check_agent_updates() -> Result<Vec<AgentUpdate>, String> {
                 let pkg = npm_package_of(install)?;
                 let installed_version = installed.get(pkg).cloned();
                 // Only hit the network for packages that are actually installed.
-                let latest_version =
-                    installed_version.as_ref().and_then(|_| npm_latest_version(pkg));
+                let latest_version = installed_version
+                    .as_ref()
+                    .and_then(|_| npm_latest_version(pkg));
                 let outdated = match (&installed_version, &latest_version) {
                     (Some(i), Some(l)) => version_is_newer(i, l),
                     _ => false,
@@ -1619,7 +1621,10 @@ mod tests {
     fn classify_health_thresholds() {
         assert_eq!(classify_health(10.0, 100, Some("S")), "healthy");
         assert_eq!(classify_health(200.0, 100, Some("R")), "high_cpu");
-        assert_eq!(classify_health(10.0, 3 * 1024 * 1024 * 1024, Some("S")), "high_mem");
+        assert_eq!(
+            classify_health(10.0, 3 * 1024 * 1024 * 1024, Some("S")),
+            "high_mem"
+        );
         assert_eq!(classify_health(10.0, 100, Some("Z")), "stuck");
         assert_eq!(classify_health(999.0, 100, Some("T+")), "stuck"); // stopped wins over cpu
     }
@@ -1634,7 +1639,10 @@ mod tests {
 
     #[test]
     fn npm_package_extraction() {
-        assert_eq!(npm_package_of("npm install -g opencode-ai"), Some("opencode-ai"));
+        assert_eq!(
+            npm_package_of("npm install -g opencode-ai"),
+            Some("opencode-ai")
+        );
         assert_eq!(
             npm_package_of("npm install -g @agentclientprotocol/claude-agent-acp"),
             Some("@agentclientprotocol/claude-agent-acp")

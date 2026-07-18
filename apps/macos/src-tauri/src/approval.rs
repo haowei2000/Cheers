@@ -91,15 +91,18 @@ pub fn permission_context(path: String) -> Result<PermissionContext, String> {
     let git_dir_raw = if is_dir {
         target.clone()
     } else {
-        target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.clone())
+        target
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| target.clone())
     };
     let git_dir = git_dir_raw.canonicalize().unwrap_or(git_dir_raw);
 
     let repo_root = git_in(&git_dir, &["rev-parse", "--show-toplevel"]);
     // Only probe branch / dirty when we actually resolved a repo root.
     let (branch, dirty) = if repo_root.is_some() {
-        let branch = git_in(&git_dir, &["rev-parse", "--abbrev-ref", "HEAD"])
-            .filter(|b| b != "HEAD"); // detached HEAD → no branch name
+        let branch =
+            git_in(&git_dir, &["rev-parse", "--abbrev-ref", "HEAD"]).filter(|b| b != "HEAD"); // detached HEAD → no branch name
         let dirty = git_in(&git_dir, &["status", "--porcelain"]).is_some();
         (branch, dirty)
     } else {

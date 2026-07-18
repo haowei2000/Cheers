@@ -1631,7 +1631,10 @@ async fn handle_permission_request_frame(
                     "request_id".into(),
                     frame.get("request_id").cloned().unwrap_or(Value::Null),
                 );
-                obj.insert("tool".into(), frame.get("tool").cloned().unwrap_or(Value::Null));
+                obj.insert(
+                    "tool".into(),
+                    frame.get("tool").cloned().unwrap_or(Value::Null),
+                );
                 obj.insert(
                     "options".into(),
                     frame.get("options").cloned().unwrap_or_else(|| json!([])),

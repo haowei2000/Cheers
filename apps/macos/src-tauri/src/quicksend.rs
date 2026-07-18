@@ -58,9 +58,7 @@ impl PendingQuickAttach {
 /// as now listening (so subsequent Finder opens emit live instead of stashing).
 /// The composer calls this on mount for a channel.
 #[tauri::command]
-pub fn take_pending_quick_attach(
-    state: tauri::State<'_, PendingQuickAttach>,
-) -> Vec<CapturedFile> {
+pub fn take_pending_quick_attach(state: tauri::State<'_, PendingQuickAttach>) -> Vec<CapturedFile> {
     state.listening.store(true, Ordering::Relaxed);
     state
         .files

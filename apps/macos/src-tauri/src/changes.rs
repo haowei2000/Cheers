@@ -100,9 +100,12 @@ fn resolve_in_workdir(name: &str, relpath: &str) -> Result<(PathBuf, PathBuf), S
     let workdir = workdir_for(name)?;
     let rel = Path::new(relpath);
     if rel.is_absolute()
-        || rel
-            .components()
-            .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+        || rel.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
     {
         return Err("invalid path".into());
     }
@@ -179,11 +182,10 @@ pub fn connector_watch_start(
     let workdir = workdir_for(&name)?;
 
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
-    let mut watcher: RecommendedWatcher =
-        notify::recommended_watcher(move |res| {
-            let _ = tx.send(res);
-        })
-        .map_err(|e| e.to_string())?;
+    let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| {
+        let _ = tx.send(res);
+    })
+    .map_err(|e| e.to_string())?;
     watcher
         .watch(&workdir, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
@@ -251,7 +253,10 @@ pub fn connector_watch_start(
 }
 
 #[tauri::command]
-pub fn connector_watch_stop(state: tauri::State<'_, WatchState>, name: String) -> Result<(), String> {
+pub fn connector_watch_stop(
+    state: tauri::State<'_, WatchState>,
+    name: String,
+) -> Result<(), String> {
     if let Some(entry) = state.watchers.lock().unwrap().remove(&name) {
         entry.stop.store(true, Ordering::Relaxed);
         // entry (its watcher) is dropped here → FSEvents stops, thread exits.
