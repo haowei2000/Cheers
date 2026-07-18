@@ -773,7 +773,61 @@ pub fn connector_write_onboarded(
 
     let config_path = base.join(format!("cheers-daemon.{safe_id}.toml"));
     fs::write(&config_path, config_toml.as_bytes()).map_err(|e| e.to_string())?;
+
+    // Zero-prep: the connector validates that every policy.workspace root exists
+    // at startup (resolve_existing_dirs), and the gateway's default config points
+    // at ~/.cheers/workspace/<bot>, which nothing else creates — so onboarding
+    // from the desktop would fail on a fresh machine. We're on the same box and
+    // own ~/.cheers, so create the referenced workspace dirs now.
+    ensure_workspace_dirs(&config_toml);
+
     Ok(config_path.to_string_lossy().into_owned())
+}
+
+/// Create the workspace directories a freshly-onboarded config references so a
+/// desktop-started connector needs no manual prep. Best-effort (a dir that can't
+/// be created just resurfaces the connector's own clear startup error) and
+/// SCOPED to the user's home dir — a gateway-supplied config must not be able to
+/// make us `mkdir -p` arbitrary system paths.
+fn ensure_workspace_dirs(config_toml: &str) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    for p in workspace_dirs_in_config(config_toml, &home) {
+        let _ = fs::create_dir_all(&p);
+    }
+}
+
+/// The every-account `policy.workspace` roots + `default_cwd` in a config,
+/// tilde-expanded and kept only when under `home`. Pure (no I/O) so the
+/// home-scoping is unit-testable. Malformed TOML / missing keys → empty.
+fn workspace_dirs_in_config(config_toml: &str, home: &Path) -> Vec<PathBuf> {
+    let Ok(doc) = config_toml.parse::<toml::Value>() else {
+        return Vec::new();
+    };
+    let Some(accounts) = doc.get("accounts").and_then(toml::Value::as_table) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for acct in accounts.values() {
+        let Some(ws) = acct.get("policy").and_then(|p| p.get("workspace")) else {
+            continue;
+        };
+        let roots = ws
+            .get("allowed_roots")
+            .and_then(toml::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(toml::Value::as_str);
+        let default_cwd = ws.get("default_cwd").and_then(toml::Value::as_str);
+        for raw in roots.chain(default_cwd) {
+            let p = expand_tilde(raw);
+            if p.starts_with(home) {
+                out.push(p);
+            }
+        }
+    }
+    out
 }
 
 /// A config the desktop may start: an existing `.toml` under `~/.cheers/`.
@@ -1615,6 +1669,28 @@ mod tests {
     #[test]
     fn parse_ps_group_empty_is_none() {
         assert!(parse_ps_group("", 1).is_none());
+    }
+
+    #[test]
+    fn workspace_dirs_collected_and_home_scoped() {
+        let home = Path::new("/home/u");
+        let cfg = r#"
+            [accounts.bot.policy.workspace]
+            allowed_roots = ["/home/u/.cheers/workspace/bot", "/outside/data"]
+            default_cwd = "/home/u/.cheers/workspace/bot/proj"
+        "#;
+        let dirs = workspace_dirs_in_config(cfg, home);
+        // The two home-scoped paths are kept; the out-of-home root is dropped.
+        assert!(dirs.contains(&PathBuf::from("/home/u/.cheers/workspace/bot")));
+        assert!(dirs.contains(&PathBuf::from("/home/u/.cheers/workspace/bot/proj")));
+        assert!(!dirs.iter().any(|p| p.starts_with("/outside")));
+        assert_eq!(dirs.len(), 2);
+    }
+
+    #[test]
+    fn workspace_dirs_malformed_or_empty_is_empty() {
+        assert!(workspace_dirs_in_config("not = valid = toml", Path::new("/home/u")).is_empty());
+        assert!(workspace_dirs_in_config("[unrelated]\nx = 1", Path::new("/home/u")).is_empty());
     }
 
     #[test]
