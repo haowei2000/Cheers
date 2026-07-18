@@ -1,0 +1,15 @@
+{
+  "name": "cheers-macos",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cheers desktop shell for macOS (Tauri): hosts the web frontend and manages local connector daemons.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "npm run sidecar && tauri dev",
+    "build": "npm run sidecar && tauri build",
+    "sidecar": "./scripts/build-sidecar.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

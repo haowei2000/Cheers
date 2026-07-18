@@ -10,6 +10,7 @@ use crate::{
         stream::StreamRegistry,
         workspace_rpc::WorkspaceRpc,
     },
+    infra::web_push::WebPushSender,
 };
 
 #[derive(Clone)]
@@ -30,4 +31,6 @@ pub struct AppState {
     pub stream_registry: Arc<StreamRegistry>,
     /// 远程工作区 RPC：gateway→connector 的 workspace_req/res 关联表。
     pub workspace_rpc: Arc<WorkspaceRpc>,
+    /// Web Push 发送器（VAPID 未配置则为 None，推送整体禁用）。
+    pub web_push: Option<Arc<WebPushSender>>,
 }

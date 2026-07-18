@@ -22,6 +22,7 @@ jobs:
       gateway: ${{ steps.filter.outputs.gateway }}
       frontend: ${{ steps.filter.outputs.frontend }}
       plugin: ${{ steps.filter.outputs.plugin }}
+      desktop: ${{ steps.filter.outputs.desktop }}
 
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +45,9 @@ jobs:
             plugin:
               - "packages/cheers-acp-connector-rs/**"
               - "packages/cheers-mcp-server/**"
+              - ".github/workflows/ci.yml"
+            desktop:
+              - "apps/macos/**"
               - ".github/workflows/ci.yml"
 
   # ─────────────────────────────────────────────
@@ -181,8 +185,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            packages/cheers-acp-connector-rs -> packages/cheers-acp-connector-rs/target
-            packages/cheers-mcp-server -> packages/cheers-mcp-server/target
+            packages/cheers-acp-connector-rs
+            packages/cheers-mcp-server
 
       - name: Format Rust agent packages
         run: |
@@ -199,3 +203,41 @@ jobs:
 
       - name: Check Rust MCP server
         run: cargo check --manifest-path packages/cheers-mcp-server/Cargo.toml
+
+  desktop-check:
+    name: Desktop Check
+    # macos-14: the Tauri crate needs Apple frameworks; no `tauri build` in CI
+    # (slow, and unsigned artifacts aren't shippable anyway) — fmt + check only.
+    runs-on: macos-14
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/macos/src-tauri
+
+      - name: Format desktop shell
+        run: cargo fmt --manifest-path apps/macos/src-tauri/Cargo.toml -- --check
+
+      # tauri-build validates bundle resources (frontendDist, externalBin) at
+      # build time — stub both so `cargo check` runs without a frontend build
+      # or a release-compiled connector.
+      - name: Stub bundle resources
+        run: |
+          mkdir -p frontend/dist apps/macos/src-tauri/binaries
+          touch frontend/dist/index.html
+          touch apps/macos/src-tauri/binaries/cce-acp-connector-aarch64-apple-darwin
+          touch apps/macos/src-tauri/binaries/cce-acp-connector-x86_64-apple-darwin
+
+      - name: Check desktop shell
+        run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml

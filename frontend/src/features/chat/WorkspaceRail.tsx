@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { getFleetBadge } from "@/api/fleet";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
+import { disablePush } from "@/lib/push";
 import { NewWorkspaceDialog } from "./NewWorkspaceDialog";
 import { NotificationCenter } from "./NotificationCenter";
 import type { Workspace } from "@/types";
@@ -82,7 +83,10 @@ export function WorkspaceRail({
     useChatStore();
   const { user, logout } = useAuthStore();
 
-  function handleLogout() {
+  async function handleLogout() {
+    // Drop the push subscription while the auth token is still valid — a
+    // signed-out browser must not keep receiving lock-screen notifications.
+    await disablePush().catch(() => {});
     logout();
     toast.success("Logged out");
     navigate("/login", { replace: true });

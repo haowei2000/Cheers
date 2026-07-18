@@ -1,8 +1,5 @@
 import { useAuthStore } from "@/stores/authStore";
-
-const API_BASE =
-  (import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE_URL ||
-  "/api/v1";
+import { apiBase, wsBase } from "@/lib/serverConfig";
 
 function getToken(): string | null {
   try {
@@ -39,7 +36,9 @@ export async function apiFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {
-  const url = `${API_BASE}${path}`;
+  // Resolved per call, not at module load: the desktop shell can switch the
+  // gateway at runtime (serverConfig), and the browser default is unchanged.
+  const url = `${apiBase()}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -125,9 +124,5 @@ export async function apiJson<T>(
 }
 
 export function buildWsUrl(path: string): string {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsBase =
-    (import.meta as { env?: Record<string, string> }).env?.VITE_WS_BASE_URL ||
-    `${proto}//${location.host}`;
-  return `${wsBase}${path}`;
+  return `${wsBase()}${path}`;
 }

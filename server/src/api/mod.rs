@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod messages;
 pub mod middleware;
 pub mod notifications;
+pub mod push;
 pub mod session_control;
 pub mod stt_settings;
 pub mod users;

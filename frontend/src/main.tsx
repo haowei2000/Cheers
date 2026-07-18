@@ -3,9 +3,15 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
+import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
+
+// PWA service worker (precached shell + Web Push, see src/sw.ts). immediate:
+// update checks run on load; registerType autoUpdate swaps the SW in place.
+// No-op in dev — vite-plugin-pwa devOptions are off.
+registerSW({ immediate: true });
 
 const queryClient = new QueryClient({
   defaultOptions: {

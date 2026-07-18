@@ -20,7 +20,12 @@ async fn plugin_rows(db: &PgPool) -> Vec<(String, String)> {
         .await
         .unwrap()
         .into_iter()
-        .map(|r| (r.get::<String, _>("plugin_id"), r.get::<String, _>("origin")))
+        .map(|r| {
+            (
+                r.get::<String, _>("plugin_id"),
+                r.get::<String, _>("origin"),
+            )
+        })
         .collect()
 }
 
@@ -77,15 +82,19 @@ async fn version_bump_restores_a_deleted_official_plugin(db: PgPool) {
         .await
         .unwrap();
     // simulate "this DB last saw an older release" — the embedded version is now higher
-    sqlx::query("UPDATE workbench_official_plugin_state SET seeded_version = 0 WHERE plugin_id = $1")
-        .bind(&id)
-        .execute(&db)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE workbench_official_plugin_state SET seeded_version = 0 WHERE plugin_id = $1",
+    )
+    .bind(&id)
+    .execute(&db)
+    .await
+    .unwrap();
     seed(&db).await.unwrap();
     let rows = plugin_rows(&db).await;
     assert_eq!(rows.len(), OFFICIAL.len());
-    assert!(rows.iter().any(|(pid, origin)| pid == &id && origin == "system"));
+    assert!(rows
+        .iter()
+        .any(|(pid, origin)| pid == &id && origin == "system"));
 }
 
 #[sqlx::test]
@@ -110,16 +119,19 @@ async fn admin_claimed_id_is_never_overwritten(db: PgPool) {
     .await
     .unwrap();
     // even a version bump must not clobber their row
-    sqlx::query("UPDATE workbench_official_plugin_state SET seeded_version = 0 WHERE plugin_id = $1")
-        .bind(&id)
-        .execute(&db)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE workbench_official_plugin_state SET seeded_version = 0 WHERE plugin_id = $1",
+    )
+    .bind(&id)
+    .execute(&db)
+    .await
+    .unwrap();
     seed(&db).await.unwrap();
-    let title: String = sqlx::query_scalar("SELECT title FROM workbench_plugins WHERE plugin_id = $1")
-        .bind(&id)
-        .fetch_one(&db)
-        .await
-        .unwrap();
+    let title: String =
+        sqlx::query_scalar("SELECT title FROM workbench_plugins WHERE plugin_id = $1")
+            .bind(&id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
     assert_eq!(title, "Admin's own");
 }

@@ -13,6 +13,12 @@ const DEV_DEFAULT_ORIGINS: &[&str] = &[
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:30080",
+    // The desktop shell (apps/macos, Tauri): its webview origin. macOS uses
+    // the tauri: scheme; http://tauri.localhost is Windows', kept for parity.
+    // Prod deployments set CORS_ALLOWED_ORIGINS and must include these two
+    // for the desktop app to connect (same env also gates the WS Origin check).
+    "tauri://localhost",
+    "http://tauri.localhost",
 ];
 
 /// RS256 keypair, parsed **once at startup** (fail-fast) and reused for every
@@ -91,6 +97,15 @@ pub struct Config {
     pub email_from_email: Option<String>,
     /// Display name on outbound mail (`EMAIL_FROM_NAME`, default `Cheers`).
     pub email_from_name: String,
+
+    // Web Push（PWA 通知；不配置则整体禁用，订阅接口返回 key=null）
+    /// VAPID application-server private key, P-256 PEM (`VAPID_PRIVATE_KEY`).
+    /// Generate: `openssl ecparam -genkey -name prime256v1 -noout`. Unset → no
+    /// outbound Web Push (subscribe UI hides itself when the key endpoint is null).
+    pub vapid_private_key_pem: Option<String>,
+    /// VAPID `sub` claim — a contact URI for the push service to reach the
+    /// operator (`VAPID_SUBJECT`, default `mailto:admin@tocheers.com`).
+    pub vapid_subject: String,
 
     /// Whether public self-service sign-up (`POST /auth/register`) is enabled.
     /// Default **false** (secure by default: accounts come from the seeded admin
@@ -203,6 +218,14 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty())
                 .unwrap_or_else(|| "Cheers".into()),
+
+            vapid_private_key_pem: env::var("VAPID_PRIVATE_KEY")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            vapid_subject: env::var("VAPID_SUBJECT")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "mailto:admin@tocheers.com".into()),
 
             open_registration: env_flag("OPEN_REGISTRATION", false),
 

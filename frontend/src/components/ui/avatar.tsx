@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { initials, avatarColor } from "@/lib/format";
 import { agentIconFor, AgentGlyph } from "@/components/ui/agentIcons";
+import { resolveServerUrl } from "@/lib/serverConfig";
 
 interface AvatarProps {
   name?: string | null;
@@ -39,7 +40,9 @@ export function Avatar({ name, src, id, size = "md", className, online }: Avatar
   if (src) {
     inner = (
       <img
-        src={src}
+        // Avatar URLs are gateway-relative paths; under the desktop shell
+        // (tauri://) they must be absolutized against the configured server.
+        src={resolveServerUrl(src)}
         alt={name ?? "avatar"}
         className={cn(
           "rounded-full object-cover flex-shrink-0",

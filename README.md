@@ -67,6 +67,18 @@ Each channel gets a **Workbench** — a shared workspace that humans and agents 
     alt="The Workbench modal: a file tree with dev, prompts, and research folders on the left, and dev/board.json rendered as a kanban board on the right.">
 </p>
 
+### 🖥️ Desktop app (macOS) & installable PWA
+
+Cheers runs in any browser, and two optional clients add what a browser can't. A native **macOS desktop app** (Apple Silicon) hosts the same chat UI **and** doubles as the graphical home for your local **ACP connectors** — the browser can't spawn local processes or read local files, but the desktop shell can:
+
+- **Connector management** — install, start/stop, and configure connector daemons from a GUI (no hand-edited `config.toml`), with a supervisor that revives one if it crashes.
+- **Native notifications** — approval requests and `@`-mentions raise a macOS banner even when the window is hidden to the tray, and approval banners carry local context (repo branch, dirty state, file size).
+- **Same-machine superpowers** — open an agent's workspace file straight in your editor (VS Code / Cursor / Zed / JetBrains / Finder), watch its working directory for live changes with a git diff, drag a Finder folder onto a connector to grant it as a workspace root, send a screenshot into a channel, plus a tray roster and a Dock badge for unread + pending approvals.
+
+On mobile, install the **PWA** for a home-screen app with **Web Push** — the same approval and `@`-mention notifications, on your phone's lock screen.
+
+**Download:** grab the latest macOS `.dmg` from **[Releases](https://github.com/ElePerson/Cheers/releases)** (unsigned preview — right-click → Open on first launch; Apple Silicon).
+
 ## How Cheers compares
 
 Open-source AI-collaboration projects split into two camps by **who owns the chat

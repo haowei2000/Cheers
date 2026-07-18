@@ -19,13 +19,21 @@ gateway:
   # Non-secret env. Secret env (DB pw, S3 keys, admin pw, JWT) come from the Secret.
   adminUsername: admin
   adminDisplayName: "Demo Admin"
-  corsAllowedOrigins: "" # empty = allow all (dev). Set explicit origins in prod.
+  # Empty = the gateway's localhost dev allowlist. Prod must set explicit
+  # origins, and must include the desktop shell's webview origins
+  # "tauri://localhost,http://tauri.localhost" for the macOS app to connect
+  # (the same list also gates the WebSocket Origin check).
+  corsAllowedOrigins: ""
   # Rate-limit client identity: in this chart the gateway is ClusterIP-only and
   # every client request passes the bundled frontend nginx (which sets
   # X-Real-IP) or the ingress, so proxy headers are trustworthy. Set false if
   # you expose the gateway Service directly (NodePort/LoadBalancer).
   trustProxyHeaders: true
   s3Region: us-east-1
+  # Web Push VAPID `sub` claim — a contact URI the push services may use to
+  # reach the operator. Only meaningful when secrets.vapidPrivateKey is set;
+  # empty uses the gateway's built-in default.
+  vapidSubject: ""
   extraEnv: {} # map of EXTRA_VAR: value
   resources: {}
   #  requests: { cpu: 100m, memory: 128Mi }
@@ -200,6 +208,12 @@ secrets:
   #   openssl rsa -in priv.pem -pubout -out pub.pem
   jwtPrivateKey: ""
   jwtPublicKey: ""
+  # Web Push VAPID key (P-256 PEM). OPTIONAL — leave empty to run without push
+  # (the frontend hides its notifications toggle). Generate:
+  #   openssl ecparam -genkey -name prime256v1 -noout -out vapid.pem
+  # Provide via `--set-file secrets.vapidPrivateKey=vapid.pem` or the existing
+  # Secret's VAPID_PRIVATE_KEY key.
+  vapidPrivateKey: ""
 
 # ── Ingress (path-routes /api + /ws to the gateway, everything else to the
 #    frontend; when disabled, reach the frontend Service directly) ───────────

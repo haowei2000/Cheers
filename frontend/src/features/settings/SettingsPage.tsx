@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines } from "lucide-react";
+import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines, Bell, Plug } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { changePassword, logout as logoutApi } from "@/api/auth";
+import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/push";
+import { getServerBase, isTauri, setServerBase } from "@/lib/serverConfig";
+import { getAutostart, setAutostart } from "@/lib/desktop";
+import { ConnectorManager } from "@/features/desktop/ConnectorManager";
 import { getMe, updateMe } from "@/api/users";
 import { uploadUserAvatar } from "@/api/avatars";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
@@ -17,16 +21,194 @@ import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
 
-type SectionId = "profile" | "bots" | "workbench" | "members" | "speech" | "account";
+type SectionId =
+  | "profile"
+  | "bots"
+  | "connector"
+  | "workbench"
+  | "members"
+  | "speech"
+  | "account";
 
-const NAV: { id: SectionId; label: string; icon: typeof User; adminOnly?: boolean }[] = [
+const NAV: {
+  id: SectionId;
+  label: string;
+  icon: typeof User;
+  adminOnly?: boolean;
+  /** Only meaningful inside the Tauri desktop shell. */
+  desktopOnly?: boolean;
+}[] = [
   { id: "profile", label: "Profile", icon: User },
   { id: "bots", label: "Bots", icon: Bot },
+  { id: "connector", label: "Connector", icon: Plug, desktopOnly: true },
   { id: "workbench", label: "Workbench", icon: Blocks, adminOnly: true },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
+
+/** Desktop shell only: which Cheers server this app talks to. Switching
+ * clears the session (tokens are per-server) and reboots into the picker. */
+function ServerCard() {
+  const logout = useAuthStore((s) => s.logout);
+  if (!isTauri()) return null;
+  const base = getServerBase();
+  return (
+    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-zinc-200">Server</p>
+          <p className="text-xs text-zinc-400 mt-0.5 truncate">
+            {base ?? "same origin"}
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            // Order matters: drop the session first (the token belongs to the
+            // old server), then clear the base — reload lands on the picker.
+            logout();
+            setServerBase(null);
+            window.location.reload();
+          }}
+        >
+          Switch server
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Desktop shell only: register the app as a macOS login item, so the tray
+ * resident (and its connector supervisor) is there from boot. */
+function LaunchAtLoginCard() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let alive = true;
+    void getAutostart().then((v) => {
+      if (alive) setEnabled(v);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!isTauri()) return null;
+
+  async function toggle() {
+    if (enabled === null) return;
+    setBusy(true);
+    try {
+      await setAutostart(!enabled);
+      setEnabled(!enabled);
+      toast.success(!enabled ? "Cheers will launch at login" : "Launch at login turned off");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update launch at login");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Launch at login</p>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Start Cheers (tray + connector supervisor) when you sign in to your Mac.
+          </p>
+        </div>
+        <Button
+          variant={enabled ? "secondary" : "primary"}
+          size="sm"
+          disabled={busy || enabled === null}
+          onClick={() => void toggle()}
+        >
+          {enabled === null ? "…" : enabled ? "Turn off" : "Turn on"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Web Push toggle: approval requests and @mentions as OS notifications, so
+ * a pending permission card reaches the user away from the tab. Hidden when
+ * the deployment has no VAPID key, and when the browser can't do push. */
+function PushNotificationsCard() {
+  const [status, setStatus] = useState<PushStatus | "loading">("loading");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void getPushStatus().then((s) => {
+      if (alive) setStatus(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Nothing to offer: the server has push disabled, or this browser (or a dev
+  // build without a service worker) can't subscribe.
+  if (status === "unconfigured" || status === "unsupported") return null;
+
+  const enabled = status === "enabled";
+
+  async function toggle() {
+    setBusy(true);
+    try {
+      if (enabled) {
+        await disablePush();
+        setStatus("disabled");
+        toast.success("Push notifications turned off");
+      } else {
+        const next = await enablePush();
+        setStatus(next);
+        if (next === "enabled") {
+          toast.success("Push notifications turned on");
+        } else if (next === "denied") {
+          toast.error(
+            "Notifications are blocked for this site — allow them in your browser settings first"
+          );
+        }
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update push notifications");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-indigo-400" /> Push notifications
+          </p>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            Approval requests and @mentions reach this device even when Cheers
+            isn't open.
+            {status === "denied" &&
+              " Currently blocked in your browser's site settings."}
+          </p>
+        </div>
+        <Button
+          variant={enabled ? "secondary" : "primary"}
+          size="sm"
+          disabled={busy || status === "loading"}
+          onClick={() => void toggle()}
+        >
+          {status === "loading" ? "…" : enabled ? "Turn off" : "Turn on"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void }) {
   const [current, setCurrent] = useState("");
@@ -317,7 +499,9 @@ export default function SettingsPage() {
   const isAdmin = useIsAdmin();
   const params = useParams();
 
-  const items = NAV.filter((n) => !n.adminOnly || isAdmin);
+  const items = NAV.filter(
+    (n) => (!n.adminOnly || isAdmin) && (!n.desktopOnly || isTauri())
+  );
 
   // Section lives in the URL (/settings/:section) so reload restores it, each
   // section is deep-linkable, and Back steps between sections. Fall back to the
@@ -388,6 +572,8 @@ export default function SettingsPage() {
 
           {section === "bots" && <BotsManager />}
 
+          {section === "connector" && <ConnectorManager />}
+
           {/* Admin-only; each self-gates (renders null for non-admins). */}
           {section === "workbench" && <WorkbenchManager />}
           {section === "members" && <AdminUsers />}
@@ -401,6 +587,12 @@ export default function SettingsPage() {
 
               <ChangePasswordCard onRotated={(token) => setToken(token)} />
 
+              <ServerCard />
+
+              <LaunchAtLoginCard />
+
+              <PushNotificationsCard />
+
               <div className="bg-zinc-900 rounded-2xl p-6 mt-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -413,7 +605,11 @@ export default function SettingsPage() {
                     variant="danger"
                     size="sm"
                     onClick={async () => {
-                      // Best-effort server revocation, then clear local state regardless.
+                      // Push first (the DELETE needs the auth token), then
+                      // best-effort server revocation, then clear local state
+                      // regardless — a signed-out browser must not keep
+                      // receiving lock-screen notifications.
+                      await disablePush().catch(() => {});
                       await logoutApi().catch(() => {});
                       logout();
                       navigate("/login", { replace: true });

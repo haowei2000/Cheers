@@ -1,5 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { notify, messageOf } from "@/lib/notify";
+import { useNavigate } from "react-router-dom";
+import { serverOrigin, isTauri } from "@/lib/serverConfig";
+import { requestConnectorForBot } from "@/features/desktop/connectorIntent";
 import {
   Bot,
   Terminal,
@@ -11,6 +14,7 @@ import {
   Download,
   ArrowLeft,
   AlertTriangle,
+  Laptop,
   Loader2,
   Ticket,
   Trash2,
@@ -41,10 +45,13 @@ type Mode = "manual" | "script" | "agent";
 const CONNECTOR_RELEASES_REPO = "ElePerson/Cheers";
 /** Same-origin download (gateway proxies the GitHub release): works from hosts
  * that can reach this server but not GitHub. GitHub stays the fallback. */
+// serverOrigin(), not window.location.origin: the snippet must name the
+// GATEWAY the target host can reach — in the desktop shell the window origin
+// is tauri://localhost, useless in a curl command.
 const CONNECTOR_DOWNLOAD_CMD = `os=$(uname -s | tr 'A-Z' 'a-z'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 mkdir -p ~/.cheers/bin
 curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
-  "${window.location.origin}/api/v1/connector/download/cce-acp-connector-$os-$arch" \\
+  "${serverOrigin()}/api/v1/connector/download/cce-acp-connector-$os-$arch" \\
   || curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
   "https://github.com/${CONNECTOR_RELEASES_REPO}/releases/latest/download/cce-acp-connector-$os-$arch"
 chmod +x ~/.cheers/bin/cce-acp-connector
@@ -146,6 +153,7 @@ export function BotOnboardingWizard({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const navigate = useNavigate();
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [mode, setMode] = useState<Mode | null>(null);
 
@@ -173,31 +181,54 @@ export function BotOnboardingWizard({
       .catch(() => {});
   }, []);
 
+  /** Resolve the chosen bot (create a new one, or use the selected existing
+   * one). Shared by "Continue" and the desktop "Set up on this Mac" hand-off. */
+  async function resolveBot(): Promise<BotItem | null> {
+    if (pick === "create") {
+      if (!username.trim()) {
+        setError("Username is required.");
+        return null;
+      }
+      const created = await createBot({
+        username: username.trim(),
+        display_name: displayName.trim() || undefined,
+        bridge_provider: agentType,
+      });
+      onDone(); // refresh the parent list
+      return created;
+    }
+    const existing = bots.find((b) => b.bot_id === existingId) ?? null;
+    if (!existing) setError("Pick a bot.");
+    return existing;
+  }
+
   async function resolveBotAndAdvance() {
     setError(null);
     setBusy(true);
     try {
-      let resolved: BotItem | null;
-      if (pick === "create") {
-        if (!username.trim()) {
-          setError("Username is required.");
-          return;
-        }
-        resolved = await createBot({
-          username: username.trim(),
-          display_name: displayName.trim() || undefined,
-          bridge_provider: agentType,
-        });
-        onDone(); // refresh the parent list
-      } else {
-        resolved = bots.find((b) => b.bot_id === existingId) ?? null;
-        if (!resolved) {
-          setError("Pick a bot.");
-          return;
-        }
-      }
+      const resolved = await resolveBot();
+      if (!resolved) return;
       setBot(resolved);
       setStep(1);
+    } catch (e) {
+      notify.error(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Desktop only: resolve the bot, then jump straight to the local
+   * "New connector" setup with it pre-selected (skips the remote-machine
+   * connection modes — the connector runs right here). */
+  async function setupLocally() {
+    setError(null);
+    setBusy(true);
+    try {
+      const resolved = await resolveBot();
+      if (!resolved) return;
+      requestConnectorForBot(resolved.bot_id);
+      onClose();
+      navigate("/settings/connector");
     } catch (e) {
       notify.error(messageOf(e));
     } finally {
@@ -340,7 +371,13 @@ export function BotOnboardingWizard({
               </select>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end items-center gap-2">
+              {isTauri() && (
+                <Button variant="secondary" onClick={setupLocally} disabled={busy}>
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <Laptop className="w-4 h-4" /> Set up on this Mac
+                </Button>
+              )}
               <Button onClick={resolveBotAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 Continue
@@ -631,7 +668,7 @@ function ScriptPanel({
   const [code, setCode] = useState<EnrollmentCode | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const installUrl = `${window.location.origin}/api/v1/install.sh`;
+  const installUrl = `${serverOrigin()}/api/v1/install.sh`;
   const command = code
     ? `CHEERS_ENROLL_CODE='${code.code}' bash <(curl -fsSL ${installUrl})`
     : "";

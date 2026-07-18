@@ -100,6 +100,7 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
     let fanout = state.fanout.clone();
     let db = state.db.clone();
     let bot_locator = state.bot_locator.clone();
+    let web_push = state.web_push.clone();
     tokio::spawn(async move {
         let started = std::time::Instant::now();
         let _ = broadcast_and_trigger_created_message(
@@ -115,6 +116,63 @@ fn spawn_created_message_effects(state: &AppState, author_bot_id: Uuid, created:
             elapsed_ms = started.elapsed().as_millis() as u64,
             "post_message broadcast+trigger complete (off critical path)"
         );
+
+        // Out-of-app nudge to the @mentioned humans (kind=mention) — bots
+        // mention people via post_message, and those people may be away from
+        // the tab: user-scoped WS frame (desktop shell; works without VAPID)
+        // plus Web Push when configured. Already off the critical path here.
+        let human_mentions: Vec<String> = created
+            .get("mentions")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter(|m| m.get("member_type").and_then(Value::as_str) == Some("user"))
+                    .filter_map(|m| m.get("member_id").and_then(Value::as_str))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !human_mentions.is_empty() {
+            let sender_name: Option<String> = sqlx::query_scalar(
+                "SELECT COALESCE(display_name, username) FROM bot_accounts WHERE bot_id = $1",
+            )
+            .bind(author_bot_id.to_string())
+            .fetch_optional(&db)
+            .await
+            .ok()
+            .flatten();
+            let body: String = created
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect();
+            let payload = json!({
+                "kind": "mention",
+                "channel_id": created.get("channel_id").cloned().unwrap_or(Value::Null),
+                "msg_id": created.get("msg_id").cloned().unwrap_or(Value::Null),
+                "sender_name": sender_name,
+                "body": body,
+            });
+            for user_id in human_mentions {
+                if let Ok(uid) = user_id.parse::<uuid::Uuid>() {
+                    fanout
+                        .broadcast_user(
+                            uid,
+                            crate::gateway::realtime::frame::WireFrame::user(
+                                "notification",
+                                payload.clone(),
+                            ),
+                        )
+                        .await;
+                }
+                if let Some(sender) = web_push.as_ref() {
+                    crate::infra::web_push::push_to_user(&db, sender, &user_id, payload.clone())
+                        .await;
+                }
+            }
+        }
     });
 }
 

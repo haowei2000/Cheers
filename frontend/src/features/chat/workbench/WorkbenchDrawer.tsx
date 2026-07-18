@@ -13,6 +13,7 @@ import { seedManifest, validateManifest, type TemplateManifest } from "./manifes
 import { FilePanel } from "./panels/FilePanel";
 import { listGlobalTemplates } from "./templatesApi";
 import { listPlugins, parsePluginHtml, MAX_PLUGIN_BUNDLE_BYTES, type PluginMeta } from "./sandbox/api";
+import { listPersonalPlugins } from "@/lib/desktop";
 import researchExample from "./examples/research.json";
 import "./lens/builtins";
 import "./environments";
@@ -102,6 +103,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   const [globalTemplates, setGlobalTemplates] = useState<TemplateManifest[]>([]);
   const [sessionTemplates, setSessionTemplates] = useState<TemplateManifest[]>([]);
   const [serverPlugins, setServerPlugins] = useState<PluginMeta[]>([]);
+  const [personalPlugins, setPersonalPlugins] = useState<PluginMeta[]>([]);
   const [sessionPlugins, setSessionPlugins] = useState<PluginMeta[]>([]);
   const [busy, setBusy] = useState(false);
   /** Drag-over highlight — deliberately separate from `busy` (which gates controls). */
@@ -130,6 +132,24 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       .catch(() => {});
     listPlugins()
       .then((p) => alive && setServerPlugins(p))
+      .catch(() => {});
+    // Desktop only: renderer plugins the user installed on this Mac
+    // (~/.cheers/plugins). Each carries its bundle inline, so it renders with no
+    // server round-trip — a same-id session/admin plugin still shadows it below.
+    listPersonalPlugins()
+      .then((ps) => {
+        if (!alive) return;
+        const metas: PluginMeta[] = [];
+        for (const p of ps) {
+          try {
+            const { id, title, manifest } = parsePluginHtml(p.content);
+            metas.push({ plugin_id: id, title, manifest, bundle: p.content, origin: "personal" });
+          } catch {
+            // A malformed bundle on disk simply isn't offered — don't fail the list.
+          }
+        }
+        setPersonalPlugins(metas);
+      })
       .catch(() => {});
     return () => {
       alive = false;
@@ -315,11 +335,15 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
   // Session plugins first: a temporary upload shadows a same-id installed plugin for
   // this session. Dedup at the PluginMeta level — renderer ids are composite
   // (plugin:<pid>:<rid>), so it must happen before renderer expansion.
+  // Precedence: session (live dev override) > personal (this Mac) > server
+  // (global admin). First writer wins in the dedup, so a temp upload shadows a
+  // personal install, which shadows a same-id admin plugin.
   const plugins = useMemo(() => {
     const byId = new Map<string, PluginMeta>();
-    for (const p of [...sessionPlugins, ...serverPlugins]) if (!byId.has(p.plugin_id)) byId.set(p.plugin_id, p);
+    for (const p of [...sessionPlugins, ...personalPlugins, ...serverPlugins])
+      if (!byId.has(p.plugin_id)) byId.set(p.plugin_id, p);
     return [...byId.values()];
-  }, [sessionPlugins, serverPlugins]);
+  }, [sessionPlugins, personalPlugins, serverPlugins]);
 
   const selectedId = cfg.environment ?? null;
 

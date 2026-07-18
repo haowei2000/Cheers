@@ -64,7 +64,9 @@ pub fn sanitize_bot_bundle(raw: &Value) -> Option<Value> {
         if out.len() >= MAX_ITEMS {
             break;
         }
-        let Some(obj) = item.as_object() else { continue };
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
         let verb = obj.get("verb").and_then(Value::as_str).unwrap_or_default();
         if !is_read_verb(verb) {
             continue;
@@ -133,7 +135,9 @@ pub fn sanitize_human_bundle(raw: &Value) -> Option<Value> {
         if out.len() >= MAX_ITEMS {
             break;
         }
-        let Some(obj) = item.as_object() else { continue };
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
         let verb = obj.get("verb").and_then(Value::as_str).unwrap_or_default();
         if !is_human_verb(verb) {
             continue;
@@ -281,9 +285,7 @@ mod tests {
 
     #[test]
     fn caps_item_count() {
-        let items: Vec<Value> = (0..40)
-            .map(|_| json!({ "verb": "channel.info" }))
-            .collect();
+        let items: Vec<Value> = (0..40).map(|_| json!({ "verb": "channel.info" })).collect();
         let out = sanitize_bot_bundle(&json!({ "items": items })).unwrap();
         assert_eq!(out["items"].as_array().unwrap().len(), MAX_ITEMS);
     }
@@ -326,11 +328,18 @@ mod tests {
               "label": "m.rs", "kind": "file", "preview": { "text": "code" } } // ref kept, preview stripped
         ]});
         let out = sanitize_human_bundle(&raw).expect("survives");
-        let verbs: Vec<&str> = out["items"].as_array().unwrap().iter()
-            .map(|i| i["verb"].as_str().unwrap()).collect();
+        let verbs: Vec<&str> = out["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["verb"].as_str().unwrap())
+            .collect();
         assert_eq!(verbs, vec!["fs.read", "workspace.read"]);
         // The stray client-supplied snapshot is NOT carried onto the wire bundle.
-        assert!(out["items"][1].get("preview").is_none(), "preview dropped: {out}");
+        assert!(
+            out["items"][1].get("preview").is_none(),
+            "preview dropped: {out}"
+        );
     }
 
     #[test]
@@ -340,14 +349,20 @@ mod tests {
               "label": "L".repeat(500) }
         ]});
         let out = sanitize_human_bundle(&raw).unwrap();
-        assert_eq!(out["items"][0]["label"].as_str().unwrap().chars().count(), MAX_LABEL_CHARS);
+        assert_eq!(
+            out["items"][0]["label"].as_str().unwrap().chars().count(),
+            MAX_LABEL_CHARS
+        );
     }
 
     #[test]
     fn human_drops_oversized_params_item() {
         let big = "x".repeat(MAX_PARAMS_CHARS + 100);
         let raw = json!({ "items": [ { "verb": "fs.read", "params": {"path": big} } ] });
-        assert!(sanitize_human_bundle(&raw).is_none(), "oversized params item dropped");
+        assert!(
+            sanitize_human_bundle(&raw).is_none(),
+            "oversized params item dropped"
+        );
     }
 
     #[test]
@@ -359,7 +374,10 @@ mod tests {
               "label": "p", "kind": "file", "preview": { "text": "secret" } }
         ]});
         let row = strip_previews(&full);
-        assert!(row["items"][0].get("preview").is_none(), "row copy strips preview");
+        assert!(
+            row["items"][0].get("preview").is_none(),
+            "row copy strips preview"
+        );
         assert_eq!(row["items"][0]["label"], json!("p"), "keeps label/locator");
         assert_eq!(row["origin"], json!("human"));
     }

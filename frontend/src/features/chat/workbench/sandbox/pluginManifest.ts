@@ -47,8 +47,10 @@ export interface PluginMeta {
   title: string;
   manifest: PluginManifest;
   /** 'system' = official, seeded by the gateway release (API refuses PUT; deleting is
-   *  allowed and sticks until a release ships a newer version). 'admin' = API-installed. */
-  origin?: "admin" | "system";
+   *  allowed and sticks until a release ships a newer version). 'admin' = API-installed.
+   *  'personal' = installed by this user on this Mac (desktop only), stored under
+   *  ~/.cheers/plugins and loaded with its bundle inline — never sent to the server. */
+  origin?: "admin" | "system" | "personal";
   /** Inline sandbox bundle — present only on SESSION-loaded (temporary) plugins; the
    *  server never sends it (installed bundles are fetched lazily via fetchBundle). */
   bundle?: string;

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
 const API_PROXY_TARGET =
@@ -12,7 +13,57 @@ const WS_PROXY_TARGET =
   );
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // PWA: installable app + Web Push. injectManifest (not generateSW) because
+    // the service worker is hand-written (src/sw.ts) — push/notificationclick
+    // handlers need app-specific logic, not just caching. The SW precaches the
+    // app shell only; /api, /ws and /docs are never cached (realtime app).
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+      registerType: "autoUpdate",
+      // Registration happens in main.tsx via virtual:pwa-register (single place
+      // that controls update behavior); no injected register script.
+      injectRegister: false,
+      manifest: {
+        name: "Cheers",
+        short_name: "Cheers",
+        description: "Multi-agent chat workspace",
+        theme_color: "#0f172a",
+        background_color: "#0f172a",
+        display: "standalone",
+        start_url: "/",
+        icons: [
+          { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
+          {
+            src: "/pwa-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      },
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // Keep the precache an actual app SHELL: the deliberately lazy-split
+        // heavyweights (file preview, code editor, pdf, highlight grammars —
+        // ~2 MB combined) load on demand exactly like without a SW, instead
+        // of being downloaded by every client on every deploy.
+        globIgnores: [
+          "**/assets/FilePreviewModal-*.js",
+          "**/assets/CodeEditor-*.js",
+          "**/assets/pdf-*.js",
+          "**/assets/hljs-*.js",
+          "**/assets/pdf.worker*",
+        ],
+      },
+      // Dev runs without a SW (devOptions off): push testing happens against
+      // the built image in kind, and a dev SW would only add cache confusion.
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
