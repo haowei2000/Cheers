@@ -67,7 +67,7 @@
 | 方向 | `type` | 载荷 | 时机 |
 |---|---|---|---|
 | plugin → host | `cheers:ready` | — | iframe 加载完,告诉 host「派活给我」 |
-| host → plugin | `cheers:render` | `{ path, format, content, version, rendererId }` | 指派渲染**一个**文件;文件被外部改动时会再发 |
+| host → plugin | `cheers:render` | `{ path, format, content, version, rendererId }` | 指派渲染**一个**文件。**只有两个触发点**:你的 `cheers:ready`,以及一次写冲突之后。**别人(bot/其他成员)改了文件不会重发**——见下方「渲染时机」 |
 | plugin → host | `cheers:unsupported` | `{ reason? }` | 看了内容渲染不了(最终裁决)→ host 显示「该渲染器无法渲染此文件」 |
 | plugin → host | `cheers:save` | `{ content }` | 把当前这一个文件存回去 |
 | host → plugin | `cheers:saved` | `{ ok, version, error? }` | 乐观锁写入结果;`ok` 时更新你手里的 `version` |
@@ -99,6 +99,14 @@ var info = await res("channel.info", {});   // → { ok, data }
 ```
 
 > **信任与外泄**:沙箱 iframe 隔离的是 token/DOM,**不隔离网络**——拿到数据的插件理论上能 fetch 到外部。所以 ① 这些 verb 全部**只读**且服务端仍按你的 channel-role 鉴权;② 插件是 **admin 安装**的(装的人为其背书);③ 白名单刻意保守。要给更敏感的能力,应走显式同意,别直接加进白名单。
+
+### 3.2 渲染时机(最容易踩的一条)
+
+`cheers:render` **只有两个触发点**:① 你发出 `cheers:ready` 之后;② 你自己的一次保存撞上版本冲突之后。
+
+**没有第三个。** bot 或别的成员在后台改了这个文件,你**不会**收到新的 `cheers:render`,而且你**没有任何办法自己重读**——`cheers:resource` 白名单只覆盖 `channel.*`,不含文件内容。用户重新打开这个文件(iframe remount → `ready` → `render`)才会看到新内容。
+
+这是刻意的能力收紧,不是缺陷:插件拿到的永远是 host 明确指派的那一份快照。但在 bot 会主动写工作区文件的产品里,它意味着「我的看板不刷新」是**预期行为**——设计 UI 时别假设自己能拿到实时内容,也别把「长期开着不动」当成正常使用姿势。
 
 要点:
 
@@ -210,6 +218,8 @@ var info = await res("channel.info", {});   // → { ok, data }
 ## 7. 安装与绑定
 
 - **试用/开发**(人人):把 `.html` 拖进工作台抽屉(或点「Load extension」选文件)——**仅本浏览器会话**生效,渲染器立即进入匹配文件的候选列表(⏱ 标记);同 id 会话插件会遮蔽已安装版本,方便迭代调试,刷新即消失。
+  - **热重载**:点「Watch file」选中磁盘上的 `.html`,之后**在编辑器里保存即自动重载**,不必反复拖拽(基于 File System Access API,仅 Chromium 系浏览器有此按钮;其他浏览器继续用拖拽)。
+  - **调试**:会话插件(⏱)的预览区右下角有 **Dev** 按钮,打开**协议检查器**——逐条列出 `cheers:*` 的收发方向、类型和截断后的载荷。沙箱是不透明源,插件里的 `console.log` 和未捕获异常**传不到宿主页**(表现为一片空白 iframe),SDK 会把它们转成 `cheers:log` 送进这个面板。这是排查「为什么什么都没画出来」的主要手段。
 - **安装**(admin):设置 → Workbench extensions → 上传 `.html`(进 `workbench_plugins` 表,全频道可见)。
 - **绑定**:打开某文件时,工作台按 `.workbench.json` 的 `bindings[path]` 选渲染器;没有就默认「原文」(textarea)或让用户从候选里挑,选择持久化进 `.workbench.json`(`path → rendererId`)。**绑定不进文件**,文件始终是纯内容。
 

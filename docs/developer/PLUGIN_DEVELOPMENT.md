@@ -11,6 +11,49 @@
 > (`path → renderer id`) persist in `.workbench.json`. Ready-to-upload examples live in
 > [`docs/arch/examples/`](../arch/examples/README.md).
 
+## 0. How it works
+
+Three moving parts, one direction of dependency:
+
+```
+file (context_files)   pure content, Markdown-first. Declares nothing about itself.
+   ▲ claimed and drawn by
+renderer (plugin)      an iframe with an opaque origin. Owns ALL the judgment:
+   ▲ seeded by         what it accepts, how it parses, how it draws, how it saves.
+environment template   declarative JSON. Only seeds initial files. Contains no code.
+```
+
+The workbench hands a renderer **exactly one file** and takes back **exactly one file**.
+That is the whole capability. A plugin cannot list the tree, open a sibling, reach another
+channel, or read your token — not by policy, but because the host never gives it a way to
+ask. Everything else is a consequence:
+
+| Mechanism | What it buys | What it costs you |
+|---|---|---|
+| One `.html`, manifest embedded | No build step, no toolchain, no registry, no install to iterate | Everything must be inlined (§6.2 for a real build) |
+| `<iframe sandbox="allow-scripts">`, no `allow-same-origin` | Opaque origin: no host token, cookies, `localStorage`, or DOM | No shared libraries, no `fetch` to the app's API |
+| Host pins the path; `cheers:save` carries no path | A plugin physically cannot write elsewhere | No multi-file renderers (a v2 item) |
+| Manifest read with `DOMParser` on upload | Your code never runs at install time | The manifest must be static JSON, not computed |
+
+A renderer is **CSS for files**: the manifest's `match` is the selector, your render code is
+the declaration block, and when several renderers claim one file the host ranks them by
+specificity — with the user's stored binding acting as `!important` (§8).
+
+> ### ⚠️ Read this before you design anything: you are rendering a snapshot
+>
+> `cheers:render` fires **exactly twice**: in reply to your `cheers:ready`, and again after
+> one of *your own* saves hits a version conflict. **There is no third trigger.**
+>
+> When a bot or another member rewrites your file, you are **not** told, and you have **no
+> way to re-read it** — the `cheers:resource` whitelist covers channel metadata, never file
+> content. The user sees fresh content only by reopening the file, which remounts your
+> iframe.
+>
+> This is a deliberate narrowing of capability, not a gap. But in a product where bots write
+> workspace files, it means *"my board didn't refresh"* is **correct behaviour**. Design for
+> it: render the snapshot you were handed, keep sessions short-lived, and never build a UI
+> that implies it is live.
+
 ## 1. Quickstart: the zero-admin dev loop
 
 You do **not** need admin access (or an install step) to develop a plugin:
@@ -24,12 +67,25 @@ You do **not** need admin access (or an install step) to develop a plugin:
    with **⏱** in the renderer dropdown.
 4. Select a file the plugin claims (its `match`, §4) → **Preview** → pick your
    renderer → interact → edits save back to the file.
-5. Iterate: edit `my-plugin.html`, drop it again. A session plugin **shadows an
-   installed plugin with the same id** for your session, so you can iterate on a
-   deployed plugin without touching the installation. Reload the page and the
-   session plugin is gone (existing bindings fall back to the installed version).
+5. Iterate — see hot reload below. A session plugin **shadows an installed plugin with
+   the same id** for your session, so you can iterate on a deployed plugin without
+   touching the installation. Reload the page and the session plugin is gone (existing
+   bindings fall back to the installed version).
 
 When it works, install it for everyone: *Settings → Workbench extensions* (admin, §8).
+
+### 1.1 Hot reload — stop re-dropping the file
+
+Click **Watch file** in the drawer toolbar and pick your `.html`. The workbench polls it
+on disk and re-loads it whenever it changes, so **saving in your editor reloads the plugin
+in place** — the session plugin is replaced, the iframe reboots, and your renderer redraws
+against the same file. Click **Watching …** to stop.
+
+Pair it with a build in watch mode (`npm run dev` in the §6.2 template) and the loop is:
+save `.tsx` → rebuild → reload. No dragging.
+
+Watch uses the File System Access API, so the button appears only in Chromium-based
+browsers. Everywhere else, drag-and-drop remains the (universal) path.
 
 ## 2. Concepts: renderers are CSS for files
 
@@ -142,6 +198,7 @@ a specific origin; the host, in turn, only accepts messages from your iframe).
 | host → plugin | `cheers:resource:result` | `{ reqId, ok, data\|error }` | Resource read result. |
 | plugin → host | `cheers:open` | `{ uri }` | Ask the host to navigate the **user's view** to a `cheers:` locator — `cheers:ws/<bot>/<path>#L<n>[-L<n>]` opens the workspace browser at that file/line (after an existence probe), `cheers:desk/<path>` focuses the workbench file browser, `cheers:inbox/<file_id>` opens channel files. Fire-and-forget (no reply). Pure UI routing: the host parses strictly, every read behind the jump passes the normal authz, and an unresolvable locator shows the user an error. Hosts that don't support it ignore the message (the protocol-1 growth rule) — safe to send unconditionally. |
 | plugin → host | `cheers:compose` | `{ text }` | **PREFILL** the channel composer with a suggested message — **never sends**. An empty draft is filled; a typed draft gets the text appended on a new line (user text is never lost); `@label` tokens matching channel members register as routable mentions. The human reviews, edits, and presses send — that keystroke is what turns a plugin suggestion into a channel action, keeping side effects human-in-the-loop and audit-visible. Shape-gated by the host (≤4000 chars, control chars stripped). Fire-and-forget; unsupported hosts ignore it. |
+| plugin → host | `cheers:log` | `{ level, message }` | **Dev diagnostics** — a line in the host's protocol inspector (§9). The sandbox's opaque origin means your `console.log` and your uncaught exceptions never reach the host page; this is the way out. Surfaced only for session-loaded (⏱) plugins; installed plugins are silent. Fire-and-forget; unsupported hosts ignore it. |
 
 ### 5.2 Lifecycle
 
@@ -260,7 +317,31 @@ host.resource("channel.info", {}).then(function (data) { /* … */ });
 host.unsupported("no task lines found");
 ```
 
-It wires the listener first and posts `cheers:ready` for you.
+It wires the listener first and posts `cheers:ready` for you. It also forwards uncaught
+errors and unhandled rejections as `cheers:log` — see §9.
+
+### 6.2 Past ~100 lines: the React + Vite template
+
+"Everything inlined into one file" is a delivery constraint, not a development one. For
+anything with components or state, start from
+[`docs/arch/examples/react-vite-template/`](../arch/examples/react-vite-template/README.md)
+— React + TypeScript, bundled by `vite-plugin-singlefile` into exactly the single `.html`
+the host wants:
+
+```bash
+cp -r docs/arch/examples/react-vite-template my-plugin && cd my-plugin
+npm install
+npm run build     # -> dist/index.html : manifest + React + your code, one file
+npm run dev       # rebuild on save; pair with "Watch file" (§1.1) for a live loop
+```
+
+It ships a working checklist renderer, a typed protocol client (`src/cheers.ts`), and the
+Vite settings that keep the build from splitting a second file out — which the sandbox
+could never load. A React build lands around 200 KB against the 2 MiB cap, so framework
+weight is a non-issue.
+
+Editing the manifest: it lives in the template's `index.html`, which Vite copies through
+untouched. **Change the placeholder `id` before installing** — it's the install key.
 
 ## 7. Cookbook
 
@@ -323,7 +404,37 @@ Recipes in words:
   raw text. The user's explicit choice always wins and persists ("Auto" clears it).
   Bindings never live in the file itself — files stay pure content.
 
-## 9. Official plugins (gateway-seeded)
+## 9. Debugging
+
+The sandbox that protects the host also blinds you: an opaque-origin iframe cannot surface
+its `console.log` to the host page, and an uncaught exception shows up as **a blank
+iframe** with nothing in the app's console. Two tools close that gap.
+
+**The protocol inspector.** Session-loaded (⏱) plugins get a **Dev** button in the bottom
+right of the preview. It opens a live log of every `cheers:*` message in both directions —
+type plus a truncated payload summary — so you can see exactly what you were handed and
+what you sent back. The log resets on each hot reload, so one run is one trace. Installed
+plugins never show it: this is a development affordance, not telemetry.
+
+Read it for the questions that are otherwise unanswerable:
+
+| Symptom | What the inspector shows |
+|---|---|
+| Blank iframe, nothing happens | No `cheers:ready` (script threw before it) — or `ready` sent before the listener was wired, so the `render` reply was missed |
+| "Can't render this file" you didn't expect | Your own `cheers:unsupported`, with the reason you passed |
+| Edits bounce back | `cheers:saved {ok:false}` followed by a fresh `cheers:render` — a version conflict, not a bug in your save |
+| A resource call returns nothing | `cheers:resource:result {ok:false, error}` — usually a verb outside the whitelist (§5.4) |
+
+**`cheers:log`.** Call `host.log("…")` for your own traces. The SDK (§6.1) and the
+TypeScript client in the template also install `error` / `unhandledrejection` handlers that
+forward automatically — so a crash inside your parser becomes a readable line instead of a
+blank panel. Both are no-ops on hosts that don't implement it.
+
+**Browser devtools still work.** The iframe is a real document: in Chromium, pick the
+`about:srcdoc` frame in the devtools frame selector to get a console and breakpoints inside
+your plugin. Build unminified (the template's default) so the sources are readable.
+
+## 10. Official plugins (gateway-seeded)
 
 A basic renderer set ships **inside the gateway binary** and is seeded into
 `workbench_plugins` at startup (`origin='system'`, "Official" badge in Settings):
@@ -348,7 +459,7 @@ Lifecycle rules (enforced; policy in `server/src/domain/workbench_official.rs`):
   `version`** (an integer next to `protocol`, used only by the seeder).
 - An id an admin claimed with their own plugin is never overwritten by the seeder.
 
-## 10. Security model (three layers)
+## 11. Security model (three layers)
 
 1. **Opaque origin** — `sandbox="allow-scripts"` without `allow-same-origin`: the
    plugin cannot steal host credentials.
@@ -356,7 +467,7 @@ Lifecycle rules (enforced; policy in `server/src/domain/workbench_official.rs`):
    `path`; server-side channel-role auth is unchanged.
 3. **Inert manifest** — parsed with `DOMParser`, never executed.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Likely cause → fix |
 |---|---|

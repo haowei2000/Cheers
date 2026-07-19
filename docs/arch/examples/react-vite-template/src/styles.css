@@ -1,0 +1,50 @@
+/* The sandbox iframe is its own document: it inherits nothing from the host page, so a
+   plugin styles itself from scratch. `color-scheme: dark` matches the workbench chrome. */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font: 13px/1.5 system-ui, -apple-system, sans-serif;
+  background: #0a0a0a;
+  color: #e4e4e7;
+}
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.rows {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.task {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.task .done {
+  color: #71717a;
+  text-decoration: line-through;
+}
+
+.plain {
+  white-space: pre-wrap;
+  color: #a1a1aa;
+  padding: 1px 0;
+}
+
+.status {
+  padding: 4px 10px;
+  border-top: 1px solid #27272a;
+  color: #71717a;
+  font-size: 11px;
+}

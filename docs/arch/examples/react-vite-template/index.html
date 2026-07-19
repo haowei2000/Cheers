@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cheers plugin</title>
+    <!-- The embedded manifest. The host reads it with DOMParser on upload and never
+         executes it, so it must be a plain JSON script tag sitting in the built output.
+         Vite copies non-module script tags through untouched — edit it here. -->
+    <script type="application/json" id="cheers-plugin">
+      {
+        "id": "react-template",
+        "protocol": 1,
+        "title": "React template",
+        "renderers": [
+          {
+            "id": "checklist",
+            "title": "Checklist (React)",
+            "match": { "format": "markdown", "requireAny": ["- [ ]", "- [x]", "- [X]"] }
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

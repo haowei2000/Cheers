@@ -1,0 +1,24 @@
+{
+  "name": "cheers-plugin-react-template",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Starter for a Cheers workbench renderer plugin built with React + TypeScript, bundled to ONE self-contained .html",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.1.0"
+  }
+}
