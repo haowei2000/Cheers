@@ -105,6 +105,7 @@ struct ChatView: View {
                 switch panel {
                 case .members:   MembersSheet(channel: model.channel)
                 case .viewboard: ViewBoardSheet(channelId: model.channel.channelId)
+                case .workbench: WorkbenchSheet(channelId: model.channel.channelId)
                 case .settings:  ChannelSettingsSheet(channel: model.channel)
                 default:         ChannelPanelSheet(panel: panel)
                 }

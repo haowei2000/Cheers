@@ -981,3 +981,48 @@ struct ActivityBoardEvent: Decodable, Identifiable {
         case data
     }
 }
+
+// MARK: - Workbench (the `fs.*` resource verbs over the channel workspace)
+//
+// The workbench is file-centric: a channel owns a tree of `context_files` that
+// humans and bots both read and write. `fs.ls` / `fs.read` are WS resource verbs
+// (ChatSocket.request), authz'd per channel-role on the server — the same pair the
+// web workbench drawer is built on (frontend/.../workbench/fsClient.ts).
+
+struct FsListing: Decodable {
+    let path: String
+    let entries: [FsEntry]
+}
+
+/// One row of an `fs.ls` reply.
+///
+/// `path` is the FULL path from the workspace root (`draft/paper.md`), and `fs.ls`
+/// returns the tree **flattened** — every file at every depth, with no directory rows
+/// in practice. Deliberately no `name`/basename helper: reading only the last segment
+/// throws the folder away, which silently flattens the hierarchy and makes same-named
+/// files in different folders indistinguishable. Build the tree instead — see
+/// `TreeNode.build` in WorkbenchSheet.swift.
+struct FsEntry: Decodable, Hashable {
+    let path: String
+    let version: Int
+    let isDir: Bool
+    let sizeBytes: Int
+
+    enum CodingKeys: String, CodingKey {
+        case path, version
+        case isDir = "is_dir"
+        case sizeBytes = "size_bytes"
+    }
+}
+
+struct FsFile: Decodable {
+    let path: String
+    let content: String
+    /// Optimistic-lock token. Unused while the workbench is read-only; `fs.write`
+    /// will send it back as `if_version`.
+    let version: Int
+
+    enum CodingKeys: String, CodingKey {
+        case path, content, version
+    }
+}
