@@ -5,12 +5,14 @@ import {
   FolderOpen,
   GitBranch,
   History,
+  Loader2,
   Play,
   Plug,
   Plus,
   RotateCw,
   Settings2,
   Square,
+  Ticket,
   Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -68,6 +70,7 @@ interface Opener {
 /** Which detail panel is open, as a modal. */
 type Modal =
   | { kind: "onboard" }
+  | { kind: "redeem" }
   | {
       kind: "logs" | "workspace" | "edit" | "delete" | "changes" | "audit";
       inst: ConnectorInstance;
@@ -80,6 +83,28 @@ function fmtMem(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
   if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
   return `${Math.round(bytes / 1024)} KB`;
+}
+
+const AGENT_TYPES: readonly AgentType[] = ["claude", "codex", "opencode", "generic"];
+
+/** Narrow a bot's stored `bridge_provider` (a free-form string server-side) to
+ *  an agent type this UI can act on. */
+function isAgentType(v: string | undefined): v is AgentType {
+  return !!v && (AGENT_TYPES as readonly string[]).includes(v);
+}
+
+/** Is this agent's ACP adapter resolvable on the login PATH right now?
+ *  Asked fresh (not from cached picker state) so an agent installed in another
+ *  window counts. A failed detect returns true: onboarding then proceeds and
+ *  `connector_write_onboarded` reports the real resolution error, which beats
+ *  blocking setup because a probe broke. */
+async function adapterInstalled(agentType: AgentType): Promise<boolean> {
+  try {
+    const agents = await invokeDesktop<DetectedAgent[]>("detect_agents");
+    return agents.find((a) => a.key === agentType)?.installed ?? true;
+  } catch {
+    return true;
+  }
 }
 
 /** CPU/mem line + an amber "consider restart" badge when a connector looks
@@ -173,6 +198,7 @@ export function ConnectorManager() {
   const [bots, setBots] = useState<BotItem[]>([]);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [existingBotId, setExistingBotId] = useState("");
+  const [enrollCode, setEnrollCode] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [agentType, setAgentType] = useState<AgentType>("claude");
   const [onboarding, setOnboarding] = useState(false);
@@ -268,10 +294,14 @@ export function ConnectorManager() {
   // New-connector modal immediately (don't wait on the bots fetch) with that
   // bot preselected.
   useEffect(() => {
-    const wantBot = consumeConnectorIntent();
-    if (wantBot) {
+    const intent = consumeConnectorIntent();
+    const wantBot = intent?.botId;
+    if (intent) {
       setMode("existing");
-      setExistingBotId(wantBot);
+      setExistingBotId(intent.botId);
+      // Honour the agent type the wizard already asked about, so the hand-off
+      // doesn't quietly re-default to this component's own initial value.
+      if (intent.agentType) setAgentType(intent.agentType);
       setModal({ kind: "onboard" });
     }
     listBots()
@@ -288,6 +318,15 @@ export function ConnectorManager() {
       })
       .catch(() => {});
   }, []);
+
+  // Selecting an existing bot adopts the agent it was registered for. The bot's
+  // bridge_provider is the source of truth — a connector built from a different
+  // agent's preset starts the wrong adapter, and nothing downstream notices.
+  useEffect(() => {
+    if (mode !== "existing" || !existingBotId) return;
+    const provider = bots.find((b) => b.bot_id === existingBotId)?.bridge_provider;
+    if (isAgentType(provider)) setAgentType(provider);
+  }, [mode, existingBotId, bots]);
 
   async function act(
     name: string,
@@ -308,10 +347,69 @@ export function ConnectorManager() {
     }
   }
 
+  // ── redeem a code minted elsewhere (the "I have a code" tile) ─────────────
+  // The bot already exists and someone else picked its agent; this Mac only
+  // supplies the host. The adapter pre-flight therefore reads the agent type
+  // out of the redeemed config rather than from this component's picker.
+  async function redeemCode() {
+    const code = enrollCode.trim();
+    if (!code) {
+      toast.error("Paste the code first");
+      return;
+    }
+    setOnboarding(true);
+    try {
+      const redeemed = await redeemEnrollmentCode(code);
+      if (
+        isAgentType(redeemed.agent_type) &&
+        !(await adapterInstalled(redeemed.agent_type))
+      ) {
+        // The code is spent by now — redeeming is what rotates the token, and
+        // it can't be undone. Say so plainly instead of a bare "not installed",
+        // because the user's next step is to install and mint a fresh code.
+        toast.error(
+          `This bot needs the ${redeemed.agent_type} adapter, which isn't installed on this Mac. ` +
+            `Install it, then ask for a new code — this one is now used up.`
+        );
+        return;
+      }
+      const configPath = await invokeDesktop<string>("connector_write_onboarded", {
+        accountId: redeemed.account_id,
+        configToml: redeemed.config_toml,
+        token: redeemed.token,
+        tokenFile: redeemed.token_file,
+      });
+      await invokeDesktop("connector_start", { name: redeemed.account_id, configPath });
+      toast.success(`Connector "${redeemed.account_id}" set up and started`);
+      setEnrollCode("");
+      setModal(null);
+      refresh();
+    } catch (e) {
+      toast.error(
+        typeof e === "string" ? e : e instanceof Error ? e.message : "couldn't use that code"
+      );
+    } finally {
+      setOnboarding(false);
+    }
+  }
+
   // ── onboarding (the New tile) ──────────────────────────────────────────────
   async function onboard() {
     setOnboarding(true);
     try {
+      // Pre-flight the adapter BEFORE anything server-side. Redeeming mints a
+      // new bot token, which destructively replaces the old one and kicks any
+      // live connector — so a client-side failure *after* that point strands
+      // the bot: nobody holds the token the gateway now expects, and re-running
+      // onboarding is the only way back. Checking here keeps "adapter not
+      // installed" a side-effect-free error.
+      if (!(await adapterInstalled(agentType))) {
+        toast.error(
+          `${agentType} isn't installed on this Mac — pick it in the agent list above to install it, then try again`
+        );
+        return;
+      }
+
       let botId = existingBotId;
       if (mode === "new") {
         const uname = newUsername.trim();
@@ -434,6 +532,21 @@ export function ConnectorManager() {
           >
             <Plus className="w-6 h-6" />
             <span className="text-sm font-medium">New connector</span>
+          </button>
+
+          {/* The other direction: a bot created somewhere else (the phone, the
+              web UI, a teammate) hands you a one-time code, and this Mac is the
+              machine that will actually run it. Without this, a code minted off
+              this device had nowhere to go — the desktop could only mint and
+              redeem for itself in one shot. */}
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "redeem" })}
+            className="min-h-[132px] rounded-xl border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+          >
+            <Ticket className="w-6 h-6" />
+            <span className="text-sm font-medium">I have a code</span>
+            <span className="text-xs text-zinc-500">Set up a bot made elsewhere</span>
           </button>
 
           {instances.map((inst) => (
@@ -586,6 +699,40 @@ export function ConnectorManager() {
       </div>
 
       {/* ── Modals ── */}
+      {modal?.kind === "redeem" && (
+        <Dialog title="I have a code" onClose={() => setModal(null)} maxWidth="max-w-lg">
+          <div className="space-y-3">
+            <p className="text-xs text-zinc-400">
+              Paste the one-time code from wherever the bot was created — the
+              Cheers app on your phone, the web UI, or a teammate. This Mac
+              becomes the machine that runs it.
+            </p>
+            <input
+              value={enrollCode}
+              onChange={(e) => setEnrollCode(e.target.value)}
+              placeholder="agbenr_…"
+              autoFocus
+              spellCheck={false}
+              className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm font-mono text-zinc-100 placeholder:text-zinc-500 outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <p className="text-xs text-zinc-500">
+              Codes are single-use and expire after about 15 minutes. Using one
+              replaces the bot's token, so any connector already running it
+              elsewhere will stop.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setModal(null)}>
+                Cancel
+              </Button>
+              <Button onClick={() => void redeemCode()} disabled={onboarding}>
+                {onboarding && <Loader2 className="w-4 h-4 animate-spin" />}
+                Set up & start
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
       {modal?.kind === "onboard" && (
         <Dialog title="New connector" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <OnboardForm

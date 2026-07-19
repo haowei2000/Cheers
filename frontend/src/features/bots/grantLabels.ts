@@ -39,7 +39,7 @@ const EVENT_LABEL: Record<string, GrantLabel> = {
   },
   set_mode: {
     label: "Switch approval mode",
-    desc: "Change how the agent asks for permission (its ACP session mode)",
+    desc: "Change when the agent stops to ask you before acting",
   },
   set_config_option: {
     label: "Change agent settings",

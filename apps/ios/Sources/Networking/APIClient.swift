@@ -280,6 +280,66 @@ extension APIClient {
         try await getJSON("/bots", as: [BotDto].self)
     }
 
+    // MARK: Bot onboarding
+    //
+    // The phone can create a bot and mint credentials, but never runs the
+    // connector — see the AgentType/EnrollmentCodeDto note in DTOs.swift. Every
+    // call here exists to produce something the user carries to a real host.
+
+    func createBot(username: String, displayName: String?, agentType: AgentType) async throws -> BotDto {
+        try await postJSON(
+            "/bots",
+            body: CreateBotRequest(
+                username: username,
+                displayName: displayName,
+                bridgeProvider: agentType.rawValue
+            ),
+            as: BotDto.self
+        )
+    }
+
+    /// Mint a one-time enrollment code (owner/admin). Plaintext is returned
+    /// once and never stored server-side — only its hash is.
+    func mintEnrollmentCode(botId: String, agentType: AgentType) async throws -> EnrollmentCodeDto {
+        try await postJSON(
+            "/bots/\(botId)/enrollment",
+            body: ["agent_type": agentType.rawValue],
+            as: EnrollmentCodeDto.self
+        )
+    }
+
+    /// Revoke ALL live codes for a bot. Idempotent — and blunt: there is no
+    /// single-code revoke, so this will also kill an install in flight.
+    func revokeEnrollmentCodes(botId: String) async throws {
+        try await deleteEmpty("/bots/\(botId)/enrollment")
+    }
+
+    func connectorConfig(botId: String, agentType: AgentType) async throws -> ConnectorConfigDto {
+        try await getJSON(
+            "/bots/\(botId)/connector-config",
+            query: [URLQueryItem(name: "agent_type", value: agentType.rawValue)],
+            as: ConnectorConfigDto.self
+        )
+    }
+
+    /// Issue/rotate the long-lived bot token. Destructive: it replaces any
+    /// previous token and kicks a connector already running with the old one.
+    func issueBotToken(botId: String) async throws -> IssuedTokenDto {
+        try await postJSON("/bots/\(botId)/token", body: [String: String](), as: IssuedTokenDto.self)
+    }
+
+    func enrollmentGuidance() async throws -> EnrollmentGuidanceDto {
+        try await getJSON("/enrollment/guidance", as: EnrollmentGuidanceDto.self)
+    }
+
+    func connectorDiscovery() async throws -> ConnectorDiscoveryDto {
+        try await getJSON("/ops/connector-discovery", as: ConnectorDiscoveryDto.self)
+    }
+
+    func botStatus(botId: String) async throws -> BotStatusDto {
+        try await getJSON("/bots/\(botId)/status", as: BotStatusDto.self)
+    }
+
     // MARK: Create channel / DM
 
     func createChannel(workspaceId: String, name: String, isPrivate: Bool, purpose: String?) async throws -> ChannelDto {

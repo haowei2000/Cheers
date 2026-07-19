@@ -8,6 +8,7 @@ struct FleetView: View {
     var activity: ActivityModel
     @State private var model = AgentsModel()
     @State private var sheetItem: ApprovalItem?
+    @State private var showOnboarding = false
 
     var body: some View {
         ScreenScaffold(title: "Fleet") {
@@ -20,14 +21,22 @@ struct FleetView: View {
                         }
                     }
 
-                    sectionHeader("Bots")
+                    HStack {
+                        sectionHeader("Bots")
+                        Spacer()
+                        Button { showOnboarding = true } label: {
+                            Label("Add", systemImage: "plus")
+                                .font(.system(size: 12.5, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.accent)
+                        .padding(.top, 12)
+                    }
                     summaryStrip.padding(.vertical, 2)
                     if model.isLoading && model.bots.isEmpty {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
                     } else if model.bots.isEmpty {
-                        Text(model.errorMessage ?? "No agents yet")
-                            .font(.system(size: 13)).foregroundStyle(Theme.textMuted)
-                            .padding(.vertical, 16)
+                        emptyState
                     } else {
                         ForEach(model.bots) { bot in
                             botRow(bot)
@@ -51,6 +60,37 @@ struct FleetView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showOnboarding) {
+            BotOnboardingView(existingBots: model.bots) {
+                Task { await model.load() }
+            }
+        }
+    }
+
+    /// An empty fleet is the most common first-run state, so it doubles as the
+    /// entry point rather than just reporting that nothing is here.
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let message = model.errorMessage {
+                Text(message).font(.system(size: 13)).foregroundStyle(Theme.danger)
+            } else {
+                Text("No agents yet")
+                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+                Text("Create one here, then connect it from the machine that will run it — this phone can't host an agent itself.")
+                    .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { showOnboarding = true } label: {
+                    Label("Add a bot", systemImage: "plus")
+                        .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 9)
+                        .background(Theme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+        }
+        .padding(.vertical, 16)
     }
 
     private func sectionHeader(_ title: String, icon: String? = nil, tint: Color = Theme.textSecondary) -> some View {

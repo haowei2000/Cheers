@@ -149,8 +149,8 @@ export function BotsManager() {
           </p>
         ) : (
           <p className="text-sm text-zinc-400 px-1">
-            No bots yet. Click <span className="text-zinc-200">Add bot</span> to register one and
-            connect it with the Rust ACP connector.
+            No bots yet. Click <span className="text-zinc-200">Add bot</span> to create one, then
+            connect it to the machine that will run it.
           </p>
         )
       ) : (
@@ -193,7 +193,7 @@ export function BotsManager() {
         <Dialog
           title={
             <span className="flex items-center gap-2">
-              <KeyRound className="w-5 h-5 text-indigo-400" /> Agent Bridge token
+              <KeyRound className="w-5 h-5 text-indigo-400" /> Connection token
             </span>
           }
           onClose={() => setIssued(null)}
@@ -207,7 +207,8 @@ export function BotsManager() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-zinc-400">
-              Set this as <code>bot_token_env</code> for the connector account.
+              This is what proves the bot is yours when it connects. Save it into
+              the bot's token file on the machine that runs it.
             </span>
             <CopyButton value={issued.token} label="Copy token" />
           </div>

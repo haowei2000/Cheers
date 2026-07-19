@@ -352,10 +352,14 @@ struct BotDto: Decodable, Identifiable {
     let canManage: Bool?
     let statusText: String?
     let statusEmoji: String?
+    /// Which ACP agent this bot was registered for. Onboarding must read it
+    /// rather than re-defaulting, or it mints a config for the wrong adapter.
+    let bridgeProvider: String?
 
     var id: String { botId }
     var name: String { displayName ?? username ?? "Agent" }
     var online: Bool { isOnline ?? false }
+    var agentType: AgentType { AgentType(rawValue: bridgeProvider ?? "") ?? .generic }
 
     enum CodingKeys: String, CodingKey {
         case botId = "bot_id"
@@ -368,8 +372,172 @@ struct BotDto: Decodable, Identifiable {
         case canManage = "can_manage"
         case statusText = "status_text"
         case statusEmoji = "status_emoji"
+        case bridgeProvider = "bridge_provider"
     }
 }
+
+// MARK: - Bot onboarding (server/src/api/enrollment.rs)
+//
+// iOS can never host a connector — there is no way to run a long-lived ACP
+// child process on the phone. So the phone's job is to CREATE the bot and hand
+// a credential to whatever machine will actually run it. Everything below is
+// about that hand-off; nothing here starts an agent locally.
+
+enum AgentType: String, CaseIterable, Identifiable, Codable {
+    case claude, codex, opencode, generic
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        case .opencode: return "OpenCode"
+        case .generic: return "Other ACP agent"
+        }
+    }
+
+    /// The adapter the gateway will name in the generated config — shown so the
+    /// user can tell whether they have it installed on the target machine.
+    var adapterHint: String {
+        switch self {
+        case .claude: return "claude-agent-acp"
+        case .codex: return "codex-acp"
+        case .opencode: return "opencode acp"
+        case .generic: return "your own ACP binary"
+        }
+    }
+}
+
+struct CreateBotRequest: Encodable {
+    let username: String
+    let displayName: String?
+    let bridgeProvider: String
+
+    enum CodingKeys: String, CodingKey {
+        case username
+        case displayName = "display_name"
+        case bridgeProvider = "bridge_provider"
+    }
+}
+
+struct ReachabilityDto: Decodable {
+    let publicBase: String?
+    let configured: Bool?
+
+    var isConfigured: Bool { configured ?? false }
+
+    enum CodingKeys: String, CodingKey {
+        case publicBase = "public_base"
+        case configured
+    }
+}
+
+/// One-time enrollment code. Single-use, TTL-bounded, and the *only* credential
+/// safe to move between devices — it rotates the bot token on redemption, so a
+/// leaked code costs one bot rather than an account.
+struct EnrollmentCodeDto: Decodable {
+    let code: String
+    let botId: String
+    let agentType: String?
+    let expiresAt: String?
+    let ttlSecs: Int?
+    let controlUrl: String?
+    let reachability: ReachabilityDto?
+    let liveCodes: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case botId = "bot_id"
+        case agentType = "agent_type"
+        case expiresAt = "expires_at"
+        case ttlSecs = "ttl_secs"
+        case controlUrl = "control_url"
+        case reachability
+        case liveCodes = "live_codes"
+    }
+}
+
+/// Manual-mode config. The token is referenced by sidecar path, never inlined —
+/// issue it separately so the config itself stays safe to share.
+struct ConnectorConfigDto: Decodable {
+    let botId: String
+    let accountId: String
+    let agentType: String?
+    let tokenFile: String?
+    let configToml: String
+    let reachability: ReachabilityDto?
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case accountId = "account_id"
+        case agentType = "agent_type"
+        case tokenFile = "token_file"
+        case configToml = "config_toml"
+        case reachability
+    }
+}
+
+struct IssuedTokenDto: Decodable {
+    let botId: String
+    let token: String
+    let tokenPrefix: String?
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case token
+        case tokenPrefix = "token_prefix"
+    }
+}
+
+/// Prompt template for "let your agent connect itself". The server never sees
+/// the code in a GET — the client substitutes `codePlaceholder` locally.
+struct EnrollmentGuidanceDto: Decodable {
+    let installUrl: String
+    let promptTemplate: String
+    let codePlaceholder: String
+
+    enum CodingKeys: String, CodingKey {
+        case installUrl = "install_url"
+        case promptTemplate = "prompt_template"
+        case codePlaceholder = "code_placeholder"
+    }
+}
+
+struct ConnectorDiscoveryDto: Decodable {
+    let publicBase: String?
+    let configured: Bool?
+    let hint: String?
+
+    var isConfigured: Bool { configured ?? false }
+
+    enum CodingKeys: String, CodingKey {
+        case publicBase = "public_base"
+        case configured
+        case hint
+    }
+}
+
+/// Live connectivity, used to answer "did the setup actually work?" — the phone
+/// polls this because the user's half of the job happens on another machine.
+struct BotStatusDto: Decodable {
+    let botId: String
+    let isDisabled: Bool?
+    let isOnline: Bool?
+    let bridgeConnected: Bool?
+    let liveEnrollmentCodes: Int?
+
+    var connected: Bool { bridgeConnected ?? isOnline ?? false }
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case isDisabled = "is_disabled"
+        case isOnline = "is_online"
+        case bridgeConnected = "bridge_connected"
+        case liveEnrollmentCodes = "live_enrollment_codes"
+    }
+}
+
 
 // MARK: - Sessions & bot settings (server/src/api/session_control.rs)
 
