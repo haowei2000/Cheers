@@ -7,7 +7,8 @@ CSS and JS, so it works offline and on any static host.
 Pages:
 
 - `index.html` — English homepage (the default): features, feature-tour
-  screenshots from `imgs/`, quick start, docs links.
+  screenshots from `imgs/`, the `#clients` section (Web / macOS / iOS /
+  Android), quick start, docs links.
 - `index.zh-CN.html` — Chinese mirror of the homepage; the two link to each
   other via the 中文 / EN button in the nav. Keep both in sync when editing.
 - `plugin-dev.html` — workbench renderer plugin guide (English only for now).
