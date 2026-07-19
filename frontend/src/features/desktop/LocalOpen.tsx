@@ -1,16 +1,9 @@
-import { useEffect, useState } from "react";
-import {
-  Braces,
-  Code,
-  Code2,
-  ExternalLink,
-  FileCode2,
-  FolderOpen,
-  MousePointer2,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { invokeDesktop } from "@/lib/desktop";
 import { getServerBase, isTauri } from "@/lib/serverConfig";
+import { OpenerGlyph } from "./openerIcons";
 
 interface Opener {
   key: string;
@@ -21,34 +14,9 @@ interface Opener {
 // click time (a connector may start/stop mid-session, and a browse root can
 // contain both local and non-local subtrees), so it is deliberately NOT cached.
 let openersCache: Opener[] | null = null;
-
-/** Brand-ish glyph for each opener key (from connector.rs KNOWN_EDITORS), so the
- *  header shows each install as its own recognizable icon instead of a text menu.
- *  lucide has no editor brand marks, so these are distinct-but-approximate icons
- *  in each app's accent colour; unknown keys fall back to a generic "open". */
-function OpenerGlyph({ k }: { k: string }) {
-  const c = "w-3.5 h-3.5";
-  switch (k) {
-    case "finder":
-      return <FolderOpen className={`${c} text-sky-400`} />;
-    case "vscode":
-      return <Code2 className={`${c} text-[#3aa0f0]`} />;
-    case "cursor":
-      return <MousePointer2 className={`${c} text-zinc-200`} />;
-    case "zed":
-      return <Code className={`${c} text-indigo-400`} />;
-    case "webstorm":
-      return <Braces className={`${c} text-cyan-400`} />;
-    case "pycharm":
-      return <Braces className={`${c} text-emerald-400`} />;
-    case "rustrover":
-      return <Braces className={`${c} text-orange-400`} />;
-    case "sublime":
-      return <FileCode2 className={`${c} text-amber-400`} />;
-    default:
-      return <ExternalLink className={`${c} text-zinc-400`} />;
-  }
-}
+// Last opener the user picked, remembered across the session so the split
+// button's primary action stays on their preferred app.
+let lastOpenerKey: string | null = null;
 
 async function probeLocal(absPath: string): Promise<boolean> {
   try {
@@ -64,8 +32,9 @@ async function probeLocal(absPath: string): Promise<boolean> {
 /**
  * "Open in editor" for a remote-workspace file — the M2 same-machine seam at
  * its natural home. Desktop shell only (a browser can't launch local editors).
- * Renders one compact icon button per available opener (Finder + installed
- * editors); the behavior branches at click:
+ * One split button: the selected app's icon opens the file directly; the chevron
+ * drops down the full opener list (Finder + installed editors) to switch, and
+ * the pick is remembered. The behavior branches at click:
  *   - the file's connector runs on THIS machine → open the real file in place;
  *   - otherwise → download the bytes to a local cache copy and open that
  *     (a detached copy; edits don't sync back).
@@ -82,9 +51,12 @@ export function LocalOpen({
   getBytesB64: () => string | null;
 }) {
   const [openers, setOpeners] = useState<Opener[]>(openersCache ?? []);
+  const [selectedKey, setSelectedKey] = useState<string | null>(lastOpenerKey);
   // Tooltip hint only; the real decision is re-probed at click so a
   // connector that started/stopped mid-session is reflected.
   const [hintLocal, setHintLocal] = useState<boolean | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   // Openers (Finder + installed editors), once per session. Fall back to
   // Finder if the probe fails, so there is always at least one action.
@@ -114,10 +86,24 @@ export function LocalOpen({
     };
   }, [absPath]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
   // Editors are a desktop capability — a plain browser can't open them.
   if (!isTauri()) return null;
 
   async function open(opener: string) {
+    setMenuOpen(false);
+    lastOpenerKey = opener;
+    setSelectedKey(opener);
     try {
       // Decide local vs download FRESH at click (never trust a possibly-stale
       // or not-yet-resolved hint): open the real file only if it's genuinely
@@ -138,21 +124,51 @@ export function LocalOpen({
     }
   }
 
+  // The primary (icon) action targets the remembered opener, else the first.
+  const selected = openers.find((o) => o.key === selectedKey) ?? openers[0];
+  if (!selected) return null; // openers not loaded yet
+
   const suffix =
     hintLocal === false ? " (downloaded copy)" : hintLocal ? " (on this machine)" : "";
 
   return (
-    <>
-      {openers.map((op) => (
+    <div className="relative shrink-0" ref={wrapRef}>
+      <div className="flex items-center rounded hover:bg-zinc-800">
         <button
-          key={op.key}
-          onClick={() => void open(op.key)}
-          title={`Open in ${op.label}${suffix}`}
-          className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-800"
+          onClick={() => void open(selected.key)}
+          title={`Open in ${selected.label}${suffix}`}
+          className="h-7 pl-1.5 pr-0.5 flex items-center justify-center rounded-l"
         >
-          <OpenerGlyph k={op.key} />
+          <OpenerGlyph k={selected.key} />
         </button>
-      ))}
-    </>
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          title="Open in another app"
+          aria-label="Choose an app to open in"
+          className="h-7 pr-1 pl-0 flex items-center rounded-r text-zinc-400 hover:text-zinc-200"
+        >
+          <ChevronDown className="w-3 h-3" />
+        </button>
+      </div>
+      {menuOpen && (
+        <div className="absolute right-0 top-full mt-1 z-20 rounded-lg bg-zinc-900 shadow-xl shadow-black/40 py-1 min-w-[9.5rem]">
+          {hintLocal === false && (
+            <p className="px-3 py-1 text-[10px] text-zinc-500 border-b border-zinc-800">
+              Remote file — opens a downloaded copy
+            </p>
+          )}
+          {openers.map((op) => (
+            <button
+              key={op.key}
+              onClick={() => void open(op.key)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
+            >
+              <OpenerGlyph k={op.key} className="w-4 h-4" />
+              {op.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
