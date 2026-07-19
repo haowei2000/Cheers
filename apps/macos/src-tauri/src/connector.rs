@@ -378,6 +378,9 @@ pub async fn connector_start(
     // track that same form so the supervisor's revive/start-with-app matches
     // (the free-text "new instance" form can pass "My Bot" → daemon "My-Bot").
     let name = safe_name(&name);
+    // Zero-prep for "start from an existing .toml" too (onboarding already does
+    // this, but a hand-picked config wouldn't have its workspace dirs created).
+    ensure_workspace_dirs_at(Path::new(&config_path));
     let out = run_cli(&app, &["--name", &name, "--config", &config_path, "start"]).await?;
     state.managed.lock().unwrap().insert(name);
     Ok(out)
@@ -791,6 +794,31 @@ fn ensure_workspace_dirs(config_toml: &str) {
     }
 }
 
+/// Read a config off disk and ensure its workspace dirs exist. Called before
+/// every start/restart so a daemon that never wrote `daemon.json` (crashed, or
+/// started from an existing `.toml` we didn't onboard) still gets zero-prep.
+fn ensure_workspace_dirs_at(config_path: &Path) {
+    if let Ok(content) = fs::read_to_string(config_path) {
+        ensure_workspace_dirs(&content);
+    }
+}
+
+/// The config path for a connector by name, so `restart` can carry `--config`
+/// even before any `daemon.json` exists — the CLI's restart fails with "restart
+/// requires --config" when there is no prior metadata, which is exactly the case
+/// right after onboarding or after a crash. Prefers the daemon's recorded config
+/// (covers arbitrary "existing .toml" starts), then the desktop's onboarded
+/// location `~/.cheers/cheers-daemon.<safe>.toml`.
+fn config_path_for(name: &str) -> Option<PathBuf> {
+    if let Some(meta) = read_metadata_by_name(name) {
+        return Some(meta.config_path);
+    }
+    let p = dirs::home_dir()?
+        .join(".cheers")
+        .join(format!("cheers-daemon.{}.toml", safe_name(name)));
+    p.exists().then_some(p)
+}
+
 /// The every-account `policy.workspace` roots + `default_cwd` in a config,
 /// tilde-expanded and kept only when under `home`. Pure (no I/O) so the
 /// home-scoping is unit-testable. Malformed TOML / missing keys → empty.
@@ -857,7 +885,16 @@ pub async fn connector_restart(
     state: tauri::State<'_, SupervisorState>,
     name: String,
 ) -> Result<String, String> {
-    let out = run_cli(&app, &["--name", &name, "restart"]).await?;
+    // Carry --config so restart works even with no prior daemon.json (fresh
+    // onboard / after a crash), and create the workspace dirs first.
+    let out = match config_path_for(&name) {
+        Some(cfg) => {
+            ensure_workspace_dirs_at(&cfg);
+            let cfg = cfg.to_string_lossy().into_owned();
+            run_cli(&app, &["--name", &name, "--config", &cfg, "restart"]).await?
+        }
+        None => run_cli(&app, &["--name", &name, "restart"]).await?,
+    };
     state.managed.lock().unwrap().insert(name);
     Ok(out)
 }
@@ -1180,7 +1217,12 @@ pub async fn connector_add_allowed_roots(
     // deliberately-stopped instance stays stopped (it picks the root up on its
     // next start).
     if pid_alive(meta.pid) {
-        if run_cli(&app, &["--name", &name, "restart"]).await.is_ok() {
+        ensure_workspace_dirs_at(&p);
+        let cfg = p.to_string_lossy().into_owned();
+        if run_cli(&app, &["--name", &name, "--config", &cfg, "restart"])
+            .await
+            .is_ok()
+        {
             state.managed.lock().unwrap().insert(name);
         }
     }
@@ -1621,7 +1663,18 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 }
                 *count += 1;
                 let gave_up = *count >= MAX_REVIVES;
-                let revived = run_cli(&app, &["--name", &inst.name, "restart"]).await;
+                // Revive with --config (+ ensure workspace dirs) so a daemon that
+                // died before writing metadata can still come back.
+                let cfg = inst.config_path.clone();
+                if let Some(c) = &cfg {
+                    ensure_workspace_dirs_at(Path::new(c));
+                }
+                let revived = match cfg.as_deref() {
+                    Some(c) => {
+                        run_cli(&app, &["--name", &inst.name, "--config", c, "restart"]).await
+                    }
+                    None => run_cli(&app, &["--name", &inst.name, "restart"]).await,
+                };
                 let body = match (&revived, gave_up) {
                     (Ok(_), false) => format!("Connector \"{}\" died and was restarted.", inst.name),
                     (Ok(_), true) => format!(
