@@ -47,8 +47,10 @@ struct ChatView: View {
     @State private var atBottom = true
     private let listModel: ConversationListModel?
 
-    init(channel: ChannelDto, listModel: ConversationListModel? = nil) {
-        _model = State(initialValue: ChatModel(channel: channel))
+    /// `model` comes from AppModel.chatModels so history survives channel
+    /// switches — creating a fresh ChatModel here would cold-reload every entry.
+    init(model: ChatModel, listModel: ConversationListModel? = nil) {
+        _model = State(initialValue: model)
         self.listModel = listModel
     }
 

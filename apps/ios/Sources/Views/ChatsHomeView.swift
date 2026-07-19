@@ -12,8 +12,8 @@ struct ChatRootView: View {
     var body: some View {
         Group {
             if let channel = shell.currentChannel {
-                ChatView(channel: channel, listModel: convo)
-                    .id(channel.channelId)   // rebuild ChatModel when the channel switches
+                ChatView(model: app.chatModels.model(for: channel), listModel: convo)
+                    .id(channel.channelId)   // remount the view per channel; the model itself is cached
             } else {
                 emptyState
             }

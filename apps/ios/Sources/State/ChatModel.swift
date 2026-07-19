@@ -7,7 +7,7 @@ import Observation
 @MainActor
 @Observable
 final class ChatModel {
-    let channel: ChannelDto
+    private(set) var channel: ChannelDto
 
     private(set) var messages: [MessageDto] = []
     private(set) var hasMoreBefore = false
@@ -46,6 +46,12 @@ final class ChatModel {
         self.channel = channel
     }
 
+    /// Cached-model reuse (ChatModelStore): keep the channel DTO fresh
+    /// (rename / purpose edits) without dropping the loaded history.
+    func refresh(channel: ChannelDto) {
+        self.channel = channel
+    }
+
     // MARK: Lifecycle
 
     func attach(_ app: AppModel) {
@@ -58,32 +64,48 @@ final class ChatModel {
         app.socket.subscribe(channelId: channel.channelId)
     }
 
+    /// Keep a cached model's re-entry render bounded: a long scrollback session
+    /// piles up many pages, and re-rendering hundreds of rows would trade the
+    /// network stall for a layout stall. Older pages stay reachable through
+    /// loadOlder — hasMoreBefore flips back on when we trim.
+    private static let detachKeepCount = 100
+
     func detach() {
         if let listenerId, let app {
             app.removeSocketListener(listenerId)
         }
         listenerId = nil
+        if messages.count > Self.detachKeepCount {
+            messages = Array(messages.suffix(Self.detachKeepCount))
+            hasMoreBefore = true
+        }
     }
 
     // MARK: History
 
     func loadInitial() async {
-        guard !loadedOnce, let api = app?.api else { return }
+        guard let api = app?.api else { return }
+        if loadedOnce {
+            // Warm re-entry on a cached model: the in-memory history renders
+            // immediately; just park at the bottom, stamp read, and heal
+            // whatever landed while we were detached via the same since_seq
+            // contract the subscribe ack uses. Members refresh in the
+            // background (someone may have joined while we were away).
+            forceBottomTick += 1
+            markRead()
+            Task { await self.refreshMembers() }
+            await catchUp()
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         do {
             // Members are fetched alongside history so live bot frames (which
             // carry no sender_name) can show the real name, not "Bot". A
             // members failure is non-fatal.
-            async let membersTask = api.listMembers(channelId: channel.channelId)
+            async let membersTask: Void = refreshMembers()
             let response = try await api.listMessages(channelId: channel.channelId, limit: 50)
-            if let members = try? await membersTask {
-                memberNames = Dictionary(
-                    members.map { ($0.memberId, $0.name) },
-                    uniquingKeysWith: { first, _ in first }
-                )
-                botMembers = members.filter { $0.memberType == "bot" }
-            }
+            await membersTask
             messages = sorted(response.messages.map(withResolvedSender))
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
             highestSeq = messages.compactMap(\.channelSeq).max() ?? 0
@@ -93,6 +115,17 @@ final class ChatModel {
         } catch {
             report(error)
         }
+    }
+
+    /// Refreshes the member-name map + bot roster; a failure is non-fatal.
+    private func refreshMembers() async {
+        guard let api = app?.api else { return }
+        guard let members = try? await api.listMembers(channelId: channel.channelId) else { return }
+        memberNames = Dictionary(
+            members.map { ($0.memberId, $0.name) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        botMembers = members.filter { $0.memberType == "bot" }
     }
 
     func loadOlder() async {
@@ -116,9 +149,14 @@ final class ChatModel {
     }
 
     /// Heal any gap after (re)subscribe using the highest seen channel_seq —
-    /// same contract as the web client.
+    /// same contract as the web client. In-flight guard: a warm loadInitial and
+    /// the subscribe ack can both request a catch-up back to back; one suffices.
+    @ObservationIgnored private var isCatchingUp = false
+
     private func catchUp() async {
-        guard loadedOnce, highestSeq > 0, let api = app?.api else { return }
+        guard loadedOnce, highestSeq > 0, !isCatchingUp, let api = app?.api else { return }
+        isCatchingUp = true
+        defer { isCatchingUp = false }
         do {
             let response = try await api.listMessages(
                 channelId: channel.channelId,
