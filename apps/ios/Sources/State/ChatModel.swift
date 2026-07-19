@@ -25,8 +25,14 @@ final class ChatModel {
     /// Bot members of this channel — the session/model picker's candidate bots.
     private(set) var botMembers: [ChannelMemberDto] = []
 
-    /// Bumped whenever a change should scroll the view to the bottom.
-    private(set) var scrollToBottomTick = 0
+    /// Bumped when the view should FOLLOW to the bottom — only honoured while the
+    /// reader is already parked at the bottom. Incoming messages and streaming
+    /// deltas use this: yanking a reader who scrolled up is the "can't scroll" bug.
+    private(set) var followBottomTick = 0
+
+    /// Bumped when the view must scroll to the bottom regardless of position —
+    /// the reader's own action (sending, opening the channel) asked for it.
+    private(set) var forceBottomTick = 0
 
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var listenerId: UUID?
@@ -82,7 +88,7 @@ final class ChatModel {
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
             highestSeq = messages.compactMap(\.channelSeq).max() ?? 0
             loadedOnce = true
-            scrollToBottomTick += 1
+            forceBottomTick += 1
             markRead()
         } catch {
             report(error)
@@ -144,7 +150,7 @@ final class ChatModel {
             composerText = ""
             replyTo = nil
             upsert(sent)
-            scrollToBottomTick += 1
+            forceBottomTick += 1
         } catch {
             report(error)
         }
@@ -171,18 +177,18 @@ final class ChatModel {
             Task { await catchUp() }
         case .message(let channelId, let message) where channelId == channel.channelId:
             upsert(message)
-            scrollToBottomTick += 1
+            followBottomTick += 1
             if message.senderId != app?.session?.userId {
                 markRead()
             }
         case .messageStream(let channelId, let msgId, let delta) where channelId == channel.channelId:
             if let index = messages.firstIndex(where: { $0.msgId == msgId }) {
                 messages[index].content += delta
-                scrollToBottomTick += 1
+                followBottomTick += 1
             }
         case .messageDone(let channelId, let message) where channelId == channel.channelId:
             upsert(message)
-            scrollToBottomTick += 1
+            followBottomTick += 1
             markRead()
         case .messageDeleted(let channelId, let msgId) where channelId == channel.channelId:
             messages.removeAll { $0.msgId == msgId }

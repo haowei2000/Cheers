@@ -13,7 +13,12 @@ struct AppShellView: View {
     @State private var convo = ConversationListModel()
     /// Session-lifetime so the pending-approval badge stays live off-screen.
     @State private var activity = ActivityModel()
-    @State private var dragOffset: CGFloat = 0
+    /// Live drag distance. MUST be `@GestureState`, not `@State`: SwiftUI does not
+    /// call `.onEnded` when a gesture is cancelled (the system swipe-back can steal
+    /// an in-flight edge drag), so a `@State` offset stays stuck non-zero forever —
+    /// which left the drawer backdrop mounted over the whole screen, swallowing
+    /// every tap and scroll. `@GestureState` auto-resets on cancellation.
+    @GestureState private var dragOffset: CGFloat = 0
 
     private let drawerWidth: CGFloat = 336
 
@@ -44,6 +49,9 @@ struct AppShellView: View {
                     .ignoresSafeArea()
                     .onTapGesture { closeDrawer() }
                     .gesture(dragCloseGesture)
+                    // Belt-and-braces: a backdrop that is only mid-drag must never
+                    // be able to eat taps meant for the chat underneath.
+                    .allowsHitTesting(shell.drawerOpen)
             }
 
             DrawerView(convo: convo, topInset: geo.safeAreaInsets.top, bottomInset: geo.safeAreaInsets.bottom)
@@ -105,7 +113,6 @@ struct AppShellView: View {
     private func closeDrawer() {
         withAnimation(.easeOut(duration: 0.25)) {
             shell.drawerOpen = false
-            dragOffset = 0
         }
     }
 
@@ -113,30 +120,28 @@ struct AppShellView: View {
 
     private var edgeOpenGesture: some Gesture {
         DragGesture(minimumDistance: 12)
-            .onChanged { value in
+            .updating($dragOffset) { value, state, _ in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                dragOffset = max(0, min(drawerWidth, value.translation.width))
+                state = max(0, min(drawerWidth, value.translation.width))
             }
             .onEnded { value in
                 let opened = value.translation.width > drawerWidth * 0.33
                 withAnimation(.easeOut(duration: 0.25)) {
                     shell.drawerOpen = opened
-                    dragOffset = 0
                 }
             }
     }
 
     private var dragCloseGesture: some Gesture {
         DragGesture(minimumDistance: 12)
-            .onChanged { value in
+            .updating($dragOffset) { value, state, _ in
                 guard value.translation.width < 0 else { return }
-                dragOffset = max(-drawerWidth, value.translation.width)
+                state = max(-drawerWidth, value.translation.width)
             }
             .onEnded { value in
                 let closed = value.translation.width < -drawerWidth * 0.33
                 withAnimation(.easeOut(duration: 0.25)) {
                     shell.drawerOpen = !closed
-                    dragOffset = 0
                 }
             }
     }

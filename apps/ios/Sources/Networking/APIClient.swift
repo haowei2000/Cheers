@@ -145,6 +145,13 @@ struct APIClient: Sendable {
         return try decode(type, from: try await send(request))
     }
 
+    @discardableResult
+    func patchJSON<B: Encodable, T: Decodable>(_ path: String, body: B, as type: T.Type) async throws -> T {
+        let data = try JSONEncoder().encode(body)
+        let request = try makeRequest("PATCH", path, body: data)
+        return try decode(type, from: try await send(request))
+    }
+
     func postEmpty(_ path: String) async throws {
         let request = try makeRequest("POST", path, body: Data("{}".utf8))
         _ = try await send(request)
@@ -190,6 +197,75 @@ struct APIClient: Sendable {
 
     func listMembers(channelId: String) async throws -> [ChannelMemberDto] {
         try await getJSON("/channels/\(channelId)/members", as: [ChannelMemberDto].self)
+    }
+
+    // MARK: Membership management (channel admin only)
+
+    /// Typeahead for both "invite a person" and "add a bot" — one endpoint, the
+    /// `member_type` on each result tells them apart. Requires q.count >= 2.
+    func searchInvitable(channelId: String, query: String) async throws -> [InvitableItem] {
+        try await getJSON(
+            "/channels/\(channelId)/invitable",
+            query: [URLQueryItem(name: "q", value: query)],
+            as: InvitableResponse.self
+        ).results
+    }
+
+    /// Adding a BOT binds it immediately; adding a USER only creates a pending
+    /// invite they must accept. The response's `status` says which happened.
+    @discardableResult
+    func addMember(channelId: String, memberId: String, memberType: String, role: String? = nil) async throws -> AddMemberResponse {
+        try await postJSON(
+            "/channels/\(channelId)/members",
+            body: AddMemberRequest(memberId: memberId, memberType: memberType, role: role),
+            as: AddMemberResponse.self
+        )
+    }
+
+    func removeMember(channelId: String, memberId: String) async throws {
+        try await deleteEmpty("/channels/\(channelId)/members/\(memberId)")
+    }
+
+    func setMemberRole(channelId: String, memberId: String, role: String) async throws {
+        _ = try await patchJSON(
+            "/channels/\(channelId)/members/\(memberId)",
+            body: MemberRoleRequest(role: role),
+            as: JSONValue.self
+        )
+    }
+
+    // MARK: Channel settings
+
+    func updateChannel(channelId: String, _ update: ChannelUpdateRequest) async throws -> ChannelDto {
+        try await patchJSON("/channels/\(channelId)", body: update, as: ChannelDto.self)
+    }
+
+    func deleteChannel(channelId: String) async throws {
+        try await deleteEmpty("/channels/\(channelId)")
+    }
+
+    func leaveChannel(channelId: String) async throws {
+        try await postEmpty("/channels/\(channelId)/leave")
+    }
+
+    // MARK: Invite links (WORKSPACE-scoped, workspace-admin gated)
+
+    /// Returns every link in the workspace — there is no server-side channel
+    /// filter, so callers narrow by `channelId` themselves.
+    func listInviteLinks(workspaceId: String) async throws -> [InviteLinkDto] {
+        try await getJSON("/workspaces/\(workspaceId)/invite-links", as: [InviteLinkDto].self)
+    }
+
+    func createInviteLink(workspaceId: String, channelId: String?, expiresInHours: Int?, maxUses: Int?) async throws -> InviteLinkDto {
+        try await postJSON(
+            "/workspaces/\(workspaceId)/invite-links",
+            body: CreateInviteLinkRequest(expiresInHours: expiresInHours, maxUses: maxUses, channelId: channelId),
+            as: InviteLinkDto.self
+        )
+    }
+
+    func revokeInviteLink(workspaceId: String, linkId: String) async throws {
+        try await deleteEmpty("/workspaces/\(workspaceId)/invite-links/\(linkId)")
     }
 
     func markRead(channelId: String) async throws {
@@ -278,6 +354,66 @@ extension APIClient {
 
     func listBots() async throws -> [BotDto] {
         try await getJSON("/bots", as: [BotDto].self)
+    }
+
+    // MARK: Bot onboarding
+    //
+    // The phone can create a bot and mint credentials, but never runs the
+    // connector — see the AgentType/EnrollmentCodeDto note in DTOs.swift. Every
+    // call here exists to produce something the user carries to a real host.
+
+    func createBot(username: String, displayName: String?, agentType: AgentType) async throws -> BotDto {
+        try await postJSON(
+            "/bots",
+            body: CreateBotRequest(
+                username: username,
+                displayName: displayName,
+                bridgeProvider: agentType.rawValue
+            ),
+            as: BotDto.self
+        )
+    }
+
+    /// Mint a one-time enrollment code (owner/admin). Plaintext is returned
+    /// once and never stored server-side — only its hash is.
+    func mintEnrollmentCode(botId: String, agentType: AgentType) async throws -> EnrollmentCodeDto {
+        try await postJSON(
+            "/bots/\(botId)/enrollment",
+            body: ["agent_type": agentType.rawValue],
+            as: EnrollmentCodeDto.self
+        )
+    }
+
+    /// Revoke ALL live codes for a bot. Idempotent — and blunt: there is no
+    /// single-code revoke, so this will also kill an install in flight.
+    func revokeEnrollmentCodes(botId: String) async throws {
+        try await deleteEmpty("/bots/\(botId)/enrollment")
+    }
+
+    func connectorConfig(botId: String, agentType: AgentType) async throws -> ConnectorConfigDto {
+        try await getJSON(
+            "/bots/\(botId)/connector-config",
+            query: [URLQueryItem(name: "agent_type", value: agentType.rawValue)],
+            as: ConnectorConfigDto.self
+        )
+    }
+
+    /// Issue/rotate the long-lived bot token. Destructive: it replaces any
+    /// previous token and kicks a connector already running with the old one.
+    func issueBotToken(botId: String) async throws -> IssuedTokenDto {
+        try await postJSON("/bots/\(botId)/token", body: [String: String](), as: IssuedTokenDto.self)
+    }
+
+    func enrollmentGuidance() async throws -> EnrollmentGuidanceDto {
+        try await getJSON("/enrollment/guidance", as: EnrollmentGuidanceDto.self)
+    }
+
+    func connectorDiscovery() async throws -> ConnectorDiscoveryDto {
+        try await getJSON("/ops/connector-discovery", as: ConnectorDiscoveryDto.self)
+    }
+
+    func botStatus(botId: String) async throws -> BotStatusDto {
+        try await getJSON("/bots/\(botId)/status", as: BotStatusDto.self)
     }
 
     // MARK: Create channel / DM

@@ -103,6 +103,20 @@ final class ShellModel {
         returnToDrawer = false // committing to a chat ends the drawer session
     }
 
+    /// Adopt an edited channel (rename, purpose, visibility) without leaving it.
+    func replaceCurrentChannel(_ channel: ChannelDto) {
+        guard currentChannel?.channelId == channel.channelId else { return }
+        currentChannel = channel
+    }
+
+    /// The channel is gone (deleted or left) — fall back to the empty state so we
+    /// never keep rendering a chat the user is no longer in.
+    func clearCurrentChannel(ifMatching channelId: String) {
+        guard currentChannel?.channelId == channelId else { return }
+        currentChannel = nil
+        UserDefaults.standard.removeObject(forKey: lastChannelKey)
+    }
+
     /// Whether the current pushed screen was entered FROM the drawer. Back then
     /// lands the user back IN the open drawer (hub continuity — e.g. Settings →
     /// back → drawer → Fleet) instead of on the bare chat. Screens entered from

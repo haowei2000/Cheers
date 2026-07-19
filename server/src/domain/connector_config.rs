@@ -34,6 +34,9 @@ pub enum TokenRef {
 struct AgentPreset {
     /// adapter.command — the stdio ACP agent binary.
     command: &'static str,
+    /// adapter.args — argv passed to `command`. Non-empty when the agent's ACP
+    /// mode is a subcommand of its main binary rather than a dedicated adapter.
+    args: &'static [&'static str],
     /// policy.env.allow — only these are copied from the connector env into the
     /// child (env.inherit stays false, the safe default).
     env_allow: &'static [&'static str],
@@ -56,6 +59,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
     match agent_type.trim().to_ascii_lowercase().as_str() {
         "claude" => AgentPreset {
             command: "claude-agent-acp",
+            args: &[],
             env_allow: &[
                 "HOME",
                 "PATH",
@@ -77,6 +81,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
         },
         "codex" => AgentPreset {
             command: "codex-acp",
+            args: &[],
             env_allow: &["HOME", "PATH", "OPENAI_API_KEY"],
             permission_mode: None,
             // We don't presume codex's modeIds; empty = any mode it advertises.
@@ -85,16 +90,22 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             needs_edit: false,
         },
         "opencode" => AgentPreset {
-            // Best-effort binary name; verify against your OpenCode ACP build.
-            command: "opencode-acp",
+            // OpenCode ships ACP as a subcommand of its main binary (`opencode
+            // acp`) — there is no separate `opencode-acp` adapter. Emitting one
+            // rendered a config the desktop app could never resolve, which
+            // stranded the bot: the gateway had already minted (and thereby
+            // revoked) its token by the time the client failed.
+            command: "opencode",
+            args: &["acp"],
             env_allow: &["HOME", "PATH"],
             permission_mode: None,
             allowed_modes: &[],
             allowed_config_options: &["model"],
-            needs_edit: true,
+            needs_edit: false,
         },
         _ => AgentPreset {
             command: "/path/to/your-acp-agent",
+            args: &[],
             env_allow: &["HOME", "PATH"],
             permission_mode: None,
             allowed_modes: &[],
@@ -268,6 +279,13 @@ pub fn render_toml(params: &RenderParams) -> String {
         .collect::<Vec<_>>()
         .join(", ");
 
+    let args = preset
+        .args
+        .iter()
+        .map(|v| toml_str(v))
+        .collect::<Vec<_>>()
+        .join(", ");
+
     let permission_mode_line = match preset.permission_mode {
         Some(mode) => format!("\npermission_mode = {}", toml_str(mode)),
         None => String::new(),
@@ -329,7 +347,7 @@ max_ms  = 30000
 [accounts.{id}.adapter]
 type    = "stdio"
 command = {command}
-args    = []{permission_mode_line}
+args    = [{args}]{permission_mode_line}
 
 [accounts.{id}.policy.sessions]
 create             = true
@@ -399,6 +417,7 @@ request_timeout_ms = 30000
         data = toml_str(&data),
         token_line = token_line,
         command = toml_str(preset.command),
+        args = args,
         permission_mode_line = permission_mode_line,
         env_allow = env_allow,
         allowed_modes = allowed_modes,
@@ -507,6 +526,39 @@ mod tests {
         assert!(toml.contains("ws://localhost:30080/ws/agent-bridge/control"));
         // The token plaintext must never be inlined.
         assert!(!toml.contains("agb_"));
+    }
+
+    /// OpenCode exposes ACP as `opencode acp`, not a standalone `opencode-acp`
+    /// binary. Rendering the latter produced a config no host could resolve —
+    /// and because the gateway mints (and thereby revokes) the bot token before
+    /// the client writes anything, that stranded the bot on a token nobody had.
+    #[test]
+    fn renders_opencode_as_a_subcommand_of_its_own_binary() {
+        let toml = render_toml(&RenderParams {
+            account_id: "OpenCode",
+            agent_type: "opencode",
+            public_base: "wss://example.test",
+            token_ref: TokenRef::File("secrets/opencode.token".into()),
+        });
+        assert!(toml.contains(r#"command = "opencode""#));
+        assert!(toml.contains(r#"args    = ["acp"]"#));
+        assert!(!toml.contains("opencode-acp"));
+        // A real resolvable command is not a placeholder needing a hand edit.
+        assert!(!toml.contains("PLACEHOLDER"));
+    }
+
+    /// Agents whose adapter is a dedicated binary take no argv.
+    #[test]
+    fn renders_empty_args_for_dedicated_adapters() {
+        for agent_type in ["claude", "codex", "generic"] {
+            let toml = render_toml(&RenderParams {
+                account_id: "bot",
+                agent_type,
+                public_base: "wss://example.test",
+                token_ref: TokenRef::File("secrets/bot.token".into()),
+            });
+            assert!(toml.contains("args    = []"), "{agent_type} should take no args");
+        }
     }
 
     #[test]

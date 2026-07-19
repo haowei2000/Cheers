@@ -18,10 +18,12 @@ import {
   Loader2,
   Ticket,
   Trash2,
+  CheckCircle2,
 } from "lucide-react";
 import {
   createBot,
   issueBotToken,
+  getBotStatus,
   getConnectorConfig,
   getConnectorDiscovery,
   mintEnrollmentCode,
@@ -58,10 +60,10 @@ chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"`;
 
 const AGENTS: { value: AgentType; label: string }[] = [
-  { value: "claude", label: "Claude (claude-agent-acp)" },
-  { value: "codex", label: "Codex (codex-acp)" },
+  { value: "claude", label: "Claude" },
+  { value: "codex", label: "Codex" },
   { value: "opencode", label: "OpenCode" },
-  { value: "generic", label: "Generic / other ACP agent" },
+  { value: "generic", label: "Something else" },
 ];
 
 function CopyBtn({ value, label }: { value: string; label?: string }) {
@@ -127,18 +129,22 @@ function Stepper({ step }: { step: 0 | 1 | 2 }) {
   );
 }
 
+/** Warns that this server has no address a *different* machine could dial.
+ *
+ *  The operator's fix (a public base URL, or a port-forward for a local
+ *  cluster) belongs in the server's own docs, not in a dialog aimed at whoever
+ *  is setting up a bot — most people reading this can't change the server. Say
+ *  what will go wrong and who can fix it; the deployment guide has the how. */
 function ReachabilityNote({ reachability }: { reachability: { configured: boolean } }) {
   if (reachability.configured) return null;
   return (
     <p className="flex items-start gap-1.5 text-xs text-amber-400">
       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
       <span>
-        No public address configured — the connector reaches the gateway only via{" "}
-        <code className="text-amber-300">
-          kubectl port-forward svc/cheers-gateway 8000:8000
-        </code>{" "}
-        (or set <code className="text-amber-300">CHEERS_CONNECTOR_PUBLIC_BASE</code>{" "}
-        to the frontend NodePort <code className="text-amber-300">ws://localhost:30080</code>).
+        This server hasn't been given an address that other machines can reach,
+        so a connector running anywhere else may not be able to sign in. Setting
+        up on this same machine will still work. Whoever runs the server can fix
+        this by configuring its public address.
       </span>
     </p>
   );
@@ -181,6 +187,27 @@ export function BotOnboardingWizard({
       .catch(() => {});
   }, []);
 
+  // Picking an existing bot adopts the agent it was registered for, so the
+  // config and enrollment code the panels mint below match its actual adapter.
+  useEffect(() => {
+    if (pick !== "existing") return;
+    const provider = bots.find((b) => b.bot_id === existingId)?.bridge_provider;
+    if (provider && AGENTS.some((a) => a.value === provider)) {
+      setAgentType(provider as AgentType);
+    }
+  }, [pick, existingId, bots]);
+
+  /** The agent a bot is actually registered for. For a brand-new bot that's the
+   * picker value; for an existing one it's whatever it was created with —
+   * re-using the picker there would mint a config for the wrong adapter. */
+  function agentTypeFor(b: BotItem): AgentType {
+    if (pick === "create") return agentType;
+    const provider = b.bridge_provider;
+    return AGENTS.some((a) => a.value === provider)
+      ? (provider as AgentType)
+      : agentType;
+  }
+
   /** Resolve the chosen bot (create a new one, or use the selected existing
    * one). Shared by "Continue" and the desktop "Set up on this Mac" hand-off. */
   async function resolveBot(): Promise<BotItem | null> {
@@ -202,19 +229,26 @@ export function BotOnboardingWizard({
     return existing;
   }
 
-  async function resolveBotAndAdvance() {
+  /** Step 0 → 1. Validates only: creating the bot here would leave an orphan
+   * behind whenever someone opens the wizard, clicks Continue, and thinks
+   * better of it — the wizard has no delete affordance to undo that. The bot is
+   * created once a mode is picked (see `pickMode`), which is the first point
+   * the user has committed to actually connecting something. */
+  function validateAndAdvance() {
     setError(null);
-    setBusy(true);
-    try {
-      const resolved = await resolveBot();
-      if (!resolved) return;
-      setBot(resolved);
-      setStep(1);
-    } catch (e) {
-      notify.error(messageOf(e));
-    } finally {
-      setBusy(false);
+    if (pick === "create" && !username.trim()) {
+      setError("Username is required.");
+      return;
     }
+    if (pick === "existing") {
+      const existing = bots.find((b) => b.bot_id === existingId) ?? null;
+      if (!existing) {
+        setError("Pick a bot.");
+        return;
+      }
+      setBot(existing);
+    }
+    setStep(1);
   }
 
   /** Desktop only: resolve the bot, then jump straight to the local
@@ -226,7 +260,7 @@ export function BotOnboardingWizard({
     try {
       const resolved = await resolveBot();
       if (!resolved) return;
-      requestConnectorForBot(resolved.bot_id);
+      requestConnectorForBot(resolved.bot_id, agentTypeFor(resolved));
       onClose();
       navigate("/settings/connector");
     } catch (e) {
@@ -260,9 +294,24 @@ export function BotOnboardingWizard({
     }
   }
 
-  function pickMode(m: Mode) {
-    setMode(m);
-    setStep(2);
+  /** Step 1 → 2, and the point the bot actually gets created: the user has now
+   * chosen how they intend to connect it. Creation failures (duplicate
+   * username, quota) keep them on the mode list with a persistent error rather
+   * than dropping them into a panel with no bot behind it. */
+  async function pickMode(m: Mode) {
+    setError(null);
+    setBusy(true);
+    try {
+      const resolved = bot ?? (await resolveBot());
+      if (!resolved) return;
+      setBot(resolved);
+      setMode(m);
+      setStep(2);
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -378,7 +427,7 @@ export function BotOnboardingWizard({
                   <Laptop className="w-4 h-4" /> Set up on this Mac
                 </Button>
               )}
-              <Button onClick={resolveBotAndAdvance} disabled={busy}>
+              <Button onClick={validateAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 Continue
               </Button>
@@ -390,27 +439,34 @@ export function BotOnboardingWizard({
         {step === 1 && (
           <div className="space-y-3">
             <p className="text-xs text-zinc-400">
-              Connecting <span className="text-zinc-300">@{bot?.username}</span>.
-              Pick how you want to run the connector on the agent's machine.
+              Connecting{" "}
+              <span className="text-zinc-300">
+                @{bot?.username ?? username.trim()}
+              </span>
+              . Pick how you want to run the connector on the agent's machine.
             </p>
             <div className="grid gap-2">
               <ModeCard
-                icon={<FileCode2 className="w-5 h-5 text-indigo-300" />}
-                title="Manual"
-                desc="Download the config, paste the one-time token into a file, start the connector yourself. Most control."
-                onClick={() => pickMode("manual")}
-              />
-              <ModeCard
                 icon={<Terminal className="w-5 h-5 text-indigo-300" />}
                 title="Install script"
+                badge="Easiest"
                 desc="One command on the host redeems a code, writes everything, installs a keep-alive service, and starts it."
                 onClick={() => pickMode("script")}
+                disabled={busy}
               />
               <ModeCard
                 icon={<Sparkles className="w-5 h-5 text-indigo-300" />}
                 title="Let your agent connect itself"
                 desc="Paste a prompt to your own agent; it follows Cheers' guidance to run the installer."
                 onClick={() => pickMode("agent")}
+                disabled={busy}
+              />
+              <ModeCard
+                icon={<FileCode2 className="w-5 h-5 text-indigo-300" />}
+                title="Manual"
+                desc="Download the config, paste the one-time token into a file, start the connector yourself. Most control."
+                onClick={() => pickMode("manual")}
+                disabled={busy}
               />
             </div>
             <div className="flex justify-start">
@@ -445,6 +501,7 @@ export function BotOnboardingWizard({
             {mode === "agent" && (
               <AgentPanel bot={bot} agentType={agentType} discovery={discovery} />
             )}
+            <ConnectionWatch botId={bot.bot_id} username={bot.username} />
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -472,24 +529,81 @@ export function BotOnboardingWizard({
   );
 }
 
+/** Live "did it actually work?" line for step 2.
+ *
+ *  The wizard used to end on a Done button that closed the dialog and nothing
+ *  else — the stepper promised "Connect" while never observing a connection, so
+ *  the only way to learn whether the setup took was to go back to the list and
+ *  read a status dot. The gateway already knows: `bridge_connected` is live
+ *  truth from the connection registry. Poll it, because the user's half of this
+ *  happens on another machine and can succeed at any moment. */
+function ConnectionWatch({ botId, username }: { botId: string; username: string }) {
+  const [online, setOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function tick() {
+      try {
+        const s = await getBotStatus(botId);
+        if (!alive) return;
+        setOnline(!!s.bridge_connected);
+      } catch {
+        // Transient failure: keep the last known state rather than flapping to
+        // "offline", which would read as the connector having dropped.
+      }
+      if (alive) timer = setTimeout(tick, 3000);
+    }
+    tick();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [botId]);
+
+  if (online === null) {
+    return (
+      <p className="flex items-center gap-2 rounded-lg bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        Checking whether @{username} is connected…
+      </p>
+    );
+  }
+  return online ? (
+    <p className="flex items-center gap-2 rounded-lg bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300">
+      <CheckCircle2 className="w-3.5 h-3.5" />
+      @{username} is online — the connector reached the gateway. You're done.
+    </p>
+  ) : (
+    <p className="flex items-center gap-2 rounded-lg bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
+      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+      Waiting for @{username} to connect — finish the steps above on the agent's
+      machine. This updates on its own.
+    </p>
+  );
+}
+
 function ModeCard({
   icon,
   title,
   desc,
   badge,
   onClick,
+  disabled,
 }: {
   icon: ReactNode;
   title: string;
   desc: string;
   badge?: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-start gap-3 rounded-xl bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors"
+      disabled={disabled}
+      className="flex items-start gap-3 rounded-xl bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:hover:bg-zinc-800/60"
     >
       <div className="w-9 h-9 rounded-lg bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
         {icon}
@@ -533,8 +647,8 @@ function ManualPanel({
     <div className="space-y-3">
       <p className="text-xs text-zinc-400">
         Manual setup for <span className="text-zinc-300">@{bot.username}</span>{" "}
-        ({agentType}). Two secrets: a config (safe to keep) and a one-time token
-        (write to a 0600 file, never commit).
+        ({agentType}). Two pieces: a settings file (safe to keep) and a token
+        (a password — save it so only you can read it, and never commit it).
       </p>
 
       {/* 1. config */}
@@ -700,9 +814,9 @@ function ScriptPanel({
     <div className="space-y-3">
       <p className="text-xs text-zinc-400">
         One command on the agent's machine for{" "}
-        <span className="text-zinc-300">@{bot.username}</span> ({agentType}):
-        redeem a one-time code, write the config + 0600 token, install a
-        keep-alive service, and start.
+        <span className="text-zinc-300">@{bot.username}</span> ({agentType}). It
+        trades the code below for a token, saves both files, and installs the
+        connector so it restarts on its own after a reboot.
       </p>
 
       <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
@@ -749,6 +863,11 @@ function ScriptPanel({
               {command}
             </pre>
           </div>
+          <p className="text-xs text-zinc-400">
+            No terminal handy? If that machine has the Cheers desktop app, open{" "}
+            <span className="text-zinc-300">Settings → Connector → I have a code</span>{" "}
+            and paste the code there instead.
+          </p>
           <div className="flex items-center justify-between">
             <span className="text-xs text-zinc-400">
               Tip: prepend a space so the code stays out of shell history

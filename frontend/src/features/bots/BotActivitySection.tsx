@@ -46,7 +46,7 @@ export function BotActivitySection({ botId }: { botId: string }) {
   return (
     <div className="rounded-xl bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium text-zinc-300">Recent ACP activity</span>
+        <span className="text-xs font-medium text-zinc-300">Recent activity</span>
         <span className="text-[11px] text-zinc-400">
           every event the bot emitted (newest first)
         </span>

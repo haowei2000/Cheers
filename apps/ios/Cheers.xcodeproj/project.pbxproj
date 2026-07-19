@@ -30,10 +30,14 @@
 		CE0000000000000000000215 /* AppShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000116 /* AppShellView.swift */; };
 		CE0000000000000000000216 /* DrawerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000117 /* DrawerView.swift */; };
 		CE0000000000000000000217 /* ChatsHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000118 /* ChatsHomeView.swift */; };
+		CE0000000000000000000222 /* ViewBoards.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000123 /* ViewBoards.swift */; };
+		CE0000000000000000000221 /* ChannelSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000122 /* ChannelSettingsSheet.swift */; };
+		CE0000000000000000000220 /* MembersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000121 /* MembersSheet.swift */; };
 		CE0000000000000000000218 /* ShellComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000119 /* ShellComponents.swift */; };
 		CE0000000000000000000219 /* PlaceholderScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011A /* PlaceholderScreens.swift */; };
 		CE000000000000000000021A /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011B /* ActivityView.swift */; };
 		CE000000000000000000021B /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011C /* AgentsView.swift */; };
+		CE000000000000000000040D /* BotOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000040C /* BotOnboardingView.swift */; };
 		CE000000000000000000021C /* ApprovalCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011D /* ApprovalCardView.swift */; };
 		CE000000000000000000021D /* ApprovalSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011E /* ApprovalSheetView.swift */; };
 		CE000000000000000000021E /* PushRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011F /* PushRouter.swift */; };
@@ -64,10 +68,14 @@
 		CE0000000000000000000116 /* AppShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000117 /* DrawerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawerView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000118 /* ChatsHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsHomeView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000123 /* ViewBoards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewBoards.swift; sourceTree = "<group>"; };
+		CE0000000000000000000122 /* ChannelSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelSettingsSheet.swift; sourceTree = "<group>"; };
+		CE0000000000000000000121 /* MembersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MembersSheet.swift; sourceTree = "<group>"; };
 		CE0000000000000000000119 /* ShellComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellComponents.swift; sourceTree = "<group>"; };
 		CE000000000000000000011A /* PlaceholderScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderScreens.swift; sourceTree = "<group>"; };
 		CE000000000000000000011B /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011C /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
+		CE000000000000000000040C /* BotOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotOnboardingView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011D /* ApprovalCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCardView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011E /* ApprovalSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSheetView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011F /* PushRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRouter.swift; sourceTree = "<group>"; };
@@ -172,10 +180,14 @@
 				CE0000000000000000000116 /* AppShellView.swift */,
 				CE0000000000000000000117 /* DrawerView.swift */,
 				CE0000000000000000000118 /* ChatsHomeView.swift */,
+				CE0000000000000000000123 /* ViewBoards.swift */,
+				CE0000000000000000000122 /* ChannelSettingsSheet.swift */,
+				CE0000000000000000000121 /* MembersSheet.swift */,
 				CE0000000000000000000119 /* ShellComponents.swift */,
 				CE000000000000000000011A /* PlaceholderScreens.swift */,
 				CE000000000000000000011B /* ActivityView.swift */,
 				CE000000000000000000011C /* AgentsView.swift */,
+				CE000000000000000000040C /* BotOnboardingView.swift */,
 				CE000000000000000000011D /* ApprovalCardView.swift */,
 				CE000000000000000000011E /* ApprovalSheetView.swift */,
 			);
@@ -274,10 +286,14 @@
 				CE0000000000000000000215 /* AppShellView.swift in Sources */,
 				CE0000000000000000000216 /* DrawerView.swift in Sources */,
 				CE0000000000000000000217 /* ChatsHomeView.swift in Sources */,
+				CE0000000000000000000222 /* ViewBoards.swift in Sources */,
+				CE0000000000000000000221 /* ChannelSettingsSheet.swift in Sources */,
+				CE0000000000000000000220 /* MembersSheet.swift in Sources */,
 				CE0000000000000000000218 /* ShellComponents.swift in Sources */,
 				CE0000000000000000000219 /* PlaceholderScreens.swift in Sources */,
 				CE000000000000000000021A /* ActivityView.swift in Sources */,
 				CE000000000000000000021B /* AgentsView.swift in Sources */,
+				CE000000000000000000040D /* BotOnboardingView.swift in Sources */,
 				CE000000000000000000021C /* ApprovalCardView.swift in Sources */,
 				CE000000000000000000021D /* ApprovalSheetView.swift in Sources */,
 				CE000000000000000000021E /* PushRouter.swift in Sources */,

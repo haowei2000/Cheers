@@ -43,6 +43,8 @@ struct ChatView: View {
     @State private var previewFile: MessageFileRef?
     @State private var showSessionSheet = false
     @State private var showModelSheet = false
+    /// Whether the message list is parked at the bottom (drives auto-follow).
+    @State private var atBottom = true
     private let listModel: ConversationListModel?
 
     init(channel: ChannelDto, listModel: ConversationListModel? = nil) {
@@ -101,8 +103,9 @@ struct ChatView: View {
         .sheet(item: $panel) { panel in
             Group {
                 switch panel {
-                case .members:   MembersSheet(channelId: model.channel.channelId)
+                case .members:   MembersSheet(channel: model.channel)
                 case .viewboard: ViewBoardSheet(channelId: model.channel.channelId)
+                case .settings:  ChannelSettingsSheet(channel: model.channel)
                 default:         ChannelPanelSheet(panel: panel)
                 }
             }
@@ -240,17 +243,37 @@ struct ChatView: View {
                     ForEach(items) { item in
                         itemView(item)
                     }
+                    // Bottom anchor doubles as the "is the reader parked at the
+                    // bottom?" probe: it's tall enough to give the follow rule a
+                    // tolerance band, so a few points of drift still counts as bottom.
                     Color.clear
-                        .frame(height: 1)
+                        .frame(height: 24)
                         .id("bottom")
+                        .onAppear { atBottom = true }
+                        .onDisappear { atBottom = false }
                 }
                 .padding(.vertical, 8)
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: model.scrollToBottomTick) {
+            // Incoming messages and streaming deltas FOLLOW only while the reader
+            // is already at the bottom — otherwise every token would yank them
+            // back and reading history would be impossible.
+            .onChange(of: model.followBottomTick) {
+                guard atBottom else { return }
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            // The reader's own actions (send, open channel) always win.
+            .onChange(of: model.forceBottomTick) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom {
+                    jumpToLatestButton(proxy)
                 }
             }
             .overlay {
@@ -259,6 +282,25 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    /// Escape hatch once auto-follow is suppressed: one tap back to live.
+    private func jumpToLatestButton(_ proxy: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+        } label: {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 44, height: 44)          // HIG minimum tap target
+                .background(Theme.bgRaised, in: Circle())
+                .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        }
+        .padding(.trailing, 14)
+        .padding(.bottom, 10)
+        .transition(.opacity)
     }
 
     private var loadOlderSentinel: some View {
@@ -404,103 +446,6 @@ struct ChatView: View {
 
 /// The channel roster (web MembersPopover): people and bots with online dots
 /// and roles, fetched from GET /channels/:id/members.
-private struct MembersSheet: View {
-    @Environment(AppModel.self) private var app
-    let channelId: String
-
-    @State private var members: [ChannelMemberDto] = []
-    @State private var isLoading = true
-    @State private var errorText: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Members")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                Spacer()
-                if !members.isEmpty {
-                    Text("\(members.count)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            .padding(16)
-            Divider().overlay(Theme.border)
-            if isLoading {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 28)
-            } else if let errorText {
-                Text(errorText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.danger)
-                    .padding(16)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(members, id: \.memberId) { member in
-                            memberRow(member)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.bgSurface)
-        .task { await load() }
-    }
-
-    private func memberRow(_ member: ChannelMemberDto) -> some View {
-        HStack(spacing: 11) {
-            ZStack(alignment: .bottomTrailing) {
-                AvatarView(seedId: member.memberId, name: member.name, size: 34, monochrome: true)
-                if member.isOnline == true {
-                    Circle()
-                        .fill(Theme.online)
-                        .frame(width: 10, height: 10)
-                        .overlay(Circle().stroke(Theme.bgSurface, lineWidth: 2))
-                }
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(member.name)
-                        .font(.system(size: 15))
-                        .foregroundStyle(Theme.textBody)
-                        .lineLimit(1)
-                    if member.memberType == "bot" {
-                        Text("BOT")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Theme.bgSelected)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }
-                }
-                if let role = member.role, !role.isEmpty {
-                    Text(role)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 48)
-    }
-
-    private func load() async {
-        guard let api = app.api else { isLoading = false; return }
-        do {
-            members = try await api.listMembers(channelId: channelId)
-            isLoading = false
-        } catch {
-            errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
-            isLoading = false
-        }
-    }
-}
 
 // MARK: - Forward sheet
 
@@ -583,97 +528,6 @@ private struct ForwardSheet: View {
 /// The channel's instrument plane. Plan/cost/activity are live-WS-only (view on
 /// web); the Audit board is REST-fetchable, so iOS shows the permission audit
 /// trail — who approved/denied which agent action, when.
-private struct ViewBoardSheet: View {
-    @Environment(AppModel.self) private var app
-    let channelId: String
-
-    @State private var events: [AuditEvent] = []
-    @State private var isLoading = true
-    @State private var errorText: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "rectangle.3.group").foregroundStyle(Theme.accent)
-                Text("ViewBoard · Audit")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-            }
-            .padding(16)
-            Text("Approval history for this channel's agents. Plan, cost and activity boards are live — view them on the web.")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
-            Divider().overlay(Theme.border)
-            content
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Theme.bgSurface)
-        .task { await load() }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if isLoading {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 28)
-        } else if let errorText {
-            ComingSoon(icon: "exclamationmark.triangle", text: errorText)
-        } else if events.isEmpty {
-            ComingSoon(icon: "checkmark.seal", text: "No approvals recorded yet")
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(events) { event in
-                        auditRow(event)
-                        Divider().overlay(Theme.border).padding(.leading, 44)
-                    }
-                }
-            }
-        }
-    }
-
-    private func auditRow(_ event: AuditEvent) -> some View {
-        let allowed = (event.decision ?? "").hasPrefix("allow")
-        let denied = (event.decision ?? "").hasPrefix("reject") || (event.decision ?? "").hasPrefix("deny")
-        return HStack(spacing: 11) {
-            Image(systemName: denied ? "xmark.circle" : (allowed ? "checkmark.circle" : "clock"))
-                .font(.system(size: 16))
-                .foregroundStyle(denied ? Theme.danger : (allowed ? Theme.online : Theme.textMuted))
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(prettyEvent(event.eventType))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                if let decision = event.decision {
-                    Text(decision).font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
-                }
-            }
-            Spacer()
-            if let ts = event.createdAt {
-                Text(TimeFormat.listStamp(TimeFormat.parse(ts)))
-                    .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 48)
-    }
-
-    private func prettyEvent(_ raw: String) -> String {
-        raw.replacingOccurrences(of: "_", with: " ").capitalized
-    }
-
-    private func load() async {
-        guard let api = app.api else { isLoading = false; return }
-        do {
-            events = try await api.permissionAudit(channelId: channelId, limit: 100)
-            isLoading = false
-        } catch {
-            errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
-            isLoading = false
-        }
-    }
-}
 
 // MARK: - File preview sheet
 
@@ -945,3 +799,4 @@ private struct ModelSettingsSheet: View {
         isLoading = false
     }
 }
+

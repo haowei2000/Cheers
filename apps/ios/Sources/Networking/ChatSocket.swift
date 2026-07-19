@@ -44,7 +44,24 @@ enum SocketEvent {
     case messageDone(channelId: String, MessageDto)
     case messageDeleted(channelId: String, msgId: String)
     case presence(channelId: String, PresencePayload)
+    /// A data-free "this board changed" tick; consumers re-pull through their own
+    /// authz'd resource read. `board` ∈ plan/cost/commands/files/workspace…
+    case boardSignal(channelId: String, board: String)
     case disconnected
+}
+
+enum ResourceError: Error, LocalizedError {
+    case notConnected
+    case timeout
+    case server(code: String?, message: String?)
+
+    var errorDescription: String? {
+        switch self {
+        case .notConnected: return "Realtime connection is down"
+        case .timeout: return "The server didn't answer in time"
+        case .server(_, let message): return message ?? "Request failed"
+        }
+    }
 }
 
 // MARK: - Socket client
@@ -130,6 +147,48 @@ final class ChatSocket: NSObject {
         }
     }
 
+    // MARK: Resource requests (request/response over the socket)
+    //
+    // Four of the five ViewBoard boards are served by WS "resource verbs", not
+    // REST: send {"type":"resource_req","req_id":…,"resource":…,"params":…} and
+    // correlate the {"type":"resource_res","req_id":…} reply. 15 s timeout,
+    // matching the web client.
+
+    private var pendingResources: [String: CheckedContinuation<JSONValue, Error>] = [:]
+
+    func request(resource: String, params: [String: Any]) async throws -> JSONValue {
+        guard isAuthed else { throw ResourceError.notConnected }
+        let reqId = UUID().uuidString
+
+        let value: JSONValue = try await withCheckedThrowingContinuation { continuation in
+            pendingResources[reqId] = continuation
+            sendJSON([
+                "type": "resource_req",
+                "req_id": reqId,
+                "resource": resource,
+                "params": params,
+            ])
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                guard let self else { return }
+                if let pending = self.pendingResources.removeValue(forKey: reqId) {
+                    pending.resume(throwing: ResourceError.timeout)
+                }
+            }
+        }
+        return value
+    }
+
+    /// Any pending resource call dies with the connection — its req_id will
+    /// never be answered on a new socket.
+    private func failPendingResources(_ error: ResourceError) {
+        let pending = pendingResources
+        pendingResources.removeAll()
+        for (_, continuation) in pending {
+            continuation.resume(throwing: error)
+        }
+    }
+
     // MARK: Connection internals
 
     private func openSocket() {
@@ -163,6 +222,7 @@ final class ChatSocket: NSObject {
         }
         task = nil
         isAuthed = false
+        failPendingResources(.notConnected)
     }
 
     private func scheduleReconnect() {
@@ -256,6 +316,23 @@ final class ChatSocket: NSObject {
         let data: T
     }
 
+    private struct ResourceResFrame: Decodable {
+        let reqId: String
+        let ok: Bool
+        let data: JSONValue?
+        let code: String?
+        let error: String?
+
+        enum CodingKeys: String, CodingKey {
+            case reqId = "req_id"
+            case ok, data, code, error
+        }
+    }
+
+    private struct BoardSignalPayload: Decodable {
+        let board: String?
+    }
+
     private func handleFrame(_ text: String) {
         guard let data = text.data(using: .utf8),
               let head = try? JSONDecoder().decode(FrameHead.self, from: data) else { return }
@@ -309,9 +386,24 @@ final class ChatSocket: NSObject {
                let payload = try? JSONDecoder().decode(DataEnvelope<PresencePayload>.self, from: data) {
                 onEvent?(.presence(channelId: channelId, payload.data))
             }
+        case "resource_res":
+            if let frame = try? JSONDecoder().decode(ResourceResFrame.self, from: data),
+               let continuation = pendingResources.removeValue(forKey: frame.reqId) {
+                if frame.ok {
+                    continuation.resume(returning: frame.data ?? .null)
+                } else {
+                    continuation.resume(throwing: ResourceError.server(code: frame.code, message: frame.error))
+                }
+            }
+        case "board_signal":
+            if let channelId = head.channelId,
+               let payload = try? JSONDecoder().decode(DataEnvelope<BoardSignalPayload>.self, from: data),
+               let board = payload.data.board {
+                onEvent?(.boardSignal(channelId: channelId, board: board))
+            }
+
         default:
-            // bot_trace / board_signal / workspace_signal / file_transcribed —
-            // not needed for the chat-first v1.
+            // bot_trace / workspace_signal / file_transcribed — not needed yet.
             break
         }
     }

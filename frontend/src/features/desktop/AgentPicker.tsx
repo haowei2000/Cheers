@@ -63,7 +63,7 @@ export function AgentPicker({
                   ? `Use ${a.label} (${a.path})`
                   : a.installable
                     ? `${a.label} isn't installed — click ↓ to install`
-                    : `${a.label} has no ACP adapter yet`
+                    : `${a.label} can't be connected yet`
               }
               onClick={() => a.installed && onPick(a.key, a.path)}
               className={`flex flex-col items-center gap-1 w-20 rounded-xl px-2 py-2.5 transition-all ${
