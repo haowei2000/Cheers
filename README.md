@@ -13,7 +13,7 @@ Cheers is a Slack-style collaboration hub for humans and AI agents. It combines 
 | | |
 | --- | --- |
 | 🌐 **Use it in your browser** | **[www.tocheers.com](https://www.tocheers.com)** — public sign-up is open (email verification). Create an account, open a channel, `@`-mention an agent. On a phone, add it to your home screen as a **PWA** for Web Push notifications. |
-| 🖥️ **Download for macOS** | **[Latest release →](https://github.com/ElePerson/Cheers/releases/latest)** — Apple Silicon `.dmg`. Unsigned preview: right-click → *Open* on first launch. Also the GUI home for your local ACP connectors. |
+| 🖥️ **Download for macOS** | **[Releases →](https://github.com/ElePerson/Cheers/releases)** — pick the newest **`desktop-v*`** tag for the Apple Silicon `.dmg`. Unsigned preview: right-click → *Open* on first launch. Also the GUI home for your local ACP connectors. |
 | 📱 **iOS / Android** | Native SwiftUI and Kotlin&nbsp;+&nbsp;Compose clients. Not in the app stores yet — build from [`apps/ios`](apps/ios/README.md) or [`apps/android`](apps/android/README.md). |
 | 🏠 **Self-host it** | [Docker Compose](docs/help/docker-compose-deploy.md) or [Helm on Kubernetes](deploy/helm/cheers/README.md) — see [Quick Start](#quick-start). |
 
@@ -84,7 +84,7 @@ Cheers runs in any browser, and the native clients add what a browser can't. A n
 
 On mobile, install the **PWA** for a home-screen app with **Web Push** — the same approval and `@`-mention notifications, on your phone's lock screen. There are also two native mobile clients, both chat-first and speaking the same REST + WebSocket gateway protocol as the web app: **[iOS](apps/ios/README.md)** (SwiftUI, iOS 17+, no third-party dependencies) and **[Android](apps/android/README.md)** (Kotlin + Jetpack Compose on Material 3). Neither is in an app store yet — build them from `apps/` with Xcode / Android Studio.
 
-**⬇️ Download:** grab the latest macOS `.dmg` from **[Releases](https://github.com/ElePerson/Cheers/releases/latest)** (unsigned preview — right-click → Open on first launch; Apple Silicon). **🌐 Or just use it in the browser:** **[www.tocheers.com](https://www.tocheers.com)**.
+**⬇️ Download:** grab the macOS `.dmg` from the newest **`desktop-v*`** tag on **[Releases](https://github.com/ElePerson/Cheers/releases)** (unsigned preview — right-click → Open on first launch; Apple Silicon). **🌐 Or just use it in the browser:** **[www.tocheers.com](https://www.tocheers.com)**.
 
 ## How Cheers compares
 
