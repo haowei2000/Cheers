@@ -5,6 +5,7 @@ import { listMessages, sendMessage } from "@/api/messages";
 import { useContextPickStore, toBundle, type ContextItem } from "./context/contextPick";
 import { ContextPickBar } from "./context/ContextPickBar";
 import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
+import { getChannelCache, setChannelCache, seedFromCache } from "./chatCache";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
 import { MembersPopover } from "./MembersPopover";
@@ -246,25 +247,117 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     lastSeqRef.current = max;
   }, [messages]);
 
-  // Initial history load (backend returns ascending: oldest first). A failure
-  // sets loadError so the render shows a retryable error region instead of the
-  // "No messages yet" empty state (a failed fetch must not masquerade as empty).
+  // The channel whose async responses are still welcome — a response landing
+  // after a switch must be dropped, not merged into the new channel's state.
+  const activeChannelRef = useRef<string | null>(null);
+  activeChannelRef.current = channel?.channel_id ?? null;
+  // Which channel the `messages` state currently belongs to. Set inside the
+  // setMessages updater (it runs with the commit that applies the seed), so the
+  // cache write-back effect can never attribute one channel's rows to another
+  // during the one commit where `channel` has switched but `messages` hasn't.
+  const msgsOwnerRef = useRef<string | null>(null);
+  // `loading` mirrored for stable callbacks (handleReady's catch-up dedup).
+  const loadingRef = useRef(false);
+  const pendingCatchUpRef = useRef(false);
+  const catchUpInFlightRef = useRef(false);
+
+  // Reconnect/refresh self-heal: pull everything past our last seq and merge.
+  // `sinceSeq` overrides the ref when the caller just seeded state (the ref
+  // effect above only updates after that commit).
+  const catchUp = useCallback(
+    async (sinceSeq?: number) => {
+      if (!channel || catchUpInFlightRef.current) return;
+      const cid = channel.channel_id;
+      catchUpInFlightRef.current = true;
+      try {
+        const res = await listMessages(cid, {
+          since_seq: sinceSeq ?? lastSeqRef.current,
+        });
+        if (activeChannelRef.current !== cid) return;
+        const incoming = res.messages ?? res.data ?? [];
+        if (incoming.length) setMessages((prev) => mergeMessages(prev, incoming));
+      } catch {
+        /* best-effort; the live stream still delivers new frames */
+      } finally {
+        catchUpInFlightRef.current = false;
+      }
+    },
+    [channel]
+  );
+
+  // Initial history load (backend returns ascending: oldest first). Warm path:
+  // re-entering a cached channel seeds instantly from memory (Telegram-style),
+  // then a since-seq catch-up merges anything that landed while we were away.
+  // Cold path: fetch the newest page; a failure sets loadError so the render
+  // shows a retryable error region instead of the "No messages yet" empty state
+  // (a failed fetch must not masquerade as empty).
   const loadHistory = useCallback(() => {
     if (!channel || isPreview) return;
-    setLoading(true);
+    const cid = channel.channel_id;
     setLoadError(false);
+    pendingCatchUpRef.current = false;
+
+    const seeded = seedFromCache(cid);
+    if (seeded) {
+      let maxSeq = 0;
+      for (const m of seeded.messages) {
+        if (typeof m.channel_seq === "number" && m.channel_seq > maxSeq)
+          maxSeq = m.channel_seq;
+      }
+      lastSeqRef.current = maxSeq;
+      setLoading(false);
+      loadingRef.current = false;
+      setMessages(() => {
+        msgsOwnerRef.current = cid;
+        return seeded.messages;
+      });
+      setHasMore(seeded.hasMore);
+      void catchUp(maxSeq);
+      return;
+    }
+
+    setLoading(true);
+    loadingRef.current = true;
+    msgsOwnerRef.current = null;
     setMessages([]);
-    listMessages(channel.channel_id, { limit: 50 })
+    setHasMore(false);
+    listMessages(cid, { limit: 50 })
       .then((res) => {
-        setMessages(sortMessages(res.messages ?? res.data ?? []));
+        if (activeChannelRef.current !== cid) return;
+        const msgs = sortMessages(res.messages ?? res.data ?? []);
+        let maxSeq = 0;
+        for (const m of msgs) {
+          if (typeof m.channel_seq === "number" && m.channel_seq > maxSeq)
+            maxSeq = m.channel_seq;
+        }
+        lastSeqRef.current = maxSeq;
+        setMessages(() => {
+          msgsOwnerRef.current = cid;
+          return msgs;
+        });
         setHasMore(res.meta?.has_more_before ?? false);
+        // A subscribe ack raced the initial load → run the deferred catch-up now
+        // that the real seq cursor is known (a since_seq=0 catch-up would have
+        // re-fetched the very page this load just delivered).
+        if (pendingCatchUpRef.current) {
+          pendingCatchUpRef.current = false;
+          void catchUp(maxSeq);
+        }
       })
-      .catch(() => setLoadError(true))
-      .finally(() => setLoading(false));
-  }, [channel, isPreview]);
+      .catch(() => {
+        if (activeChannelRef.current === cid) setLoadError(true);
+      })
+      .finally(() => {
+        if (activeChannelRef.current === cid) {
+          setLoading(false);
+          loadingRef.current = false;
+        }
+      });
+  }, [channel, isPreview, catchUp]);
 
   useEffect(() => {
     if (!channel || isPreview) {
+      msgsOwnerRef.current = null;
       setMessages([]);
       setLoadError(false);
       return;
@@ -272,6 +365,15 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.channel_id, isPreview]);
+
+  // Write-through: keep the per-channel cache current so the next entry into
+  // this channel renders instantly. The owner guard makes the mid-switch commit
+  // (new channel, previous channel's rows) a no-op.
+  useEffect(() => {
+    const cid = channel?.channel_id;
+    if (!cid || msgsOwnerRef.current !== cid) return;
+    setChannelCache(cid, { messages, hasMore });
+  }, [messages, hasMore, channel?.channel_id]);
 
   // Opening a channel marks it read: clear the unread + mention badges
   // optimistically, then stamp last_read_at server-side so list_channels stops
@@ -283,35 +385,49 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     markChannelRead(channel.channel_id).catch(() => {});
   }, [channel?.channel_id, isPreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mention candidates = channel members (users + bots).
+  // Mention candidates = channel members (users + bots). Warm path: seed from
+  // the per-channel cache so mentions/hovercards work instantly, then refresh
+  // in the background and write through.
   useEffect(() => {
     if (!channel || isPreview) {
       setMentionables([]);
       setMembers([]);
       return;
     }
-    listChannelMembers(channel.channel_id)
+    const cid = channel.channel_id;
+    const apply = (rows: MemberItem[]) => {
+      setMembers(rows);
+      setMentionables(
+        rows
+          .filter((m) => m.member_type === "user" || m.member_type === "bot")
+          .map((m) => ({
+            id: m.member_id,
+            type: m.member_type === "bot" ? ("bot" as const) : ("user" as const),
+            label: m.display_name || m.username || m.member_id.slice(0, 8),
+            sublabel: m.username,
+            // Bots: whether the agent can hear audio prompts (null/undefined =
+            // unknown → the composer treats it as "can't", fail-safe).
+            canReceiveAudio: m.can_receive_audio ?? false,
+          }))
+      );
+    };
+    const cached = getChannelCache(cid)?.members;
+    if (cached) apply(cached);
+    listChannelMembers(cid)
       .then((rows) => {
-        setMembers(rows);
-        setMentionables(
-          rows
-            .filter((m) => m.member_type === "user" || m.member_type === "bot")
-            .map((m) => ({
-              id: m.member_id,
-              type: m.member_type === "bot" ? "bot" : "user",
-              label: m.display_name || m.username || m.member_id.slice(0, 8),
-              sublabel: m.username,
-              // Bots: whether the agent can hear audio prompts (null/undefined =
-              // unknown → the composer treats it as "can't", fail-safe).
-              canReceiveAudio: m.can_receive_audio ?? false,
-            }))
-        );
+        if (activeChannelRef.current !== cid) return;
+        setChannelCache(cid, { members: rows });
+        apply(rows);
       })
       .catch(() => {
-        setMembers([]);
-        setMentionables([]);
+        // A failed refresh keeps serving the cached roster; only clear when
+        // there was nothing to show in the first place.
+        if (activeChannelRef.current === cid && !cached) {
+          setMembers([]);
+          setMentionables([]);
+        }
       });
-  }, [channel?.channel_id, isPreview]);
+  }, [channel?.channel_id, isPreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // id → member profile, so a message avatar/name click can open the hovercard
   // even though the message itself carries no bio/status.
@@ -330,6 +446,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         before: oldest.msg_id,
         limit: 50,
       });
+      if (activeChannelRef.current !== channel.channel_id) return;
       setMessages((prev) => mergeMessages(prev, res.messages ?? res.data ?? []));
       setHasMore(res.meta?.has_more_before ?? false);
     } catch {
@@ -342,20 +459,6 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       setLoadingMore(false);
     }
   }, [channel, messages, hasMore, loadingMore]);
-
-  // Reconnect/refresh self-heal: pull everything past our last seq and merge.
-  const catchUp = useCallback(async () => {
-    if (!channel) return;
-    try {
-      const res = await listMessages(channel.channel_id, {
-        since_seq: lastSeqRef.current,
-      });
-      const incoming = res.messages ?? res.data ?? [];
-      if (incoming.length) setMessages((prev) => mergeMessages(prev, incoming));
-    } catch {
-      /* best-effort; the live stream still delivers new frames */
-    }
-  }, [channel]);
 
   const handleMessage = useCallback((msg: Message) => {
     setMessages((prev) => upsertMessage(prev, msg));
@@ -508,9 +611,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   }, [channel, isPreview, botLabels]);
 
   // Realtime "ready" → self-heal the message stream AND refresh the palette
-  // (a bot may have advertised new commands while we were away).
+  // (a bot may have advertised new commands while we were away). While the
+  // initial history load is still in flight, defer the catch-up until it
+  // resolves — a since_seq=0 catch-up would just re-fetch the same page.
   const handleReady = useCallback(() => {
-    void catchUp();
+    if (loadingRef.current) pendingCatchUpRef.current = true;
+    else void catchUp();
     void loadCommands();
   }, [catchUp, loadCommands]);
 
@@ -719,6 +825,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             before: oldest.msg_id,
             limit: 50,
           });
+          if (activeChannelRef.current !== channel.channel_id) return;
           const batch = res.messages ?? res.data ?? [];
           setMessages((prev) => mergeMessages(prev, batch));
           setHasMore(res.meta?.has_more_before ?? false);

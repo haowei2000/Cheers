@@ -111,6 +111,18 @@ export function MessageList({
   );
   const prevLenRef = useRef(visible.length);
 
+  // Channel switch: the next content commit is a whole new timeline (cache seed
+  // or cold reload), not an append — jump straight to the bottom instantly.
+  // Flagged at render time and consumed by the auto-scroll effect below, which
+  // only fires once `visible` actually changes identity (the seeded commit).
+  const lastChannelRef = useRef(channelId);
+  const channelSwitchScrollRef = useRef(false);
+  if (lastChannelRef.current !== channelId) {
+    lastChannelRef.current = channelId;
+    channelSwitchScrollRef.current = true;
+    isAtBottomRef.current = true;
+  }
+
   // Track scroll position
   function handleScroll() {
     const el = containerRef.current;
@@ -130,6 +142,11 @@ export function MessageList({
     const grew = newLen > prevLenRef.current;
     prevLenRef.current = newLen;
 
+    if (channelSwitchScrollRef.current) {
+      channelSwitchScrollRef.current = false;
+      bottomRef.current?.scrollIntoView();
+      return;
+    }
     if (grew && isAtBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }

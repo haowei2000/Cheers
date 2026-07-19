@@ -75,6 +75,9 @@ interface Callbacks {
 const BASE_DELAY = 1000;
 const MAX_DELAY = 30000;
 const MAX_RETRIES = 10;
+/** How long an idle (no subscriber) socket is kept alive before closing — long
+ *  enough to survive a channel switch or a brief navigation away from chat. */
+const IDLE_CLOSE_DELAY = 30000;
 
 // ── Resource req/res over the same channel socket (workbench fs/channel access) ──
 
@@ -113,194 +116,320 @@ interface PendingReq {
 //   4. Client → {"type":"subscribe","channel_id":"..."}
 //   5. Server → {"type":"subscribed","channel_id":"..."}
 //   6. Broadcast frames arrive tagged with channel_id
+//
+// The socket is a MODULE-LEVEL SINGLETON shared across channel switches
+// (Discord-style): switching channels sends unsubscribe(old) + subscribe(new)
+// on the live connection instead of tearing it down and paying a fresh
+// TCP/TLS/WS + auth handshake per switch. Only one ChannelView mounts at a
+// time, so a single active subscription is all the state we need.
+
+/** The one mounted channel subscriber (ChannelView's realtime hook instance). */
+interface ActiveSub {
+  channelId: string;
+  cbs: React.MutableRefObject<Callbacks>;
+  setStatus: (s: RealtimeStatus) => void;
+}
+
+let ws: WebSocket | null = null;
+let wsToken: string | null = null;
+let authed = false;
+let retryCount = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+let active: ActiveSub | null = null;
+// The server rejected our token (auth_err): reconnecting with the same token
+// would just loop, so stop; the session-expired takeover is the exit.
+let authFailed = false;
+const pendingReqs = new Map<string, PendingReq>();
+
+function rejectAllPending(err: ResourceError) {
+  for (const p of pendingReqs.values()) {
+    clearTimeout(p.timer);
+    p.reject(err);
+  }
+  pendingReqs.clear();
+}
+
+function clearRetryTimer() {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+function closeSocket() {
+  clearRetryTimer();
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  const s = ws;
+  ws = null;
+  authed = false;
+  if (s) {
+    // Detach handlers so the close doesn't schedule a reconnect.
+    s.onclose = null;
+    s.onerror = null;
+    s.onmessage = null;
+    s.onopen = null;
+    try {
+      s.close();
+    } catch {
+      /* already closed */
+    }
+  }
+  rejectAllPending(new ResourceError("DISCONNECTED", "socket closed"));
+}
+
+function sendFrame(frame: Record<string, unknown>): boolean {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify(frame));
+  return true;
+}
+
+function subscribeActive() {
+  if (active && authed) {
+    sendFrame({ type: "subscribe", channel_id: active.channelId });
+  }
+}
+
+function handleFrame(event: WsEvent & { channel_id?: string }) {
+  // Resource req/res correlation (workbench fs/channel access over this socket).
+  if ((event as { type?: string }).type === "resource_res") {
+    const res = event as unknown as ResourceRes & { req_id?: string };
+    const pending = res.req_id ? pendingReqs.get(res.req_id) : undefined;
+    if (pending && res.req_id) {
+      pendingReqs.delete(res.req_id);
+      clearTimeout(pending.timer);
+      if (res.ok) pending.resolve(res.data);
+      else
+        pending.reject(
+          new ResourceError(res.code ?? "ERROR", res.error ?? "resource error")
+        );
+    }
+    return;
+  }
+
+  const { type, data } = event;
+
+  // Protocol control frames — handle then return
+  if (type === "auth_ok") {
+    authed = true;
+    retryCount = 0;
+    subscribeActive();
+    return;
+  }
+  if (type === "auth_err") {
+    // Dead token → tier L: flip the global session-expired takeover and stop
+    // the reconnect loop (retrying with the same token can never succeed).
+    authFailed = true;
+    useAuthStore.getState().markSessionExpired();
+    ws?.close();
+    return;
+  }
+  if (type === "subscribed") {
+    // Only the ack for the CURRENT channel flips us online — a stale ack from a
+    // channel we already left (switch mid-handshake) must not fire onReady.
+    if (active && event.channel_id === active.channelId) {
+      active.setStatus("online");
+      // (Re)subscribe ack — trigger REST since-seq catch-up to heal any gap
+      // from a dropped connection (write-before-deliver self-heal).
+      active.cbs.current.onReady?.();
+    }
+    return;
+  }
+  if (type === "unsubscribed" || type === "pong") {
+    return;
+  }
+
+  // Broadcast frames — drop anything for a channel we're no longer viewing
+  // (frames can still arrive between our unsubscribe and the server ack).
+  if (!active) return;
+  if (event.channel_id && event.channel_id !== active.channelId) return;
+  const cbs = active.cbs.current;
+
+  if (type === "message") {
+    cbs.onMessage(data as unknown as Message);
+    // A new message advances the channel's activity stream → nudge the board.
+    cbs.onBoardSignal?.("activity");
+  } else if (type === "message_stream") {
+    const d = data as { msg_id: string; delta: string };
+    cbs.onStreamDelta(d.msg_id, d.delta ?? "");
+  } else if (type === "message_done") {
+    cbs.onStreamDone(data as unknown as Partial<Message> & { msg_id: string });
+  } else if (type === "message_deleted") {
+    cbs.onMessageDeleted((data as { msg_id: string }).msg_id);
+  } else if (type === "bot_processing") {
+    cbs.onBotProcessing?.((data as { bot_id: string }).bot_id);
+  } else if (type === "presence") {
+    const d = data as {
+      online_user_ids?: string[];
+      online_bot_ids?: string[];
+      count?: number;
+      focus?: PresenceFocus[];
+    };
+    // `focus` is new (workspace presence); tolerate its absence on older gateways.
+    const focus = Array.isArray(d.focus)
+      ? d.focus.filter(
+          (f): f is PresenceFocus =>
+            !!f && typeof f.user_id === "string" && typeof f.bot_id === "string"
+        )
+      : [];
+    cbs.onPresence?.(
+      d.online_user_ids ?? [],
+      d.count ?? 0,
+      d.online_bot_ids ?? [],
+      focus
+    );
+  } else if (type === "bot_trace") {
+    const d = data as {
+      msg_id?: string | null;
+      title?: string | null;
+      status?: string | null;
+    };
+    cbs.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
+  } else if (type === "board_signal") {
+    const d = data as { board?: string; bot_id?: string };
+    cbs.onBoardSignal?.(d.board ?? "", d.bot_id ?? null);
+  } else if (type === "workspace_signal") {
+    const d = data as {
+      bot_id?: string;
+      root?: string;
+      paths?: string[];
+    };
+    if (d.bot_id) {
+      cbs.onWorkspaceSignal?.({
+        bot_id: d.bot_id,
+        root: d.root ?? "",
+        paths: Array.isArray(d.paths) ? d.paths : [],
+      });
+    }
+  } else if (type === "file_transcribed") {
+    const d = data as {
+      file_id?: string;
+      status?: string;
+      summary?: string | null;
+    };
+    if (d.file_id) {
+      cbs.onFileTranscribed?.(d.file_id, d.status ?? "done", d.summary ?? null);
+    }
+  } else if (type === "member_updated") {
+    const d = data as { member_id?: string };
+    if (d.member_id) {
+      cbs.onMemberUpdated?.(
+        data as { member_id: string } & Record<string, unknown>
+      );
+    }
+  }
+}
+
+/** Open (or reuse) the singleton socket for `token`. No-op while a healthy
+ *  socket for the same token is open or connecting. */
+function ensureSocket(token: string) {
+  if (authFailed && wsToken === token) return;
+  if (
+    ws &&
+    wsToken === token &&
+    (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+  closeSocket();
+  wsToken = token;
+  authFailed = false;
+
+  const socket = new WebSocket(buildWsUrl("/ws"));
+  ws = socket;
+  authed = false;
+
+  socket.onopen = () => {
+    // Phase 1: authenticate
+    socket.send(JSON.stringify({ type: "auth", token }));
+  };
+
+  socket.onmessage = (ev) => {
+    let event: WsEvent & { channel_id?: string };
+    try {
+      event = JSON.parse(ev.data as string) as WsEvent & { channel_id?: string };
+    } catch {
+      return;
+    }
+    handleFrame(event);
+  };
+
+  socket.onclose = () => {
+    if (ws !== socket) return; // superseded by a newer socket
+    ws = null;
+    authed = false;
+    // Reject any in-flight resource requests bound to this socket.
+    rejectAllPending(new ResourceError("DISCONNECTED", "socket closed"));
+    if (authFailed) return;
+    // No subscriber → reconnect lazily on the next attach instead of burning
+    // the retry budget while nobody is looking at a channel.
+    if (!active) return;
+    if (retryCount >= MAX_RETRIES) {
+      active.setStatus("offline");
+      return;
+    }
+    active.setStatus("reconnecting");
+    const delay = Math.min(BASE_DELAY * 2 ** retryCount, MAX_DELAY);
+    retryCount += 1;
+    retryTimer = setTimeout(() => {
+      if (wsToken) ensureSocket(wsToken);
+    }, delay);
+  };
+
+  socket.onerror = () => {
+    socket.close();
+  };
+}
+
+/** Mount a channel subscription on the shared socket. Reuses a live authed
+ *  socket by just swapping subscriptions; otherwise (re)connects. */
+function attach(sub: ActiveSub, token: string) {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  const prev = active;
+  active = sub;
+  if (wsToken !== token) {
+    // Token changed (re-login) — the old socket's auth is stale.
+    authFailed = false;
+    ensureSocket(token);
+    return;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN && authed) {
+    if (prev && prev.channelId !== sub.channelId) {
+      sendFrame({ type: "unsubscribe", channel_id: prev.channelId });
+    }
+    sendFrame({ type: "subscribe", channel_id: sub.channelId });
+    return;
+  }
+  // Socket connecting / mid-auth: auth_ok will subscribe the active channel.
+  // Socket dead: reconnect (a pending backoff timer keeps its own schedule).
+  if (!ws && !retryTimer) ensureSocket(token);
+}
+
+/** Unmount the channel subscription. The socket is kept warm for a grace
+ *  period so a channel switch (detach→attach) never pays a reconnect. */
+function detach(sub: ActiveSub) {
+  if (active !== sub) return; // superseded by a newer attach
+  sendFrame({ type: "unsubscribe", channel_id: sub.channelId });
+  active = null;
+  clearRetryTimer();
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    if (!active) closeSocket();
+  }, IDLE_CLOSE_DELAY);
+}
 
 export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const token = useAuthStore((s) => s.token);
-  const wsRef = useRef<WebSocket | null>(null);
-  const retryRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
   const cbsRef = useRef(cbs);
   cbsRef.current = cbs;
-  const pendingRef = useRef<Map<string, PendingReq>>(new Map());
   const [status, setStatus] = useState<RealtimeStatus>("connecting");
-  // The server rejected our token (auth_err): reconnecting with the same token
-  // would just loop, so stop; the session-expired takeover is the exit.
-  const authFailedRef = useRef(false);
-
-  const connect = useCallback(() => {
-    if (!channelId || !token || !mountedRef.current) return;
-
-    const ws = new WebSocket(buildWsUrl("/ws"));
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      // Phase 1: authenticate
-      ws.send(JSON.stringify({ type: "auth", token }));
-    };
-
-    ws.onmessage = (ev) => {
-      let event: WsEvent;
-      try {
-        event = JSON.parse(ev.data as string) as WsEvent;
-      } catch {
-        return;
-      }
-
-      // Resource req/res correlation (workbench fs/channel access over this socket).
-      if ((event as { type?: string }).type === "resource_res") {
-        const res = event as unknown as ResourceRes & { req_id?: string };
-        const pending = res.req_id
-          ? pendingRef.current.get(res.req_id)
-          : undefined;
-        if (pending && res.req_id) {
-          pendingRef.current.delete(res.req_id);
-          clearTimeout(pending.timer);
-          if (res.ok) pending.resolve(res.data);
-          else
-            pending.reject(
-              new ResourceError(res.code ?? "ERROR", res.error ?? "resource error")
-            );
-        }
-        return;
-      }
-
-      const { type, data } = event;
-
-      // Protocol control frames — handle then return
-      if (type === "auth_ok") {
-        retryRef.current = 0;
-        // Phase 2: subscribe to the target channel
-        ws.send(JSON.stringify({ type: "subscribe", channel_id: channelId }));
-        return;
-      }
-      if (type === "auth_err") {
-        // Dead token → tier L: flip the global session-expired takeover and stop
-        // the reconnect loop (retrying with the same token can never succeed).
-        authFailedRef.current = true;
-        useAuthStore.getState().markSessionExpired();
-        ws.close();
-        return;
-      }
-      if (type === "subscribed") {
-        if (mountedRef.current) setStatus("online");
-        // (Re)subscribe ack — trigger REST since-seq catch-up to heal any gap
-        // from a dropped connection (write-before-deliver self-heal).
-        cbsRef.current.onReady?.();
-        return;
-      }
-      if (type === "unsubscribed" || type === "pong") {
-        return;
-      }
-
-      // Broadcast frames
-      if (type === "message") {
-        cbsRef.current.onMessage(data as unknown as Message);
-        // A new message advances the channel's activity stream → nudge the board.
-        cbsRef.current.onBoardSignal?.("activity");
-      } else if (type === "message_stream") {
-        const d = data as { msg_id: string; delta: string };
-        cbsRef.current.onStreamDelta(d.msg_id, d.delta ?? "");
-      } else if (type === "message_done") {
-        cbsRef.current.onStreamDone(
-          data as unknown as Partial<Message> & { msg_id: string }
-        );
-      } else if (type === "message_deleted") {
-        cbsRef.current.onMessageDeleted(
-          (data as { msg_id: string }).msg_id
-        );
-      } else if (type === "bot_processing") {
-        cbsRef.current.onBotProcessing?.(
-          (data as { bot_id: string }).bot_id
-        );
-      } else if (type === "presence") {
-        const d = data as {
-          online_user_ids?: string[];
-          online_bot_ids?: string[];
-          count?: number;
-          focus?: PresenceFocus[];
-        };
-        // `focus` is new (workspace presence); tolerate its absence on older gateways.
-        const focus = Array.isArray(d.focus)
-          ? d.focus.filter(
-              (f): f is PresenceFocus =>
-                !!f && typeof f.user_id === "string" && typeof f.bot_id === "string"
-            )
-          : [];
-        cbsRef.current.onPresence?.(
-          d.online_user_ids ?? [],
-          d.count ?? 0,
-          d.online_bot_ids ?? [],
-          focus
-        );
-      } else if (type === "bot_trace") {
-        const d = data as {
-          msg_id?: string | null;
-          title?: string | null;
-          status?: string | null;
-        };
-        cbsRef.current.onBotTrace?.(d.msg_id ?? null, d.title ?? d.status ?? null);
-      } else if (type === "board_signal") {
-        const d = data as { board?: string; bot_id?: string };
-        cbsRef.current.onBoardSignal?.(d.board ?? "", d.bot_id ?? null);
-      } else if (type === "workspace_signal") {
-        const d = data as {
-          bot_id?: string;
-          root?: string;
-          paths?: string[];
-        };
-        if (d.bot_id) {
-          cbsRef.current.onWorkspaceSignal?.({
-            bot_id: d.bot_id,
-            root: d.root ?? "",
-            paths: Array.isArray(d.paths) ? d.paths : [],
-          });
-        }
-      } else if (type === "file_transcribed") {
-        const d = data as {
-          file_id?: string;
-          status?: string;
-          summary?: string | null;
-        };
-        if (d.file_id) {
-          cbsRef.current.onFileTranscribed?.(
-            d.file_id,
-            d.status ?? "done",
-            d.summary ?? null
-          );
-        }
-      } else if (type === "member_updated") {
-        const d = data as { member_id?: string };
-        if (d.member_id) {
-          cbsRef.current.onMemberUpdated?.(
-            data as { member_id: string } & Record<string, unknown>
-          );
-        }
-      }
-    };
-
-    ws.onclose = () => {
-      // Reject any in-flight resource requests bound to this socket.
-      for (const p of pendingRef.current.values()) {
-        clearTimeout(p.timer);
-        p.reject(new ResourceError("DISCONNECTED", "socket closed"));
-      }
-      pendingRef.current.clear();
-      if (!mountedRef.current || authFailedRef.current) return;
-      if (retryRef.current >= MAX_RETRIES) {
-        setStatus("offline");
-        return;
-      }
-      setStatus("reconnecting");
-      const delay = Math.min(BASE_DELAY * 2 ** retryRef.current, MAX_DELAY);
-      retryRef.current += 1;
-      timerRef.current = setTimeout(connect, delay);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
-  }, [channelId, token]);
 
   // Recovery: the exponential-backoff loop caps out after MAX_RETRIES (~2.5min),
   // which after a laptop sleep or a network blip would otherwise leave the channel
@@ -308,23 +437,19 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   // banner's "Retry now" is the escape hatch — reset the retry budget and
   // reconnect now if the socket has died.
   const reconnectNow = useCallback(() => {
-    if (!mountedRef.current || authFailedRef.current) return;
-    const ws = wsRef.current;
+    if (authFailed || !token) return;
     if (ws && ws.readyState !== WebSocket.CLOSED) return; // already up or mid-connect
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    retryRef.current = 0;
-    setStatus("reconnecting");
-    connect();
-  }, [connect]);
+    clearRetryTimer();
+    retryCount = 0;
+    if (channelId) setStatus("reconnecting");
+    ensureSocket(token);
+  }, [token, channelId]);
 
   useEffect(() => {
-    mountedRef.current = true;
-    authFailedRef.current = false; // fresh channel/token → the ban no longer applies
-    setStatus("connecting"); // fresh (re)mount — don't carry a stale banner across channels
-    connect();
+    if (!channelId || !token) return;
+    setStatus("connecting"); // fresh subscription — don't carry a stale banner across channels
+    const sub: ActiveSub = { channelId, cbs: cbsRef, setStatus };
+    attach(sub, token);
 
     const revive = () => {
       if (document.visibilityState === "hidden") return;
@@ -334,13 +459,16 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
     document.addEventListener("visibilitychange", revive);
 
     return () => {
-      mountedRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
       window.removeEventListener("online", revive);
       document.removeEventListener("visibilitychange", revive);
-      wsRef.current?.close();
+      detach(sub);
     };
-  }, [connect, reconnectNow]);
+  }, [channelId, token, reconnectNow]);
+
+  // Logout: the token is gone — a still-authed idle socket must not linger.
+  useEffect(() => {
+    if (!token) closeSocket();
+  }, [token]);
 
   // Imperative resource client: send a resource_req on the live channel socket and
   // resolve when the matching resource_res (by req_id) returns. Used by the workbench
@@ -348,20 +476,17 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   const sendResourceReq = useCallback(
     (resource: string, params: Record<string, unknown>): Promise<ResourceData> => {
       return new Promise<ResourceData>((resolve, reject) => {
-        const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
           reject(new ResourceError("DISCONNECTED", "socket not connected"));
           return;
         }
         const reqId = crypto.randomUUID();
         const timer = setTimeout(() => {
-          pendingRef.current.delete(reqId);
+          pendingReqs.delete(reqId);
           reject(new ResourceError("TIMEOUT", "resource request timed out"));
         }, RESOURCE_REQ_TIMEOUT);
-        pendingRef.current.set(reqId, { resolve, reject, timer });
-        ws.send(
-          JSON.stringify({ type: "resource_req", req_id: reqId, resource, params })
-        );
+        pendingReqs.set(reqId, { resolve, reject, timer });
+        sendFrame({ type: "resource_req", req_id: reqId, resource, params });
       });
     },
     []
@@ -373,11 +498,7 @@ export function useChatRealtime(channelId: string | null, cbs: Callbacks) {
   // the gateway re-derives presence on the next (re)subscribe anyway.
   const sendPresenceFocus = useCallback(
     (chanId: string, focus: { bot_id: string; path?: string | null } | null) => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(
-        JSON.stringify({ type: "presence_focus", channel_id: chanId, focus })
-      );
+      sendFrame({ type: "presence_focus", channel_id: chanId, focus });
     },
     []
   );
