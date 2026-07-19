@@ -440,6 +440,9 @@ struct SendMessageRequest: Encodable {
     var replyToMsgId: String? = nil
     var fileIds: [String]? = nil
     var mentionIds: [String]? = nil
+    /// Group @-mention tokens (`all`/`bots`/`humans`/`here`), expanded to real
+    /// members server-side — mirrors the web composer's mention_names split.
+    var mentionNames: [String]? = nil
     var sessionId: String? = nil
 
     enum CodingKeys: String, CodingKey {
@@ -448,6 +451,7 @@ struct SendMessageRequest: Encodable {
         case replyToMsgId = "reply_to_msg_id"
         case fileIds = "file_ids"
         case mentionIds = "mention_ids"
+        case mentionNames = "mention_names"
         case sessionId = "session_id"
     }
 }

@@ -1,6 +1,31 @@
 import Foundation
 import Observation
 
+/// An entry in the composer's @-mention picker: a channel member (user/bot) or
+/// a group token. Mirrors the web MessageComposer's MentionCandidate.
+struct MentionCandidate: Identifiable, Hashable {
+    /// Picker order: bots (primary @target) → group tokens → people.
+    enum Kind: Int {
+        case bot = 0, group = 1, user = 2
+    }
+
+    /// Member id, or for `.group` the token itself (sent as a mention_name).
+    let id: String
+    let kind: Kind
+    /// Drives the inserted "@label" text.
+    let label: String
+    let sublabel: String?
+
+    /// Group tokens the server expands to real members. `@here` currently
+    /// aliases `@all` (no write-time presence signal yet) — web parity.
+    static let groups: [MentionCandidate] = [
+        MentionCandidate(id: "all", kind: .group, label: "all", sublabel: "Everyone in the channel"),
+        MentionCandidate(id: "bots", kind: .group, label: "bots", sublabel: "All bots — triggers each"),
+        MentionCandidate(id: "humans", kind: .group, label: "humans", sublabel: "All people"),
+        MentionCandidate(id: "here", kind: .group, label: "here", sublabel: "Everyone (currently same as @all)"),
+    ]
+}
+
 /// Per-channel chat state: paginated history, realtime updates, sending.
 /// Ordering mirrors the web client (frontend ChannelView sortMessages):
 /// ascending `channel_seq`, in-flight messages (seq == nil) last.
@@ -24,6 +49,12 @@ final class ChatModel {
     var selectedSessionId: String?
     /// Bot members of this channel — the session/model picker's candidate bots.
     private(set) var botMembers: [ChannelMemberDto] = []
+    /// Channel members (users + bots) as picker entries, group tokens included —
+    /// the composer's @-mention pool.
+    private(set) var mentionPool: [MentionCandidate] = MentionCandidate.groups
+    /// Mentions the user has picked in the current draft. Routing source of
+    /// truth: only entries whose "@label" token survives in the text are sent.
+    var pickedMentions: [MentionCandidate] = []
 
     /// Bumped when the view should FOLLOW to the bottom — only honoured while the
     /// reader is already parked at the bottom. Incoming messages and streaming
@@ -83,6 +114,16 @@ final class ChatModel {
                     uniquingKeysWith: { first, _ in first }
                 )
                 botMembers = members.filter { $0.memberType == "bot" }
+                mentionPool = MentionCandidate.groups + members
+                    .filter { $0.memberType == "user" || $0.memberType == "bot" }
+                    .map { member in
+                        MentionCandidate(
+                            id: member.memberId,
+                            kind: member.isBot ? .bot : .user,
+                            label: member.name,
+                            sublabel: member.username
+                        )
+                    }
             }
             messages = sorted(response.messages.map(withResolvedSender))
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
@@ -142,12 +183,27 @@ final class ChatModel {
         guard !text.isEmpty, !isSending, let api = app?.api else { return }
         isSending = true
         defer { isSending = false }
+        // Only keep mentions whose "@label" token still survives in the text,
+        // then split them: real members → mention_ids, group tokens →
+        // mention_names (the server expands @all/@bots/… into members).
+        let survivors = pickedMentions.filter { text.contains("@\($0.label)") }
+        var seen = Set<String>()
+        let ids = survivors.filter { $0.kind != .group && seen.insert($0.id).inserted }.map(\.id)
+        seen.removeAll()
+        let names = survivors.filter { $0.kind == .group && seen.insert($0.id).inserted }.map(\.id)
         do {
             let sent = try await api.sendMessage(
                 channelId: channel.channelId,
-                SendMessageRequest(content: text, replyToMsgId: replyTo?.msgId, sessionId: selectedSessionId)
+                SendMessageRequest(
+                    content: text,
+                    replyToMsgId: replyTo?.msgId,
+                    mentionIds: ids.isEmpty ? nil : ids,
+                    mentionNames: names.isEmpty ? nil : names,
+                    sessionId: selectedSessionId
+                )
             )
             composerText = ""
+            pickedMentions = []
             replyTo = nil
             upsert(sent)
             forceBottomTick += 1
