@@ -101,6 +101,8 @@ should use HTTPS.
 
 ## Not yet implemented
 
-File upload/download, approval-card resolution (cards render as system rows
-pointing at the web app), mention picker, channel management, and workspace
-switching UI. See the repo roadmap.
+File **upload** (download/preview works) and a mention **picker** (mention
+highlighting works). Since the last update the app gained: actionable approval
+cards, workspace switching, channel management (settings, member roles, direct
++ link invites), and the five-board ViewBoard (Plan/Cost/Sessions/Audit/Activity
+— four boards ride the gateway's WS `resource_req` verbs). See the repo roadmap.

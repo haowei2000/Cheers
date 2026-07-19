@@ -46,12 +46,22 @@ struct DrawerView: View {
         .padding(.bottom, 10)
     }
 
-    // MARK: Workspace bar (compact — long-press to switch)
+    // MARK: Workspace bar (compact — tap OR long-press to switch)
 
     /// One compact row: the current workspace glyph + name, a chevron hint, and
-    /// (for team workspaces) a settings gear. **Long-press** opens the switcher
-    /// menu — no always-visible workspace strip, no descriptive subtitle.
+    /// (for team workspaces) a settings gear. The chevron promises a dropdown, so
+    /// a plain **tap** must deliver one; **long-press** opens the same switcher as
+    /// a secondary affordance. No always-visible workspace strip, no subtitle.
     private var workspaceBar: some View {
+        Menu {
+            workspaceMenu
+        } label: {
+            workspaceBarLabel
+        }
+        .contextMenu { workspaceMenu }
+    }
+
+    private var workspaceBarLabel: some View {
         HStack(spacing: 10) {
             workspaceGlyph
             Text(shell.selectedWorkspace?.name ?? "All conversations")
@@ -71,8 +81,8 @@ struct DrawerView: View {
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 10)
+        .frame(minHeight: 44)              // HIG minimum tap target
         .contentShape(Rectangle())
-        .contextMenu { workspaceMenu }
     }
 
     private var workspaceGlyph: some View {

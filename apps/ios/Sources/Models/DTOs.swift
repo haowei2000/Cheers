@@ -46,6 +46,11 @@ enum JSONValue: Codable, Equatable, Hashable {
         return nil
     }
 
+    subscript(index: Int) -> JSONValue? {
+        if case .array(let a) = self, a.indices.contains(index) { return a[index] }
+        return nil
+    }
+
     var stringValue: String? {
         if case .string(let s) = self { return s }
         return nil
@@ -72,6 +77,13 @@ enum JSONValue: Codable, Equatable, Hashable {
             if let s = self[key]?.stringValue, !s.isEmpty { return s }
         }
         return nil
+    }
+
+    /// Bridge an untyped resource-response payload into a typed DTO by
+    /// round-tripping through JSON. Board reads arrive as `JSONValue`.
+    func decode<T: Decodable>(as type: T.Type) throws -> T {
+        let data = try JSONEncoder().encode(self)
+        return try JSONDecoder().decode(type, from: data)
     }
 }
 
@@ -162,6 +174,9 @@ struct ChannelDto: Decodable, Identifiable, Hashable {
 struct ChannelMemberDto: Decodable, Identifiable, Hashable {
     let memberId: String
     let memberType: String
+    /// "active" | "pending" — a *directly invited* user sits here as `pending`
+    /// until they accept; they are not a member yet.
+    let status: String?
     let role: String?
     let username: String?
     let displayName: String?
@@ -170,6 +185,8 @@ struct ChannelMemberDto: Decodable, Identifiable, Hashable {
     let canReceiveAudio: Bool?
 
     var id: String { memberId }
+    var isPending: Bool { status == "pending" }
+    var isBot: Bool { memberType == "bot" }
     var name: String {
         if let displayName, !displayName.isEmpty { return displayName }
         return username ?? memberId
@@ -178,12 +195,132 @@ struct ChannelMemberDto: Decodable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case memberId = "member_id"
         case memberType = "member_type"
+        case status
         case role
         case username
         case displayName = "display_name"
         case avatarUrl = "avatar_url"
         case isOnline = "is_online"
         case canReceiveAudio = "can_receive_audio"
+    }
+}
+
+// MARK: - Membership management (server/src/api/channels.rs)
+
+/// A candidate for `POST /channels/:id/members`. Already-in-channel candidates
+/// come back flagged rather than filtered, so the UI can grey them out.
+struct InvitableItem: Decodable, Identifiable, Hashable {
+    let memberId: String
+    let memberType: String
+    let username: String?
+    let displayName: String?
+    let avatarUrl: String?
+    let isOnline: Bool?
+    let alreadyMember: Bool?
+
+    var id: String { memberId }
+    var isBot: Bool { memberType == "bot" }
+    var name: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        return username ?? memberId
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case memberId = "member_id"
+        case memberType = "member_type"
+        case username
+        case displayName = "display_name"
+        case avatarUrl = "avatar_url"
+        case isOnline = "is_online"
+        case alreadyMember = "already_member"
+    }
+}
+
+struct InvitableResponse: Decodable {
+    let results: [InvitableItem]
+}
+
+struct AddMemberRequest: Encodable {
+    let memberId: String
+    let memberType: String
+    let role: String?
+
+    enum CodingKeys: String, CodingKey {
+        case memberId = "member_id"
+        case memberType = "member_type"
+        case role
+    }
+}
+
+struct AddMemberResponse: Decodable {
+    let status: String?
+    let role: String?
+}
+
+struct MemberRoleRequest: Encodable {
+    let role: String
+}
+
+/// PATCH /channels/:id — every field optional, COALESCE-applied server-side.
+/// NOTE: sending a null `purpose` is a server-side no-op, so a purpose cannot
+/// be cleared through this endpoint. Don't pretend otherwise in the UI.
+struct ChannelUpdateRequest: Encodable {
+    var name: String?
+    var purpose: String?
+    var channelType: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case purpose
+        case channelType = "type"
+    }
+}
+
+// MARK: - Invite links (server/src/api/invite_links.rs)
+//
+// Scoping trap: invite links are a WORKSPACE resource gated on workspace admin,
+// even though the channel settings screen surfaces them. Listing returns every
+// link in the workspace — filter by channelId client-side.
+
+struct InviteLinkDto: Decodable, Identifiable, Hashable {
+    let linkId: String
+    let token: String
+    let workspaceId: String
+    let channelId: String?
+    let channelName: String?
+    let createdBy: String?
+    let createdAt: String?
+    let expiresAt: String?
+    let maxUses: Int?
+    let useCount: Int?
+    let status: String?
+
+    var id: String { linkId }
+
+    enum CodingKeys: String, CodingKey {
+        case linkId = "link_id"
+        case token
+        case workspaceId = "workspace_id"
+        case channelId = "channel_id"
+        case channelName = "channel_name"
+        case createdBy = "created_by"
+        case createdAt = "created_at"
+        case expiresAt = "expires_at"
+        case maxUses = "max_uses"
+        case useCount = "use_count"
+        case status
+    }
+}
+
+struct CreateInviteLinkRequest: Encodable {
+    let expiresInHours: Int?
+    let maxUses: Int?
+    let channelId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case expiresInHours = "expires_in_hours"
+        case maxUses = "max_uses"
+        case channelId = "channel_id"
     }
 }
 
@@ -538,7 +675,6 @@ struct BotStatusDto: Decodable {
     }
 }
 
-
 // MARK: - Sessions & bot settings (server/src/api/session_control.rs)
 
 struct SessionInfo: Decodable, Identifiable {
@@ -614,9 +750,14 @@ struct AuditEvent: Decodable, Identifiable {
     let eventType: String
     let botId: String?
     let requestId: String?
+    let msgId: String?
     let actorId: String?
     let targetUserId: String?
     let decision: String?
+    let optionId: String?
+    /// `{ title, tool: { command, raw_input, locations, cwd, kind } }` — the only
+    /// place the *concrete* thing that was approved is recorded.
+    let detail: JSONValue?
     let createdAt: String?
 
     var id: String { "\(requestId ?? "")\(eventType)\(createdAt ?? "")" }
@@ -625,11 +766,65 @@ struct AuditEvent: Decodable, Identifiable {
         case eventType = "event_type"
         case botId = "bot_id"
         case requestId = "request_id"
+        case msgId = "msg_id"
         case actorId = "actor_id"
         case targetUserId = "target_user_id"
         case decision
+        case optionId = "option_id"
+        case detail
         case createdAt = "created_at"
     }
+
+    /// What was actually approved, dug out of `detail.tool`. `detail.title` is a
+    /// hardcoded "ACP permission request" server-side and must never be used.
+    var subject: String? {
+        guard let tool = detail?["tool"] else { return nil }
+        let raw = tool["raw_input"]
+        let candidates: [String?] = [
+            tool["command"]?.stringValue,
+            raw?["command"]?.stringValue,
+            raw?["file_path"]?.stringValue,
+            raw?["path"]?.stringValue,
+            tool["title"]?.stringValue,
+            tool["locations"]?[0]?["path"]?.stringValue,
+        ]
+        return candidates.compactMap { $0 }.first { !$0.isEmpty }
+    }
+
+    var cwd: String? { detail?["tool"]?["cwd"]?.stringValue }
+    var toolKind: String? { detail?["tool"]?["kind"]?.stringValue }
+
+    /// approved / denied / pending / timed-out, from decision + event type.
+    var outcome: AuditOutcome {
+        let d = decision ?? ""
+        if d.hasPrefix("allow") { return .approved }
+        if d.hasPrefix("reject") || d.hasPrefix("deny") { return .denied }
+        if eventType == "timeout" { return .timedOut }
+        return .pending
+    }
+
+    /// Human label for the decision, falling back to the event type.
+    var outcomeLabel: String {
+        switch decision {
+        case "allow_once":   return "Approved once"
+        case "allow_always": return "Always approved"
+        case "reject_once":  return "Denied once"
+        case "reject_always":return "Always denied"
+        default: break
+        }
+        switch eventType {
+        case "requested":        return "Approval requested"
+        case "access_requested": return "Access requested"
+        case "access_granted":   return "Access granted"
+        case "access_revoked":   return "Access revoked"
+        case "timeout":          return "Timed out"
+        default: return eventType.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+}
+
+enum AuditOutcome {
+    case approved, denied, pending, timedOut
 }
 
 struct AuditResponse: Decodable {
@@ -664,4 +859,125 @@ struct DmCreateRequest: Encodable {
 
 struct ApiErrorBody: Decodable {
     let detail: String
+}
+
+// MARK: - ViewBoard resource payloads (server/src/resource/*.rs)
+//
+// All numerics are genuinely nullable — the UI must render "—" for null,
+// because "no data" is not "measured zero".
+
+struct PlanBoardResponse: Decodable {
+    let plans: [PlanCard]
+}
+
+struct PlanCard: Decodable, Identifiable {
+    let botId: String
+    let sessionId: String
+    let entries: [PlanEntry]
+    let total: Int
+    let completed: Int
+    let updatedAt: String?
+
+    var id: String { "\(botId)/\(sessionId)" }
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case sessionId = "session_id"
+        case entries, total, completed
+        case updatedAt = "updated_at"
+    }
+}
+
+struct PlanEntry: Decodable, Identifiable, Hashable {
+    let content: String
+    let priority: String?
+    let status: String?
+
+    var id: String { content }
+}
+
+struct UsageBoardResponse: Decodable {
+    let bots: [UsageRow]
+}
+
+struct UsageRow: Decodable, Identifiable {
+    let botId: String
+    let sessionId: String?
+    let inputTokens: Int64?
+    let outputTokens: Int64?
+    let totalTokens: Int64?
+    let contextWindow: Int64?
+    let costUsd: Double?
+
+    var id: String { "\(botId)/\(sessionId ?? "-")" }
+
+    enum CodingKeys: String, CodingKey {
+        case botId = "bot_id"
+        case sessionId = "session_id"
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case totalTokens = "total_tokens"
+        case contextWindow = "context_window"
+        case costUsd = "cost_usd"
+    }
+}
+
+struct SessionsBoardResponse: Decodable {
+    let sessions: [SessionBoardRow]
+}
+
+struct SessionBoardRow: Decodable, Identifiable {
+    let sessionId: String
+    let botId: String
+    let botName: String?
+    let role: String
+    let isPrimary: Bool
+    let status: String
+    let createdAt: String     // "" when absent, NOT null
+    let lastUsedAt: String
+    let workspace: SessionWorkspace?
+
+    var id: String { sessionId }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case botId = "bot_id"
+        case botName = "bot_name"
+        case role
+        case isPrimary = "is_primary"
+        case status
+        case createdAt = "created_at"
+        case lastUsedAt = "last_used_at"
+        case workspace
+    }
+}
+
+struct SessionWorkspace: Decodable {
+    let cwd: String?
+    let additionalDirs: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case cwd
+        case additionalDirs = "additional_dirs"
+    }
+}
+
+struct ActivityBoardResponse: Decodable {
+    let events: [ActivityBoardEvent]
+}
+
+struct ActivityBoardEvent: Decodable, Identifiable {
+    let eventType: String     // "message" | "operation"
+    let channelSeq: Int64
+    let createdAt: String?
+    let data: JSONValue?
+
+    var id: Int64 { channelSeq }
+
+    enum CodingKeys: String, CodingKey {
+        case eventType = "event_type"
+        case channelSeq = "channel_seq"
+        case createdAt = "created_at"
+        case data
+    }
 }
