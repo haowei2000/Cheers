@@ -9,6 +9,33 @@ separately under `connector-v*` tags.
 
 ## [Unreleased]
 
+The macOS desktop app is released separately under `desktop-v*` tags; the
+entries below marked **(desktop)** ship in `desktop-v0.1.1`.
+
+### Added
+- **iOS: channel management.** The native client gained a members sheet, a
+  channel settings sheet, and the Viewboards surface (plan / cost / sessions /
+  audit / activity), bringing it in line with the web client.
+- **Bot creation parity.** Creating a bot now follows the same onboarding flow
+  on web, macOS and iOS instead of three divergent paths.
+- **(desktop) "Open in …" split button.** The workspace opener collapses into a
+  split button with per-app tiles (VS Code / Cursor / Zed / JetBrains / Finder)
+  rather than a flat list.
+- **Landing page: a client section.** `website/` now documents all four clients
+  — Web, macOS, iOS, Android — with download and web-app entry points surfaced
+  in the hero and at the top of the README.
+
+### Fixed
+- **(desktop) Connector restarts dropped `--config`.** A restarted connector
+  daemon came back up without its config file, silently losing its configured
+  workspace roots and adapter settings.
+- **(desktop) Onboarding is now zero-prep** — it creates the workspace
+  directories itself instead of failing when they don't already exist.
+- **Bot token minting for opencode.** The gateway now resolves the opencode
+  adapter before minting an Agent Bridge token, so token creation no longer
+  succeeds against an unresolved adapter.
+- **iOS: stuck touch input and runaway auto-scroll** in the chat view.
+
 ### Changed (breaking, security defaults)
 - **`OPEN_REGISTRATION` now defaults to `false`** — public self-service sign-up
   (`POST /auth/register`) is disabled unless explicitly enabled. Existing
