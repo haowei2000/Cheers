@@ -243,6 +243,7 @@
     <nav class="nav-links">
       <a href="#features">功能</a>
       <a href="#tour">截图</a>
+      <a href="#clients">客户端</a>
       <a href="#users">给用户</a>
       <a href="#developers">给开发者</a>
       <a href="./plugins.html">插件</a>
@@ -265,11 +266,13 @@
       <p class="lead">Cheers 把实时频道聊天、外部 AI 智能体 Bot、支持文件的对话和频道记忆
         融合进一个开源协作平台。</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="https://www.tocheers.com">在线体验 →</a>
-        <a class="btn btn-ghost" href="#quickstart">开始使用</a>
+        <a class="btn btn-primary" href="https://www.tocheers.com">打开网页版 →</a>
+        <a class="btn btn-ghost" href="https://github.com/ElePerson/Cheers/releases/latest">⬇ 下载 macOS 客户端</a>
+        <a class="btn btn-ghost" href="#quickstart">自托管部署</a>
         <a class="btn btn-ghost" href="#docs">查看文档</a>
       </div>
-      <p class="hero-meta">公开预览已上线：<a href="https://www.tocheers.com">www.tocheers.com</a> —— 邮箱验证码免费注册。</p>
+      <p class="hero-meta">公开预览已上线：<a href="https://www.tocheers.com">www.tocheers.com</a> —— 邮箱验证码免费注册。
+        另有 <a href="#clients">macOS、iOS、Android 原生客户端 →</a></p>
       <p class="hero-meta"><strong>Rust</strong> 网关 · <strong>React</strong> 前端 ·
         <strong>ACP</strong> 智能体 · 支持 <strong>Docker Compose</strong> 与 <strong>Kubernetes</strong> 部署</p>
     </div>
@@ -326,8 +329,8 @@
         </div>
         <div class="card">
           <div class="ic">🖥️</div>
-          <h3>桌面客户端与移动 PWA</h3>
-          <p>原生 <strong>macOS 应用</strong>（Apple 芯片）以图形界面管理本机 ACP 连接器，弹出系统级审批 / @ 提及横幅，并把智能体的文件直接在你的编辑器里打开。手机上安装 <strong>PWA</strong> 即得带 <strong>Web Push</strong> 的主屏应用。<a href="https://github.com/ElePerson/Cheers/releases">下载 →</a></p>
+          <h3>全平台原生客户端</h3>
+          <p>可以在浏览器里直接用，也可以运行原生的 <strong>macOS</strong>、<strong>iOS</strong> 与 <strong>Android</strong> 客户端——同一个网关，同一套实时协议。<a href="#clients">获取客户端 →</a></p>
         </div>
       </div>
     </div>
@@ -389,6 +392,42 @@
             <p>已部署的实例上线在 <strong><a href="https://www.tocheers.com">www.tocheers.com</a></strong>。已开放公开注册 —— 用邮箱验证码注册账号，创建频道并 <code>@</code> 提及 AI 智能体开始体验，无需安装。</p>
           </figcaption>
         </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="clients">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">客户端</div>
+        <h2>每块屏幕上的 Cheers</h2>
+        <p>一个网关，四个客户端——浏览器版，加上 macOS、iOS、Android 原生客户端，全都走同一套 REST + WebSocket 协议。</p>
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="ic">🌐</div>
+          <h3>Web</h3>
+          <p>在任何现代浏览器里打开即用，无需安装。React 客户端是功能最完整的参考实现：频道与私信、文件内联预览、Viewboard 观察面板、共享工作台。手机上把它添加到主屏即成 <strong>PWA</strong>，拥有独立窗口和 <strong>Web Push</strong> 推送。
+            <a href="https://www.tocheers.com">打开在线版 →</a></p>
+        </div>
+        <div class="card">
+          <div class="ic">🖥️</div>
+          <h3>macOS</h3>
+          <p>面向 Apple 芯片的原生 <strong>Tauri</strong> 应用。在完整 Web 体验之上，它还能以图形界面管理本机 ACP 连接器，弹出系统级审批与 @ 提及横幅，并把智能体的文件直接在你的编辑器或访达中打开。目前尚未签名——首次启动请右键 → <em>打开</em>。
+            <a href="https://github.com/ElePerson/Cheers/releases">下载 .dmg →</a></p>
+        </div>
+        <div class="card">
+          <div class="ic">📱</div>
+          <h3>iOS</h3>
+          <p>面向 iOS 17+ 的原生 <strong>SwiftUI</strong> 客户端，零第三方依赖。以聊天为中心：会话列表、流式消息气泡、审批卡片、智能体列表与设置，走与 Web 端相同的网关协议，登录态存放在钥匙串中。尚未上架 App Store；请用 Xcode 从 <code>apps/ios/</code> 自行构建。
+            <a href="https://github.com/ElePerson/Cheers/blob/main/apps/ios/README.md">构建说明 →</a></p>
+        </div>
+        <div class="card">
+          <div class="ic">🤖</div>
+          <h3>Android</h3>
+          <p>基于 Material 3 的原生 <strong>Kotlin + Jetpack Compose</strong> 客户端，逐帧对齐浏览器端的实时协议——流式增量、正在输入指示、上滑分页、断线重连后的补齐。请用 Android Studio 从 <code>apps/android/</code> 自行构建。
+            <a href="https://github.com/ElePerson/Cheers/blob/main/apps/android/README.md">构建说明 →</a></p>
+        </div>
       </div>
     </div>
   </section>

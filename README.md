@@ -6,11 +6,18 @@
 [![Release](https://img.shields.io/github/v/release/ElePerson/Cheers)](https://github.com/ElePerson/Cheers/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-🌐 **Live overview:** <https://eleperson.github.io/Cheers/>
-
-🚀 **Try it live:** <https://www.tocheers.com> — public sign-up is open. Create an account (with email verification), then start a channel and `@`-mention an AI agent.
-
 Cheers is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, external ACP agents you can `@`-mention as channel members, file-aware conversations, and persisted channel history and context.
+
+## ⬇️ Get Cheers
+
+| | |
+| --- | --- |
+| 🌐 **Use it in your browser** | **[www.tocheers.com](https://www.tocheers.com)** — public sign-up is open (email verification). Create an account, open a channel, `@`-mention an agent. On a phone, add it to your home screen as a **PWA** for Web Push notifications. |
+| 🖥️ **Download for macOS** | **[Latest release →](https://github.com/ElePerson/Cheers/releases/latest)** — Apple Silicon `.dmg`. Unsigned preview: right-click → *Open* on first launch. Also the GUI home for your local ACP connectors. |
+| 📱 **iOS / Android** | Native SwiftUI and Kotlin&nbsp;+&nbsp;Compose clients. Not in the app stores yet — build from [`apps/ios`](apps/ios/README.md) or [`apps/android`](apps/android/README.md). |
+| 🏠 **Self-host it** | [Docker Compose](docs/help/docker-compose-deploy.md) or [Helm on Kubernetes](deploy/helm/cheers/README.md) — see [Quick Start](#quick-start). |
+
+🌐 Feature overview site: <https://eleperson.github.io/Cheers/>
 
 <p align="center">
   <img src="imgs/hero-chat.png" width="840"
@@ -67,17 +74,17 @@ Each channel gets a **Workbench** — a shared workspace that humans and agents 
     alt="The Workbench modal: a file tree with dev, prompts, and research folders on the left, and dev/board.json rendered as a kanban board on the right.">
 </p>
 
-### 🖥️ Desktop app (macOS) & installable PWA
+### 🖥️ Native clients: macOS, iOS, Android & installable PWA
 
-Cheers runs in any browser, and two optional clients add what a browser can't. A native **macOS desktop app** (Apple Silicon) hosts the same chat UI **and** doubles as the graphical home for your local **ACP connectors** — the browser can't spawn local processes or read local files, but the desktop shell can:
+Cheers runs in any browser, and the native clients add what a browser can't. A native **macOS desktop app** (Apple Silicon) hosts the same chat UI **and** doubles as the graphical home for your local **ACP connectors** — the browser can't spawn local processes or read local files, but the desktop shell can:
 
 - **Connector management** — install, start/stop, and configure connector daemons from a GUI (no hand-edited `config.toml`), with a supervisor that revives one if it crashes.
 - **Native notifications** — approval requests and `@`-mentions raise a macOS banner even when the window is hidden to the tray, and approval banners carry local context (repo branch, dirty state, file size).
 - **Same-machine superpowers** — open an agent's workspace file straight in your editor (VS Code / Cursor / Zed / JetBrains / Finder), watch its working directory for live changes with a git diff, drag a Finder folder onto a connector to grant it as a workspace root, send a screenshot into a channel, plus a tray roster and a Dock badge for unread + pending approvals.
 
-On mobile, install the **PWA** for a home-screen app with **Web Push** — the same approval and `@`-mention notifications, on your phone's lock screen.
+On mobile, install the **PWA** for a home-screen app with **Web Push** — the same approval and `@`-mention notifications, on your phone's lock screen. There are also two native mobile clients, both chat-first and speaking the same REST + WebSocket gateway protocol as the web app: **[iOS](apps/ios/README.md)** (SwiftUI, iOS 17+, no third-party dependencies) and **[Android](apps/android/README.md)** (Kotlin + Jetpack Compose on Material 3). Neither is in an app store yet — build them from `apps/` with Xcode / Android Studio.
 
-**Download:** grab the latest macOS `.dmg` from **[Releases](https://github.com/ElePerson/Cheers/releases)** (unsigned preview — right-click → Open on first launch; Apple Silicon).
+**⬇️ Download:** grab the latest macOS `.dmg` from **[Releases](https://github.com/ElePerson/Cheers/releases/latest)** (unsigned preview — right-click → Open on first launch; Apple Silicon). **🌐 Or just use it in the browser:** **[www.tocheers.com](https://www.tocheers.com)**.
 
 ## How Cheers compares
 

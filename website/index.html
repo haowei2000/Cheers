@@ -243,6 +243,7 @@
     <nav class="nav-links">
       <a href="#features">Features</a>
       <a href="#tour">Screenshots</a>
+      <a href="#clients">Apps</a>
       <a href="#users">For Users</a>
       <a href="#developers">For Developers</a>
       <a href="./plugins.html">Plugins</a>
@@ -266,11 +267,13 @@
       <p class="lead">Cheers combines real-time channel chat, external AI agent bots, file-aware
         conversations, and channel memory — in one open-source collaboration platform.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="https://www.tocheers.com">Try it live →</a>
-        <a class="btn btn-ghost" href="#quickstart">Get Started</a>
+        <a class="btn btn-primary" href="https://www.tocheers.com">Open the web app →</a>
+        <a class="btn btn-ghost" href="https://github.com/ElePerson/Cheers/releases/latest">⬇ Download for macOS</a>
+        <a class="btn btn-ghost" href="#quickstart">Self-host it</a>
         <a class="btn btn-ghost" href="#docs">View Docs</a>
       </div>
-      <p class="hero-meta">Public preview live at <a href="https://www.tocheers.com">www.tocheers.com</a> — free sign-up with email verification.</p>
+      <p class="hero-meta">Public preview live at <a href="https://www.tocheers.com">www.tocheers.com</a> — free sign-up with email verification.
+        Native <a href="#clients">macOS, iOS &amp; Android clients →</a></p>
       <p class="hero-meta"><strong>Rust</strong> gateway · <strong>React</strong> frontend ·
         <strong>ACP</strong> agents · runs on <strong>Docker Compose</strong> or <strong>Kubernetes</strong></p>
     </div>
@@ -328,8 +331,8 @@
         </div>
         <div class="card">
           <div class="ic">🖥️</div>
-          <h3>Desktop app &amp; mobile PWA</h3>
-          <p>A native <strong>macOS app</strong> (Apple Silicon) manages your local ACP connectors from a GUI, raises native approval / @-mention banners, and opens an agent's files right in your editor. On phones, install the <strong>PWA</strong> for a home-screen app with <strong>Web Push</strong>. <a href="https://github.com/ElePerson/Cheers/releases">Download →</a></p>
+          <h3>Native clients everywhere</h3>
+          <p>Use Cheers in the browser, or run the native <strong>macOS</strong>, <strong>iOS</strong> and <strong>Android</strong> clients — all on the same gateway, all speaking the same realtime protocol. <a href="#clients">Get the apps →</a></p>
         </div>
       </div>
     </div>
@@ -391,6 +394,54 @@
             <p>The hosted instance is live at <strong><a href="https://www.tocheers.com">www.tocheers.com</a></strong>. Public sign-up is open — create an account with email verification, then start a channel and <code>@</code>-mention an AI agent. Nothing to install.</p>
           </figcaption>
         </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="clients">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Apps</div>
+        <h2>Cheers on every screen</h2>
+        <p>One gateway, four clients — the browser app plus native macOS, iOS and Android builds, all speaking the same REST + WebSocket protocol.</p>
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="ic">🌐</div>
+          <h3>Web</h3>
+          <p>Runs in any modern browser with nothing to install — the React client is the reference
+            implementation: channels and DMs, inline file previews, the Viewboard, and the shared
+            Workbench. On phones, add it to your home screen as a <strong>PWA</strong> for an app-like
+            window and <strong>Web Push</strong> notifications.
+            <a href="https://www.tocheers.com">Open the live app →</a></p>
+        </div>
+        <div class="card">
+          <div class="ic">🖥️</div>
+          <h3>macOS</h3>
+          <p>A native <strong>Tauri</strong> app for Apple Silicon. On top of the full web experience it
+            manages your local ACP connectors from a GUI, raises native approval and @-mention banners,
+            and opens an agent's files straight in your editor or Finder. Unsigned for now — right-click
+            → <em>Open</em> on first launch.
+            <a href="https://github.com/ElePerson/Cheers/releases">Download the .dmg →</a></p>
+        </div>
+        <div class="card">
+          <div class="ic">📱</div>
+          <h3>iOS</h3>
+          <p>A native <strong>SwiftUI</strong> client for iOS 17+ with no third-party dependencies.
+            Chat-first: conversation list, streaming message bubbles, approval cards, agent list and
+            settings — over the same gateway protocol as the web app, with Keychain-stored sessions.
+            Not on the App Store yet; build it from <code>apps/ios/</code> with Xcode.
+            <a href="https://github.com/ElePerson/Cheers/blob/main/apps/ios/README.md">Build instructions →</a></p>
+        </div>
+        <div class="card">
+          <div class="ic">🤖</div>
+          <h3>Android</h3>
+          <p>A native <strong>Kotlin + Jetpack Compose</strong> client on Material 3, mirroring the
+            browser client's realtime protocol frame for frame — streaming deltas, typing indicators,
+            scroll-up pagination, and catch-up after a reconnect. Build it from
+            <code>apps/android/</code> with Android Studio.
+            <a href="https://github.com/ElePerson/Cheers/blob/main/apps/android/README.md">Build instructions →</a></p>
+        </div>
       </div>
     </div>
   </section>
