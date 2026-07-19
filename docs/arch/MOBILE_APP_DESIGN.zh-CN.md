@@ -1,12 +1,26 @@
-# 移动 App 设计（Expo）
+# 移动 App 设计
 
 > **语言**: [English](MOBILE_APP_DESIGN.md) | 中文
 >
-> **状态**: 草案 · **日期**: 2026-07-17 · **负责人**: haowei
+> **状态**: 草案 · **日期**: 2026-07-17 · **修订**: 2026-07-19 · **负责人**: haowei
 
-Cheers 整合后的移动 App（`apps/mobile/`）设计文档 ——
-[MOBILE_CLIENT_STRATEGY.zh-CN.md](MOBILE_CLIENT_STRATEGY.zh-CN.md)（已接受，
-2026-07-06）指定的 iOS + Android 最终态 Expo (React Native) 代码库。涵盖产品/UX
+> ## ⚠️ 先读这里 —— 本文中 Expo 相关部分已被取代
+>
+> 本设计当初是为 `apps/mobile/` 下的 Expo（React Native）App 写的。**2026-07-19** 该方向
+> 已放弃：移动端客户端是 **`apps/ios` 的原生 SwiftUI App**，`apps/mobile/` 不会被创建。
+> 见 [MOBILE_CLIENT_STRATEGY.zh-CN.md](MOBILE_CLIENT_STRATEGY.zh-CN.md)。
+>
+> | 章节 | 状态 |
+> |---|---|
+> | 产品/UX 设计、屏幕、信息架构 | **有效** —— 与平台无关，用 SwiftUI 实现 |
+> | §5 推送通知 | **有效** —— 已于 2026-07-18 改为直连 APNs + 中继 |
+> | 代码库表格、`apps/mobile/` 目录树、expo-router、expo-secure-store、NativeWind | **已取代** —— 读作「原生 App 需要提供的形态」，而非实施指令 |
+>
+> Expo 特有的机制会**随原生实现推进逐段替换**，而不是一次性删除 —— 里面的论证仍然是
+> SwiftUI 实现必须回答的问题。
+
+Cheers 移动 App 设计文档。最初为 `apps/mobile/` 下整合的 Expo (React Native) 代码库撰写；
+现在的目标是 `apps/ios` 的原生 SwiftUI App（见上方横幅）。涵盖产品/UX
 设计、App 架构与推送通知系统（需要新的服务端工作，此处给出规格并作为后续任务跟踪）。
 
 配套交互原型：[docs/design/mobile-app-prototype.html](../design/mobile-app-prototype.html)
