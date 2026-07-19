@@ -438,7 +438,12 @@ const KNOWN_AGENTS: &[(&str, &str, &str, &str)] = &[
     ),
     // OpenCode's ACP mode is a subcommand of its main binary (`opencode acp`),
     // so the adapter command IS `opencode` — matching the gateway preset.
-    ("opencode", "OpenCode", "opencode", "npm install -g opencode-ai"),
+    (
+        "opencode",
+        "OpenCode",
+        "opencode",
+        "npm install -g opencode-ai",
+    ),
     // No ACP adapter exists for Gemini yet; empty command → never "installed"
     // (the plain `gemini` CLI is NOT an ACP adapter), shown as unavailable.
     ("gemini", "Gemini", "", ""),
