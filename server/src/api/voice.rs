@@ -17,9 +17,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::{api::middleware::Claims as BrowserClaims, app_state::AppState, errors::AppError};
+use crate::{
+    api::middleware::Claims as BrowserClaims, app_state::AppState, errors::AppError,
+    gateway::realtime::frame::WireFrame,
+};
 
 const JOIN_TOKEN_TTL_SECS: i64 = 10 * 60;
 
@@ -80,6 +84,22 @@ pub struct VoiceSessionDto {
     pub status: String,
     pub transcription_status: String,
     pub started_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VoicePresenceParticipant {
+    pub user_id: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub mic_published: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VoicePresenceSnapshot {
+    pub channel_id: String,
+    pub voice_session_id: Option<String>,
+    pub status: Option<String>,
+    pub participants: Vec<VoicePresenceParticipant>,
 }
 
 struct VoiceMember {
@@ -287,6 +307,133 @@ pub async fn state(
     }))
 }
 
+fn presence_snapshots(rows: Vec<sqlx::postgres::PgRow>) -> Vec<VoicePresenceSnapshot> {
+    let mut snapshots = Vec::<VoicePresenceSnapshot>::new();
+    let mut indexes = HashMap::<String, usize>::new();
+    for row in rows {
+        let channel_id: String = row.try_get("channel_id").unwrap_or_default();
+        let index = *indexes.entry(channel_id.clone()).or_insert_with(|| {
+            let index = snapshots.len();
+            snapshots.push(VoicePresenceSnapshot {
+                channel_id,
+                voice_session_id: row.try_get("voice_session_id").ok(),
+                status: row.try_get("status").ok(),
+                participants: Vec::new(),
+            });
+            index
+        });
+        let Some(user_id) = row.try_get::<Option<String>, _>("user_id").ok().flatten() else {
+            continue;
+        };
+        snapshots[index]
+            .participants
+            .push(VoicePresenceParticipant {
+                user_id,
+                display_name: row
+                    .try_get::<Option<String>, _>("display_name")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| "Member".into()),
+                avatar_url: row
+                    .try_get::<Option<String>, _>("avatar_url")
+                    .ok()
+                    .flatten(),
+                mic_published: row
+                    .try_get::<Option<chrono::DateTime<Utc>>, _>("mic_published_at")
+                    .ok()
+                    .flatten()
+                    .is_some(),
+            });
+    }
+    snapshots
+}
+
+/// GET /api/v1/voice/presence
+///
+/// Initial app-wide occupancy snapshot for every active voice session visible to
+/// the caller. Subsequent changes arrive as user-scoped `voice_presence` frames.
+pub async fn presence(
+    State(state): State<AppState>,
+    Extension(claims): Extension<BrowserClaims>,
+) -> Result<Json<Vec<VoicePresenceSnapshot>>, AppError> {
+    let rows = sqlx::query(
+        "SELECT vs.channel_id, vs.voice_session_id, vs.status,
+                vps.user_id,
+                COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name,
+                u.avatar_url, vps.mic_published_at
+         FROM voice_sessions vs
+         JOIN channels c ON c.channel_id = vs.channel_id AND c.kind = 'voice'
+         JOIN channel_memberships viewer ON viewer.channel_id = vs.channel_id
+              AND viewer.member_id = $1 AND viewer.member_type = 'user'
+         LEFT JOIN voice_participant_sessions vps ON vps.voice_session_id = vs.voice_session_id
+              AND vps.joined_at IS NOT NULL AND vps.left_at IS NULL
+         LEFT JOIN users u ON u.user_id = vps.user_id
+         WHERE vs.ended_at IS NULL
+         ORDER BY vs.channel_id, vps.joined_at, vps.participant_session_id",
+    )
+    .bind(&claims.sub)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(presence_snapshots(rows)))
+}
+
+async fn channel_presence_snapshot(
+    state: &AppState,
+    channel_id: Uuid,
+) -> Result<VoicePresenceSnapshot, AppError> {
+    let rows = sqlx::query(
+        "SELECT vs.channel_id, vs.voice_session_id, vs.status,
+                vps.user_id,
+                COALESCE(NULLIF(u.display_name, ''), u.username, 'Member') AS display_name,
+                u.avatar_url, vps.mic_published_at
+         FROM voice_sessions vs
+         LEFT JOIN voice_participant_sessions vps ON vps.voice_session_id = vs.voice_session_id
+              AND vps.joined_at IS NOT NULL AND vps.left_at IS NULL
+         LEFT JOIN users u ON u.user_id = vps.user_id
+         WHERE vs.channel_id = $1 AND vs.ended_at IS NULL
+         ORDER BY vps.joined_at, vps.participant_session_id",
+    )
+    .bind(channel_id.to_string())
+    .fetch_all(&state.db)
+    .await?;
+    Ok(presence_snapshots(rows)
+        .into_iter()
+        .next()
+        .unwrap_or(VoicePresenceSnapshot {
+            channel_id: channel_id.to_string(),
+            voice_session_id: None,
+            status: None,
+            participants: Vec::new(),
+        }))
+}
+
+async fn broadcast_voice_presence(state: &AppState, channel_id: Uuid) {
+    let snapshot = match channel_presence_snapshot(state, channel_id).await {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            tracing::warn!(%channel_id, %error, "voice presence snapshot failed");
+            return;
+        }
+    };
+    let member_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT member_id FROM channel_memberships
+         WHERE channel_id = $1 AND member_type = 'user'",
+    )
+    .bind(channel_id.to_string())
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+    let data = serde_json::to_value(snapshot).unwrap_or_else(|_| json!({}));
+    for member_id in member_ids {
+        if let Ok(user_id) = Uuid::parse_str(&member_id) {
+            state
+                .fanout
+                .broadcast_user(user_id, WireFrame::user("voice_presence", data.clone()))
+                .await;
+        }
+    }
+}
+
 fn verify_webhook(
     api_key: &str,
     api_secret: &str,
@@ -350,6 +497,11 @@ pub async fn livekit_webhook(
         .map_err(|_| AppError::BadRequest("invalid LiveKit webhook JSON".into()))?;
     let event_name = event.get("event").and_then(|v| v.as_str()).unwrap_or("");
     let event_id = event.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    if event_name.is_empty() || event_id.is_empty() {
+        return Err(AppError::BadRequest(
+            "LiveKit webhook event and id are required".into(),
+        ));
+    }
     let provider_room_id = event
         .pointer("/room/name")
         .and_then(|v| v.as_str())
@@ -359,11 +511,37 @@ pub async fn livekit_webhook(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    if provider_room_id.is_empty() {
-        // Egress/ingress event classes are valid LiveKit webhooks but are not
-        // part of Voice V1 room state. Acknowledge them without mutation.
-        return Ok(Json(json!({ "ok": true, "ignored": true })));
+    let mut tx = state.db.begin().await?;
+    let claimed = sqlx::query(
+        "INSERT INTO voice_webhook_events
+            (provider, event_id, event_type, provider_room_id)
+         VALUES ('livekit', $1, $2, NULLIF($3, ''))
+         ON CONFLICT (provider, event_id) DO NOTHING",
+    )
+    .bind(event_id)
+    .bind(event_name)
+    .bind(provider_room_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        == 1;
+    if !claimed {
+        tx.rollback().await?;
+        return Ok(Json(json!({ "ok": true, "duplicate": true })));
     }
+
+    let channel_id: Option<String> = if provider_room_id.is_empty() {
+        None
+    } else {
+        sqlx::query_scalar(
+            "SELECT channel_id FROM voice_sessions
+             WHERE provider = 'livekit' AND provider_room_id = $1
+             ORDER BY started_at DESC LIMIT 1",
+        )
+        .bind(provider_room_id)
+        .fetch_optional(&mut *tx)
+        .await?
+    };
 
     match event_name {
         "room_started" => {
@@ -372,7 +550,7 @@ pub async fn livekit_webhook(
                  WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
             )
             .bind(provider_room_id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
         }
         "room_finished" => {
@@ -382,7 +560,7 @@ pub async fn livekit_webhook(
                  WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
             )
             .bind(provider_room_id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
         }
         "participant_joined" => {
@@ -391,14 +569,14 @@ pub async fn livekit_webhook(
                  WHERE provider_identity = $1 AND left_at IS NULL",
             )
             .bind(participant_identity)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
             sqlx::query(
                 "UPDATE voice_sessions SET status = 'active', updated_at = NOW()
                  WHERE provider = 'livekit' AND provider_room_id = $1 AND ended_at IS NULL",
             )
             .bind(provider_room_id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
         }
         "participant_left" | "participant_connection_aborted" => {
@@ -407,7 +585,7 @@ pub async fn livekit_webhook(
                  WHERE provider_identity = $1 AND left_at IS NULL",
             )
             .bind(participant_identity)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
         }
         "track_published" => {
@@ -417,10 +595,38 @@ pub async fn livekit_webhook(
                  WHERE provider_identity = $1 AND left_at IS NULL",
             )
             .bind(participant_identity)
-            .execute(&state.db)
+            .execute(&mut *tx)
+            .await?;
+        }
+        "track_unpublished" => {
+            sqlx::query(
+                "UPDATE voice_participant_sessions SET mic_published_at = NULL
+                 WHERE provider_identity = $1 AND left_at IS NULL",
+            )
+            .bind(participant_identity)
+            .execute(&mut *tx)
             .await?;
         }
         _ => {}
+    }
+    tx.commit().await?;
+
+    if matches!(
+        event_name,
+        "room_started"
+            | "room_finished"
+            | "participant_joined"
+            | "participant_left"
+            | "participant_connection_aborted"
+            | "track_published"
+            | "track_unpublished"
+    ) {
+        if let Some(channel_uuid) = channel_id
+            .as_deref()
+            .and_then(|value| Uuid::parse_str(value).ok())
+        {
+            broadcast_voice_presence(&state, channel_uuid).await;
+        }
     }
 
     tracing::debug!(
@@ -429,7 +635,10 @@ pub async fn livekit_webhook(
         provider_room_id,
         "LiveKit webhook applied"
     );
-    Ok(Json(json!({ "ok": true })))
+    Ok(Json(json!({
+        "ok": true,
+        "ignored": provider_room_id.is_empty() || channel_id.is_none()
+    })))
 }
 
 #[cfg(test)]

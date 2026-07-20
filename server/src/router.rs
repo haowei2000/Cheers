@@ -264,6 +264,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/voice/state",
             get(api::voice::state),
         )
+        .route("/api/v1/voice/presence", get(api::voice::presence))
         .route(
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
             post(api::messages::cancel_message),

@@ -34,7 +34,8 @@ Voice V1 now provides:
 - persistent `text` and `voice` channel kinds;
 - membership-authorized, short-lived, room-scoped LiveKit join tokens;
 - browser join/leave, microphone mute, remote audio, participant count, and active-speaker UI;
-- signed LiveKit webhook ingestion for room, participant, and microphone lifecycle state;
+- idempotent signed LiveKit webhook ingestion for room, participant, and microphone lifecycle state;
+- app-wide voice occupancy snapshots and live sidebar participant presence;
 - a dedicated small-VM Docker Compose stack for LiveKit, Redis, and Caddy.
 
 The earlier attachment flow still supports:
@@ -46,7 +47,7 @@ The earlier attachment flow still supports:
   fallback.
 
 Cheers still does not have the transcription worker, durable live transcript event model,
-browser-wide voice-presence fanout, moderation controls, or proactive task-claim scheduler.
+moderation controls, or proactive task-claim scheduler.
 The existing `transcription_worker` polls S3-backed files and may take minutes; it must not
 be stretched into a real-time media service.
 

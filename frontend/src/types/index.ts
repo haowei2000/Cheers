@@ -43,6 +43,20 @@ export interface Channel {
   is_member?: boolean;
 }
 
+export interface VoicePresenceParticipant {
+  user_id: string;
+  display_name: string;
+  avatar_url?: string | null;
+  mic_published: boolean;
+}
+
+export interface VoicePresenceSnapshot {
+  channel_id: string;
+  voice_session_id?: string | null;
+  status?: string | null;
+  participants: VoicePresenceParticipant[];
+}
+
 export interface DM {
   channel_id: string;
   workspace_id: string;

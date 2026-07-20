@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare, Menu, Settings, Volume2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
-import type { Channel, Workspace } from "@/types";
+import type { Channel, VoicePresenceSnapshot, Workspace } from "@/types";
+import { Avatar } from "@/components/ui/avatar";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
@@ -84,46 +85,72 @@ interface ChannelItemProps {
   channel: Channel;
   selected: boolean;
   onClick: () => void;
+  voicePresence?: VoicePresenceSnapshot;
 }
 
-function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
+function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemProps) {
+  const participants = voicePresence?.participants ?? [];
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        // max-md:py-3 → ~44px touch rows on phones; desktop keeps the compact py-1.
-        "w-full flex items-center gap-2 px-3 py-1 max-md:py-3 rounded-md text-sm transition-colors text-left",
-        selected
-          ? "bg-zinc-800 text-zinc-100 font-medium"
-          : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
-      )}
-    >
-      {channel.kind === "voice" ? (
-        <Volume2 className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-      ) : (
-        <Hash className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
-      )}
-      {/* Joinable-but-not-joined public channels (Slack model) render dimmed;
-          clicking one opens the join prompt instead of the chat. */}
-      <span className={cn("truncate", channel.is_member === false && "opacity-50")}>
-        {channel.name}
-      </span>
-      {/* A mention badge (rose "@N") outranks the plain unread pill: being
-          @mentioned is a stronger signal than an unread message, so when both
-          apply we show the mention. */}
-      {(channel.mention_count ?? 0) > 0 ? (
-        <span
-          title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
-          className="ml-auto text-[10px] font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
-        >
-          @{channel.mention_count}
+    <div>
+      <button
+        onClick={onClick}
+        className={cn(
+          // max-md:py-3 → ~44px touch rows on phones; desktop keeps the compact py-1.
+          "w-full flex items-center gap-2 px-3 py-1 max-md:py-3 rounded-md text-sm transition-colors text-left",
+          selected
+            ? "bg-zinc-800 text-zinc-100 font-medium"
+            : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+        )}
+      >
+        {channel.kind === "voice" ? (
+          <Volume2 className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+        ) : (
+          <Hash className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+        )}
+        {/* Joinable-but-not-joined public channels (Slack model) render dimmed;
+            clicking one opens the join prompt instead of the chat. */}
+        <span className={cn("truncate", channel.is_member === false && "opacity-50")}>
+          {channel.name}
         </span>
-      ) : (channel.unread_count ?? 0) > 0 ? (
-        <span className="ml-auto text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-          {channel.unread_count}
-        </span>
-      ) : null}
-    </button>
+        {participants.length > 0 && (
+          <span className="ml-auto text-[10px] tabular-nums text-emerald-400">
+            {participants.length}
+          </span>
+        )}
+        {/* A mention badge (rose "@N") outranks the plain unread pill. */}
+        {(channel.mention_count ?? 0) > 0 ? (
+          <span
+            title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
+            className="ml-auto text-[10px] font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+          >
+            @{channel.mention_count}
+          </span>
+        ) : (channel.unread_count ?? 0) > 0 ? (
+          <span className="ml-auto text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+            {channel.unread_count}
+          </span>
+        ) : null}
+      </button>
+      {channel.kind === "voice" && participants.length > 0 && (
+        <div className="pb-1 pl-8 pr-2">
+          {participants.map((participant) => (
+            <div
+              key={participant.user_id}
+              className="flex items-center gap-2 rounded px-1 py-1 text-xs text-zinc-400"
+            >
+              <Avatar
+                name={participant.display_name}
+                src={participant.avatar_url}
+                id={participant.user_id}
+                size="xs"
+                online
+              />
+              <span className="truncate">{participant.display_name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -136,8 +163,13 @@ interface Props {
 }
 
 export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
-  const { channels, selectedChannelId, selectChannel, selectedWorkspaceId } =
-    useChatStore();
+  const {
+    channels,
+    selectedChannelId,
+    selectChannel,
+    selectedWorkspaceId,
+    voicePresenceByChannel,
+  } = useChatStore();
   const [dmOpen, setDmOpen] = useState(false);
   const [channelOpen, setChannelOpen] = useState(false);
   const [wsSettingsOpen, setWsSettingsOpen] = useState(false);
@@ -212,6 +244,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
                 channel={ch}
                 selected={selectedChannelId === ch.channel_id}
                 onClick={() => pick(ch.channel_id)}
+                voicePresence={voicePresenceByChannel[ch.channel_id]}
               />
             ))}
           </Section>

@@ -1,5 +1,5 @@
 import { apiJson } from "./client";
-import type { Channel, MemberItem } from "@/types";
+import type { Channel, MemberItem, VoicePresenceSnapshot } from "@/types";
 
 export async function listChannels(workspaceId?: string): Promise<Channel[]> {
   const qs = workspaceId ? `?workspace_id=${workspaceId}` : "";
@@ -128,6 +128,11 @@ export async function joinVoiceChannel(channelId: string): Promise<VoiceJoinResp
   return apiJson<VoiceJoinResponse>(`/channels/${channelId}/voice/join`, {
     method: "POST",
   });
+}
+
+/** Initial app-wide occupancy for voice channels visible to the caller. */
+export async function listVoicePresence(): Promise<VoicePresenceSnapshot[]> {
+  return apiJson<VoicePresenceSnapshot[]>("/voice/presence");
 }
 
 export async function deleteChannel(channelId: string): Promise<void> {
