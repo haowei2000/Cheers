@@ -3,6 +3,7 @@ import { notify, messageOf } from "@/lib/notify";
 import { useNavigate } from "react-router-dom";
 import { serverOrigin, isTauri } from "@/lib/serverConfig";
 import { requestConnectorForBot } from "@/features/desktop/connectorIntent";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   Bot,
   Terminal,
@@ -103,7 +104,7 @@ function download(filename: string, text: string) {
 }
 
 function Stepper({ step }: { step: 0 | 1 | 2 }) {
-  const labels = ["Choose bot", "Pick a mode", "Connect"];
+  const labels = ["Choose bot", "Choose host", "Connect"];
   return (
     <div className="flex items-center gap-2 text-xs">
       {labels.map((label, i) => (
@@ -160,6 +161,8 @@ export function BotOnboardingWizard({
   onDone: () => void;
 }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const localDesktop = isTauri();
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [mode, setMode] = useState<Mode | null>(null);
 
@@ -333,6 +336,16 @@ export function BotOnboardingWizard({
         {/* ── Step 0: choose / create bot ───────────────────────────── */}
         {step === 0 && (
           <div className="space-y-3">
+            <div className="rounded-xl bg-indigo-950/35 px-3 py-2.5 text-xs text-indigo-100">
+              <p className="font-medium">A bot is an identity; a connector is where it runs.</p>
+              <p className="mt-1 text-indigo-200/75">
+                {localDesktop
+                  ? "This Mac can create the bot and run its connector in one guided setup."
+                  : isMobile
+                    ? "This phone creates the bot and a secure pairing code. Use that code on a Mac or Linux machine where your agent is installed."
+                    : "This browser creates the bot and a secure pairing code. Run the connector later on the Mac or Linux machine where your agent is installed."}
+              </p>
+            </div>
             <div className="flex gap-2 text-xs">
               <button
                 type="button"
@@ -421,7 +434,7 @@ export function BotOnboardingWizard({
             </div>
 
             <div className="flex justify-end items-center gap-2">
-              {isTauri() && (
+              {localDesktop && (
                 <Button variant="secondary" onClick={setupLocally} disabled={busy}>
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   <Laptop className="w-4 h-4" /> Set up on this Mac
@@ -429,7 +442,7 @@ export function BotOnboardingWizard({
               )}
               <Button onClick={validateAndAdvance} disabled={busy}>
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                Continue
+                {localDesktop ? "Set up another host" : "Choose host"}
               </Button>
             </div>
           </div>
@@ -443,28 +456,28 @@ export function BotOnboardingWizard({
               <span className="text-zinc-300">
                 @{bot?.username ?? username.trim()}
               </span>
-              . Pick how you want to run the connector on the agent's machine.
+              . Choose how the host machine will receive its secure pairing code.
             </p>
             <div className="grid gap-2">
               <ModeCard
                 icon={<Terminal className="w-5 h-5 text-indigo-300" />}
-                title="Install script"
+                title="Run one command on the host"
                 badge="Easiest"
-                desc="One command on the host redeems a code, writes everything, installs a keep-alive service, and starts it."
+                desc="Recommended. On the Mac or Linux host, one command pairs the bot, writes its config, and starts a background connector."
                 onClick={() => pickMode("script")}
                 disabled={busy}
               />
               <ModeCard
                 icon={<Sparkles className="w-5 h-5 text-indigo-300" />}
-                title="Let your agent connect itself"
-                desc="Paste a prompt to your own agent; it follows Cheers' guidance to run the installer."
+                title="Ask an agent on the host to set it up"
+                desc="Copy a prompt to an agent that has terminal access on the host. It follows the same guided installer."
                 onClick={() => pickMode("agent")}
                 disabled={busy}
               />
               <ModeCard
                 icon={<FileCode2 className="w-5 h-5 text-indigo-300" />}
-                title="Manual"
-                desc="Download the config, paste the one-time token into a file, start the connector yourself. Most control."
+                title="Configure the host manually"
+                desc="For operators who need to inspect every setting and start the connector themselves."
                 onClick={() => pickMode("manual")}
                 disabled={busy}
               />

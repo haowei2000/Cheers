@@ -776,7 +776,8 @@ async fn normalize_account(
     let bot_token = read_bot_token(id, &raw.bridge, base_dir).await?;
     let policy = normalize_policy(id, raw.policy, base_dir)?;
     let env = materialize_env_policy(&policy.env)?;
-    let command = normalize_command_for_env_policy(&raw.adapter.command, policy.env.inherit)?;
+    let (command, args) =
+        normalize_adapter_launcher(&raw.adapter.command, raw.adapter.args, policy.env.inherit)?;
     let acp_capability = normalize_acp_capability(id, raw.security.acp_capability, base_dir)?;
 
     Ok(AccountConfig {
@@ -791,7 +792,7 @@ async fn normalize_account(
         },
         agent: StdioAgentConfig {
             command,
-            args: raw.adapter.args,
+            args,
             model: None,
             cwd: policy.workspace.default_cwd.clone(),
             env,
@@ -1003,21 +1004,65 @@ fn valid_env_name(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
+/// Resolve an adapter command for the connector's process policy. When possible
+/// we make a bare command absolute even if the child inherits its environment:
+/// launchd/systemd often provide a much smaller PATH than the interactive shell
+/// that generated the config.
 fn normalize_command_for_env_policy(command: &str, inherit_env: bool) -> anyhow::Result<String> {
     let command = command.trim();
     if command.is_empty() {
         return Err(anyhow!("adapter.command must not be empty"));
     }
-    if inherit_env || command.contains(std::path::MAIN_SEPARATOR) {
+    if command.contains(std::path::MAIN_SEPARATOR) {
         return Ok(command.to_string());
     }
-    find_command_in_path(command)
-        .map(|path| path.display().to_string())
-        .ok_or_else(|| {
-            anyhow!(
-                "adapter.command {command} is not absolute and was not found in PATH; set policy.env.inherit=true or use an absolute command path"
-            )
-        })
+    if let Some(path) = find_command_in_path(command) {
+        return Ok(path.display().to_string());
+    }
+    if inherit_env {
+        return Ok(command.to_string());
+    }
+    Err(anyhow!(
+        "adapter.command {command} is not absolute and was not found in PATH; set policy.env.inherit=true or use an absolute command path"
+    ))
+}
+
+/// Convert npm ACP shims with `#!/usr/bin/env node` into an explicit Node
+/// process. The connector may deliberately clear the child environment, and
+/// macOS launchd/systemd do not reliably inherit an interactive PATH; leaving
+/// the shim as `adapter.command` would otherwise fail with `env: node: No such
+/// file or directory` even when Node is installed.
+///
+/// This normalization is in-memory: it protects every `start`/`run` path,
+/// including hand-written configs. The installer also persists the same shape
+/// so a managed service is self-explanatory when inspected later.
+fn normalize_adapter_launcher(
+    command: &str,
+    mut args: Vec<String>,
+    inherit_env: bool,
+) -> anyhow::Result<(String, Vec<String>)> {
+    let command = normalize_command_for_env_policy(command, inherit_env)?;
+    let path = Path::new(&command);
+    let is_node_shim = path.is_file()
+        && std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| content.lines().next().map(str::to_owned))
+            .is_some_and(|line| line.trim() == "#!/usr/bin/env node");
+    if !is_node_shim {
+        return Ok((command, args));
+    }
+
+    let node = find_command_in_path("node").ok_or_else(|| {
+        anyhow!(
+            "adapter.command {} is a Node.js ACP shim, but node was not found in PATH; install Node.js or set adapter.command to an absolute Node path and put the shim path first in adapter.args",
+            path.display()
+        )
+    })?;
+    let script = path.display().to_string();
+    if args.first() != Some(&script) {
+        args.insert(0, script);
+    }
+    Ok((node.display().to_string(), args))
 }
 
 fn find_command_in_path(command: &str) -> Option<PathBuf> {
@@ -1372,5 +1417,24 @@ command = "/bin/echo"
 
         let err = load_config(&config_path).await.unwrap_err().to_string();
         assert!(err.contains("bot_token_env") || err.contains("bot_token_file"));
+    }
+
+    #[test]
+    fn normalizes_node_shebang_adapter_to_explicit_launcher() {
+        let dir = tempfile::tempdir().unwrap();
+        let shim = dir.path().join("codex-acp");
+        std::fs::write(&shim, "#!/usr/bin/env node\nconsole.log('ACP')\n").unwrap();
+        let expected_node = find_command_in_path("node").expect("test host has node");
+
+        let (command, args) = normalize_adapter_launcher(
+            shim.to_str().unwrap(),
+            vec!["--verbose".to_string()],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(command, expected_node.display().to_string());
+        assert_eq!(args[0], shim.display().to_string());
+        assert_eq!(args[1], "--verbose");
     }
 }
