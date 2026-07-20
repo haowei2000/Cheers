@@ -42,9 +42,15 @@ impl ApnsClient {
     /// PEM content itself or a path to the .p8 file. APNS_TOPIC defaults to the
     /// iOS bundle id; APNS_SANDBOX=true targets the development environment.
     pub fn from_env() -> Option<Self> {
-        let raw_key = std::env::var("APNS_KEY_P8").ok().filter(|v| !v.trim().is_empty())?;
-        let key_id = std::env::var("APNS_KEY_ID").ok().filter(|v| !v.trim().is_empty())?;
-        let team_id = std::env::var("APNS_TEAM_ID").ok().filter(|v| !v.trim().is_empty())?;
+        let raw_key = std::env::var("APNS_KEY_P8")
+            .ok()
+            .filter(|v| !v.trim().is_empty())?;
+        let key_id = std::env::var("APNS_KEY_ID")
+            .ok()
+            .filter(|v| !v.trim().is_empty())?;
+        let team_id = std::env::var("APNS_TEAM_ID")
+            .ok()
+            .filter(|v| !v.trim().is_empty())?;
 
         let pem = if raw_key.contains("BEGIN PRIVATE KEY") {
             raw_key
@@ -105,7 +111,12 @@ impl ApnsClient {
     }
 
     /// Deliver one payload to one device token.
-    pub async fn send(&self, device_token: &str, payload: &Value, collapse_id: &str) -> Result<(), ApnsError> {
+    pub async fn send(
+        &self,
+        device_token: &str,
+        payload: &Value,
+        collapse_id: &str,
+    ) -> Result<(), ApnsError> {
         let bearer = self.provider_token()?;
         let url = format!("{}/3/device/{}", self.endpoint, device_token);
         let response = self

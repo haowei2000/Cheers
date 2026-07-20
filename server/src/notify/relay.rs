@@ -43,11 +43,14 @@ impl RelayClient {
         payload: &Value,
         collapse_id: &str,
     ) -> Result<(), ApnsError> {
-        let mut request = self.http.post(format!("{}/v1/push", self.url)).json(&json!({
-            "device_token": device_token,
-            "collapse_id": collapse_id,
-            "payload": payload,
-        }));
+        let mut request = self
+            .http
+            .post(format!("{}/v1/push", self.url))
+            .json(&json!({
+                "device_token": device_token,
+                "collapse_id": collapse_id,
+                "payload": payload,
+            }));
         if let Some(key) = &self.key {
             request = request.header("authorization", format!("Bearer {key}"));
         }
