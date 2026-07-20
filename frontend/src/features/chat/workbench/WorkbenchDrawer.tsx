@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
+import { Clock, Eye, Maximize2, Minimize2, Package, Pin, X } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
@@ -323,6 +323,71 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
     [loadExtensionFile]
   );
 
+  // ---- Hot reload: watch the extension file on disk and re-load it on every save ----
+  // The dev loop used to be "edit, drag the file in again" — dozens of round trips while
+  // tuning a renderer's UI. With the File System Access API we keep the picked handle and
+  // poll its mtime, so saving in your editor re-loads the plugin in place: the session
+  // plugin is replaced, SandboxRenderer sees a new bundle, and the iframe reboots.
+  // Chromium-only (Firefox/Safari lack showOpenFilePicker) — the button hides elsewhere
+  // and drag-drop remains the universal path.
+  const [watching, setWatching] = useState<string | null>(null);
+  const watchTimer = useRef<number | null>(null);
+  const canWatch = typeof (window as { showOpenFilePicker?: unknown }).showOpenFilePicker === "function";
+
+  const stopWatch = useCallback(() => {
+    if (watchTimer.current !== null) {
+      window.clearInterval(watchTimer.current);
+      watchTimer.current = null;
+    }
+    setWatching(null);
+  }, []);
+
+  const startWatch = useCallback(async () => {
+    interface PickedFile {
+      getFile: () => Promise<File>;
+    }
+    const pick = (window as unknown as {
+      showOpenFilePicker: (o: unknown) => Promise<PickedFile[]>;
+    }).showOpenFilePicker;
+    let handle: PickedFile;
+    try {
+      const [h] = await pick({
+        multiple: false,
+        types: [
+          {
+            description: "Workbench extension",
+            accept: { "text/html": [".html", ".htm"], "application/json": [".json"] },
+          },
+        ],
+      });
+      if (!h) return;
+      handle = h;
+    } catch {
+      return; // user dismissed the picker
+    }
+    const first = await handle.getFile();
+    let lastSeen = first.lastModified;
+    loadExtensionFile(first);
+    setWatching(first.name);
+    if (watchTimer.current !== null) window.clearInterval(watchTimer.current);
+    watchTimer.current = window.setInterval(() => {
+      void handle
+        .getFile()
+        .then((f) => {
+          if (f.lastModified === lastSeen) return;
+          lastSeen = f.lastModified;
+          loadExtensionFile(f);
+        })
+        .catch(() => {
+          // The file was moved/deleted, or permission lapsed — stop rather than spin.
+          stopWatch();
+          setNotice("Stopped watching: the file is no longer readable");
+        });
+    }, 1000);
+  }, [loadExtensionFile, stopWatch]);
+
+  useEffect(() => stopWatch, [stopWatch]);
+
   // Session templates first so a temporary upload overrides a same-id global for this session.
   const allEnvs = useMemo(() => {
     const byId = new Map<string, TemplateManifest>();
@@ -504,6 +569,25 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
           >
             <Clock className="w-3.5 h-3.5" /> Load extension
           </button>
+          {canWatch &&
+            (watching ? (
+              <button
+                onClick={stopWatch}
+                title={`Hot reload is watching ${watching} — saving it in your editor reloads the plugin here. Click to stop.`}
+                className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+              >
+                <Eye className="w-3.5 h-3.5" /> Watching {watching}
+              </button>
+            ) : (
+              <button
+                onClick={() => void startWatch()}
+                disabled={busy}
+                title="Watch an extension file on disk: every save in your editor reloads it here, no re-dropping"
+                className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+              >
+                <Eye className="w-3.5 h-3.5" /> Watch file
+              </button>
+            ))}
           {pinned.length > 0 && (
             <div className="relative">
               <button

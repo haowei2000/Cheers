@@ -22,8 +22,15 @@
  *   host.resource(name, params) // -> Promise<data> for the read-only channel.*
  *                               //    whitelist (channel.info / members / messages …)
  *   host.unsupported(reason)    // -> final verdict: this content can't be rendered
+ *   host.log(msg, level)        // -> a line in the host's dev protocol inspector
  *
  * cheers:ready is posted for you, after the listener is wired.
+ *
+ * DEBUGGING: the sandbox has an opaque origin, so nothing you console.log and no error
+ * you throw reaches the host page — a broken renderer just shows a blank iframe. This
+ * SDK forwards uncaught errors and unhandled promise rejections as `cheers:log`, which
+ * a session-loaded (⏱) plugin surfaces in the workbench's "Dev" inspector. Use
+ * host.log() for your own traces. Hosts that don't implement cheers:log ignore it.
  */
 function cheersPlugin(opts) {
   var reqId = 0;
@@ -74,12 +81,29 @@ function cheersPlugin(opts) {
       // desk file, attachment). Fire-and-forget; hosts without support ignore it.
       parent.postMessage({ type: "cheers:open", uri: uri }, "*");
     },
+    log: function (message, level) {
+      // Dev-loop only: a line in the host's protocol inspector. Fire-and-forget.
+      parent.postMessage(
+        { type: "cheers:log", level: level || "info", message: String(message).slice(0, 2000) },
+        "*"
+      );
+    },
     compose: function (text) {
       // PREFILL the channel composer with a suggested message — never sends; the
       // human reviews and presses send. Fire-and-forget; unsupported hosts ignore it.
       parent.postMessage({ type: "cheers:compose", text: text }, "*");
     },
   };
+  // Make silent failures visible: an opaque-origin sandbox swallows these otherwise.
+  window.addEventListener("error", function (e) {
+    api.log(
+      "uncaught: " + (e.message || "error") + " @" + (e.filename || "?") + ":" + (e.lineno || 0),
+      "error"
+    );
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    api.log("unhandled rejection: " + ((e.reason && e.reason.message) || e.reason), "error");
+  });
   parent.postMessage({ type: "cheers:ready" }, "*");
   return api;
 }

@@ -1,15 +1,31 @@
-# Mobile App Design (Expo)
+# Mobile App Design
 
 > **Language**: English | [中文](MOBILE_APP_DESIGN.zh-CN.md)
 >
-> **Status**: Draft · **Date**: 2026-07-17 · **Owner**: haowei
+> **Status**: Draft · **Date**: 2026-07-17 · **Revised**: 2026-07-19 · **Owner**: haowei
 
-Design for the consolidated Cheers mobile app at `apps/mobile/` — the Expo
-(React Native) codebase that [MOBILE_CLIENT_STRATEGY.md](MOBILE_CLIENT_STRATEGY.md)
-(Accepted, 2026-07-06) designates as the end-state mobile client for both iOS
-and Android. Covers product/UX design, app architecture, and the push
-notification system (which requires new server work, specified here and
-tracked as follow-ups).
+> ## ⚠️ Read first — the Expo parts of this document are superseded
+>
+> This design was written for an Expo (React Native) app at `apps/mobile/`. On
+> **2026-07-19** that direction was dropped: the mobile client is the **native SwiftUI
+> app at `apps/ios`**, and `apps/mobile/` will not be created. See
+> [MOBILE_CLIENT_STRATEGY.md](MOBILE_CLIENT_STRATEGY.md).
+>
+> | Section | Status |
+> |---|---|
+> | Product / UX design, screens, information architecture | **Valid** — platform-agnostic, implement in SwiftUI |
+> | §5 Push notifications | **Valid** — already revised 2026-07-18 to direct APNs + relay |
+> | Codebase table, `apps/mobile/` tree, expo-router, expo-secure-store, NativeWind | **Superseded** — read as "the shape the native app must provide", not as instructions |
+>
+> Expo-specific mechanics are being replaced section by section as the native app
+> catches up, rather than deleted in one sweep — the reasoning in them is still the
+> reasoning the SwiftUI implementation has to answer.
+
+Design for the Cheers mobile app. Originally written for a consolidated Expo
+(React Native) codebase at `apps/mobile/`; the target is now the native SwiftUI
+app at `apps/ios` (see the banner above). Covers product/UX design, app
+architecture, and the push notification system (which requires new server work,
+specified here and tracked as follow-ups).
 
 Companion interactive prototype: [docs/design/mobile-app-prototype.html](../design/mobile-app-prototype.html)
 (open in a browser — 8 key screens plus a light-mode variant).

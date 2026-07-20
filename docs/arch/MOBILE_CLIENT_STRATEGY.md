@@ -2,10 +2,53 @@
 
 > **Language**: English | [中文](MOBILE_CLIENT_STRATEGY.zh-CN.md)
 >
-> **Status**: Accepted · **Date**: 2026-07-06 · **Owner**: haowei
+> **Status**: Accepted · **Date**: 2026-07-06 · **Revised**: 2026-07-19 · **Owner**: haowei
 
 Decision record for how Cheers ships to phones: how the three mobile branches
 land, and where native vs. cross-platform goes from here.
+
+> ## ⚠️ Revised 2026-07-19 — Expo is dropped; native Swift is the mobile client
+>
+> **Decision 2 below (consolidate onto Expo) is superseded.** The new direction:
+>
+> 1. **iOS = native SwiftUI (`apps/ios`), and it is a long-term client, not a
+>    transitional one.** All mobile investment goes here. The roadmap item "retire
+>    `apps/ios` + `apps/android` once Expo reaches parity" is void.
+> 2. **Android = frozen.** `apps/android` (Kotlin + Compose) stays at its current
+>    functionality and receives fixes only — no new features. Android users are served
+>    by the PWA / mobile web.
+> 3. **`apps/mobile/` (Expo) will not be created.**
+>
+> ### Why the 2026-07-06 decision did not survive
+>
+> - **Revealed preference.** In the 13 days after it was accepted, the Expo scaffold
+>   (roadmap step 3) was never started — there is still zero Expo/React Native code in
+>   the repo — while `apps/ios` received three commits, including touch-input, scroll,
+>   and channel-management work. The team kept choosing native; the document did not
+>   describe what was actually happening.
+> - **The native app has already out-run the plan.** The push design was revised on
+>   2026-07-18 to direct APNs + an official relay *precisely because* the shipping
+>   client is the native SwiftUI app and the store binary's credentials are ours (see
+>   [MOBILE_APP_DESIGN.md](MOBILE_APP_DESIGN.md) §5.1). An Expo rewrite would have to
+>   re-earn features that already work.
+> - **The cost argument changed shape.** The original case against native was 2×
+>   maintenance for Swift **and** Kotlin. Freezing Android removes that multiplier
+>   without a rewrite: one native client plus the PWA is a smaller surface than either
+>   two native clients or a from-scratch Expo port.
+>
+> ### What this costs us — accepted knowingly
+>
+> - **No native Android feature velocity.** Android users get the PWA, which lags the
+>   native experience (no share sheet, weaker notification affordances). If that becomes
+>   unacceptable, the decision to revisit is *Android's client*, not iOS's.
+> - **No React-team leverage on mobile.** Mobile work needs Swift, which is a narrower
+>   skill pool on this team than TypeScript. This is the real, ongoing price.
+> - **`MOBILE_APP_DESIGN.md` is partly stale.** Its Expo-shaped sections (expo-router,
+>   expo-secure-store, the `apps/mobile/` tree) describe a codebase that will not exist;
+>   its product/UX and push sections remain valid. That doc carries its own banner.
+>
+> The 2026-07-06 analysis is kept below unedited — the branch-landing decision (Decision
+> 1) was carried out and is still accurate history.
 
 ## Context
 
@@ -43,7 +86,8 @@ Verified with `git merge-tree`: the two native branches are purely additive
 Native branches land first so they are immune to whatever the web merge touches,
 and `develop` stops drifting from three long-lived branches.
 
-**2 — Strategic direction: consolidate mobile onto one Expo (React Native)
+**2 — (SUPERSEDED 2026-07-19 — see the banner at the top; retained for the record)
+Strategic direction: consolidate mobile onto one Expo (React Native)
 codebase; keep the two native branches as the verified API/protocol reference.**
 
 Rationale — the team is React/TypeScript-centric and small. Maintaining Swift +
@@ -63,10 +107,13 @@ reference an Expo rewrite copies from.
 ## Consequences
 
 - After step 1, Cheers has **four clients**: desktop web, mobile web, native iOS,
-  native Android — all on one gateway. This is transitional, not the end state.
-- Native apps ship value immediately; Expo replaces them over time. When Expo
-  reaches parity, `apps/ios` + `apps/android` are deleted (trivially reversible —
-  they are self-contained under `apps/`).
+  native Android — all on one gateway. ~~This is transitional, not the end state.~~
+  **(2026-07-19)** This *is* the end state, minus the Expo consolidation: desktop web,
+  PWA/mobile web, native iOS (active), native Android (frozen).
+- ~~Native apps ship value immediately; Expo replaces them over time. When Expo
+  reaches parity, `apps/ios` + `apps/android` are deleted.~~ **(2026-07-19)** Void.
+  `apps/ios` is the long-term mobile client and is invested in accordingly; `apps/android`
+  is frozen but kept (fixes only).
 - **Frontend cleanups** surfaced during the review, tracked separately from this
   decision but relevant to the mobile-web line:
   - React Query is configured but **unused** (0 `useQuery`, 19 files hand-roll
@@ -89,11 +136,19 @@ reference an Expo rewrite copies from.
 ## Roadmap
 
 1. ✅ Decision recorded (this doc).
-2. Merge the three branches into `develop` (order above).
-3. Scaffold `apps/mobile/` with Expo — reuse REST + `/ws` protocol; port the
-   native reconnect/DTO logic.
-4. Reach feature parity, then retire `apps/ios` + `apps/android`.
+2. ✅ Merge the three branches into `develop` (order above).
+3. ~~Scaffold `apps/mobile/` with Expo~~ — **cancelled 2026-07-19, never started.**
+4. ~~Reach feature parity, then retire `apps/ios` + `apps/android`.~~ — **void.**
 5. In parallel, migrate the web data layer to React Query (benefits mobile web too).
+
+**Revised roadmap (2026-07-19)**
+
+1. `apps/ios` is the mobile client — feature work continues there (next up: the
+   Workbench, currently a placeholder sheet).
+2. `apps/android` frozen: fixes only, no new features. Revisit only if Android demand
+   makes the PWA gap unacceptable.
+3. Prune the Expo-shaped sections of [MOBILE_APP_DESIGN.md](MOBILE_APP_DESIGN.md) as
+   the native app supersedes them, rather than in one sweep.
 
 ## References
 
