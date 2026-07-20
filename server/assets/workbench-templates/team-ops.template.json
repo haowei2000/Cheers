@@ -1,0 +1,54 @@
+{
+  "id": "cheers-team-ops",
+  "version": 1,
+  "title": "Team ops",
+  "views": [
+    {
+      "id": "servers",
+      "title": "Servers",
+      "file": "ops/servers.yaml",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "name", "label": "Server" },
+          { "key": "env", "label": "Env", "options": ["prod", "staging", "dev"] },
+          { "key": "status", "label": "Status", "options": ["up", "degraded", "down", "retired"] },
+          { "key": "owner", "label": "Owner" },
+          { "key": "notes", "label": "Notes" }
+        ]
+      }
+    },
+    {
+      "id": "assets",
+      "title": "Assets",
+      "file": "ops/assets.yaml",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "asset", "label": "Asset" },
+          { "key": "kind", "label": "Kind", "options": ["domain", "cert", "license", "account", "hardware"] },
+          { "key": "owner", "label": "Owner" },
+          { "key": "renewal", "label": "Renews" }
+        ]
+      }
+    },
+    { "id": "oncall", "title": "On-call", "file": "ops/oncall.yaml", "lens": "kanban" }
+  ],
+  "seed": {
+    "ops/servers.yaml": [
+      { "name": "example-box", "env": "prod", "status": "up", "owner": "", "notes": "replace me" }
+    ],
+    "ops/assets.yaml": [
+      { "asset": "example.com", "kind": "domain", "owner": "", "renewal": "" }
+    ],
+    "ops/oncall.yaml": {
+      "columns": [
+        { "name": "Watch", "items": [] },
+        { "name": "Investigating", "items": [] },
+        { "name": "Resolved", "items": [] }
+      ]
+    },
+    "prompts/ops-conventions.md": "# Ops conventions\n\n- Inventory lives in `ops/servers.yaml`; keep `status` honest — alerts read it.\n- Anything with an expiry (domains, certs, licenses) goes in `ops/assets.yaml` with `renewal` as YYYY-MM-DD.\n- Incidents move across `ops/oncall.yaml`: Watch → Investigating → Resolved.\n"
+  },
+  "pin": ["prompts/ops-conventions.md"]
+}

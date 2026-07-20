@@ -1,0 +1,51 @@
+{
+  "id": "cheers-research-lab",
+  "version": 1,
+  "title": "Research lab",
+  "views": [
+    {
+      "id": "experiments",
+      "title": "Experiments",
+      "file": "lab/experiments.yaml",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "name", "label": "Run" },
+          { "key": "status", "label": "Status", "options": ["queued", "running", "done", "failed"] },
+          { "key": "metric", "label": "Best metric" },
+          { "key": "notes", "label": "Notes" }
+        ]
+      }
+    },
+    { "id": "metrics", "title": "Metrics", "file": "lab/metrics.yaml", "lens": "chart" },
+    {
+      "id": "submissions",
+      "title": "Submissions",
+      "file": "lab/submissions.yaml",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "paper", "label": "Paper" },
+          { "key": "venue", "label": "Venue" },
+          {
+            "key": "status",
+            "label": "Status",
+            "options": ["drafting", "submitted", "review", "rebuttal", "accepted", "rejected"]
+          },
+          { "key": "deadline", "label": "Deadline" }
+        ]
+      }
+    }
+  ],
+  "seed": {
+    "lab/experiments.yaml": [
+      { "name": "baseline", "status": "queued", "metric": "", "notes": "replace me" }
+    ],
+    "lab/metrics.yaml": { "series": [{ "name": "loss", "points": [[0, 1.0]] }] },
+    "lab/submissions.yaml": [
+      { "paper": "First paper", "venue": "", "status": "drafting", "deadline": "" }
+    ],
+    "prompts/lab-conventions.md": "# Lab conventions\n\n- Every run gets a row in `lab/experiments.yaml`; update `status` as it moves.\n- Append `[step, value]` points to `lab/metrics.yaml` while training.\n- Paper state lives in `lab/submissions.yaml` — keep `deadline` as YYYY-MM-DD.\n"
+  },
+  "pin": ["prompts/lab-conventions.md"]
+}

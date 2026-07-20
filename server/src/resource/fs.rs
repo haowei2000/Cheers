@@ -82,10 +82,22 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         None => (full, None),
     };
 
+    // Parsed representation for structured board files (whole-file reads only — a line
+    // window is a text slice, not a document). YAML is a storage format for humans and
+    // agents; the wire is JSON, so clients with no YAML parser (native iOS/Android)
+    // can render lenses. `null` when the file doesn't parse — the client falls back to
+    // the editor over `content`. See docs/arch/WORKBENCH_WRITEBACK.md.
+    let data = if range.is_none() {
+        parse_structured(&path, &content)
+    } else {
+        None
+    };
+
     Ok(json!({
         "channel_id": channel_id,
         "path": row.try_get::<String, _>("path").unwrap_or(path),
         "content": content,
+        "data": data,
         "version": row.try_get::<i64, _>("version").unwrap_or(0),
         "is_dir": row.try_get::<bool, _>("is_dir").unwrap_or(false),
         // Present only for a ranged read: the actual (clamped) line window returned.
@@ -94,6 +106,20 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
         "created_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at").ok(),
         "updated_at": row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated_at").ok(),
     }))
+}
+
+/// Parse a structured file to a JSON value by extension class. YAML covers `.yaml`/
+/// `.yml` (serde_yaml is YAML 1.2: a bare `no` stays a string — resolving the 1.1
+/// ambiguity ONCE, server-side, instead of per client parser); `.json` parses as JSON.
+/// Everything else — and anything unparseable — is `None`, never an error: prose is
+/// not a board, and a half-written file must not break reading it.
+fn parse_structured(path: &str, content: &str) -> Option<Value> {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "yaml" | "yml" => serde_yaml::from_str::<Value>(content).ok(),
+        "json" => serde_json::from_str::<Value>(content).ok(),
+        _ => None,
+    }
 }
 
 /// Slice `content` to a 1-indexed inclusive `[start, end]` line window. Returns
@@ -751,7 +777,7 @@ fn version_conflict(current: i64) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::slice_lines;
+    use super::{parse_structured, slice_lines};
 
     #[test]
     fn no_range_returns_none() {
@@ -794,5 +820,24 @@ mod tests {
         let (text, s, e) = slice_lines("only", Some(1), Some(1)).unwrap();
         assert_eq!(text, "only");
         assert_eq!((s, e), (1, 1));
+    }
+
+    #[test]
+    fn parse_structured_yaml_with_comments_and_11_booleans() {
+        let y = "# header\ntasks:\n  - title: ship\n    done: no   # 1.1 would say false\n";
+        let v = parse_structured("board.yaml", y).expect("yaml parses");
+        // Comments are invisible to data; the 1.1 boolean literal stays a STRING (1.2).
+        assert_eq!(v["tasks"][0]["done"], serde_json::json!("no"));
+        assert_eq!(v["tasks"][0]["title"], serde_json::json!("ship"));
+    }
+
+    #[test]
+    fn parse_structured_scopes_and_failures() {
+        assert!(parse_structured("a.json", r#"{"k":1}"#).is_some());
+        assert!(parse_structured("a.yml", "k: 1").is_some());
+        // Prose is not a board; garbage must not error a read.
+        assert!(parse_structured("notes.md", "# hi").is_none());
+        assert!(parse_structured("bad.yaml", "a: [unclosed").is_none());
+        assert!(parse_structured("noext", "k: 1").is_none());
     }
 }

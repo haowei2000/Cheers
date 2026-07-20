@@ -1,0 +1,36 @@
+{
+  "id": "cheers-task-board",
+  "version": 1,
+  "title": "Task board",
+  "views": [
+    { "id": "board", "title": "Board", "file": "tasks/board.yaml", "lens": "kanban" },
+    {
+      "id": "backlog",
+      "title": "Backlog",
+      "file": "tasks/backlog.yaml",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "title", "label": "Task" },
+          { "key": "owner", "label": "Owner" },
+          { "key": "priority", "label": "Priority", "options": ["P0", "P1", "P2"] },
+          { "key": "status", "label": "Status", "options": ["todo", "doing", "done"] }
+        ]
+      }
+    }
+  ],
+  "seed": {
+    "tasks/board.yaml": {
+      "columns": [
+        { "name": "Todo", "items": ["Try dragging this card to Doing"] },
+        { "name": "Doing", "items": [] },
+        { "name": "Done", "items": [] }
+      ]
+    },
+    "tasks/backlog.yaml": [
+      { "title": "Example task", "owner": "", "priority": "P1", "status": "todo" }
+    ],
+    "prompts/task-conventions.md": "# Task conventions\n\n- The board lives in `tasks/board.yaml` (columns Todo / Doing / Done); the backlog in `tasks/backlog.yaml`.\n- When you finish work, move its card and update `status` in the backlog row.\n- Keep card texts short; details go in the backlog row.\n"
+  },
+  "pin": ["prompts/task-conventions.md"]
+}

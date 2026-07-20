@@ -154,6 +154,18 @@ pub async fn put_template(
             "manifest must be a JSON object".into(),
         ));
     }
+    // Official ids belong to the binary (same rule as plugins): delete-then-reclaim is
+    // allowed, silent overwrite is not.
+    let origin: Option<String> =
+        sqlx::query_scalar("SELECT origin FROM workbench_templates WHERE tpl_id = $1")
+            .bind(&tpl_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if origin.as_deref() == Some("system") {
+        return Err(AppError::BadRequest(
+            "this id is an official template; copy it under a new id to customize".into(),
+        ));
+    }
     domain::workbench_templates::put(
         &state.db,
         &tpl_id,
