@@ -70,7 +70,13 @@ struct ChatView: View {
                 isSending: model.isSending,
                 onSend: { Task { await self.model.send() } },
                 onChooseSession: { showSessionSheet = true },
-                onModelSettings: { showModelSheet = true }
+                onModelSettings: { showModelSheet = true },
+                mentionPool: model.mentionPool,
+                onMentionPicked: { candidate in
+                    if !model.pickedMentions.contains(candidate) {
+                        model.pickedMentions.append(candidate)
+                    }
+                }
             )
         }
         .background(Theme.bgApp)
