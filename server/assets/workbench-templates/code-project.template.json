@@ -1,0 +1,46 @@
+{
+  "id": "cheers-code-project",
+  "version": 1,
+  "title": "Code project",
+  "views": [
+    { "id": "plan", "title": "Plan", "file": "dev/plan.yaml", "lens": "kanban" },
+    {
+      "id": "issues",
+      "title": "Issues",
+      "file": "dev/issues.yaml",
+      "lens": "table",
+      "config": {
+        "columns": [
+          { "key": "title", "label": "Issue" },
+          { "key": "severity", "label": "Sev", "options": ["P0", "P1", "P2"] },
+          { "key": "status", "label": "Status", "options": ["open", "fixing", "fixed", "wontfix"] },
+          { "key": "ref", "label": "Where" }
+        ]
+      }
+    },
+    { "id": "progress", "title": "Progress", "file": "dev/progress.yaml", "lens": "chart" },
+    { "id": "todo", "title": "Todo", "file": "dev/todo.md", "lens": "markdown" }
+  ],
+  "seed": {
+    "dev/plan.yaml": {
+      "columns": [
+        { "name": "Planned", "items": ["Sketch the first milestone"] },
+        { "name": "In progress", "items": [] },
+        { "name": "Shipped", "items": [] }
+      ]
+    },
+    "dev/issues.yaml": [
+      {
+        "title": "Example issue — replace me",
+        "severity": "P2",
+        "status": "open",
+        "ref": "src/main.rs#L1"
+      }
+    ],
+    "dev/progress.yaml": { "series": [{ "name": "tests passing", "points": [[1, 0]] }] },
+    "dev/todo.md": "# Todo\n\n- [ ] First task\n- [ ] Install the checklist renderer to tick these interactively\n",
+    "codemap/map.yaml": "# Codemap — maintained by the agent (see docs/arch/CODEMAP.md).\n# Rendered by the codemap plugin where installed; readable as YAML everywhere.\ncodemap: 1\nnodes: []\n",
+    "prompts/code-conventions.md": "# Project conventions\n\n- Track work on `dev/plan.yaml`; found bugs go to `dev/issues.yaml` with a `ref` like `path/file.rs#L120`.\n- Append a `[step, passing]` point to `dev/progress.yaml` after each test run.\n- Keep `codemap/map.yaml` updated as modules change.\n"
+  },
+  "pin": ["prompts/code-conventions.md"]
+}

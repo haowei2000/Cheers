@@ -11,7 +11,7 @@
       {
         "id": "cheers-frontmatter",
         "protocol": 1,
-        "version": 1,
+        "version": 2,
         "title": "Frontmatter form",
         "renderers": [
           {
@@ -39,7 +39,7 @@
     <div id="body"></div>
     <div id="st"></div>
     <script>
-      /* inlined cheers-plugin-sdk v1 (docs/arch/examples/cheers-plugin-sdk.js) */
+      /* inlined cheers-plugin-sdk v2 (docs/arch/examples/cheers-plugin-sdk.js) */
       function cheersPlugin(opts) {
         var reqId = 0, pendingRes = {}, pendingSave = null;
         window.addEventListener("message", function (e) {
@@ -58,6 +58,12 @@
         var api = {
           save: function (content) {
             return new Promise(function (resolve, reject) {
+              if (pendingSave) {
+                // cheers:saved carries no correlation id — overlapping saves would
+                // adopt each other's results. Reject loudly; await the previous save().
+                reject(new Error("save already in flight — await the previous save() first"));
+                return;
+              }
               pendingSave = { resolve: resolve, reject: reject };
               parent.postMessage({ type: "cheers:save", content: content }, "*");
             });
@@ -70,7 +76,20 @@
             });
           },
           unsupported: function (reason) { parent.postMessage({ type: "cheers:unsupported", reason: reason }, "*"); },
+          open: function (uri) { parent.postMessage({ type: "cheers:open", uri: uri }, "*"); },
+          compose: function (text) { parent.postMessage({ type: "cheers:compose", text: text }, "*"); },
+          log: function (message, level) {
+            parent.postMessage({ type: "cheers:log", level: level || "info", message: String(message).slice(0, 2000) }, "*");
+          },
         };
+        // An opaque-origin sandbox swallows uncaught errors — forward them so a broken
+        // renderer becomes a readable line in the host's Dev inspector, not a blank iframe.
+        window.addEventListener("error", function (e) {
+          api.log("uncaught: " + (e.message || "error") + " @" + (e.filename || "?") + ":" + (e.lineno || 0), "error");
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          api.log("unhandled rejection: " + ((e.reason && e.reason.message) || e.reason), "error");
+        });
         parent.postMessage({ type: "cheers:ready" }, "*");
         return api;
       }

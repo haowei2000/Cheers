@@ -1,4 +1,5 @@
-/* cheers-plugin-sdk v1 — protocol 1.
+/* cheers-plugin-sdk v2 — protocol 1. (v2 adds open/compose/log + uncaught-error
+ * forwarding and the one-save-in-flight guard; the wire protocol is unchanged.)
  *
  * Copy-paste this function INLINE into your plugin's <script> — plugins are single
  * self-contained .html files, there is no external script loading in the sandbox.

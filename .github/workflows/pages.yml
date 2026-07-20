@@ -47,6 +47,10 @@ jobs:
              docs/arch/examples/*.template.json \
              docs/arch/examples/cheers-plugin-sdk.js \
              website/downloads/plugins/
+          # Official scenario templates get their OWN dir: docs examples share some
+          # filenames (code-project / research-lab), one dir would silently clobber.
+          mkdir -p website/downloads/templates
+          cp server/assets/workbench-templates/*.template.json website/downloads/templates/
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3

@@ -9,7 +9,7 @@ use sqlx::{PgPool, Row};
 /// List installed global templates (manifest parsed back to JSON for the client).
 pub async fn list(db: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
     let rows = sqlx::query(
-        "SELECT tpl_id, title, manifest FROM workbench_templates ORDER BY installed_at DESC",
+        "SELECT tpl_id, title, manifest, origin FROM workbench_templates ORDER BY installed_at DESC",
     )
     .fetch_all(db)
     .await?;
@@ -25,6 +25,8 @@ pub async fn list(db: &PgPool) -> Result<Vec<Value>, sqlx::Error> {
                 "tpl_id": r.try_get::<String, _>("tpl_id").unwrap_or_default(),
                 "title": r.try_get::<String, _>("title").unwrap_or_default(),
                 "manifest": manifest,
+                // 'system' = seeded official (badge in Settings); 'admin' = API-installed.
+                "origin": r.try_get::<String, _>("origin").unwrap_or_else(|_| "admin".into()),
             })
         })
         .collect())

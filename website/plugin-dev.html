@@ -213,6 +213,9 @@
       <tr><td>host → plugin</td><td><code>cheers:saved</code></td><td><code>{ ok, version, error? }</code></td><td>Optimistic-lock result; on <code>ok</code>, update your <code>version</code></td></tr>
       <tr><td>plugin → host</td><td><code>cheers:resource</code></td><td><code>{ reqId, resource, params }</code></td><td>Read-only channel info (whitelisted)</td></tr>
       <tr><td>host → plugin</td><td><code>cheers:resource:result</code></td><td><code>{ reqId, ok, data|error }</code></td><td>Resource read result</td></tr>
+      <tr><td>plugin → host</td><td><code>cheers:open</code></td><td><code>{ uri }</code></td><td>Navigate the <em>user's view</em> to a <code>cheers:</code> locator (workspace file at a line, desk file, attachment). Fire-and-forget; unsupported hosts ignore it</td></tr>
+      <tr><td>plugin → host</td><td><code>cheers:compose</code></td><td><code>{ text }</code></td><td><strong>Prefill</strong> the channel composer — never sends; the human reviews and presses send. Fire-and-forget</td></tr>
+      <tr><td>plugin → host</td><td><code>cheers:log</code></td><td><code>{ level, message }</code></td><td>Dev diagnostics: a line in the host's protocol inspector (session-loaded ⏱ plugins only). The sandbox's opaque origin swallows <code>console.log</code> and uncaught errors — this is the way out</td></tr>
     </table></div>
     <ul>
       <li><strong>Single-file capability.</strong> One <code>cheers:render</code> = one file. You can only render and save that <code>path</code>.</li>

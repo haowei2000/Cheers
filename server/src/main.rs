@@ -54,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
     // Seed the official workbench plugins (embedded in this binary). Version-gated
     // upserts: admin deletions stick within a release; see domain/workbench_official.rs.
     server::domain::workbench_official::seed(&db).await?;
+    server::domain::workbench_official_templates::seed(&db).await?;
 
     // S3 / RustFS client for gateway-proxied file storage. Bucket bootstrap is
     // best-effort: a missing object store must not block the core chat loop.
