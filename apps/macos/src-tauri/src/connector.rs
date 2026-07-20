@@ -201,17 +201,60 @@ fn read_instances() -> Vec<ConnectorInstance> {
                 });
             }
             // A service dir without (readable) metadata still shows up, so a
-            // half-created instance isn't invisible in the GUI.
-            None if entry.path().is_dir() => out.push(ConnectorInstance {
-                start_with_app: settings.start_with_app.contains(&dir_name),
-                name: dir_name,
-                running: false,
-                pid: None,
-                started_at: None,
-                config_path: None,
-                stdout_log: None,
-            }),
+            // half-created instance isn't invisible in the GUI. Pair it with
+            // the desktop-owned onboarding config when present so users can
+            // fix a failed first launch instead of being stranded.
+            None if entry.path().is_dir() => {
+                let config_path = dirs::home_dir()
+                    .map(|h| {
+                        h.join(".cheers")
+                            .join(format!("cheers-daemon.{dir_name}.toml"))
+                    })
+                    .filter(|p| p.exists())
+                    .map(|p| p.to_string_lossy().into_owned());
+                out.push(ConnectorInstance {
+                    start_with_app: settings.start_with_app.contains(&dir_name),
+                    name: dir_name,
+                    running: false,
+                    pid: None,
+                    started_at: None,
+                    config_path,
+                    stdout_log: None,
+                })
+            }
             None => {}
+        }
+    }
+    // `daemon.json` exists only after a successful daemon start. Onboarding writes
+    // the config first, so a bad adapter must still be visible, editable, and
+    // retryable instead of disappearing from the desktop after its first crash.
+    let config_home = dirs::home_dir().map(|h| h.join(".cheers"));
+    if let Some(config_home) = config_home {
+        if let Ok(entries) = fs::read_dir(config_home) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Some(file) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                let Some(name) = file
+                    .strip_prefix("cheers-daemon.")
+                    .and_then(|n| n.strip_suffix(".toml"))
+                else {
+                    continue;
+                };
+                if out.iter().any(|instance| instance.name == name) {
+                    continue;
+                }
+                out.push(ConnectorInstance {
+                    start_with_app: settings.start_with_app.contains(name),
+                    name: name.to_string(),
+                    running: false,
+                    pid: None,
+                    started_at: None,
+                    config_path: Some(path.to_string_lossy().into_owned()),
+                    stdout_log: None,
+                });
+            }
         }
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -380,7 +423,16 @@ pub async fn connector_start(
     let name = safe_name(&name);
     // Zero-prep for "start from an existing .toml" too (onboarding already does
     // this, but a hand-picked config wouldn't have its workspace dirs created).
-    ensure_workspace_dirs_at(Path::new(&config_path));
+    // Older desktop-created configs can still point at an npm JS shim with an
+    // `env node` shebang. Normalize again at launch so a previously failed
+    // first setup is repaired by Retry, without requiring the user to find and
+    // edit a TOML file themselves.
+    let current_config = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    let normalized_config = normalize_adapter_launcher(&current_config)?;
+    if normalized_config != current_config {
+        fs::write(&config_path, &normalized_config).map_err(|e| e.to_string())?;
+    }
+    ensure_workspace_dirs(&normalized_config);
     let out = run_cli(&app, &["--name", &name, "--config", &config_path, "start"]).await?;
     state.managed.lock().unwrap().insert(name);
     Ok(out)
@@ -686,7 +738,7 @@ pub(crate) fn resolve_on_login_path(cmd: &str) -> Option<PathBuf> {
 /// a GUI-spawned daemon has a minimal PATH, so the connector's load-time
 /// `command -v` check fails on `opencode-acp`/`claude-agent-acp` etc. Mirrors
 /// install.sh's resolution. Errors clearly when the adapter isn't installed.
-fn absolutize_adapter_command(config_toml: &str) -> Result<String, String> {
+fn normalize_adapter_launcher(config_toml: &str) -> Result<String, String> {
     // Read the current command value (robust extraction via the parsed TOML).
     let cfg: toml::Value = toml::from_str(config_toml).map_err(|e| e.to_string())?;
     let cmd = cfg
@@ -699,31 +751,65 @@ fn absolutize_adapter_command(config_toml: &str) -> Result<String, String> {
     let Some(cmd) = cmd else {
         return Ok(config_toml.to_string()); // no adapter command — leave as-is
     };
-    if Path::new(cmd).is_absolute() {
-        return Ok(config_toml.to_string()); // already absolute
-    }
-    let abs = resolve_on_login_path(cmd).ok_or_else(|| {
-        format!(
-            "agent adapter '{cmd}' isn't installed (or not on your login PATH). \
+    let command = if Path::new(cmd).is_absolute() {
+        PathBuf::from(cmd)
+    } else {
+        resolve_on_login_path(cmd).ok_or_else(|| {
+            format!(
+                "agent adapter '{cmd}' isn't installed (or not on your login PATH). \
              Install it — e.g. Claude: npm i -g @agentclientprotocol/claude-agent-acp — \
              then set it up again, or pick a different agent."
-        )
-    })?;
-    let abs = abs.to_string_lossy();
-    // Replace just the adapter command line, preserving indentation.
-    let patched: Vec<String> = config_toml
-        .lines()
-        .map(|line| {
-            let t = line.trim_start();
-            if t.starts_with("command") && line.contains(&format!("\"{cmd}\"")) {
-                let indent = &line[..line.len() - t.len()];
-                format!("{indent}command = \"{abs}\"")
-            } else {
-                line.to_string()
-            }
-        })
-        .collect();
-    Ok(patched.join("\n"))
+            )
+        })?
+    };
+
+    // npm's `codex-acp` executable is commonly a symlink to a JavaScript file
+    // beginning `#!/usr/bin/env node`. The connector deliberately starts agents
+    // with a restricted environment, so that shebang cannot find `node` even
+    // though the desktop's login shell can. Invoke Node by its resolved absolute
+    // path and make the script its first argument instead.
+    let is_env_node_script = fs::read_to_string(&command)
+        .ok()
+        .and_then(|content| content.lines().next().map(str::to_owned))
+        .is_some_and(|first| first.trim() == "#!/usr/bin/env node");
+
+    let mut doc: toml_edit::DocumentMut = config_toml
+        .parse()
+        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let account_id = doc
+        .get("accounts")
+        .and_then(|a| a.as_table())
+        .and_then(|a| a.iter().next().map(|(id, _)| id.to_string()))
+        .ok_or("config has no account")?;
+    let adapter = &mut doc["accounts"][account_id.as_str()]["adapter"];
+    use toml_edit::{value, Array};
+    if is_env_node_script {
+        let node = resolve_on_login_path("node").ok_or(
+            "Node.js is required to launch this ACP adapter but was not found on the login PATH",
+        )?;
+        let mut args = adapter["args"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let script = command.to_string_lossy().into_owned();
+        if args.first() != Some(&script) {
+            args.insert(0, script);
+        }
+        let mut array = Array::new();
+        for arg in args {
+            array.push(arg.as_str());
+        }
+        adapter["command"] = value(node.to_string_lossy().as_ref());
+        adapter["args"] = value(array);
+    } else {
+        adapter["command"] = value(command.to_string_lossy().as_ref());
+    }
+    Ok(doc.to_string())
 }
 
 /// Write a gateway-generated connector config + its token to `~/.cheers/`, the
@@ -742,7 +828,7 @@ pub fn connector_write_onboarded(
 ) -> Result<String, String> {
     // Resolve the adapter to an absolute path BEFORE writing (and error early
     // if it isn't installed, so we don't leave a crash-looping config behind).
-    let config_toml = absolutize_adapter_command(&config_toml)?;
+    let config_toml = normalize_adapter_launcher(&config_toml)?;
 
     let base = dirs::home_dir()
         .map(|h| h.join(".cheers"))
@@ -1146,7 +1232,8 @@ pub fn connector_config_write_fields(path: String, fields: ConfigFields) -> Resu
     doc["accounts"][id]["bridge"]["heartbeat_interval_ms"] = value(fields.heartbeat_interval_ms);
     doc["accounts"][id]["policy"]["file_upload"]["allow"] = value(fields.file_upload_allow);
 
-    fs::write(&p, doc.to_string()).map_err(|e| e.to_string())
+    let normalized = normalize_adapter_launcher(&doc.to_string())?;
+    fs::write(&p, normalized).map_err(|e| e.to_string())
 }
 
 /// Drag-to-grant (A3): append one or more absolute directory paths to the
@@ -1254,11 +1341,30 @@ fn guard_config_path(p: &Path) -> Result<(), String> {
     let want = p
         .canonicalize()
         .map_err(|_| "config file does not exist".to_string())?;
-    if known_config_paths().contains(&want) {
+    if known_config_paths().contains(&want) || is_desktop_onboarded_config(&want) {
         Ok(())
     } else {
         Err("not a known connector config".into())
     }
+}
+
+/// A desktop-created connector is formally recoverable from its generated
+/// `~/.cheers/cheers-daemon.<safe-name>.toml` even before the daemon has written
+/// metadata. This is a narrowly scoped recovery contract, not an arbitrary TOML
+/// allowlist: the file must be a direct child of the desktop-owned home and use
+/// the exact onboarding filename grammar.
+fn is_desktop_onboarded_config(path: &Path) -> bool {
+    let Some(home) = dirs::home_dir().map(|h| h.join(".cheers")) else {
+        return false;
+    };
+    if path.parent() != Some(home.as_path()) {
+        return false;
+    }
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("cheers-daemon."))
+        .and_then(|name| name.strip_suffix(".toml"))
+        .is_some_and(|name| !name.is_empty() && safe_name(name) == name)
 }
 
 /// Canonical paths of every config referenced by a discovered `daemon.json`.

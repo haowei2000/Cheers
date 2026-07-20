@@ -201,12 +201,18 @@ info "connector binary: $BIN"
 # connector, and a keep-alive unit whose adapter is missing just crash-loops.
 # Resolve it to an ABSOLUTE path in the config (launchd/systemd don't see a
 # login-shell PATH), auto-installing the known npm adapter when possible;
-# otherwise skip the keep-alive install and say exactly how to finish.
+# otherwise skip the keep-alive install and say exactly how to finish. npm ACP
+# packages can be JavaScript shims headed by `#!/usr/bin/env node`; a launchd or
+# systemd child has no reliable interactive PATH, so persist those as an
+# explicit Node binary plus the shim path as the first argument.
 ADAPTER="$(sed -n 's/^command[[:space:]]*=[[:space:]]*"\(.*\)".*$/\1/p' "$CONFIG_FILE" | head -1)"
 ADAPTER_OK=1
+ADAPTER_RESOLVED=""
 case "$ADAPTER" in
   "") : ;; # no adapter line (unusual config) — nothing to check
-  /*) [ -x "$ADAPTER" ] || ADAPTER_OK=0 ;;
+  /*)
+    if [ -x "$ADAPTER" ]; then ADAPTER_RESOLVED="$ADAPTER"; else ADAPTER_OK=0; fi
+    ;;
   *)
     ADAPTER_ABS="$(command -v "$ADAPTER" 2>/dev/null || true)"
     if [ -z "$ADAPTER_ABS" ] && [ "$ADAPTER" = "claude-agent-acp" ] && command -v npm >/dev/null 2>&1; then
@@ -215,18 +221,48 @@ case "$ADAPTER" in
       ADAPTER_ABS="$(command -v claude-agent-acp 2>/dev/null || true)"
     fi
     if [ -n "$ADAPTER_ABS" ]; then
-      sed -i.cheers-bak "s|^command[[:space:]]*=[[:space:]]*\"$ADAPTER\"|command = \"$ADAPTER_ABS\"|" "$CONFIG_FILE" \
-        && rm -f "$CONFIG_FILE.cheers-bak"
-      info "agent adapter: $ADAPTER_ABS (absolute path baked into the config)"
+      ADAPTER_RESOLVED="$ADAPTER_ABS"
     else
       ADAPTER_OK=0
     fi
     ;;
 esac
+
+if [ "$ADAPTER_OK" = "1" ] && [ -n "$ADAPTER_RESOLVED" ]; then
+  if [ "$(head -n 1 "$ADAPTER_RESOLVED" 2>/dev/null || true)" = "#!/usr/bin/env node" ]; then
+    NODE_BIN="$(command -v node 2>/dev/null || true)"
+    if [ -z "$NODE_BIN" ]; then
+      ADAPTER_OK=0
+      ADAPTER_ERROR="the adapter needs Node.js, but node was not found on PATH"
+    else
+      python3 - "$CONFIG_FILE" "$NODE_BIN" "$ADAPTER_RESOLVED" <<'PY'
+import json, re, sys
+path, node, script = sys.argv[1:]
+text = open(path).read()
+text, count = re.subn(r'(?m)^(\s*)command\s*=\s*"[^"]*"\s*$', lambda m: f'{m.group(1)}command = {json.dumps(node)}', text, count=1)
+if count != 1:
+    raise SystemExit("could not update adapter.command")
+def add_script(match):
+    existing = match.group(2).strip()
+    values = json.dumps(script)
+    return f'{match.group(1)}args = [{values}{", " + existing if existing else ""}]'
+text, count = re.subn(r'(?m)^(\s*)args\s*=\s*\[(.*)\]\s*$', add_script, text, count=1)
+if count != 1:
+    raise SystemExit("could not update adapter.args")
+open(path, "w").write(text)
+PY
+      info "agent adapter: $NODE_BIN $ADAPTER_RESOLVED (explicit Node launcher baked into the config)"
+    fi
+  else
+    sed -i.cheers-bak "s|^command[[:space:]]*=[[:space:]]*\"$ADAPTER\"|command = \"$ADAPTER_RESOLVED\"|" "$CONFIG_FILE" \
+      && rm -f "$CONFIG_FILE.cheers-bak"
+    info "agent adapter: $ADAPTER_RESOLVED (absolute path baked into the config)"
+  fi
+fi
 if [ "$ADAPTER_OK" = "0" ]; then
   cat >&2 <<EOF
 
-  The agent adapter '$ADAPTER' referenced by the config is not installed, so the
+  The agent adapter '$ADAPTER' referenced by the config is not ready${ADAPTER_ERROR:+ ($ADAPTER_ERROR)}, so the
   keep-alive service is NOT being enabled (it would only crash-loop). To finish:
     1. install the adapter, e.g. for Claude:  npm install -g @agentclientprotocol/claude-agent-acp
     2. put its ABSOLUTE path into $CONFIG_FILE (adapter.command), then:

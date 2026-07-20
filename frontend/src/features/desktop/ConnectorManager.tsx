@@ -200,8 +200,9 @@ export function ConnectorManager() {
   const [existingBotId, setExistingBotId] = useState("");
   const [enrollCode, setEnrollCode] = useState("");
   const [newUsername, setNewUsername] = useState("");
-  const [agentType, setAgentType] = useState<AgentType>("claude");
+  const [agentType, setAgentType] = useState<AgentType>("codex");
   const [onboarding, setOnboarding] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
   // Advanced fallback: start straight from an existing .toml on disk.
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -395,6 +396,7 @@ export function ConnectorManager() {
 
   // ── onboarding (the New tile) ──────────────────────────────────────────────
   async function onboard() {
+    setOnboardingError(null);
     setOnboarding(true);
     try {
       // Pre-flight the adapter BEFORE anything server-side. Redeeming mints a
@@ -437,9 +439,10 @@ export function ConnectorManager() {
       setModal(null);
       refresh();
     } catch (e) {
-      toast.error(
-        typeof e === "string" ? e : e instanceof Error ? e.message : "onboarding failed"
-      );
+      const detail =
+        typeof e === "string" ? e : e instanceof Error ? e.message : "onboarding failed";
+      setOnboardingError(detail);
+      toast.error(detail);
     } finally {
       setOnboarding(false);
     }
@@ -523,7 +526,7 @@ export function ConnectorManager() {
           "Start with app" instances are launched on app start and revived if they die.
         </p>
 
-        {/* Grid: the "New connector" tile is always the first item. */}
+        {/* Grid: the local setup tile is always the first item. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           <button
             type="button"
@@ -531,7 +534,8 @@ export function ConnectorManager() {
             className="min-h-[132px] rounded-xl border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Plus className="w-6 h-6" />
-            <span className="text-sm font-medium">New connector</span>
+            <span className="text-sm font-medium">Set up on this Mac</span>
+            <span className="text-xs text-zinc-500">Create or attach a bot, then verify it starts</span>
           </button>
 
           {/* The other direction: a bot created somewhere else (the phone, the
@@ -734,7 +738,7 @@ export function ConnectorManager() {
       )}
 
       {modal?.kind === "onboard" && (
-        <Dialog title="New connector" onClose={() => setModal(null)} maxWidth="max-w-lg">
+        <Dialog title="Set up a connector on this Mac" onClose={() => setModal(null)} maxWidth="max-w-lg">
           <OnboardForm
             bots={bots}
             mode={mode}
@@ -746,6 +750,7 @@ export function ConnectorManager() {
             agentType={agentType}
             setAgentType={setAgentType}
             onboarding={onboarding}
+            onboardingError={onboardingError}
             onSubmit={() => void onboard()}
             advancedOpen={advancedOpen}
             setAdvancedOpen={setAdvancedOpen}
@@ -1033,6 +1038,7 @@ function OnboardForm(props: {
   agentType: AgentType;
   setAgentType: (v: AgentType) => void;
   onboarding: boolean;
+  onboardingError: string | null;
   onSubmit: () => void;
   advancedOpen: boolean;
   setAdvancedOpen: (v: boolean) => void;
@@ -1046,10 +1052,13 @@ function OnboardForm(props: {
   const p = props;
   return (
     <div className="grid gap-3">
-      <p className="text-xs text-zinc-400">
-        Pick (or create) a bot and its agent — the server generates the config
-        and token, written to <code className="bg-zinc-800 rounded px-1">~/.cheers</code> and started.
-      </p>
+      <div className="rounded-xl bg-indigo-950/35 p-3 text-xs text-indigo-100">
+        <p className="font-medium">Four steps, all on this Mac</p>
+        <p className="mt-1 text-indigo-200/75">
+          Choose a bot → check its agent → save the secure local config → start and verify it.
+          If a start fails, the saved connector remains below for Logs, Edit, or Retry.
+        </p>
+      </div>
       <div className="flex gap-1.5">
         {(["existing", "new"] as const).map((m) => (
           <button
@@ -1089,7 +1098,7 @@ function OnboardForm(props: {
             id="onb-uname"
             value={p.newUsername}
             onChange={(e) => p.setNewUsername(e.target.value)}
-            placeholder="my-agent"
+            placeholder="codex-local"
           />
         </Field>
       )}
@@ -1110,6 +1119,16 @@ function OnboardForm(props: {
       </Field>
 
       <AgentUpdates />
+
+      {p.onboardingError && (
+        <div className="rounded-xl bg-rose-950/35 p-3 text-xs text-rose-200">
+          <p className="font-medium">Setup needs attention</p>
+          <p className="mt-1 break-words text-rose-200/80">{p.onboardingError}</p>
+          <p className="mt-1 text-rose-200/70">
+            You can fix the agent or configuration and retry. A saved connector will appear on this page instead of being lost.
+          </p>
+        </div>
+      )}
 
       <div>
         <Button
