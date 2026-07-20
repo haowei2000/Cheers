@@ -220,6 +220,32 @@ pub async fn resolve_claim(
     } else {
         "rejected"
     };
+    // Resolve dispatch prerequisites before consuming the one-way pending state.
+    // Previously a missing PRIMARY session returned 409 only after the claim had
+    // already become accepted, making the approval impossible to retry.
+    let dispatch_session = if status == "accepted" {
+        let bot_id = sqlx::query_scalar::<_, String>(
+            "SELECT bot_id FROM task_claim_requests WHERE claim_id=$1 AND channel_id=$2 AND status='pending'",
+        )
+        .bind(claim_id.to_string())
+        .bind(channel_id.to_string())
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::Conflict("claim is no longer pending".into()))?
+        .parse::<Uuid>()
+        .map_err(|_| AppError::Internal("invalid bot id".into()))?;
+        Some(
+            crate::domain::sessions::resolve_primary_session(
+                &state.db,
+                bot_id,
+                &channel_id.to_string(),
+            )
+            .await?
+            .ok_or_else(|| AppError::Conflict("bot has no primary channel session".into()))?,
+        )
+    } else {
+        None
+    };
     let row = sqlx::query(r#"UPDATE task_claim_requests SET status=$3,resolved_by=$4,resolution_note=$5,resolved_at=NOW(),updated_at=NOW() WHERE claim_id=$1 AND channel_id=$2 AND status='pending' RETURNING bot_id,summary,proposed_action"#)
         .bind(claim_id.to_string()).bind(channel_id.to_string()).bind(status).bind(user_id.to_string()).bind(input.note.as_deref()).fetch_optional(&state.db).await?;
     let Some(row) = row else {
@@ -241,13 +267,7 @@ pub async fn resolve_claim(
         );
         sqlx::query("INSERT INTO messages(msg_id,channel_id,sender_id,sender_type,content,msg_type,is_secret,is_partial) VALUES($1,$2,$3,'user',$4,'task_claim',TRUE,FALSE) ON CONFLICT(msg_id) DO NOTHING")
             .bind(trigger_id.to_string()).bind(channel_id.to_string()).bind(user_id.to_string()).bind(format!("Approved proactive task claim.\nSummary: {summary}\nRequested action: {action}\nComplete the requested work and report the result in this channel.")).execute(&state.db).await?;
-        let session = crate::domain::sessions::resolve_primary_session(
-            &state.db,
-            bot_id,
-            &channel_id.to_string(),
-        )
-        .await?
-        .ok_or_else(|| AppError::Conflict("bot has no primary channel session".into()))?;
+        let session = dispatch_session.expect("accepted claims preflight a primary session");
         let result = dispatcher::dispatch(&state.db,&state.fanout,&state.stream_registry,&state.bot_locator,DispatchParams { trigger_msg_id: trigger_id,trigger_seq: 0,bot_id,channel_id,depth: 0,provider_session_key: session.1,session_id: Some(session.0),chain_id: None,context_bundle: Some(json!({"kind":"task_claim","claim_id":claim_id,"summary":summary,"proposed_action":action})) },&MediaCache::default()).await;
         match result {
             dispatcher::DispatchResult::Dispatched { placeholder_msg_id } => {

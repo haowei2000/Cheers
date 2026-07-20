@@ -513,7 +513,8 @@ pub async fn create_channel(
             invited_users.push(user_id.clone());
         }
     }
-    for bot_id in body.initial_bot_ids {
+    let initial_bot_ids = body.initial_bot_ids;
+    for bot_id in &initial_bot_ids {
         sqlx::query("INSERT INTO channel_memberships (channel_id, member_id, member_type, role, added_by) VALUES ($1, $2, 'bot', 'member', $3) ON CONFLICT DO NOTHING")
             .bind(&channel_id)
             .bind(bot_id)
@@ -522,6 +523,28 @@ pub async fn create_channel(
             .await?;
     }
     tx.commit().await?;
+
+    // Channel creation with initial bots is the same session-creation contract as
+    // adding a bot later: every bound bot must have a dispatchable PRIMARY session.
+    // Keep this after the membership transaction so session creation cannot point at
+    // a channel/bot membership that has not committed yet.
+    for bot_id in &initial_bot_ids {
+        let bot_uuid = Uuid::parse_str(bot_id)
+            .map_err(|_| AppError::BadRequest("initial_bot_ids must contain bot uuids".into()))?;
+        let provider_account_id =
+            crate::domain::messages::resolve_provider_account_id_for_bot(&state.db, bot_uuid)
+                .await
+                .unwrap_or_else(|_| bot_id.clone());
+        crate::domain::sessions::ensure_primary_session_workspace(
+            &state.db,
+            bot_uuid,
+            &provider_account_id,
+            &channel_id,
+            None,
+            &[],
+        )
+        .await?;
+    }
 
     // Live push for any founding-member invites (best-effort; durable in DB).
     if !invited_users.is_empty() {

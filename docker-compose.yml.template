@@ -1,7 +1,8 @@
 services:
   gateway:
     build:
-      context: ./server
+      context: .
+      dockerfile: server/Dockerfile
     restart: unless-stopped
     # Resource caps (single-host defaults; raise for heavier workloads).
     deploy:
