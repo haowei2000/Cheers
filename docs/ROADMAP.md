@@ -82,6 +82,8 @@ F0 foundation → F1 human picker → F2 bot handoff → F3 suggested context.
 ### UI
 
 - [ ] Unify UI hover states.
+- [ ] Apply the spacing-first grouping rule to the native iOS surfaces; replace
+      presentation-only dividers while retaining row rules only for dense data.
 - [ ] Fix missing Chinese and English localization coverage.
 - [ ] Optimize default options.
 

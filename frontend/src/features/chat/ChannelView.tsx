@@ -629,6 +629,14 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     onStreamDelta: handleStreamDelta,
     onStreamDone: handleStreamDone,
     onMessageDeleted: handleDeleted,
+    onBotUnavailable: (botId, placeholderMsgId) => {
+      pendingDeltas.current.delete(placeholderMsgId);
+      setMessages((prev) => prev.filter((m) => m.msg_id !== placeholderMsgId));
+      const botName = memberById.get(botId)?.display_name ?? "This bot";
+      toast.error(`${botName} is offline and couldn't receive your message.`, {
+        id: `bot-offline-${botId}`,
+      });
+    },
     onReady: handleReady,
     // Backend `count` already includes online bots — display as-is, never re-add botIds.
     // `focus` carries workspace presence (who's viewing which bot's workspace).
@@ -1336,7 +1344,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     };
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+        <div className="flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
           {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
           {onBack && (
             <button
@@ -1389,7 +1397,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
-      <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+      <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
         {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
         {onBack && (
           <button
@@ -1406,8 +1414,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           {channel.name}
         </span>
         {channel.purpose && (
-          <div className="hidden md:flex items-center gap-3 min-w-0">
-            <div className="w-px h-4 bg-zinc-700" />
+          <div className="hidden md:flex items-center gap-3 pl-1 min-w-0">
             <span className="text-xs text-zinc-400 truncate">
               {channel.purpose}
             </span>
@@ -1493,13 +1500,10 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         </button>
         {channel.type !== "dm" && (
           <>
-            {/* Divider: the buttons left of it toggle instrument panels in the
-                lane; Settings opens a modal — a different kind of action. */}
-            <div className="w-px h-4 bg-zinc-700 flex-shrink-0 mx-0.5" />
             <button
               onClick={() => setSettingsOpen(true)}
               title="Channel settings"
-              className="flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              className="ml-1.5 flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -1563,7 +1567,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
       {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
       {selectMode && (
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-zinc-800 bg-zinc-900/80 text-xs">
+        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/80 px-3 py-2 text-xs">
           <span className="text-zinc-300 font-medium">
             {selectedIds.size} selected
           </span>
@@ -1605,7 +1609,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
       {/* Reply banner — the composer's next send answers this message. */}
       {replyTo && !selectMode && (
-        <div className="flex items-center gap-2 px-4 py-1.5 border-t border-zinc-800 bg-zinc-900/60 text-xs">
+        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/60 px-3 py-1.5 text-xs">
           <Reply className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
           <span className="text-zinc-400 flex-shrink-0">Replying to</span>
           <span className="text-zinc-300 font-medium flex-shrink-0">{displayName(replyTo)}</span>

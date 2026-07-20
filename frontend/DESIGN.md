@@ -73,11 +73,12 @@ meaningful text → `zinc-400`.
 | Hover on soft surfaces | `bg-zinc-700` |
 
 **Elevation principle — borderless everywhere.** Layers separate by surface
-contrast and shadow, never by box outlines: `border border-*` is banned on
-buttons, fields, cards, chips and popovers alike. 1px *dividers* between
-stacked regions (`border-b border-zinc-800`) and underline *indicators*
-(tabs) remain. Rings appear only as **states**: focus (`ring-indigo-500`)
-and error (`ring-red-500`).
+contrast, shadow, and deliberate spacing, never by box outlines: `border
+border-*` is banned on buttons, fields, cards, chips and popovers alike. Use
+vertical and horizontal gaps as the default way to group stacked regions.
+Reserve 1px rules only for dense, data-heavy surfaces where adjacent rows must
+be scanned as a table; underline *indicators* remain for tabs. Rings appear
+only as **states**: focus (`ring-indigo-500`) and error (`ring-red-500`).
 
 ### Typography
 

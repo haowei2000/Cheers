@@ -1,6 +1,7 @@
-import { cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { FloatingLayer } from "./floating-layer";
 
 // Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
 // AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
@@ -31,24 +32,8 @@ export function Tip({
   className?: string;
 }) {
   const id = useId();
-
-  const bubble = (
-    <span
-      role="tooltip"
-      id={id}
-      className={cn(
-        "pointer-events-none absolute bottom-full z-20 mb-2 w-max max-w-[230px]",
-        "rounded-lg bg-zinc-700 px-2.5 py-1.5 text-left text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-100",
-        "opacity-0 shadow-xl shadow-black/40 transition-opacity duration-100",
-        "group-hover/tip:opacity-100 group-focus-within/tip:opacity-100",
-        align === "center" && "left-1/2 -translate-x-1/2",
-        align === "start" && "left-0",
-        align === "end" && "right-0"
-      )}
-    >
-      {content}
-    </span>
-  );
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
 
   const trigger =
     children && isValidElement(children) ? (
@@ -68,9 +53,27 @@ export function Tip({
     );
 
   return (
-    <span className={cn("group/tip relative inline-flex", className)}>
+    <span
+      ref={rootRef}
+      className={cn("relative inline-flex", className)}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocusCapture={() => setOpen(true)}
+      onBlurCapture={() => requestAnimationFrame(() => !rootRef.current?.contains(document.activeElement) && setOpen(false))}
+    >
       {trigger}
-      {bubble}
+      {open && (
+        <FloatingLayer
+          anchorRef={rootRef}
+          placement="up"
+          align={align}
+          id={id}
+          role="tooltip"
+          className="pointer-events-none w-max max-w-[230px] rounded-lg bg-zinc-700 px-2.5 py-1.5 text-left text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-100 shadow-xl shadow-black/40"
+        >
+          {content}
+        </FloatingLayer>
+      )}
     </span>
   );
 }

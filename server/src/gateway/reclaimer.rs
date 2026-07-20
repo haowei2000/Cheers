@@ -3,8 +3,8 @@
 //! bot 占位 born `is_partial=TRUE, channel_seq=NULL`，仅在 `done` 帧到达时
 //! finalize（此时才耗 seq）。若后端重启（内存态 [`StreamRegistry`] 丢失）或
 //! bot 中途消失且未发 `done`，占位将成为孤儿——聊天气泡永远停在「思考中」。
-//! 本周期性扫描把这类孤儿 finalize 为 "[bot offline]"，与派发期 bot-offline
-//! 路径（`dispatcher::offline_done_frame`）行为一致。
+//! 本周期性扫描删除这类孤儿占位，并发送一个瞬态 bot-unavailable 提示，与派发期
+//! bot-offline 路径（`dispatcher::bot_unavailable_frame`）行为一致。
 //!
 //! 安全前提：占位仅在同时满足以下两条时才回收——
 //!   (a) 早于 `threshold_secs`（`created_at < now() - threshold`），且
@@ -18,7 +18,7 @@ use std::time::Duration;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use super::dispatcher::{mark_placeholder_failed, offline_done_frame};
+use super::dispatcher::{bot_unavailable_frame, remove_placeholder};
 use super::realtime::fanout::Fanout;
 use super::stream::StreamRegistry;
 
@@ -67,22 +67,25 @@ pub async fn sweep_once(
             .ok()
             .and_then(|s| s.parse::<Uuid>().ok());
 
-        match mark_placeholder_failed(db, msg_id).await {
+        match remove_placeholder(db, msg_id).await {
             Ok(Some(failed)) => {
                 // 仅当能解析出 bot_id 时才广播终态帧（前端据此解除「思考中」）。
                 if let Some(bot_id) = bot_id {
-                    let done =
-                        offline_done_frame(failed.channel_id, failed.channel_seq, msg_id, bot_id);
-                    fanout.broadcast_channel(failed.channel_id, done).await;
+                    fanout
+                        .broadcast_channel(
+                            failed.channel_id,
+                            bot_unavailable_frame(failed.channel_id, msg_id, bot_id),
+                        )
+                        .await;
                 }
                 registry.remove(msg_id);
                 reclaimed += 1;
-                tracing::info!(msg_id = %msg_id, "orphan reclaimer: placeholder finalized as [bot offline]");
+                tracing::info!(msg_id = %msg_id, "orphan reclaimer: placeholder removed; bot unavailable notified");
             }
             // 占位已被并发 done/dispatch finalize（channel_seq 已分配）——无需处理。
             Ok(None) => {}
             Err(e) => {
-                tracing::error!(error = %e, msg_id = %msg_id, ctx = "orphan reclaimer: mark_placeholder_failed", "reclaimer db error");
+                tracing::error!(error = %e, msg_id = %msg_id, ctx = "orphan reclaimer: remove_placeholder", "reclaimer db error");
             }
         }
     }

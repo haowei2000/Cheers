@@ -451,7 +451,7 @@ mod tests {
     /// I6：终态帧（不可丢，背压时关连接）须被识别。
     #[test]
     fn terminal_frames_are_recognized() {
-        for ft in ["message", "message_done", "message_deleted"] {
+        for ft in ["message", "message_done", "message_deleted", "bot_unavailable"] {
             assert!(is_terminal_frame(&frame(ft)), "{ft} 是终态帧");
         }
     }

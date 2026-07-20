@@ -23,6 +23,9 @@ interface Callbacks {
   onStreamDone: (msg: Partial<Message> & { msg_id: string }) => void;
   onMessageDeleted: (msgId: string) => void;
   onBotProcessing?: (botId: string) => void;
+  /** A mentioned bot could not accept the task. The transient placeholder was
+   * removed server-side, so clients should remove it locally and surface a toast. */
+  onBotUnavailable?: (botId: string, placeholderMsgId: string) => void;
   /** Fired after every (re)subscribe ack — used to run REST seq catch-up. */
   onReady?: () => void;
   /** Channel presence update (online user ids + count + online bot ids).
@@ -261,6 +264,9 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     cbs.onMessageDeleted((data as { msg_id: string }).msg_id);
   } else if (type === "bot_processing") {
     cbs.onBotProcessing?.((data as { bot_id: string }).bot_id);
+  } else if (type === "bot_unavailable") {
+    const d = data as { bot_id: string; placeholder_msg_id: string };
+    cbs.onBotUnavailable?.(d.bot_id, d.placeholder_msg_id);
   } else if (type === "presence") {
     const d = data as {
       online_user_ids?: string[];

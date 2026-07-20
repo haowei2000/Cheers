@@ -377,11 +377,11 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
     });
 
   return (
-    <div className="flex h-full text-sm">
+    <div className="flex h-full gap-2 p-1.5 text-sm">
       {/* file tree (collapsible — previews get the full drawer width when hidden) */}
       {treeOpen ? (
-        <div className="w-52 flex-shrink-0 border-r border-zinc-800 flex flex-col">
-          <div className="flex items-center gap-1 px-2 h-8 border-b border-zinc-800 flex-shrink-0">
+        <div className="flex w-52 flex-shrink-0 flex-col rounded-lg bg-zinc-900/50">
+          <div className="mx-1 mt-1 flex h-8 flex-shrink-0 items-center gap-1 rounded-md bg-zinc-800/50 px-2">
             <button
               type="button"
               onClick={() => beginCreate("")}
@@ -423,7 +423,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
           onClick={() => setTreeOpen(true)}
           aria-label="Show file tree"
           title="Show file tree"
-          className="w-6 flex-shrink-0 border-r border-zinc-800 flex items-start justify-center pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+          className="flex w-6 flex-shrink-0 items-start justify-center rounded-md bg-zinc-900/50 pt-2 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         >
           <PanelLeftOpen className="w-3.5 h-3.5" />
         </button>
@@ -450,7 +450,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
             const effMode = mode !== "raw" && previewRenderer ? "preview" : "raw";
             return (
               <>
-                <div className="flex items-center gap-2 px-3 h-8 border-b border-zinc-800 flex-shrink-0">
+                <div className="mx-1 mt-1 flex h-8 flex-shrink-0 items-center gap-2 rounded-md bg-zinc-900/50 px-3">
                   <span className="text-xs text-zinc-300 truncate">{selected}</span>
                   {effMode === "raw" && editor.dirty && <span className="text-[10px] text-amber-400">●</span>}
                   <div className="flex-1" />
@@ -593,7 +593,7 @@ export function FilePanel({ ctx }: { ctx: WorkbenchContext }) {
         {(editor.status || status) && (
           <div
             aria-live="polite"
-            className="px-3 py-1 text-[11px] text-zinc-400 border-t border-zinc-800 flex-shrink-0"
+            className="mx-1 mb-1 rounded-md bg-zinc-900/50 px-3 py-1 text-[11px] text-zinc-400"
           >
             {editor.status || status}
           </div>

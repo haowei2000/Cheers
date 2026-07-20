@@ -139,7 +139,9 @@ export function WorkspaceRail({
         </div>
       </RailButton>
 
-      <div className="w-8 h-px bg-zinc-700/60 my-1" />
+      {/* The personal workspace and team list are grouped by a small visual
+          pause instead of a hard rule. */}
+      <div className="h-2 flex-shrink-0" aria-hidden />
 
       {/* Team workspaces (personal is the top slot, never listed here) */}
       <div className="flex flex-col items-center gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">

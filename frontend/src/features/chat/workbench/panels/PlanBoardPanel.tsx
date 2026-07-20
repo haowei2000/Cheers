@@ -72,7 +72,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
 
   return (
     <div className="rounded-md mb-3 overflow-hidden">
-      <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/40">
+      <div className="mx-2 mt-2 rounded-lg bg-zinc-900/60 px-3 py-2">
         <div className="flex items-center gap-2">
           {/* Card is titled by the bot's avatar + name (raw id in the tooltip). */}
           <Avatar

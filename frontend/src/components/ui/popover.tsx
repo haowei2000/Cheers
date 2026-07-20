@@ -9,8 +9,9 @@
 //     <button aria-expanded={open} …>trigger</button>
 //     {open && <PopoverPanel placement="up">…</PopoverPanel>}
 //   </div>
-import { useEffect, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { cn } from "@/lib/cn";
+import { FloatingLayer } from "./floating-layer";
 
 /**
  * Close an open popover on outside mousedown or Escape. Outside-ness is checked
@@ -44,8 +45,10 @@ export function usePopoverDismiss(
 }
 
 /**
- * The floating surface itself — positioning relative to the `relative` anchor
- * plus the §2.4 borderless popover chrome. Width/padding stay with the caller.
+ * The floating surface itself. Its marker stays in the relative anchor, while
+ * the visible panel is portalled to the document body so it cannot be clipped
+ * by a scrolling, rounded, or transformed parent. Width/padding stay with the
+ * caller.
  */
 export function PopoverPanel({
   placement = "up",
@@ -59,16 +62,18 @@ export function PopoverPanel({
   className?: string;
   children: ReactNode;
 }) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
   return (
-    <div
-      className={cn(
-        "absolute z-50 rounded-xl bg-zinc-900 shadow-xl shadow-black/40",
-        placement === "up" ? "bottom-full mb-2" : "top-full mt-2",
-        align === "start" ? "left-0" : "right-0",
-        className
-      )}
-    >
-      {children}
-    </div>
+    <>
+      <span ref={anchorRef} aria-hidden="true" className="pointer-events-none absolute inset-0" />
+      <FloatingLayer
+        anchorRef={anchorRef}
+        placement={placement}
+        align={align}
+        className={cn("rounded-xl bg-zinc-900 shadow-xl shadow-black/40", className)}
+      >
+        {children}
+      </FloatingLayer>
+    </>
   );
 }

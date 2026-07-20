@@ -137,7 +137,7 @@ function KanbanLens({ data, onChange }: LensProps) {
       {cols.length === 0 && <div className="p-3 text-zinc-400">Empty board</div>}
       {cols.map((c, ci) => (
         <div key={ci} className="w-40 flex-shrink-0 bg-zinc-950/60 rounded ">
-          <div className="px-2 py-1 text-zinc-300 border-b border-zinc-800">
+          <div className="mx-1 mt-1 rounded-md bg-zinc-800/50 px-2 py-1 text-zinc-300">
             {c.name} <span className="text-zinc-400">{c.items.length}</span>
           </div>
           <div className="p-1 space-y-1">

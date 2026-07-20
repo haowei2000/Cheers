@@ -385,7 +385,7 @@ function ParticipantStrip({
   const online = ids.reduce((n, id) => n + (memberOf(id)?.is_online ? 1 : 0), 0);
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 flex-shrink-0">
+    <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-1 rounded-lg bg-zinc-900/50 px-2 py-1.5">
       <div className="flex items-center -space-x-2">
         {shown.map((id) => {
           const mem = memberOf(id);
@@ -565,7 +565,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
         )}
 
         {/* Footer: lens tabs (left) + member filter (right). */}
-        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-zinc-800 flex-shrink-0">
+        <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900/50 px-2 py-1.5">
           <div className="flex items-center gap-0.5 rounded-full bg-zinc-900/60 p-0.5">
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <button
@@ -675,7 +675,7 @@ function MemberFilter({
 
       {open && (
         <PopoverPanel placement={openUp ? "up" : "down"} align="end" className="w-60 max-w-[calc(100vw-2rem)]">
-          <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-zinc-800">
+          <div className="m-1 flex items-center gap-1.5 rounded-md bg-zinc-800/50 px-2 py-1.5">
             <Search className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
             <input
               autoFocus
@@ -726,7 +726,7 @@ function MemberFilter({
             )}
           </div>
           {selected.size > 0 && (
-            <div className="border-t border-zinc-800 px-2 py-1.5 flex items-center gap-2">
+            <div className="m-1 mt-2 flex items-center gap-2 rounded-md bg-zinc-800/50 px-2 py-1.5">
               <div className="flex-1 flex flex-wrap gap-1">
                 {members
                   .filter((mem) => selected.has(mem.member_id))

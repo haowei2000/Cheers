@@ -215,7 +215,7 @@ function ViewBoardDrawerImpl({
     >
       <div
         {...(float ? drag.handleProps : {})}
-        className="flex items-center gap-2 px-3 h-10 border-b border-zinc-800 flex-shrink-0 select-none"
+        className="mx-2 mt-2 flex h-10 flex-shrink-0 select-none items-center gap-2 rounded-lg bg-zinc-900/70 px-3"
       >
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -275,7 +275,7 @@ function ViewBoardDrawerImpl({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 flex-shrink-0 overflow-x-auto">
+          <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-900/50 px-2 py-1.5">
             {boards.map((b) => {
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
@@ -297,7 +297,7 @@ function ViewBoardDrawerImpl({
           </div>
 
           {activeBoard?.sessionScoped && (
-            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-zinc-800 flex-shrink-0">
+            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 rounded-lg bg-zinc-900/40 px-3 py-1.5">
               <Layers className="w-3 h-3 text-zinc-500 flex-shrink-0" />
               <span className="text-[10px] uppercase tracking-wide text-zinc-400">Scope</span>
               <select
