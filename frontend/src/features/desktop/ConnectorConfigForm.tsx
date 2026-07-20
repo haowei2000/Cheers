@@ -57,6 +57,10 @@ export function ConnectorConfigForm({
   const [argsOpen, setArgsOpen] = useState(false);
   // Which agent tile is highlighted; "custom" until the picker matches one.
   const [agentKey, setAgentKey] = useState("custom");
+  // True when `default_cwd` is set but under none of the workspace roots — the
+  // connector rejects this at startup with "default_cwd must be under
+  // allowed_roots", so warn before the user saves instead of after a crash.
+  const [cwdUnderRoot, setCwdUnderRoot] = useState<boolean | null>(null);
 
   useEffect(() => {
     invokeDesktop<ConfigFields>("connector_config_read_fields", { path: configPath })
@@ -67,6 +71,29 @@ export function ConnectorConfigForm({
   function patch(p: Partial<ConfigFields>) {
     setF((prev) => (prev ? { ...prev, ...p } : prev));
   }
+
+  // Re-check the cwd-vs-roots rule whenever either changes. No-op in the
+  // browser (the desktop-only command is gated inside invokeDesktop).
+  useEffect(() => {
+    if (!f) {
+      setCwdUnderRoot(null);
+      return;
+    }
+    let cancelled = false;
+    invokeDesktop<boolean>("connector_validate_workspace", {
+      defaultCwd: f.default_cwd ?? null,
+      allowedRoots: f.allowed_roots,
+    })
+      .then((ok) => {
+        if (!cancelled) setCwdUnderRoot(ok);
+      })
+      .catch(() => {
+        if (!cancelled) setCwdUnderRoot(null); // fall back to silent
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [f?.default_cwd, f?.allowed_roots]);
 
   async function openRaw() {
     try {
@@ -230,6 +257,24 @@ export function ConnectorConfigForm({
               <FolderPlus className="w-3.5 h-3.5" /> Choose…
             </Button>
           </div>
+          {cwdUnderRoot === false && f.default_cwd?.trim() && (
+            <p className="mt-1 text-xs text-amber-400">
+              This directory is not under any workspace root — the connector will
+              refuse to start.{" "}
+              <button
+                type="button"
+                className="underline hover:text-amber-300"
+                onClick={() => {
+                  const cwd = f.default_cwd?.trim();
+                  if (cwd && !f.allowed_roots.includes(cwd)) {
+                    patch({ allowed_roots: [...f.allowed_roots, cwd] });
+                  }
+                }}
+              >
+                Add it to workspace roots
+              </button>
+            </p>
+          )}
         </Field>
         <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer w-fit">
           <input

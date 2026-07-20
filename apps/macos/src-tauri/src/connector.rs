@@ -1005,10 +1005,11 @@ pub async fn connector_delete(
     // Capture the config path before we remove the service dir that records it.
     let config_path = read_metadata_by_name(&name).map(|m| m.config_path);
 
-    // Best-effort stop; a dead/never-started instance has nothing to stop.
-    let _ = run_cli(&app, &["--name", &name, "stop"]).await;
-
-    // Forget it everywhere the supervisor tracks it.
+    // Forget it from the supervisor BEFORE stopping: the supervisor loop takes
+    // a one-shot `managed` snapshot each tick, and a still-queued revive would
+    // `start_daemon` → recreate the service dir + daemon.json right after we
+    // delete them (the "delete sometimes resurrects" race). Removing first
+    // closes the window — the stop below kills any already-running process.
     state.managed.lock().unwrap().remove(&name);
     {
         let mut settings = load_settings();
@@ -1016,6 +1017,9 @@ pub async fn connector_delete(
             let _ = save_settings(&settings);
         }
     }
+
+    // Best-effort stop; a dead/never-started instance has nothing to stop.
+    let _ = run_cli(&app, &["--name", &name, "stop"]).await;
 
     // Remove the service directory (state + logs). safe_name matches the
     // sanitized on-disk directory the connector created.
@@ -1234,6 +1238,50 @@ pub fn connector_config_write_fields(path: String, fields: ConfigFields) -> Resu
 
     let normalized = normalize_adapter_launcher(&doc.to_string())?;
     fs::write(&p, normalized).map_err(|e| e.to_string())
+}
+
+/// Mirror the connector's startup check (`config.rs`: when `allowed_roots` is
+/// non-empty, `default_cwd` must be under one of them) so the form can warn
+/// BEFORE saving — the daemon's own check only fires on restart, by which point
+/// the user has already seen a wall of "stream closed" errors. Expands `~` via
+/// the real home dir and canonicalizes when the path exists, so the result
+/// matches what the daemon will see. Pure (no I/O beyond `canonicalize`) so the
+/// home-scoping is unit-testable. Returns true when valid OR when we can't be
+/// sure (non-existent path) — the daemon's check is authoritative, this is a
+/// UX hint.
+fn workspace_cwd_allowed(default_cwd: &str, allowed_roots: &[String]) -> bool {
+    if allowed_roots.is_empty() {
+        return true; // no restriction until the user adds a root
+    }
+    let home = dirs::home_dir();
+    let expand = |raw: &str| -> PathBuf {
+        let p = if raw == "~" {
+            home.clone().unwrap_or_default()
+        } else if let Some(rest) = raw.strip_prefix("~/") {
+            home.clone().map(|h| h.join(rest)).unwrap_or_default()
+        } else {
+            PathBuf::from(raw)
+        };
+        // Canonicalize when the dir exists (matches the daemon); otherwise fall
+        // back to the expanded path so a not-yet-created dir still compares.
+        p.canonicalize().unwrap_or(p)
+    };
+    let cwd = expand(default_cwd);
+    allowed_roots.iter().any(|root| cwd.starts_with(expand(root)))
+}
+
+/// Validate the workspace fields the way the connector does at startup, so the
+/// form can surface "default_cwd must be under allowed_roots" inline instead of
+/// as a post-restart daemon crash. Returns `{ cwd_under_root: bool }`.
+#[tauri::command]
+pub fn connector_validate_workspace(
+    default_cwd: Option<String>,
+    allowed_roots: Vec<String>,
+) -> bool {
+    match default_cwd.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(cwd) => workspace_cwd_allowed(cwd, &allowed_roots),
+        None => true, // no cwd set — nothing to validate
+    }
 }
 
 /// Drag-to-grant (A3): append one or more absolute directory paths to the
@@ -1772,6 +1820,22 @@ pub fn spawn_supervisor(app: tauri::AppHandle) {
                 if *count >= MAX_REVIVES {
                     continue; // gave up already; stay quiet until it runs again
                 }
+                // Re-check `managed` right before acting: the snapshot was taken
+                // at the top of the loop, and a concurrent `connector_delete` may
+                // have removed this instance since. Without this, a delete that
+                // lands between the snapshot and the revive would resurrect the
+                // just-deleted connector (stop it, then start_daemon rebuilds the
+                // service dir + daemon.json). Belt-and-braces with removing the
+                // name from managed first in connector_delete.
+                let still_managed = {
+                    let state = app.state::<SupervisorState>();
+                    let managed = state.managed.lock().unwrap();
+                    managed.contains(&inst.name)
+                };
+                if !still_managed {
+                    revive_counts.remove(&inst.name);
+                    continue;
+                }
                 *count += 1;
                 let gave_up = *count >= MAX_REVIVES;
                 // Revive with --config (+ ensure workspace dirs) so a daemon that
@@ -1881,5 +1945,46 @@ mod tests {
             Some("@agentclientprotocol/claude-agent-acp")
         );
         assert_eq!(npm_package_of(""), None);
+    }
+
+    // `workspace_cwd_allowed` is written pure (no direct I/O): `~` expansion and
+    // canonicalize are both side-effect-free over these fixtures, so the
+    // absolute-path cases are deterministic regardless of the test machine.
+    #[test]
+    fn workspace_cwd_allowed_absolute_paths() {
+        // cwd directly under a root.
+        assert!(workspace_cwd_allowed(
+            "/Users/dev/Projects/Cheers",
+            &["/Users/dev/Projects".to_string()]
+        ));
+        // cwd is exactly a root.
+        assert!(workspace_cwd_allowed(
+            "/Users/dev/Projects",
+            &["/Users/dev/Projects".to_string()]
+        ));
+        // cwd is the sibling of a root — not under it.
+        assert!(!workspace_cwd_allowed(
+            "/Users/dev/Other",
+            &["/Users/dev/Projects".to_string()]
+        ));
+        // Matches the second root out of several.
+        assert!(workspace_cwd_allowed(
+            "/Users/dev/Projects/Cheers",
+            &["/var/empty".to_string(), "/Users/dev/Projects".to_string()]
+        ));
+        // Empty roots → unrestricted (mirrors the connector).
+        assert!(workspace_cwd_allowed("/anywhere/else", &[]));
+    }
+
+    #[test]
+    fn workspace_cwd_allowed_tilde_and_command_layer_none() {
+        // Same `~/...` prefix on both sides compares equal as strings.
+        assert!(workspace_cwd_allowed("~/Projects/Cheers", &["~/Projects".to_string()]));
+        assert!(!workspace_cwd_allowed("~/Other", &["~/Projects".to_string()]));
+        // The command layer trims + filters blank cwd → None → true; the helper
+        // itself reports the literal fact that "" is under no root.
+        assert!(super::connector_validate_workspace(None, vec!["/root".into()]));
+        assert!(super::connector_validate_workspace(Some("".into()), vec!["/root".into()]));
+        assert!(super::connector_validate_workspace(Some("   ".into()), vec!["/root".into()]));
     }
 }

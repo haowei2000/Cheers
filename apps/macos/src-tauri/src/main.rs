@@ -103,6 +103,7 @@ fn main() {
             changes::connector_file_revert,
             changes::connector_open_pr,
             connector::connector_health,
+            connector::connector_validate_workspace,
             connector::connector_add_allowed_roots,
             connector::check_agent_updates,
             audit::connector_audit_timeline,
