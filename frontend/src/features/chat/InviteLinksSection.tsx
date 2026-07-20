@@ -146,11 +146,11 @@ export function InviteLinksSection({
       </div>
 
       {links.length > 0 && (
-        <div className="rounded-lg bg-zinc-950/40 divide-y divide-zinc-800/60">
+        <div className="space-y-2">
           {links.map((l) => {
             const dead = l.status !== "active";
             return (
-              <div key={l.link_id} className="flex items-center gap-2 px-3 py-2">
+              <div key={l.link_id} className="flex items-center gap-2 rounded-lg bg-zinc-950/40 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-mono text-zinc-300 truncate">
                     {inviteUrl(l.token)}

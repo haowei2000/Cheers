@@ -115,7 +115,7 @@ export function WorkspaceRail({
   }, []);
 
   return (
-    <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+    <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {/* Personal workspace — the user's home (DMs + private space), the most important
           one, so it takes the prominent top slot. Selectable; falls back to a static brand
           mark until it's loaded. */}
@@ -139,7 +139,9 @@ export function WorkspaceRail({
         </div>
       </RailButton>
 
-      <div className="w-8 h-px bg-zinc-700/60 my-1" />
+      {/* The personal workspace and team list are grouped by a small visual
+          pause instead of a hard rule. */}
+      <div className="h-2 flex-shrink-0" aria-hidden />
 
       {/* Team workspaces (personal is the top slot, never listed here) */}
       <div className="flex flex-col items-center gap-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">

@@ -23,6 +23,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       plugin: ${{ steps.filter.outputs.plugin }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      ios: ${{ steps.filter.outputs.ios }}
 
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +50,10 @@ jobs:
             desktop:
               - "apps/macos/**"
               - ".github/workflows/ci.yml"
+            ios:
+              - "apps/ios/**"
+              - "scripts/check-pbxproj.py"
+              - ".github/workflows/ci.yml"
 
   # ─────────────────────────────────────────────
   # Gateway (Rust): build + test
@@ -68,12 +73,18 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
+
+      # The other Rust crates gate on fmt; the gateway didn't, so CLAUDE.md's
+      # "run cargo fmt --check before pushing" was unenforced here. Runs before
+      # the build so a formatting-only failure reports in seconds.
+      - name: Format
+        run: cargo fmt --check
 
       - name: Build
         run: cargo build
@@ -241,3 +252,54 @@ jobs:
 
       - name: Check desktop shell
         run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
+
+  # ─────────────────────────────────────────────
+  # iOS (Swift): project-file sanity + a real compile.
+  #
+  # Added after a broken develop on 2026-07-20: two parallel branches gave
+  # ChatModelStore.swift and WorkbenchSheet.swift the same hand-assigned
+  # pbxproj ids, Xcode silently dropped one, and nothing in CI compiled iOS at
+  # all — the app simply stopped building and no gate noticed.
+  #
+  # Simulator destination + CODE_SIGNING_ALLOWED=NO: this proves the code and
+  # the project file are sound without needing signing certs or a provisioning
+  # profile in CI. Device signing stays a local/release concern.
+  # ─────────────────────────────────────────────
+  ios-build:
+    name: iOS Build
+    # macos-15, not macos-14: the sources need Swift 6 (`@retroactive`, and the
+    # SwiftUI MainActor-isolation inference that lets a View hold a @MainActor
+    # model). macos-14 defaults to Xcode 15.4 / Swift 5.10 and fails on both.
+    runs-on: macos-15
+    needs: changes
+    if: needs.changes.outputs.ios == 'true' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: apps/ios
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Select the newest Xcode on the image rather than pinning a version: the
+      # runner default lags well behind what the project is developed against,
+      # and a hard-coded path breaks on the next image bump. The version is
+      # printed so a future toolchain-drift failure is obvious in the log.
+      - name: Select newest Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      # Runs first: when ids collide this names the two colliding files in a
+      # second, where xcodebuild would instead fail minutes later pointing at
+      # some unrelated file that referenced the dropped symbol.
+      - name: Check project file
+        run: python3 ../../scripts/check-pbxproj.py
+
+      - name: Build (iOS Simulator, unsigned)
+        run: |
+          xcodebuild \
+            -project Cheers.xcodeproj \
+            -scheme Cheers \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            build

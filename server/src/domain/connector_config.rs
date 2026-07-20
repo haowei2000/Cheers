@@ -557,7 +557,10 @@ mod tests {
                 public_base: "wss://example.test",
                 token_ref: TokenRef::File("secrets/bot.token".into()),
             });
-            assert!(toml.contains("args    = []"), "{agent_type} should take no args");
+            assert!(
+                toml.contains("args    = []"),
+                "{agent_type} should take no args"
+            );
         }
     }
 

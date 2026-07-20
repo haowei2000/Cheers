@@ -217,7 +217,6 @@ struct ChatView: View {
             Button { panel = .workspaceFiles } label: {
                 Label("Workspace files", systemImage: "folder")
             }
-            Divider()
             Button { panel = .viewboard } label: {
                 Label("ViewBoard", systemImage: "rectangle.3.group")
             }
@@ -225,7 +224,6 @@ struct ChatView: View {
                 Label("Workbench", systemImage: "sidebar.right")
             }
             if !model.channel.isDM {
-                Divider()
                 Button { panel = .settings } label: {
                     Label("Channel settings", systemImage: "gearshape")
                 }
@@ -487,9 +485,8 @@ private struct ForwardSheet: View {
                     .foregroundStyle(Theme.danger)
                     .padding(.horizontal, 16)
             }
-            Divider().overlay(Theme.border)
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: 6) {
                     ForEach(convo?.rows ?? []) { row in
                         Button { forward(to: row.channel) } label: {
                             HStack(spacing: 11) {
@@ -573,7 +570,6 @@ private struct FilePreviewSheet: View {
                 }
             }
             .padding(16)
-            Divider().overlay(Theme.border)
             content
         }
         .background(Theme.bgSurface)
@@ -808,4 +804,3 @@ private struct ModelSettingsSheet: View {
         isLoading = false
     }
 }
-

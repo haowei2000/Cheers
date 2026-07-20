@@ -64,9 +64,9 @@ export function BotActivitySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
-        <div className="max-h-56 overflow-y-auto divide-y divide-zinc-800/70">
+        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
           {events.map((e, i) => (
-            <div key={i} className="flex items-center gap-2 py-1 text-[11px]">
+            <div key={i} className="flex items-center gap-2 rounded-md bg-zinc-950/30 px-2 py-1.5 text-[11px]">
               <span className="text-zinc-400 tabular-nums w-20 shrink-0">{time(e.created_at)}</span>
               <span
                 className={`shrink-0 rounded px-1.5 py-0.5 border text-[10px] ${homeCls[e.home] ?? homeCls.observe}`}

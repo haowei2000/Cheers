@@ -208,11 +208,11 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
           (the member-allow default). Click “New rule” to deny a specific bot.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg divide-y divide-zinc-800/70">
+        <div className="space-y-1.5">
           {grants.map((r: BotGrant) => (
             <div
               key={`${r.grant}:${r.channel_id}:${r.subject_id}`}
-              className="flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
+              className="flex items-center gap-2 rounded-md bg-zinc-950/30 px-2.5 py-2 text-[11px]"
             >
               <span
                 className={`rounded px-1 py-0.5 text-[10px] border ${GRANT_BADGE[r.grant]}`}

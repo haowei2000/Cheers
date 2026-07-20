@@ -147,9 +147,9 @@ function ProfileCard({
     <div
       data-profile-card
       style={{ position: "fixed", width: CARD_W, ...pos }}
-      className="z-[60] rounded-xl bg-zinc-900 shadow-xl shadow-black/40 overflow-hidden"
+      className="z-[60] rounded-xl bg-zinc-900 p-3 shadow-xl shadow-black/40 space-y-3"
     >
-      <div className="flex items-start gap-3 p-3">
+      <div className="flex items-start gap-3">
         <div className="relative flex-shrink-0">
           <Avatar name={name} src={member.avatar_url || undefined} id={member.member_id} size="lg" />
           {member.is_online != null && (
@@ -189,14 +189,14 @@ function ProfileCard({
       </div>
 
       {member.bio && (
-        <div className="border-t border-zinc-800 px-3 py-2">
+        <div>
           <p className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
             {member.bio}
           </p>
         </div>
       )}
       {member.role && member.role !== "member" && (
-        <div className="border-t border-zinc-800 px-3 py-1.5">
+        <div>
           <span className="text-[10px] uppercase tracking-wide text-zinc-400">
             {member.role}
           </span>

@@ -59,9 +59,8 @@ export function LaneResizer({
       className="group relative w-1.5 flex-shrink-0 cursor-col-resize max-md:hidden"
       style={{ touchAction: "none" }}
     >
-      {/* A hairline that brightens on hover/drag; the 6px-wide parent is the
-          (invisible) grab target so the 1px line stays easy to hit. */}
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-800 transition-colors group-hover:bg-indigo-500/60" />
+      {/* The 6px-wide invisible target keeps resizing discoverable through its
+          cursor and title without drawing a permanent divider between regions. */}
     </div>
   );
 }

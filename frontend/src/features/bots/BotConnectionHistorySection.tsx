@@ -64,9 +64,9 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
         </p>
       ) : (
-        <div className="max-h-56 overflow-y-auto divide-y divide-zinc-800/70">
+        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
           {events.map((e, i) => (
-            <div key={i} className="flex items-center gap-2 py-1 text-[11px]">
+            <div key={i} className="flex items-center gap-2 rounded-md bg-zinc-950/30 px-2 py-1.5 text-[11px]">
               <span className="text-zinc-400 tabular-nums w-36 shrink-0">{time(e.created_at)}</span>
               {e.event === "connected" ? (
                 <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />

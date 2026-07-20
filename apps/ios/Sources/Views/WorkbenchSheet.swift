@@ -43,9 +43,8 @@ struct WorkbenchSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            Divider().overlay(Theme.border)
             if let openFile {
                 FileContentView(channelId: channelId, node: openFile)
             } else if isLoading {

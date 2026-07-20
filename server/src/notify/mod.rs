@@ -74,9 +74,16 @@ pub enum PushKind {
         reject_option_id: Option<String>,
     },
     /// A direct message (from a person or a bot).
-    DirectMessage { channel_id: Uuid, sender_name: String },
+    DirectMessage {
+        channel_id: Uuid,
+        sender_name: String,
+    },
     /// The user was @-mentioned in a channel.
-    Mention { channel_id: Uuid, sender_name: String, channel_name: String },
+    Mention {
+        channel_id: Uuid,
+        sender_name: String,
+        channel_name: String,
+    },
     /// A workspace/channel invite (mirrors the in-app notification inbox).
     Invite { title: String },
 }
@@ -85,15 +92,20 @@ impl PushKind {
     /// APNs alert title/body — deliberately generic (payload minimization).
     fn alert(&self) -> (String, String) {
         match self {
-            Self::PermissionRequest { bot_name, title, .. } => {
-                (format!("{bot_name} requests permission"), title.clone())
-            }
+            Self::PermissionRequest {
+                bot_name, title, ..
+            } => (format!("{bot_name} requests permission"), title.clone()),
             Self::DirectMessage { sender_name, .. } => {
                 (sender_name.clone(), "New direct message".into())
             }
-            Self::Mention { sender_name, channel_name, .. } => {
-                (format!("#{channel_name}"), format!("{sender_name} mentioned you"))
-            }
+            Self::Mention {
+                sender_name,
+                channel_name,
+                ..
+            } => (
+                format!("#{channel_name}"),
+                format!("{sender_name} mentioned you"),
+            ),
             Self::Invite { title } => ("Invitation".into(), format!("You're invited to {title}")),
         }
     }

@@ -73,6 +73,16 @@ body {
   background: #52525b;
 }
 
+/* The message timeline is content, not a scroll control. Preserve wheel, touch,
+   keyboard, and programmatic scrolling while keeping the rail visually quiet. */
+.chat-scrollbar {
+  scrollbar-width: none;
+}
+.chat-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 /* Textarea reset */
 textarea {
   resize: none;

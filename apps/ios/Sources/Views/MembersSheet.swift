@@ -35,9 +35,8 @@ struct MembersSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            Divider().overlay(Theme.border)
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -282,8 +281,6 @@ struct InviteSheet: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            Divider().overlay(Theme.border)
-
             if let errorText {
                 Text(errorText)
                     .font(.system(size: 12))
@@ -516,7 +513,6 @@ struct InviteSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .overlay(alignment: .bottom) { Divider().overlay(Theme.border).padding(.leading, 16) }
     }
 
     /// The link must point at the *web deployment*, not any app scheme — the

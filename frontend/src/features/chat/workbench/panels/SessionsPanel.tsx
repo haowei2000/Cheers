@@ -239,7 +239,7 @@ function SessionCard({
 
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
-        <div className="mt-2 border-t border-zinc-800/60 pt-2 space-y-1.5">
+        <div className="mt-3 space-y-1.5 rounded-lg bg-zinc-900/40 p-2">
           <div className="flex items-center gap-2 text-[10px] text-zinc-400">
             <span className="w-12 shrink-0">session</span>
             <span className="font-mono text-zinc-200" title={s.session_id}>

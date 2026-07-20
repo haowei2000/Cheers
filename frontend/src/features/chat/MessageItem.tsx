@@ -1,4 +1,4 @@
-import { memo, useContext, useState } from "react";
+import { memo, useContext, useRef, useState, type RefObject } from "react";
 import { Square, MessageCircleMore, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
@@ -13,6 +13,7 @@ import { BotTracePanel } from "./BotTracePanel";
 import { stopTurn } from "./stopTurn";
 import type { Message } from "@/types";
 import { useProfileCard } from "./ProfileHovercard";
+import { FloatingLayer } from "@/components/ui/floating-layer";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -50,12 +51,10 @@ const SYSTEM_TYPES = new Set([
 
 function SystemMessage({ message }: { message: Message }) {
   return (
-    <div className="flex items-center gap-3 py-1 px-4">
-      <div className="flex-1 h-px bg-zinc-800" />
+    <div className="flex justify-center py-3 px-4">
       <span className="text-xs text-zinc-400 whitespace-nowrap">
         {message.content}
       </span>
-      <div className="flex-1 h-px bg-zinc-800" />
     </div>
   );
 }
@@ -81,18 +80,33 @@ function ActionBar({
   message,
   actions,
   reversed,
+  anchorRef,
+  visible,
+  onEnter,
+  onLeave,
 }: {
   message: Message;
   actions: MessageActionHandlers;
   reversed?: boolean;
+  anchorRef: RefObject<HTMLElement | null>;
+  visible: boolean;
+  onEnter: () => void;
+  onLeave: () => void;
 }) {
   const btn =
     "flex items-center justify-center w-7 h-7 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/70";
   return (
-    <div
+    <FloatingLayer
+      anchorRef={anchorRef}
+      placement="up"
+      align={reversed ? "start" : "end"}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onFocus={onEnter}
+      onBlur={onLeave}
       className={cn(
-        "absolute -top-3 z-10 flex opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity",
-        reversed ? "left-4" : "right-4"
+        "flex items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity",
+        visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
       <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
@@ -112,7 +126,7 @@ function ActionBar({
       >
         <CheckSquare className="w-3.5 h-3.5" />
       </button>
-    </div>
+    </FloatingLayer>
   );
 }
 
@@ -249,6 +263,8 @@ export const MessageItem = memo(function MessageItem({
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
   const showActions = actions && !active && !selectMode && !message._status;
   const selectable = Boolean(actions && selectMode);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [actionsVisible, setActionsVisible] = useState(false);
 
   // Click the sender's avatar/name → open their profile card (bio/status). In
   // select mode the row-click owns the interaction, so skip it there.
@@ -287,11 +303,15 @@ export const MessageItem = memo(function MessageItem({
     return (
       <div
         className={cn(
-          "group relative flex items-start gap-3 px-4 py-0.5 hover:bg-zinc-900/40 transition-colors",
+          "group relative flex items-start gap-3 px-4 py-0.5 hover:z-20 focus-within:z-20 hover:bg-zinc-900/40 transition-colors",
           selectable && "cursor-pointer",
           selected && "bg-indigo-950/30 hover:bg-indigo-950/40"
         )}
         {...rowSelectProps}
+        ref={rowRef}
+        onMouseEnter={() => setActionsVisible(true)}
+        onMouseLeave={() => setActionsVisible(false)}
+        onFocusCapture={() => setActionsVisible(true)}
       >
         {selectable && <SelectBox selected={selected} />}
         <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
@@ -313,7 +333,7 @@ export const MessageItem = memo(function MessageItem({
             />
           )}
         </div>
-        {showActions && <ActionBar message={message} actions={actions} />}
+        {showActions && <ActionBar message={message} actions={actions} anchorRef={rowRef} visible={actionsVisible} onEnter={() => setActionsVisible(true)} onLeave={() => setActionsVisible(false)} />}
       </div>
     );
   }
@@ -321,12 +341,16 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div
       className={cn(
-        "group relative flex items-start gap-3 px-4 py-1.5 hover:bg-zinc-900/40 transition-colors",
+        "group relative flex items-start gap-3 px-4 py-1.5 hover:z-20 focus-within:z-20 hover:bg-zinc-900/40 transition-colors",
         isOwn && "flex-row-reverse",
         selectable && "cursor-pointer",
         selected && "bg-indigo-950/30 hover:bg-indigo-950/40"
       )}
-      {...rowSelectProps}
+        {...rowSelectProps}
+      ref={rowRef}
+      onMouseEnter={() => setActionsVisible(true)}
+      onMouseLeave={() => setActionsVisible(false)}
+      onFocusCapture={() => setActionsVisible(true)}
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
       {selectable && <SelectBox selected={selected} className={isOwn ? "order-last" : undefined} />}
@@ -385,7 +409,7 @@ export const MessageItem = memo(function MessageItem({
           />
         )}
       </div>
-      {showActions && <ActionBar message={message} actions={actions} reversed={isOwn} />}
+      {showActions && <ActionBar message={message} actions={actions} reversed={isOwn} anchorRef={rowRef} visible={actionsVisible} onEnter={() => setActionsVisible(true)} onLeave={() => setActionsVisible(false)} />}
     </div>
   );
 });

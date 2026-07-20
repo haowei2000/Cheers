@@ -528,7 +528,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
       >
         <div
           {...(float ? drag.handleProps : {})}
-          className="flex items-center gap-2 px-3 h-12 border-b border-zinc-800 flex-shrink-0 select-none"
+          className="mx-2 mt-2 flex h-12 flex-shrink-0 select-none items-center gap-2 rounded-lg bg-zinc-900/70 px-3"
         >
           {minimized ? (
             // Collapsed: the whole title is the expand target (bigger than the
@@ -646,7 +646,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         </div>
 
         {!minimized && notice && (
-          <div className="px-3 py-1 text-[11px] text-amber-400/90 bg-amber-500/5 border-b border-zinc-800 flex items-center gap-2">
+          <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-400/90">
             <span className="flex-1">{notice}</span>
             <button onClick={() => setNotice(null)} title="Dismiss" className="text-zinc-500 hover:text-zinc-300">
               <X className="w-3 h-3" />
@@ -655,7 +655,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
         )}
 
         {!minimized && allEnvs.length === 0 && selectedId === null && (
-          <div className="px-3 py-1.5 text-[11px] text-zinc-400 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
+          <div className="mx-2 mt-2 flex flex-shrink-0 items-center gap-2 rounded-lg bg-zinc-900/50 px-3 py-1.5 text-[11px] text-zinc-400">
             <Package className="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" />
             <span className="flex-1">
               No scenarios yet — drop a .json template (or .html plugin) here, use "Load extension", or

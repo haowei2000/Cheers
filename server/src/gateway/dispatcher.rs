@@ -15,7 +15,7 @@ use super::{
     registry::BotLocator,
     stream::{StreamEntry, StreamRegistry},
 };
-use crate::domain::{channel_seq, sessions};
+use crate::domain::sessions;
 use crate::gateway::realtime::{fanout::Fanout, frame::WireFrame};
 use crate::infra::db::models::MESSAGE_SCHEMA_VERSION;
 
@@ -183,15 +183,17 @@ pub async fn dispatch(
     let delivered = bot_locator.dispatch_task(params.bot_id, task_frame).await;
 
     if !delivered {
-        // bot 不在线：清理占位（或标记为失败，让前端看到错误提示）
-        if let Ok(Some(failed)) = mark_placeholder_failed(db, placeholder_id).await {
-            let done = offline_done_frame(
-                failed.channel_id,
-                failed.channel_seq,
-                placeholder_id,
-                params.bot_id,
-            );
-            fanout.broadcast_channel(failed.channel_id, done).await;
+        // The placeholder is an internal streaming affordance, not a chat event.
+        // Remove it rather than persisting "[bot offline]" as a bot message, then
+        // send one terminal transient frame so active clients can dismiss it and
+        // show an error toast. History remains free of failed pseudo-replies.
+        if let Ok(Some(failed)) = remove_placeholder(db, placeholder_id).await {
+            fanout
+                .broadcast_channel(
+                    failed.channel_id,
+                    bot_unavailable_frame(failed.channel_id, placeholder_id, params.bot_id),
+                )
+                .await;
         }
         registry.remove(placeholder_id);
         if let Some(session_id) = params.session_id {
@@ -271,34 +273,17 @@ async fn create_placeholder(
 
 pub(crate) struct FailedPlaceholder {
     pub(crate) channel_id: Uuid,
-    pub(crate) channel_seq: i64,
 }
 
-/// 构造 bot-offline 的 `message_done` 终态帧（占位被 finalize 为 "[bot offline]"）。
-/// 派发期 bot 不在线与孤儿回收器共用此帧形状。
-pub(crate) fn offline_done_frame(
-    channel_id: Uuid,
-    channel_seq: i64,
-    msg_id: Uuid,
-    bot_id: Uuid,
-) -> WireFrame {
+/// A terminal transient frame: the placeholder has been deleted and the client
+/// must remove its local copy before displaying an unavailable-bot toast.
+pub(crate) fn bot_unavailable_frame(channel_id: Uuid, msg_id: Uuid, bot_id: Uuid) -> WireFrame {
     WireFrame::channel(
         channel_id,
-        "message_done",
+        "bot_unavailable",
         json!({
-            "v": MESSAGE_SCHEMA_VERSION,
-            "msg_id": msg_id,
-            "channel_id": channel_id,
-            "channel_seq": channel_seq,
-            "sender_id": bot_id,
-            "sender_type": "bot",
-            "content": "[bot offline]",
-            "msg_type": "text",
-            "is_partial": false,
-            "reply_to_msg_id": null,
-            "file_ids": [],
-            "mentions": [],
-            "files": [],
+            "bot_id": bot_id,
+            "placeholder_msg_id": msg_id,
         }),
     )
 }
@@ -645,7 +630,7 @@ pub async fn load_pinned_context(db: &PgPool, channel_id: Uuid) -> Vec<String> {
     out
 }
 
-pub(crate) async fn mark_placeholder_failed(
+pub(crate) async fn remove_placeholder(
     db: &PgPool,
     placeholder_id: Uuid,
 ) -> Result<Option<FailedPlaceholder>, sqlx::Error> {
@@ -662,31 +647,19 @@ pub(crate) async fn mark_placeholder_failed(
         return Ok(None);
     };
 
-    let mut tx = db.begin().await?;
-    let seq = channel_seq::allocate(&mut tx, channel_id).await?;
     let result = sqlx::query(
-        "UPDATE messages
-         SET is_partial = FALSE,
-             content = '[bot offline]',
-             channel_seq = $2
+        "DELETE FROM messages
          WHERE msg_id = $1 AND is_partial = TRUE AND channel_seq IS NULL",
     )
     .bind(placeholder_id.to_string())
-    .bind(seq)
-    .execute(&mut *tx)
+    .execute(db)
     .await?;
 
     if result.rows_affected() == 0 {
-        tx.rollback().await?;
         return Ok(None);
     }
 
-    tx.commit().await?;
-
-    Ok(Some(FailedPlaceholder {
-        channel_id,
-        channel_seq: seq,
-    }))
+    Ok(Some(FailedPlaceholder { channel_id }))
 }
 
 /// A session's ACP root set: `(cwd, additional_dirs)` — the effective root set is
