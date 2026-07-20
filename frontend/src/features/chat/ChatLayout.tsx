@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { listWorkspaces, getPersonalWorkspace } from "@/api/workspaces";
-import { listChannels, listDms } from "@/api/channels";
+import { listChannels, listDms, listVoicePresence } from "@/api/channels";
 import toast from "react-hot-toast";
 import { ErrorState } from "@/components/ui/error-state";
 import { useChatStore } from "@/stores/chatStore";
@@ -14,7 +14,7 @@ import { isTauri } from "@/lib/serverConfig";
 import { useUserSocket } from "./hooks/useUserSocket";
 import { useTrayLiveness } from "@/features/desktop/useTrayLiveness";
 import type { NotificationItem } from "@/api/notifications";
-import type { PermissionContentData, PermissionOption } from "@/types";
+import type { PermissionContentData, PermissionOption, VoicePresenceSnapshot } from "@/types";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { Sidebar } from "./Sidebar";
 import { ChannelView } from "./ChannelView";
@@ -67,6 +67,8 @@ export default function ChatLayout() {
     setWorkspaces,
     setPersonalWorkspace,
     setChannels,
+    setVoicePresence,
+    updateVoicePresence,
     selectWorkspace,
     hydrateSelection,
   } = useChatStore();
@@ -87,7 +89,25 @@ export default function ChatLayout() {
   useEffect(() => {
     void refreshNotifications();
   }, [refreshNotifications]);
-  useUserSocket((raw) => {
+  useEffect(() => {
+    // Clear any in-memory snapshot left by a previous login before hydrating the
+    // current account's authorized voice channels.
+    setVoicePresence([]);
+    void listVoicePresence()
+      .then(setVoicePresence)
+      .catch(() => {
+        // Non-blocking: LiveKit may intentionally be unconfigured, and future
+        // user-scoped frames will still reconcile occupancy when it is enabled.
+      });
+  }, [setVoicePresence]);
+  useUserSocket((frameType, raw) => {
+    if (frameType === "voice_presence") {
+      const snapshot = raw as VoicePresenceSnapshot | null;
+      if (snapshot?.channel_id && Array.isArray(snapshot.participants)) {
+        updateVoicePresence(snapshot);
+      }
+      return;
+    }
     // Desktop shell: permission_request / mention nudges arrive on this
     // user-scoped socket (the gateway mirrors its Web Push payloads here —
     // WKWebView has no Push API). Same suppression as the service worker:

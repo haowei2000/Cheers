@@ -8,9 +8,19 @@ name: release-desktop
 # Apple-silicon only for now (macos-14 runner = arm64): an Intel build needs a
 # cross-compiled sidecar + universal bundle, deferred until someone asks.
 #
-# UNSIGNED: there is no Developer ID signing/notarization yet, so Gatekeeper
-# will warn on first launch. The release notes carry the right-click → Open
-# escape hatch. Signing lands with a proper release pipeline later.
+# UNSIGNED (Gatekeeper): there is no Developer ID signing/notarization yet, so
+# Gatekeeper will warn on first launch. The release notes carry the right-click
+# → Open escape hatch. Signing lands with a proper release pipeline later.
+#
+# SIGNED (updater): separate from Gatekeeper. The .app.tar.gz and latest.json
+# are signed with the minisign updater key (secret DESKTOP_UPDATER_KEY, public
+# half pinned in tauri.conf.json), so an installed app only ever runs an update
+# this key signed. Losing the key means no client can update again — it lives
+# in ~/.cheers-release/desktop-updater.key alongside the connector release key.
+#
+# NOT a prerelease: the app's update feed is the fixed URL
+# releases/latest/download/latest.json, and GitHub's "latest" pointer skips
+# prereleases — marking these prerelease would make the feed 404 forever.
 
 on:
   push:
@@ -51,8 +61,14 @@ jobs:
 
       # npm run build = build-sidecar.sh (stages the connector as a Tauri
       # sidecar) + tauri build (whose beforeBuildCommand builds the frontend).
+      # createUpdaterArtifacts makes tauri build emit the updater tarball and its
+      # .sig; the signing key must be present here or the build produces an
+      # unsigned bundle that no installed client will accept.
       - name: Build the app
         run: npm --prefix apps/macos run build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.DESKTOP_UPDATER_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
       - name: Package assets
         run: |
@@ -61,15 +77,42 @@ jobs:
           # End-user-legible names: this build targets macOS on Apple Silicon,
           # so the system is obvious from the filename (not "aarch64").
           cp "$BUNDLE"/dmg/Cheers_*.dmg dist-assets/Cheers-macOS-AppleSilicon.dmg
-          tar -C "$BUNDLE/macos" -czf dist-assets/Cheers-macOS-AppleSilicon.app.tar.gz Cheers.app
+          # The updater consumes the tarball tauri signed, not a tar we rolled
+          # ourselves — the .sig only matches those exact bytes.
+          cp "$BUNDLE"/macos/Cheers.app.tar.gz dist-assets/Cheers-macOS-AppleSilicon.app.tar.gz
+          cp "$BUNDLE"/macos/Cheers.app.tar.gz.sig dist-assets/Cheers-macOS-AppleSilicon.app.tar.gz.sig
           shasum -a 256 dist-assets/* | tee dist-assets/SHA256SUMS.txt
           ls -l dist-assets
+
+      # The update feed. `platforms` keys are what the updater asks for; this
+      # runner only ever produces darwin-aarch64, so an Intel Mac gets a clean
+      # "no update" rather than a broken download.
+      - name: Write latest.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          SIG=$(cat dist-assets/Cheers-macOS-AppleSilicon.app.tar.gz.sig)
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/Cheers-macOS-AppleSilicon.app.tar.gz"
+          python3 - "$VERSION" "$SIG" "$URL" <<'PY' | tee dist-assets/latest.json
+          import json, sys, subprocess
+          version, sig, url = sys.argv[1:4]
+          pub = subprocess.run(
+              ["git", "log", "-1", "--format=%cI"], capture_output=True, text=True
+          ).stdout.strip()
+          json.dump({
+              "version": version,
+              "pub_date": pub,
+              "notes": f"Cheers Desktop {version}",
+              "platforms": {"darwin-aarch64": {"signature": sig, "url": url}},
+          }, sys.stdout, indent=2)
+          PY
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           name: Cheers Desktop (macOS · Apple Silicon)
-          prerelease: true
+          # Must stay false — see the header note on the updater feed URL.
+          prerelease: false
+          make_latest: true
           fail_on_unmatched_files: true
           files: |
             dist-assets/*
@@ -86,7 +129,13 @@ jobs:
             Applications. The `cheers://` link scheme and Finder "Open With →
             Cheers" register on first launch of the installed app.
 
+            **Updates:** this is the last version you install by hand. From
+            0.1.2 on, Settings → Account → App updates checks this feed and
+            updates in place; only builds signed with the Cheers updater key
+            are accepted.
+
             | Download | System |
             |---|---|
             | `Cheers-macOS-AppleSilicon.dmg` | macOS 11+, Apple Silicon — installer |
-            | `Cheers-macOS-AppleSilicon.app.tar.gz` | macOS 11+, Apple Silicon — bare .app |
+            | `Cheers-macOS-AppleSilicon.app.tar.gz` | macOS 11+, Apple Silicon — bare .app (also the updater payload) |
+            | `latest.json` | the in-app update feed — not a download |

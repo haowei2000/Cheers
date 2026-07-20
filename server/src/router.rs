@@ -252,8 +252,42 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::send_message).get(api::messages::list_messages),
         )
         .route(
+            "/api/v1/channels/:channel_id/task-claims",
+            get(api::task_claims::list_claims),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/task-claims/:claim_id/resolve",
+            post(api::task_claims::resolve_claim),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/monitoring",
+            get(api::task_claims::get_monitoring).put(api::task_claims::put_monitoring),
+        )
+        .route(
             "/api/v1/channels/:channel_id/read",
             post(api::channels::mark_channel_read),
+        )
+        // ── Real-time voice control plane (media flows directly via LiveKit) ─
+        .route(
+            "/api/v1/channels/:channel_id/voice/join",
+            post(api::voice::join),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/voice/state",
+            get(api::voice::state),
+        )
+        .route("/api/v1/voice/presence", get(api::voice::presence))
+        .route(
+            "/api/v1/channels/:channel_id/voice/transcript",
+            get(api::voice::transcript),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/voice/transcription/start",
+            post(api::voice::start_transcription),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/voice/transcription/stop",
+            post(api::voice::stop_transcription),
         )
         .route(
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
@@ -619,6 +653,20 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/bots/:bot_id/self-status",
             post(api::bots::bot_self_status),
+        )
+        // LiveKit calls this from the media plane. Authentication is its signed
+        // webhook JWT + raw-body SHA-256, not a browser session token.
+        .route(
+            "/api/v1/voice/livekit/webhook",
+            post(api::voice::livekit_webhook).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
+            "/internal/v1/voice/sessions/:voice_session_id/transcript-segments",
+            post(api::voice::ingest_transcript_segment).layer(DefaultBodyLimit::max(32 * 1024)),
+        )
+        .route(
+            "/internal/v1/voice/rooms/:room_name/context",
+            get(api::voice::transcriber_context),
         )
         // Avatar images: public so an `<img src>` (no auth header) resolves. The
         // path is uuid-versioned + validated; the bytes aren't sensitive.

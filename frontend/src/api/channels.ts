@@ -1,5 +1,10 @@
 import { apiJson } from "./client";
-import type { Channel, MemberItem } from "@/types";
+import type {
+  Channel,
+  MemberItem,
+  VoicePresenceSnapshot,
+  VoiceTranscriptSegment,
+} from "@/types";
 
 export async function listChannels(workspaceId?: string): Promise<Channel[]> {
   const qs = workspaceId ? `?workspace_id=${workspaceId}` : "";
@@ -59,6 +64,7 @@ export async function createChannel(data: {
   workspace_id: string;
   name: string;
   type?: string;
+  kind?: "text" | "voice";
   purpose?: string;
   initial_bot_ids?: string[];
 }): Promise<Channel> {
@@ -110,6 +116,68 @@ export async function updateChannel(
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+}
+
+export interface VoiceJoinResponse {
+  url: string;
+  token: string;
+  room_name: string;
+  voice_session_id: string;
+  participant_identity: string;
+  can_publish: boolean;
+  expires_at: number;
+}
+
+export interface VoiceStateResponse {
+  enabled: boolean;
+  channel_kind: string;
+  session: {
+    voice_session_id: string;
+    status: string;
+    transcription_status: "off" | "starting" | "active" | "failed";
+    started_at: string;
+  } | null;
+}
+
+export interface VoiceTranscriptionControlResponse {
+  voice_session_id: string;
+  transcription_status: "off" | "starting" | "active" | "failed";
+}
+
+/** Authorize this member and mint a short-lived, room-scoped LiveKit token. */
+export async function joinVoiceChannel(channelId: string): Promise<VoiceJoinResponse> {
+  return apiJson<VoiceJoinResponse>(`/channels/${channelId}/voice/join`, {
+    method: "POST",
+  });
+}
+
+export async function getVoiceState(channelId: string): Promise<VoiceStateResponse> {
+  return apiJson<VoiceStateResponse>(`/channels/${channelId}/voice/state`);
+}
+
+export async function setVoiceTranscription(
+  channelId: string,
+  enabled: boolean
+): Promise<VoiceTranscriptionControlResponse> {
+  return apiJson<VoiceTranscriptionControlResponse>(
+    `/channels/${channelId}/voice/transcription/${enabled ? "start" : "stop"}`,
+    { method: "POST" }
+  );
+}
+
+/** Initial app-wide occupancy for voice channels visible to the caller. */
+export async function listVoicePresence(): Promise<VoicePresenceSnapshot[]> {
+  return apiJson<VoicePresenceSnapshot[]>("/voice/presence");
+}
+
+export async function listVoiceTranscript(
+  channelId: string,
+  afterSeq = 0,
+  limit = 100
+): Promise<VoiceTranscriptSegment[]> {
+  return apiJson<VoiceTranscriptSegment[]>(
+    `/channels/${channelId}/voice/transcript?after_seq=${afterSeq}&limit=${limit}`
+  );
 }
 
 export async function deleteChannel(channelId: string): Promise<void> {

@@ -59,6 +59,8 @@ fn main() {
             surface_main_window(app);
         }))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -103,6 +105,7 @@ fn main() {
             changes::connector_file_revert,
             changes::connector_open_pr,
             connector::connector_health,
+            connector::connector_validate_workspace,
             connector::connector_add_allowed_roots,
             connector::check_agent_updates,
             audit::connector_audit_timeline,

@@ -164,6 +164,33 @@ The startup log line reports the resolved config, e.g.
 **Use it:** in the UI, add the `opencode` bot to a channel (member list → add
 bot), then mention it: `@opencode hello`.
 
+## 8. (Optional) Start live voice transcription
+
+Deploy the small LiveKit media stack from [`deploy/livekit`](../../deploy/livekit/README.md)
+first. Put its URL/key/secret in the root `.env`, then configure a separate worker token
+and an OpenAI-compatible STT endpoint:
+
+```dotenv
+LIVEKIT_URL=wss://voice.example.com
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
+VOICE_TRANSCRIBER_TOKEN=<openssl rand -hex 32>
+VOICE_STT_API_KEY=...
+VOICE_STT_BASE_URL=
+VOICE_STT_MODEL=gpt-4o-mini-transcribe
+```
+
+Start the named worker on the application/compute host:
+
+```bash
+docker compose --profile voice-transcriber up -d --build voice-transcriber
+docker compose logs -f voice-transcriber
+```
+
+The worker is not sent to every room. A voice-channel owner/admin must join the room and
+press **Start** beside the visible transcription indicator. The gateway then explicitly
+dispatches it through LiveKit. Keep this compute service off a 2 GB SFU-only machine.
+
 ## Production hardening (HTTPS via Caddy)
 
 The TLS overlay adds a Caddy `tls-edge` service that terminates HTTPS and

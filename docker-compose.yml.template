@@ -1,7 +1,8 @@
 services:
   gateway:
     build:
-      context: ./server
+      context: .
+      dockerfile: server/Dockerfile
     restart: unless-stopped
     # Resource caps (single-host defaults; raise for heavier workloads).
     deploy:
@@ -49,6 +50,12 @@ services:
       # signal (download proxy then tracks the latest GitHub release).
       - CHEERS_CONNECTOR_RELEASE_REPO=${CHEERS_CONNECTOR_RELEASE_REPO:-}
       - CHEERS_CONNECTOR_RELEASE_VERSION=${CHEERS_CONNECTOR_RELEASE_VERSION:-}
+      # Real-time voice control plane. LIVEKIT_URL is browser-reachable (wss),
+      # while the key/secret stay gateway-only and sign room-scoped join tokens.
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - VOICE_TRANSCRIBER_TOKEN=${VOICE_TRANSCRIBER_TOKEN:-}
       # SMTP（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -107,6 +114,37 @@ services:
     volumes:
       - ./data/opencode-bot:/app/state
       - ./data/opencode-workspace:/workspace
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # Optional streaming STT worker. Keep this compute workload off the small
+  # dedicated LiveKit SFU host; it connects outbound to LiveKit and the gateway.
+  voice-transcriber:
+    profiles: ["voice-transcriber"]
+    build:
+      context: ./services/voice-transcriber
+    image: ${VOICE_TRANSCRIBER_IMAGE:-cheers/voice-transcriber:latest}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          memory: 256M
+    env_file:
+      - .env
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - CHEERS_INTERNAL_URL=http://gateway:8000
+      - VOICE_TRANSCRIBER_TOKEN=${VOICE_TRANSCRIBER_TOKEN:-}
+      - VOICE_STT_API_KEY=${VOICE_STT_API_KEY:-}
+      - VOICE_STT_BASE_URL=${VOICE_STT_BASE_URL:-}
+      - VOICE_STT_MODEL=${VOICE_STT_MODEL:-gpt-4o-mini-transcribe}
+      - VOICE_STT_LANGUAGE=${VOICE_STT_LANGUAGE:-}
     depends_on:
       gateway:
         condition: service_healthy

@@ -25,6 +25,8 @@ export interface Channel {
   channel_id: string;
   name: string;
   type: string;
+  /** Interaction kind, independent from public/private/DM access semantics. */
+  kind?: "text" | "voice";
   workspace_id?: string;
   purpose?: string | null;
   auto_assist?: boolean;
@@ -39,6 +41,40 @@ export interface Channel {
   /** False for public channels the caller sees as a workspace member but hasn't
    * joined yet (Slack model) — render a join prompt instead of the composer. */
   is_member?: boolean;
+}
+
+export interface VoicePresenceParticipant {
+  user_id: string;
+  display_name: string;
+  avatar_url?: string | null;
+  mic_published: boolean;
+}
+
+export interface VoicePresenceSnapshot {
+  channel_id: string;
+  voice_session_id?: string | null;
+  status?: string | null;
+  participants: VoicePresenceParticipant[];
+}
+
+export interface VoiceTranscriptSegment {
+  segment_id: string;
+  voice_session_id: string;
+  channel_id: string;
+  participant_session_id: string;
+  user_id: string;
+  provider_segment_id: string;
+  provider_event_id: string;
+  track_id: string;
+  channel_seq: number;
+  text: string;
+  started_at_ms: number;
+  ended_at_ms: number;
+  language?: string | null;
+  confidence?: number | null;
+  supersedes_segment_id?: string | null;
+  finalized_at: string;
+  created_at: string;
 }
 
 export interface DM {

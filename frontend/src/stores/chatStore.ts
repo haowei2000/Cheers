@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Workspace, Channel } from "@/types";
+import type { Workspace, Channel, VoicePresenceSnapshot } from "@/types";
 
 interface ChatState {
   workspaces: Workspace[];
   /** The user's personal workspace (rendered prominently atop the rail). */
   personalWorkspace: Workspace | null;
   channels: Channel[];
+  voicePresenceByChannel: Record<string, VoicePresenceSnapshot>;
   selectedWorkspaceId: string | null;
   selectedChannelId: string | null;
   /**
@@ -20,6 +21,8 @@ interface ChatState {
   setWorkspaces: (ws: Workspace[]) => void;
   setPersonalWorkspace: (ws: Workspace | null) => void;
   setChannels: (ch: Channel[]) => void;
+  setVoicePresence: (snapshots: VoicePresenceSnapshot[]) => void;
+  updateVoicePresence: (snapshot: VoicePresenceSnapshot) => void;
   selectWorkspace: (id: string | null) => void;
   selectChannel: (id: string | null) => void;
   patchChannel: (id: string, patch: Partial<Channel>) => void;
@@ -42,6 +45,7 @@ export const useChatStore = create<ChatState>()(
       workspaces: [],
       personalWorkspace: null,
       channels: [],
+      voicePresenceByChannel: {},
       selectedWorkspaceId: null,
       selectedChannelId: null,
       lastChannelByWorkspace: {},
@@ -49,6 +53,19 @@ export const useChatStore = create<ChatState>()(
       setWorkspaces: (ws) => set({ workspaces: ws }),
       setPersonalWorkspace: (ws) => set({ personalWorkspace: ws }),
       setChannels: (ch) => set({ channels: ch }),
+      setVoicePresence: (snapshots) =>
+        set({
+          voicePresenceByChannel: Object.fromEntries(
+            snapshots.map((snapshot) => [snapshot.channel_id, snapshot])
+          ),
+        }),
+      updateVoicePresence: (snapshot) =>
+        set((state) => ({
+          voicePresenceByChannel: {
+            ...state.voicePresenceByChannel,
+            [snapshot.channel_id]: snapshot,
+          },
+        })),
       // Restore the workspace's last-opened channel (or the empty state if it has
       // none / was cleared) rather than hard-resetting to null on every switch.
       selectWorkspace: (id) =>

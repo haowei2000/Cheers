@@ -749,6 +749,7 @@ pub async fn list_channel_messages(
                     "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
+                       AND m.is_secret = FALSE
                        AND (
                            m.created_at < $2
                            OR (m.created_at = $2 AND m.msg_id < $3)
@@ -769,6 +770,7 @@ pub async fn list_channel_messages(
                     "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
+                       AND m.is_secret = FALSE
                      ORDER BY m.created_at DESC, m.msg_id DESC
                      LIMIT $2"
                 ))
@@ -788,6 +790,7 @@ pub async fn list_channel_messages(
                     "{MESSAGE_LIST_SELECT}
                      WHERE m.channel_id = $1
                        AND m.is_partial = FALSE
+                       AND m.is_secret = FALSE
                        AND (
                            m.created_at > $2
                            OR (m.created_at = $2 AND m.msg_id > $3)
@@ -810,7 +813,9 @@ pub async fn list_channel_messages(
         (None, None) => {
             let rows = sqlx::query(&format!(
                 "{MESSAGE_LIST_SELECT}
-                 WHERE m.channel_id = $1 AND m.is_partial = FALSE
+                 WHERE m.channel_id = $1
+                   AND m.is_partial = FALSE
+                   AND m.is_secret = FALSE
                  ORDER BY m.created_at DESC, m.msg_id DESC
                  LIMIT $2"
             ))
@@ -852,6 +857,7 @@ pub async fn list_channel_messages_since_seq(
         "{MESSAGE_LIST_SELECT}
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
+           AND m.is_secret = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq > $2
          ORDER BY m.channel_seq ASC
@@ -893,6 +899,7 @@ pub async fn list_channel_messages_by_seq(
         "{MESSAGE_LIST_SELECT}
          WHERE m.channel_id = $1
            AND m.is_partial = FALSE
+           AND m.is_secret = FALSE
            AND m.channel_seq IS NOT NULL
            AND m.channel_seq >= $2
            AND ($3::bigint IS NULL OR m.channel_seq <= $3)
@@ -946,6 +953,7 @@ pub async fn search_channel_messages(
                 "{MESSAGE_LIST_SELECT}
                  WHERE m.channel_id = $1
                    AND m.is_partial = FALSE
+                   AND m.is_secret = FALSE
                    AND m.content ILIKE $2
                    AND (
                        m.created_at < $3
@@ -971,6 +979,7 @@ pub async fn search_channel_messages(
             "{MESSAGE_LIST_SELECT}
              WHERE m.channel_id = $1
                AND m.is_partial = FALSE
+               AND m.is_secret = FALSE
                AND m.content ILIKE $2
              ORDER BY m.created_at DESC, m.msg_id DESC
              LIMIT $3"
@@ -1027,7 +1036,7 @@ async fn fetch_anchor(
     let anchor = sqlx::query_as::<_, AnchorRow>(
         "SELECT msg_id, created_at
          FROM messages
-         WHERE msg_id = $1 AND channel_id = $2
+         WHERE msg_id = $1 AND channel_id = $2 AND is_secret = FALSE
          LIMIT 1",
     )
     .bind(anchor_id)

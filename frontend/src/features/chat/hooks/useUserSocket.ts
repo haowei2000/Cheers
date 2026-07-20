@@ -16,20 +16,20 @@ const MAX_RETRIES = 10;
  * App-wide, user-scoped WebSocket. Unlike `useChatRealtime` (bound to the open
  * channel), this one stays connected for the whole session and ONLY authenticates —
  * it never subscribes to a channel. Its sole job is to receive `scope:"user"`
- * frames (invite notifications) even when no channel is open. The gateway's
+ * frames (invite notifications and voice occupancy) even when no channel is open. The gateway's
  * `broadcast_user` fans out to every connection of the user, so this extra socket
  * gets the notification even while another socket is bound to a channel.
  *
  * Mounted once by ChatLayout (always mounted, unlike the rail on mobile).
  */
-export function useUserSocket(onNotification: (data: unknown) => void) {
+export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
   const token = useAuthStore((s) => s.token);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-  const cbRef = useRef(onNotification);
-  cbRef.current = onNotification;
+  const cbRef = useRef(onFrame);
+  cbRef.current = onFrame;
   // Token rejected → reconnecting with it would just loop; stop and let the
   // session-expired takeover (flipped below) be the exit.
   const authFailedRef = useRef(false);
@@ -61,9 +61,10 @@ export function useUserSocket(onNotification: (data: unknown) => void) {
         ws.close();
         return;
       }
-      // The only user-scoped frame we care about (invites; extensible later).
-      if (frame.type === "notification") {
-        cbRef.current(frame.data);
+      // App-wide user frames: invites and voice occupancy for every visible
+      // channel, including voice channels that are not currently open.
+      if (frame.type === "notification" || frame.type === "voice_presence") {
+        cbRef.current(frame.type, frame.data);
       }
     };
 

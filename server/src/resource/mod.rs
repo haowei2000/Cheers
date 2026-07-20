@@ -10,6 +10,7 @@ pub mod messages;
 pub mod plan;
 pub mod sessions;
 pub mod usage;
+pub mod voice;
 
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -88,6 +89,9 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 
         // ── mesh step 6：新增读操作 ───────────────────────────────────────
         "channel.activity.read" => activity::handle_read(db, &principal, &params).await,
+        "channel.voice.transcript" | "channel.voice.transcript.by-seq" => {
+            voice::handle_transcript(db, &principal, &params).await
+        }
         "channel.messages.index" => activity::handle_index(db, &principal, &params).await,
         "channel.messages.by-seq" => messages::handle_by_seq(db, &principal, &params).await,
         "channel.messages.search" => messages::handle_search(db, &principal, &params).await,

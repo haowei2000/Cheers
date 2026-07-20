@@ -154,6 +154,33 @@ docker compose logs -f opencode-bot     # 关注 api_key_set=true
 **使用：** 在 UI 中把 `opencode` Bot 加入某个频道（成员列表 → 添加 Bot），
 然后 @ 它：`@opencode 你好`。
 
+## 8.（可选）启动实时语音转写
+
+先按 [`deploy/livekit`](../../deploy/livekit/README.md) 部署小型 LiveKit 媒体栈，
+再在根目录 `.env` 中填写它的 URL、key、secret，并配置独立 Worker token 与
+OpenAI-compatible STT：
+
+```dotenv
+LIVEKIT_URL=wss://voice.example.com
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
+VOICE_TRANSCRIBER_TOKEN=<openssl rand -hex 32>
+VOICE_STT_API_KEY=...
+VOICE_STT_BASE_URL=
+VOICE_STT_MODEL=gpt-4o-mini-transcribe
+```
+
+在应用机或计算节点启动命名 Worker：
+
+```bash
+docker compose --profile voice-transcriber up -d --build voice-transcriber
+docker compose logs -f voice-transcriber
+```
+
+Worker 不会自动进入所有房间。语音频道 owner/admin 需要先加入房间，再点击转写状态旁的
+**Start**；gateway 才会通过 LiveKit 显式调度 Worker。不要把这个计算服务放在仅有 2 GB
+内存、专门运行 SFU 的机器上。
+
 ## 生产加固（Caddy HTTPS）
 
 TLS overlay 增加一个 Caddy `tls-edge` 服务，终止 HTTPS 并反向代理到

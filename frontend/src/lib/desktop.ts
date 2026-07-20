@@ -64,6 +64,43 @@ export async function setAutostart(enabled: boolean): Promise<void> {
   else await autostart.disable();
 }
 
+/** A newer desktop build published on the release feed. */
+export interface AppUpdate {
+  version: string;
+  notes?: string;
+}
+
+/** Check the signed latest.json feed for a newer desktop build. Returns null
+ * when up to date (or outside the shell). The updater verifies the release
+ * signature against the pubkey compiled into the app, so a tampered feed can
+ * withhold updates but never push code. */
+export async function checkAppUpdate(): Promise<AppUpdate | null> {
+  if (!isTauri()) return null;
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const update = await check();
+  if (!update) return null;
+  return { version: update.version, notes: update.body };
+}
+
+/** Download + install the pending update, then relaunch. Re-checks rather than
+ * holding the handle from checkAppUpdate: the user may sit on the prompt for a
+ * while, and a stale handle would install a build that is no longer latest.
+ *
+ * Throws if the re-check finds nothing — the caller only gets here after the
+ * user acted on a shown update, so "nothing to install" means the feed moved
+ * (or the network dropped) and the caller must surface that. Returning quietly
+ * would leave the button spinning forever, since the success path never
+ * returns: relaunch() replaces the process. */
+export async function installAppUpdate(): Promise<never | void> {
+  if (!isTauri()) return;
+  const { check } = await import("@tauri-apps/plugin-updater");
+  const update = await check();
+  if (!update) throw new Error("The update is no longer available — try again.");
+  await update.downloadAndInstall();
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+}
+
 /** Show a macOS native notification. WKWebView has no Push API, so the
  * desktop shell listens on the user-scoped WS (ChatLayout) and raises these
  * instead of Web Push. Fire-and-forget; failures are logged, never thrown. */

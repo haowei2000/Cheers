@@ -617,8 +617,63 @@ impl RuntimeContext {
                 };
                 let runtime = self.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = runtime.run_task(task).await {
+                    if let Err(err) = runtime.run_task(task, None).await {
                         tracing::error!("task failed: {err}");
+                    }
+                });
+            }
+            ControlInbound::ClaimEvaluation {
+                evaluation_id,
+                channel_id,
+                provider_session_key,
+                scope,
+                confidence_threshold,
+                source_seq_from,
+                source_seq_to,
+                activity,
+                ..
+            } => {
+                let instructions = format!(
+                    "You are evaluating whether the following recent channel activity contains a concrete task that belongs to you.\nYour configured scope: {}\nMinimum confidence: {:.3}\nActivity sequence: {}..={}\nActivity JSON:\n{}\n\nDo not execute the task and do not call tools. Return exactly one JSON object and no prose. If no task belongs to you: {{\"decision\":\"ignore\"}}. If it does: {{\"decision\":\"claim\",\"summary\":\"short task summary\",\"proposed_action\":\"what you will do after approval\",\"confidence\":0.0,\"impact\":\"low|medium|high\"}}.",
+                    if scope.trim().is_empty() { "Use your identity and capabilities." } else { scope.as_str() },
+                    confidence_threshold,
+                    source_seq_from,
+                    source_seq_to,
+                    serde_json::to_string_pretty(&activity).unwrap_or_else(|_| "[]".to_string()),
+                );
+                let task = TaskCommand {
+                    task_id: evaluation_id.clone(),
+                    channel_id,
+                    msg_id: evaluation_id.clone(),
+                    provider_session_key,
+                    session_id: None,
+                    trigger: Some("claim_evaluation".to_string()),
+                    trigger_message: Some(
+                        json!({"msg_id":evaluation_id,"text":instructions,"msg_type":"claim_evaluation"}),
+                    ),
+                    attachments: Vec::new(),
+                    pinned: Vec::new(),
+                    cwd: None,
+                    additional_dirs: Vec::new(),
+                    context_bundle: None,
+                };
+                let runtime = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = runtime
+                        .clone()
+                        .run_task(task, Some(evaluation_id.clone()))
+                        .await
+                    {
+                        tracing::error!("claim evaluation failed: {err}");
+                        let _ = runtime
+                            .io
+                            .send_data(DataOutbound::ClaimEvaluationResult {
+                                v: BRIDGE_PROTOCOL_VERSION,
+                                evaluation_id,
+                                content: None,
+                                error: Some(err.to_string()),
+                            })
+                            .await;
                     }
                 });
             }
@@ -1832,11 +1887,27 @@ impl RuntimeContext {
         Ok(())
     }
 
-    async fn run_task(self: Arc<Self>, task: TaskCommand) -> anyhow::Result<()> {
+    async fn run_task(
+        self: Arc<Self>,
+        task: TaskCommand,
+        evaluation_id: Option<String>,
+    ) -> anyhow::Result<()> {
         // Held for the whole turn (queued included) — a staged self-update only
         // swaps binaries and re-execs once no guard is alive.
         let _busy = crate::self_update::BusyGuard::new();
         if !self.config.policy.prompt.allow {
+            if let Some(evaluation_id) = evaluation_id {
+                let _ = self
+                    .io
+                    .send_data(DataOutbound::ClaimEvaluationResult {
+                        v: BRIDGE_PROTOCOL_VERSION,
+                        evaluation_id,
+                        content: None,
+                        error: Some("local daemon policy does not allow prompts".to_string()),
+                    })
+                    .await;
+                return Ok(());
+            }
             let _ = self
                 .io
                 .send_data_expect_terminal_ack(DataOutbound::Error {
@@ -1854,7 +1925,12 @@ impl RuntimeContext {
         }
         let session_lock = self.session_lock(&task.provider_session_key).await;
         let _guard = session_lock.lock().await;
-        let start_options = self.session_start_options(&task).await;
+        let mut start_options = self.session_start_options(&task).await;
+        // Evaluation is read-only and receives its bounded activity inline. Do
+        // not expose Cheers MCP resources during this isolated decision turn.
+        if evaluation_id.is_some() {
+            start_options.mcp_servers = json!([]);
+        }
         let acp_session_id = self.ensure_acp_session(&task, start_options).await?;
         let run = Arc::new(Mutex::new(ActiveRun {
             task_id: task.task_id.clone(),
@@ -1869,6 +1945,7 @@ impl RuntimeContext {
             created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
+            evaluation_id: evaluation_id.clone(),
         }));
         {
             let mut shared = self.shared.lock().await;
@@ -1976,30 +2053,41 @@ impl RuntimeContext {
                         guard.created_file_ids.clone(),
                     )
                 };
-                let terminal_ack = self
-                    .io
-                    .send_data_expect_terminal_ack(DataOutbound::Done {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        client_msg_id: Uuid::new_v4().to_string(),
-                        msg_id: task.msg_id.clone(),
-                        file_ids,
-                        mention_ids: Vec::new(),
-                        content: Some(final_text),
-                        provider_session_key: Some(task.provider_session_key.clone()),
-                        provider_session_id: Some(acp_session_id.clone()),
-                        session_id: task.session_id.clone(),
-                        acp_capability: None,
-                    })
-                    .await?;
-                if !terminal_ack_ok(&terminal_ack) {
-                    self.trace(
-                        &run,
-                        "terminal_ack_failed",
-                        "error",
-                        "Agent Bridge rejected done frame",
-                        terminal_ack_error(&terminal_ack).as_deref(),
-                    )
-                    .await?;
+                if let Some(evaluation_id) = evaluation_id.as_ref() {
+                    self.io
+                        .send_data(DataOutbound::ClaimEvaluationResult {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            evaluation_id: evaluation_id.clone(),
+                            content: Some(final_text),
+                            error: None,
+                        })
+                        .await?;
+                } else {
+                    let terminal_ack = self
+                        .io
+                        .send_data_expect_terminal_ack(DataOutbound::Done {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            client_msg_id: Uuid::new_v4().to_string(),
+                            msg_id: task.msg_id.clone(),
+                            file_ids,
+                            mention_ids: Vec::new(),
+                            content: Some(final_text),
+                            provider_session_key: Some(task.provider_session_key.clone()),
+                            provider_session_id: Some(acp_session_id.clone()),
+                            session_id: task.session_id.clone(),
+                            acp_capability: None,
+                        })
+                        .await?;
+                    if !terminal_ack_ok(&terminal_ack) {
+                        self.trace(
+                            &run,
+                            "terminal_ack_failed",
+                            "error",
+                            "Agent Bridge rejected done frame",
+                            terminal_ack_error(&terminal_ack).as_deref(),
+                        )
+                        .await?;
+                    }
                 }
             }
             Err(err) => {
@@ -2012,28 +2100,39 @@ impl RuntimeContext {
                     Some(&message),
                 )
                 .await?;
-                let terminal_ack = self
-                    .io
-                    .send_data_expect_terminal_ack(DataOutbound::Error {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        client_msg_id: Uuid::new_v4().to_string(),
-                        msg_id: task.msg_id.clone(),
-                        message,
-                        provider_session_key: Some(task.provider_session_key.clone()),
-                        provider_session_id: Some(acp_session_id.clone()),
-                        session_id: task.session_id.clone(),
-                        acp_capability: None,
-                    })
-                    .await?;
-                if !terminal_ack_ok(&terminal_ack) {
-                    self.trace(
-                        &run,
-                        "terminal_ack_failed",
-                        "error",
-                        "Agent Bridge rejected error frame",
-                        terminal_ack_error(&terminal_ack).as_deref(),
-                    )
-                    .await?;
+                if let Some(evaluation_id) = evaluation_id.as_ref() {
+                    self.io
+                        .send_data(DataOutbound::ClaimEvaluationResult {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            evaluation_id: evaluation_id.clone(),
+                            content: None,
+                            error: Some(message),
+                        })
+                        .await?;
+                } else {
+                    let terminal_ack = self
+                        .io
+                        .send_data_expect_terminal_ack(DataOutbound::Error {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            client_msg_id: Uuid::new_v4().to_string(),
+                            msg_id: task.msg_id.clone(),
+                            message,
+                            provider_session_key: Some(task.provider_session_key.clone()),
+                            provider_session_id: Some(acp_session_id.clone()),
+                            session_id: task.session_id.clone(),
+                            acp_capability: None,
+                        })
+                        .await?;
+                    if !terminal_ack_ok(&terminal_ack) {
+                        self.trace(
+                            &run,
+                            "terminal_ack_failed",
+                            "error",
+                            "Agent Bridge rejected error frame",
+                            terminal_ack_error(&terminal_ack).as_deref(),
+                        )
+                        .await?;
+                    }
                 }
             }
         }
@@ -2326,6 +2425,8 @@ impl RuntimeContext {
             return Ok(());
         };
 
+        let is_evaluation = run.lock().await.evaluation_id.is_some();
+
         // Keep the tool-call detail before it scrolls past: the permission request
         // that follows carries only a delta and would otherwise render an approval
         // card with no title, no diff and no path. See `tool_call_snapshots`.
@@ -2339,7 +2440,7 @@ impl RuntimeContext {
         // classifies + logs it). The text-token chunks already go out as Delta, so
         // skip them here. Best-effort — the log must never disrupt the turn. The
         // connector stays ACP-generic: it labels by the ACP subtype, never interprets.
-        if !matches!(kind, "agent_message_chunk" | "agent_thought_chunk") {
+        if !is_evaluation && !matches!(kind, "agent_message_chunk" | "agent_thought_chunk") {
             let (channel_id, task_id, msg_id, session_id, psk) = {
                 let g = run.lock().await;
                 (
@@ -2375,33 +2476,37 @@ impl RuntimeContext {
                 }
                 guard.delta_seq += 1;
                 guard.text.push_str(&text);
-                self.io
-                    .send_data(DataOutbound::Delta {
-                        v: BRIDGE_PROTOCOL_VERSION,
-                        msg_id: guard.msg_id.clone(),
-                        seq: guard.delta_seq,
-                        delta: text,
-                        provider_session_key: Some(guard.provider_session_key.clone()),
-                        provider_session_id: Some(guard.acp_session_id.clone()),
-                        session_id: guard.session_id.clone(),
-                        acp_capability: None,
-                    })
+                if !is_evaluation {
+                    self.io
+                        .send_data(DataOutbound::Delta {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            msg_id: guard.msg_id.clone(),
+                            seq: guard.delta_seq,
+                            delta: text,
+                            provider_session_key: Some(guard.provider_session_key.clone()),
+                            provider_session_id: Some(guard.acp_session_id.clone()),
+                            session_id: guard.session_id.clone(),
+                            acp_capability: None,
+                        })
+                        .await?;
+                }
+            }
+        } else if !is_evaluation {
+            if let Some(SessionUpdateTrace {
+                title,
+                status,
+                data,
+            }) = describe_session_update(kind, &update)
+            {
+                // Structure the trace from the ACP update's OWN fields. tool_call /
+                // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
+                // per the ACP schema; we pass those through instead of a generic
+                // label. A `plan` update also carries structured `data` (its to-do
+                // entries) so the channel can render a live task panel. Noise
+                // (usage_update, mode/config) is filtered by the helper.
+                self.trace_with_data(&run, kind, &status, &title, None, data)
                     .await?;
             }
-        } else if let Some(SessionUpdateTrace {
-            title,
-            status,
-            data,
-        }) = describe_session_update(kind, &update)
-        {
-            // Structure the trace from the ACP update's OWN fields. tool_call /
-            // tool_call_update carry `title` ("ls -la …"), `kind` and `status`
-            // per the ACP schema; we pass those through instead of a generic
-            // label. A `plan` update also carries structured `data` (its to-do
-            // entries) so the channel can render a live task panel. Noise
-            // (usage_update, mode/config) is filtered by the helper.
-            self.trace_with_data(&run, kind, &status, &title, None, data)
-                .await?;
         }
         Ok(())
     }
@@ -2554,6 +2659,9 @@ impl RuntimeContext {
         data: Option<Value>,
     ) -> anyhow::Result<()> {
         if !self.config.policy.trace.allow {
+            return Ok(());
+        }
+        if run.lock().await.evaluation_id.is_some() {
             return Ok(());
         }
         let message = message
@@ -2735,6 +2843,9 @@ struct ActiveRun {
     /// Scoped to the run so it dies with the turn; capped so a long agentic turn
     /// can't grow it without bound (diffs are held verbatim).
     tool_call_snapshots: VecDeque<(String, Value)>,
+    /// Present for an isolated proactive-claim evaluation. Such runs accumulate
+    /// text but never surface chat deltas, traces, or generic ACP events.
+    evaluation_id: Option<String>,
 }
 
 /// How many `tool_call` snapshots one run keeps. A permission request follows its
@@ -2885,6 +2996,7 @@ mod tests {
             created_file_ids: Vec::new(),
             streaming_started: false,
             tool_call_snapshots: VecDeque::new(),
+            evaluation_id: None,
         }
     }
 

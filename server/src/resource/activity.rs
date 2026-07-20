@@ -1,4 +1,5 @@
-//! `channel.activity.read` — 统一事件流（messages ∪ channel_operations）。
+//! `channel.activity.read` — unified event stream
+//! (messages ∪ channel_operations ∪ final voice transcript segments).
 //!
 //! DECENTRALIZED_MESH §6：两张表共享 `channel_seq` 计数器，UNION 后按 seq 排序，
 //! bot 的 cursor 在一个流里同时看到对话消息与操作事件（文件变更、成员变动等）。
@@ -102,6 +103,33 @@ pub async fn handle_read(db: &PgPool, principal: &Principal, params: &Value) -> 
             FROM channel_operations o
             WHERE o.channel_id = $1
               AND o.channel_seq > $2
+
+            UNION ALL
+
+            SELECT
+                'voice_transcript_final'::text AS event_type,
+                t.channel_seq,
+                t.created_at,
+                jsonb_build_object(
+                    'segment_id', t.segment_id,
+                    'voice_session_id', t.voice_session_id,
+                    'channel_id', t.channel_id,
+                    'channel_seq', t.channel_seq,
+                    'user_id', t.user_id,
+                    'provider_segment_id', t.provider_segment_id,
+                    'track_id', t.track_id,
+                    'text', t.text,
+                    'started_at_ms', t.started_at_ms,
+                    'ended_at_ms', t.ended_at_ms,
+                    'language', t.language,
+                    'confidence', t.confidence,
+                    'supersedes_segment_id', t.supersedes_segment_id,
+                    'finalized_at', t.finalized_at,
+                    'created_at', t.created_at
+                ) AS payload
+            FROM voice_transcript_segments t
+            WHERE t.channel_id = $1
+              AND t.channel_seq > $2
         ) events
         ORDER BY channel_seq ASC
         LIMIT $3

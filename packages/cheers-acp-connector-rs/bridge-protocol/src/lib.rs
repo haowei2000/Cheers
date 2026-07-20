@@ -508,6 +508,21 @@ pub enum ControlInbound {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         enqueued_at: Option<String>,
     },
+    #[serde(rename = "claim_evaluation")]
+    ClaimEvaluation {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        evaluation_id: String,
+        channel_id: String,
+        provider_session_key: String,
+        #[serde(default)]
+        scope: String,
+        confidence_threshold: f64,
+        source_seq_from: i64,
+        source_seq_to: i64,
+        #[serde(default)]
+        activity: Vec<Value>,
+    },
     #[serde(rename = "channel_joined")]
     ChannelJoined {
         channel: ChannelInfo,
@@ -875,6 +890,16 @@ pub enum DataOutbound {
         #[serde(default = "default_bridge_protocol_version")]
         v: u32,
         last_event_seq: u64,
+    },
+    #[serde(rename = "claim_evaluation_result")]
+    ClaimEvaluationResult {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        evaluation_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     #[serde(rename = "delta")]
     Delta {

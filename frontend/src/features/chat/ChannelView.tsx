@@ -4,7 +4,12 @@ import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
 import { useContextPickStore, toBundle, type ContextItem } from "./context/contextPick";
 import { ContextPickBar } from "./context/ContextPickBar";
-import { listChannelMembers, markChannelRead, joinChannel } from "@/api/channels";
+import {
+  listChannelMembers,
+  listVoiceTranscript,
+  markChannelRead,
+  joinChannel,
+} from "@/api/channels";
 import { getChannelCache, setChannelCache, seedFromCache } from "./chatCache";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
@@ -46,13 +51,23 @@ const ChannelSettingsDialog = lazy(() =>
 const RemoteWorkspaceDialog = lazy(() =>
   import("./RemoteWorkspaceDialog").then((m) => ({ default: m.RemoteWorkspaceDialog })),
 );
+const VoiceRoomPanel = lazy(() =>
+  import("./VoiceRoomPanel").then((m) => ({ default: m.VoiceRoomPanel })),
+);
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { parseLocator } from "./locator";
 import { locateWorkspaceFile } from "./wsLocate";
 import { useAuthStore } from "@/stores/authStore";
-import type { Message, Channel, PermissionContentData, MemberItem } from "@/types";
+import { TaskClaimsPanel } from "./TaskClaimsPanel";
+import type {
+  Message,
+  Channel,
+  PermissionContentData,
+  MemberItem,
+  VoiceTranscriptSegment,
+} from "@/types";
 
 // In-flight bot placeholders arrive with `channel_seq: null`; they are the
 // newest thing in the channel until finalized, so order them last. Stable sort
@@ -117,6 +132,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // list across all bots; refreshed on channel open and on reconnect catch-up.
   const [commands, setCommands] = useState<CommandCandidate[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [voiceTranscripts, setVoiceTranscripts] = useState<VoiceTranscriptSegment[]>([]);
   // Workspace presence: who else is viewing which bot's workspace (from the `presence`
   // frame's `focus` array). Surfaced as viewer chips in the RemoteWorkspaceDialog.
   const [workspaceFocus, setWorkspaceFocus] = useState<PresenceFocus[]>([]);
@@ -435,6 +451,34 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     () => new Map(members.map((m) => [m.member_id, m])),
     [members]
   );
+  const voiceSpeakerNames = useMemo(
+    () =>
+      Object.fromEntries(
+        members.map((member) => [
+          member.member_id,
+          member.display_name || member.username || "Member",
+        ])
+      ),
+    [members]
+  );
+
+  const loadVoiceTranscript = useCallback(async () => {
+    if (!channel || channel.kind !== "voice" || isPreview) {
+      setVoiceTranscripts([]);
+      return;
+    }
+    const channelId = channel.channel_id;
+    try {
+      const segments = await listVoiceTranscript(channelId);
+      if (activeChannelRef.current === channelId) setVoiceTranscripts(segments);
+    } catch {
+      if (activeChannelRef.current === channelId) setVoiceTranscripts([]);
+    }
+  }, [channel, isPreview]);
+
+  useEffect(() => {
+    void loadVoiceTranscript();
+  }, [loadVoiceTranscript]);
 
   const loadMore = useCallback(async () => {
     if (!channel || loadingMore || !hasMore) return;
@@ -618,7 +662,10 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     if (loadingRef.current) pendingCatchUpRef.current = true;
     else void catchUp();
     void loadCommands();
-  }, [catchUp, loadCommands]);
+    void loadVoiceTranscript();
+  }, [catchUp, loadCommands, loadVoiceTranscript]);
+
+  const [taskClaimsTick, setTaskClaimsTick] = useState(0);
 
   const { sendResourceReq, sendPresenceFocus, status: rtStatus, reconnectNow } = useChatRealtime(
     // Preview (not yet a member) → don't subscribe; the gateway gates realtime
@@ -663,6 +710,18 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         seq: (prev?.seq ?? 0) + 1,
       })),
     onFileTranscribed: handleFileTranscribed,
+    onVoiceTranscriptFinal: (segment) =>
+      setVoiceTranscripts((previous) => {
+        const existing = previous.findIndex(
+          (item) => item.segment_id === segment.segment_id
+        );
+        const next =
+          existing === -1
+            ? [...previous, segment]
+            : previous.map((item, index) => (index === existing ? segment : item));
+        return next.sort((left, right) => left.channel_seq - right.channel_seq);
+      }),
+    onTaskClaimChange: () => setTaskClaimsTick((value) => value + 1),
     // A member edited their profile → patch their row in place so the hovercard
     // (which reads from `memberById`) reflects the new avatar/bio/status live.
     // Only overwrite fields the frame actually carries (undefined = unchanged).
@@ -1522,6 +1581,20 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         }`}
       >
       <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
+      {channel.kind === "voice" && (
+        <Suspense
+          fallback={
+            <div className="mx-4 mb-3 h-[74px] rounded-xl border border-zinc-800 bg-zinc-900/50 animate-pulse" />
+          }
+        >
+          <VoiceRoomPanel
+            channelId={channel.channel_id}
+            transcripts={voiceTranscripts}
+            speakerNames={voiceSpeakerNames}
+            canManage={channel.can_manage === true || channel.my_role === "owner" || channel.my_role === "admin"}
+          />
+        </Suspense>
+      )}
       {/* Live-connection banner (tier M): the channel is readable but frozen. */}
       {showConnBanner && (
         <Banner
@@ -1535,6 +1608,11 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             : "Connection lost — reconnecting…"}
         </Banner>
       )}
+      <TaskClaimsPanel
+        channelId={channel.channel_id}
+        canManage={channel.can_manage === true || channel.my_role === "owner" || channel.my_role === "admin"}
+        refreshKey={taskClaimsTick}
+      />
       {/* Messages */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">

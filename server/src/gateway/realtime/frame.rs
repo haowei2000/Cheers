@@ -83,7 +83,14 @@ impl WireFrame {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self.frame_type.as_str(),
-            "message" | "message_done" | "message_deleted" | "notification" | "bot_unavailable"
+            "message"
+                | "message_done"
+                | "message_deleted"
+                | "notification"
+                | "bot_unavailable"
+                | "voice_transcript_final"
+                | "task_claim_created"
+                | "task_claim_updated"
         )
     }
 }
