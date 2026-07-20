@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main-window capabilities: native notifications plus the shell permission for the bundled connector sidecar. App-defined commands (connector_* etc.) need no entries here.",
+  "description": "Main-window capabilities: native notifications, in-app updates (check/install + the relaunch that follows), plus the shell permission for the bundled connector sidecar. App-defined commands (connector_* etc.) need no entries here.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -10,6 +10,8 @@
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "shell:allow-execute",
       "allow": [
