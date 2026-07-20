@@ -277,11 +277,7 @@ pub(crate) struct FailedPlaceholder {
 
 /// A terminal transient frame: the placeholder has been deleted and the client
 /// must remove its local copy before displaying an unavailable-bot toast.
-pub(crate) fn bot_unavailable_frame(
-    channel_id: Uuid,
-    msg_id: Uuid,
-    bot_id: Uuid,
-) -> WireFrame {
+pub(crate) fn bot_unavailable_frame(channel_id: Uuid, msg_id: Uuid, bot_id: Uuid) -> WireFrame {
     WireFrame::channel(
         channel_id,
         "bot_unavailable",
