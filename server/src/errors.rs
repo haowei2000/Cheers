@@ -33,6 +33,9 @@ pub enum AppError {
     #[error("internal error: {0}")]
     Internal(String),
 
+    #[error("service unavailable: {0}")]
+    ServiceUnavailable(String),
+
     #[error("too many requests")]
     TooManyRequests { retry_after_secs: u64 },
 }
@@ -56,6 +59,7 @@ impl AppError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::TooManyRequests { .. } => StatusCode::TOO_MANY_REQUESTS,
         }
     }

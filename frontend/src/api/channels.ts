@@ -59,6 +59,7 @@ export async function createChannel(data: {
   workspace_id: string;
   name: string;
   type?: string;
+  kind?: "text" | "voice";
   purpose?: string;
   initial_bot_ids?: string[];
 }): Promise<Channel> {
@@ -109,6 +110,23 @@ export async function updateChannel(
   return apiJson<Channel>(`/channels/${channelId}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
+  });
+}
+
+export interface VoiceJoinResponse {
+  url: string;
+  token: string;
+  room_name: string;
+  voice_session_id: string;
+  participant_identity: string;
+  can_publish: boolean;
+  expires_at: number;
+}
+
+/** Authorize this member and mint a short-lived, room-scoped LiveKit token. */
+export async function joinVoiceChannel(channelId: string): Promise<VoiceJoinResponse> {
+  return apiJson<VoiceJoinResponse>(`/channels/${channelId}/voice/join`, {
+    method: "POST",
   });
 }
 

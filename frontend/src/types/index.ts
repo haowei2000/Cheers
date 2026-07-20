@@ -25,6 +25,8 @@ export interface Channel {
   channel_id: string;
   name: string;
   type: string;
+  /** Interaction kind, independent from public/private/DM access semantics. */
+  kind?: "text" | "voice";
   workspace_id?: string;
   purpose?: string | null;
   auto_assist?: boolean;

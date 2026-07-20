@@ -255,6 +255,15 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/read",
             post(api::channels::mark_channel_read),
         )
+        // ── Real-time voice control plane (media flows directly via LiveKit) ─
+        .route(
+            "/api/v1/channels/:channel_id/voice/join",
+            post(api::voice::join),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/voice/state",
+            get(api::voice::state),
+        )
         .route(
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
             post(api::messages::cancel_message),
@@ -619,6 +628,12 @@ fn build_public_routes() -> Router<AppState> {
         .route(
             "/api/v1/bots/:bot_id/self-status",
             post(api::bots::bot_self_status),
+        )
+        // LiveKit calls this from the media plane. Authentication is its signed
+        // webhook JWT + raw-body SHA-256, not a browser session token.
+        .route(
+            "/api/v1/voice/livekit/webhook",
+            post(api::voice::livekit_webhook),
         )
         // Avatar images: public so an `<img src>` (no auth header) resolves. The
         // path is uuid-versioned + validated; the bytes aren't sensitive.

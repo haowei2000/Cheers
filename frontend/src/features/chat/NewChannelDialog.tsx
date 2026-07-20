@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Hash, Lock } from "lucide-react";
+import { Hash, Lock, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { createChannel } from "@/api/channels";
 import { useChatStore } from "@/stores/chatStore";
@@ -24,6 +24,7 @@ export function NewChannelDialog({
   const selectChannel = useChatStore((s) => s.selectChannel);
   const [name, setName] = useState("");
   const [type, setType] = useState<"public" | "private">("public");
+  const [kind, setKind] = useState<"text" | "voice">("text");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -35,6 +36,7 @@ export function NewChannelDialog({
         workspace_id: workspaceId,
         name: trimmed,
         type,
+        kind,
       });
       upsertChannel(ch);
       selectChannel(ch.channel_id);
@@ -89,6 +91,29 @@ export function NewChannelDialog({
                 <Lock className="w-3.5 h-3.5" />
               )}
               {t === "public" ? "Public" : "Private"}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          {(["text", "voice"] as const).map((value) => (
+            <button
+              type="button"
+              key={value}
+              onClick={() => setKind(value)}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-sm transition-colors",
+                kind === value
+                  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100 hover:bg-indigo-500/15"
+                  : "border-zinc-800 text-zinc-400 hover:bg-zinc-800/60"
+              )}
+            >
+              {value === "text" ? (
+                <Hash className="w-3.5 h-3.5" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5" />
+              )}
+              {value === "text" ? "Text" : "Voice"}
             </button>
           ))}
         </div>

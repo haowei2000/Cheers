@@ -46,6 +46,9 @@ const ChannelSettingsDialog = lazy(() =>
 const RemoteWorkspaceDialog = lazy(() =>
   import("./RemoteWorkspaceDialog").then((m) => ({ default: m.RemoteWorkspaceDialog })),
 );
+const VoiceRoomPanel = lazy(() =>
+  import("./VoiceRoomPanel").then((m) => ({ default: m.VoiceRoomPanel })),
+);
 import { ResolveRefContext, type RefClick } from "./workspaceLink";
 import { ProfileCardProvider, type ProfileData } from "./ProfileHovercard";
 import { resolveRef, getWorkspaceFile } from "@/api/workspace";
@@ -1522,6 +1525,15 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         }`}
       >
       <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
+      {channel.kind === "voice" && (
+        <Suspense
+          fallback={
+            <div className="mx-4 mb-3 h-[74px] rounded-xl border border-zinc-800 bg-zinc-900/50 animate-pulse" />
+          }
+        >
+          <VoiceRoomPanel channelId={channel.channel_id} />
+        </Suspense>
+      )}
       {/* Live-connection banner (tier M): the channel is readable but frozen. */}
       {showConnBanner && (
         <Banner

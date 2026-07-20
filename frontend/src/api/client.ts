@@ -72,6 +72,7 @@ const MACHINE_ERROR_PREFIXES = [
   "payload too large:",
   "database error:",
   "internal error:",
+  "service unavailable:",
   "not found:",
 ];
 

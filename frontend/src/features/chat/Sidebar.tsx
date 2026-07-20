@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare, Menu, Settings } from "lucide-react";
+import { Hash, ChevronDown, ChevronRight, Plus, MessageSquare, Menu, Settings, Volume2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useChatStore } from "@/stores/chatStore";
 import type { Channel, Workspace } from "@/types";
@@ -98,7 +98,11 @@ function ChannelItem({ channel, selected, onClick }: ChannelItemProps) {
           : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
       )}
     >
-      <Hash className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+      {channel.kind === "voice" ? (
+        <Volume2 className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+      ) : (
+        <Hash className="w-3.5 h-3.5 flex-shrink-0 opacity-70" />
+      )}
       {/* Joinable-but-not-joined public channels (Slack model) render dimmed;
           clicking one opens the join prompt instead of the chat. */}
       <span className={cn("truncate", channel.is_member === false && "opacity-50")}>
@@ -144,9 +148,10 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
   const isPersonal = workspace?.kind === "personal";
 
   const publicChannels = channels.filter(
-    (c) => c.type !== "dm" && c.type !== "private"
+    (c) => c.type !== "dm" && c.type !== "private" && c.kind !== "voice"
   );
-  const privateChannels = channels.filter((c) => c.type === "private");
+  const privateChannels = channels.filter((c) => c.type === "private" && c.kind !== "voice");
+  const voiceChannels = channels.filter((c) => c.type !== "dm" && c.kind === "voice");
   const dms = channels.filter((c) => c.type === "dm");
 
   // Selecting a channel also notifies the mobile layout (push the chat screen).
@@ -198,6 +203,19 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             />
           ))}
         </Section>
+
+        {voiceChannels.length > 0 && (
+          <Section label="Voice Channels" defaultOpen>
+            {voiceChannels.map((ch) => (
+              <ChannelItem
+                key={ch.channel_id}
+                channel={ch}
+                selected={selectedChannelId === ch.channel_id}
+                onClick={() => pick(ch.channel_id)}
+              />
+            ))}
+          </Section>
+        )}
 
         {privateChannels.length > 0 && (
           <Section label="Private" defaultOpen>

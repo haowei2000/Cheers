@@ -135,6 +135,14 @@ pub struct Config {
     pub approval_card_ttl_secs: u64,
     /// 审批卡扫描间隔秒数（默认 120；设为 0 则只在启动时扫一次）。
     pub approval_sweep_interval_secs: u64,
+
+    // LiveKit real-time voice (optional; all three values are required together).
+    /// Browser-reachable LiveKit WebSocket URL, e.g. `wss://voice.example.com`.
+    pub livekit_url: Option<String>,
+    /// LiveKit API key used as the issuer (`iss`) of participant access tokens.
+    pub livekit_api_key: Option<String>,
+    /// LiveKit API secret used only server-side to sign HS256 access tokens.
+    pub livekit_api_secret: Option<String>,
 }
 
 impl Config {
@@ -248,7 +256,28 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(120),
+
+            livekit_url: env::var("LIVEKIT_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            livekit_api_key: env::var("LIVEKIT_API_KEY")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            livekit_api_secret: env::var("LIVEKIT_API_SECRET")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
         }
+    }
+
+    /// Return a complete LiveKit configuration or `None` when voice is disabled.
+    /// A partial configuration is rejected at use time with a safe 503 rather than
+    /// accidentally exposing a half-working voice button.
+    pub fn livekit(&self) -> Option<(&str, &str, &str)> {
+        Some((
+            self.livekit_url.as_deref()?,
+            self.livekit_api_key.as_deref()?,
+            self.livekit_api_secret.as_deref()?,
+        ))
     }
 
     /// Browser origins allowed for both CORS and the WebSocket `Origin` check.
