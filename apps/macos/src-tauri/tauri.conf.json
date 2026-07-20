@@ -42,10 +42,17 @@
       "desktop": {
         "schemes": ["cheers"]
       }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/ElePerson/Cheers/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFREExMTc2QjA2NkIwMTIKUldRU3NHYXdkaEhhWGhVREVPSGZJZ2VGMEszM1lCZWx2WTBoWjFwY28vY0VCTmVodkFUMlNrMXAK"
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["app", "dmg"],
     "icon": ["icons/icon.icns", "icons/icon.png"],
     "externalBin": ["binaries/cce-acp-connector"],

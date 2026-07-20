@@ -28,6 +28,10 @@ chrono = { version = "0.4", features = ["serde"] }
 notify = "8"
 # cheers:// deep links + Finder "Open With" (B5/B6).
 tauri-plugin-deep-link = "2"
+# In-app updates: signed latest.json feed off the GitHub release (C9).
+tauri-plugin-updater = "2"
+# relaunch() after an update installs.
+tauri-plugin-process = "2"
 
 [profile.release]
 strip = true
