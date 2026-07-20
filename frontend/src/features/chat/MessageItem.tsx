@@ -50,12 +50,10 @@ const SYSTEM_TYPES = new Set([
 
 function SystemMessage({ message }: { message: Message }) {
   return (
-    <div className="flex items-center gap-3 py-1 px-4">
-      <div className="flex-1 h-px bg-zinc-800" />
+    <div className="flex justify-center py-3 px-4">
       <span className="text-xs text-zinc-400 whitespace-nowrap">
         {message.content}
       </span>
-      <div className="flex-1 h-px bg-zinc-800" />
     </div>
   );
 }

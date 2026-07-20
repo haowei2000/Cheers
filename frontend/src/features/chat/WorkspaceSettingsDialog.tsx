@@ -202,9 +202,9 @@ export function WorkspaceSettingsDialog({
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                 Members ({members.length})
               </label>
-              <div className="max-h-48 overflow-y-auto rounded-lg bg-zinc-950/40 divide-y divide-zinc-800/60">
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                 {members.map((m) => (
-                  <div key={m.user_id} className="flex items-center gap-2 px-3 py-2">
+                  <div key={m.user_id} className="flex items-center gap-2 rounded-lg bg-zinc-950/40 px-3 py-2.5">
                     <Avatar name={m.display_name || m.username} id={m.user_id} size="sm" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-zinc-200 truncate">

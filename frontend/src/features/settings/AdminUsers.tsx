@@ -107,9 +107,9 @@ export function AdminUsers() {
           placeholder="Filter by name / username / email…"
           className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <div className="divide-y divide-zinc-800/60">
+        <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.user_id} className="flex items-center gap-3 py-2">
+            <div key={u.user_id} className="flex items-center gap-3 rounded-lg px-2 py-2.5">
               <Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-zinc-200 truncate flex items-center gap-2">

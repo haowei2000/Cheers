@@ -402,11 +402,11 @@ function ProfileEditCard() {
   const handle = user?.username ?? user?.user_id?.slice(0, 8);
 
   return (
-    // One card, three divider-separated regions: identity header → form → details.
-    <div className="bg-zinc-900 rounded-xl">
+    // One card with three clearly spaced regions: identity header, form, and details.
+    <div className="bg-zinc-900 rounded-xl p-5 space-y-7">
       {/* Identity header — the avatar is the upload entry; this doubles as a
           live preview, so no separate preview block above the form. */}
-      <div className="flex items-center gap-4 p-5">
+      <div className="flex items-center gap-4">
         <AvatarUpload
           name={displayName || user?.username}
           id={user?.user_id}
@@ -426,9 +426,7 @@ function ProfileEditCard() {
         </div>
       </div>
 
-      <div className="border-t border-zinc-800" />
-
-      <div className="p-5 space-y-4">
+      <div className="space-y-4">
         <Field label="Display name" htmlFor="pf-name">
           <Input
             id="pf-name"
@@ -474,9 +472,7 @@ function ProfileEditCard() {
         </Button>
       </div>
 
-      <div className="border-t border-zinc-800" />
-
-      <div className="p-5 space-y-3">
+      <div className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="User ID">
           <code className="flex-1 truncate rounded bg-zinc-800 px-2 py-1 text-zinc-400">
@@ -517,7 +513,7 @@ export default function SettingsPage() {
     // and h-screen=100vh overflows the 100dvh root on mobile browsers).
     <div className="h-full overflow-y-auto overscroll-contain bg-zinc-950 text-zinc-100">
       {/* Header */}
-      <div className="border-b border-zinc-800 px-6 max-md:px-4 py-4 flex items-center gap-4">
+      <div className="px-6 max-md:px-4 py-5 flex items-center gap-4">
         <button
           type="button"
           // Always return to the chat home, not the previous history entry — the

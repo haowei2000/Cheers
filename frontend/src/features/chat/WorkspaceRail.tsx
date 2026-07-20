@@ -115,7 +115,7 @@ export function WorkspaceRail({
   }, []);
 
   return (
-    <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 border-r border-zinc-800/40 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+    <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {/* Personal workspace — the user's home (DMs + private space), the most important
           one, so it takes the prominent top slot. Selectable; falls back to a static brand
           mark until it's loaded. */}

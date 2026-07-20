@@ -15,11 +15,10 @@ struct DrawerView: View {
     @State private var showNew = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 10) {
             workspaceBar
                 .padding(.top, topInset + 8)
             searchField
-            Divider().overlay(Theme.border)
             channelList
             navChips
             footer
@@ -204,8 +203,7 @@ struct DrawerView: View {
             navChip("Friends", systemName: "person.2", route: .friends)
         }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .overlay(alignment: .top) { Divider().overlay(Theme.border) }
+        .padding(.top, 14)
     }
 
     private func navChip(_ title: String, systemName: String, route: Route, badge: Int = 0, badgeColor: Color = Theme.accent) -> some View {

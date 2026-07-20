@@ -18,7 +18,7 @@ struct ApprovalSheetView: View {
     @State private var undelivered = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 14) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     header
@@ -93,7 +93,7 @@ struct ApprovalSheetView: View {
     }
 
     private var options: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
             ForEach(request.radioOptions) { option in
                 Button {
                     selectedOptionId = option.optionId
@@ -111,9 +111,6 @@ struct ApprovalSheetView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                if option.optionId != request.radioOptions.last?.optionId {
-                    Divider().overlay(Theme.border)
-                }
             }
         }
     }
@@ -146,9 +143,8 @@ struct ApprovalSheetView: View {
             .disabled(busy || selectedOptionId == nil)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 16)
         .padding(.bottom, 28)
-        .overlay(alignment: .top) { Divider().overlay(Theme.border) }
     }
 
     private var denyOptionId: String? {

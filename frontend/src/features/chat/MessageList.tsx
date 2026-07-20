@@ -190,12 +190,13 @@ export function MessageList({
         return (
           <div key={msg.msg_id}>
             {showDayLabel && (
-              <div className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 h-px bg-zinc-800" />
+              /* Day boundary reads by distance, not a rule: the space above
+                 (separating the previous day) is deliberately larger than the
+                 space below, so proximity binds the label to the day it opens. */
+              <div className="flex justify-center px-4 pt-8 pb-2">
                 <span className="text-xs text-zinc-400 font-medium">
                   {formatDayLabel(msg.created_at)}
                 </span>
-                <div className="flex-1 h-px bg-zinc-800" />
               </div>
             )}
             <div

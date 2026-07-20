@@ -23,7 +23,7 @@ struct ViewBoardSheet: View {
     @State private var pendingSignal: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.3.group").foregroundStyle(Theme.accent)
                 Text("ViewBoard")
@@ -40,8 +40,6 @@ struct ViewBoardSheet: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
-
-            Divider().overlay(Theme.border)
 
             Group {
                 switch board {
@@ -585,7 +583,7 @@ private struct AuditDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("Approval detail")
                     .font(.system(size: 17, weight: .semibold))
@@ -599,7 +597,6 @@ private struct AuditDetailSheet: View {
                     .background(auditTone(event.outcome).opacity(0.12), in: Capsule())
             }
             .padding(16)
-            Divider().overlay(Theme.border)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if let subject = event.subject {
@@ -650,7 +647,6 @@ private struct AuditDetailSheet: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                Divider().overlay(Theme.border).padding(.leading, 16)
             }
         }
     }

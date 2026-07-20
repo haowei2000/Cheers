@@ -37,7 +37,7 @@ struct ChannelSettingsSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Channel settings")
                     .font(.system(size: 17, weight: .semibold))
@@ -57,8 +57,6 @@ struct ChannelSettingsSheet: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            Divider().overlay(Theme.border)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let errorText {
@@ -107,7 +105,6 @@ struct ChannelSettingsSheet: View {
                     }
 
                     if !channel.isDM {
-                        Divider().overlay(Theme.border)
                         dangerZone
                     }
                 }
