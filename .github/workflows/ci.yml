@@ -267,7 +267,10 @@ jobs:
   # ─────────────────────────────────────────────
   ios-build:
     name: iOS Build
-    runs-on: macos-14
+    # macos-15, not macos-14: the sources need Swift 6 (`@retroactive`, and the
+    # SwiftUI MainActor-isolation inference that lets a View hold a @MainActor
+    # model). macos-14 defaults to Xcode 15.4 / Swift 5.10 and fails on both.
+    runs-on: macos-15
     needs: changes
     if: needs.changes.outputs.ios == 'true' || github.event_name == 'workflow_dispatch'
     defaults:
@@ -276,6 +279,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # Select the newest Xcode on the image rather than pinning a version: the
+      # runner default lags well behind what the project is developed against,
+      # and a hard-coded path breaks on the next image bump. The version is
+      # printed so a future toolchain-drift failure is obvious in the log.
+      - name: Select newest Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          xcodebuild -version
 
       # Runs first: when ids collide this names the two colliding files in a
       # second, where xcodebuild would instead fail minutes later pointing at
