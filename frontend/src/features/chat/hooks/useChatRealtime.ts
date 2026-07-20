@@ -63,6 +63,8 @@ interface Callbacks {
   ) => void;
   /** A durable final voice transcript segment; interim captions stay in LiveKit. */
   onVoiceTranscriptFinal?: (segment: VoiceTranscriptSegment) => void;
+  /** A proactive task claim was created or resolved; refresh the approval tray. */
+  onTaskClaimChange?: () => void;
   /** A member edited their profile (name/avatar/bio/status) — patch that member's
    *  card in place so the hovercard reflects it without a channel-switch/reload.
    *  Only the provided fields are meaningful; `member_id` always identifies who. */
@@ -269,6 +271,8 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
   } else if (type === "bot_unavailable") {
     const d = data as { bot_id: string; placeholder_msg_id: string };
     cbs.onBotUnavailable?.(d.bot_id, d.placeholder_msg_id);
+  } else if (type === "task_claim_created" || type === "task_claim_updated") {
+    cbs.onTaskClaimChange?.();
   } else if (type === "presence") {
     const d = data as {
       online_user_ids?: string[];

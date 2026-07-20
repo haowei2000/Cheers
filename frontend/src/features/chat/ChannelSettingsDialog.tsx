@@ -31,6 +31,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { InviteLinksSection } from "./InviteLinksSection";
 import type { Channel, MemberItem } from "@/types";
+import { TaskClaimSettings } from "./TaskClaimSettings";
 
 // Channel admin panel: rename/purpose, member list (add/remove members — users
 // AND bots, invited alike), and delete. Management controls are gated on the
@@ -339,6 +340,13 @@ export function ChannelSettingsDialog({
             </div>
           )}
         </div>
+
+        {canManage && (
+          <TaskClaimSettings
+            channelId={channel.channel_id}
+            bots={members.filter((m) => m.member_type === "bot" && m.status !== "pending")}
+          />
+        )}
 
         {/* Shareable invite links — public channels only (a link joiner enters the
             workspace + this channel). The section hides itself for non-workspace-

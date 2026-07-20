@@ -60,6 +60,7 @@ import { resolveRef, getWorkspaceFile } from "@/api/workspace";
 import { parseLocator } from "./locator";
 import { locateWorkspaceFile } from "./wsLocate";
 import { useAuthStore } from "@/stores/authStore";
+import { TaskClaimsPanel } from "./TaskClaimsPanel";
 import type {
   Message,
   Channel,
@@ -664,6 +665,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     void loadVoiceTranscript();
   }, [catchUp, loadCommands, loadVoiceTranscript]);
 
+  const [taskClaimsTick, setTaskClaimsTick] = useState(0);
+
   const { sendResourceReq, sendPresenceFocus, status: rtStatus, reconnectNow } = useChatRealtime(
     // Preview (not yet a member) → don't subscribe; the gateway gates realtime
     // frames on channel membership anyway.
@@ -718,6 +721,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             : previous.map((item, index) => (index === existing ? segment : item));
         return next.sort((left, right) => left.channel_seq - right.channel_seq);
       }),
+    onTaskClaimChange: () => setTaskClaimsTick((value) => value + 1),
     // A member edited their profile → patch their row in place so the hovercard
     // (which reads from `memberById`) reflects the new avatar/bio/status live.
     // Only overwrite fields the frame actually carries (undefined = unchanged).
@@ -1604,6 +1608,11 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             : "Connection lost — reconnecting…"}
         </Banner>
       )}
+      <TaskClaimsPanel
+        channelId={channel.channel_id}
+        canManage={channel.can_manage === true || channel.my_role === "owner" || channel.my_role === "admin"}
+        refreshKey={taskClaimsTick}
+      />
       {/* Messages */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">

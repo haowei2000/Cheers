@@ -252,6 +252,18 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::send_message).get(api::messages::list_messages),
         )
         .route(
+            "/api/v1/channels/:channel_id/task-claims",
+            get(api::task_claims::list_claims),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/task-claims/:claim_id/resolve",
+            post(api::task_claims::resolve_claim),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/bots/:bot_id/monitoring",
+            get(api::task_claims::get_monitoring).put(api::task_claims::put_monitoring),
+        )
+        .route(
             "/api/v1/channels/:channel_id/read",
             post(api::channels::mark_channel_read),
         )

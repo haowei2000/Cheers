@@ -169,6 +169,10 @@ async fn main() -> anyhow::Result<()> {
         config.conversion_poll_interval_secs,
     );
 
+    // Opt-in proactive task claiming. Policies default to `off`; PostgreSQL
+    // persists rate limits and cursors so restarts never replay claimed ranges.
+    gateway::task_claim_scheduler::spawn(state.clone());
+
     // Scheduled bot self-status refresh (audit item 6). The connector was
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).

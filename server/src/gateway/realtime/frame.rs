@@ -89,6 +89,8 @@ impl WireFrame {
                 | "notification"
                 | "bot_unavailable"
                 | "voice_transcript_final"
+                | "task_claim_created"
+                | "task_claim_updated"
         )
     }
 }

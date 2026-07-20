@@ -24,6 +24,13 @@ impl RuntimeContext {
             let _ = respond_to.send(PermissionOutcome::Cancelled);
             return Ok(());
         };
+        // Proactive evaluation is a classification turn, never an execution
+        // turn. Reject native agent tool requests even when the operator's
+        // ordinary-task policy is auto_allow.
+        if run.lock().await.evaluation_id.is_some() {
+            let _ = respond_to.send(PermissionOutcome::Cancelled);
+            return Ok(());
+        }
         // ACP hands us a ToolCallUpdate (a DELTA) here, so codex's edit approvals
         // arrive as a bare `{ toolCallId, kind: "edit", status }` — the title and
         // the diff were sent earlier, in the `session/update` that opened the same
