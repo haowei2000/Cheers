@@ -6,7 +6,7 @@
 
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     Extension, Json,
 };
@@ -21,11 +21,13 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims as BrowserClaims, app_state::AppState, errors::AppError,
-    gateway::realtime::frame::WireFrame,
+    api::middleware::Claims as BrowserClaims, app_state::AppState, domain::channel_seq,
+    errors::AppError, gateway::realtime::frame::WireFrame,
 };
 
 const JOIN_TOKEN_TTL_SECS: i64 = 10 * 60;
+const MAX_TRANSCRIPT_CHARS: usize = 8_000;
+const MAX_SEGMENT_DURATION_MS: i64 = 5 * 60 * 1_000;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +102,48 @@ pub struct VoicePresenceSnapshot {
     pub voice_session_id: Option<String>,
     pub status: Option<String>,
     pub participants: Vec<VoicePresenceParticipant>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TranscriptSegmentIngestRequest {
+    pub provider_event_id: String,
+    pub segment_id: String,
+    pub participant_identity: String,
+    pub track_id: String,
+    pub text: String,
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+    pub language: Option<String>,
+    pub confidence: Option<f64>,
+    pub finalized_at: String,
+    pub supersedes_segment_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TranscriptSegmentDto {
+    pub segment_id: String,
+    pub voice_session_id: String,
+    pub channel_id: String,
+    pub participant_session_id: String,
+    pub user_id: String,
+    pub provider_segment_id: String,
+    pub provider_event_id: String,
+    pub track_id: String,
+    pub channel_seq: i64,
+    pub text: String,
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+    pub language: Option<String>,
+    pub confidence: Option<f64>,
+    pub supersedes_segment_id: Option<String>,
+    pub finalized_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TranscriptListQuery {
+    pub after_seq: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 struct VoiceMember {
@@ -434,6 +478,343 @@ async fn broadcast_voice_presence(state: &AppState, channel_id: Uuid) {
     }
 }
 
+fn transcriber_authorized(state: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    let expected = state
+        .config
+        .voice_transcriber_token
+        .as_deref()
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("voice transcriber is not configured".into())
+        })?;
+    let provided = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::Unauthorized("missing voice transcriber token".into()))?;
+    // Compare fixed-size digests so mismatch timing does not reveal token bytes.
+    let expected_hash = Sha256::digest(expected.as_bytes());
+    let provided_hash = Sha256::digest(provided.as_bytes());
+    let different = expected_hash
+        .iter()
+        .zip(provided_hash.iter())
+        .fold(0_u8, |acc, (left, right)| acc | (left ^ right));
+    if different != 0 {
+        return Err(AppError::Unauthorized(
+            "invalid voice transcriber token".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn transcript_dto(row: sqlx::postgres::PgRow) -> TranscriptSegmentDto {
+    TranscriptSegmentDto {
+        segment_id: row.try_get("segment_id").unwrap_or_default(),
+        voice_session_id: row.try_get("voice_session_id").unwrap_or_default(),
+        channel_id: row.try_get("channel_id").unwrap_or_default(),
+        participant_session_id: row.try_get("participant_session_id").unwrap_or_default(),
+        user_id: row.try_get("user_id").unwrap_or_default(),
+        provider_segment_id: row.try_get("provider_segment_id").unwrap_or_default(),
+        provider_event_id: row.try_get("provider_event_id").unwrap_or_default(),
+        track_id: row.try_get("track_id").unwrap_or_default(),
+        channel_seq: row.try_get("channel_seq").unwrap_or_default(),
+        text: row.try_get("text").unwrap_or_default(),
+        started_at_ms: row.try_get("started_at_ms").unwrap_or_default(),
+        ended_at_ms: row.try_get("ended_at_ms").unwrap_or_default(),
+        language: row.try_get("language").ok(),
+        confidence: row.try_get("confidence").ok(),
+        supersedes_segment_id: row.try_get("supersedes_segment_id").ok(),
+        finalized_at: row
+            .try_get::<chrono::DateTime<Utc>, _>("finalized_at")
+            .map(|value| value.to_rfc3339())
+            .unwrap_or_default(),
+        created_at: row
+            .try_get::<chrono::DateTime<Utc>, _>("created_at")
+            .map(|value| value.to_rfc3339())
+            .unwrap_or_default(),
+    }
+}
+
+struct ValidTranscript {
+    text: String,
+    language: Option<String>,
+    confidence: Option<String>,
+    finalized_at: chrono::DateTime<Utc>,
+}
+
+fn validate_transcript(body: &TranscriptSegmentIngestRequest) -> Result<ValidTranscript, AppError> {
+    for (label, value) in [
+        ("provider_event_id", body.provider_event_id.trim()),
+        ("segment_id", body.segment_id.trim()),
+        ("participant_identity", body.participant_identity.trim()),
+        ("track_id", body.track_id.trim()),
+    ] {
+        if value.is_empty() || value.len() > 255 {
+            return Err(AppError::BadRequest(format!(
+                "{label} must contain 1 to 255 bytes"
+            )));
+        }
+    }
+    let text = body.text.trim().to_string();
+    if text.is_empty() || text.chars().count() > MAX_TRANSCRIPT_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "transcript text must contain 1 to {MAX_TRANSCRIPT_CHARS} characters"
+        )));
+    }
+    if body.started_at_ms < 0
+        || body.ended_at_ms < body.started_at_ms
+        || body.ended_at_ms - body.started_at_ms > MAX_SEGMENT_DURATION_MS
+    {
+        return Err(AppError::BadRequest(
+            "invalid transcript segment timestamps".into(),
+        ));
+    }
+    let language = body
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    if language.as_ref().is_some_and(|value| {
+        value.len() > 16
+            || !value
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+    }) {
+        return Err(AppError::BadRequest("invalid transcript language".into()));
+    }
+    let confidence = match body.confidence {
+        Some(value) if value.is_finite() && (0.0..=1.0).contains(&value) => {
+            Some(format!("{value:.3}"))
+        }
+        Some(_) => {
+            return Err(AppError::BadRequest(
+                "transcript confidence must be between 0 and 1".into(),
+            ));
+        }
+        None => None,
+    };
+    let finalized_at = chrono::DateTime::parse_from_rfc3339(&body.finalized_at)
+        .map_err(|_| AppError::BadRequest("finalized_at must be RFC3339".into()))?
+        .with_timezone(&Utc);
+    if finalized_at > Utc::now() + chrono::Duration::minutes(5) {
+        return Err(AppError::BadRequest(
+            "finalized_at is too far in the future".into(),
+        ));
+    }
+    Ok(ValidTranscript {
+        text,
+        language,
+        confidence,
+        finalized_at,
+    })
+}
+
+const TRANSCRIPT_SELECT: &str =
+    "SELECT segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+            provider_segment_id, provider_event_id, track_id, channel_seq, text,
+            started_at_ms, ended_at_ms, language,
+            confidence::double precision AS confidence,
+            supersedes_segment_id, finalized_at, created_at
+     FROM voice_transcript_segments";
+
+/// POST /internal/v1/voice/sessions/:voice_session_id/transcript-segments
+pub async fn ingest_transcript_segment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(voice_session_id): Path<String>,
+    Json(body): Json<TranscriptSegmentIngestRequest>,
+) -> Result<Json<TranscriptSegmentDto>, AppError> {
+    transcriber_authorized(&state, &headers)?;
+    Uuid::parse_str(&voice_session_id)
+        .map_err(|_| AppError::BadRequest("invalid voice session id".into()))?;
+    let valid = validate_transcript(&body)?;
+
+    let speaker = sqlx::query(
+        "SELECT vs.channel_id, vs.status, vs.started_at AS session_started_at,
+                vps.participant_session_id, vps.user_id, vps.joined_at, vps.left_at
+         FROM voice_sessions vs
+         JOIN voice_participant_sessions vps ON vps.voice_session_id = vs.voice_session_id
+              AND vps.provider_identity = $2 AND vps.provider_track_id = $3
+         JOIN channel_memberships cm ON cm.channel_id = vs.channel_id
+              AND cm.member_id = vps.user_id AND cm.member_type = 'user'
+         WHERE vs.voice_session_id = $1",
+    )
+    .bind(&voice_session_id)
+    .bind(body.participant_identity.trim())
+    .bind(body.track_id.trim())
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Forbidden("unknown or unauthorized voice participant".into()))?;
+    let status: String = speaker.try_get("status").unwrap_or_default();
+    if status == "failed" {
+        return Err(AppError::BadRequest("voice session has failed".into()));
+    }
+    let joined_at: chrono::DateTime<Utc> = speaker
+        .try_get("joined_at")
+        .map_err(|_| AppError::BadRequest("participant never joined the room".into()))?;
+    let left_at: Option<chrono::DateTime<Utc>> = speaker.try_get("left_at").ok().flatten();
+    let session_started_at: chrono::DateTime<Utc> = speaker.try_get("session_started_at")?;
+    let speech_started_at = session_started_at + chrono::Duration::milliseconds(body.started_at_ms);
+    let speech_ended_at = session_started_at + chrono::Duration::milliseconds(body.ended_at_ms);
+    let grace = chrono::Duration::seconds(30);
+    if speech_started_at < joined_at - grace
+        || left_at.is_some_and(|left| speech_ended_at > left + grace)
+        || valid.finalized_at < speech_ended_at - grace
+    {
+        return Err(AppError::BadRequest(
+            "segment falls outside the participant session".into(),
+        ));
+    }
+    let channel_id: String = speaker.try_get("channel_id")?;
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::Internal("invalid channel id in voice session".into()))?;
+    let participant_session_id: String = speaker.try_get("participant_session_id")?;
+    let user_id: String = speaker.try_get("user_id")?;
+
+    let supersedes = match body.supersedes_segment_id.as_deref() {
+        Some(value) => {
+            Uuid::parse_str(value)
+                .map_err(|_| AppError::BadRequest("invalid supersedes_segment_id".into()))?;
+            let belongs: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM voice_transcript_segments
+                    WHERE segment_id = $1 AND voice_session_id = $2
+                 )",
+            )
+            .bind(value)
+            .bind(&voice_session_id)
+            .fetch_one(&state.db)
+            .await?;
+            if !belongs {
+                return Err(AppError::BadRequest(
+                    "superseded segment is not in this voice session".into(),
+                ));
+            }
+            Some(value.to_string())
+        }
+        None => None,
+    };
+
+    let mut tx = state.db.begin().await?;
+    let existing_sql = format!(
+        "{TRANSCRIPT_SELECT}
+         WHERE voice_session_id = $1
+           AND (provider_event_id = $2 OR provider_segment_id = $3)
+         ORDER BY created_at LIMIT 1"
+    );
+    if let Some(row) = sqlx::query(&existing_sql)
+        .bind(&voice_session_id)
+        .bind(body.provider_event_id.trim())
+        .bind(body.segment_id.trim())
+        .fetch_optional(&mut *tx)
+        .await?
+    {
+        tx.commit().await?;
+        return Ok(Json(transcript_dto(row)));
+    }
+
+    let seq = channel_seq::allocate(&mut tx, channel_uuid).await?;
+    let segment_id = Uuid::new_v4().to_string();
+    let inserted = sqlx::query(
+        "INSERT INTO voice_transcript_segments
+            (segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+             provider_segment_id, provider_event_id, track_id, channel_seq, text,
+             started_at_ms, ended_at_ms, language, confidence, supersedes_segment_id,
+             finalized_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                 $14::numeric, $15, $16)
+         ON CONFLICT DO NOTHING
+         RETURNING segment_id, voice_session_id, channel_id, participant_session_id, user_id,
+                   provider_segment_id, provider_event_id, track_id, channel_seq, text,
+                   started_at_ms, ended_at_ms, language,
+                   confidence::double precision AS confidence,
+                   supersedes_segment_id, finalized_at, created_at",
+    )
+    .bind(&segment_id)
+    .bind(&voice_session_id)
+    .bind(&channel_id)
+    .bind(&participant_session_id)
+    .bind(&user_id)
+    .bind(body.segment_id.trim())
+    .bind(body.provider_event_id.trim())
+    .bind(body.track_id.trim())
+    .bind(seq)
+    .bind(&valid.text)
+    .bind(body.started_at_ms)
+    .bind(body.ended_at_ms)
+    .bind(&valid.language)
+    .bind(&valid.confidence)
+    .bind(&supersedes)
+    .bind(valid.finalized_at)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(row) = inserted else {
+        tx.rollback().await?;
+        let row = sqlx::query(&existing_sql)
+            .bind(&voice_session_id)
+            .bind(body.provider_event_id.trim())
+            .bind(body.segment_id.trim())
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| AppError::Conflict("transcript segment conflict".into()))?;
+        return Ok(Json(transcript_dto(row)));
+    };
+    sqlx::query(
+        "UPDATE voice_sessions
+         SET transcription_status = 'active', updated_at = NOW()
+         WHERE voice_session_id = $1 AND transcription_status IN ('off', 'starting')",
+    )
+    .bind(&voice_session_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let dto = transcript_dto(row);
+    let data = serde_json::to_value(&dto).unwrap_or_else(|_| json!({}));
+    state
+        .fanout
+        .broadcast_channel(
+            channel_uuid,
+            WireFrame::channel(channel_uuid, "voice_transcript_final", data),
+        )
+        .await;
+    Ok(Json(dto))
+}
+
+/// GET /api/v1/channels/:channel_id/voice/transcript
+pub async fn transcript(
+    State(state): State<AppState>,
+    Extension(claims): Extension<BrowserClaims>,
+    Path(channel_id): Path<String>,
+    Query(query): Query<TranscriptListQuery>,
+) -> Result<Json<Vec<TranscriptSegmentDto>>, AppError> {
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
+    let member = voice_member(&state, &channel_id, &claims.sub).await?;
+    if member.channel_kind != "voice" {
+        return Err(AppError::BadRequest(
+            "channel is not a voice channel".into(),
+        ));
+    }
+    let after_seq = query.after_seq.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let sql = format!(
+        "{TRANSCRIPT_SELECT}
+         WHERE channel_id = $1 AND channel_seq > $2
+         ORDER BY channel_seq ASC LIMIT $3"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(channel_uuid.to_string())
+        .bind(after_seq)
+        .bind(limit)
+        .fetch_all(&state.db)
+        .await?;
+    Ok(Json(rows.into_iter().map(transcript_dto).collect()))
+}
+
 fn verify_webhook(
     api_key: &str,
     api_secret: &str,
@@ -509,6 +890,10 @@ pub async fn livekit_webhook(
     let participant_identity = event
         .pointer("/participant/identity")
         .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let provider_track_id = event
+        .pointer("/track/sid")
+        .and_then(|value| value.as_str())
         .unwrap_or("");
 
     let mut tx = state.db.begin().await?;
@@ -591,19 +976,24 @@ pub async fn livekit_webhook(
         "track_published" => {
             sqlx::query(
                 "UPDATE voice_participant_sessions
-                 SET mic_published_at = COALESCE(mic_published_at, NOW())
+                 SET mic_published_at = COALESCE(mic_published_at, NOW()),
+                     provider_track_id = NULLIF($2, '')
                  WHERE provider_identity = $1 AND left_at IS NULL",
             )
             .bind(participant_identity)
+            .bind(provider_track_id)
             .execute(&mut *tx)
             .await?;
         }
         "track_unpublished" => {
             sqlx::query(
-                "UPDATE voice_participant_sessions SET mic_published_at = NULL
-                 WHERE provider_identity = $1 AND left_at IS NULL",
+                "UPDATE voice_participant_sessions
+                 SET mic_published_at = NULL, provider_track_id = NULL
+                 WHERE provider_identity = $1 AND left_at IS NULL
+                   AND (provider_track_id = NULLIF($2, '') OR NULLIF($2, '') IS NULL)",
             )
             .bind(participant_identity)
+            .bind(provider_track_id)
             .execute(&mut *tx)
             .await?;
         }
@@ -645,6 +1035,22 @@ pub async fn livekit_webhook(
 mod tests {
     use super::*;
     use jsonwebtoken::{decode, DecodingKey, Validation};
+
+    fn valid_transcript() -> TranscriptSegmentIngestRequest {
+        TranscriptSegmentIngestRequest {
+            provider_event_id: "event-1".into(),
+            segment_id: "segment-1".into(),
+            participant_identity: "participant-1".into(),
+            track_id: "track-1".into(),
+            text: "  Ship the accessibility audit.  ".into(),
+            started_at_ms: 1_000,
+            ended_at_ms: 3_000,
+            language: Some("en-US".into()),
+            confidence: Some(0.9346),
+            finalized_at: Utc::now().to_rfc3339(),
+            supersedes_segment_id: None,
+        }
+    }
 
     #[test]
     fn join_token_is_room_scoped_and_microphone_only() {
@@ -718,5 +1124,35 @@ mod tests {
         let auth = format!("Bearer {token}");
         assert!(verify_webhook("devkey", "secret", Some(&auth), body).is_ok());
         assert!(verify_webhook("devkey", "secret", Some(&auth), b"tampered").is_err());
+    }
+
+    #[test]
+    fn final_transcript_validation_normalizes_bounded_input() {
+        let valid = validate_transcript(&valid_transcript()).unwrap();
+        assert_eq!(valid.text, "Ship the accessibility audit.");
+        assert_eq!(valid.language.as_deref(), Some("en-US"));
+        assert_eq!(valid.confidence.as_deref(), Some("0.935"));
+    }
+
+    #[test]
+    fn final_transcript_validation_rejects_bad_time_and_confidence() {
+        let mut body = valid_transcript();
+        body.ended_at_ms = body.started_at_ms - 1;
+        assert!(validate_transcript(&body).is_err());
+
+        let mut body = valid_transcript();
+        body.confidence = Some(1.1);
+        assert!(validate_transcript(&body).is_err());
+    }
+
+    #[test]
+    fn final_transcript_validation_rejects_empty_or_oversized_text() {
+        let mut body = valid_transcript();
+        body.text = "   ".into();
+        assert!(validate_transcript(&body).is_err());
+
+        let mut body = valid_transcript();
+        body.text = "x".repeat(MAX_TRANSCRIPT_CHARS + 1);
+        assert!(validate_transcript(&body).is_err());
     }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ConnectionState,
   Room,
@@ -11,9 +11,12 @@ import { Loader2, Mic, MicOff, PhoneOff, Volume2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { joinVoiceChannel } from "@/api/channels";
 import { Button } from "@/components/ui/button";
+import type { VoiceTranscriptSegment } from "@/types";
 
 interface Props {
   channelId: string;
+  transcripts?: VoiceTranscriptSegment[];
+  speakerNames?: Record<string, string>;
 }
 
 /**
@@ -21,7 +24,11 @@ interface Props {
  * the join and mints the room-scoped token. The component deliberately owns the
  * Room lifecycle so switching channels cannot leave a microphone published.
  */
-export function VoiceRoomPanel({ channelId }: Props) {
+export function VoiceRoomPanel({
+  channelId,
+  transcripts = [],
+  speakerNames = {},
+}: Props) {
   const roomRef = useRef<Room | null>(null);
   const audioRootRef = useRef<HTMLDivElement>(null);
   const [joining, setJoining] = useState(false);
@@ -31,6 +38,16 @@ export function VoiceRoomPanel({ channelId }: Props) {
   const [canPublish, setCanPublish] = useState(true);
   const [participantCount, setParticipantCount] = useState(0);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
+  const visibleTranscripts = useMemo(() => {
+    const superseded = new Set(
+      transcripts
+        .map((segment) => segment.supersedes_segment_id)
+        .filter((value): value is string => Boolean(value))
+    );
+    return transcripts
+      .filter((segment) => !superseded.has(segment.segment_id))
+      .slice(-4);
+  }, [transcripts]);
 
   const refreshParticipantCount = useCallback((room: Room) => {
     setParticipantCount(room.remoteParticipants.size + 1);
@@ -177,6 +194,22 @@ export function VoiceRoomPanel({ channelId }: Props) {
       </div>
       {!canPublish && connected && (
         <p className="mt-2 text-xs text-zinc-500">You have listen-only access in this channel.</p>
+      )}
+      {visibleTranscripts.length > 0 && (
+        <div
+          className="mt-3 space-y-1.5 border-t border-zinc-800 pt-3"
+          aria-label="Latest final voice transcript"
+          aria-live="polite"
+        >
+          {visibleTranscripts.map((segment) => (
+            <div key={segment.segment_id} className="flex gap-2 text-xs leading-relaxed">
+              <span className="max-w-24 flex-shrink-0 truncate font-medium text-indigo-300">
+                {speakerNames[segment.user_id] || "Member"}
+              </span>
+              <span className="text-zinc-300">{segment.text}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

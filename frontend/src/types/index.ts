@@ -57,6 +57,26 @@ export interface VoicePresenceSnapshot {
   participants: VoicePresenceParticipant[];
 }
 
+export interface VoiceTranscriptSegment {
+  segment_id: string;
+  voice_session_id: string;
+  channel_id: string;
+  participant_session_id: string;
+  user_id: string;
+  provider_segment_id: string;
+  provider_event_id: string;
+  track_id: string;
+  channel_seq: number;
+  text: string;
+  started_at_ms: number;
+  ended_at_ms: number;
+  language?: string | null;
+  confidence?: number | null;
+  supersedes_segment_id?: string | null;
+  finalized_at: string;
+  created_at: string;
+}
+
 export interface DM {
   channel_id: string;
   workspace_id: string;

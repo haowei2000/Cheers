@@ -34,6 +34,8 @@ the Cheers application server with the same credentials:
 LIVEKIT_URL=wss://voice.example.com
 LIVEKIT_API_KEY=<same key as media server>
 LIVEKIT_API_SECRET=<same secret as media server>
+# Generate independently; future transcriber workers use this only for final text ingest.
+VOICE_TRANSCRIBER_TOKEN=<a separate random secret>
 ```
 
 Then rebuild and recreate the Cheers gateway so the embedded sqlx migration and

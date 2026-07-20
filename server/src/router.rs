@@ -266,6 +266,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/voice/presence", get(api::voice::presence))
         .route(
+            "/api/v1/channels/:channel_id/voice/transcript",
+            get(api::voice::transcript),
+        )
+        .route(
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
             post(api::messages::cancel_message),
         )
@@ -634,7 +638,11 @@ fn build_public_routes() -> Router<AppState> {
         // webhook JWT + raw-body SHA-256, not a browser session token.
         .route(
             "/api/v1/voice/livekit/webhook",
-            post(api::voice::livekit_webhook),
+            post(api::voice::livekit_webhook).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
+            "/internal/v1/voice/sessions/:voice_session_id/transcript-segments",
+            post(api::voice::ingest_transcript_segment).layer(DefaultBodyLimit::max(32 * 1024)),
         )
         // Avatar images: public so an `<img src>` (no auth header) resolves. The
         // path is uuid-versioned + validated; the bytes aren't sensitive.

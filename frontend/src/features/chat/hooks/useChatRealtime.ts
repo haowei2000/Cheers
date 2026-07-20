@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { buildWsUrl } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
-import type { Message, WsEvent } from "@/types";
+import type { Message, VoiceTranscriptSegment, WsEvent } from "@/types";
 
 /** Live-connection state for the open channel, driving the tier-M banner:
  *  connecting → first attempt (no banner; the channel is still loading anyway),
@@ -61,6 +61,8 @@ interface Callbacks {
     status: string,
     summary: string | null
   ) => void;
+  /** A durable final voice transcript segment; interim captions stay in LiveKit. */
+  onVoiceTranscriptFinal?: (segment: VoiceTranscriptSegment) => void;
   /** A member edited their profile (name/avatar/bio/status) — patch that member's
    *  card in place so the hovercard reflects it without a channel-switch/reload.
    *  Only the provided fields are meaningful; `member_id` always identifies who. */
@@ -318,6 +320,11 @@ function handleFrame(event: WsEvent & { channel_id?: string }) {
     };
     if (d.file_id) {
       cbs.onFileTranscribed?.(d.file_id, d.status ?? "done", d.summary ?? null);
+    }
+  } else if (type === "voice_transcript_final") {
+    const segment = data as unknown as VoiceTranscriptSegment;
+    if (segment.segment_id && typeof segment.channel_seq === "number") {
+      cbs.onVoiceTranscriptFinal?.(segment);
     }
   } else if (type === "member_updated") {
     const d = data as { member_id?: string };

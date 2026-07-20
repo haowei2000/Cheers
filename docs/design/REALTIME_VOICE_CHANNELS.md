@@ -1,6 +1,6 @@
 # Real-time voice channels
 
-> Status: 🚧 **Voice V1 foundation implemented; transcription and task claims proposed** (2026-07)
+> Status: 🚧 **Voice V1 + final-transcript contract implemented; streaming worker and task claims proposed** (2026-07)
 > Product goal: Discord-style persistent voice channels with live, speaker-attributed
 > transcription as a first-class collaboration stream
 > Related: [Proactive task claims](PROACTIVE_TASK_CLAIMS.md) ·
@@ -36,6 +36,8 @@ Voice V1 now provides:
 - browser join/leave, microphone mute, remote audio, participant count, and active-speaker UI;
 - idempotent signed LiveKit webhook ingestion for room, participant, and microphone lifecycle state;
 - app-wide voice occupancy snapshots and live sidebar participant presence;
+- authenticated, idempotent final-transcript ingestion with speaker/track validation;
+- durable final captions, transcript REST/Resource reads, and unified channel activity sequencing;
 - a dedicated small-VM Docker Compose stack for LiveKit, Redis, and Caddy.
 
 The earlier attachment flow still supports:

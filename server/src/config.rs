@@ -143,6 +143,8 @@ pub struct Config {
     pub livekit_api_key: Option<String>,
     /// LiveKit API secret used only server-side to sign HS256 access tokens.
     pub livekit_api_secret: Option<String>,
+    /// Independent bearer secret accepted only from the transcription worker.
+    pub voice_transcriber_token: Option<String>,
 }
 
 impl Config {
@@ -264,6 +266,9 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             livekit_api_secret: env::var("LIVEKIT_API_SECRET")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            voice_transcriber_token: env::var("VOICE_TRANSCRIBER_TOKEN")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
         }
