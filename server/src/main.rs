@@ -173,6 +173,21 @@ async fn main() -> anyhow::Result<()> {
     // persists rate limits and cursors so restarts never replay claimed ranges.
     gateway::task_claim_scheduler::spawn(state.clone());
 
+    // Claim-expiry sweeper: pending/executing claims with `expires_at <= NOW()`
+    // transition to `failed` so a stale claim never blocks a channel forever.
+    let sweep_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            match server::api::task_claims::sweep_expired_claims(&sweep_state.db).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(expired = n, "task-claim expiry sweep"),
+                Err(e) => tracing::warn!(err = %e, "task-claim expiry sweep failed"),
+            }
+        }
+    });
+
     // Scheduled bot self-status refresh (audit item 6). The connector was
     // historically meant to run this loop but ships no implementation, so the
     // gateway owns it. Best-effort; never panics (per-tick/per-bot errors logged).

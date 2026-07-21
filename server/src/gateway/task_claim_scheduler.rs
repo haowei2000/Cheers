@@ -2,6 +2,7 @@
 //! Monitoring is opt-in (`mode != off`). PostgreSQL owns cursors, rate limits and
 //! reservations; connectors only decide whether the reserved activity is theirs.
 
+use chrono::Timelike;
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use std::time::Duration;
@@ -36,7 +37,7 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
         RETURNING s.evaluation_id
       ) UPDATE task_claim_evaluations e SET status='failed',error='evaluation lease expired',completed_at=NOW()
         FROM rewound r WHERE e.evaluation_id=r.evaluation_id"#).execute(&state.db).await?;
-    let rows = sqlx::query(r#"SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq
+    let rows = sqlx::query(r#"SELECT channel_id,bot_id,mode,scope,debounce_seconds,min_interval_seconds,max_evaluations_per_hour,batch_size,confidence_threshold::float8 AS confidence_threshold,last_evaluated_seq,policy
         FROM channel_bot_monitoring
         WHERE mode <> 'off' AND (next_eligible_at IS NULL OR next_eligible_at <= NOW())
         ORDER BY COALESCE(next_eligible_at,created_at) LIMIT 20"#).fetch_all(&state.db).await?;
@@ -63,6 +64,17 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
     let debounce: i32 = row.try_get("debounce_seconds")?;
     let interval: i32 = row.try_get("min_interval_seconds")?;
     let confidence: f64 = row.try_get("confidence_threshold")?;
+    let policy: serde_json::Value = row.try_get("policy").unwrap_or_else(|_| json!({}));
+    // Quiet-hours gate: if the policy declares a quiet window and we are inside
+    // it, pause (re-arm at the top of the hour — the sweeper will re-check on
+    // the next tick). `quiet_hours: { "start": "22:00", "end": "07:00" }`.
+    if let Some(window) = policy.get("quiet_hours") {
+        if in_quiet_window(window) {
+            sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=NOW()+INTERVAL '10 minutes' WHERE channel_id=$1 AND bot_id=$2")
+                .bind(channel_id.to_string()).bind(bot_id.to_string()).execute(&state.db).await?;
+            return Ok(());
+        }
+    }
     let hourly: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM task_claim_evaluations WHERE channel_id=$1 AND bot_id=$2 AND reserved_at > NOW()-INTERVAL '1 hour'")
         .bind(channel_id.to_string()).bind(bot_id.to_string()).fetch_one(&state.db).await?;
     if hourly >= i64::from(max_hourly) {
@@ -90,7 +102,22 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
     let age = chrono::Utc::now()
         .signed_duration_since(newest)
         .num_seconds();
-    if age < i64::from(debounce) {
+    // Immediate triggers (policy.immediate_triggers keywords present in the
+    // newest candidate's text) bypass the debounce window so a directed request
+    // is evaluated without waiting for the silence period.
+    let immediate_triggers: Vec<String> = policy
+        .get("immediate_triggers")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let newest_text: String = candidates
+        .last()
+        .and_then(|r| r.try_get::<String, _>("text").ok())
+        .unwrap_or_default();
+    let is_immediate = immediate_triggers.iter().any(|kw| {
+        !kw.is_empty() && newest_text.to_lowercase().contains(&kw.to_lowercase())
+    });
+    if !is_immediate && age < i64::from(debounce) {
         sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2")
             .bind(channel_id.to_string()).bind(bot_id.to_string()).bind(newest + chrono::Duration::seconds(i64::from(debounce))).execute(&state.db).await?;
         return Ok(());
@@ -209,4 +236,45 @@ pub async fn complete(
     tx.commit().await?;
     state.fanout.broadcast_channel(channel_id,WireFrame::channel(channel_id,"task_claim_created",json!({"claim_id":claim_id,"evaluation_id":evaluation_id,"channel_id":channel_id,"bot_id":bot_id,"summary":summary,"proposed_action":action,"confidence":confidence,"impact":impact,"status":"pending"}))).await;
     Ok(json!({"evaluation_id":evaluation_id,"claim_id":claim_id,"status":"pending"}))
+}
+
+/// True when the current local time falls inside the policy's quiet-hours window.
+/// `window` shape: `{"start":"22:00","end":"07:00"}`. Windows that cross midnight
+/// (start > end) are supported. Missing/invalid fields → not quiet (fail open).
+fn in_quiet_window(window: &serde_json::Value) -> bool {
+    let (start, end) = match (
+        window.get("start").and_then(|v| v.as_str()),
+        window.get("end").and_then(|v| v.as_str()),
+    ) {
+        (Some(s), Some(e)) => (s, e),
+        _ => return false,
+    };
+    let parse = |hhmm: &str| -> Option<(u32, u32)> {
+        let mut parts = hhmm.split(':');
+        let h = parts.next()?.parse::<u32>().ok()?;
+        let m = parts.next()?.parse::<u32>().ok()?;
+        if h < 24 && m < 60 {
+            Some((h, m))
+        } else {
+            None
+        }
+    };
+    let (sh, sm) = match parse(start) {
+        Some(v) => v,
+        None => return false,
+    };
+    let (eh, em) = match parse(end) {
+        Some(v) => v,
+        None => return false,
+    };
+    let now = chrono::Local::now();
+    let minutes = now.time().hour() * 60 + now.time().minute();
+    let start_min = sh * 60 + sm;
+    let end_min = eh * 60 + em;
+    if start_min <= end_min {
+        minutes >= start_min && minutes < end_min
+    } else {
+        // Crosses midnight: e.g. 22:00 → 07:00.
+        minutes >= start_min || minutes < end_min
+    }
 }
