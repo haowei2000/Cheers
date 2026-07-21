@@ -55,7 +55,7 @@
     "createUpdaterArtifacts": true,
     "targets": ["app", "dmg"],
     "icon": ["icons/icon.icns", "icons/icon.png"],
-    "externalBin": ["binaries/cce-acp-connector"],
+    "externalBin": ["binaries/cce-acp-connector", "binaries/cheers-mcp-server"],
     "fileAssociations": [
       {
         "ext": ["png", "jpg", "jpeg", "gif", "webp", "pdf", "txt", "md"],
