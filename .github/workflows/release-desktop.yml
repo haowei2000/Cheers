@@ -59,8 +59,9 @@ jobs:
           npm --prefix frontend ci
           npm --prefix apps/macos ci
 
-      # npm run build = build-sidecar.sh (stages the connector as a Tauri
-      # sidecar) + tauri build (whose beforeBuildCommand builds the frontend).
+      # npm run build = build-sidecar.sh (stages the connector and its MCP
+      # companion as Tauri sidecars) + tauri build (whose beforeBuildCommand
+      # builds the frontend).
       # createUpdaterArtifacts makes tauri build emit the updater tarball and its
       # .sig; the signing key must be present here or the build produces an
       # unsigned bundle that no installed client will accept.

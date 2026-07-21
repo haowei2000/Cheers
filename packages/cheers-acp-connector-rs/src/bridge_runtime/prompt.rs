@@ -995,10 +995,11 @@ pub(super) fn resolve_mcp_server_command() -> String {
     // directory as this connector binary (~/.cheers/bin). Prefer that over the
     // dev-tree fallback so an installed pair never depends on a source checkout.
     if let Ok(exe) = env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join(bin_name);
-            if sibling.exists() {
-                return sibling.display().to_string();
+        if exe.parent().is_some() {
+            for sibling in mcp_sibling_candidates(&exe, bin_name) {
+                if sibling.exists() {
+                    return sibling.display().to_string();
+                }
             }
         }
     }
@@ -1020,10 +1021,46 @@ pub(super) fn resolve_mcp_server_command() -> String {
     "cheers-mcp-server".to_string()
 }
 
+/// Candidate MCP paths beside the connector executable. Tauri preserves its
+/// target-triple suffix when it bundles external binaries, so a sidecar named
+/// `cce-acp-connector-aarch64-apple-darwin` needs the correspondingly named
+/// `cheers-mcp-server-aarch64-apple-darwin`, rather than only the ordinary
+/// unsuffixed release-install name.
+fn mcp_sibling_candidates(connector_exe: &std::path::Path, bin_name: &str) -> Vec<PathBuf> {
+    let Some(dir) = connector_exe.parent() else {
+        return Vec::new();
+    };
+    let mut candidates = vec![dir.join(bin_name)];
+    let connector_name = connector_exe.file_name().and_then(|name| name.to_str());
+    if let Some(suffix) = connector_name.and_then(|name| name.strip_prefix("cce-acp-connector")) {
+        if !suffix.is_empty() {
+            candidates.push(dir.join(format!("{bin_name}{suffix}")));
+        }
+    }
+    candidates
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn finds_target_suffixed_tauri_mcp_sidecar() {
+        let connector = PathBuf::from(
+            "/Applications/Cheers.app/Contents/MacOS/cce-acp-connector-aarch64-apple-darwin",
+        );
+        let candidates = mcp_sibling_candidates(&connector, "cheers-mcp-server");
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/Applications/Cheers.app/Contents/MacOS/cheers-mcp-server"),
+                PathBuf::from(
+                    "/Applications/Cheers.app/Contents/MacOS/cheers-mcp-server-aarch64-apple-darwin"
+                ),
+            ]
+        );
+    }
 
     #[test]
     fn config_options_report_omits_absent_fields() {

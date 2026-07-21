@@ -249,6 +249,8 @@ jobs:
           touch frontend/dist/index.html
           touch apps/macos/src-tauri/binaries/cce-acp-connector-aarch64-apple-darwin
           touch apps/macos/src-tauri/binaries/cce-acp-connector-x86_64-apple-darwin
+          touch apps/macos/src-tauri/binaries/cheers-mcp-server-aarch64-apple-darwin
+          touch apps/macos/src-tauri/binaries/cheers-mcp-server-x86_64-apple-darwin
 
       - name: Check desktop shell
         run: cargo check --manifest-path apps/macos/src-tauri/Cargo.toml
