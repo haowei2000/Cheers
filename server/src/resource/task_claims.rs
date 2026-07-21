@@ -17,11 +17,7 @@ use uuid::Uuid;
 use super::{authorize_channel_read, internal_err, Principal, ResourceResult};
 
 /// `channel.task_claims.list` — list claims in a channel (read-only).
-pub async fn handle_list(
-    db: &PgPool,
-    principal: &Principal,
-    params: &Value,
-) -> ResourceResult {
+pub async fn handle_list(db: &PgPool, principal: &Principal, params: &Value) -> ResourceResult {
     let channel_id: Uuid = params
         .get("channel_id")
         .and_then(Value::as_str)
@@ -50,7 +46,11 @@ pub async fn handle_list(
     .bind(limit)
     .fetch_all(db)
     .await
-    .map_err(internal_err("TASK_CLAIMS_LIST_DB", "db error", "list claims"))?;
+    .map_err(internal_err(
+        "TASK_CLAIMS_LIST_DB",
+        "db error",
+        "list claims",
+    ))?;
     let claims: Vec<Value> = rows
         .into_iter()
         .map(|row| {

@@ -108,15 +108,19 @@ async fn schedule_one(state: &AppState, row: sqlx::postgres::PgRow) -> anyhow::R
     let immediate_triggers: Vec<String> = policy
         .get("immediate_triggers")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     let newest_text: String = candidates
         .last()
         .and_then(|r| r.try_get::<String, _>("text").ok())
         .unwrap_or_default();
-    let is_immediate = immediate_triggers.iter().any(|kw| {
-        !kw.is_empty() && newest_text.to_lowercase().contains(&kw.to_lowercase())
-    });
+    let is_immediate = immediate_triggers
+        .iter()
+        .any(|kw| !kw.is_empty() && newest_text.to_lowercase().contains(&kw.to_lowercase()));
     if !is_immediate && age < i64::from(debounce) {
         sqlx::query("UPDATE channel_bot_monitoring SET next_eligible_at=$3 WHERE channel_id=$1 AND bot_id=$2")
             .bind(channel_id.to_string()).bind(bot_id.to_string()).bind(newest + chrono::Duration::seconds(i64::from(debounce))).execute(&state.db).await?;

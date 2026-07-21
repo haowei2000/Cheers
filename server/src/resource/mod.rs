@@ -90,9 +90,7 @@ pub async fn dispatch(db: &PgPool, principal: Principal, frame: &Value) -> Value
 
         // ── mesh step 6：新增读操作 ───────────────────────────────────────
         "channel.activity.read" => activity::handle_read(db, &principal, &params).await,
-        "channel.task_claims.list" => {
-            task_claims::handle_list(db, &principal, &params).await
-        }
+        "channel.task_claims.list" => task_claims::handle_list(db, &principal, &params).await,
         "channel.voice.transcript" | "channel.voice.transcript.by-seq" => {
             voice::handle_transcript(db, &principal, &params).await
         }

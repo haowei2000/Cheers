@@ -318,13 +318,14 @@ pub async fn join(
     // the disclosure. We record `consent_version` at first join so later
     // policy-version bumps can force re-consent.
     let config = VoiceConfig::load(&state.db, &channel_id).await?;
-    let existing_consent: Option<String> =
-        sqlx::query_scalar("SELECT consent_version FROM voice_participant_sessions
-                            WHERE user_id = $1 AND voice_session_id = $2")
-        .bind(&claims.sub)
-        .bind(&voice_session_id)
-        .fetch_optional(&mut *tx)
-        .await?;
+    let existing_consent: Option<String> = sqlx::query_scalar(
+        "SELECT consent_version FROM voice_participant_sessions
+                            WHERE user_id = $1 AND voice_session_id = $2",
+    )
+    .bind(&claims.sub)
+    .bind(&voice_session_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let has_consent = existing_consent.as_deref() == Some(CONSENT_VERSION);
     sqlx::query(
         "INSERT INTO voice_participant_sessions
@@ -337,7 +338,11 @@ pub async fn join(
     .bind(&claims.sub)
     .bind(&identity)
     .bind(connection_nonce)
-    .bind(if has_consent { Some(CONSENT_VERSION) } else { None })
+    .bind(if has_consent {
+        Some(CONSENT_VERSION)
+    } else {
+        None
+    })
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1305,7 +1310,6 @@ pub(crate) async fn write_transcript_audit(
         tracing::warn!(%channel_id, %actor_user_id, %action, %error, "transcript audit write failed");
     }
 }
-
 
 fn verify_webhook(
     api_key: &str,

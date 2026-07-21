@@ -12,9 +12,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims as BrowserClaims,
-    app_state::AppState,
-    errors::AppError,
+    api::middleware::Claims as BrowserClaims, app_state::AppState, errors::AppError,
     gateway::realtime::frame::WireFrame,
 };
 // Re-exported from the parent voice module so retention handlers (split into
@@ -39,11 +37,11 @@ pub async fn export_transcript(
     Extension(claims): Extension<BrowserClaims>,
     Path(channel_id): Path<String>,
 ) -> Result<Json<TranscriptExportResponse>, AppError> {
-    use crate::api::voice::{TranscriptSegmentDto, transcript_dto, TRANSCRIPT_SELECT};
+    use crate::api::voice::{transcript_dto, TranscriptSegmentDto, TRANSCRIPT_SELECT};
     use chrono::Utc;
 
-    let channel_uuid =
-        Uuid::parse_str(&channel_id).map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
+    let channel_uuid = Uuid::parse_str(&channel_id)
+        .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = crate::api::voice::voice_member(&state, &channel_id, &claims.sub).await?;
     if member.channel_kind != "voice" {
         return Err(AppError::BadRequest(
@@ -51,7 +49,9 @@ pub async fn export_transcript(
         ));
     }
     if !matches!(member.channel_role.as_str(), "owner" | "admin") {
-        return Err(AppError::Forbidden("channel owner or admin required".into()));
+        return Err(AppError::Forbidden(
+            "channel owner or admin required".into(),
+        ));
     }
     const EXPORT_LIMIT: i64 = 10_000;
     let query_string = format!(
@@ -97,7 +97,9 @@ pub async fn delete_transcript_segment(
         ));
     }
     if !matches!(member.channel_role.as_str(), "owner" | "admin") {
-        return Err(AppError::Forbidden("channel owner or admin required".into()));
+        return Err(AppError::Forbidden(
+            "channel owner or admin required".into(),
+        ));
     }
     let result = sqlx::query(
         "UPDATE voice_transcript_segments
@@ -147,7 +149,9 @@ pub async fn update_voice_config(
 ) -> Result<Json<VoiceConfig>, AppError> {
     let member = crate::api::voice::voice_member(&state, &channel_id, &claims.sub).await?;
     if !matches!(member.channel_role.as_str(), "owner" | "admin") {
-        return Err(AppError::Forbidden("channel owner or admin required".into()));
+        return Err(AppError::Forbidden(
+            "channel owner or admin required".into(),
+        ));
     }
     body.save(&state.db, &channel_id).await?;
     write_transcript_audit(

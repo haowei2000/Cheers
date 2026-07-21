@@ -159,13 +159,7 @@ fn validate(input: &MonitoringInput) -> Result<(), AppError> {
     // Policy is free-form JSON but constrain its known keys so a bad write can't
     // silently break the scheduler's quiet-hours / immediate-trigger parsing.
     if let Some(triggers) = input.policy.get("immediate_triggers") {
-        if !triggers.is_array()
-            || triggers
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|v| !v.is_string())
-        {
+        if !triggers.is_array() || triggers.as_array().unwrap().iter().any(|v| !v.is_string()) {
             return Err(AppError::BadRequest(
                 "immediate_triggers must be an array of strings".into(),
             ));
