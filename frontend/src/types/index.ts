@@ -57,6 +57,7 @@ export interface VoicePresenceSnapshot {
   participants: VoicePresenceParticipant[];
 }
 
+/// Durable, persisted final transcript segment (gateway → PG → WS fanout).
 export interface VoiceTranscriptSegment {
   segment_id: string;
   voice_session_id: string;
@@ -75,6 +76,20 @@ export interface VoiceTranscriptSegment {
   supersedes_segment_id?: string | null;
   finalized_at: string;
   created_at: string;
+}
+
+/// Ephemeral UI-only interim caption. Never persisted, never consumes
+/// channel_seq, never triggers claims. Keyed by segment_id + revision; revisions
+/// replace in place for the same spoken turn.
+export interface VoiceInterimSegment {
+  segment_id: string;
+  participant_identity: string;
+  track_id: string;
+  text: string;
+  revision: number;
+  started_at_ms: number;
+  ended_at_ms: number;
+  language?: string | null;
 }
 
 export interface DM {
@@ -190,7 +205,12 @@ export interface Message {
   context_bundle?: {
     origin?: string;
     from?: { type?: string; id?: string } | null;
-    items?: Array<{ verb: string; label: string; kind: string; params?: unknown }>;
+    items?: Array<{
+      verb: string;
+      label: string;
+      kind: string;
+      params?: unknown;
+    }>;
   } | null;
   _streaming?: boolean;
   /** Latest agent progress (trace) title shown while streaming. */

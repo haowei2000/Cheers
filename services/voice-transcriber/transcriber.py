@@ -85,6 +85,28 @@ def unix_seconds(value: str) -> float:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
 
 
+async def publish_data(
+    local_participant: rtc.LocalParticipant,
+    payload: dict[str, Any],
+) -> None:
+    """Best-effort LiveKit data-packet publish to the `lk.transcription` topic.
+
+    Interim captions ride this path directly; finals are mirrored here for
+    low-latency UI in addition to the durable HTTP persist. Failures are logged
+    and swallowed — a lost data packet must never break transcription.
+    """
+    import json
+
+    try:
+        await local_participant.publish_data(
+            json.dumps(payload).encode("utf-8"),
+            topic="lk.transcription",
+            reliable=False,
+        )
+    except Exception as exc:  # noqa: BLEEFLIVEKIT — degrade gracefully
+        logger.warning("publish_data failed (segment %s): %s", payload.get("segment_id"), exc)
+
+
 async def process_track(
     track: rtc.RemoteTrack,
     publication: rtc.RemoteTrackPublication,
@@ -92,6 +114,7 @@ async def process_track(
     client: CheersClient,
     context: dict[str, Any],
     settings: Settings,
+    local_participant: rtc.LocalParticipant,
 ) -> None:
     if track.kind != rtc.TrackKind.KIND_AUDIO:
         return
@@ -111,36 +134,66 @@ async def process_track(
     audio_stream = rtc.AudioStream(track)
     session_started = unix_seconds(context["started_at"])
     speech_started_ms: int | None = None
+    # Monotonic revision counter per spoken turn; the UI replaces prior interim
+    # revisions in place by (segment_id, revision).
+    interim_revision: int = 0
+    current_segment_id: str | None = None
 
     async def consume_transcripts() -> None:
-        nonlocal speech_started_ms
+        nonlocal speech_started_ms, interim_revision, current_segment_id
         async for event in stt_stream:
             now_ms = max(0, int((time.time() - session_started) * 1000))
+
             if event.type == SpeechEventType.START_OF_SPEECH:
                 speech_started_ms = now_ms
+                interim_revision = 0
+                current_segment_id = str(uuid.uuid4())
                 continue
-            if event.type != SpeechEventType.FINAL_TRANSCRIPT or not event.alternatives:
+
+            if event.type not in (
+                SpeechEventType.INTERIM_TRANSCRIPT,
+                SpeechEventType.FINAL_TRANSCRIPT,
+            ) or not event.alternatives:
                 continue
+
             alternative = event.alternatives[0]
             text = alternative.text.strip()
             if not text:
                 continue
-            segment_id = str(uuid.uuid4())
+
+            is_final = event.type == SpeechEventType.FINAL_TRANSCRIPT
+            segment_id = current_segment_id if current_segment_id is not None else str(uuid.uuid4())
+            if is_final:
+                current_segment_id = None
+
             payload = {
-                "provider_event_id": segment_id,
                 "segment_id": segment_id,
+                "provider_event_id": segment_id,
                 "participant_identity": participant.identity,
                 "track_id": publication.sid,
                 "text": text,
+                "is_final": is_final,
+                "revision": interim_revision,
                 "started_at_ms": speech_started_ms if speech_started_ms is not None else now_ms,
                 "ended_at_ms": now_ms,
                 "language": getattr(alternative, "language", None),
                 "confidence": getattr(alternative, "confidence", None),
-                "finalized_at": datetime.now(timezone.utc).isoformat(),
+                "finalized_at": datetime.now(timezone.utc).isoformat() if is_final else None,
                 "supersedes_segment_id": None,
             }
-            await client.persist(context["voice_session_id"], payload)
-            speech_started_ms = None
+
+            # Interim captions never reach the gateway HTTP path — they are UI
+            # best-effort state that rides the data channel only. Finals are
+            # durable via HTTP (idempotent, claim-integrated) AND mirrored to
+            # the data channel for low-latency UI.
+            await publish_data(local_participant, payload)
+            if is_final:
+                await client.persist(context["voice_session_id"], payload)
+
+            interim_revision += 1
+            if is_final:
+                speech_started_ms = None
+                interim_revision = 0
 
     try:
         async with asyncio.TaskGroup() as tasks:
@@ -178,6 +231,8 @@ async def transcriber(ctx: agents.JobContext) -> None:
 
         tasks: set[asyncio.Task[None]] = set()
 
+        local_participant = ctx.room.local_participant
+
         @ctx.room.on("track_subscribed")
         def on_track_subscribed(
             track: rtc.RemoteTrack,
@@ -185,7 +240,9 @@ async def transcriber(ctx: agents.JobContext) -> None:
             participant: rtc.RemoteParticipant,
         ) -> None:
             task = asyncio.create_task(
-                process_track(track, publication, participant, client, context, settings)
+                process_track(
+                    track, publication, participant, client, context, settings, local_participant
+                )
             )
             tasks.add(task)
             task.add_done_callback(tasks.discard)

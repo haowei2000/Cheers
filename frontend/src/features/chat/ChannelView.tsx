@@ -1,8 +1,37 @@
-import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
-import { ArrowLeft, Hash, Users, Loader2, PanelRight, PanelLeftClose, PanelLeftOpen, Paperclip, FolderTree, Settings, LayoutDashboard, Reply, X, Copy, Forward, WifiOff } from "lucide-react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+  lazy,
+  Suspense,
+} from "react";
+import {
+  ArrowLeft,
+  Hash,
+  Users,
+  Loader2,
+  PanelRight,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Paperclip,
+  FolderTree,
+  Settings,
+  LayoutDashboard,
+  Reply,
+  X,
+  Copy,
+  Forward,
+  WifiOff,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { listMessages, sendMessage } from "@/api/messages";
-import { useContextPickStore, toBundle, type ContextItem } from "./context/contextPick";
+import {
+  useContextPickStore,
+  toBundle,
+  type ContextItem,
+} from "./context/contextPick";
 import { ContextPickBar } from "./context/ContextPickBar";
 import {
   listChannelMembers,
@@ -43,13 +72,19 @@ import { usePopoverDismiss } from "@/components/ui/popover";
 // Click-gated dialogs — kept out of the eager ChatLayout chunk. RemoteWorkspaceDialog
 // pulls in DiffView + the workspace browser; all three only mount on explicit user action.
 const ChannelFilesDialog = lazy(() =>
-  import("./ChannelFilesDialog").then((m) => ({ default: m.ChannelFilesDialog })),
+  import("./ChannelFilesDialog").then((m) => ({
+    default: m.ChannelFilesDialog,
+  })),
 );
 const ChannelSettingsDialog = lazy(() =>
-  import("./ChannelSettingsDialog").then((m) => ({ default: m.ChannelSettingsDialog })),
+  import("./ChannelSettingsDialog").then((m) => ({
+    default: m.ChannelSettingsDialog,
+  })),
 );
 const RemoteWorkspaceDialog = lazy(() =>
-  import("./RemoteWorkspaceDialog").then((m) => ({ default: m.RemoteWorkspaceDialog })),
+  import("./RemoteWorkspaceDialog").then((m) => ({
+    default: m.RemoteWorkspaceDialog,
+  })),
 );
 const VoiceRoomPanel = lazy(() =>
   import("./VoiceRoomPanel").then((m) => ({ default: m.VoiceRoomPanel })),
@@ -82,7 +117,7 @@ function sortMessages(msgs: Message[]): Message[] {
 
 function upsertMessage(
   msgs: Message[],
-  incoming: Partial<Message> & { msg_id: string }
+  incoming: Partial<Message> & { msg_id: string },
 ): Message[] {
   const idx = msgs.findIndex((m) => m.msg_id === incoming.msg_id);
   if (idx === -1) return sortMessages([...msgs, incoming as Message]);
@@ -109,14 +144,20 @@ interface Props {
   onToggleSidebar?: () => void;
 }
 
-export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: Props) {
+export function ChannelView({
+  channel,
+  onBack,
+  sidebarOpen,
+  onToggleSidebar,
+}: Props) {
   const user = useAuthStore((s) => s.user);
   const patchChannel = useChatStore((s) => s.patchChannel);
   // Public channel the caller can see (as a workspace member) but hasn't joined
   // yet — everything membership-gated (history, members, realtime, composer) is
   // skipped and a join prompt renders instead. Joining patches the store, which
   // flips this off and lets the normal effects run.
-  const isPreview = !!channel && channel.type !== "dm" && channel.is_member === false;
+  const isPreview =
+    !!channel && channel.type !== "dm" && channel.is_member === false;
   const [joining, setJoining] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -132,7 +173,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // list across all bots; refreshed on channel open and on reconnect catch-up.
   const [commands, setCommands] = useState<CommandCandidate[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
-  const [voiceTranscripts, setVoiceTranscripts] = useState<VoiceTranscriptSegment[]>([]);
+  const [voiceTranscripts, setVoiceTranscripts] = useState<
+    VoiceTranscriptSegment[]
+  >([]);
   // Workspace presence: who else is viewing which bot's workspace (from the `presence`
   // frame's `focus` array). Surfaced as viewer chips in the RemoteWorkspaceDialog.
   const [workspaceFocus, setWorkspaceFocus] = useState<PresenceFocus[]>([]);
@@ -140,7 +183,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [selectedSessionId, setSelectedSessionId] = useState("");
   // The owning bot of the pinned session (null for Auto) — narrows the composer's
   // model chip to the single bot a pinned session actually targets.
-  const [selectedSessionBotId, setSelectedSessionBotId] = useState<string | null>(null);
+  const [selectedSessionBotId, setSelectedSessionBotId] = useState<
+    string | null
+  >(null);
   // Bots @mentioned in the current draft (from the composer), so we can show their
   // mode/config controls inline when the caller is allowed to change them.
   const [mentionedBots, setMentionedBots] = useState<MentionCandidate[]>([]);
@@ -151,9 +196,14 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   usePopoverDismiss(membersOpen, closeMembers, membersRootRef);
   // Message actions: reply target, multi-select set, pending forward payload.
   const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const [selectMode, setSelectMode] = useState(false);
-  const [forward, setForward] = useState<{ content: string; count: number } | null>(null);
+  const [forward, setForward] = useState<{
+    content: string;
+    count: number;
+  } | null>(null);
   // Live draft text (from the composer) → F3 suggested context (filename detection).
   const [draftText, setDraftText] = useState("");
 
@@ -164,7 +214,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       mentionables
         .filter((m) => m.type === "bot")
         .map((m) => ({ botId: m.id, name: m.label })),
-    [mentionables]
+    [mentionables],
   );
 
   // Channel file index (id + name) built from loaded messages' attachments — no
@@ -217,9 +267,10 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // Cancel any scheduled delta flush on unmount.
   useEffect(
     () => () => {
-      if (flushHandle.current !== null) cancelAnimationFrame(flushHandle.current);
+      if (flushHandle.current !== null)
+        cancelAnimationFrame(flushHandle.current);
     },
-    []
+    [],
   );
 
   // Esc backs out of the transient message-action states (reply draft / selection).
@@ -291,14 +342,15 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         });
         if (activeChannelRef.current !== cid) return;
         const incoming = res.messages ?? res.data ?? [];
-        if (incoming.length) setMessages((prev) => mergeMessages(prev, incoming));
+        if (incoming.length)
+          setMessages((prev) => mergeMessages(prev, incoming));
       } catch {
         /* best-effort; the live stream still delivers new frames */
       } finally {
         catchUpInFlightRef.current = false;
       }
     },
-    [channel]
+    [channel],
   );
 
   // Initial history load (backend returns ascending: oldest first). Warm path:
@@ -418,13 +470,14 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           .filter((m) => m.member_type === "user" || m.member_type === "bot")
           .map((m) => ({
             id: m.member_id,
-            type: m.member_type === "bot" ? ("bot" as const) : ("user" as const),
+            type:
+              m.member_type === "bot" ? ("bot" as const) : ("user" as const),
             label: m.display_name || m.username || m.member_id.slice(0, 8),
             sublabel: m.username,
             // Bots: whether the agent can hear audio prompts (null/undefined =
             // unknown → the composer treats it as "can't", fail-safe).
             canReceiveAudio: m.can_receive_audio ?? false,
-          }))
+          })),
       );
     };
     const cached = getChannelCache(cid)?.members;
@@ -449,7 +502,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // even though the message itself carries no bio/status.
   const memberById = useMemo<Map<string, ProfileData>>(
     () => new Map(members.map((m) => [m.member_id, m])),
-    [members]
+    [members],
   );
   const voiceSpeakerNames = useMemo(
     () =>
@@ -457,9 +510,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         members.map((member) => [
           member.member_id,
           member.display_name || member.username || "Member",
-        ])
+        ]),
       ),
-    [members]
+    [members],
   );
 
   const loadVoiceTranscript = useCallback(async () => {
@@ -491,7 +544,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         limit: 50,
       });
       if (activeChannelRef.current !== channel.channel_id) return;
-      setMessages((prev) => mergeMessages(prev, res.messages ?? res.data ?? []));
+      setMessages((prev) =>
+        mergeMessages(prev, res.messages ?? res.data ?? []),
+      );
       setHasMore(res.meta?.has_more_before ?? false);
     } catch {
       // hasMore stays true, so scrolling up again retries this page. Stable id so a
@@ -509,7 +564,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     // A resolved approval landing → nudge the Audit board to re-fetch live.
     if (
       msg.msg_type === "permission" &&
-      (msg.content_data as PermissionContentData | null | undefined)?.resolved === true
+      (msg.content_data as PermissionContentData | null | undefined)
+        ?.resolved === true
     ) {
       setBoardTick((t) => ({ ...t, audit: (t.audit ?? 0) + 1 }));
     }
@@ -567,7 +623,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         flushHandle.current = requestAnimationFrame(flushDeltas);
       }
     },
-    [flushDeltas]
+    [flushDeltas],
   );
 
   const handleStreamDone = useCallback(
@@ -577,26 +633,28 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       // would either duplicate text or append after finalize).
       pendingDeltas.current.delete(update.msg_id);
       setMessages((prev) =>
-        upsertMessage(prev, { ...update, _streaming: false, _trace: null })
+        upsertMessage(prev, { ...update, _streaming: false, _trace: null }),
       );
     },
-    []
+    [],
   );
 
   const handleBotTrace = useCallback(
     (msgId: string | null, title: string | null) => {
       if (!msgId) return;
-      setMessages((prev) => upsertMessage(prev, { msg_id: msgId, _trace: title }));
+      setMessages((prev) =>
+        upsertMessage(prev, { msg_id: msgId, _trace: title }),
+      );
     },
-    []
+    [],
   );
 
   const handleDeleted = useCallback((msgId: string) => {
     pendingDeltas.current.delete(msgId);
     setMessages((prev) =>
       prev.map((m) =>
-        m.msg_id === msgId ? { ...m, is_deleted: true, content: "" } : m
-      )
+        m.msg_id === msgId ? { ...m, is_deleted: true, content: "" } : m,
+      ),
     );
   }, []);
 
@@ -611,21 +669,26 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             ...m,
             files: m.files.map((f) =>
               f.file_id === fileId
-                ? { ...f, summary: summary ?? f.summary, transcript_status: status }
-                : f
+                ? {
+                    ...f,
+                    summary: summary ?? f.summary,
+                    transcript_status: status,
+                  }
+                : f,
             ),
           };
-        })
+        }),
       );
     },
-    []
+    [],
   );
 
   // Refresh the slash-command palette from `channel.commands.read`. Bot-produced
   // command names/descriptions are untrusted — they only ever render as inert
   // text in the picker. Best-effort: a failure just leaves the palette empty.
   const sendResourceReqRef = useRef<
-    ((resource: string, params: Record<string, unknown>) => Promise<unknown>) | null
+    | ((resource: string, params: Record<string, unknown>) => Promise<unknown>)
+    | null
   >(null);
   const loadCommands = useCallback(async () => {
     if (!channel || isPreview) return;
@@ -646,7 +709,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           description: c.description ?? undefined,
           botId: b.bot_id,
           botLabel: botLabels.get(b.bot_id) || b.bot_id.slice(0, 8),
-        }))
+        })),
       );
       setCommands(flat);
     } catch {
@@ -667,91 +730,108 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
   const [taskClaimsTick, setTaskClaimsTick] = useState(0);
 
-  const { sendResourceReq, sendPresenceFocus, status: rtStatus, reconnectNow } = useChatRealtime(
+  const {
+    sendResourceReq,
+    sendPresenceFocus,
+    status: rtStatus,
+    reconnectNow,
+  } = useChatRealtime(
     // Preview (not yet a member) → don't subscribe; the gateway gates realtime
     // frames on channel membership anyway.
     !channel || isPreview ? null : channel.channel_id,
     {
-    onMessage: handleMessage,
-    onStreamDelta: handleStreamDelta,
-    onStreamDone: handleStreamDone,
-    onMessageDeleted: handleDeleted,
-    onBotUnavailable: (botId, placeholderMsgId) => {
-      pendingDeltas.current.delete(placeholderMsgId);
-      setMessages((prev) => prev.filter((m) => m.msg_id !== placeholderMsgId));
-      const botName = memberById.get(botId)?.display_name ?? "This bot";
-      toast.error(`${botName} is offline and couldn't receive your message.`, {
-        id: `bot-offline-${botId}`,
-      });
-    },
-    onReady: handleReady,
-    // Backend `count` already includes online bots — display as-is, never re-add botIds.
-    // `focus` carries workspace presence (who's viewing which bot's workspace).
-    onPresence: (_ids, count, _botIds, focus) => {
-      setOnlineCount(count);
-      setWorkspaceFocus(focus ?? []);
-    },
-    onBotTrace: handleBotTrace,
-    onBoardSignal: (board, botId) => {
-      // "workspace" ticks live in their own bot-scoped cell (no ViewBoard consumes
-      // a plain workspace count); everything else feeds the per-board counters.
-      if (board === "workspace")
-        setWorkspaceTick((prev) => ({ seq: (prev?.seq ?? 0) + 1, botId: botId ?? null }));
-      else setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 }));
-    },
-    // Live-watch: an agent touched files on its machine. Stash the bot-scoped signal
-    // (bumping `seq` so repeat signals for the same paths still re-trigger); the open
-    // workspace dialog filters by its own `botId` and refetches. See RemoteWorkspaceDialog.
-    onWorkspaceSignal: (sig) =>
-      setWorkspaceSignal((prev) => ({
-        botId: sig.bot_id,
-        root: sig.root,
-        paths: sig.paths,
-        seq: (prev?.seq ?? 0) + 1,
-      })),
-    onFileTranscribed: handleFileTranscribed,
-    onVoiceTranscriptFinal: (segment) =>
-      setVoiceTranscripts((previous) => {
-        const existing = previous.findIndex(
-          (item) => item.segment_id === segment.segment_id
+      onMessage: handleMessage,
+      onStreamDelta: handleStreamDelta,
+      onStreamDone: handleStreamDone,
+      onMessageDeleted: handleDeleted,
+      onBotUnavailable: (botId, placeholderMsgId) => {
+        pendingDeltas.current.delete(placeholderMsgId);
+        setMessages((prev) =>
+          prev.filter((m) => m.msg_id !== placeholderMsgId),
         );
-        const next =
-          existing === -1
-            ? [...previous, segment]
-            : previous.map((item, index) => (index === existing ? segment : item));
-        return next.sort((left, right) => left.channel_seq - right.channel_seq);
-      }),
-    onTaskClaimChange: () => setTaskClaimsTick((value) => value + 1),
-    // A member edited their profile → patch their row in place so the hovercard
-    // (which reads from `memberById`) reflects the new avatar/bio/status live.
-    // Only overwrite fields the frame actually carries (undefined = unchanged).
-    onMemberUpdated: (m) =>
-      setMembers((prev) =>
-        prev.map((row) =>
-          row.member_id === m.member_id
-            ? {
-                ...row,
-                ...(m.display_name !== undefined && {
-                  display_name: m.display_name ?? undefined,
-                }),
-                ...(m.avatar_url !== undefined && {
-                  avatar_url: m.avatar_url ?? undefined,
-                }),
-                ...(m.bio !== undefined && { bio: m.bio ?? undefined }),
-                ...(m.status_text !== undefined && {
-                  status_text: m.status_text ?? undefined,
-                }),
-                ...(m.status_emoji !== undefined && {
-                  status_emoji: m.status_emoji ?? undefined,
-                }),
-                ...(m.status_updated_at !== undefined && {
-                  status_updated_at: m.status_updated_at ?? undefined,
-                }),
-              }
-            : row
-        )
-      ),
-    }
+        const botName = memberById.get(botId)?.display_name ?? "This bot";
+        toast.error(
+          `${botName} is offline and couldn't receive your message.`,
+          {
+            id: `bot-offline-${botId}`,
+          },
+        );
+      },
+      onReady: handleReady,
+      // Backend `count` already includes online bots — display as-is, never re-add botIds.
+      // `focus` carries workspace presence (who's viewing which bot's workspace).
+      onPresence: (_ids, count, _botIds, focus) => {
+        setOnlineCount(count);
+        setWorkspaceFocus(focus ?? []);
+      },
+      onBotTrace: handleBotTrace,
+      onBoardSignal: (board, botId) => {
+        // "workspace" ticks live in their own bot-scoped cell (no ViewBoard consumes
+        // a plain workspace count); everything else feeds the per-board counters.
+        if (board === "workspace")
+          setWorkspaceTick((prev) => ({
+            seq: (prev?.seq ?? 0) + 1,
+            botId: botId ?? null,
+          }));
+        else setBoardTick((t) => ({ ...t, [board]: (t[board] ?? 0) + 1 }));
+      },
+      // Live-watch: an agent touched files on its machine. Stash the bot-scoped signal
+      // (bumping `seq` so repeat signals for the same paths still re-trigger); the open
+      // workspace dialog filters by its own `botId` and refetches. See RemoteWorkspaceDialog.
+      onWorkspaceSignal: (sig) =>
+        setWorkspaceSignal((prev) => ({
+          botId: sig.bot_id,
+          root: sig.root,
+          paths: sig.paths,
+          seq: (prev?.seq ?? 0) + 1,
+        })),
+      onFileTranscribed: handleFileTranscribed,
+      onVoiceTranscriptFinal: (segment) =>
+        setVoiceTranscripts((previous) => {
+          const existing = previous.findIndex(
+            (item) => item.segment_id === segment.segment_id,
+          );
+          const next =
+            existing === -1
+              ? [...previous, segment]
+              : previous.map((item, index) =>
+                  index === existing ? segment : item,
+                );
+          return next.sort(
+            (left, right) => left.channel_seq - right.channel_seq,
+          );
+        }),
+      onTaskClaimChange: () => setTaskClaimsTick((value) => value + 1),
+      // A member edited their profile → patch their row in place so the hovercard
+      // (which reads from `memberById`) reflects the new avatar/bio/status live.
+      // Only overwrite fields the frame actually carries (undefined = unchanged).
+      onMemberUpdated: (m) =>
+        setMembers((prev) =>
+          prev.map((row) =>
+            row.member_id === m.member_id
+              ? {
+                  ...row,
+                  ...(m.display_name !== undefined && {
+                    display_name: m.display_name ?? undefined,
+                  }),
+                  ...(m.avatar_url !== undefined && {
+                    avatar_url: m.avatar_url ?? undefined,
+                  }),
+                  ...(m.bio !== undefined && { bio: m.bio ?? undefined }),
+                  ...(m.status_text !== undefined && {
+                    status_text: m.status_text ?? undefined,
+                  }),
+                  ...(m.status_emoji !== undefined && {
+                    status_emoji: m.status_emoji ?? undefined,
+                  }),
+                  ...(m.status_updated_at !== undefined && {
+                    status_updated_at: m.status_updated_at ?? undefined,
+                  }),
+                }
+              : row,
+          ),
+        ),
+    },
   );
   // Keep a stable ref so loadCommands can reach the latest resource client
   // without re-subscribing the realtime hook.
@@ -779,7 +859,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     setMessages((prev) =>
       prev.some((m) => m._streaming)
         ? prev.map((m) => (m._streaming ? { ...m, _streaming: false } : m))
-        : prev
+        : prev,
     );
   }, [rtStatus]);
 
@@ -791,12 +871,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // ViewBoard open/minimal survive reloads and channel switches (it's a channel-agnostic
   // viewing preference, like a theme — the boards themselves re-scope per channel).
   const [vbOpen, setVbOpen] = useState(
-    () => localStorage.getItem("cheers.viewboard.open") === "1"
+    () => localStorage.getItem("cheers.viewboard.open") === "1",
   );
   // Minimal ViewBoard: a compact content-height card in a narrower column (vs the full
   // full-height column). Still reserves its own column so it never covers the chat.
   const [vbMinimal, setVbMinimal] = useState(
-    () => localStorage.getItem("cheers.viewboard.minimal") === "1"
+    () => localStorage.getItem("cheers.viewboard.minimal") === "1",
   );
   useEffect(() => {
     localStorage.setItem("cheers.viewboard.open", vbOpen ? "1" : "0");
@@ -824,9 +904,16 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [filesOpen, setFilesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
-  const [wsInit, setWsInit] = useState<{ botId?: string; path?: string; line?: number }>({});
+  const [wsInit, setWsInit] = useState<{
+    botId?: string;
+    path?: string;
+    line?: number;
+  }>({});
   // Composer prefill (a plugin's cheers:compose — G4): suggestion only, never a send.
-  const [composePrefill, setComposePrefill] = useState<{ text: string; seq: number } | null>(null);
+  const [composePrefill, setComposePrefill] = useState<{
+    text: string;
+    seq: number;
+  } | null>(null);
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
 
   // The work lane is the bounded canvas the instrument windows drag/resize +
@@ -836,7 +923,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const [laneEl, setLaneEl] = useState<HTMLElement | null>(null);
   const getLaneBounds = useCallback(
     () => laneEl?.getBoundingClientRect() ?? null,
-    [laneEl]
+    [laneEl],
   );
   // User-adjustable lane width (px), dragged via the splitter between the chat
   // column and the lane. CSS min/max on the <aside> clamp a stale value against
@@ -860,7 +947,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // change so one can't get stranded in the lane's overflow-hidden clip.
   useEffect(() => {
     if (!laneEl || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => window.dispatchEvent(new Event("resize")));
+    const ro = new ResizeObserver(() =>
+      window.dispatchEvent(new Event("resize")),
+    );
     ro.observe(laneEl);
     return () => ro.disconnect();
   }, [laneEl]);
@@ -872,7 +961,10 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   // If the target isn't in the loaded window (initial load is only the newest
   // page), page older history in — bounded — until it appears, then focus; the
   // old behavior just toasted "scroll up to load older history" at the user.
-  const [focusMsg, setFocusMsg] = useState<{ msgId: string; nonce: number } | null>(null);
+  const [focusMsg, setFocusMsg] = useState<{
+    msgId: string;
+    nonce: number;
+  } | null>(null);
   const messagesRef = useRef<Message[]>(messages);
   messagesRef.current = messages;
   const jumpBackfillRef = useRef(false);
@@ -880,7 +972,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const JUMP_BACKFILL_PAGES = 8;
   const jumpToMessage = useCallback(
     async (msgId: string) => {
-      const focus = () => setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 }));
+      const focus = () =>
+        setFocusMsg((prev) => ({ msgId, nonce: (prev?.nonce ?? 0) + 1 }));
       if (messagesRef.current.some((m) => m.msg_id === msgId)) return focus();
       if (!channel || jumpBackfillRef.current) return;
       jumpBackfillRef.current = true;
@@ -908,13 +1001,15 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           id: "jump-not-found",
         });
       } catch {
-        toast.error("Couldn't load older messages — try again", { id: "load-older-failed" });
+        toast.error("Couldn't load older messages — try again", {
+          id: "load-older-failed",
+        });
       } finally {
         toast.dismiss(toastId);
         jumpBackfillRef.current = false;
       }
     },
-    [channel]
+    [channel],
   );
   // Web Push integration: report the open channel to the SW bridge (so a
   // notification for a channel the user is already viewing is suppressed), and
@@ -943,11 +1038,17 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
   // "Open the ViewBoard on THIS board" request (same nonce pattern as focusMsg) —
   // the session chip's "Manage sessions…" jumps straight to the Sessions board.
-  const [focusBoard, setFocusBoard] = useState<{ id: string; nonce: number } | null>(null);
+  const [focusBoard, setFocusBoard] = useState<{
+    id: string;
+    nonce: number;
+  } | null>(null);
   const openSessionsBoard = useCallback(() => {
     setVbMinimal(false);
     setVbOpen(true);
-    setFocusBoard((prev) => ({ id: "sessions", nonce: (prev?.nonce ?? 0) + 1 }));
+    setFocusBoard((prev) => ({
+      id: "sessions",
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
   }, []);
 
   // Add-context menu → open a side surface (untargeted) so the user can pick a
@@ -1016,8 +1117,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
                     {
                       botId: selectedSessionBotId,
                       name:
-                        switcherBots.find((b) => b.botId === selectedSessionBotId)?.name ??
-                        selectedSessionBotId,
+                        switcherBots.find(
+                          (b) => b.botId === selectedSessionBotId,
+                        )?.name ?? selectedSessionBotId,
                     },
                   ]
                 : mentionedBots.length > 0
@@ -1029,7 +1131,15 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         </>
       ) : null,
     // sendResourceReq and openSessionsBoard are identity-stable (useCallback).
-    [channel, switcherBots, selectedSessionId, selectedSessionBotId, mentionedBots, sendResourceReq, openSessionsBoard]
+    [
+      channel,
+      switcherBots,
+      selectedSessionId,
+      selectedSessionBotId,
+      mentionedBots,
+      sendResourceReq,
+      openSessionsBoard,
+    ],
   );
 
   // In-flight bot turns, for the composer's send→stop morph. The array identity
@@ -1043,10 +1153,10 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           (m) =>
             m.sender_type === "bot" &&
             (m._streaming || m.is_partial) &&
-            !m.is_deleted
+            !m.is_deleted,
         )
         .map((m) => m.msg_id),
-    [messages]
+    [messages],
   );
   const streamingIdsRef = useRef(streamingIds);
   streamingIdsRef.current = streamingIds;
@@ -1054,7 +1164,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const stopStreaming = useCallback(async () => {
     if (!channelIdForStop) return;
     await Promise.all(
-      streamingIdsRef.current.map((id) => stopTurn(channelIdForStop, id))
+      streamingIdsRef.current.map((id) => stopTurn(channelIdForStop, id)),
     );
   }, [channelIdForStop]);
 
@@ -1066,13 +1176,16 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
     async ({ senderBotId, ref, files }: RefClick) => {
       if (!channel) return;
       const base = ref.split("/").pop() || ref;
-      const senderBotLabel = botLabels.get(senderBotId) || senderBotId.slice(0, 8);
+      const senderBotLabel =
+        botLabels.get(senderBotId) || senderBotId.slice(0, 8);
       const openInbox = (fileId: string) => {
         setFilesFocus(fileId);
         setFilesOpen(true);
       };
       // 1) Strongest signal: a file THIS message attached (an inbox deliverable).
-      const hit = (files || []).find((f) => (f.original_filename || "") === base);
+      const hit = (files || []).find(
+        (f) => (f.original_filename || "") === base,
+      );
       if (hit) {
         openInbox(hit.file_id);
         return;
@@ -1097,19 +1210,21 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
             setRefError(
               offline
                 ? `Can't open "${base}": this file lives on bot "${senderBotLabel}"'s machine, but its connector is currently offline.`
-                : `Couldn't find "${base}".\nIt isn't attached to this reply, on the channel Desk, or in the workspace — the bot may have only mentioned it without actually producing or sharing it.`
+                : `Couldn't find "${base}".\nIt isn't attached to this reply, on the channel Desk, or in the workspace — the bot may have only mentioned it without actually producing or sharing it.`,
             );
           }
         } else {
           setRefError(
-            `Couldn't find "${base}".\nIt isn't attached to this reply, on the channel Desk, or in any reachable workspace — the bot may have mentioned this file without actually producing or sharing it.`
+            `Couldn't find "${base}".\nIt isn't attached to this reply, on the channel Desk, or in any reachable workspace — the bot may have mentioned this file without actually producing or sharing it.`,
           );
         }
       } catch (e) {
-        setRefError(`Failed to open "${base}": ${e instanceof Error ? e.message : String(e)}`);
+        setRefError(
+          `Failed to open "${base}": ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     },
-    [channel, botLabels]
+    [channel, botLabels],
   );
 
   // Resolve a `cheers:` locator (the DETERMINISTIC cousin of resolveAndOpenRef's
@@ -1143,7 +1258,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       let botId = loc.bot;
       if (botId.startsWith("@")) {
         const handle = botId.slice(1).toLowerCase();
-        const hits = [...botLabels.entries()].filter(([, label]) => label.toLowerCase() === handle);
+        const hits = [...botLabels.entries()].filter(
+          ([, label]) => label.toLowerCase() === handle,
+        );
         if (hits.length === 1) {
           botId = hits[0][0];
         } else if (hits.length === 0 && botLabels.size === 1) {
@@ -1153,11 +1270,12 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           // of them should still be navigable in the common single-bot channel.)
           botId = [...botLabels.keys()][0];
         } else {
-          const known = [...botLabels.values()].map((l) => `@${l}`).join(", ") || "(none)";
+          const known =
+            [...botLabels.values()].map((l) => `@${l}`).join(", ") || "(none)";
           setRefError(
             hits.length === 0
               ? `No bot named "@${handle}" in this channel — bots here: ${known}.\nThe locator may be stale or invented; ask the bot to fix the loc fields in its map file.`
-              : `More than one bot answers to "@${handle}" here — open the workspace browser and pick one.`
+              : `More than one bot answers to "@${handle}" here — open the workspace browser and pick one.`,
           );
           return;
         }
@@ -1167,27 +1285,35 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       // written paths carry root-basis uncertainty, so the probe is TOLERANT — exact
       // path first, then bounded root-offset corrections (see wsLocate.ts).
       try {
-        const resolved = await locateWorkspaceFile(channel.channel_id, botId, loc.path);
+        const resolved = await locateWorkspaceFile(
+          channel.channel_id,
+          botId,
+          loc.path,
+        );
         if (!resolved) {
           setRefError(
-            `Couldn't find "${loc.path}" in that bot's workspace — not at that path, not one level up, not under any top-level folder.\nThe file may have moved or been renamed; ask the bot to refresh the loc fields in its map file.`
+            `Couldn't find "${loc.path}" in that bot's workspace — not at that path, not one level up, not under any top-level folder.\nThe file may have moved or been renamed; ask the bot to refresh the loc fields in its map file.`,
           );
           return;
         }
         // A directory loc opens the folder view (the dialog's deep-link already falls
         // back to listing); a line anchor only makes sense on a file.
-        setWsInit({ botId, path: resolved.path, line: resolved.kind === "file" ? loc.line : undefined });
+        setWsInit({
+          botId,
+          path: resolved.path,
+          line: resolved.kind === "file" ? loc.line : undefined,
+        });
         setWsOpen(true);
       } catch (e) {
         const offline = String(e).includes("offline");
         setRefError(
           offline
             ? `Can't open "${loc.path}": that bot's connector is currently offline.`
-            : `Couldn't open "${loc.path}" in that workspace: ${e instanceof Error ? e.message : String(e)}`
+            : `Couldn't open "${loc.path}" in that workspace: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
     },
-    [channel, botLabels]
+    [channel, botLabels],
   );
 
   // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
@@ -1201,47 +1327,47 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       content: string,
       mentionIds: string[],
       fileIds: string[],
-      mentionNames: string[] = []
+      mentionNames: string[] = [],
     ) => {
-    if (!channel) return;
-    // Attached resource context (docs/design/RESOURCE_CONTEXT.md): read the
-    // channel's pending picks and ship them as a bundle, then clear on success.
-    const pending =
-      useContextPickStore.getState().byChannel[channel.channel_id] ?? [];
-    const bundle = toBundle(pending, channel.channel_id);
-    const sendParams: NonNullable<Message["_sendParams"]> = {
-      content,
-      ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
-      ...(mentionNames.length ? { mention_names: mentionNames } : {}),
-      ...(fileIds.length ? { file_ids: fileIds } : {}),
-      ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
-      ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
-      ...(bundle ? { context_bundle: bundle } : {}),
-    };
-    setReplyTo(null);
-    try {
-      const { content: body, ...opts } = sendParams;
-      await sendMessage(channel.channel_id, body, opts);
-      useContextPickStore.getState().clear(channel.channel_id);
-    } catch {
-      // Don't lose the message: drop a client-only "failed" bubble into the
-      // timeline (the composer already cleared the draft) so it stays visible
-      // with its content and a Retry button. Never persisted / sent to the server.
-      const failed: Message = {
-        msg_id: `local-failed-${crypto.randomUUID()}`,
-        sender_id: user?.user_id ?? "",
-        sender_type: "user",
-        sender_name: user?.display_name ?? user?.username,
+      if (!channel) return;
+      // Attached resource context (docs/design/RESOURCE_CONTEXT.md): read the
+      // channel's pending picks and ship them as a bundle, then clear on success.
+      const pending =
+        useContextPickStore.getState().byChannel[channel.channel_id] ?? [];
+      const bundle = toBundle(pending, channel.channel_id);
+      const sendParams: NonNullable<Message["_sendParams"]> = {
         content,
-        created_at: new Date().toISOString(),
+        ...(mentionIds.length ? { mention_ids: mentionIds } : {}),
+        ...(mentionNames.length ? { mention_names: mentionNames } : {}),
         ...(fileIds.length ? { file_ids: fileIds } : {}),
-        _status: "failed",
-        _sendParams: sendParams,
+        ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
+        ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
+        ...(bundle ? { context_bundle: bundle } : {}),
       };
-      setMessages((prev) => sortMessages([...prev, failed]));
-    }
+      setReplyTo(null);
+      try {
+        const { content: body, ...opts } = sendParams;
+        await sendMessage(channel.channel_id, body, opts);
+        useContextPickStore.getState().clear(channel.channel_id);
+      } catch {
+        // Don't lose the message: drop a client-only "failed" bubble into the
+        // timeline (the composer already cleared the draft) so it stays visible
+        // with its content and a Retry button. Never persisted / sent to the server.
+        const failed: Message = {
+          msg_id: `local-failed-${crypto.randomUUID()}`,
+          sender_id: user?.user_id ?? "",
+          sender_type: "user",
+          sender_name: user?.display_name ?? user?.username,
+          content,
+          created_at: new Date().toISOString(),
+          ...(fileIds.length ? { file_ids: fileIds } : {}),
+          _status: "failed",
+          _sendParams: sendParams,
+        };
+        setMessages((prev) => sortMessages([...prev, failed]));
+      }
     },
-    [channel, selectedSessionId, replyTo, user]
+    [channel, selectedSessionId, replyTo, user],
   );
 
   // Retry a failed send: flip the placeholder to "sending", replay the original
@@ -1253,34 +1379,34 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       const { content, ...opts } = failed._sendParams;
       setMessages((prev) =>
         prev.map((m) =>
-          m.msg_id === failed.msg_id ? { ...m, _status: "sending" } : m
-        )
+          m.msg_id === failed.msg_id ? { ...m, _status: "sending" } : m,
+        ),
       );
       try {
         const sent = await sendMessage(channel.channel_id, content, opts);
         setMessages((prev) =>
           upsertMessage(
             prev.filter((m) => m.msg_id !== failed.msg_id),
-            sent
-          )
+            sent,
+          ),
         );
       } catch {
         setMessages((prev) =>
           prev.map((m) =>
-            m.msg_id === failed.msg_id ? { ...m, _status: "failed" } : m
-          )
+            m.msg_id === failed.msg_id ? { ...m, _status: "failed" } : m,
+          ),
         );
         toast.error("Still couldn't send — check your connection");
       }
     },
-    [channel]
+    [channel],
   );
 
   // ── Message actions: reply / copy / forward / multi-select ────────────────
   const displayName = useCallback(
     (m: Message) =>
       m.sender_name || memberNames.get(m.sender_id) || m.sender_id.slice(0, 8),
-    [memberNames]
+    [memberNames],
   );
 
   /** Markdown quote block with provenance — the forward payload. */
@@ -1304,13 +1430,13 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           : `#${channel?.name ?? "channel"}`;
       return `**↪ Forwarded from ${source}**\n${blocks.join("\n>\n")}`;
     },
-    [channel?.type, channel?.name, displayName]
+    [channel?.type, channel?.name, displayName],
   );
 
   /** Selected messages in channel order (selection set has no order of its own). */
   const selectedMessages = useMemo(
     () => messages.filter((m) => selectedIds.has(m.msg_id)),
-    [messages, selectedIds]
+    [messages, selectedIds],
   );
 
   // Stable identity: selection state deliberately NOT captured here (it travels
@@ -1319,7 +1445,8 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
   const messageActions: MessageActionHandlers = useMemo(
     () => ({
       onReply: (m) => setReplyTo(m),
-      onForward: (m) => setForward({ content: buildForwardContent([m]), count: 1 }),
+      onForward: (m) =>
+        setForward({ content: buildForwardContent([m]), count: 1 }),
       onToggleSelect: (m) => {
         setSelectMode(true);
         // Entering select mode hides the reply banner — disarm the reply too so
@@ -1334,7 +1461,7 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
       },
       onRetry: retryMessage,
     }),
-    [buildForwardContent, retryMessage]
+    [buildForwardContent, retryMessage],
   );
 
   const clearSelection = () => {
@@ -1344,11 +1471,16 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
   async function copySelected() {
     const text = selectedMessages
-      .map((m) => `${displayName(m)}: ${(m.content ?? "").replace(/<#file:[^>]+>/g, "").trim()}`)
+      .map(
+        (m) =>
+          `${displayName(m)}: ${(m.content ?? "").replace(/<#file:[^>]+>/g, "").trim()}`,
+      )
       .join("\n");
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`Copied ${selectedMessages.length} message${selectedMessages.length > 1 ? "s" : ""}`);
+      toast.success(
+        `Copied ${selectedMessages.length} message${selectedMessages.length > 1 ? "s" : ""}`,
+      );
       clearSelection();
     } catch {
       toast.error("Clipboard unavailable");
@@ -1422,7 +1554,9 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <Hash className="w-10 h-10 text-zinc-700" />
-          <div className="text-zinc-100 font-semibold text-lg">#{channel.name}</div>
+          <div className="text-zinc-100 font-semibold text-lg">
+            #{channel.name}
+          </div>
           {channel.purpose && (
             <p className="text-sm text-zinc-400 max-w-md">{channel.purpose}</p>
           )}
@@ -1448,299 +1582,330 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
 
   return (
     <ProfileCardProvider members={memberById}>
-    {/* Desktop: instrument panels DOCK into a dedicated work area on the right,
+      {/* Desktop: instrument panels DOCK into a dedicated work area on the right,
         which reserves real layout space. The chat column is always width-capped:
         centered while the work area is closed, docked against it when open.
         Mobile: the panels stay full/near-full-screen overlay sheets. */}
-    <div className="flex flex-col h-full">
-      {/* Channel header — `relative z-30` lifts the header's stacking context (it
+      <div className="flex flex-col h-full">
+        {/* Channel header — `relative z-30` lifts the header's stacking context (it
           already makes one via backdrop-blur) above the message list, so header
           dropdowns like the session panel render over the chat, not under it. */}
-      <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
-        {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
-        {onBack && (
-          <button
-            onClick={onBack}
-            title="Back to channels"
-            aria-label="Back to channels"
-            className="md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-        )}
-        <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
-        <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
-          {channel.name}
-        </span>
-        {channel.purpose && (
-          <div className="hidden md:flex items-center gap-3 pl-1 min-w-0">
-            <span className="text-xs text-zinc-400 truncate">
-              {channel.purpose}
-            </span>
-          </div>
-        )}
-        <div className="flex-1" />
-        <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
-          {/* Members: was a dead-looking span — now a real button opening the roster. */}
-          <div className="relative" ref={membersRootRef}>
+        <div className="relative z-30 flex items-center gap-3 max-md:gap-1 px-4 max-md:px-2 h-12 mb-2 bg-zinc-950/80 backdrop-blur-sm flex-shrink-0">
+          {sidebarToggle && <div className="-ml-1 mr-1">{sidebarToggle}</div>}
+          {onBack && (
             <button
-              type="button"
-              onClick={() => setMembersOpen((v) => !v)}
-              title="Channel members"
-              aria-expanded={membersOpen}
-              className={`flex items-center gap-1.5 rounded px-1.5 py-1 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
-                membersOpen ? "text-zinc-100 bg-zinc-800" : ""
-              }`}
+              onClick={onBack}
+              title="Back to channels"
+              aria-label="Back to channels"
+              className="md:hidden flex items-center justify-center w-11 h-11 -ml-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
             >
-              <Users className="w-3.5 h-3.5" />
-              {mentionables.length || "Members"}
-              {onlineCount > 0 && (
-                <span className="flex items-center gap-1.5 ml-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  {onlineCount} online
-                </span>
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0 max-md:hidden" />
+          <span className="font-semibold text-zinc-100 text-sm truncate min-w-0 max-md:pl-1">
+            {channel.name}
+          </span>
+          {channel.purpose && (
+            <div className="hidden md:flex items-center gap-3 pl-1 min-w-0">
+              <span className="text-xs text-zinc-400 truncate">
+                {channel.purpose}
+              </span>
+            </div>
+          )}
+          <div className="flex-1" />
+          <div className="hidden md:flex items-center gap-3 text-xs text-zinc-400">
+            {/* Members: was a dead-looking span — now a real button opening the roster. */}
+            <div className="relative" ref={membersRootRef}>
+              <button
+                type="button"
+                onClick={() => setMembersOpen((v) => !v)}
+                title="Channel members"
+                aria-expanded={membersOpen}
+                className={`flex items-center gap-1.5 rounded px-1.5 py-1 hover:text-zinc-100 hover:bg-zinc-800 transition-colors ${
+                  membersOpen ? "text-zinc-100 bg-zinc-800" : ""
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                {mentionables.length || "Members"}
+                {onlineCount > 0 && (
+                  <span className="flex items-center gap-1.5 ml-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    {onlineCount} online
+                  </span>
+                )}
+              </button>
+              {membersOpen && (
+                <MembersPopover
+                  channelId={channel.channel_id}
+                  isDm={channel.type === "dm"}
+                  onManage={() => setSettingsOpen(true)}
+                  onClose={() => setMembersOpen(false)}
+                />
               )}
-            </button>
-            {membersOpen && (
-              <MembersPopover
-                channelId={channel.channel_id}
-                isDm={channel.type === "dm"}
-                onManage={() => setSettingsOpen(true)}
-                onClose={() => setMembersOpen(false)}
-              />
-            )}
+            </div>
           </div>
+          {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
+          <button
+            onClick={() => {
+              setFilesFocus(undefined);
+              setFilesOpen((v) => !v);
+            }}
+            title="Channel files"
+            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
+              filesOpen
+                ? "text-zinc-100 bg-zinc-800"
+                : "text-zinc-500 hover:text-zinc-100"
+            }`}
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => {
+              setWsInit({});
+              setWsOpen((v) => !v);
+            }}
+            title="Remote workspace"
+            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
+              wsOpen
+                ? "text-zinc-100 bg-zinc-800"
+                : "text-zinc-500 hover:text-zinc-100"
+            }`}
+          >
+            <FolderTree className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setVbOpen((v) => !v)}
+            title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
+            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
+              vbOpen
+                ? "text-zinc-100 bg-zinc-800"
+                : "text-zinc-500 hover:text-zinc-100"
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => {
+              setWbTarget(undefined);
+              setWbOpen((v) => !v);
+            }}
+            title="Workbench — file workspace"
+            className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
+              wbOpen
+                ? "text-zinc-100 bg-zinc-800"
+                : "text-zinc-500 hover:text-zinc-100"
+            }`}
+          >
+            <PanelRight className="w-4 h-4" />
+          </button>
+          {channel.type !== "dm" && (
+            <>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                title="Channel settings"
+                className="ml-1.5 flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
-        {/* Channel files (chat attachments) — its own view, separate from the Workbench. */}
-        <button
-          onClick={() => {
-            setFilesFocus(undefined);
-            setFilesOpen((v) => !v);
-          }}
-          title="Channel files"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-            filesOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
-          }`}
-        >
-          <Paperclip className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => {
-            setWsInit({});
-            setWsOpen((v) => !v);
-          }}
-          title="Remote workspace"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-            wsOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
-          }`}
-        >
-          <FolderTree className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => setVbOpen((v) => !v)}
-          title="ViewBoard — live plan / cost / sessions / audit (instrument plane)"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-            vbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
-          }`}
-        >
-          <LayoutDashboard className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => {
-            setWbTarget(undefined);
-            setWbOpen((v) => !v);
-          }}
-          title="Workbench — file workspace"
-          className={`flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg hover:bg-zinc-800 flex-shrink-0 ${
-            wbOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-500 hover:text-zinc-100"
-          }`}
-        >
-          <PanelRight className="w-4 h-4" />
-        </button>
-        {channel.type !== "dm" && (
-          <>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              title="Channel settings"
-              className="ml-1.5 flex items-center justify-center w-7 h-7 max-md:w-10 max-md:h-10 rounded-lg text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 flex-shrink-0"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          </>
-        )}
-      </div>
 
-      <div className="flex-1 min-h-0 flex">
-      {/* Chat region — fills the width left of the (resizable) lane, down to a
+        <div className="flex-1 min-h-0 flex">
+          {/* Chat region — fills the width left of the (resizable) lane, down to a
           24rem floor; the inner column below caps the reading width at 52rem and
           stays centered in that space (whether or not the lane is open) so it
           never strands a wide empty gutter on one side. */}
-      <div
-        className={`flex-1 min-w-0 flex flex-col ${
-          anyWorkOpen ? "md:min-w-[24rem]" : ""
-        }`}
-      >
-      <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
-      {channel.kind === "voice" && (
-        <Suspense
-          fallback={
-            <div className="mx-4 mb-3 h-[74px] rounded-xl border border-zinc-800 bg-zinc-900/50 animate-pulse" />
-          }
-        >
-          <VoiceRoomPanel
-            channelId={channel.channel_id}
-            transcripts={voiceTranscripts}
-            speakerNames={voiceSpeakerNames}
-            canManage={channel.can_manage === true || channel.my_role === "owner" || channel.my_role === "admin"}
-          />
-        </Suspense>
-      )}
-      {/* Live-connection banner (tier M): the channel is readable but frozen. */}
-      {showConnBanner && (
-        <Banner
-          severity={rtStatus === "offline" ? "error" : "warning"}
-          icon={WifiOff}
-          className="mx-4 mt-2 flex-shrink-0"
-          action={{ label: "Retry now", onClick: reconnectNow }}
-        >
-          {rtStatus === "offline"
-            ? "Connection lost — new messages are paused."
-            : "Connection lost — reconnecting…"}
-        </Banner>
-      )}
-      <TaskClaimsPanel
-        channelId={channel.channel_id}
-        canManage={channel.can_manage === true || channel.my_role === "owner" || channel.my_role === "admin"}
-        refreshKey={taskClaimsTick}
-      />
-      {/* Messages */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
-        </div>
-      ) : loadError ? (
-        <ErrorState
-          className="flex-1"
-          title="Couldn't load messages"
-          description="Check your connection and try again."
-          action={{ label: "Retry", onClick: loadHistory }}
-        />
-      ) : (
-        <ResolveRefContext.Provider value={resolveAndOpenRef}>
-          <MessageList
-            messages={messages}
-            currentUserId={user?.user_id}
-            channelId={channel.channel_id}
-            senderNames={memberNames}
-            hasMore={hasMore}
-            onLoadMore={loadMore}
-            loading={loadingMore}
-            actions={messageActions}
-            selectMode={selectMode}
-            selectedIds={selectedIds}
-            focusMsg={focusMsg}
-          />
-        </ResolveRefContext.Provider>
-      )}
-
-      {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
-      {selectMode && (
-        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/80 px-3 py-2 text-xs">
-          <span className="text-zinc-300 font-medium">
-            {selectedIds.size} selected
-          </span>
-          <span className="text-zinc-400">· click messages to toggle</span>
-          <div className="flex-1" />
-          <button
-            type="button"
-            disabled={selectedIds.size === 0}
-            onClick={() => void copySelected()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+          <div
+            className={`flex-1 min-w-0 flex flex-col ${
+              anyWorkOpen ? "md:min-w-[24rem]" : ""
+            }`}
           >
-            <Copy className="w-3.5 h-3.5" />
-            Copy
-          </button>
-          <button
-            type="button"
-            disabled={selectedIds.size === 0}
-            onClick={() =>
-              setForward({
-                content: buildForwardContent(selectedMessages),
-                count: selectedMessages.length,
-              })
-            }
-            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
-          >
-            <Forward className="w-3.5 h-3.5" />
-            Forward
-          </button>
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-400 hover:text-zinc-200"
-          >
-            <X className="w-3.5 h-3.5" />
-            Cancel
-          </button>
-        </div>
-      )}
+            <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
+              {channel.kind === "voice" && (
+                <Suspense
+                  fallback={
+                    <div className="mx-4 mb-3 h-[74px] rounded-xl border border-zinc-800 bg-zinc-900/50 animate-pulse" />
+                  }
+                >
+                  <VoiceRoomPanel
+                    channelId={channel.channel_id}
+                    transcripts={voiceTranscripts}
+                    speakerNames={voiceSpeakerNames}
+                    canManage={
+                      channel.can_manage === true ||
+                      channel.my_role === "owner" ||
+                      channel.my_role === "admin"
+                    }
+                    onFinalSegment={() => {
+                      // Re-renders clear any in-progress interim bubbles for this segment
+                      // (VoiceRoomPanel drops them from local state on the data-channel
+                      // final too — this just forces the React render pass).
+                      setVoiceTranscripts((prev) => [...prev]);
+                    }}
+                  />
+                </Suspense>
+              )}
+              {/* Live-connection banner (tier M): the channel is readable but frozen. */}
+              {showConnBanner && (
+                <Banner
+                  severity={rtStatus === "offline" ? "error" : "warning"}
+                  icon={WifiOff}
+                  className="mx-4 mt-2 flex-shrink-0"
+                  action={{ label: "Retry now", onClick: reconnectNow }}
+                >
+                  {rtStatus === "offline"
+                    ? "Connection lost — new messages are paused."
+                    : "Connection lost — reconnecting…"}
+                </Banner>
+              )}
+              <TaskClaimsPanel
+                channelId={channel.channel_id}
+                canManage={
+                  channel.can_manage === true ||
+                  channel.my_role === "owner" ||
+                  channel.my_role === "admin"
+                }
+                refreshKey={taskClaimsTick}
+              />
+              {/* Messages */}
+              {loading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
+                </div>
+              ) : loadError ? (
+                <ErrorState
+                  className="flex-1"
+                  title="Couldn't load messages"
+                  description="Check your connection and try again."
+                  action={{ label: "Retry", onClick: loadHistory }}
+                />
+              ) : (
+                <ResolveRefContext.Provider value={resolveAndOpenRef}>
+                  <MessageList
+                    messages={messages}
+                    currentUserId={user?.user_id}
+                    channelId={channel.channel_id}
+                    senderNames={memberNames}
+                    hasMore={hasMore}
+                    onLoadMore={loadMore}
+                    loading={loadingMore}
+                    actions={messageActions}
+                    selectMode={selectMode}
+                    selectedIds={selectedIds}
+                    focusMsg={focusMsg}
+                  />
+                </ResolveRefContext.Provider>
+              )}
 
-      {/* Reply banner — the composer's next send answers this message. */}
-      {replyTo && !selectMode && (
-        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/60 px-3 py-1.5 text-xs">
-          <Reply className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-          <span className="text-zinc-400 flex-shrink-0">Replying to</span>
-          <span className="text-zinc-300 font-medium flex-shrink-0">{displayName(replyTo)}</span>
-          <span className="text-zinc-400 truncate italic">
-            {(replyTo.content ?? "").replace(/<#file:[^>]+>/g, "").trim().slice(0, 120)}
-          </span>
-          <button
-            type="button"
-            onClick={() => setReplyTo(null)}
-            title="Cancel reply"
-            className="ml-auto text-zinc-500 hover:text-zinc-200 flex-shrink-0"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+              {/* Multi-select toolbar — replaces nothing, floats above the composer. */}
+              {selectMode && (
+                <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/80 px-3 py-2 text-xs">
+                  <span className="text-zinc-300 font-medium">
+                    {selectedIds.size} selected
+                  </span>
+                  <span className="text-zinc-400">
+                    · click messages to toggle
+                  </span>
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => void copySelected()}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedIds.size === 0}
+                    onClick={() =>
+                      setForward({
+                        content: buildForwardContent(selectedMessages),
+                        count: selectedMessages.length,
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                  >
+                    <Forward className="w-3.5 h-3.5" />
+                    Forward
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-zinc-400 hover:text-zinc-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Cancel
+                  </button>
+                </div>
+              )}
 
-      {/* Attached resource context (docs/design/RESOURCE_CONTEXT.md) */}
-      {!selectMode && (
-        <ContextPickBar
-          channelId={channel.channel_id}
-          replyTo={replyTo}
-          draftText={draftText}
-          files={channelFiles}
-          onBrowseWorkbench={browseWorkbench}
-          onBrowseWorkspace={browseWorkspace}
-          onJumpToSource={jumpToContextSource}
-        />
-      )}
+              {/* Reply banner — the composer's next send answers this message. */}
+              {replyTo && !selectMode && (
+                <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-zinc-900/60 px-3 py-1.5 text-xs">
+                  <Reply className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                  <span className="text-zinc-400 flex-shrink-0">
+                    Replying to
+                  </span>
+                  <span className="text-zinc-300 font-medium flex-shrink-0">
+                    {displayName(replyTo)}
+                  </span>
+                  <span className="text-zinc-400 truncate italic">
+                    {(replyTo.content ?? "")
+                      .replace(/<#file:[^>]+>/g, "")
+                      .trim()
+                      .slice(0, 120)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setReplyTo(null)}
+                    title="Cancel reply"
+                    className="ml-auto text-zinc-500 hover:text-zinc-200 flex-shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
-      {/* Composer */}
-      <MessageComposer
-        channelId={channel.channel_id}
-        channelName={channel.name}
-        mentionables={mentionables}
-        commands={commands}
-        toolbar={composerToolbar}
-        onMentionsChange={setMentionedBots}
-        onTextChange={setDraftText}
-        prefill={composePrefill}
-        streamingCount={streamingIds.length}
-        onStopStreaming={stopStreaming}
-        onSend={handleSend}
-      />
-      </div>
-      </div>
+              {/* Attached resource context (docs/design/RESOURCE_CONTEXT.md) */}
+              {!selectMode && (
+                <ContextPickBar
+                  channelId={channel.channel_id}
+                  replyTo={replyTo}
+                  draftText={draftText}
+                  files={channelFiles}
+                  onBrowseWorkbench={browseWorkbench}
+                  onBrowseWorkspace={browseWorkspace}
+                  onJumpToSource={jumpToContextSource}
+                />
+              )}
 
-      {/* Splitter — drag to resize the lane's width (desktop only, when open). */}
-      {anyWorkOpen && (
-        <LaneResizer onChange={setLaneWidth} onCommit={commitLaneWidth} />
-      )}
+              {/* Composer */}
+              <MessageComposer
+                channelId={channel.channel_id}
+                channelName={channel.name}
+                mentionables={mentionables}
+                commands={commands}
+                toolbar={composerToolbar}
+                onMentionsChange={setMentionedBots}
+                onTextChange={setDraftText}
+                prefill={composePrefill}
+                streamingCount={streamingIds.length}
+                onStopStreaming={stopStreaming}
+                onSend={handleSend}
+              />
+            </div>
+          </div>
 
-      {/* Work area — a dedicated lane on the right: a bounded canvas the instrument
+          {/* Splitter — drag to resize the lane's width (desktop only, when open). */}
+          {anyWorkOpen && (
+            <LaneResizer onChange={setLaneWidth} onCommit={commitLaneWidth} />
+          )}
+
+          {/* Work area — a dedicated lane on the right: a bounded canvas the instrument
           windows (ViewBoard, Workbench, Remote workspace, Channel files) float,
           drag and resize inside. `relative` + `overflow-hidden` make it the
           positioning context and clip stray windows; dragging a window overlays a
@@ -1750,103 +1915,110 @@ export function ChannelView({ channel, onBack, sidebarOpen, onToggleSidebar }: P
           the panels stay full-screen overlay sheets there (width ignored).
           LaneBoundsContext hands each window this box's live rect so
           drag/resize/snap stay inside it. */}
-      <aside
-        ref={setLaneEl}
-        style={{ width: laneWidth }}
-        className={
-          anyWorkOpen
-            ? "max-md:contents md:relative md:shrink-0 md:min-w-[20rem] md:max-w-[calc(100%-24rem)] md:min-h-0 md:overflow-hidden"
-            : "contents"
-        }
-      >
-        <LaneBoundsContext.Provider value={anyWorkOpen ? getLaneBounds : null}>
-        {anyWorkOpen && <LaneZones />}
-        {wsOpen && (
-          <Suspense fallback={null}>
-          <RemoteWorkspaceDialog
-            channelId={channel.channel_id}
-            onClose={() => setWsOpen(false)}
-            initialBotId={wsInit.botId}
-            initialPath={wsInit.path}
-            initialLine={wsInit.line}
-            // Default the browse to the composer's active session ("" = Auto → no
-            // session scope → the dialog shows the bot's full allowed roots).
-            sessionId={selectedSessionId || undefined}
-            // "workspace" board tick (an agent finished a turn; carries the emitting
-            // bot) → the dialog refetches its current dir + a clean open file, but
-            // only when the tick's bot is the one being browsed.
-            workspaceTick={workspaceTick}
-            // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
-            // dialog registers a watch while open and refetches when a signal for ITS bot
-            // arrives. See onWorkspaceSignal → workspaceSignal above.
-            workspaceSignal={workspaceSignal}
-            // Workspace presence: broadcast our own focus + render who ELSE is viewing this
-            // bot's workspace. `focus` is the parsed presence list; names resolve via the
-            // channel member map; currentUserId filters ourselves out of the chips.
-            sendPresenceFocus={sendPresenceFocus}
-            workspaceFocus={workspaceFocus}
-            currentUserId={user?.user_id}
-            memberNames={memberNames}
-          />
-          </Suspense>
-        )}
+          <aside
+            ref={setLaneEl}
+            style={{ width: laneWidth }}
+            className={
+              anyWorkOpen
+                ? "max-md:contents md:relative md:shrink-0 md:min-w-[20rem] md:max-w-[calc(100%-24rem)] md:min-h-0 md:overflow-hidden"
+                : "contents"
+            }
+          >
+            <LaneBoundsContext.Provider
+              value={anyWorkOpen ? getLaneBounds : null}
+            >
+              {anyWorkOpen && <LaneZones />}
+              {wsOpen && (
+                <Suspense fallback={null}>
+                  <RemoteWorkspaceDialog
+                    channelId={channel.channel_id}
+                    onClose={() => setWsOpen(false)}
+                    initialBotId={wsInit.botId}
+                    initialPath={wsInit.path}
+                    initialLine={wsInit.line}
+                    // Default the browse to the composer's active session ("" = Auto → no
+                    // session scope → the dialog shows the bot's full allowed roots).
+                    sessionId={selectedSessionId || undefined}
+                    // "workspace" board tick (an agent finished a turn; carries the emitting
+                    // bot) → the dialog refetches its current dir + a clean open file, but
+                    // only when the tick's bot is the one being browsed.
+                    workspaceTick={workspaceTick}
+                    // Live-watch: the bot-scoped `workspace_signal` (agent touched a file). The
+                    // dialog registers a watch while open and refetches when a signal for ITS bot
+                    // arrives. See onWorkspaceSignal → workspaceSignal above.
+                    workspaceSignal={workspaceSignal}
+                    // Workspace presence: broadcast our own focus + render who ELSE is viewing this
+                    // bot's workspace. `focus` is the parsed presence list; names resolve via the
+                    // channel member map; currentUserId filters ourselves out of the chips.
+                    sendPresenceFocus={sendPresenceFocus}
+                    workspaceFocus={workspaceFocus}
+                    currentUserId={user?.user_id}
+                    memberNames={memberNames}
+                  />
+                </Suspense>
+              )}
 
-        <ViewBoardDrawer
-          open={vbOpen}
-          onClose={closeViewBoard}
-          channelId={channel.channel_id}
-          sendResourceReq={sendResourceReq}
-          selectedSessionId={selectedSessionId}
-          boardTick={boardTick}
-          minimal={vbMinimal}
-          onToggleMinimal={toggleViewBoardMinimal}
-          onJumpToMessage={jumpToMessage}
-          focusBoard={focusBoard ?? undefined}
-        />
+              <ViewBoardDrawer
+                open={vbOpen}
+                onClose={closeViewBoard}
+                channelId={channel.channel_id}
+                sendResourceReq={sendResourceReq}
+                selectedSessionId={selectedSessionId}
+                boardTick={boardTick}
+                minimal={vbMinimal}
+                onToggleMinimal={toggleViewBoardMinimal}
+                onJumpToMessage={jumpToMessage}
+                focusBoard={focusBoard ?? undefined}
+              />
 
-        <WorkbenchDrawer
-          open={wbOpen}
-          onClose={closeWorkbench}
-          channelId={channel.channel_id}
-          sendResourceReq={sendResourceReq}
-          openFilePath={wbTarget}
-          filesTick={boardTick.files}
-          onOpenLocator={openLocator}
-          onCompose={composeMessage}
-        />
+              <WorkbenchDrawer
+                open={wbOpen}
+                onClose={closeWorkbench}
+                channelId={channel.channel_id}
+                sendResourceReq={sendResourceReq}
+                openFilePath={wbTarget}
+                filesTick={boardTick.files}
+                onOpenLocator={openLocator}
+                onCompose={composeMessage}
+              />
 
-        {/* Channel files lives in the lane too, so it floats/drags/resizes like the
+              {/* Channel files lives in the lane too, so it floats/drags/resizes like the
             other instrument panels instead of over the whole viewport. */}
-        {filesOpen && (
+              {filesOpen && (
+                <Suspense fallback={null}>
+                  <ChannelFilesDialog
+                    channelId={channel.channel_id}
+                    onClose={() => setFilesOpen(false)}
+                    focusFileId={filesFocus}
+                  />
+                </Suspense>
+              )}
+            </LaneBoundsContext.Provider>
+          </aside>
+        </div>
+        {settingsOpen && (
           <Suspense fallback={null}>
-            <ChannelFilesDialog
-              channelId={channel.channel_id}
-              onClose={() => setFilesOpen(false)}
-              focusFileId={filesFocus}
+            <ChannelSettingsDialog
+              channel={channel}
+              onClose={() => setSettingsOpen(false)}
             />
           </Suspense>
         )}
-        </LaneBoundsContext.Provider>
-      </aside>
+        {forward && (
+          <ForwardDialog
+            content={forward.content}
+            sourceChannelId={channel.channel_id}
+            messageCount={forward.count}
+            onClose={() => {
+              setForward(null);
+              clearSelection();
+            }}
+          />
+        )}
+        {refError && (
+          <ErrorDialog message={refError} onClose={() => setRefError(null)} />
+        )}
       </div>
-      {settingsOpen && (
-        <Suspense fallback={null}>
-          <ChannelSettingsDialog channel={channel} onClose={() => setSettingsOpen(false)} />
-        </Suspense>
-      )}
-      {forward && (
-        <ForwardDialog
-          content={forward.content}
-          sourceChannelId={channel.channel_id}
-          messageCount={forward.count}
-          onClose={() => {
-            setForward(null);
-            clearSelection();
-          }}
-        />
-      )}
-      {refError && <ErrorDialog message={refError} onClose={() => setRefError(null)} />}
-    </div>
     </ProfileCardProvider>
   );
 }
