@@ -151,6 +151,27 @@ export async function joinVoiceChannel(channelId: string): Promise<VoiceJoinResp
   });
 }
 
+export interface VoiceConsentResponse {
+  consented: boolean;
+  publish_token: string | null;
+  can_publish: boolean;
+}
+
+/** Accept the transcription disclosure; returns a publishable token to upgrade
+ *  from listen-only to mic publish. */
+export async function grantVoiceConsent(channelId: string): Promise<VoiceConsentResponse> {
+  return apiJson<VoiceConsentResponse>(`/channels/${channelId}/voice/consent`, {
+    method: "POST",
+  });
+}
+
+/** Withdraw transcription consent (the client must mute its mic immediately). */
+export async function withdrawVoiceConsent(channelId: string): Promise<VoiceConsentResponse> {
+  return apiJson<VoiceConsentResponse>(`/channels/${channelId}/voice/consent`, {
+    method: "DELETE",
+  });
+}
+
 export async function getVoiceState(channelId: string): Promise<VoiceStateResponse> {
   return apiJson<VoiceStateResponse>(`/channels/${channelId}/voice/state`);
 }

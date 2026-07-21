@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::{
     api::middleware::Claims as BrowserClaims, app_state::AppState, domain::channel_seq,
-    errors::AppError, gateway::realtime::frame::WireFrame,
+    domain::voice_config::VoiceConfig, errors::AppError, gateway::realtime::frame::WireFrame,
 };
 
 const JOIN_TOKEN_TTL_SECS: i64 = 10 * 60;
@@ -104,6 +104,22 @@ pub struct VoiceTranscriptionControlResponse {
     pub voice_session_id: String,
     pub transcription_status: String,
 }
+
+/// Response for a consent action (POST/DELETE …/voice/consent). When consent was
+/// just granted, `publish_token` lets the client upgrade from listen-only to
+/// mic-publishing **without** a full reconnect.
+#[derive(Debug, Serialize)]
+pub struct VoiceConsentResponse {
+    pub consented: bool,
+    /// Fresh publishable token, present only when consent was granted.
+    pub publish_token: Option<String>,
+    /// Mirror of the join response's `can_publish` after this action.
+    pub can_publish: bool,
+}
+
+/// Stable disclosure version. Bump when the consent copy/policy changes so
+/// previously-accepted consent must be re-confirmed.
+pub(crate) const CONSENT_VERSION: &str = "v1";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VoicePresenceParticipant {
@@ -293,22 +309,40 @@ pub async fn join(
         "cheers:{}:{}:{}",
         voice_session_id, claims.sub, connection_nonce
     );
+    // Consent gating: when the channel requires explicit consent, the first join
+    // completes listen-only (can_publish=false) until the participant accepts
+    // the disclosure. We record `consent_version` at first join so later
+    // policy-version bumps can force re-consent.
+    let config = VoiceConfig::load(&state.db, &channel_id).await?;
+    let existing_consent: Option<String> =
+        sqlx::query_scalar("SELECT consent_version FROM voice_participant_sessions
+                            WHERE user_id = $1 AND voice_session_id = $2")
+        .bind(&claims.sub)
+        .bind(&voice_session_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let has_consent = existing_consent.as_deref() == Some(CONSENT_VERSION);
     sqlx::query(
         "INSERT INTO voice_participant_sessions
-            (participant_session_id, voice_session_id, user_id, provider_identity, connection_nonce)
-         VALUES ($1, $2, $3, $4, $5)",
+            (participant_session_id, voice_session_id, user_id, provider_identity,
+             connection_nonce, consent_version)
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(participant_session_id)
     .bind(&voice_session_id)
     .bind(&claims.sub)
     .bind(&identity)
     .bind(connection_nonce)
+    .bind(if has_consent { Some(CONSENT_VERSION) } else { None })
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
 
-    // readonly members may listen but cannot publish a microphone track.
-    let can_publish = member.channel_role != "readonly";
+    // readonly members may listen but cannot publish a microphone track; explicit
+    // consent mode additionally gates publishing until the participant accepts.
+    let consent_blocks_publish =
+        config.consent_mode == crate::domain::voice_config::ConsentMode::Explicit && !has_consent;
+    let can_publish = member.channel_role != "readonly" && !consent_blocks_publish;
     let (token, expires_at) = mint_join_token(
         api_key,
         api_secret,
@@ -1075,6 +1109,162 @@ pub async fn transcript(
         .fetch_all(&state.db)
         .await?;
     Ok(Json(rows.into_iter().map(transcript_dto).collect()))
+}
+
+/// POST /api/v1/channels/:channel_id/voice/consent — accept the transcription
+/// disclosure for this channel. Records the consent version and returns a
+/// publishable token so the client can upgrade from listen-only to mic publish
+/// **without a full reconnect** (LiveKit `room.disconnect(true)` + re-connect
+/// with the new token, or releasing the held mic track).
+pub async fn grant_consent(
+    State(state): State<AppState>,
+    Extension(claims): Extension<BrowserClaims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<VoiceConsentResponse>, AppError> {
+    let member = voice_member(&state, &channel_id, &claims.sub).await?;
+    if member.channel_kind != "voice" {
+        return Err(AppError::BadRequest(
+            "channel is not a voice channel".into(),
+        ));
+    }
+    let Some((_url, api_key, api_secret)) = state.config.livekit() else {
+        return Err(AppError::ServiceUnavailable(
+            "real-time voice is not configured".into(),
+        ));
+    };
+    let provider_room_id = room_name(&channel_id);
+
+    // Resolve the live session (must be joined already).
+    let row = sqlx::query(
+        "SELECT voice_session_id FROM voice_sessions
+         WHERE channel_id = $1 AND ended_at IS NULL
+         ORDER BY started_at DESC LIMIT 1",
+    )
+    .bind(&channel_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Conflict("join the voice channel first".into()))?;
+    let voice_session_id: String = row.try_get("voice_session_id")?;
+
+    // Record consent (idempotent) for every participant-session this user has in
+    // the session (normally one).
+    sqlx::query(
+        "UPDATE voice_participant_sessions
+         SET consent_version = $1
+         WHERE user_id = $2 AND voice_session_id = $3 AND consent_version IS DISTINCT FROM $1",
+    )
+    .bind(CONSENT_VERSION)
+    .bind(&claims.sub)
+    .bind(&voice_session_id)
+    .execute(&state.db)
+    .await?;
+
+    // Re-mint a publishable token against the same identity the client already
+    // holds — same `provider_identity` so it maps to the existing participant.
+    let identity_row: Option<String> = sqlx::query_scalar(
+        "SELECT provider_identity FROM voice_participant_sessions
+         WHERE user_id = $1 AND voice_session_id = $2 LIMIT 1",
+    )
+    .bind(&claims.sub)
+    .bind(&voice_session_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(identity) = identity_row else {
+        return Err(AppError::Conflict("participant session not found".into()));
+    };
+    let can_publish = member.channel_role != "readonly";
+    let (token, _) = mint_join_token(
+        api_key,
+        api_secret,
+        &identity,
+        &member.display_name,
+        &provider_room_id,
+        &claims.sub,
+        can_publish,
+        Utc::now().timestamp(),
+    )?;
+
+    // Notify the room so other participants see the consent state refresh.
+    state
+        .fanout
+        .broadcast_channel(
+            Uuid::parse_str(&channel_id)
+                .map_err(|_| AppError::BadRequest("invalid channel id".into()))?,
+            WireFrame::channel(
+                Uuid::parse_str(&channel_id).unwrap(),
+                "voice_consent_updated",
+                json!({
+                    "voice_session_id": voice_session_id,
+                    "user_id": claims.sub,
+                    "consented": true,
+                }),
+            ),
+        )
+        .await;
+
+    Ok(Json(VoiceConsentResponse {
+        consented: true,
+        publish_token: Some(token),
+        can_publish,
+    }))
+}
+
+/// DELETE /api/v1/channels/:channel_id/voice/consent — withdraw consent. The
+/// client must mute/unpublish its mic immediately on success. We clear the
+/// recorded version so the next join re-surfaces the disclosure.
+pub async fn withdraw_consent(
+    State(state): State<AppState>,
+    Extension(claims): Extension<BrowserClaims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<VoiceConsentResponse>, AppError> {
+    let member = voice_member(&state, &channel_id, &claims.sub).await?;
+    if member.channel_kind != "voice" {
+        return Err(AppError::BadRequest(
+            "channel is not a voice channel".into(),
+        ));
+    }
+    let row = sqlx::query(
+        "SELECT voice_session_id FROM voice_sessions
+         WHERE channel_id = $1 AND ended_at IS NULL
+         ORDER BY started_at DESC LIMIT 1",
+    )
+    .bind(&channel_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::Conflict("no active voice session".into()))?;
+    let voice_session_id: String = row.try_get("voice_session_id")?;
+    sqlx::query(
+        "UPDATE voice_participant_sessions
+         SET consent_version = NULL
+         WHERE user_id = $1 AND voice_session_id = $2",
+    )
+    .bind(&claims.sub)
+    .bind(&voice_session_id)
+    .execute(&state.db)
+    .await?;
+
+    state
+        .fanout
+        .broadcast_channel(
+            Uuid::parse_str(&channel_id)
+                .map_err(|_| AppError::BadRequest("invalid channel id".into()))?,
+            WireFrame::channel(
+                Uuid::parse_str(&channel_id).unwrap(),
+                "voice_consent_updated",
+                json!({
+                    "voice_session_id": voice_session_id,
+                    "user_id": claims.sub,
+                    "consented": false,
+                }),
+            ),
+        )
+        .await;
+
+    Ok(Json(VoiceConsentResponse {
+        consented: false,
+        publish_token: None,
+        can_publish: false,
+    }))
 }
 
 fn verify_webhook(

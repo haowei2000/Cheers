@@ -290,6 +290,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::voice::stop_transcription),
         )
         .route(
+            "/api/v1/channels/:channel_id/voice/consent",
+            post(api::voice::grant_consent),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/voice/consent",
+            delete(api::voice::withdraw_consent),
+        )
+        .route(
             "/api/v1/channels/:channel_id/messages/:msg_id/cancel",
             post(api::messages::cancel_message),
         )
