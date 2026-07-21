@@ -27,5 +27,6 @@ pub mod usage_store;
 pub mod workbench_official;
 pub mod workbench_official_templates;
 pub mod workbench_plugins;
+pub mod voice_config;
 pub mod workbench_templates;
 pub mod workspaces;

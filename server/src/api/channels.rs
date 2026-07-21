@@ -42,6 +42,16 @@ pub struct ChannelDto {
     /// `false` so the client renders a join prompt instead of the composer.
     /// Queries that only ever return the caller's own channels leave it `true`.
     pub is_member: bool,
+    /// The caller's role in this channel (`owner`/`admin`/`member`/`bot`), or
+    /// null when the caller isn't a direct channel member (e.g. a workspace
+    /// member viewing a public channel they haven't joined). Drives
+    /// member/permission surfaces. `system_admin` is surfaced as "owner".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub my_role: Option<String>,
+    /// True when the caller may administer this channel (owner, admin, or
+    /// system_admin). Gates transcription/moderation/retention controls.
+    #[serde(default)]
+    pub can_manage: bool,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +127,10 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         // Only the workspace-scoped listing computes this; the other queries are
         // membership-gated (or membership-joined) already, so absent → true.
         is_member: row.try_get("is_member").unwrap_or(true),
+        // Only the workspace-scoped listing computes these; other queries leave
+        // them absent → None / false (no role gating needed for create/get/update).
+        my_role: row.try_get("my_role").ok(),
+        can_manage: row.try_get("can_manage").unwrap_or(false),
     }
 }
 
@@ -257,6 +271,8 @@ pub async fn list_channels(
         "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.type, c.kind, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
                 (cm.member_id IS NOT NULL) AS is_member,
+                cm.role AS my_role,
+                (cm.role IN ('owner', 'admin') OR $3::boolean) AS can_manage,
                 counts.unread_count,
                 counts.mention_count
          FROM channels c
@@ -297,6 +313,7 @@ pub async fn list_channels(
     )
     .bind(&claims.sub)
     .bind(&q.workspace_id)
+    .bind(claims.role == "system_admin" || claims.role == "admin")
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows.into_iter().map(dto).collect()))
@@ -576,11 +593,21 @@ pub async fn get_channel(
     if !is_channel_member(&state, &channel_id, &claims.sub, &claims.role).await? {
         return Err(AppError::Forbidden("not a channel member".into()));
     }
-    let row = sqlx::query("SELECT channel_id, workspace_id, name, type, kind, purpose, auto_assist, allow_member_invites, allow_bot_adds FROM channels WHERE channel_id = $1")
-        .bind(&channel_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let row = sqlx::query(
+        "SELECT c.channel_id, c.workspace_id, c.name, c.type, c.kind, c.purpose,
+                c.auto_assist, c.allow_member_invites, c.allow_bot_adds,
+                cm.role AS my_role,
+                (cm.role IN ('owner', 'admin') OR $2::boolean) AS can_manage
+         FROM channels c
+         LEFT JOIN channel_memberships cm ON cm.channel_id = c.channel_id AND cm.member_id = $1
+         WHERE c.channel_id = $3",
+    )
+    .bind(&claims.sub)
+    .bind(claims.role == "system_admin" || claims.role == "admin")
+    .bind(&channel_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
     Ok(Json(dto(row)))
 }
 
