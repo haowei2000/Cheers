@@ -131,6 +131,8 @@ export interface VoiceJoinResponse {
 export interface VoiceStateResponse {
   enabled: boolean;
   channel_kind: string;
+  /** Server-authoritative owner/admin permission for caption controls. */
+  can_manage: boolean;
   session: {
     voice_session_id: string;
     status: string;
@@ -142,6 +144,32 @@ export interface VoiceStateResponse {
 export interface VoiceTranscriptionControlResponse {
   voice_session_id: string;
   transcription_status: "off" | "starting" | "active" | "failed";
+}
+
+export interface DictationCapabilityResponse {
+  adapter_configured: boolean;
+  adapter_kind?: "stepfun" | "openai";
+}
+
+export interface DictationTranscriptResponse {
+  transcript: string;
+}
+
+export function getDictationCapability(channelId: string): Promise<DictationCapabilityResponse> {
+  return apiJson<DictationCapabilityResponse>(
+    `/channels/${channelId}/voice/dictation-capability`,
+  );
+}
+
+export function transcribeDictation(
+  channelId: string,
+  audio: Blob,
+): Promise<DictationTranscriptResponse> {
+  return apiJson<DictationTranscriptResponse>(`/channels/${channelId}/voice/dictation`, {
+    method: "POST",
+    headers: { "Content-Type": audio.type || "audio/webm" },
+    body: audio,
+  });
 }
 
 /** Authorize this member and mint a short-lived, room-scoped LiveKit token. */
