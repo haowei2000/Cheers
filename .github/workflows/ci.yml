@@ -175,6 +175,13 @@ jobs:
       - name: Type-check & build
         run: npm run build
 
+      # The production image uses the repository root as its context so it can
+      # include the authoritative policy pages from website/. A plain Vite build
+      # cannot catch stale COPY paths between Docker stages.
+      - name: Build production image
+        working-directory: .
+        run: docker build --file frontend/Dockerfile --tag cheers-frontend:ci .
+
   # ─────────────────────────────────────────────
   # Agent packages: Rust connector/MCP binaries
   # ─────────────────────────────────────────────
