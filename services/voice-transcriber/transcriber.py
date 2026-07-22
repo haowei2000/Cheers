@@ -328,9 +328,12 @@ async def transcriber(ctx: agents.JobContext) -> None:
             "room_name": ctx.room.name,
         }
 
-        tasks: set[asyncio.Task[None]] = set()
-
+        # A JobContext owns an unconnected Room at entry. Accessing its local
+        # participant before `connect` raises and drops the whole dispatch, so
+        # establish the LiveKit session before wiring the outgoing caption path.
+        await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         local_participant = ctx.room.local_participant
+        tasks: set[asyncio.Task[None]] = set()
 
         @ctx.room.on("track_subscribed")
         def on_track_subscribed(
@@ -346,7 +349,6 @@ async def transcriber(ctx: agents.JobContext) -> None:
             tasks.add(task)
             task.add_done_callback(tasks.discard)
 
-        await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         try:
             await asyncio.Future()
         finally:
