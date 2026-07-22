@@ -173,6 +173,15 @@ pub struct Config {
     pub livekit_api_secret: Option<String>,
     /// Independent bearer secret accepted only from the transcription worker.
     pub voice_transcriber_token: Option<String>,
+    /// Optional server-side speech adapter used by Composer dictation. This
+    /// deliberately shares the voice-transcriber environment names so one
+    /// StepFun configuration can serve both surfaces without exposing its key
+    /// to browsers.
+    pub voice_stt_provider: Option<String>,
+    pub voice_stt_api_key: Option<String>,
+    pub voice_stt_base_url: Option<String>,
+    pub voice_stt_model: Option<String>,
+    pub voice_stt_language: Option<String>,
     /// Kill-switch for proactive task claiming (design §11). When false the
     /// scheduler is not spawned and monitoring writes are accepted but never
     /// evaluated — ship-safe default for a first release behind a flag.
@@ -331,6 +340,21 @@ impl Config {
             voice_transcriber_token: env::var("VOICE_TRANSCRIBER_TOKEN")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
+            voice_stt_provider: env::var("VOICE_STT_PROVIDER")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            voice_stt_api_key: env::var("VOICE_STT_API_KEY")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            voice_stt_base_url: env::var("VOICE_STT_BASE_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            voice_stt_model: env::var("VOICE_STT_MODEL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            voice_stt_language: env::var("VOICE_STT_LANGUAGE")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
             task_claims_enabled: env::var("TASK_CLAIMS_ENABLED")
                 .ok()
                 .map(|v| v.trim().eq_ignore_ascii_case("true"))
@@ -346,6 +370,29 @@ impl Config {
             self.livekit_url.as_deref()?,
             self.livekit_api_key.as_deref()?,
             self.livekit_api_secret.as_deref()?,
+        ))
+    }
+
+    /// StepFun's ASR API accepts PCM-over-JSON/SSE rather than the generic
+    /// OpenAI multipart contract used by file transcription.
+    pub fn stepfun_dictation(&self) -> Option<(&str, &str, &str, Option<&str>)> {
+        if !self
+            .voice_stt_provider
+            .as_deref()?
+            .trim()
+            .eq_ignore_ascii_case("stepfun")
+        {
+            return None;
+        }
+        Some((
+            self.voice_stt_api_key.as_deref()?,
+            self.voice_stt_base_url
+                .as_deref()
+                .unwrap_or("https://api.stepfun.com/v1/audio/asr/sse"),
+            self.voice_stt_model
+                .as_deref()
+                .unwrap_or("stepaudio-2.5-asr"),
+            self.voice_stt_language.as_deref(),
         ))
     }
 
