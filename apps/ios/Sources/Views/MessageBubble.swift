@@ -10,7 +10,7 @@ struct DaySeparatorView: View {
         // Borderless pill (content-first, less chrome); textSecondary clears AA
         // in both appearances where zinc-500 is borderline in light mode.
         Text(label)
-            .font(.system(size: 12, weight: .medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -28,7 +28,7 @@ struct SystemMessageView: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(.caption)
             .foregroundStyle(Theme.textMuted)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
@@ -53,6 +53,9 @@ struct MessageBubbleView: View {
     let showSenderName: Bool
     let showAvatar: Bool
     let isLastInGroup: Bool
+    /// Preformatted when the channel's presentation model changes, not while
+    /// the bubble is being laid out during scrolling.
+    var formattedTime: String = ""
     /// The message this one replies to (resolved by the caller), rendered as a
     /// compact quote block above the content — mirrors the web's ReplyQuote.
     var repliedTo: MessageDto? = nil
@@ -97,7 +100,7 @@ struct MessageBubbleView: View {
                 HStack(spacing: 5) {
                     // Hierarchy via weight, not color (HIG): neutral semibold name.
                     Text(message.senderName ?? (message.isBot ? "Bot" : "Unknown"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.textPrimary)
                     if message.isBot {
                         Text("BOT")
@@ -114,6 +117,14 @@ struct MessageBubbleView: View {
             if isTyping {
                 TypingDotsView()
                     .padding(.vertical, 4)
+            } else if message.isPartial == true {
+                // Streaming deltas can arrive many times per second. Keep
+                // them intentionally plain until message_done supplies the
+                // stable final content for Markdown rendering.
+                Text(message.content)
+                    .font(.body)
+                    .foregroundStyle(Theme.bubbleOtherText)
+                    .lineSpacing(3)
             } else {
                 MessageContentView(content: message.content, mentions: message.mentions ?? [], isOwn: isOwn)
             }
@@ -138,7 +149,6 @@ struct MessageBubbleView: View {
         .padding(.vertical, 8)
         .background(Theme.bubbleOther)
         .clipShape(bubbleShape)
-        .shadow(color: .black.opacity(0.05), radius: 1.5, y: 0.5)
         .contextMenu {
             // Web bubble actions (MessageItem.tsx): Reply · Copy text · Forward.
             if let onReply {
@@ -167,9 +177,9 @@ struct MessageBubbleView: View {
                 .frame(width: 2.5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(quoted.senderName ?? (quoted.isBot ? "Bot" : "Message"))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                 Text(quoted.content.replacingOccurrences(of: "\n", with: " "))
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .lineLimit(1)
             }
             .foregroundStyle(Theme.textSecondary)
@@ -189,8 +199,8 @@ struct MessageBubbleView: View {
                     .fill(Theme.textSecondary)
                     .frame(width: 5, height: 5)
             }
-            Text(TimeFormat.time(message.createdDate))
-                .font(.system(size: 11).monospacedDigit())
+            Text(formattedTime)
+                .font(.caption2.monospacedDigit())
                 .foregroundStyle(Theme.textSecondary)
         }
         .padding(.bottom, 1)
@@ -227,6 +237,7 @@ struct MessageBubbleView: View {
 
 struct TypingDotsView: View {
     @State private var phase = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 4) {
@@ -236,14 +247,14 @@ struct TypingDotsView: View {
                     .frame(width: 6, height: 6)
                     .offset(y: phase ? -3 : 1)
                     .animation(
-                        .easeInOut(duration: 0.45)
+                        reduceMotion ? nil : .easeInOut(duration: 0.45)
                             .repeatForever(autoreverses: true)
                             .delay(Double(index) * 0.15),
                         value: phase
                     )
             }
         }
-        .onAppear { phase = true }
+        .onAppear { phase = !reduceMotion }
         .accessibilityLabel("Typing")
     }
 }
@@ -288,12 +299,11 @@ struct MessageContentView: View {
     let isOwn: Bool
 
     private enum Segment: Identifiable {
-        case text(String)
-        case code(String)
+        case text(AttributedString, key: String)
+        case code(String, key: String)
         var id: String {
             switch self {
-            case .text(let t): return "t:\(t.hashValue)"
-            case .code(let c): return "c:\(c.hashValue)"
+            case .text(_, let key), .code(_, let key): return key
             }
         }
     }
@@ -302,20 +312,17 @@ struct MessageContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(segments) { segment in
                 switch segment {
-                case .text(let text):
-                    Text(highlightMentions(in: Self.markdown(text)))
-                        .font(.system(size: 16))
+                case .text(let attributed, _):
+                    Text(attributed)
+                        .font(.body)
                         .foregroundStyle(Theme.bubbleOtherText)
                         .lineSpacing(3)
                         .tint(Theme.link)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                case .code(let code):
+                case .code(let code, _):
                     ScrollView(.horizontal, showsIndicators: false) {
                         Text(code)
                             .font(.system(size: 13, design: .monospaced))
                             .foregroundStyle(Theme.textBody)
-                            .textSelection(.enabled)
                             .padding(10)
                     }
                     .background(Theme.bgApp)
@@ -325,14 +332,46 @@ struct MessageContentView: View {
         }
     }
 
+    /// Parsed rich text is immutable for a message. Caching it prevents a
+    /// Markdown parser run every time LazyVStack re-evaluates a visible row.
+    private static let renderedCache = NSCache<NSString, RenderedContent>()
+
+    private final class RenderedContent {
+        let segments: [Segment]
+
+        init(segments: [Segment]) {
+            self.segments = segments
+        }
+    }
+
     private var segments: [Segment] {
+        Self.segments(for: content, mentions: mentions)
+    }
+
+    /// Safe to call from a detached task before a locally-sent message is
+    /// inserted into the timeline. NSCache is thread-safe.
+    static func prewarm(content: String) {
+        _ = segments(for: content, mentions: [])
+    }
+
+    private static func segments(for content: String, mentions: [MessageMention]) -> [Segment] {
+        let mentionKey = mentions.flatMap { [$0.username, $0.displayName] }
+            .compactMap { $0 }
+            .joined(separator: "\u{001F}")
+        let key = (content + "\u{001E}" + mentionKey) as NSString
+        if let cached = renderedCache.object(forKey: key) {
+            return cached.segments
+        }
         // Split on ``` fences. Even indices are text, odd are code.
         let parts = content.components(separatedBy: "```")
         var result: [Segment] = []
         for (index, raw) in parts.enumerated() {
             if index % 2 == 0 {
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { result.append(.text(trimmed)) }
+                if !trimmed.isEmpty {
+                    let attributed = highlightedMentions(in: Self.markdown(trimmed), mentions: mentions)
+                    result.append(.text(attributed, key: "text-\(index)-\(trimmed.hashValue)"))
+                }
             } else {
                 // Drop an optional language hint on the first line.
                 var body = raw
@@ -343,10 +382,15 @@ struct MessageContentView: View {
                     }
                 }
                 let trimmed = body.trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
-                result.append(.code(trimmed.isEmpty ? raw : trimmed))
+                let code = trimmed.isEmpty ? raw : trimmed
+                result.append(.code(code, key: "code-\(index)-\(code.hashValue)"))
             }
         }
-        return result.isEmpty ? [.text(content)] : result
+        let rendered = result.isEmpty
+            ? [.text(highlightedMentions(in: Self.markdown(content), mentions: mentions), key: "text-0-\(content.hashValue)")]
+            : result
+        renderedCache.setObject(RenderedContent(segments: rendered), forKey: key)
+        return rendered
     }
 
     static func markdown(_ string: String) -> AttributedString {
@@ -360,7 +404,10 @@ struct MessageContentView: View {
 
     /// Highlight `@username` / `@display_name` spans that correspond to real
     /// mentions on the message (rose for received, white-bold on own bubbles).
-    private func highlightMentions(in attributed: AttributedString) -> AttributedString {
+    private static func highlightedMentions(
+        in attributed: AttributedString,
+        mentions: [MessageMention]
+    ) -> AttributedString {
         guard !mentions.isEmpty else { return attributed }
         var result = attributed
         // Accent (not rose — rose is the unread-mention badge), keeping the chat

@@ -1,7 +1,8 @@
 # Cheers iOS
 
 Native SwiftUI client for the Cheers Rust gateway. Chat-first, Telegram-style:
-conversation list → chat with bubbles → settings. No third-party dependencies.
+conversation list → chat with bubbles → settings. LiveKit supplies realtime
+voice media; the rest of the client uses Apple platform frameworks.
 
 - **Deployment target:** iOS 17.0+
 - **Architecture:** MVVM with `@Observable` models, async/await `URLSession`
@@ -18,6 +19,26 @@ conversation list → chat with bubbles → settings. No third-party dependencie
   web palette (zinc + indigo); light is the derived mapping from the design
   language map (§1.4). Avatar colors reuse the exact web hash
   (`frontend/src/lib/format.ts`) so identities match across platforms.
+- **Local cache:** SwiftData is accessed only through a `@ModelActor`. Container
+  opening, message JSON encoding, SQLite writes, and trimming never run on the
+  main actor.
+
+## Performance invariants
+
+These are architectural contracts, not optional micro-optimizations:
+
+- Text-field draft/focus/dictation state belongs to `ComposerView`. Do not bind
+  keystrokes to `ChatModel` or another ancestor that owns the timeline.
+- The active transcript is bounded to 200 messages. Older/newer pages are
+  replaced through gateway pagination instead of accumulating indefinitely.
+- Streaming bot output stays plain text until `message_done`; Markdown parsing
+  is cached and runs only for finalized content.
+- Message presentation values (day labels, timestamps, grouping, reply lookup)
+  are rebuilt only when the message collection changes, never from a row body.
+- SwiftData access goes through `MessageStoreWorker`; never use
+  `ModelContainer.mainContext` for chat persistence.
+- User-driven animations must respect Reduce Motion. Interactive controls use
+  native `Button`/`TextField` semantics and at least 44×44 pt hit regions.
 
 ## Layout
 
@@ -101,8 +122,8 @@ should use HTTPS.
 
 ## Not yet implemented
 
-File **upload** (download/preview works) and a mention **picker** (mention
-highlighting works). Since the last update the app gained: actionable approval
+File **upload** is not implemented yet (download/preview works). Since the last
+update the app gained a mention picker, actionable approval
 cards, workspace switching, channel management (settings, member roles, direct
 + link invites), and the five-board ViewBoard (Plan/Cost/Sessions/Audit/Activity
 — four boards ride the gateway's WS `resource_req` verbs). See the repo roadmap.

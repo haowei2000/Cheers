@@ -2,6 +2,35 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
+import { copyFileSync, mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WEBSITE_DIR = path.resolve(FRONTEND_DIR, "../website");
+const PUBLIC_POLICY_PAGES = [
+  "privacy.html",
+  "privacy.zh-CN.html",
+  "support.html",
+  "support.zh-CN.html",
+  "remote-operations.html",
+  "remote-operations.zh-CN.html",
+] as const;
+
+/** Keep website/ authoritative while shipping the App Store public URLs from
+ * the same Nginx origin as the app. This runs for local and Docker builds. */
+function publicPolicyPages() {
+  return {
+    name: "cheers-public-policy-pages",
+    apply: "build" as const,
+    closeBundle() {
+      const outputDir = path.resolve(FRONTEND_DIR, "dist");
+      mkdirSync(outputDir, { recursive: true });
+      for (const page of PUBLIC_POLICY_PAGES) {
+        copyFileSync(path.join(WEBSITE_DIR, page), path.join(outputDir, page));
+      }
+    },
+  };
+}
 
 const API_PROXY_TARGET =
   process.env.VITE_API_PROXY_TARGET || "http://localhost:8000";
@@ -15,6 +44,7 @@ const WS_PROXY_TARGET =
 export default defineConfig({
   plugins: [
     react(),
+    publicPolicyPages(),
     // PWA: installable app + Web Push. injectManifest (not generateSW) because
     // the service worker is hand-written (src/sw.ts) — push/notificationclick
     // handlers need app-specific logic, not just caching. The SW precaches the

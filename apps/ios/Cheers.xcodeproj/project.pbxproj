@@ -20,6 +20,7 @@
 		CE0000000000000000000224 /* MessageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000125 /* MessageStore.swift */; };
 		CE000000000000000000020A /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010A /* AvatarView.swift */; };
 		CE000000000000000000020B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010B /* LoginView.swift */; };
+		CE0000000000000000000420 /* RegisterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000421 /* RegisterView.swift */; };
 		CE000000000000000000020C /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010C /* ConversationListView.swift */; };
 		CE000000000000000000020D /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010D /* ChatView.swift */; };
 		CE000000000000000000020E /* MessageBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000010E /* MessageBubble.swift */; };
@@ -66,6 +67,7 @@
 		CE0000000000000000000125 /* MessageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageStore.swift; sourceTree = "<group>"; };
 		CE000000000000000000010A /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
 		CE000000000000000000010B /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000421 /* RegisterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisterView.swift; sourceTree = "<group>"; };
 		CE000000000000000000010C /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
 		CE000000000000000000010D /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		CE000000000000000000010E /* MessageBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubble.swift; sourceTree = "<group>"; };
@@ -194,6 +196,7 @@
 			children = (
 				CE000000000000000000010A /* AvatarView.swift */,
 				CE000000000000000000010B /* LoginView.swift */,
+				CE0000000000000000000421 /* RegisterView.swift */,
 				CE000000000000000000010C /* ConversationListView.swift */,
 				CE000000000000000000010D /* ChatView.swift */,
 				CE000000000000000000010E /* MessageBubble.swift */,
@@ -308,6 +311,7 @@
 				CE0000000000000000000224 /* MessageStore.swift in Sources */,
 				CE000000000000000000020A /* AvatarView.swift in Sources */,
 				CE000000000000000000020B /* LoginView.swift in Sources */,
+				CE0000000000000000000420 /* RegisterView.swift in Sources */,
 				CE000000000000000000020C /* ConversationListView.swift in Sources */,
 				CE000000000000000000020D /* ChatView.swift in Sources */,
 				CE000000000000000000020E /* MessageBubble.swift in Sources */,

@@ -12,6 +12,7 @@ final class VoiceRoomModel {
     private(set) var isConnected = false
     private(set) var micEnabled = false
     private(set) var canPublish = false
+    private(set) var canManageTranscription = false
     private(set) var participantNames: [String] = []
     private(set) var transcripts: [VoiceTranscriptSegment] = []
     private(set) var transcriptionStatus = "off"
@@ -41,7 +42,9 @@ final class VoiceRoomModel {
         do {
             async let state = api.voiceState(channelId: channelId)
             async let rows = api.voiceTranscript(channelId: channelId)
-            transcriptionStatus = try await state.session?.transcriptionStatus ?? "off"
+            let resolvedState = try await state
+            transcriptionStatus = resolvedState.session?.transcriptionStatus ?? "off"
+            canManageTranscription = resolvedState.canManage
             transcripts = try await rows
         } catch {
             // Voice can be deliberately unavailable; joining shows the useful error.
@@ -79,6 +82,7 @@ final class VoiceRoomModel {
         isConnected = false
         micEnabled = false
         canPublish = false
+        canManageTranscription = false
         participantNames = []
     }
 

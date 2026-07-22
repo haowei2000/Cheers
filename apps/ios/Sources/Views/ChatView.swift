@@ -1,5 +1,11 @@
 import SwiftUI
 import UIKit
+import os
+
+private let timelinePerformanceSignposter = OSSignposter(
+    subsystem: "app.cheers.ios",
+    category: "TimelinePerformance"
+)
 
 /// Channel header surfaces, mirroring the web channel header. Every ⋯-menu item
 /// opens a bottom SHEET (modal "peek" surfaces) — pushed pages are reserved for
@@ -34,9 +40,37 @@ enum ChannelPanel: String, Identifiable {
     }
 }
 
+/// Immutable presentation records consumed by the UIKit timeline. Identity is
+/// stable by message id; equality includes the rendered content so the
+/// diffable data source reconfigures only rows that actually changed.
+private enum ChatTimelineItem: Identifiable, Hashable {
+    case loadOlder(isLoading: Bool)
+    case day(label: String, key: String)
+    case system(MessageDto)
+    case bubble(
+        MessageDto,
+        isOwn: Bool,
+        showName: Bool,
+        showAvatar: Bool,
+        isLast: Bool,
+        formattedTime: String,
+        repliedTo: MessageDto?
+    )
+
+    var id: String {
+        switch self {
+        case .loadOlder: return "load-older"
+        case .day(_, let key): return "day-\(key)"
+        case .system(let message): return "sys-\(message.msgId)"
+        case .bubble(let message, _, _, _, _, _, _): return message.msgId
+        }
+    }
+}
+
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(ShellModel.self) private var shell
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: ChatModel
     @State private var panel: ChannelPanel?
     @State private var forwardMessage: MessageDto?
@@ -46,8 +80,13 @@ struct ChatView: View {
     @State private var voice: VoiceRoomModel
     @State private var reportTarget: MessageDto?
     @State private var blockTarget: MessageDto?
+    /// Grouping the timeline involves date parsing and neighbour comparisons.
+    /// Cache that presentation model and rebuild it only when messages (or the
+    /// identity used for "own" bubbles) actually change.
+    @State private var messageItems: [ChatTimelineItem] = []
     /// Whether the message list is parked at the bottom (drives auto-follow).
     @State private var atBottom = true
+    @State private var manualBottomTick = 0
     private let listModel: ConversationListModel?
 
     /// `model` comes from AppModel.chatModels so history survives channel
@@ -64,7 +103,7 @@ struct ChatView: View {
             if model.channel.isVoice {
                 VoiceMeetingStrip(
                     voice: voice,
-                    canManageTranscription: app.session?.role == "admin" || app.session?.role == "system_admin"
+                    canManageTranscription: voice.canManageTranscription
                 )
             }
             messageScroll
@@ -75,10 +114,13 @@ struct ChatView: View {
                 errorBanner(error)
             }
             ComposerView(
-                text: $model.composerText,
+                initialText: model.composerText,
+                clearTick: model.composerClearTick,
                 placeholder: composerPlaceholder,
                 isSending: model.isSending,
-                onSend: { Task { await self.model.send() } },
+                onSend: { draft in await model.send(draft: draft) },
+                channelId: model.channel.channelId,
+                api: app.api,
                 onChooseSession: { showSessionSheet = true },
                 onModelSettings: { showModelSheet = true },
                 mentionPool: model.mentionPool,
@@ -95,7 +137,7 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 CircleIconButton(systemName: "line.3.horizontal", badge: shell.pendingApprovals) {
-                    withAnimation(.easeOut(duration: 0.25)) { shell.openDrawer() }
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { shell.openDrawer() }
                 }
             }
             ToolbarItem(placement: .principal) {
@@ -115,6 +157,9 @@ struct ChatView: View {
             listModel?.markRead(channelId: model.channel.channelId)
             await model.loadInitial()
         }
+        .onChange(of: model.messages) { rebuildMessageItems() }
+        .onChange(of: app.session?.userId) { rebuildMessageItems() }
+        .onAppear { rebuildMessageItems() }
         .onDisappear {
             if listModel?.openChannelId == model.channel.channelId {
                 listModel?.openChannelId = nil
@@ -284,61 +329,41 @@ struct ChatView: View {
     // MARK: Message list
 
     private var messageScroll: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if model.hasMoreBefore {
-                        loadOlderSentinel
-                    }
-                    ForEach(items) { item in
-                        itemView(item)
-                    }
-                    // Bottom anchor doubles as the "is the reader parked at the
-                    // bottom?" probe: it's tall enough to give the follow rule a
-                    // tolerance band, so a few points of drift still counts as bottom.
-                    Color.clear
-                        .frame(height: 24)
-                        .id("bottom")
-                        .onAppear { atBottom = true }
-                        .onDisappear { atBottom = false }
-                }
-                .padding(.vertical, 8)
+        ChatCollectionTimeline(
+            items: (model.hasMoreBefore ? [.loadOlder(isLoading: model.isLoadingOlder)] : []) + messageItems,
+            app: app,
+            channelId: model.channel.channelId,
+            hasMoreBefore: model.hasMoreBefore,
+            isLoadingOlder: model.isLoadingOlder,
+            followBottomTick: model.followBottomTick,
+            forceBottomTick: model.forceBottomTick + manualBottomTick,
+            atBottom: $atBottom,
+            onLoadOlder: { Task { await model.loadOlder() } },
+            onReply: { model.replyTo = $0 },
+            onForward: { forwardMessage = $0 },
+            onFile: { previewFile = $0 },
+            onReport: { reportTarget = $0 },
+            onBlock: { blockTarget = $0 }
+        )
+        .overlay(alignment: .bottomTrailing) {
+            if !atBottom || model.hasTrimmedNewer {
+                jumpToLatestButton
             }
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
-            // Incoming messages and streaming deltas FOLLOW only while the reader
-            // is already at the bottom — otherwise every token would yank them
-            // back and reading history would be impossible.
-            .onChange(of: model.followBottomTick) {
-                guard atBottom else { return }
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
-            }
-            // The reader's own actions (send, open channel) always win.
-            .onChange(of: model.forceBottomTick) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if !atBottom {
-                    jumpToLatestButton(proxy)
-                }
-            }
-            .overlay {
-                if model.isLoading && model.messages.isEmpty {
-                    ProgressView()
-                }
+        }
+        .overlay {
+            if model.isLoading && model.messages.isEmpty {
+                ProgressView()
             }
         }
     }
 
     /// Escape hatch once auto-follow is suppressed: one tap back to live.
-    private func jumpToLatestButton(_ proxy: ScrollViewProxy) -> some View {
+    private var jumpToLatestButton: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.25)) {
-                proxy.scrollTo("bottom", anchor: .bottom)
+            if model.hasTrimmedNewer {
+                Task { await model.loadLatest() }
+            } else {
+                manualBottomTick += 1
             }
         } label: {
             Image(systemName: "arrow.down")
@@ -348,29 +373,10 @@ struct ChatView: View {
                 .background(Theme.bgRaised, in: Circle())
                 .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
         }
+        .accessibilityLabel(model.hasTrimmedNewer ? "Return to latest messages" : "Jump to latest messages")
         .padding(.trailing, 14)
         .padding(.bottom, 10)
         .transition(.opacity)
-    }
-
-    private var loadOlderSentinel: some View {
-        HStack {
-            if model.isLoadingOlder {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Button("Load earlier messages") {
-                    Task { await model.loadOlder() }
-                }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.link)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .onAppear {
-            Task { await model.loadOlder() }
-        }
     }
 
     private func errorBanner(_ text: String) -> some View {
@@ -395,31 +401,27 @@ struct ChatView: View {
 
     // MARK: Item building
 
-    private enum ChatItem: Identifiable {
-        case day(label: String, key: String)
-        case system(MessageDto)
-        case bubble(MessageDto, isOwn: Bool, showName: Bool, showAvatar: Bool, isLast: Bool)
-
-        var id: String {
-            switch self {
-            case .day(_, let key): return "day-\(key)"
-            case .system(let msg): return "sys-\(msg.msgId)"
-            case .bubble(let msg, _, _, _, _): return msg.msgId
-            }
-        }
-    }
-
     private static let systemTypes: Set<String> = ["routing", "announcement", "notification", "permission"]
 
-    private var items: [ChatItem] {
-        let currentUserId = app.session?.userId
+    private func rebuildMessageItems() {
+        let interval = timelinePerformanceSignposter.beginInterval("BuildPresentationItems")
+        defer { timelinePerformanceSignposter.endInterval("BuildPresentationItems", interval) }
+        messageItems = buildMessageItems(
+            messages: model.messages,
+            currentUserId: app.session?.userId
+        )
+    }
+
+    private func buildMessageItems(
+        messages visible: [MessageDto],
+        currentUserId: String?
+    ) -> [ChatTimelineItem] {
         // Approval cards stay in the stream in both states: pending renders an
         // actionable card, resolved shrinks to a quiet trace line (ApprovalCardView).
-        let visible = model.messages
-
-        var result: [ChatItem] = []
+        var result: [ChatTimelineItem] = []
         result.reserveCapacity(visible.count + 8)
         var previousDay: Date?
+        let messagesById = Dictionary(uniqueKeysWithValues: visible.map { ($0.msgId, $0) })
 
         for (index, message) in visible.enumerated() {
             let day = message.createdDate
@@ -457,46 +459,12 @@ struct ChatView: View {
                 isOwn: isOwn,
                 showName: !isOwn && !model.channel.isDM && isFirstInGroup,
                 showAvatar: !isOwn && isFirstInGroup,   // web parity: avatar on the FIRST of a run, top-aligned
-                isLast: isLastInGroup
+                isLast: isLastInGroup,
+                formattedTime: TimeFormat.time(message.createdDate),
+                repliedTo: message.replyToMsgId.flatMap { messagesById[$0] }
             ))
         }
         return result
-    }
-
-    @ViewBuilder
-    private func itemView(_ item: ChatItem) -> some View {
-        switch item {
-        case .day(let label, _):
-            DaySeparatorView(label: label)
-        case .system(let message):
-            if message.msgType == "permission" {
-                ApprovalCardView(message: message)
-            } else {
-                SystemMessageView(message: message)
-            }
-        case .bubble(let message, let isOwn, let showName, let showAvatar, let isLast):
-            VStack(alignment: isOwn ? .trailing : .leading, spacing: 0) {
-                MessageBubbleView(
-                    message: message,
-                    isOwn: isOwn,
-                    showSenderName: showName,
-                    showAvatar: showAvatar,
-                    isLastInGroup: isLast,
-                    repliedTo: message.replyToMsgId.flatMap { id in
-                        model.messages.first { $0.msgId == id }
-                    },
-                    onReply: { model.replyTo = message },
-                    onForward: { forwardMessage = message },
-                    onTapFile: { file in previewFile = file },
-                    onReport: { reportTarget = message },
-                    onBlock: { blockTarget = message }
-                )
-                if message.msgType == "task_claim_confirmation" {
-                    TaskClaimConfirmationFooter(message: message, channelId: model.channel.channelId)
-                        .padding(.leading, 58).padding(.top, 2)
-                }
-            }
-        }
     }
 
     private func submitReport(reason: String) {
@@ -518,6 +486,255 @@ struct ChatView: View {
                 try await api.blockUser(userId)
                 model.errorMessage = "User blocked."
             } catch { model.errorMessage = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+        }
+    }
+}
+
+// MARK: - Incremental UIKit timeline
+
+/// UICollectionView owns scrolling, cell reuse, self-sizing, keyboard viewport
+/// changes, and incremental updates. SwiftUI remains responsible for the
+/// content inside each reused cell, but a composer edit can no longer
+/// invalidate or rebuild the entire transcript hierarchy.
+private struct ChatCollectionTimeline: UIViewRepresentable {
+    let items: [ChatTimelineItem]
+    let app: AppModel
+    let channelId: String
+    let hasMoreBefore: Bool
+    let isLoadingOlder: Bool
+    let followBottomTick: Int
+    let forceBottomTick: Int
+    @Binding var atBottom: Bool
+    let onLoadOlder: () -> Void
+    let onReply: (MessageDto) -> Void
+    let onForward: (MessageDto) -> Void
+    let onFile: (MessageFileRef) -> Void
+    let onReport: (MessageDto) -> Void
+    let onBlock: (MessageDto) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UICollectionView {
+        var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+        configuration.showsSeparators = false
+        configuration.backgroundColor = .clear
+        let layout = UICollectionViewCompositionalLayout.list(using: configuration)
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collectionView.backgroundColor = .clear
+        collectionView.alwaysBounceVertical = true
+        collectionView.keyboardDismissMode = .interactive
+        collectionView.contentInsetAdjustmentBehavior = .never
+        collectionView.delegate = context.coordinator
+        context.coordinator.configure(collectionView)
+        return collectionView
+    }
+
+    func updateUIView(_ collectionView: UICollectionView, context: Context) {
+        context.coordinator.update(parent: self, collectionView: collectionView)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UICollectionViewDelegate {
+        private var parent: ChatCollectionTimeline
+        private weak var collectionView: UICollectionView?
+        private var dataSource: UICollectionViewDiffableDataSource<Int, String>?
+        private var itemsById: [String: ChatTimelineItem] = [:]
+        private var itemHashes: [String: Int] = [:]
+        private var lastFollowTick: Int
+        private var lastForceTick: Int
+        private var hasAppliedInitialSnapshot = false
+
+        init(parent: ChatCollectionTimeline) {
+            self.parent = parent
+            lastFollowTick = parent.followBottomTick
+            lastForceTick = parent.forceBottomTick
+        }
+
+        private lazy var registration = UICollectionView.CellRegistration<UICollectionViewCell, String> {
+            [weak self] cell, _, itemId in
+            guard let self, let item = self.itemsById[itemId] else { return }
+            cell.backgroundConfiguration = UIBackgroundConfiguration.clear()
+            cell.contentConfiguration = UIHostingConfiguration {
+                ChatTimelineRow(
+                    item: item,
+                    channelId: self.parent.channelId,
+                    onLoadOlder: self.parent.onLoadOlder,
+                    onReply: self.parent.onReply,
+                    onForward: self.parent.onForward,
+                    onFile: self.parent.onFile,
+                    onReport: self.parent.onReport,
+                    onBlock: self.parent.onBlock
+                )
+                .environment(self.parent.app)
+            }
+            .margins(.all, 0)
+        }
+
+        func configure(_ collectionView: UICollectionView) {
+            self.collectionView = collectionView
+            // UIKit requires registrations to exist before entering the cell
+            // provider. Force the lazy value here so every dequeue reuses the
+            // same registration instead of creating one during cell lookup.
+            let registration = self.registration
+            dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collectionView) {
+                collectionView, indexPath, itemId in
+                return collectionView.dequeueConfiguredReusableCell(
+                    using: registration,
+                    for: indexPath,
+                    item: itemId
+                )
+            }
+        }
+
+        func update(parent: ChatCollectionTimeline, collectionView: UICollectionView) {
+            let wasAtBottom = isAtBottom(collectionView)
+            let oldIdentifiers = dataSource?.snapshot().itemIdentifiers ?? []
+            let oldFirstMessageId = oldIdentifiers.first { $0 != "load-older" }
+            let oldContentHeight = collectionView.contentSize.height
+            let oldOffsetY = collectionView.contentOffset.y
+            let forceBottom = parent.forceBottomTick != lastForceTick
+            let followBottom = parent.followBottomTick != lastFollowTick && wasAtBottom
+            lastForceTick = parent.forceBottomTick
+            lastFollowTick = parent.followBottomTick
+            self.parent = parent
+
+            var newItemsById: [String: ChatTimelineItem] = [:]
+            var newHashes: [String: Int] = [:]
+            newItemsById.reserveCapacity(parent.items.count)
+            newHashes.reserveCapacity(parent.items.count)
+            for item in parent.items {
+                newItemsById[item.id] = item
+                newHashes[item.id] = item.hashValue
+            }
+            let newIdentifiers = parent.items.map(\.id)
+            let contentChanged = oldIdentifiers != newIdentifiers || itemHashes != newHashes
+            let changedIds = parent.items.compactMap { item -> String? in
+                guard itemHashes[item.id] != nil, itemHashes[item.id] != newHashes[item.id] else { return nil }
+                return item.id
+            }
+            itemsById = newItemsById
+            itemHashes = newHashes
+
+            // Binding updates such as crossing the bottom threshold re-enter
+            // updateUIView. They must not re-apply an identical snapshot.
+            guard contentChanged || forceBottom || followBottom || !hasAppliedInitialSnapshot else { return }
+            let interval = timelinePerformanceSignposter.beginInterval("ApplyTimelineSnapshot")
+
+            var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
+            snapshot.appendSections([0])
+            snapshot.appendItems(newIdentifiers, toSection: 0)
+            let existingIds = Set(oldIdentifiers)
+            let reconfigurable = changedIds.filter { existingIds.contains($0) && newItemsById[$0] != nil }
+            if !reconfigurable.isEmpty {
+                snapshot.reconfigureItems(reconfigurable)
+            }
+
+            dataSource?.apply(snapshot, animatingDifferences: false) { [weak self, weak collectionView] in
+                timelinePerformanceSignposter.endInterval("ApplyTimelineSnapshot", interval)
+                guard let self, let collectionView else { return }
+                collectionView.layoutIfNeeded()
+                let newFirstMessageId = snapshot.itemIdentifiers.first { $0 != "load-older" }
+                let prependedHistory = oldFirstMessageId != nil
+                    && newFirstMessageId != oldFirstMessageId
+                    && !forceBottom
+                    && !followBottom
+                if prependedHistory {
+                    let delta = collectionView.contentSize.height - oldContentHeight
+                    collectionView.setContentOffset(
+                        CGPoint(x: 0, y: max(-collectionView.adjustedContentInset.top, oldOffsetY + delta)),
+                        animated: false
+                    )
+                } else if forceBottom || followBottom || !self.hasAppliedInitialSnapshot {
+                    self.scrollToBottom(collectionView, animated: false)
+                }
+                self.hasAppliedInitialSnapshot = true
+                self.publishBottomState(collectionView)
+            }
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard let collectionView = scrollView as? UICollectionView else { return }
+            publishBottomState(collectionView)
+        }
+
+        private func scrollToBottom(_ collectionView: UICollectionView, animated: Bool) {
+            guard let last = dataSource?.snapshot().itemIdentifiers.last,
+                  let indexPath = dataSource?.indexPath(for: last) else { return }
+            collectionView.scrollToItem(at: indexPath, at: .bottom, animated: animated)
+        }
+
+        private func isAtBottom(_ collectionView: UICollectionView) -> Bool {
+            let visibleBottom = collectionView.contentOffset.y
+                + collectionView.bounds.height
+                - collectionView.adjustedContentInset.bottom
+            return collectionView.contentSize.height - visibleBottom <= 80
+        }
+
+        private func publishBottomState(_ collectionView: UICollectionView) {
+            let value = isAtBottom(collectionView)
+            guard parent.atBottom != value else { return }
+            parent.atBottom = value
+        }
+    }
+}
+
+private struct ChatTimelineRow: View {
+    let item: ChatTimelineItem
+    let channelId: String
+    let onLoadOlder: () -> Void
+    let onReply: (MessageDto) -> Void
+    let onForward: (MessageDto) -> Void
+    let onFile: (MessageFileRef) -> Void
+    let onReport: (MessageDto) -> Void
+    let onBlock: (MessageDto) -> Void
+
+    @ViewBuilder
+    var body: some View {
+        switch item {
+        case .loadOlder(let isLoading):
+            HStack {
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Load earlier messages", action: onLoadOlder)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.link)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.vertical, 4)
+        case .day(let label, _):
+            DaySeparatorView(label: label)
+        case .system(let message):
+            if message.msgType == "permission" {
+                ApprovalCardView(message: message)
+            } else {
+                SystemMessageView(message: message)
+            }
+        case .bubble(let message, let isOwn, let showName, let showAvatar, let isLast, let time, let repliedTo):
+            VStack(alignment: isOwn ? .trailing : .leading, spacing: 0) {
+                MessageBubbleView(
+                    message: message,
+                    isOwn: isOwn,
+                    showSenderName: showName,
+                    showAvatar: showAvatar,
+                    isLastInGroup: isLast,
+                    formattedTime: time,
+                    repliedTo: repliedTo,
+                    onReply: { onReply(message) },
+                    onForward: { onForward(message) },
+                    onTapFile: onFile,
+                    onReport: { onReport(message) },
+                    onBlock: { onBlock(message) }
+                )
+                if message.msgType == "task_claim_confirmation" {
+                    TaskClaimConfirmationFooter(message: message, channelId: channelId)
+                        .padding(.leading, 58)
+                        .padding(.top, 2)
+                }
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import CryptoKit
 
 struct LoginView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var server = AppModel.defaultServerURL
     @State private var username = ""
@@ -11,7 +12,10 @@ struct LoginView: View {
     @State private var isBusy = false
     @State private var errorText: String?
     @State private var appleEnabled = false
+    @State private var capabilityLoaded = false
+    @State private var registrationEnabled = false
     @State private var appleChallenge: AppleChallenge?
+    @State private var showingRegistration = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, username, password }
@@ -30,6 +34,13 @@ struct LoginView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Theme.bgApp)
+        .sheet(isPresented: $showingRegistration) {
+            RegisterView(
+                server: $server,
+                openRegistration: registrationEnabled
+            )
+            .environment(app)
+        }
         .onAppear {
             server = app.serverURLString
         }
@@ -42,16 +53,11 @@ struct LoginView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
-            // Clinking-glasses brand mark, drawn to echo cheers-icon.svg.
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(hex: 0x0F172A))
-                Image(systemName: "wineglass")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(Color(hex: 0xF8FAFC))
-            }
-            .frame(width: 56, height: 56)
-            .shadow(color: Color(hex: 0x14B8A6).opacity(0.2), radius: 12, y: 4)
+            Image("CheersBrandIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
 
             Text("Cheers")
                 .font(.system(size: 24, weight: .bold))
@@ -118,29 +124,54 @@ struct LoginView: View {
             .disabled(!canSubmit || isBusy)
             .padding(.top, 4)
 
-            if appleEnabled {
-                HStack {
-                    Rectangle().fill(Theme.border).frame(height: 1)
-                    Text("or").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
-                    Rectangle().fill(Theme.border).frame(height: 1)
-                }
-                .padding(.vertical, 2)
-
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName, .email]
-                    if let nonce = appleChallenge?.nonce {
-                        request.nonce = SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
-                    }
-                } onCompletion: { result in
-                    handleAppleCompletion(result)
-                }
-                .signInWithAppleButtonStyle(.white)
-                .frame(height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .disabled(isBusy || appleChallenge == nil)
-                .opacity(appleChallenge == nil ? 0.55 : 1)
-                .accessibilityHint("Uses the Apple account signed in on this device")
+            HStack {
+                Rectangle().fill(Theme.border).frame(height: 1)
+                Text("or").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                Rectangle().fill(Theme.border).frame(height: 1)
             }
+            .padding(.vertical, 2)
+
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = [.fullName, .email]
+                if let nonce = appleChallenge?.nonce {
+                    request.nonce = SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
+                }
+            } onCompletion: { result in
+                handleAppleCompletion(result)
+            }
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .frame(height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .disabled(isBusy || appleChallenge == nil)
+            .opacity(appleChallenge == nil ? 0.55 : 1)
+            .accessibilityHint(
+                appleEnabled
+                    ? "Uses the Apple account signed in on this device"
+                    : "Unavailable because this server has not configured Sign in with Apple"
+            )
+
+            if capabilityLoaded && !appleEnabled {
+                Label("Apple sign-in isn't configured on this server.", systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button {
+                focusedField = nil
+                showingRegistration = true
+            } label: {
+                Text("New to Cheers? Create an account")
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.accentHover)
+            .accessibilityHint(
+                registrationEnabled
+                    ? "Opens account registration"
+                    : "An invitation is required on this server"
+            )
         }
         .padding(24)
         .background(Theme.bgSurface)
@@ -203,13 +234,18 @@ struct LoginView: View {
 
     @MainActor
     private func loadAppleCapability() async {
+        capabilityLoaded = false
         do {
             let (capabilities, challenge) = try await app.appleCapabilities(server: server)
             appleEnabled = capabilities.signInWithApple
+            registrationEnabled = capabilities.selfServiceRegistration
             appleChallenge = challenge
+            capabilityLoaded = true
         } catch {
             appleEnabled = false
+            registrationEnabled = false
             appleChallenge = nil
+            capabilityLoaded = true
         }
     }
 

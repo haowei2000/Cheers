@@ -40,6 +40,13 @@ python3 -m http.server -d website 8080   # → http://localhost:8080
 Any other static host also works — the site is a handful of self-contained
 HTML files plus the `imgs/` screenshots, with no build step.
 
+The production Cheers frontend also publishes the App Store policy and support
+URLs from this directory. `frontend/vite.config.ts` copies the English and
+Chinese privacy, support, and remote-operation pages into the frontend build;
+keep `website/` as the single source of truth rather than duplicating them under
+`frontend/public/`. The frontend Docker build therefore uses the repository root
+as its build context.
+
 ## Notes
 
 - Light/dark theme follows the OS by default; the ◐ button cycles

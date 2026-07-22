@@ -116,11 +116,46 @@ struct AuthCapabilities: Decodable {
     let passwordLogin: Bool
     let signInWithApple: Bool
     let appleClientId: String?
+    let selfServiceRegistration: Bool
 
     enum CodingKeys: String, CodingKey {
         case passwordLogin = "password_login"
         case signInWithApple = "sign_in_with_apple"
         case appleClientId = "apple_client_id"
+        case selfServiceRegistration = "self_service_registration"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        passwordLogin = try values.decode(Bool.self, forKey: .passwordLogin)
+        signInWithApple = try values.decode(Bool.self, forKey: .signInWithApple)
+        appleClientId = try values.decodeIfPresent(String.self, forKey: .appleClientId)
+        selfServiceRegistration = try values.decodeIfPresent(Bool.self, forKey: .selfServiceRegistration) ?? false
+    }
+}
+
+struct RegisterCodeRequest: Encodable {
+    let email: String
+    let inviteToken: String?
+
+    enum CodingKeys: String, CodingKey {
+        case email
+        case inviteToken = "invite_token"
+    }
+}
+
+struct RegisterRequest: Encodable {
+    let username: String
+    let password: String
+    let email: String
+    let code: String
+    let displayName: String?
+    let inviteToken: String?
+
+    enum CodingKeys: String, CodingKey {
+        case username, password, email, code
+        case displayName = "display_name"
+        case inviteToken = "invite_token"
     }
 }
 
@@ -383,12 +418,28 @@ struct VoiceSessionDto: Decodable {
 struct VoiceStateResponse: Decodable {
     let enabled: Bool
     let channelKind: String
+    let canManage: Bool
     let session: VoiceSessionDto?
     enum CodingKeys: String, CodingKey {
         case enabled
         case channelKind = "channel_kind"
+        case canManage = "can_manage"
         case session
     }
+}
+
+struct DictationCapabilityResponse: Decodable {
+    let adapterConfigured: Bool
+    let adapterKind: String?
+
+    enum CodingKeys: String, CodingKey {
+        case adapterConfigured = "adapter_configured"
+        case adapterKind = "adapter_kind"
+    }
+}
+
+struct DictationTranscriptResponse: Decodable {
+    let transcript: String
 }
 
 struct VoiceConsentResponse: Decodable {

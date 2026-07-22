@@ -23,7 +23,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cheers uses your microphone to participate in voice channels.</string>
+	<string>Cheers uses your microphone for voice channels and composer dictation.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cheers converts your spoken draft into text when no server speech adapter is configured.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -34,6 +36,7 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

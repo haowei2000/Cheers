@@ -1,3 +1,5 @@
+import AVFoundation
+import Speech
 import SwiftUI
 
 /// Growing multiline composer pinned to the bottom of the chat screen.
@@ -30,10 +32,15 @@ private enum ComposerAction: String, Identifiable {
 }
 
 struct ComposerView: View {
-    @Binding var text: String
+    /// Draft and keyboard focus live inside this leaf view. A keystroke now
+    /// invalidates only the composer subtree, never the chat timeline.
+    @State private var text: String
+    let clearTick: Int
     let placeholder: String
     let isSending: Bool
-    let onSend: () -> Void
+    let onSend: (String) async -> Bool
+    let channelId: String
+    let api: APIClient?
     var onChooseSession: () -> Void = {}
     var onModelSettings: () -> Void = {}
     /// "@" typeahead pool (group tokens + channel members) and the pick
@@ -43,6 +50,33 @@ struct ComposerView: View {
 
     @FocusState private var isFocused: Bool
     @State private var action: ComposerAction?
+    @State private var dictation = ComposerDictationController()
+
+    init(
+        initialText: String,
+        clearTick: Int,
+        placeholder: String,
+        isSending: Bool,
+        onSend: @escaping (String) async -> Bool,
+        channelId: String,
+        api: APIClient?,
+        onChooseSession: @escaping () -> Void = {},
+        onModelSettings: @escaping () -> Void = {},
+        mentionPool: [MentionCandidate] = [],
+        onMentionPicked: @escaping (MentionCandidate) -> Void = { _ in }
+    ) {
+        _text = State(initialValue: initialText)
+        self.clearTick = clearTick
+        self.placeholder = placeholder
+        self.isSending = isSending
+        self.onSend = onSend
+        self.channelId = channelId
+        self.api = api
+        self.onChooseSession = onChooseSession
+        self.onModelSettings = onModelSettings
+        self.mentionPool = mentionPool
+        self.onMentionPicked = onMentionPicked
+    }
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
@@ -97,6 +131,11 @@ struct ComposerView: View {
         .padding(.top, 6)
         .padding(.bottom, 8)
         .background(Theme.bgApp)
+        .onChange(of: clearTick) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { text = "" }
+        }
         .sheet(item: $action) { action in
             ComposerActionSheet(action: action)
                 .presentationDetents([.medium])
@@ -164,15 +203,32 @@ struct ComposerView: View {
                     .contentShape(Rectangle())
             }
             .padding(.leading, 2)
+            .accessibilityLabel("Add message options")
 
             TextField(placeholder, text: $text, axis: .vertical)
-                .font(.system(size: 16))
+                .font(.body)
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1...8)
                 .focused($isFocused)
                 .padding(.vertical, 11)
+                .accessibilityLabel(placeholder)
 
-            Button(action: onSend) {
+            dictationButton
+
+            Button {
+                // Sending is an intentional completion point for a mobile
+                // draft. Clear focus first so UIKit reliably dismisses the
+                // software keyboard even while the network request is pending.
+                isFocused = false
+                let draft = text
+                Task {
+                    if await onSend(draft) {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) { text = "" }
+                    }
+                }
+            } label: {
                 Group {
                     if isSending {
                         ProgressView()
@@ -192,6 +248,7 @@ struct ComposerView: View {
             }
             .disabled(!canSend)
             .padding(.trailing, 2)
+            .accessibilityLabel(isSending ? "Sending message" : "Send message")
         }
         .background(Theme.bgRaised.opacity(0.8))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -200,6 +257,238 @@ struct ComposerView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(isFocused ? Theme.accentHover.opacity(0.6) : Color.clear, lineWidth: 1.5)
         )
+        .alert("Voice dictation", isPresented: Binding(
+            get: { dictation.errorMessage != nil },
+            set: { if !$0 { dictation.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { dictation.errorMessage = nil }
+        } message: {
+            Text(dictation.errorMessage ?? "")
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { isFocused = false }
+            }
+        }
+    }
+
+    private var dictationButton: some View {
+        Button {
+            Task {
+                await dictation.toggle(channelId: channelId, api: api) { transcript in
+                    let separator = text.isEmpty || text.last?.isWhitespace == true ? "" : " "
+                    // A final transcript can grow the multiline field by
+                    // several rows. Insert it in one non-animated transaction
+                    // so UIKit does not animate the keyboard/layout through
+                    // intermediate composer states.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        text += separator + transcript
+                        isFocused = true
+                    }
+                }
+            }
+        } label: {
+            Group {
+                if dictation.isWorking {
+                    ProgressView().controlSize(.small).tint(Theme.accent)
+                } else {
+                    Image(systemName: dictation.isRecording ? "stop.circle.fill" : "mic")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(dictation.isRecording ? Color.red : Theme.textSecondary)
+                }
+            }
+            .frame(width: 40, height: 44)
+            .contentShape(Rectangle())
+        }
+        .disabled(dictation.isWorking || api == nil)
+        .accessibilityLabel(dictation.isRecording ? "Stop voice dictation" : "Start voice dictation")
+    }
+}
+
+/// Captures one short composer utterance. A configured Gateway adapter is used
+/// first so provider credentials never reach the phone; iOS Speech is only the
+/// intentional no-adapter fallback. Neither path persists raw audio.
+@MainActor
+@Observable
+private final class ComposerDictationController {
+    private(set) var isRecording = false
+    private(set) var isWorking = false
+    var errorMessage: String?
+
+    @ObservationIgnored private let audioEngine = AVAudioEngine()
+    @ObservationIgnored private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    @ObservationIgnored private var recognitionTask: SFSpeechRecognitionTask?
+    @ObservationIgnored private var pcm = PCM16Accumulator()
+    @ObservationIgnored private var usesServerAdapter = false
+    @ObservationIgnored private var onTranscript: ((String) -> Void)?
+
+    func toggle(channelId: String, api: APIClient?, onTranscript: @escaping (String) -> Void) async {
+        if isRecording {
+            await stop(channelId: channelId, api: api)
+        } else {
+            await start(channelId: channelId, api: api, onTranscript: onTranscript)
+        }
+    }
+
+    private func start(channelId: String, api: APIClient?, onTranscript: @escaping (String) -> Void) async {
+        guard let api else { return }
+        errorMessage = nil
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let capability = try await api.dictationCapability(channelId: channelId)
+            usesServerAdapter = capability.adapterConfigured && capability.adapterKind == "stepfun"
+            self.onTranscript = onTranscript
+            pcm = PCM16Accumulator()
+
+            if !usesServerAdapter {
+                try await requestNativeSpeechPermission()
+                let request = SFSpeechAudioBufferRecognitionRequest()
+                request.shouldReportPartialResults = false
+                if #available(iOS 13, *) { request.requiresOnDeviceRecognition = false }
+                recognitionRequest = request
+                let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+                    ?? SFSpeechRecognizer()
+                guard let recognizer, recognizer.isAvailable else {
+                    throw DictationError.speechUnavailable
+                }
+                recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                    guard let self else { return }
+                    if let result, result.isFinal {
+                        self.deliver(result.bestTranscription.formattedString)
+                    } else if let error, self.isRecording {
+                        self.errorMessage = error.localizedDescription
+                    }
+                }
+            } else {
+                try await requestMicrophonePermission()
+            }
+
+            try configureAudioAndStartTap()
+            isRecording = true
+        } catch {
+            cleanup()
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func stop(channelId: String, api: APIClient?) async {
+        guard isRecording else { return }
+        isRecording = false
+        let adapterAudio = usesServerAdapter ? pcm.data : Data()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        recognitionRequest?.endAudio()
+        if usesServerAdapter {
+            isWorking = true
+            defer { isWorking = false; cleanup() }
+            guard !adapterAudio.isEmpty else {
+                errorMessage = "No speech was captured. Please try again."
+                return
+            }
+            do {
+                guard let api else { return }
+                deliver(try await api.dictate(channelId: channelId, pcm16: adapterAudio))
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        } else {
+            // The recognizer delivers its final result asynchronously after endAudio.
+            recognitionTask?.finish()
+        }
+    }
+
+    private func configureAudioAndStartTap() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        let input = audioEngine.inputNode
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1_024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
+            guard let self else { return }
+            if self.usesServerAdapter {
+                self.pcm.append(buffer)
+            } else {
+                self.recognitionRequest?.append(buffer)
+            }
+        }
+        audioEngine.prepare()
+        try audioEngine.start()
+    }
+
+    private func deliver(_ transcript: String) {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onTranscript?(trimmed)
+        cleanup()
+    }
+
+    private func cleanup() {
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        isRecording = false
+        usesServerAdapter = false
+    }
+
+    private func requestMicrophonePermission() async throws {
+        let granted = await AVAudioApplication.requestRecordPermission()
+        guard granted else { throw DictationError.microphoneDenied }
+    }
+
+    private func requestNativeSpeechPermission() async throws {
+        try await requestMicrophonePermission()
+        let status = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+        }
+        guard status == .authorized else { throw DictationError.speechDenied }
+    }
+
+    private enum DictationError: LocalizedError {
+        case microphoneDenied, speechDenied, speechUnavailable
+        var errorDescription: String? {
+            switch self {
+            case .microphoneDenied: return "Allow microphone access in Settings to use voice dictation."
+            case .speechDenied: return "Allow Speech Recognition in Settings to use the on-device dictation fallback."
+            case .speechUnavailable: return "Speech Recognition is unavailable on this device right now."
+            }
+        }
+    }
+}
+
+/// Thread-safe PCM conversion for StepFun: 16 kHz, mono, little-endian Int16.
+/// The AudioEngine tap may run off the main actor, so this intentionally keeps
+/// its mutable buffer behind a lock.
+private final class PCM16Accumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = Data()
+
+    var data: Data { lock.withLock { storage } }
+
+    func append(_ buffer: AVAudioPCMBuffer) {
+        guard let channels = buffer.floatChannelData else { return }
+        let source = channels[0]
+        let sourceCount = Int(buffer.frameLength)
+        guard sourceCount > 0 else { return }
+        let sourceRate = buffer.format.sampleRate
+        let outputCount = max(1, Int((Double(sourceCount) * 16_000.0 / sourceRate).rounded()))
+        var converted = Data(capacity: outputCount * MemoryLayout<Int16>.size)
+        for outputIndex in 0..<outputCount {
+            let sourceIndex = min(sourceCount - 1, Int(Double(outputIndex) * sourceRate / 16_000.0))
+            let normalized = max(-1.0, min(1.0, source[sourceIndex]))
+            var sample = Int16((normalized * Float(Int16.max)).rounded()).littleEndian
+            withUnsafeBytes(of: &sample) { converted.append(contentsOf: $0) }
+        }
+        lock.withLock {
+            guard storage.count + converted.count <= 8 * 1024 * 1024 else { return }
+            storage.append(converted)
+        }
     }
 }
 

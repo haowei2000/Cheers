@@ -164,7 +164,8 @@ services:
     env_file:
       - .env
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET:-http://gateway:8000}
         VITE_WS_PROXY_TARGET: ${VITE_WS_PROXY_TARGET:-ws://gateway:8000}

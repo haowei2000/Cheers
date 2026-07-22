@@ -201,6 +201,17 @@ struct APIClient: Sendable {
         try await getJSON("/auth/capabilities", as: AuthCapabilities.self)
     }
 
+    func requestRegisterCode(email: String, inviteToken: String?) async throws {
+        try await postEmptyJSON(
+            "/auth/register/request-code",
+            body: RegisterCodeRequest(email: email, inviteToken: inviteToken)
+        )
+    }
+
+    func register(_ request: RegisterRequest) async throws -> LoginResponse {
+        try await postJSON("/auth/register", body: request, as: LoginResponse.self)
+    }
+
     func appleChallenge() async throws -> AppleChallenge {
         try await postJSON("/auth/apple/challenge", body: EmptyRequest(), as: AppleChallenge.self)
     }
@@ -412,6 +423,20 @@ struct APIClient: Sendable {
 
     func voiceState(channelId: String) async throws -> VoiceStateResponse {
         try await getJSON("/channels/\(channelId)/voice/state", as: VoiceStateResponse.self)
+    }
+
+    func dictationCapability(channelId: String) async throws -> DictationCapabilityResponse {
+        try await getJSON("/channels/\(channelId)/voice/dictation-capability", as: DictationCapabilityResponse.self)
+    }
+
+    /// Short-lived 16 kHz mono PCM captured for Composer dictation. The Gateway
+    /// owns the provider credential and returns text only; audio is never saved
+    /// as a message, attachment, or channel transcript.
+    func dictate(channelId: String, pcm16: Data) async throws -> String {
+        var request = try makeRequest("POST", "/channels/\(channelId)/voice/dictation", body: pcm16)
+        request.setValue("audio/pcm;rate=16000;channels=1", forHTTPHeaderField: "Content-Type")
+        let response: DictationTranscriptResponse = try decode(DictationTranscriptResponse.self, from: try await send(request))
+        return response.transcript
     }
 
     func voiceTranscript(channelId: String, afterSeq: Int64 = 0) async throws -> [VoiceTranscriptSegment] {

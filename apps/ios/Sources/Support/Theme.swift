@@ -123,6 +123,25 @@ enum TimeFormat {
         return f
     }()
 
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let fullDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("EEEE MMMM d")
+        return formatter
+    }()
+
+    private static let shortDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        return formatter
+    }()
+
     static func parse(_ iso: String?) -> Date? {
         guard let iso else { return nil }
         return Self.iso.date(from: iso) ?? Self.isoNoFraction.date(from: iso)
@@ -131,10 +150,7 @@ enum TimeFormat {
     /// "HH:MM" 2-digit style, like `formatTime`.
     static func time(_ date: Date?) -> String {
         guard let date else { return "" }
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f.string(from: date)
+        return timeFormatter.string(from: date)
     }
 
     /// "Today" / "Yesterday" / "Monday, June 1" style, like `formatDayLabel`.
@@ -143,9 +159,7 @@ enum TimeFormat {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return "Today" }
         if cal.isDateInYesterday(date) { return "Yesterday" }
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("EEEE MMMM d")
-        return f.string(from: date)
+        return fullDayFormatter.string(from: date)
     }
 
     /// Compact stamp for conversation list rows: time today, "Yesterday",
@@ -155,9 +169,7 @@ enum TimeFormat {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return time(date) }
         if cal.isDateInYesterday(date) { return "Yesterday" }
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("MMM d")
-        return f.string(from: date)
+        return shortDayFormatter.string(from: date)
     }
 
     static func sameDay(_ a: Date?, _ b: Date?) -> Bool {

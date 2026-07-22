@@ -4,8 +4,8 @@
 ARG BASE_REGISTRY=docker.io
 FROM ${BASE_REGISTRY}/library/node:20-alpine AS builder
 ARG NPM_REGISTRY=https://registry.npmjs.org
-WORKDIR /app
-COPY package*.json ./
+WORKDIR /repo/frontend
+COPY frontend/package*.json ./
 RUN npm config set registry "${NPM_REGISTRY}" && \
     npm ci --legacy-peer-deps
 ARG VITE_API_PROXY_TARGET=http://gateway:8000
@@ -18,7 +18,10 @@ ENV VITE_WS_PROXY_TARGET=${VITE_WS_PROXY_TARGET}
 ENV VITE_PUBLIC_BASE_PATH=${VITE_PUBLIC_BASE_PATH}
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_ENABLE_MERMAID=${VITE_ENABLE_MERMAID}
-COPY . .
+COPY frontend/ ./
+# The App Store policy/support pages live in website/ as their single source of
+# truth. Vite copies the selected public pages into dist during closeBundle.
+COPY website/ ../website/
 RUN npm run build
 
 FROM ${BASE_REGISTRY}/library/nginx:alpine

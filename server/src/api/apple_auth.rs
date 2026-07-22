@@ -31,6 +31,7 @@ pub struct AuthCapabilities {
     password_login: bool,
     sign_in_with_apple: bool,
     apple_client_id: Option<String>,
+    self_service_registration: bool,
 }
 
 pub async fn capabilities(State(state): State<AppState>) -> Json<AuthCapabilities> {
@@ -39,6 +40,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<AuthCapabilitie
         password_login: true,
         sign_in_with_apple: apple.is_some(),
         apple_client_id: apple.map(|v| v.client_id.clone()),
+        self_service_registration: state.config.open_registration,
     })
 }
 

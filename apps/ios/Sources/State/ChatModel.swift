@@ -1,5 +1,11 @@
 import Foundation
 import Observation
+import os
+
+private let chatPerformanceSignposter = OSSignposter(
+    subsystem: "app.cheers.ios",
+    category: "ChatPerformance"
+)
 
 /// An entry in the composer's @-mention picker: a channel member (user/bot) or
 /// a group token. Mirrors the web MessageComposer's MentionCandidate.
@@ -36,12 +42,20 @@ final class ChatModel {
 
     private(set) var messages: [MessageDto] = []
     private(set) var hasMoreBefore = false
+    /// The active window has paged far enough into history that its newest
+    /// rows were released. The UI offers an explicit return-to-latest action
+    /// rather than silently keeping an unbounded transcript in memory.
+    private(set) var hasTrimmedNewer = false
     private(set) var isLoading = false
     private(set) var isLoadingOlder = false
     private(set) var isSending = false
     var errorMessage: String?
     var pendingAIConsent: [AIDataDisclosure] = []
     var composerText = ""
+    /// Explicit reset signal for the leaf composer. The draft deliberately
+    /// lives outside ChatModel while typing, so model text changes must not be
+    /// observed on every keystroke; this increments only after a confirmed send.
+    private(set) var composerClearTick = 0
     /// Message being replied to (set by the bubble context menu); sent as
     /// reply_to_msg_id and cleared on success.
     var replyTo: MessageDto?
@@ -101,6 +115,10 @@ final class ChatModel {
     /// network stall for a layout stall. Older pages stay reachable through
     /// loadOlder — hasMoreBefore flips back on when we trim.
     private static let detachKeepCount = 100
+    /// Long chat transcripts must remain bounded while a channel stays open,
+    /// not only after navigation away. Two hundred keeps roughly four pages
+    /// available around the reader while avoiding an ever-growing LazyVStack.
+    private static let activeWindowLimit = 200
 
     func detach() {
         if let listenerId, let app {
@@ -111,34 +129,50 @@ final class ChatModel {
             messages = Array(messages.suffix(Self.detachKeepCount))
             hasMoreBefore = true
         }
-        // Leaving the channel is the natural durability point — flush the
-        // debounced write so a swipe-away right after can't lose the tail.
-        persistTask?.cancel()
-        persistTask = nil
+        // Flush the latest immutable DTO snapshot. The cache's ModelActor does
+        // the expensive work away from the UI executor.
         persistNow()
     }
 
     // MARK: Persistence (offline-first cache)
 
-    /// Debounced write-through to MessageStore: streaming and busy channels
-    /// mutate `messages` many times a second; one write a second is plenty for
-    /// a cache whose gaps self-heal via since_seq catch-up.
-    @ObservationIgnored private var persistTask: Task<Void, Never>?
+    /// Coalesce bursts (including streaming tokens) into one cache snapshot.
+    /// The task waits on the main actor, but the actual encode/database work is
+    /// isolated inside MessageStore's ModelActor.
+    @ObservationIgnored private var needsPersistence = false
+    @ObservationIgnored private var persistenceTask: Task<Void, Never>?
+    @ObservationIgnored private var persistenceGeneration = UUID()
 
     private func schedulePersist() {
         guard loadedOnce else { return }
-        persistTask?.cancel()
-        persistTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard let self, !Task.isCancelled else { return }
-            self.persistTask = nil
-            self.persistNow()
+        needsPersistence = true
+        persistenceTask?.cancel()
+        let generation = UUID()
+        persistenceGeneration = generation
+        let store = app?.messageStore
+        let channelId = channel.channelId
+        let snapshot = messages
+        let more = hasMoreBefore
+        persistenceTask = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let store else { return }
+            await store.save(channelId: channelId, messages: snapshot, hasMoreBefore: more)
+            guard !Task.isCancelled, persistenceGeneration == generation else { return }
+            needsPersistence = false
         }
     }
 
     private func persistNow() {
-        guard loadedOnce, let store = app?.messageStore else { return }
-        store.save(channelId: channel.channelId, messages: messages, hasMoreBefore: hasMoreBefore)
+        guard loadedOnce, needsPersistence, let store = app?.messageStore else { return }
+        persistenceTask?.cancel()
+        persistenceGeneration = UUID()
+        let channelId = channel.channelId
+        let snapshot = messages
+        let more = hasMoreBefore
+        persistenceTask = Task {
+            await store.save(channelId: channelId, messages: snapshot, hasMoreBefore: more)
+        }
+        needsPersistence = false
     }
 
     // MARK: History
@@ -146,6 +180,10 @@ final class ChatModel {
     func loadInitial() async {
         guard let api = app?.api else { return }
         if loadedOnce {
+            if hasTrimmedNewer {
+                await loadLatest()
+                return
+            }
             // Warm re-entry on a cached model: the in-memory history renders
             // immediately; just park at the bottom, stamp read, and heal
             // whatever landed while we were detached via the same since_seq
@@ -163,7 +201,7 @@ final class ChatModel {
         // Offline-first: a cold start (fresh model, e.g. after app relaunch)
         // renders the persisted window immediately; the network refresh below
         // then lands on top. If it fails, the cached history stays readable.
-        if messages.isEmpty, let cached = app?.messageStore.load(channelId: channel.channelId) {
+        if messages.isEmpty, let cached = await app?.messageStore.load(channelId: channel.channelId) {
             messages = sorted(cached.messages.map(withResolvedSender))
             hasMoreBefore = cached.hasMoreBefore
             highestSeq = messages.compactMap(\.channelSeq).max() ?? 0
@@ -198,6 +236,7 @@ final class ChatModel {
                 // beyond THEM is what the stored flag answers.
             }
             highestSeq = messages.compactMap(\.channelSeq).max() ?? 0
+            hasTrimmedNewer = false
             loadedOnce = true
             forceBottomTick += 1
             markRead()
@@ -217,7 +256,7 @@ final class ChatModel {
                 try await api.grantAIConsent(channelId: channel.channelId, disclosure: disclosure)
             }
             pendingAIConsent = []
-            await send()
+            _ = await send()
         } catch { report(error) }
     }
 
@@ -257,8 +296,38 @@ final class ChatModel {
             )
             let existing = Set(messages.map(\.msgId))
             let older = response.messages.filter { !existing.contains($0.msgId) }
-            messages = sorted(older + messages)
+            let merged = sorted(older + messages)
+            if merged.count > Self.activeWindowLimit {
+                // While reading upward, preserve the currently visible older
+                // end and release the far newer tail. `loadLatest()` restores
+                // it from the canonical server page when requested.
+                messages = Array(merged.prefix(Self.activeWindowLimit))
+                hasTrimmedNewer = true
+            } else {
+                messages = merged
+            }
             hasMoreBefore = response.meta?.hasMoreBefore ?? false
+            schedulePersist()
+        } catch {
+            report(error)
+        }
+    }
+
+    /// Replaces an older paging window with the authoritative newest page.
+    /// This avoids retaining an unbounded local transcript just to support a
+    /// return-to-bottom gesture.
+    func loadLatest() async {
+        guard !isLoading, let api = app?.api else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let response = try await api.listMessages(channelId: channel.channelId, limit: 50)
+            messages = sorted(response.messages.map(withResolvedSender))
+            hasMoreBefore = response.meta?.hasMoreBefore ?? false
+            hasTrimmedNewer = false
+            highestSeq = messages.compactMap(\.channelSeq).max() ?? highestSeq
+            forceBottomTick += 1
+            markRead()
             schedulePersist()
         } catch {
             report(error)
@@ -292,9 +361,13 @@ final class ChatModel {
 
     // MARK: Sending
 
-    func send() async {
+    @discardableResult
+    func send(draft: String? = nil) async -> Bool {
+        let interval = chatPerformanceSignposter.beginInterval("SendMessage")
+        defer { chatPerformanceSignposter.endInterval("SendMessage", interval) }
+        if let draft { composerText = draft }
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending, let api = app?.api else { return }
+        guard !text.isEmpty, !isSending, let api = app?.api else { return false }
         isSending = true
         defer { isSending = false }
         // Only keep mentions whose "@label" token still survives in the text,
@@ -317,12 +390,15 @@ final class ChatModel {
                 )
             )
             composerText = ""
+            composerClearTick += 1
             pickedMentions = []
             replyTo = nil
             upsert(sent)
             forceBottomTick += 1
+            return true
         } catch {
             report(error)
+            return false
         }
     }
 
@@ -362,7 +438,9 @@ final class ChatModel {
             markRead()
         case .messageDeleted(let channelId, let msgId) where channelId == channel.channelId:
             messages.removeAll { $0.msgId == msgId }
-            app?.messageStore.delete(msgId: msgId)
+            if let store = app?.messageStore {
+                Task { await store.delete(msgId: msgId) }
+            }
         default:
             break
         }
@@ -386,15 +464,28 @@ final class ChatModel {
                 merged.senderName = messages[index].senderName
             }
             messages[index] = withResolvedSender(merged)
-            messages = sorted(messages)
+            messages = boundedActiveWindow(sorted(messages))
         } else {
             var incoming = message
             if incoming.createdAt == nil {
                 incoming.createdAt = TimeFormat.iso.string(from: Date())
             }
-            messages = sorted(messages + [withResolvedSender(incoming)])
+            messages = boundedActiveWindow(sorted(messages + [withResolvedSender(incoming)]))
         }
         schedulePersist()
+    }
+
+    private func boundedActiveWindow(_ sortedMessages: [MessageDto]) -> [MessageDto] {
+        guard sortedMessages.count > Self.activeWindowLimit else { return sortedMessages }
+        if hasTrimmedNewer {
+            // An older-history reading window is active; preserve its range
+            // until the user explicitly returns to the latest server page.
+            return Array(sortedMessages.prefix(Self.activeWindowLimit))
+        }
+        // Live traffic at the bottom keeps the newest window and leaves older
+        // rows reachable through the existing `before` pagination contract.
+        hasMoreBefore = true
+        return Array(sortedMessages.suffix(Self.activeWindowLimit))
     }
 
     /// Fills a missing `sender_name` from the channel-member map.

@@ -105,6 +105,20 @@ final class AppModel {
         return (capabilities, challenge)
     }
 
+    func requestRegisterCode(server: String, email: String, inviteToken: String?) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        try await APIClient(baseURL: base, token: nil).requestRegisterCode(
+            email: email,
+            inviteToken: inviteToken
+        )
+    }
+
+    func register(server: String, request: RegisterRequest) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let response = try await APIClient(baseURL: base, token: nil).register(request)
+        finishLogin(base: base, response: response)
+    }
+
     func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let response = try await APIClient(baseURL: base, token: nil).appleLogin(payload)
@@ -165,7 +179,7 @@ final class AppModel {
         socket.disconnect()
         socketConnected = false
         chatModels.removeAll()
-        messageStore.removeAll()
+        Task { await messageStore.removeAll() }
         token = nil
         session = nil
         KeychainStore.remove(Keys.token)
