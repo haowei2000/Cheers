@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cheers 远程操作安全政策</title><link rel="alternate" hreflang="en" href="./remote-operations.html"><style>body{max-width:760px;margin:0 auto;padding:40px 22px;font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033}h1{line-height:1.2}h2{margin-top:2em}a{color:#9a5a00}strong{color:#8b1e1e}</style></head><body>
+<p><a href="./index.zh-CN.html">← Cheers</a> · <a href="./remote-operations.html">English</a></p><h1>远程操作安全政策</h1><p><small>生效日期：2026 年 7 月 21 日</small></p>
+<p>Cheers 可连接到由工作区所有者选择的计算机或服务上运行的外部 AI 智能体。Cheers 是协作与审批界面；它不会使外部智能体天然安全，也不能替代智能体服务商的条款或安全控制。</p>
+<h2>智能体可能执行的操作</h2><p>取决于智能体、本地配置和主机操作者授予的权限，智能体可能读取或修改已批准工作区根目录中的文件、运行命令、访问网络服务、创建提交或其他外部变更，并将输出发送回频道。某些请求可能不可逆、产生费用，或会被第三方看到。</p>
+<h2>必须采取的防护措施</h2><ul><li>只连接你控制或信任的智能体和主机。</li><li>使用专用且最小权限的操作系统账户、受限工作区根目录和最小环境变量白名单。</li><li>除非经过专门批准的工作流确有必要，否则不要在提示、附件或可访问目录中放入凭证、私钥、生产数据、受监管数据或其他机密。</li><li>对写入、命令、网络、凭证和破坏性操作保持审批。iOS 通知保留紧急请求的直接 Approve / Deny，并要求设备认证；由于通知不会显示完整命令或 diff，只有在你能独立确认该请求时才可直接批准。否则先打开请求，审阅准确命令、路径和 diff。</li><li>对接近生产的任务使用测试环境，审阅审计记录；行为异常时撤销 bot token 或断开 connector。</li></ul>
+<h2>不得草率批准的操作</h2><p><strong>不要批准</strong>删除或覆盖大范围路径、变更访问控制、安装未知软件、暴露端口、导出数据、修改云资源、发布/部署代码、花费资金或传输密钥的命令，除非你已独立核验完整影响且有相应授权。</p>
+<h2>数据与参与者告知</h2><p>将外部 AI 智能体加入频道前，工作区所有者必须告知参与者智能体/服务商身份、预期范围、其是否可访问文件或执行命令以及服务商的数据条款。对包含个人、机密或受监管信息的频道，未完成所需告知和同意前不得加入第三方 AI 智能体。</p>
+<h2>审批与责任</h2><p>只有 bot 所有者或指定审批人可以裁决请求。iOS 中，Approve / Deny 操作要求设备认证，服务端会在转发决定前校验审批人身份和请求仍处于待处理状态。通知会提示这是远程操作，但出于最小化内容原则不会展示完整细节；不确定时请打开 App 审阅。审批记录将保留以供审计。你需对自己授权的行为，以及组织政策和适用法律的合规性负责。</p>
+<h2>紧急响应</h2><p>如怀疑被滥用，请立即断开 connector、轮换 bot token 和受影响凭证、撤销访问、保留审计记录，并联系 <a href="mailto:tocheers@icloud.com">tocheers@icloud.com</a>。产品漏洞请通过<a href="https://github.com/ElePerson/Cheers/security/advisories/new">私密安全通道</a>报告。</p></body></html>

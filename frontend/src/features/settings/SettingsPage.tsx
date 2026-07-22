@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines, Bell, Plug } from "lucide-react";
+import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines, Bell, Plug, ShieldAlert } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { changePassword, logout as logoutApi } from "@/api/auth";
@@ -26,6 +26,7 @@ import { CopyButton } from "@/features/bots/BotDetailPanel";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
+import { AdminReports } from "./AdminReports";
 
 type SectionId =
   | "profile"
@@ -34,6 +35,7 @@ type SectionId =
   | "workbench"
   | "members"
   | "speech"
+  | "reports"
   | "account";
 
 const NAV: {
@@ -50,6 +52,7 @@ const NAV: {
   { id: "workbench", label: "Workbench", icon: Blocks, adminOnly: true },
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
+  { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
 
@@ -306,8 +309,8 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    if (next.length < 8) {
-      toast.error("New password must be at least 8 characters");
+    if (next.length < 12) {
+      toast.error("New password must be at least 12 characters");
       return;
     }
     if (next !== confirm) {
@@ -662,6 +665,7 @@ export default function SettingsPage() {
           {/* Admin-only; each self-gates (renders null for non-admins). */}
           {section === "workbench" && <WorkbenchManager />}
           {section === "members" && <AdminUsers />}
+          {section === "reports" && <AdminReports />}
           {section === "speech" && <AdminSttSettings />}
 
           {section === "account" && (

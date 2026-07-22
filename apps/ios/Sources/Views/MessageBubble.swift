@@ -59,6 +59,8 @@ struct MessageBubbleView: View {
     var onReply: (() -> Void)? = nil
     var onForward: (() -> Void)? = nil
     var onTapFile: ((MessageFileRef) -> Void)? = nil
+    var onReport: (() -> Void)? = nil
+    var onBlock: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -147,6 +149,12 @@ struct MessageBubbleView: View {
             } label: { Label("Copy text", systemImage: "doc.on.doc") }
             if let onForward {
                 Button { onForward() } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
+            }
+            if !isOwn, let onReport {
+                Button(role: .destructive) { onReport() } label: { Label("Report message", systemImage: "exclamationmark.bubble") }
+            }
+            if !isOwn, message.senderType == "user", let onBlock {
+                Button(role: .destructive) { onBlock() } label: { Label("Block user", systemImage: "hand.raised") }
             }
         }
     }

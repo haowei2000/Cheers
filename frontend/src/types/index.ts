@@ -285,6 +285,11 @@ export interface BotItem {
   status_auto_update?: boolean;
   status_update_prompt?: string | null;
   status_update_interval_minutes?: number | null;
+  external_processor?: boolean;
+  processor_name?: string | null;
+  processor_privacy_url?: string | null;
+  processor_data_use?: string | null;
+  processor_policy_version?: string;
 }
 
 export interface WsEvent {

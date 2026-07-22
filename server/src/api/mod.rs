@@ -1,10 +1,12 @@
 pub mod acp_capability;
+pub mod apple_auth;
 pub mod approval;
 pub mod auth;
 pub mod avatars;
 pub mod bot_permission;
 pub mod bots;
 pub mod channels;
+pub mod compliance;
 pub mod devices;
 pub mod enrollment;
 pub mod files;

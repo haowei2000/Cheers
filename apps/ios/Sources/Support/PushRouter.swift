@@ -5,9 +5,9 @@ import UserNotifications
 /// OS push bridge (docs/arch/MOBILE_APP_DESIGN.md §5.4), following the HIG:
 /// - authorization is requested IN CONTEXT — after login, when the main shell
 ///   appears — never cold at first launch;
-/// - the ACP_APPROVAL category makes approval banners actionable (Approve
-///   requires device authentication, Deny is destructive-styled); actions
-///   resolve via the REST API without opening the UI;
+/// - the ACP_APPROVAL category keeps direct Approve / Deny actions for urgent
+///   requests. Approval requires device authentication and action labels make
+///   the external-agent impact explicit; tapping the notification opens details;
 /// - a foregrounded app suppresses banners (its live WS already shows the
 ///   event — design §5.3 "client-side suppression");
 /// - tapping a banner deep-links to the channel.
@@ -33,13 +33,13 @@ final class PushRouter: NSObject {
 
         let approve = UNNotificationAction(
             identifier: "APPROVE",
-            title: "Approve",
+            title: "Approve remote action",
             options: [.authenticationRequired]
         )
         let deny = UNNotificationAction(
             identifier: "DENY",
             title: "Deny",
-            options: [.destructive]
+            options: [.destructive, .authenticationRequired]
         )
         center.setNotificationCategories([
             UNNotificationCategory(
@@ -75,6 +75,13 @@ final class PushRouter: NSObject {
         try? await api.deleteDevice(token: token)
         UserDefaults.standard.removeObject(forKey: tokenKey)
     }
+
+    /// Password changes revoke every registered device server-side. Restore the
+    /// current, user-controlled device only after its fresh session is stored.
+    static func reregisterCurrentDevice(using api: APIClient) async {
+        guard let token = UserDefaults.standard.string(forKey: tokenKey) else { return }
+        try? await api.registerDevice(token: token, name: UIDevice.current.name)
+    }
 }
 
 extension PushRouter: UNUserNotificationCenterDelegate {
@@ -95,7 +102,6 @@ extension PushRouter: UNUserNotificationCenterDelegate {
         let cheers = info["cheers"] as? [String: Any]
         let channelId = cheers?["channel_id"] as? String
         let action = response.actionIdentifier
-
         await MainActor.run {
             switch action {
             case "APPROVE", "DENY":
@@ -104,6 +110,9 @@ extension PushRouter: UNUserNotificationCenterDelegate {
                       let requestId = cheers?["request_id"] as? String,
                       let optionId = cheers?[action == "APPROVE" ? "approve_option_id" : "reject_option_id"] as? String
                 else { return }
+                // iOS has already required device authentication for these
+                // actions. The server still performs the owner/approver and
+                // pending-request checks before relaying the decision.
                 Task {
                     _ = try? await api.resolvePermission(
                         channelId: channelId,
@@ -112,7 +121,6 @@ extension PushRouter: UNUserNotificationCenterDelegate {
                     )
                 }
             default:
-                // Plain tap → open the conversation.
                 if let channelId {
                     PushRouter.shared.openChannel?(channelId)
                 }

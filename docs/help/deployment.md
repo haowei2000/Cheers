@@ -40,6 +40,11 @@ Desktop users should give the VM at least 4 GB of memory (6–8 GB with the bot)
   RustFS (required), Gotenberg (optional — office→PDF document preview), Redis
   (optional — only for multi-instance fan-out; a single instance uses in-process
   state).
+- **Sign in with Apple is opt-in per gateway.** The official hosted gateway sets
+  `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_CLIENT_ID=app.cheers.ios`, and
+  `APPLE_PRIVATE_KEY_P8`. Leave all four unset on normal self-hosted instances;
+  `/api/v1/auth/capabilities` then reports the feature disabled. Never distribute
+  the official `.p8` key to self-hosted operators.
 
 ---
 

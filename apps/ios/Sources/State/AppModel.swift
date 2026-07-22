@@ -14,6 +14,11 @@ struct UserSession: Equatable {
 @Observable
 final class AppModel {
     static let defaultServerURL = "https://www.tocheers.com/api/v1"
+    /// Public, production URLs. These must stay live and match the App Store
+    /// Connect metadata before each submission.
+    static let privacyPolicyURL = URL(string: "https://www.tocheers.com/privacy.html")!
+    static let supportURL = URL(string: "https://www.tocheers.com/support.html")!
+    static let remoteOperationSafetyURL = URL(string: "https://www.tocheers.com/remote-operations.html")!
 
     private enum Keys {
         static let token = "access_token"
@@ -89,6 +94,24 @@ final class AppModel {
         let client = APIClient(baseURL: base, token: nil)
         let response = try await client.login(login: loginName, password: password)
 
+        finishLogin(base: base, response: response)
+    }
+
+    func appleCapabilities(server: String) async throws -> (AuthCapabilities, AppleChallenge?) {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let client = APIClient(baseURL: base, token: nil)
+        let capabilities = try await client.authCapabilities()
+        let challenge = capabilities.signInWithApple ? try await client.appleChallenge() : nil
+        return (capabilities, challenge)
+    }
+
+    func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let response = try await APIClient(baseURL: base, token: nil).appleLogin(payload)
+        finishLogin(base: base, response: response)
+    }
+
+    private func finishLogin(base: URL, response: LoginResponse) {
         serverURLString = base.absoluteString
         token = response.accessToken
         KeychainStore.set(response.accessToken, for: Keys.token)
@@ -98,13 +121,13 @@ final class AppModel {
         defaults.set(response.userId, forKey: Keys.userId)
         defaults.set(response.displayName, forKey: Keys.displayName)
         defaults.set(response.role, forKey: Keys.role)
-        defaults.set(loginName, forKey: Keys.username)
+        defaults.set(response.username, forKey: Keys.username)
 
         session = UserSession(
             userId: response.userId,
             displayName: response.displayName,
             role: response.role,
-            username: loginName
+            username: response.username
         )
         connectSocket()
     }
@@ -117,6 +140,24 @@ final class AppModel {
             try? await api.logout()
         }
         clearSession()
+    }
+
+    /// Changes the password and replaces the locally held token. The gateway
+    /// revokes every older session and push registration as part of this flow.
+    func changePassword(currentPassword: String, newPassword: String) async throws {
+        guard let api else { throw APIError.unauthorized }
+        let response = try await api.changePassword(
+            currentPassword: currentPassword,
+            newPassword: newPassword
+        )
+        token = response.accessToken
+        _ = KeychainStore.set(response.accessToken, for: Keys.token)
+        socket.disconnect()
+        socketConnected = false
+        connectSocket()
+        if let refreshedAPI = self.api {
+            await PushRouter.reregisterCurrentDevice(using: refreshedAPI)
+        }
     }
 
     /// Local sign-out (used on 401 / revoked token).

@@ -8,6 +8,7 @@ enum APIError: LocalizedError {
     case http(status: Int, detail: String?)
     case transport(Error)
     case decoding(Error)
+    case aiConsentRequired([AIDataDisclosure])
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +23,8 @@ enum APIError: LocalizedError {
             return err.localizedDescription
         case .decoding:
             return "Unexpected server response."
+        case .aiConsentRequired:
+            return "Review the external AI data notice before sending this message."
         }
     }
 }
@@ -48,6 +51,10 @@ struct APIClient: Sendable {
 
     /// Normalizes user input like "localhost:30080" or a trailing-slash URL
     /// into a base URL ending in /api/v1 (no trailing slash).
+    ///
+    /// Credentials and bearer tokens must never traverse a clear-text network.
+    /// Local HTTP remains available for simulator/local-development use only;
+    /// every non-loopback server must use HTTPS.
     static func normalizeBaseURL(_ raw: String) -> URL? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
@@ -58,7 +65,17 @@ struct APIClient: Sendable {
         if !text.hasSuffix("/api/v1") {
             text += "/api/v1"
         }
-        return URL(string: text)
+        guard let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              scheme == "https" || scheme == "http"
+        else { return nil }
+
+        if scheme == "http" {
+            let isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
+            guard isLoopback else { return nil }
+        }
+        return url
     }
 
     /// Derives the websocket URL (ws(s)://host[:port]/ws) from the REST base.
@@ -109,6 +126,11 @@ struct APIClient: Sendable {
             throw APIError.http(status: 0, detail: "no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 428,
+               let required = try? JSONDecoder().decode(AIConsentRequiredResponse.self, from: data),
+               required.code == "ai_consent_required" {
+                throw APIError.aiConsentRequired(required.disclosures)
+            }
             // 401 means "session revoked/expired" only on authenticated calls.
             // Unauthenticated ones (login) must surface the server's detail
             // ("invalid credentials", 429-style lockout text) instead of the
@@ -157,6 +179,12 @@ struct APIClient: Sendable {
         _ = try await send(request)
     }
 
+    func postEmptyJSON<B: Encodable>(_ path: String, body: B) async throws {
+        let data = try JSONEncoder().encode(body)
+        let request = try makeRequest("POST", path, body: data)
+        _ = try await send(request)
+    }
+
     func deleteEmpty(_ path: String) async throws {
         let request = try makeRequest("DELETE", path)
         _ = try await send(request)
@@ -169,8 +197,90 @@ struct APIClient: Sendable {
         try await postJSON("/auth/login", body: LoginRequest(login: loginName, password: password), as: LoginResponse.self)
     }
 
+    func authCapabilities() async throws -> AuthCapabilities {
+        try await getJSON("/auth/capabilities", as: AuthCapabilities.self)
+    }
+
+    func appleChallenge() async throws -> AppleChallenge {
+        try await postJSON("/auth/apple/challenge", body: EmptyRequest(), as: AppleChallenge.self)
+    }
+
+    func appleLogin(_ payload: AppleAuthorizationPayload) async throws -> LoginResponse {
+        try await postJSON("/auth/apple", body: payload, as: LoginResponse.self)
+    }
+
+    func linkApple(_ payload: AppleAuthorizationPayload) async throws {
+        _ = try await postJSON("/users/me/external-identities/apple", body: payload, as: JSONValue.self)
+    }
+
+    func appleIdentityStatus() async throws -> AppleIdentityStatus {
+        try await getJSON("/users/me/external-identities/apple", as: AppleIdentityStatus.self)
+    }
+
+    func unlinkApple() async throws {
+        try await deleteEmpty("/users/me/external-identities/apple")
+    }
+
+    func deleteAccount(currentPassword: String?, apple: AppleAuthorizationPayload?) async throws {
+        try await postEmptyJSON(
+            "/users/me/delete",
+            body: DeleteAccountRequest(confirmation: "DELETE", currentPassword: currentPassword, apple: apple)
+        )
+    }
+
+    func setPassword(_ password: String, apple: AppleAuthorizationPayload) async throws {
+        try await postEmptyJSON("/users/me/password", body: SetPasswordRequest(newPassword: password, apple: apple))
+    }
+
+    func report(targetType: String, targetId: String, channelId: String?, reason: String, details: String?) async throws {
+        try await postEmptyJSON(
+            "/reports",
+            body: CreateReportRequest(targetType: targetType, targetId: targetId, channelId: channelId, reason: reason, details: details)
+        )
+    }
+
+    func blockUser(_ userId: String) async throws {
+        _ = try await postJSON("/friends/block", body: ["user_id": userId], as: JSONValue.self)
+    }
+
+    func unblockUser(_ userId: String) async throws {
+        _ = try await postJSON("/friends/unblock", body: ["user_id": userId], as: JSONValue.self)
+    }
+
+    func blockedUsers() async throws -> [BlockedUserDto] {
+        try await getJSON("/friends/blocks", as: [BlockedUserDto].self)
+    }
+
+    func aiDisclosures(channelId: String) async throws -> [AIDataDisclosure] {
+        try await getJSON("/channels/\(channelId)/ai-disclosures", as: [AIDataDisclosure].self)
+    }
+
+    func storedAIConsents() async throws -> [StoredAIConsent] {
+        try await getJSON("/users/me/ai-consents", as: [StoredAIConsent].self)
+    }
+
+    func grantAIConsent(channelId: String, disclosure: AIDataDisclosure) async throws {
+        _ = try await postJSON(
+            "/channels/\(channelId)/bots/\(disclosure.botId)/ai-consent",
+            body: ["policy_version": disclosure.policyVersion],
+            as: JSONValue.self
+        )
+    }
+
+    func revokeAIConsent(channelId: String, botId: String) async throws {
+        try await deleteEmpty("/channels/\(channelId)/bots/\(botId)/ai-consent")
+    }
+
     func logout() async throws {
         try await postEmpty("/auth/logout")
+    }
+
+    func changePassword(currentPassword: String, newPassword: String) async throws -> ChangePasswordResponse {
+        try await postJSON(
+            "/auth/change-password",
+            body: ChangePasswordRequest(currentPassword: currentPassword, newPassword: newPassword),
+            as: ChangePasswordResponse.self
+        )
     }
 
     // MARK: Workspaces / channels

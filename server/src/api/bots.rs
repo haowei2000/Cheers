@@ -45,6 +45,12 @@ pub struct BotCreateRequest {
     pub bridge_provider: Option<String>,
     pub binding_config: Option<Value>,
     pub acp_security: Option<BotAcpSecurityConfig>,
+    #[serde(default)]
+    pub external_processor: bool,
+    pub processor_name: Option<String>,
+    pub processor_privacy_url: Option<String>,
+    pub processor_data_use: Option<String>,
+    pub processor_policy_version: Option<String>,
 }
 
 /// Per-user cap on bot creation for non-admins (resource-abuse bound, audit H1).
@@ -136,7 +142,9 @@ pub async fn list_bots(
         "SELECT bot_id, username, display_name, description, avatar_url, is_disabled, scope,
                 binding_type, bridge_provider, model_id, template_id, intro, binding_config,
                 created_by, status_text, status_emoji, status_updated_at,
-                status_auto_update, status_update_prompt, status_update_interval_minutes
+                status_auto_update, status_update_prompt, status_update_interval_minutes,
+                external_processor, processor_name, processor_privacy_url,
+                processor_data_use, processor_policy_version
          FROM bot_accounts b
          WHERE $1
             OR b.created_by = $2
@@ -210,6 +218,11 @@ pub async fn list_bots(
             "template_id": r.try_get::<String, _>("template_id").ok(),
             "intro": r.try_get::<String, _>("intro").ok(),
             "binding_config": binding_config,
+            "external_processor": r.try_get::<bool, _>("external_processor").unwrap_or(false),
+            "processor_name": r.try_get::<Option<String>, _>("processor_name").ok().flatten(),
+            "processor_privacy_url": r.try_get::<Option<String>, _>("processor_privacy_url").ok().flatten(),
+            "processor_data_use": r.try_get::<Option<String>, _>("processor_data_use").ok().flatten(),
+            "processor_policy_version": r.try_get::<String, _>("processor_policy_version").unwrap_or_else(|_| "1".into()),
         }));
     }
     Ok(Json(bots))
@@ -222,6 +235,31 @@ pub async fn create_bot(
 ) -> Result<Json<Value>, AppError> {
     if body.username.trim().is_empty() {
         return Err(AppError::BadRequest("username is required".into()));
+    }
+    if body.external_processor {
+        let valid_url = body
+            .processor_privacy_url
+            .as_deref()
+            .and_then(|value| reqwest::Url::parse(value).ok())
+            .is_some_and(|url| url.scheme() == "https");
+        if body
+            .processor_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .is_none()
+            || body
+                .processor_data_use
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .is_none()
+            || !valid_url
+        {
+            return Err(AppError::BadRequest(
+                "external processors require a provider name, data-use disclosure, and HTTPS privacy URL".into(),
+            ));
+        }
     }
     // Resource-abuse bound (audit H1): cap how many bots a non-admin can own.
     if !is_admin(&claims) {
@@ -247,10 +285,12 @@ pub async fn create_bot(
         "INSERT INTO bot_accounts
          (bot_id, username, display_name, description, avatar_url, model_id, template_id,
              custom_system_prompt, scope, intro, binding_type, bridge_provider,
-             binding_config, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             binding_config, created_by, external_processor, processor_name,
+             processor_privacy_url, processor_data_use, processor_policy_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING bot_id, username, display_name, description, avatar_url, is_disabled, scope,
-                   binding_type, bridge_provider, model_id, template_id, intro, binding_config",
+                   binding_type, bridge_provider, model_id, template_id, intro, binding_config,
+                   external_processor, processor_name, processor_privacy_url, processor_data_use, processor_policy_version",
     )
     .bind(&bot_id)
     .bind(body.username.trim())
@@ -266,6 +306,11 @@ pub async fn create_bot(
     .bind(bridge_provider)
     .bind(binding_config)
     .bind(&claims.sub)
+    .bind(body.external_processor)
+    .bind(body.processor_name)
+    .bind(body.processor_privacy_url)
+    .bind(body.processor_data_use)
+    .bind(body.processor_policy_version.unwrap_or_else(|| "1".into()))
     .fetch_one(&state.db)
     .await?;
     Ok(Json(json!({
@@ -283,6 +328,11 @@ pub async fn create_bot(
         "template_id": row.try_get::<String, _>("template_id").ok(),
         "intro": row.try_get::<String, _>("intro").ok(),
         "binding_config": row.try_get::<Value, _>("binding_config").ok(),
+        "external_processor": row.try_get::<bool, _>("external_processor").unwrap_or(false),
+        "processor_name": row.try_get::<Option<String>, _>("processor_name").ok().flatten(),
+        "processor_privacy_url": row.try_get::<Option<String>, _>("processor_privacy_url").ok().flatten(),
+        "processor_data_use": row.try_get::<Option<String>, _>("processor_data_use").ok().flatten(),
+        "processor_policy_version": row.try_get::<String, _>("processor_policy_version").unwrap_or_else(|_| "1".into()),
     })))
 }
 
@@ -687,6 +737,27 @@ pub async fn update_bot_profile(
     let status_text = BotPatchField::read(obj, "status_text");
     let status_emoji = BotPatchField::read(obj, "status_emoji");
     let status_prompt = BotPatchField::read(obj, "status_update_prompt");
+    let processor_name = BotPatchField::read(obj, "processor_name");
+    let processor_privacy_url = BotPatchField::read(obj, "processor_privacy_url");
+    let processor_data_use = BotPatchField::read(obj, "processor_data_use");
+    let processor_policy_version = BotPatchField::read(obj, "processor_policy_version");
+    let external_processor_provided = obj.contains_key("external_processor");
+    let external_processor = obj
+        .get("external_processor")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if external_processor_provided && external_processor {
+        let valid_url = processor_privacy_url
+            .value
+            .as_deref()
+            .and_then(|value| reqwest::Url::parse(value).ok())
+            .is_some_and(|url| url.scheme() == "https");
+        if processor_name.value.is_none() || processor_data_use.value.is_none() || !valid_url {
+            return Err(AppError::BadRequest(
+                "external processors require a provider name, data-use disclosure, and HTTPS privacy URL".into(),
+            ));
+        }
+    }
 
     if status_text
         .value
@@ -753,7 +824,12 @@ pub async fn update_bot_profile(
             status_updated_at = CASE WHEN $12 THEN NOW() ELSE status_updated_at END,
             status_auto_update = CASE WHEN $13 THEN $14 ELSE status_auto_update END,
             status_update_prompt = CASE WHEN $15 THEN $16 ELSE status_update_prompt END,
-            status_update_interval_minutes = CASE WHEN $17 THEN $18 ELSE status_update_interval_minutes END
+            status_update_interval_minutes = CASE WHEN $17 THEN $18 ELSE status_update_interval_minutes END,
+            external_processor = CASE WHEN $19 THEN $20 ELSE external_processor END,
+            processor_name = CASE WHEN $21 THEN $22 ELSE processor_name END,
+            processor_privacy_url = CASE WHEN $23 THEN $24 ELSE processor_privacy_url END,
+            processor_data_use = CASE WHEN $25 THEN $26 ELSE processor_data_use END,
+            processor_policy_version = CASE WHEN $27 THEN $28 ELSE processor_policy_version END
          WHERE bot_id = $1",
     )
     .bind(&bot_id)
@@ -774,6 +850,16 @@ pub async fn update_bot_profile(
     .bind(&status_prompt.value)
     .bind(interval_provided)
     .bind(interval)
+    .bind(external_processor_provided)
+    .bind(external_processor)
+    .bind(processor_name.provided)
+    .bind(&processor_name.value)
+    .bind(processor_privacy_url.provided)
+    .bind(&processor_privacy_url.value)
+    .bind(processor_data_use.provided)
+    .bind(&processor_data_use.value)
+    .bind(processor_policy_version.provided)
+    .bind(&processor_policy_version.value)
     .execute(&state.db)
     .await?;
     if res.rows_affected() == 0 {

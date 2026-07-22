@@ -40,6 +40,7 @@ final class ChatModel {
     private(set) var isLoadingOlder = false
     private(set) var isSending = false
     var errorMessage: String?
+    var pendingAIConsent: [AIDataDisclosure] = []
     var composerText = ""
     /// Message being replied to (set by the bubble context menu); sent as
     /// reply_to_msg_id and cleared on success.
@@ -201,9 +202,23 @@ final class ChatModel {
             forceBottomTick += 1
             markRead()
             schedulePersist()
+        } catch APIError.aiConsentRequired(let disclosures) {
+            pendingAIConsent = disclosures
+            errorMessage = nil
         } catch {
             report(error)
         }
+    }
+
+    func grantPendingAIConsentAndRetry() async {
+        guard let api = app?.api, !pendingAIConsent.isEmpty else { return }
+        do {
+            for disclosure in pendingAIConsent {
+                try await api.grantAIConsent(channelId: channel.channelId, disclosure: disclosure)
+            }
+            pendingAIConsent = []
+            await send()
+        } catch { report(error) }
     }
 
     /// Refreshes the member-name map, bot roster and @-mention pool; a failure

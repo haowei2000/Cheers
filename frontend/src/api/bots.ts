@@ -16,6 +16,11 @@ export interface CreateBotInput {
   bridge_provider?: string;
   /** When set, the Agent Bridge requires a signed ACP capability delegation. */
   acp_security?: { enabled: boolean; require_capability?: boolean };
+  external_processor?: boolean;
+  processor_name?: string;
+  processor_privacy_url?: string;
+  processor_data_use?: string;
+  processor_policy_version?: string;
 }
 
 export async function createBot(input: CreateBotInput): Promise<BotItem> {
@@ -59,6 +64,11 @@ export interface UpdateBotProfileInput {
   status_auto_update?: boolean;
   status_update_prompt?: string | null;
   status_update_interval_minutes?: number | null;
+  external_processor?: boolean;
+  processor_name?: string | null;
+  processor_privacy_url?: string | null;
+  processor_data_use?: string | null;
+  processor_policy_version?: string | null;
 }
 
 /** PATCH /bots/:id/profile — owner/admin edits identity, status, and the schedule. */

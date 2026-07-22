@@ -94,7 +94,10 @@ impl PushKind {
         match self {
             Self::PermissionRequest {
                 bot_name, title, ..
-            } => (format!("{bot_name} requests permission"), title.clone()),
+            } => (
+                "Remote action needs approval".into(),
+                format!("{bot_name}: {title}. Approve only if you recognize this request."),
+            ),
             Self::DirectMessage { sender_name, .. } => {
                 (sender_name.clone(), "New direct message".into())
             }

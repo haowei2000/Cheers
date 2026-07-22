@@ -16,8 +16,8 @@ export default function ResetPasswordPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (pw.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    if (pw.length < 12) {
+      toast.error("Password must be at least 12 characters");
       return;
     }
     if (pw !== confirm) {
@@ -75,7 +75,7 @@ export default function ResetPasswordPage() {
             <label className={labelCls}>New password</label>
             <Input
               type="password"
-              placeholder="min 8 characters"
+              placeholder="min 12 characters"
               autoComplete="new-password"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
