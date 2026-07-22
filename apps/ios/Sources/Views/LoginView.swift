@@ -1,4 +1,6 @@
 import SwiftUI
+import AuthenticationServices
+import CryptoKit
 
 struct LoginView: View {
     @Environment(AppModel.self) private var app
@@ -8,6 +10,8 @@ struct LoginView: View {
     @State private var password = ""
     @State private var isBusy = false
     @State private var errorText: String?
+    @State private var appleEnabled = false
+    @State private var appleChallenge: AppleChallenge?
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, username, password }
@@ -17,6 +21,7 @@ struct LoginView: View {
             VStack(spacing: 24) {
                 header
                 card
+                legalLinks
             }
             .padding(.horizontal, 24)
             .padding(.top, 64)
@@ -27,6 +32,11 @@ struct LoginView: View {
         .background(Theme.bgApp)
         .onAppear {
             server = app.serverURLString
+        }
+        .task(id: server) {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await loadAppleCapability()
         }
     }
 
@@ -107,6 +117,30 @@ struct LoginView: View {
             }
             .disabled(!canSubmit || isBusy)
             .padding(.top, 4)
+
+            if appleEnabled {
+                HStack {
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                    Text("or").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                }
+                .padding(.vertical, 2)
+
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName, .email]
+                    if let nonce = appleChallenge?.nonce {
+                        request.nonce = SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
+                    }
+                } onCompletion: { result in
+                    handleAppleCompletion(result)
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .disabled(isBusy || appleChallenge == nil)
+                .opacity(appleChallenge == nil ? 0.55 : 1)
+                .accessibilityHint("Uses the Apple account signed in on this device")
+            }
         }
         .padding(24)
         .background(Theme.bgSurface)
@@ -143,6 +177,16 @@ struct LoginView: View {
             && !password.isEmpty
     }
 
+    private var legalLinks: some View {
+        VStack(spacing: 6) {
+            Link("Privacy Policy", destination: AppModel.privacyPolicyURL)
+            Link("Support", destination: AppModel.supportURL)
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(Theme.textMuted)
+        .multilineTextAlignment(.center)
+    }
+
     private func submit() {
         guard canSubmit, !isBusy else { return }
         errorText = nil
@@ -153,6 +197,60 @@ struct LoginView: View {
                 try await app.login(server: server, login: username, password: password)
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func loadAppleCapability() async {
+        do {
+            let (capabilities, challenge) = try await app.appleCapabilities(server: server)
+            appleEnabled = capabilities.signInWithApple
+            appleChallenge = challenge
+        } catch {
+            appleEnabled = false
+            appleChallenge = nil
+        }
+    }
+
+    private func handleAppleCompletion(_ result: Result<ASAuthorization, Error>) {
+        guard !isBusy else { return }
+        switch result {
+        case .failure(let error):
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                errorText = error.localizedDescription
+            }
+            Task { await loadAppleCapability() }
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let challenge = appleChallenge,
+                  let tokenData = credential.identityToken,
+                  let codeData = credential.authorizationCode,
+                  let identityToken = String(data: tokenData, encoding: .utf8),
+                  let authorizationCode = String(data: codeData, encoding: .utf8)
+            else {
+                errorText = "Apple did not return usable credentials. Please try again."
+                Task { await loadAppleCapability() }
+                return
+            }
+            let payload = AppleAuthorizationPayload(
+                challengeId: challenge.challengeId,
+                identityToken: identityToken,
+                authorizationCode: authorizationCode,
+                givenName: credential.fullName?.givenName,
+                familyName: credential.fullName?.familyName,
+                inviteToken: nil
+            )
+            isBusy = true
+            errorText = nil
+            Task {
+                defer { isBusy = false }
+                do {
+                    try await app.loginWithApple(server: server, payload: payload)
+                } catch {
+                    errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+                    await loadAppleCapability()
+                }
             }
         }
     }

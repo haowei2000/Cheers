@@ -90,6 +90,34 @@ impl Default for VoiceConfig {
 }
 
 impl VoiceConfig {
+    pub fn validate(&self) -> Result<(), AppError> {
+        if self
+            .empty_timeout_minutes
+            .is_some_and(|minutes| !(1..=1_440).contains(&minutes))
+        {
+            return Err(AppError::BadRequest(
+                "empty_timeout_minutes must be between 1 and 1440".into(),
+            ));
+        }
+        if self
+            .participant_cap
+            .is_some_and(|participants| !(2..=500).contains(&participants))
+        {
+            return Err(AppError::BadRequest(
+                "participant_cap must be between 2 and 500".into(),
+            ));
+        }
+        if self
+            .retention_days
+            .is_some_and(|days| !(1..=3_650).contains(&days))
+        {
+            return Err(AppError::BadRequest(
+                "retention_days must be between 1 and 3650".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Parse the JSONB config for one channel, falling back to defaults when the
     /// column is absent or malformed (legacy `{}` rows, or a partial write).
     pub fn from_row(raw: Option<&serde_json::Value>) -> Self {
@@ -125,5 +153,37 @@ impl VoiceConfig {
             .execute(db)
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unbounded_operational_limits() {
+        let mut config = VoiceConfig::default();
+        config.participant_cap = Some(501);
+        assert!(config.validate().is_err());
+
+        config.participant_cap = Some(50);
+        config.retention_days = Some(0);
+        assert!(config.validate().is_err());
+
+        config.retention_days = Some(30);
+        config.empty_timeout_minutes = Some(1_441);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn accepts_bounded_or_inherited_limits() {
+        assert!(VoiceConfig::default().validate().is_ok());
+        let config = VoiceConfig {
+            empty_timeout_minutes: Some(30),
+            participant_cap: Some(50),
+            retention_days: None,
+            ..VoiceConfig::default()
+        };
+        assert!(config.validate().is_ok());
     }
 }

@@ -80,6 +80,16 @@ pub async fn send_message(
         }
     }
 
+    crate::api::compliance::ensure_message_consents(
+        &state,
+        &claims.sub,
+        channel_id,
+        &body.mention_ids,
+        &body.mention_names,
+        body.session_id,
+    )
+    .await?;
+
     // Harden the human-attached context bundle before it is persisted / delivered
     // (docs/design/RESOURCE_CONTEXT.md, no-permission-bypass): read verbs only,
     // origin stamped server-side, caps — then re-verify `workspace/read` on every

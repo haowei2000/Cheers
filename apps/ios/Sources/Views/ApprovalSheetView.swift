@@ -16,6 +16,7 @@ struct ApprovalSheetView: View {
     @State private var busy = false
     @State private var errorText: String?
     @State private var undelivered = false
+    @State private var showApprovalConfirm = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -28,6 +29,7 @@ struct ApprovalSheetView: View {
                     if let diff = request.diff {
                         diffBlock(diff)
                     }
+                    safetyNotice
                     options
                     if let errorText {
                         Text(errorText)
@@ -50,6 +52,18 @@ struct ApprovalSheetView: View {
             if selectedOptionId == nil {
                 selectedOptionId = request.radioOptions.first?.optionId
             }
+        }
+        .confirmationDialog(
+            "Approve this remote-agent request?",
+            isPresented: $showApprovalConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Approve request", role: .destructive) {
+                Task { await resolve(with: selectedOptionId) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Approval may let \(botName) act on the connected computer or service. Confirm that you reviewed the command, files, and diff above.")
         }
     }
 
@@ -115,6 +129,19 @@ struct ApprovalSheetView: View {
         }
     }
 
+    private var safetyNotice: some View {
+        Label(
+            "Review carefully. An approved request may read, change, or delete files, run commands, or contact external services on the connected agent host.",
+            systemImage: "exclamationmark.shield"
+        )
+        .font(.system(size: 12))
+        .foregroundStyle(Theme.warning)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Theme.warning.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
     private var footer: some View {
         HStack(spacing: 10) {
             Button { Task { await resolve(with: denyOptionId) } } label: {
@@ -128,7 +155,7 @@ struct ApprovalSheetView: View {
             .buttonStyle(.plain)
             .disabled(busy)
 
-            Button { Task { await resolve(with: selectedOptionId) } } label: {
+            Button { showApprovalConfirm = true } label: {
                 ZStack {
                     if busy { ProgressView().tint(Theme.bgApp) }
                     Text("Approve").opacity(busy ? 0 : 1)

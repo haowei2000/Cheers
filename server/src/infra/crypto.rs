@@ -1,5 +1,9 @@
 use sha2::{Digest, Sha256};
 
+/// One password policy for self-service and administrator-provisioned accounts.
+/// Existing credentials remain valid; this applies whenever a password is set.
+pub const MIN_PASSWORD_CHARS: usize = 12;
+
 /// botToken 明文前缀。便于在 UI/日志中识别（不含敏感信息）。
 pub const BOT_TOKEN_PREFIX: &str = "agb_";
 
@@ -47,6 +51,20 @@ pub fn generate_invite_link_token() -> String {
     let mut bytes = [0u8; 16];
     getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
     format!("{INVITE_LINK_PREFIX}{}", hex::encode(bytes))
+}
+
+/// Raw nonce returned only to the native Apple authorization request. The DB
+/// stores only its SHA-256 value, which is what Apple signs into the ID token.
+pub fn generate_auth_nonce() -> String {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable");
+    hex::encode(bytes)
+}
+
+pub fn sha256_hex(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 // ── Secrets at rest (AES-256-GCM) ────────────────────────────────────────────

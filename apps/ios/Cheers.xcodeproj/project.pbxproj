@@ -49,6 +49,7 @@
 		CE0000000000000000000412 /* VoiceMeetingStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000413 /* VoiceMeetingStrip.swift */; };
 		CE0000000000000000000414 /* TaskClaimConfirmationFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000415 /* TaskClaimConfirmationFooter.swift */; };
 		CE0000000000000000000416 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000418 /* LiveKit */; };
+		CE0000000000000000000230 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000128 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -91,6 +92,8 @@
 		CE000000000000000000011F /* PushRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRouter.swift; sourceTree = "<group>"; };
 		CE0000000000000000000120 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CE0000000000000000000111 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CE0000000000000000000127 /* Cheers.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Cheers.entitlements; sourceTree = "<group>"; };
+		CE0000000000000000000128 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CE0000000000000000000402 /* Cheers.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cheers.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CE0000000000000000000411 /* VoiceRoomModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRoomModel.swift; sourceTree = "<group>"; };
 		CE0000000000000000000413 /* VoiceMeetingStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMeetingStrip.swift; sourceTree = "<group>"; };
@@ -130,6 +133,8 @@
 			children = (
 				CE0000000000000000000101 /* CheersApp.swift */,
 				CE0000000000000000000111 /* Info.plist */,
+				CE0000000000000000000127 /* Cheers.entitlements */,
+				CE0000000000000000000128 /* PrivacyInfo.xcprivacy */,
 				CE0000000000000000000120 /* Assets.xcassets */,
 				CE0000000000000000000304 /* Support */,
 				CE0000000000000000000305 /* Models */,
@@ -279,6 +284,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CE000000000000000000021F /* Assets.xcassets in Resources */,
+				CE0000000000000000000230 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -390,7 +396,9 @@
 		CE000000000000000000040A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Sources/Cheers.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -400,7 +408,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.cheers.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -412,7 +420,9 @@
 		CE000000000000000000040B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Sources/Cheers.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -422,7 +432,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.cheers.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

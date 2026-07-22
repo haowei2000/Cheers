@@ -3,7 +3,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
 
 /// Message API 对外消息体的统一版本。
 pub const MESSAGE_SCHEMA_VERSION: u8 = 1;

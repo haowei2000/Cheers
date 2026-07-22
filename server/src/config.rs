@@ -33,6 +33,25 @@ pub struct JwtKeys {
     pub decoding: DecodingKey,
 }
 
+#[derive(Clone)]
+pub struct AppleAuthConfig {
+    pub team_id: String,
+    pub key_id: String,
+    pub client_id: String,
+    pub private_key_pem: String,
+}
+
+impl std::fmt::Debug for AppleAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppleAuthConfig")
+            .field("team_id", &self.team_id)
+            .field("key_id", &self.key_id)
+            .field("client_id", &self.client_id)
+            .field("private_key_pem", &"<redacted>")
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for JwtKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("JwtKeys(<redacted>)")
@@ -87,6 +106,11 @@ pub struct Config {
     /// at rest (system_settings). When unset, the key is derived from the JWT
     /// private key — set this to survive JWT key rotation without re-entering secrets.
     pub secret_store_key: Option<String>,
+
+    /// Sign in with Apple is enabled only when all four values are present.
+    /// Self-hosted gateways therefore remain password-only by default and never
+    /// need access to the official app's Apple private key.
+    pub apple_auth: Option<AppleAuthConfig>,
 
     // 邮件（Brevo 事务性邮件 HTTP API；不配置则验证码回退打印到日志）
     /// Brevo (ex-Sendinblue) API key for the transactional email endpoint
@@ -179,6 +203,30 @@ impl Config {
             ),
         };
 
+        let apple_values = (
+            optional("APPLE_TEAM_ID"),
+            optional("APPLE_KEY_ID"),
+            optional("APPLE_CLIENT_ID"),
+            optional("APPLE_PRIVATE_KEY_P8"),
+        );
+        let apple_auth = match apple_values {
+            (Some(team_id), Some(key_id), Some(client_id), Some(private_key_pem)) => {
+                Some(AppleAuthConfig {
+                    team_id,
+                    key_id,
+                    client_id,
+                    private_key_pem,
+                })
+            }
+            (None, None, None, None) => None,
+            _ => {
+                tracing::warn!(
+                    "partial APPLE_* configuration ignored; Sign in with Apple disabled"
+                );
+                None
+            }
+        };
+
         Self {
             database_url: require("DATABASE_URL"),
             port: env::var("PORT")
@@ -225,6 +273,7 @@ impl Config {
             secret_store_key: env::var("SECRET_STORE_KEY")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
+            apple_auth,
 
             brevo_api_key: env::var("BREVO_API_KEY")
                 .ok()
@@ -333,6 +382,10 @@ fn require(key: &str) -> String {
         Ok(v) if !v.trim().is_empty() => v,
         _ => panic!("required env var {key} is missing or empty — see docs/help/deployment.md"),
     }
+}
+
+fn optional(key: &str) -> Option<String> {
+    env::var(key).ok().filter(|value| !value.trim().is_empty())
 }
 
 /// Parse a boolean env flag. Only `1/true/yes/on` (case-insensitive) enable it;

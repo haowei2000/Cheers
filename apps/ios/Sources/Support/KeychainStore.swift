@@ -5,6 +5,10 @@ import Security
 /// Generic-password items, no third-party dependencies.
 enum KeychainStore {
     private static let service = "app.cheers.ios"
+    /// Tokens stay on this device and are inaccessible while it is locked.
+    /// This prevents background access after a reboot and pairs with the
+    /// lock-screen action's device-authentication requirement.
+    private static let accessibility = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
 
     @discardableResult
     static func set(_ value: String, for key: String) -> Bool {
@@ -15,13 +19,16 @@ enum KeychainStore {
             kSecAttrAccount as String: key,
         ]
         // Upsert: try update first, add if missing.
-        let update: [String: Any] = [kSecValueData as String: data]
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: accessibility,
+        ]
         let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
         if updateStatus == errSecSuccess { return true }
         if updateStatus == errSecItemNotFound {
             var add = query
             add[kSecValueData as String] = data
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            add[kSecAttrAccessible as String] = accessibility
             return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
         }
         return false

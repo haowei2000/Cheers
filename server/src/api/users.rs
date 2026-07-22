@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     api::middleware::Claims, app_state::AppState, errors::AppError,
-    gateway::realtime::frame::WireFrame,
+    gateway::realtime::frame::WireFrame, infra::crypto::MIN_PASSWORD_CHARS,
 };
 
 fn is_admin(claims: &Claims) -> bool {
@@ -317,10 +317,10 @@ pub async fn create_user(
             "username is required (≤64 chars)".into(),
         ));
     }
-    if body.password.chars().count() < 8 {
-        return Err(AppError::BadRequest(
-            "password must be at least 8 characters".into(),
-        ));
+    if body.password.chars().count() < MIN_PASSWORD_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "password must be at least {MIN_PASSWORD_CHARS} characters"
+        )));
     }
     let role = match body.role.as_deref().unwrap_or("member") {
         r @ ("member" | "admin") => r.to_string(),

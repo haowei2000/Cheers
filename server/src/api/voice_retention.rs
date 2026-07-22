@@ -153,6 +153,7 @@ pub async fn update_voice_config(
             "channel owner or admin required".into(),
         ));
     }
+    body.validate()?;
     body.save(&state.db, &channel_id).await?;
     write_transcript_audit(
         &state.db,

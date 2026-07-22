@@ -436,6 +436,11 @@ function BotStatusEditor({
   const [statusEmoji, setStatusEmoji] = useState(bot.status_emoji ?? "");
   const [statusText, setStatusText] = useState(bot.status_text ?? "");
   const [description, setDescription] = useState(bot.description ?? "");
+  const [externalProcessor, setExternalProcessor] = useState(bot.external_processor ?? false);
+  const [processorName, setProcessorName] = useState(bot.processor_name ?? "");
+  const [processorPrivacyUrl, setProcessorPrivacyUrl] = useState(bot.processor_privacy_url ?? "");
+  const [processorDataUse, setProcessorDataUse] = useState(bot.processor_data_use ?? "");
+  const [processorPolicyVersion, setProcessorPolicyVersion] = useState(bot.processor_policy_version ?? "1");
   // Re-seed the drafts when a refetch brings new values — e.g. the agent just
   // wrote its status via set_status after "Update status now". Without this the
   // inputs keep showing the stale pre-refresh text (useState seeds only once),
@@ -444,7 +449,12 @@ function BotStatusEditor({
     setStatusEmoji(bot.status_emoji ?? "");
     setStatusText(bot.status_text ?? "");
     setDescription(bot.description ?? "");
-  }, [bot.status_emoji, bot.status_text, bot.description]);
+    setExternalProcessor(bot.external_processor ?? false);
+    setProcessorName(bot.processor_name ?? "");
+    setProcessorPrivacyUrl(bot.processor_privacy_url ?? "");
+    setProcessorDataUse(bot.processor_data_use ?? "");
+    setProcessorPolicyVersion(bot.processor_policy_version ?? "1");
+  }, [bot.status_emoji, bot.status_text, bot.description, bot.external_processor, bot.processor_name, bot.processor_privacy_url, bot.processor_data_use, bot.processor_policy_version]);
   const [auto, setAuto] = useState(bot.status_auto_update ?? false);
   const [prompt, setPrompt] = useState(bot.status_update_prompt ?? "");
   const [interval, setIntervalMin] = useState(
@@ -540,6 +550,10 @@ function BotStatusEditor({
       return;
     }
     setPromptError(null);
+    if (externalProcessor && (!processorName.trim() || !processorDataUse.trim() || !processorPrivacyUrl.startsWith("https://"))) {
+      setPromptError("External AI requires a provider name, data-use disclosure, and HTTPS privacy URL");
+      return;
+    }
     setBusy(true);
     try {
       await updateBotProfile(bot.bot_id, {
@@ -549,6 +563,11 @@ function BotStatusEditor({
         status_auto_update: auto,
         status_update_prompt: prompt.trim(),
         status_update_interval_minutes: Number(interval) || 60,
+        external_processor: externalProcessor,
+        processor_name: processorName.trim(),
+        processor_privacy_url: processorPrivacyUrl.trim(),
+        processor_data_use: processorDataUse.trim(),
+        processor_policy_version: processorPolicyVersion.trim() || "1",
       });
       toast.success("Bot profile saved");
       onChanged();
@@ -591,6 +610,22 @@ function BotStatusEditor({
           aria-label="Bot description"
         />
       </Field>
+
+      <div className="rounded-xl border border-zinc-800 p-4 space-y-3">
+        <label className="flex items-center gap-2 text-sm text-zinc-200">
+          <input type="checkbox" checked={externalProcessor} onChange={(e) => setExternalProcessor(e.target.checked)} className="accent-indigo-500" />
+          Sends channel data to an external AI provider
+        </label>
+        {externalProcessor && (
+          <>
+            <Field label="Provider name"><Input value={processorName} onChange={(e) => setProcessorName(e.target.value)} placeholder="OpenAI, Anthropic, or operator name" /></Field>
+            <Field label="Provider privacy URL"><Input value={processorPrivacyUrl} onChange={(e) => setProcessorPrivacyUrl(e.target.value)} placeholder="https://…" /></Field>
+            <Field label="Data use shown to members"><Textarea value={processorDataUse} onChange={(e) => setProcessorDataUse(e.target.value)} rows={2} placeholder="Messages and selected workspace context are sent to generate replies." /></Field>
+            <Field label="Disclosure version"><Input value={processorPolicyVersion} onChange={(e) => setProcessorPolicyVersion(e.target.value)} placeholder="1" /></Field>
+            <p className="text-xs text-zinc-400">Changing the disclosure version requires members to consent again before their next AI-directed message.</p>
+          </>
+        )}
+      </div>
 
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
       <div className="flex flex-wrap items-center gap-2">

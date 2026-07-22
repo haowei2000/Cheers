@@ -181,7 +181,7 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!username.trim() || password.length < 8) {
+    if (!username.trim() || password.length < 12) {
       toast.error("Username and an 8+ character password are required");
       return;
     }
@@ -238,7 +238,7 @@ function CreateUserForm({ onCreated }: { onCreated: () => void }) {
         <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Temporary password (min 8)"
+          placeholder="Temporary password (min 12)"
           type="password"
           autoComplete="new-password"
           className={inputCls}

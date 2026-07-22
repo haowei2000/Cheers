@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use sqlx::{error::DatabaseError, Row};
 use uuid::Uuid;
 
+use crate::infra::crypto::MIN_PASSWORD_CHARS;
 use crate::{api::middleware::Claims, app_state::AppState, domain::auth, errors::AppError};
 
 /// Minimal `local@domain.tld` shape check — not RFC-perfect, just rejects obvious junk.
@@ -40,6 +41,7 @@ pub struct LoginResponse {
     pub access_token: String,
     pub token_type: String,
     pub user_id: String,
+    pub username: String,
     pub display_name: Option<String>,
     pub role: String,
 }
@@ -88,6 +90,7 @@ pub async fn login(
         access_token: token,
         token_type: "bearer".into(),
         user_id: user.id,
+        username: user.username,
         display_name: user.display_name,
         role: user.role,
     }))
@@ -105,7 +108,10 @@ pub struct RegisterCodeRequest {
 /// Sign-up gate shared by request-code + register: open registration, or a live
 /// invite-link token. The token is only CHECKED here — its use is consumed later
 /// by `accept_invite_link`, once the account exists and actually joins.
-async fn ensure_may_register(state: &AppState, invite_token: Option<&str>) -> Result<(), AppError> {
+pub(crate) async fn ensure_may_register(
+    state: &AppState,
+    invite_token: Option<&str>,
+) -> Result<(), AppError> {
     if state.config.open_registration {
         return Ok(());
     }
@@ -226,10 +232,10 @@ pub async fn register(
             "username is required (≤64 chars)".into(),
         ));
     }
-    if body.password.chars().count() < 8 {
-        return Err(AppError::BadRequest(
-            "password must be at least 8 characters".into(),
-        ));
+    if body.password.chars().count() < MIN_PASSWORD_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "password must be at least {MIN_PASSWORD_CHARS} characters"
+        )));
     }
     // Email is REQUIRED for self-service sign-up (so password reset always works).
     let email = body.email.trim().to_lowercase();
@@ -302,6 +308,7 @@ pub async fn register(
         access_token: token,
         token_type: "bearer".into(),
         user_id: user_id.to_string(),
+        username,
         display_name,
         role: "member".into(),
     }))
@@ -322,10 +329,10 @@ pub async fn change_password(
     Extension(claims): Extension<Claims>,
     Json(body): Json<ChangePasswordRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if body.new_password.chars().count() < 8 {
-        return Err(AppError::BadRequest(
-            "new password must be at least 8 characters".into(),
-        ));
+    if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "new password must be at least {MIN_PASSWORD_CHARS} characters"
+        )));
     }
     let row = sqlx::query(
         "SELECT password_hash, role, token_version FROM users
@@ -336,7 +343,12 @@ pub async fn change_password(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let hashed: String = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed: Option<String> = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed = hashed.ok_or_else(|| {
+        AppError::BadRequest(
+            "this account has no password; add one from Sign in with Apple settings".into(),
+        )
+    })?;
     if !crate::infra::crypto::verify_password(body.current_password.clone(), hashed)
         .await
         .unwrap_or(false)
@@ -476,10 +488,10 @@ pub async fn reset_password(
     if let Some(retry_after_secs) = limiter.retry_after(&key) {
         return Err(AppError::TooManyRequests { retry_after_secs });
     }
-    if body.new_password.chars().count() < 8 {
-        return Err(AppError::BadRequest(
-            "new password must be at least 8 characters".into(),
-        ));
+    if body.new_password.chars().count() < MIN_PASSWORD_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "new password must be at least {MIN_PASSWORD_CHARS} characters"
+        )));
     }
     let email = body.email.trim().to_lowercase();
     let code = body.code.trim().to_uppercase(); // codes use an uppercase alphabet

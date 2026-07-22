@@ -17,6 +17,8 @@ struct MembersSheet: View {
     @State private var showInvite = false
     @State private var roleTarget: ChannelMemberDto?
     @State private var removeTarget: ChannelMemberDto?
+    @State private var reportTarget: ChannelMemberDto?
+    @State private var blockTarget: ChannelMemberDto?
 
     private var channelId: String { channel.channelId }
 
@@ -59,6 +61,16 @@ struct MembersSheet: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Report this user?", isPresented: Binding(get: { reportTarget != nil }, set: { if !$0 { reportTarget = nil } }), titleVisibility: .visible) {
+            ForEach(["harassment", "spam", "illegal", "privacy", "other"], id: \.self) { reason in
+                Button(reason.capitalized) { Task { await report(reason) } }
+            }
+            Button("Cancel", role: .cancel) { reportTarget = nil }
+        }
+        .confirmationDialog("Block this user?", isPresented: Binding(get: { blockTarget != nil }, set: { if !$0 { blockTarget = nil } }), titleVisibility: .visible) {
+            Button("Block", role: .destructive) { Task { await block() } }
+            Button("Cancel", role: .cancel) { blockTarget = nil }
         }
         .confirmationDialog(
             removeTarget.map { "Remove \($0.name) from #\(channel.name)?" } ?? "",
@@ -159,9 +171,7 @@ struct MembersSheet: View {
                 }
             }
             Spacer(minLength: 8)
-            if canManage {
-                rowMenu(member)
-            }
+            rowMenu(member)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 52)
@@ -173,9 +183,10 @@ struct MembersSheet: View {
     @ViewBuilder
     private func rowMenu(_ member: ChannelMemberDto) -> some View {
         let isMe = member.memberType == "user" && member.memberId == app.session?.userId
-        let canChangeRole = !member.isPending && !isMe
-        let canRemove = !isMe && member.role != "owner"
-        if canChangeRole || canRemove {
+        let canChangeRole = canManage && !member.isPending && !isMe
+        let canRemove = canManage && !isMe && member.role != "owner"
+        let canSafetyAction = !member.isBot && !member.isPending && !isMe
+        if canChangeRole || canRemove || canSafetyAction {
             Menu {
                 if canChangeRole {
                     Button { roleTarget = member } label: { Label("Change role", systemImage: "person.badge.key") }
@@ -184,6 +195,11 @@ struct MembersSheet: View {
                     Button(role: .destructive) { removeTarget = member } label: {
                         Label(member.isPending ? "Cancel invite" : "Remove", systemImage: "person.badge.minus")
                     }
+                }
+                if canSafetyAction {
+                    Divider()
+                    Button { reportTarget = member } label: { Label("Report user", systemImage: "exclamationmark.bubble") }
+                    Button(role: .destructive) { blockTarget = member } label: { Label("Block user", systemImage: "hand.raised") }
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -228,6 +244,22 @@ struct MembersSheet: View {
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    private func report(_ reason: String) async {
+        guard let target = reportTarget, let api = app.api else { return }
+        reportTarget = nil
+        do {
+            try await api.report(targetType: "user", targetId: target.memberId, channelId: channelId, reason: reason, details: nil)
+            errorText = nil
+        } catch { errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription }
+    }
+
+    private func block() async {
+        guard let target = blockTarget, let api = app.api else { return }
+        blockTarget = nil
+        do { try await api.blockUser(target.memberId) }
+        catch { errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription }
     }
 }
 

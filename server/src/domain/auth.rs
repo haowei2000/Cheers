@@ -37,6 +37,7 @@ pub fn create_access_token(
 
 pub struct AuthUser {
     pub id: String,
+    pub username: String,
     pub display_name: Option<String>,
     pub role: String,
     pub token_version: i32,
@@ -49,7 +50,7 @@ pub async fn authenticate(
     password: &str,
 ) -> Result<AuthUser, AppError> {
     let row = sqlx::query(
-        "SELECT user_id, password_hash, display_name, role, token_version, is_suspended
+        "SELECT user_id, username, password_hash, display_name, role, token_version, is_suspended
          FROM users
          WHERE (username = $1 OR email = $1) AND is_deleted = FALSE
          LIMIT 1",
@@ -60,7 +61,9 @@ pub async fn authenticate(
     .map_err(AppError::Db)?
     .ok_or_else(|| AppError::Unauthorized("invalid credentials".into()))?;
 
-    let hashed: String = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed: Option<String> = row.try_get("password_hash").map_err(AppError::Db)?;
+    let hashed = hashed
+        .ok_or_else(|| AppError::Unauthorized("use Sign in with Apple for this account".into()))?;
 
     // Python passlib 使用 bcrypt（$2b$ 前缀）。bcrypt 是 CPU 密集（~200-300ms），
     // 放到 spawn_blocking 线程池执行，避免阻塞 tokio worker。
@@ -78,6 +81,7 @@ pub async fn authenticate(
 
     Ok(AuthUser {
         id: row.try_get("user_id").map_err(AppError::Db)?,
+        username: row.try_get("username").map_err(AppError::Db)?,
         display_name: row.try_get("display_name").ok(),
         role: row.try_get("role").unwrap_or_else(|_| "user".to_string()),
         token_version: row.try_get::<i32, _>("token_version").unwrap_or(0),

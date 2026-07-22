@@ -57,7 +57,7 @@ export default function RegisterPage() {
   const validatePassword = () => {
     setErrors((e) => ({
       ...e,
-      password: form.password && form.password.length < 8 ? "Use at least 8 characters" : undefined,
+      password: form.password && form.password.length < 12 ? "Use at least 12 characters" : undefined,
     }));
   };
   const validateConfirm = () => {
@@ -98,7 +98,7 @@ export default function RegisterPage() {
     const email = form.email.trim();
     const nextErrors: Partial<Record<keyof typeof form, string>> = {};
     if (!email || !EMAIL_RE.test(email)) nextErrors.email = "Enter a valid email address";
-    if (form.password.length < 8) nextErrors.password = "Use at least 8 characters";
+    if (form.password.length < 12) nextErrors.password = "Use at least 12 characters";
     if (form.password !== form.confirm) nextErrors.confirm = "Passwords don't match";
     if (Object.keys(nextErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...nextErrors }));
@@ -230,7 +230,7 @@ export default function RegisterPage() {
             <label className={labelCls}>Password</label>
             <Input
               type="password"
-              placeholder="min 8 characters"
+              placeholder="min 12 characters"
               autoComplete="new-password"
               value={form.password}
               onChange={set("password")}
