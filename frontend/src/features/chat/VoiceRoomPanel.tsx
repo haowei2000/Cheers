@@ -64,6 +64,10 @@ export function VoiceRoomPanel({
   const [transcriptionStatus, setTranscriptionStatus] = useState<
     "off" | "starting" | "active" | "failed"
   >("off");
+  // The channel list can be restored from a client cache. Refresh this from
+  // the voice-state API so an owner does not lose caption controls because an
+  // old cached channel object omitted `can_manage`.
+  const [serverCanManage, setServerCanManage] = useState(canManage);
   const [changingTranscription, setChangingTranscription] = useState(false);
   // Transcription-consent gating (design §11.3). When the channel requires
   // explicit consent and the participant hasn't accepted, join completes
@@ -105,10 +109,10 @@ export function VoiceRoomPanel({
     const refresh = async () => {
       try {
         const voiceState = await getVoiceState(channelId);
-        if (!cancelled)
-          setTranscriptionStatus(
-            voiceState.session?.transcription_status ?? "off",
-          );
+        if (!cancelled) {
+          setTranscriptionStatus(voiceState.session?.transcription_status ?? "off");
+          setServerCanManage(voiceState.can_manage);
+        }
       } catch {
         // Voice can be intentionally disabled; joining surfaces the actionable error.
       }
@@ -476,7 +480,7 @@ export function VoiceRoomPanel({
             </p>
           )}
         </div>
-        {canManage && (
+        {serverCanManage && (
           <button
             type="button"
             disabled={!connected || changingTranscription}

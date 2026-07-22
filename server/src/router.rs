@@ -280,6 +280,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/channels/:channel_id/voice/state",
             get(api::voice::state),
         )
+        .route(
+            "/api/v1/channels/:channel_id/voice/dictation-capability",
+            get(api::voice::dictation_capability),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/voice/dictation",
+            post(api::voice::dictate).layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
         .route("/api/v1/voice/presence", get(api::voice::presence))
         .route(
             "/api/v1/channels/:channel_id/voice/transcript",

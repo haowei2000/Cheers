@@ -23,8 +23,14 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    api::middleware::Claims as BrowserClaims, app_state::AppState, domain::channel_seq,
-    domain::voice_config::VoiceConfig, errors::AppError, gateway::realtime::frame::WireFrame,
+    api::middleware::Claims as BrowserClaims,
+    app_state::AppState,
+    domain::channel_seq,
+    domain::stt_settings,
+    domain::voice_config::VoiceConfig,
+    errors::AppError,
+    gateway::realtime::frame::WireFrame,
+    infra::{crypto, stt},
 };
 
 const JOIN_TOKEN_TTL_SECS: i64 = 10 * 60;
@@ -80,6 +86,10 @@ pub struct VoiceJoinResponse {
 pub struct VoiceStateResponse {
     pub enabled: bool,
     pub channel_kind: String,
+    /// Authoritative per-request permission for caption controls. The channel
+    /// list may be restored from a client cache, so it cannot be the only
+    /// source of truth for this decision.
+    pub can_manage: bool,
     pub session: Option<VoiceSessionDto>,
 }
 
@@ -103,6 +113,21 @@ pub struct VoiceTranscriberContext {
 pub struct VoiceTranscriptionControlResponse {
     pub voice_session_id: String,
     pub transcription_status: String,
+}
+
+/// The composer asks this before opening the microphone. A configured adapter
+/// keeps audio server-side; without one the client can fall back to the
+/// platform's speech-recognition service without ever uploading audio.
+#[derive(Debug, Serialize)]
+pub struct DictationCapabilityResponse {
+    pub adapter_configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_kind: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DictationTranscriptResponse {
+    pub transcript: String,
 }
 
 /// Response for a consent action (POST/DELETE …/voice/consent). When consent was
@@ -187,6 +212,108 @@ pub(crate) struct VoiceMember {
     pub(crate) channel_kind: String,
     pub(crate) channel_role: String,
     pub(crate) display_name: String,
+}
+
+fn can_manage_voice(member: &VoiceMember, claims: &BrowserClaims) -> bool {
+    matches!(member.channel_role.as_str(), "owner" | "admin")
+        || matches!(claims.role.as_str(), "system_admin" | "admin")
+}
+
+fn stt_master_key(state: &AppState) -> [u8; 32] {
+    crypto::derive_master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    )
+}
+
+async fn configured_dictation_adapter(
+    state: &AppState,
+) -> Result<Option<stt_settings::SttSettings>, AppError> {
+    Ok(stt_settings::load(&state.db, &stt_master_key(state))
+        .await?
+        .filter(|settings| {
+            settings.enabled
+                && !settings.endpoint.trim().is_empty()
+                && !settings.model.trim().is_empty()
+        }))
+}
+
+async fn transcribe_stepfun_dictation(
+    api_key: &str,
+    url: &str,
+    model: &str,
+    language: Option<&str>,
+    pcm: &[u8],
+) -> Result<String, AppError> {
+    let mut transcription = json!({ "model": model, "enable_itn": true });
+    if let Some(language) = language.filter(|value| !value.trim().is_empty()) {
+        transcription["language"] = json!(language);
+    }
+    let payload = json!({
+        "audio": {
+            "data": BASE64.encode(pcm),
+            "input": {
+                "transcription": transcription,
+                "format": {
+                    "type": "pcm",
+                    "codec": "pcm_s16le",
+                    "rate": 16000,
+                    "bits": 16,
+                    "channel": 1,
+                },
+            },
+        },
+    });
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|_| AppError::ServiceUnavailable("could not create speech adapter client".into()))?
+        .post(url)
+        .bearer_auth(api_key)
+        .header("Accept", "text/event-stream")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "StepFun dictation request failed");
+            AppError::ServiceUnavailable(
+                "configured speech adapter could not transcribe audio".into(),
+            )
+        })?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        let body_snippet: String = body.chars().take(500).collect();
+        tracing::warn!(%status, body = %body_snippet, "StepFun dictation rejected request");
+        return Err(AppError::ServiceUnavailable(
+            "configured speech adapter could not transcribe audio".into(),
+        ));
+    }
+    for line in body.lines() {
+        let Some(data) = line.trim().strip_prefix("data:") else {
+            continue;
+        };
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(data.trim()) else {
+            continue;
+        };
+        if event.get("type").and_then(serde_json::Value::as_str) == Some("error") {
+            tracing::warn!(message = ?event.get("message"), "StepFun dictation returned error event");
+            return Err(AppError::ServiceUnavailable(
+                "configured speech adapter could not transcribe audio".into(),
+            ));
+        }
+        if event.get("type").and_then(serde_json::Value::as_str) == Some("transcript.text.done") {
+            return Ok(event
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_string());
+        }
+    }
+    Err(AppError::ServiceUnavailable(
+        "configured speech adapter returned no final transcript".into(),
+    ))
 }
 
 pub(crate) async fn voice_member(
@@ -408,11 +535,83 @@ pub async fn state(
             .unwrap_or_default(),
     });
 
+    let can_manage = can_manage_voice(&member, &claims);
     Ok(Json(VoiceStateResponse {
         enabled: state.config.livekit().is_some(),
         channel_kind: member.channel_kind,
+        can_manage,
         session,
     }))
+}
+
+/// GET /api/v1/channels/:channel_id/voice/dictation-capability
+pub async fn dictation_capability(
+    State(state): State<AppState>,
+    Extension(claims): Extension<BrowserClaims>,
+    Path(channel_id): Path<String>,
+) -> Result<Json<DictationCapabilityResponse>, AppError> {
+    // Dictation is available in both text and voice channels, but it is always
+    // scoped to a current member so arbitrary callers cannot use this endpoint
+    // as a shared transcription proxy.
+    voice_member(&state, &channel_id, &claims.sub).await?;
+    if state.config.stepfun_dictation().is_some() {
+        return Ok(Json(DictationCapabilityResponse {
+            adapter_configured: true,
+            adapter_kind: Some("stepfun".into()),
+        }));
+    }
+    let adapter = configured_dictation_adapter(&state).await?;
+    Ok(Json(DictationCapabilityResponse {
+        adapter_configured: adapter.is_some(),
+        adapter_kind: adapter.map(|_| "openai".into()),
+    }))
+}
+
+/// POST /api/v1/channels/:channel_id/voice/dictation
+///
+/// The browser sends a short WebM/Opus utterance only when an administrator has
+/// configured an instance STT adapter. The transcript is returned to the caller
+/// and is not persisted as a message, attachment, or voice-channel transcript.
+pub async fn dictate(
+    State(state): State<AppState>,
+    Extension(claims): Extension<BrowserClaims>,
+    Path(channel_id): Path<String>,
+    audio: Bytes,
+) -> Result<Json<DictationTranscriptResponse>, AppError> {
+    voice_member(&state, &channel_id, &claims.sub).await?;
+    if audio.is_empty() {
+        return Err(AppError::BadRequest(
+            "record a short utterance first".into(),
+        ));
+    }
+    if audio.len() > 8 * 1024 * 1024 {
+        return Err(AppError::PayloadTooLarge(
+            "dictation audio must be 8 MB or smaller".into(),
+        ));
+    }
+    let text = if let Some((api_key, url, model, language)) = state.config.stepfun_dictation() {
+        transcribe_stepfun_dictation(api_key, url, model, language, &audio).await?
+    } else {
+        let settings = configured_dictation_adapter(&state)
+            .await?
+            .ok_or_else(|| AppError::Conflict("no speech adapter is configured".into()))?;
+        stt::transcribe(
+            &stt::build_client(),
+            &settings.endpoint,
+            settings.api_key.as_deref(),
+            &settings.model,
+            "dictation.webm",
+            audio.to_vec(),
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%channel_id, error = %error, "composer dictation failed");
+            AppError::ServiceUnavailable(
+                "configured speech adapter could not transcribe audio".into(),
+            )
+        })?
+    };
+    Ok(Json(DictationTranscriptResponse { transcript: text }))
 }
 
 fn livekit_api_host(url: &str) -> Result<String, AppError> {
@@ -461,8 +660,7 @@ pub async fn start_transcription(
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" || !matches!(member.channel_role.as_str(), "owner" | "admin")
-    {
+    if member.channel_kind != "voice" || !can_manage_voice(&member, &claims) {
         return Err(AppError::Forbidden(
             "channel owner or admin is required to start transcription".into(),
         ));
@@ -576,8 +774,7 @@ pub async fn stop_transcription(
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::BadRequest("invalid channel id".into()))?;
     let member = voice_member(&state, &channel_id, &claims.sub).await?;
-    if member.channel_kind != "voice" || !matches!(member.channel_role.as_str(), "owner" | "admin")
-    {
+    if member.channel_kind != "voice" || !can_manage_voice(&member, &claims) {
         return Err(AppError::Forbidden(
             "channel owner or admin is required to stop transcription".into(),
         ));
