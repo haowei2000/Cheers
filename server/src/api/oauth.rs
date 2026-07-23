@@ -334,11 +334,11 @@ async fn complete_callback(
     if let Some(error) = provider_error {
         let _ = sqlx::query("UPDATE auth_transactions SET status = 'failed', updated_at = NOW() WHERE transaction_id = $1 AND status = 'consumed'")
             .bind(&transaction_id).execute(&state.db).await;
-        return Ok(Redirect::temporary(&append_query(
-            &context["return_uri"].as_str().unwrap_or(&return_uri),
+        return Ok(oauth_return_redirect(
+            context["return_uri"].as_str().unwrap_or(&return_uri),
             "error",
             &error_code(&error),
-        ))
+        )
         .into_response());
     }
     let code =
@@ -392,7 +392,7 @@ async fn complete_callback(
     .execute(&state.db)
     .await?;
     let target = context["return_uri"].as_str().unwrap_or(&return_uri);
-    Ok(Redirect::temporary(&append_query(target, "code", &handoff)).into_response())
+    Ok(oauth_return_redirect(target, "code", &handoff).into_response())
 }
 
 fn error_code(value: &str) -> String {
@@ -410,6 +410,13 @@ fn append_query(base: &str, key: &str, value: &str) -> String {
     };
     url.query_pairs_mut().append_pair(key, value);
     url.to_string()
+}
+
+fn oauth_return_redirect(base: &str, key: &str, value: &str) -> Redirect {
+    // Apple posts its callback form. A 307 would preserve POST when returning
+    // to the SPA or custom URL scheme, producing a 405 instead of loading the
+    // callback page. A 303 explicitly continues the handoff with GET.
+    Redirect::to(&append_query(base, key, value))
 }
 
 async fn verify_apple_callback(
@@ -791,6 +798,8 @@ pub async fn handoff(
 
 #[cfg(test)]
 mod tests {
+    use axum::http::{header, HeaderValue, StatusCode};
+
     use super::*;
 
     #[test]
@@ -820,5 +829,23 @@ mod tests {
     fn provider_errors_are_reduced_to_public_codes() {
         assert_eq!(error_code("access_denied"), "access_denied");
         assert_eq!(error_code("internal_provider_detail"), "provider_error");
+    }
+
+    #[test]
+    fn oauth_return_uses_see_other_to_drop_apple_form_post() {
+        let response = oauth_return_redirect(
+            "https://www.tocheers.com/auth/callback",
+            "code",
+            "one/two+three",
+        )
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            response.headers().get(header::LOCATION),
+            Some(&HeaderValue::from_static(
+                "https://www.tocheers.com/auth/callback?code=one%2Ftwo%2Bthree"
+            ))
+        );
     }
 }
