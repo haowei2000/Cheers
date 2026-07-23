@@ -14,6 +14,7 @@
 import { openDeepLinkChannel } from "@/lib/push";
 import { isTauri } from "@/lib/serverConfig";
 import { takePendingDeepLink } from "@/lib/desktopQuick";
+import { acceptOAuthDeepLink } from "@/lib/oauthCallback";
 
 /** Parse `cheers://channel/<id>?msg=<mid>` → {channelId, msgId}. Tolerant of a
  * trailing slash and a missing msg; returns null for anything else. */
@@ -36,6 +37,7 @@ export function parseDeepLink(
 }
 
 function route(url: string): void {
+  if (acceptOAuthDeepLink(url)) return;
   const target = parseDeepLink(url);
   if (target) openDeepLinkChannel(target.channelId, target.msgId);
 }

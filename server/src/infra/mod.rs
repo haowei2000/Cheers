@@ -6,4 +6,5 @@ pub mod http;
 pub mod ratelimit;
 pub mod s3;
 pub mod stt;
+pub mod totp;
 pub mod web_push;

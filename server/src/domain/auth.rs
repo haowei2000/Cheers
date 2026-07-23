@@ -11,12 +11,14 @@ pub fn create_access_token(
     user_id: Uuid,
     role: &str,
     token_version: i64,
+    session_id: &str,
 ) -> Result<String, AppError> {
     let now = chrono::Utc::now();
     let iat = now.timestamp() as u64;
-    let exp = (now + chrono::Duration::hours(24)).timestamp() as u64;
+    let exp = (now + chrono::Duration::minutes(10)).timestamp() as u64;
     let claims = Claims {
         sub: user_id.to_string(),
+        sid: session_id.to_string(),
         role: role.to_string(),
         exp,
         iat,
@@ -41,6 +43,27 @@ pub struct AuthUser {
     pub display_name: Option<String>,
     pub role: String,
     pub token_version: i32,
+}
+
+pub async fn load_auth_user(db: &PgPool, user_id: &str) -> Result<AuthUser, AppError> {
+    let row = sqlx::query(
+        "SELECT user_id, username, display_name, role, token_version, is_suspended
+         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+    )
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    if row.try_get::<bool, _>("is_suspended").unwrap_or(false) {
+        return Err(AppError::Forbidden("account suspended".into()));
+    }
+    Ok(AuthUser {
+        id: row.try_get("user_id")?,
+        username: row.try_get("username")?,
+        display_name: row.try_get("display_name").ok(),
+        role: row.try_get("role").unwrap_or_else(|_| "member".into()),
+        token_version: row.try_get("token_version").unwrap_or(0),
+    })
 }
 
 /// 通过 username 或 email 查找用户，验证密码，返回用户信息。

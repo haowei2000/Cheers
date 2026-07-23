@@ -212,6 +212,10 @@ struct APIClient: Sendable {
         try await postJSON("/auth/register", body: request, as: LoginResponse.self)
     }
 
+    func refresh(refreshToken: String) async throws -> LoginResponse {
+        try await postJSON("/auth/refresh", body: RefreshRequest(refreshToken: refreshToken), as: LoginResponse.self)
+    }
+
     func appleChallenge() async throws -> AppleChallenge {
         try await postJSON("/auth/apple/challenge", body: EmptyRequest(), as: AppleChallenge.self)
     }

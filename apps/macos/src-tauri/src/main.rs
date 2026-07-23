@@ -12,6 +12,7 @@ mod audit;
 mod changes;
 mod connector;
 mod deeplink;
+mod desktop_auth;
 mod plugins;
 mod quicksend;
 mod tray;
@@ -114,6 +115,12 @@ fn main() {
             tray::tray_update_liveness,
             // B5/B6: deep-link drain + interactive screenshot + Finder open-file drain
             deeplink::take_pending_deep_link,
+            desktop_auth::desktop_password_login,
+            desktop_auth::desktop_verify_factor,
+            desktop_auth::desktop_oauth_handoff,
+            desktop_auth::desktop_refresh_session,
+            desktop_auth::desktop_logout_session,
+            desktop_auth::desktop_open_oauth_url,
             quicksend::capture_screenshot,
             quicksend::take_pending_quick_attach,
             quicksend::release_quick_attach,

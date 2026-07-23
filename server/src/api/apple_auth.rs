@@ -2,7 +2,7 @@
 //! app's Apple credentials. Unconfigured/self-hosted gateways fail closed and
 //! advertise the feature as unavailable.
 
-use axum::{extract::State, Extension, Json};
+use axum::{extract::State, response::IntoResponse, Extension, Json};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{
     decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
@@ -16,7 +16,7 @@ use crate::{
     api::{auth::LoginResponse, middleware::Claims},
     app_state::AppState,
     config::AppleAuthConfig,
-    domain::auth,
+    domain::{auth, auth_sessions, two_factor},
     errors::AppError,
     infra::crypto,
 };
@@ -85,6 +85,10 @@ pub struct AppleAuthorizationRequest {
     pub family_name: Option<String>,
     #[serde(default)]
     pub invite_token: Option<String>,
+    #[serde(default)]
+    pub client: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,7 +139,7 @@ fn require_config(state: &AppState) -> Result<&AppleAuthConfig, AppError> {
     })
 }
 
-fn client_secret(config: &AppleAuthConfig) -> Result<String, AppError> {
+fn client_secret(config: &AppleAuthConfig, client_id: &str) -> Result<String, AppError> {
     let now = Utc::now().timestamp() as usize;
     let mut header = Header::new(Algorithm::ES256);
     header.kid = Some(config.key_id.clone());
@@ -146,7 +150,7 @@ fn client_secret(config: &AppleAuthConfig) -> Result<String, AppError> {
             iat: now,
             exp: now + 300,
             aud: APPLE_ISSUER,
-            sub: &config.client_id,
+            sub: client_id,
         },
         &EncodingKey::from_ec_pem(config.private_key_pem.as_bytes())
             .map_err(|e| AppError::Internal(format!("invalid Apple private key: {e}")))?,
@@ -223,7 +227,10 @@ async fn exchange_code(
         .post(APPLE_TOKEN_URL)
         .form(&[
             ("client_id", config.client_id.as_str()),
-            ("client_secret", client_secret(config)?.as_str()),
+            (
+                "client_secret",
+                client_secret(config, &config.client_id)?.as_str(),
+            ),
             ("code", code),
             ("grant_type", "authorization_code"),
         ])
@@ -266,8 +273,10 @@ pub(crate) async fn verify_recent_for_user(
     let (apple, tokens) = verify_authorization(state, request).await?;
     let row = sqlx::query(
         "SELECT identity_id FROM auth_external_identities
-         WHERE provider = 'apple' AND subject = $1 AND user_id = $2",
+         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default'
+           AND subject = $2 AND user_id = $3",
     )
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -309,6 +318,77 @@ fn display_name(request: &AppleAuthorizationRequest) -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
+async fn ensure_native_identity_for_existing(
+    state: &AppState,
+    subject: &str,
+    expected_user_id: Option<&str>,
+    email: Option<&str>,
+    name: Option<&str>,
+    is_private_email: Option<Value>,
+) -> Result<Option<(String, String)>, AppError> {
+    let owners = sqlx::query(
+        "SELECT DISTINCT user_id FROM auth_external_identities
+         WHERE provider = 'apple' AND issuer = $1 AND subject = $2",
+    )
+    .bind(APPLE_ISSUER)
+    .bind(subject)
+    .fetch_all(&state.db)
+    .await?;
+    if owners.len() > 1 {
+        return Err(AppError::Conflict(
+            "Apple identity is linked to multiple accounts; contact support".into(),
+        ));
+    }
+    let Some(owner) = owners.first() else {
+        return Ok(None);
+    };
+    let user_id: String = owner.try_get("user_id")?;
+    if expected_user_id.is_some_and(|expected| expected != user_id) {
+        return Err(AppError::Conflict(
+            "this Apple account is already linked".into(),
+        ));
+    }
+
+    sqlx::query(
+        "INSERT INTO auth_external_identities
+         (identity_id, provider, issuer, provider_config_id, subject, user_id,
+          corp_id, display_name, email, profile)
+         VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7,
+                 jsonb_build_object('is_private_email', $8::boolean))
+         ON CONFLICT (provider, issuer, provider_config_id, subject) DO NOTHING",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(APPLE_ISSUER)
+    .bind(subject)
+    .bind(&user_id)
+    .bind(&require_config(state)?.team_id)
+    .bind(name)
+    .bind(email)
+    .bind(is_private_email.as_ref().and_then(|value| {
+        value
+            .as_bool()
+            .or_else(|| value.as_str().map(|text| text == "true"))
+    }))
+    .execute(&state.db)
+    .await?;
+    let row = sqlx::query(
+        "SELECT identity_id, user_id FROM auth_external_identities
+         WHERE provider = 'apple' AND issuer = $1
+           AND provider_config_id = 'default' AND subject = $2",
+    )
+    .bind(APPLE_ISSUER)
+    .bind(subject)
+    .fetch_one(&state.db)
+    .await?;
+    let native_owner: String = row.try_get("user_id")?;
+    if native_owner != user_id {
+        return Err(AppError::Conflict(
+            "Apple identity is already linked to another account".into(),
+        ));
+    }
+    Ok(Some((row.try_get("identity_id")?, user_id)))
+}
+
 async fn persist_refresh_token(
     state: &AppState,
     identity_id: &str,
@@ -324,58 +404,127 @@ async fn persist_refresh_token(
     let encrypted = crypto::encrypt_secret(&key, refresh_token)
         .map_err(|e| AppError::Internal(format!("encrypt Apple refresh token: {e}")))?;
     sqlx::query(
-        "INSERT INTO apple_auth_credentials (identity_id, refresh_token_encrypted, last_validated_at)
-         VALUES ($1, $2, NOW())
+        "INSERT INTO apple_auth_credentials (identity_id, refresh_token_encrypted, client_id, last_validated_at)
+         VALUES ($1, $2, $3, NOW())
          ON CONFLICT (identity_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
-             last_validated_at = NOW(), revoked_at = NULL, updated_at = NOW()",
+             client_id = EXCLUDED.client_id, last_validated_at = NOW(), revoked_at = NULL, updated_at = NOW()",
     )
-    .bind(identity_id).bind(encrypted).execute(&state.db).await?;
+    .bind(identity_id)
+    .bind(encrypted)
+    .bind(&require_config(state)?.client_id)
+    .execute(&state.db)
+    .await?;
     Ok(())
 }
 
-async fn login_response(state: &AppState, user_id: &str) -> Result<LoginResponse, AppError> {
-    let row = sqlx::query(
-        "SELECT username, display_name, role, token_version, is_suspended
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    if row.try_get::<bool, _>("is_suspended").unwrap_or(false) {
-        return Err(AppError::Forbidden("account suspended".into()));
+struct AppleLoginResult {
+    body: LoginResponse,
+    refresh_token: Option<String>,
+    csrf_token: Option<String>,
+}
+
+async fn login_response(
+    state: &AppState,
+    user_id: &str,
+    client: auth_sessions::ClientType,
+    device_name: Option<&str>,
+) -> Result<AppleLoginResult, AppError> {
+    let user = auth::load_auth_user(&state.db, user_id).await?;
+    if two_factor::status(&state.db, user_id).await?.enabled {
+        let transaction =
+            auth_sessions::create_factor_transaction(&state.db, user_id, client, device_name)
+                .await?;
+        return Ok(AppleLoginResult {
+            body: LoginResponse {
+                status: "factor_required".into(),
+                transaction_id: Some(transaction.transaction_id),
+                allowed_factors: vec!["totp".into(), "recovery_code".into(), "passkey".into()],
+                expires_in: Some(600),
+                requires_2fa: true,
+                two_factor_session_id: None,
+                access_token: None,
+                token_type: None,
+                user_id: None,
+                username: None,
+                display_name: None,
+                role: None,
+                refresh_token: None,
+                csrf_token: None,
+            },
+            refresh_token: None,
+            csrf_token: None,
+        });
     }
-    let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
-    let token_version = row.try_get::<i32, _>("token_version").unwrap_or(0) as i64;
-    Ok(LoginResponse {
-        access_token: auth::create_access_token(
-            state.config.as_ref(),
-            user_id
-                .parse()
-                .map_err(|_| AppError::Internal("invalid user id".into()))?,
-            &role,
-            token_version,
-        )?,
-        token_type: "bearer".into(),
-        user_id: user_id.into(),
-        username: row.try_get("username").unwrap_or_default(),
-        display_name: row.try_get("display_name").ok(),
-        role,
+    let session =
+        auth_sessions::finalize_login(&state.db, &state.config, &user, client, device_name).await?;
+    Ok(AppleLoginResult {
+        body: LoginResponse {
+            status: "authenticated".into(),
+            transaction_id: None,
+            allowed_factors: Vec::new(),
+            expires_in: Some(session.expires_in),
+            requires_2fa: false,
+            two_factor_session_id: None,
+            access_token: Some(session.access_token),
+            token_type: Some("bearer".into()),
+            user_id: Some(user.id),
+            username: Some(user.username),
+            display_name: user.display_name,
+            role: Some(user.role),
+            refresh_token: (client != auth_sessions::ClientType::Web)
+                .then_some(session.refresh_token.clone()),
+            csrf_token: (client != auth_sessions::ClientType::Web)
+                .then_some(session.csrf_token.clone()),
+        },
+        refresh_token: Some(session.refresh_token),
+        csrf_token: Some(session.csrf_token),
     })
+}
+
+fn apple_login_response(
+    result: AppleLoginResult,
+    client: auth_sessions::ClientType,
+) -> axum::response::Response {
+    let mut response = Json(result.body).into_response();
+    if client == auth_sessions::ClientType::Web {
+        if let Some(refresh) = result.refresh_token {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                format!("cheers_refresh={refresh}; Max-Age=2592000; Path=/; Secure; HttpOnly; SameSite=Lax").parse().unwrap(),
+            );
+        }
+        if let Some(csrf) = result.csrf_token {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                format!("cheers_csrf={csrf}; Max-Age=2592000; Path=/; Secure; SameSite=Lax")
+                    .parse()
+                    .unwrap(),
+            );
+        }
+    }
+    response
 }
 
 pub async fn authorize(
     State(state): State<AppState>,
     Json(request): Json<AppleAuthorizationRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<axum::response::Response, AppError> {
     let (apple, tokens) = verify_authorization(&state, &request).await?;
-    if let Some(row) = sqlx::query(
-        "SELECT identity_id, user_id FROM auth_external_identities WHERE provider = 'apple' AND subject = $1",
-    ).bind(&apple.sub).fetch_optional(&state.db).await? {
-        let identity_id: String = row.try_get("identity_id")?;
-        let user_id: String = row.try_get("user_id")?;
+    let client = auth_sessions::ClientType::parse(request.client.as_deref())?;
+    if let Some((identity_id, user_id)) = ensure_native_identity_for_existing(
+        &state,
+        &apple.sub,
+        None,
+        verified_email(&apple).as_deref(),
+        display_name(&request).as_deref(),
+        apple.is_private_email.clone(),
+    )
+    .await?
+    {
         persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-        return Ok(Json(login_response(&state, &user_id).await?));
+        let result =
+            login_response(&state, &user_id, client, request.device_name.as_deref()).await?;
+        return Ok(apple_login_response(result, client));
     }
 
     crate::api::auth::ensure_may_register(&state, request.invite_token.as_deref()).await?;
@@ -413,10 +562,11 @@ pub async fn authorize(
     .await?;
     sqlx::query(
         "INSERT INTO auth_external_identities
-         (identity_id, provider, subject, user_id, corp_id, display_name, email, profile)
-         VALUES ($1, 'apple', $2, $3, $4, $5, $6, $7)",
+         (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile)
+         VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7, $8)",
     )
     .bind(&identity_id)
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .bind(&user_id)
     .bind(&require_config(&state)?.team_id)
@@ -427,7 +577,8 @@ pub async fn authorize(
     .await?;
     tx.commit().await?;
     persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-    Ok(Json(login_response(&state, &user_id).await?))
+    let result = login_response(&state, &user_id, client, request.device_name.as_deref()).await?;
+    Ok(apple_login_response(result, client))
 }
 
 pub async fn link(
@@ -436,20 +587,16 @@ pub async fn link(
     Json(request): Json<AppleAuthorizationRequest>,
 ) -> Result<Json<Value>, AppError> {
     let (apple, tokens) = verify_authorization(&state, &request).await?;
-    if let Some(row) = sqlx::query(
-        "SELECT identity_id, user_id FROM auth_external_identities WHERE provider = 'apple' AND subject = $1",
+    if let Some((identity_id, _)) = ensure_native_identity_for_existing(
+        &state,
+        &apple.sub,
+        Some(&claims.sub),
+        verified_email(&apple).as_deref(),
+        display_name(&request).as_deref(),
+        apple.is_private_email.clone(),
     )
-    .bind(&apple.sub)
-    .fetch_optional(&state.db)
     .await?
     {
-        let owner: String = row.try_get("user_id")?;
-        if owner != claims.sub {
-            return Err(AppError::Conflict(
-                "this Apple account is already linked".into(),
-            ));
-        }
-        let identity_id: String = row.try_get("identity_id")?;
         persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
         return Ok(Json(json!({"linked": true})));
     }
@@ -457,10 +604,11 @@ pub async fn link(
     let email = verified_email(&apple);
     sqlx::query(
         "INSERT INTO auth_external_identities
-         (identity_id, provider, subject, user_id, corp_id, display_name, email, profile)
-         VALUES ($1, 'apple', $2, $3, $4, $5, $6, $7)",
+         (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile)
+         VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7, $8)",
     )
     .bind(&identity_id)
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .bind(&claims.sub)
     .bind(&require_config(&state)?.team_id)
@@ -509,42 +657,46 @@ pub async fn unlink(
 }
 
 pub async fn revoke_for_user(state: &AppState, user_id: &str) -> Result<(), AppError> {
-    let Some(row) = sqlx::query(
-        "SELECT c.refresh_token_encrypted FROM apple_auth_credentials c
+    let rows = sqlx::query(
+        "SELECT c.refresh_token_encrypted, c.client_id FROM apple_auth_credentials c
          JOIN auth_external_identities i ON i.identity_id = c.identity_id
          WHERE i.provider = 'apple' AND i.user_id = $1 AND c.revoked_at IS NULL",
     )
     .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?
-    else {
+    .fetch_all(&state.db)
+    .await?;
+    if rows.is_empty() {
         return Ok(());
-    };
-    let encrypted: String = row.try_get("refresh_token_encrypted")?;
+    }
     let key = crypto::derive_master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
     );
-    let token = crypto::decrypt_secret(&key, &encrypted)
-        .map_err(|e| AppError::Internal(format!("decrypt Apple refresh token: {e}")))?;
     let config = require_config(state)?;
-    let response = reqwest::Client::new()
-        .post(APPLE_REVOKE_URL)
-        .form(&[
-            ("client_id", config.client_id.as_str()),
-            ("client_secret", client_secret(config)?.as_str()),
-            ("token", token.as_str()),
-            ("token_type_hint", "refresh_token"),
-        ])
-        .send()
-        .await
-        .map_err(|_| {
-            AppError::ServiceUnavailable("could not reach Apple revocation service".into())
-        })?;
-    if !response.status().is_success() {
-        return Err(AppError::ServiceUnavailable(
-            "Apple token revocation failed; account was not unlinked".into(),
-        ));
+    for row in rows {
+        let encrypted: String = row.try_get("refresh_token_encrypted")?;
+        let token = crypto::decrypt_secret(&key, &encrypted)
+            .map_err(|e| AppError::Internal(format!("decrypt Apple refresh token: {e}")))?;
+        let stored_client: Option<String> = row.try_get("client_id").ok().flatten();
+        let client_id = stored_client.as_deref().unwrap_or(&config.client_id);
+        let response = reqwest::Client::new()
+            .post(APPLE_REVOKE_URL)
+            .form(&[
+                ("client_id", client_id),
+                ("client_secret", client_secret(config, client_id)?.as_str()),
+                ("token", token.as_str()),
+                ("token_type_hint", "refresh_token"),
+            ])
+            .send()
+            .await
+            .map_err(|_| {
+                AppError::ServiceUnavailable("could not reach Apple revocation service".into())
+            })?;
+        if !response.status().is_success() {
+            return Err(AppError::ServiceUnavailable(
+                "Apple token revocation failed; account was not unlinked".into(),
+            ));
+        }
     }
     sqlx::query(
         "UPDATE apple_auth_credentials SET revoked_at = NOW(), updated_at = NOW()
@@ -616,8 +768,9 @@ pub async fn events(
     .events;
 
     let identity = sqlx::query(
-        "SELECT identity_id, user_id FROM auth_external_identities WHERE provider = 'apple' AND subject = $1",
-    ).bind(&event.sub).fetch_optional(&state.db).await?;
+        "SELECT identity_id, user_id FROM auth_external_identities
+         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default' AND subject = $2",
+    ).bind(APPLE_ISSUER).bind(&event.sub).fetch_optional(&state.db).await?;
     let Some(identity) = identity else {
         return Ok(Json(json!({"processed": true})));
     };

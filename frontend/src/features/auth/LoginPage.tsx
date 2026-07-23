@@ -1,8 +1,18 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Apple } from "lucide-react";
 import toast from "react-hot-toast";
-import { login } from "@/api/auth";
+import {
+  exchangeOAuthHandoff,
+  getAuthCapabilities,
+  login,
+  startOAuth,
+  verifyTwoFactorLogin,
+  type AuthCapabilities,
+  type LoginResponse,
+} from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
+import { onOAuthHandoff } from "@/lib/oauthCallback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -17,25 +27,71 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({ login: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [transactionId, setTransactionId] = useState<string | null>(
+    params.get("factor_transaction")
+  );
+  const [factorCode, setFactorCode] = useState("");
+  const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
+
+  useEffect(() => {
+    void getAuthCapabilities().then(setCapabilities).catch(() => setCapabilities(null));
+  }, []);
+
+  useEffect(() => onOAuthHandoff((code) => {
+    setLoading(true);
+    void exchangeOAuthHandoff(code)
+      .then(completeOutcome)
+      .catch((error) => toast.error(error instanceof Error ? error.message : "OAuth login failed"))
+      .finally(() => setLoading(false));
+  // completeOutcome only reads stable router/store bindings.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  function completeOutcome(res: LoginResponse) {
+    if (res.status === "factor_required" || res.requires_2fa) {
+      if (!res.transaction_id) throw new Error("Authentication transaction is missing");
+      setTransactionId(res.transaction_id);
+      return;
+    }
+    if (!res.access_token || !res.user_id) throw new Error("Login response is incomplete");
+    setAuth(
+      {
+        user_id: res.user_id,
+        display_name: res.display_name ?? null,
+        username: res.username ?? form.login,
+        role: res.role,
+      },
+      res.access_token
+    );
+    navigate(redirect, { replace: true });
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!form.login || !form.password) return;
     setLoading(true);
     try {
-      const res = await login(form);
-      setAuth(
-        {
-          user_id: res.user_id,
-          display_name: res.display_name,
-          username: form.login,
-          role: res.role,
-        },
-        res.access_token
-      );
-      navigate(redirect, { replace: true });
+      const res = await login({ ...form, client: "web" });
+      completeOutcome(res);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFactorSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!transactionId || !factorCode) return;
+    setLoading(true);
+    try {
+      const res = await verifyTwoFactorLogin({
+        transaction_id: transactionId,
+        code: factorCode,
+      });
+      completeOutcome(res);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Verification failed");
     } finally {
       setLoading(false);
     }
@@ -64,7 +120,30 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <form
+        {transactionId ? <form
+          onSubmit={handleFactorSubmit}
+          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
+        >
+          <div className="space-y-1.5">
+            <label htmlFor="factor-code" className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              Verification code
+            </label>
+            <Input
+              id="factor-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              value={factorCode}
+              onChange={(e) => setFactorCode(e.target.value)}
+            />
+          </div>
+          <Button type="submit" className="w-full" loading={loading} disabled={!factorCode}>
+            Verify
+          </Button>
+          <button type="button" className="w-full text-xs text-zinc-400 hover:text-zinc-200" onClick={() => setTransactionId(null)}>
+            Back to sign in
+          </button>
+        </form> : <form
           onSubmit={handleSubmit}
           className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
         >
@@ -114,6 +193,52 @@ export default function LoginPage() {
             Sign in
           </Button>
 
+          {(capabilities?.providers.apple || capabilities?.providers.google) && (
+            <div className="space-y-3 pt-1">
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-zinc-800" />
+                <span className="text-xs text-zinc-500">or</span>
+                <span className="h-px flex-1 bg-zinc-800" />
+              </div>
+              {capabilities.providers.apple && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={loading}
+                  onClick={() => {
+                    sessionStorage.setItem("cheers.oauth_redirect", redirect);
+                    setLoading(true);
+                    void startOAuth("apple").catch((error) => {
+                      setLoading(false);
+                      toast.error(error instanceof Error ? error.message : "Apple sign-in failed");
+                    });
+                  }}
+                >
+                  <Apple className="h-4 w-4" /> Continue with Apple
+                </Button>
+              )}
+              {capabilities.providers.google && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={loading}
+                  onClick={() => {
+                    sessionStorage.setItem("cheers.oauth_redirect", redirect);
+                    setLoading(true);
+                    void startOAuth("google").catch((error) => {
+                      setLoading(false);
+                      toast.error(error instanceof Error ? error.message : "Google sign-in failed");
+                    });
+                  }}
+                >
+                  <span className="font-semibold" aria-hidden="true">G</span> Continue with Google
+                </Button>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <Link to="/register" className="text-indigo-400 hover:text-indigo-300">
               Create account
@@ -122,7 +247,7 @@ export default function LoginPage() {
               Forgot password?
             </Link>
           </div>
-        </form>
+        </form>}
       </div>
     </div>
   );

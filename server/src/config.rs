@@ -37,8 +37,13 @@ pub struct JwtKeys {
 pub struct AppleAuthConfig {
     pub team_id: String,
     pub key_id: String,
+    /// Native iOS App ID used by AuthenticationServices.
     pub client_id: String,
     pub private_key_pem: String,
+    /// Web Services ID and HTTPS gateway callback. Both must be present for
+    /// browser/macOS system-browser authentication to be advertised.
+    pub web_client_id: Option<String>,
+    pub web_redirect_uri: Option<String>,
 }
 
 impl std::fmt::Debug for AppleAuthConfig {
@@ -47,7 +52,26 @@ impl std::fmt::Debug for AppleAuthConfig {
             .field("team_id", &self.team_id)
             .field("key_id", &self.key_id)
             .field("client_id", &self.client_id)
+            .field("web_client_id", &self.web_client_id)
+            .field("web_redirect_uri", &self.web_redirect_uri)
             .field("private_key_pem", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct GoogleAuthConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
+impl std::fmt::Debug for GoogleAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoogleAuthConfig")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("redirect_uri", &self.redirect_uri)
             .finish()
     }
 }
@@ -111,6 +135,11 @@ pub struct Config {
     /// Self-hosted gateways therefore remain password-only by default and never
     /// need access to the official app's Apple private key.
     pub apple_auth: Option<AppleAuthConfig>,
+    /// Google is intentionally limited to the Web client and the basic
+    /// `openid email profile` scopes. No offline access is requested.
+    pub google_auth: Option<GoogleAuthConfig>,
+    /// Exact browser destination after a successful provider callback.
+    pub oauth_web_return_url: Option<String>,
 
     // 邮件（Brevo 事务性邮件 HTTP API；不配置则验证码回退打印到日志）
     /// Brevo (ex-Sendinblue) API key for the transactional email endpoint
@@ -135,6 +164,11 @@ pub struct Config {
     /// Default **false** (secure by default: accounts come from the seeded admin
     /// or `POST /users`); set `OPEN_REGISTRATION=true` to open sign-up.
     pub open_registration: bool,
+
+    /// Whether users must enable TOTP 2FA before creating or starting remote
+    /// agents. This is an instance policy controlled only by
+    /// `REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS` and defaults to true.
+    pub require_2fa_for_remote_agent_access: bool,
 
     /// Whether the rate limiter may key clients on `X-Real-IP` /
     /// `X-Forwarded-For`. Default **false** (use the peer socket address): the
@@ -220,11 +254,27 @@ impl Config {
         );
         let apple_auth = match apple_values {
             (Some(team_id), Some(key_id), Some(client_id), Some(private_key_pem)) => {
+                let web_values = (
+                    optional("APPLE_WEB_CLIENT_ID"),
+                    optional("APPLE_WEB_REDIRECT_URI"),
+                );
+                let (web_client_id, web_redirect_uri) = match web_values {
+                    (Some(client_id), Some(redirect_uri)) => (Some(client_id), Some(redirect_uri)),
+                    (None, None) => (None, None),
+                    _ => {
+                        tracing::warn!(
+                            "partial Apple Web configuration ignored; web/macOS Apple login disabled"
+                        );
+                        (None, None)
+                    }
+                };
                 Some(AppleAuthConfig {
                     team_id,
                     key_id,
                     client_id,
                     private_key_pem,
+                    web_client_id,
+                    web_redirect_uri,
                 })
             }
             (None, None, None, None) => None,
@@ -232,6 +282,24 @@ impl Config {
                 tracing::warn!(
                     "partial APPLE_* configuration ignored; Sign in with Apple disabled"
                 );
+                None
+            }
+        };
+
+        let google_values = (
+            optional("GOOGLE_WEB_CLIENT_ID"),
+            optional("GOOGLE_WEB_CLIENT_SECRET"),
+            optional("GOOGLE_WEB_REDIRECT_URI"),
+        );
+        let google_auth = match google_values {
+            (Some(client_id), Some(client_secret), Some(redirect_uri)) => Some(GoogleAuthConfig {
+                client_id,
+                client_secret,
+                redirect_uri,
+            }),
+            (None, None, None) => None,
+            _ => {
+                tracing::warn!("partial GOOGLE_WEB_* configuration ignored; Google login disabled");
                 None
             }
         };
@@ -283,6 +351,8 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             apple_auth,
+            google_auth,
+            oauth_web_return_url: optional("OAUTH_WEB_RETURN_URL"),
 
             brevo_api_key: env::var("BREVO_API_KEY")
                 .ok()
@@ -304,6 +374,11 @@ impl Config {
                 .unwrap_or_else(|| "mailto:admin@tocheers.com".into()),
 
             open_registration: env_flag("OPEN_REGISTRATION", false),
+
+            require_2fa_for_remote_agent_access: env_flag(
+                "REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS",
+                true,
+            ),
 
             trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 

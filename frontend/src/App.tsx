@@ -21,6 +21,7 @@ const QuickPanel = lazy(() =>
 );
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
+const OAuthCallbackPage = lazy(() => import("@/features/auth/OAuthCallbackPage"));
 const RegisterPage = lazy(() => import("@/features/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("@/features/auth/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("@/features/auth/ResetPasswordPage"));
@@ -98,6 +99,8 @@ function SessionExpiredTakeover() {
 }
 
 export default function App() {
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const authInitialized = useAuthStore((s) => s.initialized);
   // The quick panel loads the SPA in its own window with ?quickpanel=1. It's a
   // lean composer with no ChatLayout, so the main-window-only bridges must NOT
   // run there: initDeepLinks in a ChatLayout-less window would redirect and
@@ -113,12 +116,22 @@ export default function App() {
     if (isQuickPanel) return;
     initPushBridge();
   }, [isQuickPanel]);
+
+  useEffect(() => {
+    if (isQuickPanel) return;
+    void restoreSession();
+    const refreshTimer = window.setInterval(() => void restoreSession(), 8 * 60 * 1000);
+    return () => window.clearInterval(refreshTimer);
+  }, [isQuickPanel, restoreSession]);
+
   // cheers:// deep links (desktop): drain the cold-start link + listen for warm
   // opens, routing through the push channel-open path.
   useEffect(() => {
     if (isQuickPanel) return;
     return initDeepLinks();
   }, [isQuickPanel]);
+
+  if (!isQuickPanel && !authInitialized) return <Spinner />;
 
   if (isQuickPanel) {
     return (
@@ -136,6 +149,7 @@ export default function App() {
     <Suspense fallback={<Spinner />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot" element={<ForgotPasswordPage />} />
         <Route path="/reset" element={<ResetPasswordPage />} />

@@ -12,6 +12,8 @@ const PUBLIC_POLICY_PAGES = [
   "privacy.zh-CN.html",
   "support.html",
   "support.zh-CN.html",
+  "terms.html",
+  "account-deletion.html",
   "remote-operations.html",
   "remote-operations.zh-CN.html",
 ] as const;

@@ -17,11 +17,12 @@ fn default_issuer() -> String {
     JWT_ISSUER.to_string()
 }
 
-/// JWT Claims（RS256）。新增字段对旧 token 前向兼容：`nbf`/`iss` 缺失时按 serde
-/// 默认填充，`token_version` 缺失视为 0（会话吊销 W6 用，避免升级后全员掉线）。
+/// User JWT claims. `sid` is deliberately required: user JWTs minted before
+/// the unified-session rollout fail deserialization and must reauthenticate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // user_id
+    pub sid: String, // auth_sessions.session_id
     pub role: String,
     pub exp: u64,
     pub iat: u64,
@@ -57,24 +58,33 @@ pub async fn jwt_auth(
     Ok(next.run(req).await)
 }
 
-/// Session revocation + account status (W6): a token is revoked when its user is
-/// unknown/deleted/suspended, or the JWT predates a forced logout (token_version
-/// bump). A token with no token_version claim defaults to 0, matching a fresh
-/// user's row, so existing sessions survive the W6 rollout. One indexed PK
-/// lookup per check; move to a Redis cache if it ever shows up on the hot path.
+/// A user token is valid only while both its account and exact session are active.
 async fn is_revoked(db: &sqlx::PgPool, claims: &Claims) -> Result<bool, sqlx::Error> {
-    let row =
-        sqlx::query("SELECT token_version, is_suspended, is_deleted FROM users WHERE user_id = $1")
-            .bind(&claims.sub)
-            .fetch_optional(db)
-            .await?;
+    let row = sqlx::query(
+        "SELECT u.token_version, u.is_suspended, u.is_deleted,
+                s.revoked_at, s.absolute_expires_at
+         FROM users u
+         JOIN auth_sessions s ON s.user_id = u.user_id
+         WHERE u.user_id = $1 AND s.session_id = $2",
+    )
+    .bind(&claims.sub)
+    .bind(&claims.sid)
+    .fetch_optional(db)
+    .await?;
     let Some(row) = row else {
         return Ok(true); // unknown user_id → treat as revoked
     };
     let db_version: i32 = row.try_get("token_version").unwrap_or(0);
     let suspended: bool = row.try_get("is_suspended").unwrap_or(false);
     let deleted: bool = row.try_get("is_deleted").unwrap_or(false);
-    Ok(deleted || suspended || (claims.token_version as i64) < db_version as i64)
+    let session_revoked: Option<chrono::DateTime<chrono::Utc>> =
+        row.try_get("revoked_at").ok().flatten();
+    let session_expiry: chrono::DateTime<chrono::Utc> = row.try_get("absolute_expires_at")?;
+    Ok(deleted
+        || suspended
+        || session_revoked.is_some()
+        || session_expiry <= chrono::Utc::now()
+        || (claims.token_version as i64) < db_version as i64)
 }
 
 fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -114,4 +124,22 @@ fn verify_rs256(token: &str, key: &DecodingKey) -> Result<Claims, jsonwebtoken::
     validation.validate_nbf = true;
     validation.set_issuer(&[JWT_ISSUER]);
     decode::<Claims>(token, key, &validation).map(|d| d.claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Claims;
+
+    #[test]
+    fn pre_session_jwt_without_sid_is_rejected() {
+        let value = serde_json::json!({
+            "sub": "user",
+            "role": "member",
+            "exp": 2,
+            "iat": 1,
+            "iss": "cheers-gateway",
+            "token_version": 0
+        });
+        assert!(serde_json::from_value::<Claims>(value).is_err());
+    }
 }
