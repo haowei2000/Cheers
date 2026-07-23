@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use axum::{
     extract::DefaultBodyLimit,
-    http::{header, HeaderValue, Method},
+    http::{header, HeaderName, HeaderValue, Method},
     middleware,
     routing::{delete, get, patch, post, put},
     Router,
@@ -79,7 +79,12 @@ fn build_cors(state: &AppState) -> CorsLayer {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ORIGIN,
+            HeaderName::from_static("x-csrf-token"),
+        ])
         .allow_origin(AllowOrigin::list(origins))
 }
 
@@ -609,10 +614,20 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/auth/logout", post(api::auth::logout))
         .route(
-            "/api/v1/users/me/external-identities/apple",
-            get(api::apple_auth::status)
-                .post(api::apple_auth::link)
-                .delete(api::apple_auth::unlink),
+            "/api/v1/auth/logout-current",
+            post(api::auth::logout_current),
+        )
+        .route("/api/v1/auth/logout-all", post(api::auth::logout_all))
+        .route("/api/v1/auth/sessions", get(api::auth::list_sessions))
+        .route(
+            "/api/v1/auth/sessions/:session_id",
+            delete(api::auth::revoke_session),
+        )
+        .route(
+            "/api/v1/users/me/external-identities/:provider",
+            get(api::external_identities::status)
+                .post(api::external_identities::link)
+                .delete(api::external_identities::unlink),
         )
         .route(
             "/api/v1/users/me/delete",
@@ -682,14 +697,25 @@ fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login))
+        .route("/api/v1/auth/refresh", post(api::auth::refresh))
         .route(
             "/api/v1/auth/2fa/login",
             post(api::auth::verify_two_factor_login),
         )
+        .route("/api/v1/auth/capabilities", get(api::auth::capabilities))
         .route(
-            "/api/v1/auth/capabilities",
-            get(api::apple_auth::capabilities),
+            "/api/v1/auth/oauth/:provider/start",
+            post(api::oauth::start),
         )
+        .route(
+            "/api/v1/auth/oauth/apple/callback",
+            post(api::oauth::apple_callback),
+        )
+        .route(
+            "/api/v1/auth/oauth/google/callback",
+            get(api::oauth::google_callback),
+        )
+        .route("/api/v1/auth/oauth/handoff", post(api::oauth::handoff))
         .route(
             "/api/v1/auth/apple/challenge",
             post(api::apple_auth::challenge),

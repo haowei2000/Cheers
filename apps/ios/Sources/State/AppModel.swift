@@ -22,6 +22,7 @@ final class AppModel {
 
     private enum Keys {
         static let token = "access_token"
+        static let refreshToken = "refresh_token"
         static let serverURL = "server_url"
         static let userId = "user_id"
         static let displayName = "display_name"
@@ -69,7 +70,11 @@ final class AppModel {
             self?.dispatch(event)
         }
         if session != nil {
-            connectSocket()
+            if KeychainStore.get(Keys.refreshToken) != nil {
+                Task { await restoreSession() }
+            } else {
+                connectSocket()
+            }
         }
     }
 
@@ -94,7 +99,7 @@ final class AppModel {
         let client = APIClient(baseURL: base, token: nil)
         let response = try await client.login(login: loginName, password: password)
 
-        finishLogin(base: base, response: response)
+        try finishLogin(base: base, response: response)
     }
 
     func appleCapabilities(server: String) async throws -> (AuthCapabilities, AppleChallenge?) {
@@ -116,34 +121,53 @@ final class AppModel {
     func register(server: String, request: RegisterRequest) async throws {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let response = try await APIClient(baseURL: base, token: nil).register(request)
-        finishLogin(base: base, response: response)
+        try finishLogin(base: base, response: response)
     }
 
     func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let response = try await APIClient(baseURL: base, token: nil).appleLogin(payload)
-        finishLogin(base: base, response: response)
+        try finishLogin(base: base, response: response)
     }
 
-    private func finishLogin(base: URL, response: LoginResponse) {
+    private func finishLogin(base: URL, response: LoginResponse) throws {
+        guard response.status != "factor_required",
+              let accessToken = response.accessToken,
+              let userId = response.userId,
+              let role = response.role else {
+            throw APIError.http(status: 401, detail: "Additional verification is required.")
+        }
         serverURLString = base.absoluteString
-        token = response.accessToken
-        KeychainStore.set(response.accessToken, for: Keys.token)
+        token = accessToken
+        KeychainStore.set(accessToken, for: Keys.token)
+        if let refreshToken = response.refreshToken {
+            KeychainStore.set(refreshToken, for: Keys.refreshToken)
+        }
 
         let defaults = UserDefaults.standard
         defaults.set(base.absoluteString, forKey: Keys.serverURL)
-        defaults.set(response.userId, forKey: Keys.userId)
+        defaults.set(userId, forKey: Keys.userId)
         defaults.set(response.displayName, forKey: Keys.displayName)
-        defaults.set(response.role, forKey: Keys.role)
+        defaults.set(role, forKey: Keys.role)
         defaults.set(response.username, forKey: Keys.username)
 
         session = UserSession(
-            userId: response.userId,
+            userId: userId,
             displayName: response.displayName,
-            role: response.role,
+            role: role,
             username: response.username
         )
         connectSocket()
+    }
+
+    private func restoreSession() async {
+        guard let base = baseURL, let refreshToken = KeychainStore.get(Keys.refreshToken) else { return }
+        do {
+            let response = try await APIClient(baseURL: base, token: nil).refresh(refreshToken: refreshToken)
+            try finishLogin(base: base, response: response)
+        } catch {
+            clearSession()
+        }
     }
 
     func logout() async {
@@ -183,6 +207,7 @@ final class AppModel {
         token = nil
         session = nil
         KeychainStore.remove(Keys.token)
+        KeychainStore.remove(Keys.refreshToken)
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: Keys.userId)
         defaults.removeObject(forKey: Keys.displayName)

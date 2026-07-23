@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::{
     api::{apple_auth, middleware::Claims},
     app_state::AppState,
+    domain::auth_sessions,
     errors::AppError,
     infra::crypto,
 };
@@ -58,9 +59,10 @@ pub async fn delete_account(
             apple_auth::verify_recent_for_user(&state, &claims.sub, &apple).await?
         }
         (None, _, None) => {
-            return Err(AppError::Unauthorized(
-                "fresh Apple authentication is required".into(),
-            ))
+            // Provider-only accounts have no password to re-enter. Their
+            // freshly-created unified session is the step-up proof, regardless
+            // of whether it came from Apple, Google, or a Passkey.
+            auth_sessions::require_recent_auth(&state.db, &claims.sub, &claims.sid).await?
         }
         _ => {
             return Err(AppError::Unauthorized(

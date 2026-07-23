@@ -150,9 +150,11 @@ jobs:
   # ─────────────────────────────────────────────
   # Deploy to the production server (Hetzner) via SSH.
   # The deploy key is a forced-command key on the server: any connection with it
-  # runs /opt/cheers/deploy.sh (pull :main images → recreate gateway+frontend →
-  # wait for gateway health) and nothing else. Gate: vars.DEPLOY_ENABLED = 'true'.
-  # Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS.
+  # runs /opt/cheers/deploy.sh (sync the allowlisted auth environment from
+  # stdin, pull :main images, recreate gateway+frontend, then wait for health)
+  # and nothing else. Gate: vars.DEPLOY_ENABLED = 'true'.
+  # Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS,
+  # APPLE_PRIVATE_KEY_P8. Public Apple identifiers and callback URLs are vars.
   # ─────────────────────────────────────────────
   deploy:
     name: Deploy to Server
@@ -174,17 +176,81 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ vars.APPLE_KEY_ID }}
+          APPLE_CLIENT_ID: ${{ vars.APPLE_CLIENT_ID }}
+          APPLE_PRIVATE_KEY_P8: ${{ secrets.APPLE_PRIVATE_KEY_P8 }}
+          APPLE_WEB_CLIENT_ID: ${{ vars.APPLE_WEB_CLIENT_ID }}
+          APPLE_WEB_REDIRECT_URI: ${{ vars.APPLE_WEB_REDIRECT_URI }}
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_SECRET }}
+          GOOGLE_WEB_REDIRECT_URI: ${{ vars.GOOGLE_WEB_REDIRECT_URI }}
+          OAUTH_WEB_RETURN_URL: ${{ vars.OAUTH_WEB_RETURN_URL }}
         run: |
+          set +x
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+          for name in \
+            APPLE_TEAM_ID \
+            APPLE_KEY_ID \
+            APPLE_CLIENT_ID \
+            APPLE_PRIVATE_KEY_P8 \
+            APPLE_WEB_CLIENT_ID \
+            APPLE_WEB_REDIRECT_URI \
+            OAUTH_WEB_RETURN_URL
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "required production auth setting is missing: $name" >&2
+              exit 1
+            fi
+          done
+
+          google_count=0
+          for name in GOOGLE_WEB_CLIENT_ID GOOGLE_WEB_CLIENT_SECRET GOOGLE_WEB_REDIRECT_URI; do
+            if [ -n "${!name:-}" ]; then
+              google_count=$((google_count + 1))
+            fi
+          done
+          if [ "$google_count" -ne 0 ] && [ "$google_count" -ne 3 ]; then
+            echo "Google OAuth settings must be configured together" >&2
+            exit 1
+          fi
+
+          payload="$(mktemp)"
+          trap 'rm -f "$payload"' EXIT
+          chmod 600 "$payload"
+          printf '%s\n' 'CHEERS_DEPLOY_AUTH_ENV_V1' > "$payload"
+
+          append_payload_field() {
+            name="$1"
+            value="$2"
+            encoded="$(printf '%s' "$value" | base64 | tr -d '\n')"
+            printf '%s=%s\n' "$name" "$encoded" >> "$payload"
+          }
+
+          append_payload_field APPLE_TEAM_ID "$APPLE_TEAM_ID"
+          append_payload_field APPLE_KEY_ID "$APPLE_KEY_ID"
+          append_payload_field APPLE_CLIENT_ID "$APPLE_CLIENT_ID"
+          append_payload_field APPLE_PRIVATE_KEY_P8 "$APPLE_PRIVATE_KEY_P8"
+          append_payload_field APPLE_WEB_CLIENT_ID "$APPLE_WEB_CLIENT_ID"
+          append_payload_field APPLE_WEB_REDIRECT_URI "$APPLE_WEB_REDIRECT_URI"
+          if [ "$google_count" -eq 3 ]; then
+            append_payload_field GOOGLE_WEB_CLIENT_ID "$GOOGLE_WEB_CLIENT_ID"
+            append_payload_field GOOGLE_WEB_CLIENT_SECRET "$GOOGLE_WEB_CLIENT_SECRET"
+            append_payload_field GOOGLE_WEB_REDIRECT_URI "$GOOGLE_WEB_REDIRECT_URI"
+          fi
+          append_payload_field OAUTH_WEB_RETURN_URL "$OAUTH_WEB_RETURN_URL"
+
           # The server side ignores the requested command (forced command),
-          # but pass "deploy" for readable auth logs.
+          # but pass "deploy" for readable auth logs. The fixed deploy script
+          # accepts only the versioned, allowlisted payload on stdin.
           ssh -i ~/.ssh/deploy_key \
               -o IdentitiesOnly=yes \
               -o StrictHostKeyChecking=yes \
-              "$USER@$HOST" deploy
+              "$USER@$HOST" deploy < "$payload"
 
       - name: Verify public health endpoint
         run: |

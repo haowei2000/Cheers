@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Minimal Keychain wrapper for storing the JWT access token.
+/// Minimal Keychain wrapper for storing short-lived access and rotating refresh tokens.
 /// Generic-password items, no third-party dependencies.
 enum KeychainStore {
     private static let service = "app.cheers.ios"

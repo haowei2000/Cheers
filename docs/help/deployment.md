@@ -42,9 +42,42 @@ Desktop users should give the VM at least 4 GB of memory (6–8 GB with the bot)
   state).
 - **Sign in with Apple is opt-in per gateway.** The official hosted gateway sets
   `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_CLIENT_ID=app.cheers.ios`, and
-  `APPLE_PRIVATE_KEY_P8`. Leave all four unset on normal self-hosted instances;
-  `/api/v1/auth/capabilities` then reports the feature disabled. Never distribute
-  the official `.p8` key to self-hosted operators.
+  `APPLE_PRIVATE_KEY_P8`. Browser and macOS OAuth additionally require
+  `APPLE_WEB_CLIENT_ID`, `APPLE_WEB_REDIRECT_URI`, and `OAUTH_WEB_RETURN_URL`.
+  Google OAuth additionally requires `GOOGLE_WEB_CLIENT_ID`,
+  `GOOGLE_WEB_CLIENT_SECRET`, and `GOOGLE_WEB_REDIRECT_URI`; all three must be
+  set together. Google requests only `openid email profile` and no offline access.
+  Leave these unset on normal self-hosted instances; `/api/v1/auth/capabilities`
+  then reports the provider disabled. Never distribute the official `.p8` key
+  to self-hosted operators.
+
+### Official production OAuth credentials
+
+The official GitHub `production` Environment stores `APPLE_PRIVATE_KEY_P8` as a
+Secret. Team/key/client identifiers and the two HTTPS callback URLs are
+Environment Variables because they are public metadata. The CD workflow creates
+a versioned, Base64-encoded allowlist payload and sends it only through the
+forced-command SSH connection's standard input.
+
+Google's client secret is stored as the `GOOGLE_WEB_CLIENT_SECRET` production
+Environment Secret. Its client ID and callback URI are production Environment
+Variables. If the Google group is absent, capabilities report Google disabled;
+partial Google configuration fails deployment.
+
+The server-side script is versioned at
+`deploy/production/deploy.sh` and installed as `/opt/cheers/deploy.sh`. It
+validates every field and the EC private key, validates the candidate Compose
+configuration, and atomically replaces the root-only (`0600`) managed block in
+`/opt/cheers/.env` before recreating the gateway. Pull, recreate, and health
+failures restore the previous environment. Deployment logs must never print the
+payload, private key, or complete environment file.
+
+Do not manually edit content between these markers:
+
+```text
+# BEGIN CHEERS GITHUB-MANAGED AUTH
+# END CHEERS GITHUB-MANAGED AUTH
+```
 
 ---
 
