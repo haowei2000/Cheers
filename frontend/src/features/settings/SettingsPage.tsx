@@ -306,6 +306,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -319,11 +320,16 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
     }
     setBusy(true);
     try {
-      const res = await changePassword({ current_password: current, new_password: next });
+      const res = await changePassword({
+        current_password: current,
+        new_password: next,
+        two_factor_code: twoFactorCode.trim() || undefined,
+      });
       onRotated(res.access_token); // keep this session alive on the fresh token
       setCurrent("");
       setNext("");
       setConfirm("");
+      setTwoFactorCode("");
       toast.success("Password changed — other sessions were signed out");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to change password");
@@ -372,7 +378,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             type="password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
-            placeholder="At least 8 characters"
+            placeholder="At least 12 characters"
             autoComplete="new-password"
             className={inputCls}
           />
@@ -391,6 +397,23 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             onChange={(e) => setConfirm(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void submit()}
             autoComplete="new-password"
+            className={inputCls}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label
+            htmlFor="cp-two-factor"
+            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+          >
+            2FA code
+          </label>
+          <input
+            id="cp-two-factor"
+            type="text"
+            value={twoFactorCode}
+            onChange={(e) => setTwoFactorCode(e.target.value)}
+            placeholder="Authenticator or backup code"
+            autoComplete="one-time-code"
             className={inputCls}
           />
         </div>

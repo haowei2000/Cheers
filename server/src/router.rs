@@ -86,6 +86,16 @@ fn build_cors(state: &AppState) -> CorsLayer {
 fn build_authed_routes(state: AppState) -> Router<AppState> {
     // Routes under this branch all require JWT authentication.
     Router::new()
+        // Two-factor authentication (TOTP) management for the authenticated user.
+        .route("/api/v1/auth/2fa/setup", post(api::auth::setup_two_factor))
+        .route(
+            "/api/v1/auth/2fa/enable",
+            post(api::auth::enable_two_factor),
+        )
+        .route(
+            "/api/v1/auth/2fa/disable",
+            post(api::auth::disable_two_factor),
+        )
         // Server-level workbench plugin store (install = admin; list/bundle = any member).
         .route(
             "/api/v1/workbench/plugins",
@@ -672,6 +682,10 @@ fn build_public_routes() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
         .route("/api/v1/auth/login", post(api::auth::login))
+        .route(
+            "/api/v1/auth/2fa/login",
+            post(api::auth::verify_two_factor_login),
+        )
         .route(
             "/api/v1/auth/capabilities",
             get(api::apple_auth::capabilities),

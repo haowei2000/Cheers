@@ -136,6 +136,11 @@ pub struct Config {
     /// or `POST /users`); set `OPEN_REGISTRATION=true` to open sign-up.
     pub open_registration: bool,
 
+    /// Whether users must enable TOTP 2FA before creating or starting remote
+    /// agents. This is an instance policy controlled only by
+    /// `REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS` and defaults to true.
+    pub require_2fa_for_remote_agent_access: bool,
+
     /// Whether the rate limiter may key clients on `X-Real-IP` /
     /// `X-Forwarded-For`. Default **false** (use the peer socket address): the
     /// headers are client-controlled whenever the gateway port is directly
@@ -304,6 +309,11 @@ impl Config {
                 .unwrap_or_else(|| "mailto:admin@tocheers.com".into()),
 
             open_registration: env_flag("OPEN_REGISTRATION", false),
+
+            require_2fa_for_remote_agent_access: env_flag(
+                "REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS",
+                true,
+            ),
 
             trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 

@@ -45,6 +45,8 @@ services:
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-true}
       # 自助注册默认关闭（安全默认）；公开实例显式设为 true。
       - OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
+      # 系统级安全策略：远程 Agent 创建和会话启动默认要求用户已开启 2FA。
+      - REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS=${REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS:-true}
       # Official hosted service only: all four values enable Sign in with Apple.
       # Leave blank on ordinary self-hosted instances; capability discovery then
       # keeps the native Apple button hidden.

@@ -11,7 +11,10 @@ use sqlx::{error::DatabaseError, Row};
 use uuid::Uuid;
 
 use crate::infra::crypto::MIN_PASSWORD_CHARS;
-use crate::{api::middleware::Claims, app_state::AppState, domain::auth, errors::AppError};
+use crate::{
+    api::middleware::Claims, app_state::AppState, domain::auth, domain::two_factor,
+    errors::AppError,
+};
 
 /// Minimal `local@domain.tld` shape check — not RFC-perfect, just rejects obvious junk.
 fn looks_like_email(s: &str) -> bool {
@@ -38,12 +41,21 @@ pub struct LoginRequest {
 
 #[derive(Serialize)]
 pub struct LoginResponse {
-    pub access_token: String,
-    pub token_type: String,
-    pub user_id: String,
-    pub username: String,
+    pub requires_2fa: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub two_factor_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 /// POST /api/v1/auth/login
@@ -74,6 +86,22 @@ pub async fn login(
     };
     limiter.reset(&key);
 
+    let tf_status = two_factor::status(&state.db, &user.id).await?;
+
+    if tf_status.enabled {
+        let session_id = two_factor::create_login_session(&state.db, &user.id).await?;
+        return Ok(Json(LoginResponse {
+            requires_2fa: true,
+            two_factor_session_id: Some(session_id),
+            access_token: None,
+            token_type: None,
+            user_id: None,
+            username: None,
+            display_name: None,
+            role: None,
+        }));
+    }
+
     let user_uuid: Uuid = user
         .id
         .parse()
@@ -87,12 +115,14 @@ pub async fn login(
     )?;
 
     Ok(Json(LoginResponse {
-        access_token: token,
-        token_type: "bearer".into(),
-        user_id: user.id,
-        username: user.username,
+        requires_2fa: false,
+        two_factor_session_id: None,
+        access_token: Some(token),
+        token_type: Some("bearer".into()),
+        user_id: Some(user.id),
+        username: Some(user.username),
         display_name: user.display_name,
-        role: user.role,
+        role: Some(user.role),
     }))
 }
 
@@ -305,12 +335,14 @@ pub async fn register(
     // Auto-login: a fresh account starts at token_version 0.
     let token = auth::create_access_token(&state.config, user_id, "member", 0)?;
     Ok(Json(LoginResponse {
-        access_token: token,
-        token_type: "bearer".into(),
-        user_id: user_id.to_string(),
-        username,
+        requires_2fa: false,
+        two_factor_session_id: None,
+        access_token: Some(token),
+        token_type: Some("bearer".into()),
+        user_id: Some(user_id.to_string()),
+        username: Some(username),
         display_name,
-        role: "member".into(),
+        role: Some("member".into()),
     }))
 }
 
@@ -318,6 +350,8 @@ pub async fn register(
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
+    #[serde(default)]
+    pub two_factor_code: Option<String>,
 }
 
 /// POST /api/v1/auth/change-password — the authenticated user rotates their own
@@ -357,6 +391,17 @@ pub async fn change_password(
             "current password is incorrect".into(),
         ));
     }
+    let master_key = two_factor::master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    two_factor::ensure_valid_code_if_enabled(
+        &state.db,
+        &claims.sub,
+        body.two_factor_code.as_deref(),
+        &master_key,
+    )
+    .await?;
     let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
@@ -548,4 +593,135 @@ pub async fn reset_password(
     .await?;
 
     Ok(Json(json!({ "ok": true })))
+}
+
+// ── Two-factor authentication (TOTP) ───────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct TwoFactorSetupResponse {
+    pub secret: String,
+    pub provisioning_uri: String,
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorEnableRequest {
+    pub code: String,
+}
+
+#[derive(Serialize)]
+pub struct TwoFactorEnableResponse {
+    pub backup_codes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorVerifyRequest {
+    pub two_factor_session_id: String,
+    pub code: String,
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorDisableRequest {
+    pub code: String,
+}
+
+/// POST /api/v1/auth/2fa/setup — generate a TOTP secret for the caller.
+/// The secret is stored encrypted but not yet enabled; the caller must verify
+/// a code via `/auth/2fa/enable` to activate 2FA.
+pub async fn setup_two_factor(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<TwoFactorSetupResponse>, AppError> {
+    let master_key = two_factor::master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    let secret = crate::infra::totp::generate_secret();
+    let row = sqlx::query("SELECT username FROM users WHERE user_id = $1 AND is_deleted = FALSE")
+        .bind(&claims.sub)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let username: String = row.try_get("username").map_err(AppError::Db)?;
+    let provisioning_uri = crate::infra::totp::provisioning_uri(&secret, &username, "Cheers");
+    two_factor::setup(&state.db, &claims.sub, &secret, &master_key).await?;
+    Ok(Json(TwoFactorSetupResponse {
+        secret,
+        provisioning_uri,
+    }))
+}
+
+/// POST /api/v1/auth/2fa/enable — verify the first TOTP code and activate 2FA.
+/// Returns one-time backup codes; the client should store them securely.
+pub async fn enable_two_factor(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<TwoFactorEnableRequest>,
+) -> Result<Json<TwoFactorEnableResponse>, AppError> {
+    let master_key = two_factor::master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    let backup_codes = two_factor::enable(&state.db, &claims.sub, &body.code, &master_key).await?;
+    Ok(Json(TwoFactorEnableResponse { backup_codes }))
+}
+
+/// POST /api/v1/auth/2fa/disable — turn off 2FA after verifying a code.
+pub async fn disable_two_factor(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<TwoFactorDisableRequest>,
+) -> Result<Json<Value>, AppError> {
+    let master_key = two_factor::master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    two_factor::verify_and_disable(&state.db, &claims.sub, &body.code, &master_key).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// POST /api/v1/auth/2fa/login — complete login when 2FA is enabled.
+/// Consumes the intermediate session returned by `/auth/login` and issues a
+/// normal access token after the TOTP code or backup code is verified.
+pub async fn verify_two_factor_login(
+    State(state): State<AppState>,
+    Json(body): Json<TwoFactorVerifyRequest>,
+) -> Result<Json<LoginResponse>, AppError> {
+    let Some(user_id) =
+        two_factor::consume_login_session(&state.db, &body.two_factor_session_id).await?
+    else {
+        return Err(AppError::Unauthorized(
+            "invalid or expired 2FA session".into(),
+        ));
+    };
+    let master_key = two_factor::master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    if !two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await? {
+        return Err(AppError::Unauthorized("invalid 2FA code".into()));
+    }
+    let row = sqlx::query(
+        "SELECT user_id, username, display_name, role, token_version
+         FROM users WHERE user_id = $1 AND is_deleted = FALSE AND is_suspended = FALSE",
+    )
+    .bind(&user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let user_uuid: Uuid = user_id
+        .parse()
+        .map_err(|_| AppError::Internal("invalid user id".into()))?;
+    let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
+    let token_version: i32 = row.try_get("token_version").unwrap_or(0);
+    let token = auth::create_access_token(&state.config, user_uuid, &role, token_version as i64)?;
+    Ok(Json(LoginResponse {
+        requires_2fa: false,
+        two_factor_session_id: None,
+        access_token: Some(token),
+        token_type: Some("bearer".into()),
+        user_id: Some(user_id),
+        username: Some(row.try_get("username").map_err(AppError::Db)?),
+        display_name: row.try_get("display_name").ok(),
+        role: Some(role),
+    }))
 }

@@ -1,11 +1,14 @@
 import { apiJson } from "./client";
 
 export interface LoginResponse {
-  access_token: string;
-  token_type: string;
-  user_id: string;
-  display_name: string | null;
-  role: string;
+  requires_2fa: boolean;
+  two_factor_session_id?: string;
+  access_token?: string;
+  token_type?: string;
+  user_id?: string;
+  username?: string;
+  display_name?: string | null;
+  role?: string;
 }
 
 export async function login(credentials: {
@@ -15,6 +18,20 @@ export async function login(credentials: {
   return apiJson<LoginResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(credentials),
+  });
+}
+
+export interface TwoFactorVerifyRequest {
+  two_factor_session_id: string;
+  code: string;
+}
+
+export async function verifyTwoFactorLogin(
+  body: TwoFactorVerifyRequest
+): Promise<LoginResponse> {
+  return apiJson<LoginResponse>("/auth/2fa/login", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
@@ -53,6 +70,7 @@ export async function register(input: {
 export async function changePassword(input: {
   current_password: string;
   new_password: string;
+  two_factor_code?: string;
 }): Promise<{ ok: boolean; access_token: string }> {
   return apiJson("/auth/change-password", {
     method: "POST",

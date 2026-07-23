@@ -348,19 +348,21 @@ async fn login_response(state: &AppState, user_id: &str) -> Result<LoginResponse
     let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
     let token_version = row.try_get::<i32, _>("token_version").unwrap_or(0) as i64;
     Ok(LoginResponse {
-        access_token: auth::create_access_token(
+        requires_2fa: false,
+        two_factor_session_id: None,
+        access_token: Some(auth::create_access_token(
             state.config.as_ref(),
             user_id
                 .parse()
                 .map_err(|_| AppError::Internal("invalid user id".into()))?,
             &role,
             token_version,
-        )?,
-        token_type: "bearer".into(),
-        user_id: user_id.into(),
-        username: row.try_get("username").unwrap_or_default(),
+        )?),
+        token_type: Some("bearer".into()),
+        user_id: Some(user_id.into()),
+        username: Some(row.try_get("username").unwrap_or_default()),
         display_name: row.try_get("display_name").ok(),
-        role,
+        role: Some(role),
     })
 }
 

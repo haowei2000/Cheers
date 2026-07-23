@@ -23,6 +23,7 @@ pub mod sessions;
 pub mod stt_settings;
 pub mod task_chains;
 pub mod trace;
+pub mod two_factor;
 pub mod usage_store;
 pub mod voice_config;
 pub mod workbench_official;
