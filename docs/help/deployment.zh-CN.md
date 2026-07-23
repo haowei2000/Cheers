@@ -34,6 +34,31 @@ Docker Desktop 用户请把虚拟机内存至少设为 4 GB（含 bot 时 6–8 
   access/secret key，以及 `ADMIN_PASSWORD`（首次启动时用于创建管理员）。
 - **依赖服务：** PostgreSQL（必需）、S3 兼容对象存储 RustFS（必需）、Gotenberg
   （可选 —— office→PDF 文档预览）、Redis（可选 —— 仅用于多实例广播；单实例使用进程内状态）。
+- **Apple 登录由每个 gateway 显式启用。** 官方托管 gateway 配置
+  `APPLE_TEAM_ID`、`APPLE_KEY_ID`、`APPLE_CLIENT_ID=app.cheers.ios` 和
+  `APPLE_PRIVATE_KEY_P8`。浏览器与 macOS OAuth 还需要
+  `APPLE_WEB_CLIENT_ID`、`APPLE_WEB_REDIRECT_URI` 和
+  `OAUTH_WEB_RETURN_URL`。普通自托管实例应保持这些变量未设置，能力接口会将
+  provider 标记为不可用；不得向自托管用户分发官方 `.p8` 私钥。
+
+### 官方生产环境 Apple 凭据
+
+官方 GitHub `production` Environment 将 `APPLE_PRIVATE_KEY_P8` 保存为 Secret；
+Team/Key/Client ID 和两个 HTTPS 回调地址属于公开元数据，保存为 Environment
+Variables。CD workflow 生成带版本号、Base64 编码且字段固定在 allowlist 中的载荷，
+只通过 forced-command SSH 连接的标准输入传输。
+
+服务器脚本版本化保存在 `deploy/production/deploy.sh`，生产安装路径为
+`/opt/cheers/deploy.sh`。脚本验证每个字段和 EC 私钥、验证候选 Compose 配置，并在
+重建 gateway 前原子替换 `/opt/cheers/.env` 中权限为 `0600` 的受管区块。镜像拉取、
+容器重建或健康检查失败时会恢复旧环境。部署日志不得打印载荷、私钥或完整环境文件。
+
+不要手工修改以下标记之间的内容：
+
+```text
+# BEGIN CHEERS GITHUB-MANAGED AUTH
+# END CHEERS GITHUB-MANAGED AUTH
+```
 
 ---
 
