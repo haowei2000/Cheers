@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines, Bell, Plug, ShieldAlert, Shield } from "lucide-react";
+import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines, Bell, Plug, ShieldAlert } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { changePassword, logout as logoutApi } from "@/api/auth";
@@ -26,7 +26,6 @@ import { CopyButton } from "@/features/bots/BotDetailPanel";
 import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
-import { AdminSecuritySettings } from "./AdminSecuritySettings";
 import { AdminReports } from "./AdminReports";
 
 type SectionId =
@@ -37,7 +36,6 @@ type SectionId =
   | "members"
   | "speech"
   | "reports"
-  | "security"
   | "account";
 
 const NAV: {
@@ -55,7 +53,6 @@ const NAV: {
   { id: "members", label: "Members", icon: Users, adminOnly: true },
   { id: "speech", label: "Speech-to-text", icon: AudioLines, adminOnly: true },
   { id: "reports", label: "Safety reports", icon: ShieldAlert, adminOnly: true },
-  { id: "security", label: "Security", icon: Shield, adminOnly: true },
   { id: "account", label: "Account", icon: LogOut },
 ];
 
@@ -309,6 +306,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -322,11 +320,16 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
     }
     setBusy(true);
     try {
-      const res = await changePassword({ current_password: current, new_password: next });
+      const res = await changePassword({
+        current_password: current,
+        new_password: next,
+        two_factor_code: twoFactorCode.trim() || undefined,
+      });
       onRotated(res.access_token); // keep this session alive on the fresh token
       setCurrent("");
       setNext("");
       setConfirm("");
+      setTwoFactorCode("");
       toast.success("Password changed — other sessions were signed out");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to change password");
@@ -375,7 +378,7 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             type="password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
-            placeholder="At least 8 characters"
+            placeholder="At least 12 characters"
             autoComplete="new-password"
             className={inputCls}
           />
@@ -394,6 +397,23 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
             onChange={(e) => setConfirm(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void submit()}
             autoComplete="new-password"
+            className={inputCls}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label
+            htmlFor="cp-two-factor"
+            className="block text-xs font-medium text-zinc-400 uppercase tracking-wide"
+          >
+            2FA code
+          </label>
+          <input
+            id="cp-two-factor"
+            type="text"
+            value={twoFactorCode}
+            onChange={(e) => setTwoFactorCode(e.target.value)}
+            placeholder="Authenticator or backup code"
+            autoComplete="one-time-code"
             className={inputCls}
           />
         </div>
@@ -669,7 +689,6 @@ export default function SettingsPage() {
           {section === "workbench" && <WorkbenchManager />}
           {section === "members" && <AdminUsers />}
           {section === "reports" && <AdminReports />}
-          {section === "security" && <AdminSecuritySettings />}
           {section === "speech" && <AdminSttSettings />}
 
           {section === "account" && (

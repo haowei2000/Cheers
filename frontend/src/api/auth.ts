@@ -70,6 +70,7 @@ export async function register(input: {
 export async function changePassword(input: {
   current_password: string;
   new_password: string;
+  two_factor_code?: string;
 }): Promise<{ ok: boolean; access_token: string }> {
   return apiJson("/auth/change-password", {
     method: "POST",

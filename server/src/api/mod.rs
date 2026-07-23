@@ -18,7 +18,6 @@ pub mod messages;
 pub mod middleware;
 pub mod notifications;
 pub mod push;
-pub mod security_settings;
 pub mod session_control;
 pub mod stt_settings;
 pub mod task_claims;

@@ -265,7 +265,12 @@ pub async fn create_bot(
         }
     }
     // Security: remote agent creation requires 2FA when the instance is configured for it.
-    two_factor::ensure_2fa_for_remote_agent_access(&state.db, &claims.sub).await?;
+    two_factor::ensure_2fa_for_remote_agent_access(
+        &state.db,
+        &claims.sub,
+        state.config.require_2fa_for_remote_agent_access,
+    )
+    .await?;
     // Resource-abuse bound (audit H1): cap how many bots a non-admin can own.
     if !is_admin(&claims) {
         let count: i64 =

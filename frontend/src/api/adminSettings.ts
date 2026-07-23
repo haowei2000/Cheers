@@ -43,25 +43,3 @@ export interface SttTestResult {
 export async function testSttSettings(): Promise<SttTestResult> {
   return apiJson<SttTestResult>(`/admin/settings/stt/test`, { method: "POST" });
 }
-
-
-export interface SecuritySettings {
-  require_2fa_for_remote_agent_access: boolean;
-}
-
-export async function getSecuritySettings(): Promise<SecuritySettings> {
-  return apiJson<SecuritySettings>("/admin/settings/security");
-}
-
-export interface SecuritySettingsUpdate {
-  require_2fa_for_remote_agent_access: boolean;
-}
-
-export async function putSecuritySettings(
-  update: SecuritySettingsUpdate
-): Promise<SecuritySettings> {
-  return apiJson<SecuritySettings>("/admin/settings/security", {
-    method: "PUT",
-    body: JSON.stringify(update),
-  });
-}

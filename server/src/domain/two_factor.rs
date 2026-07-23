@@ -5,7 +5,6 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    domain::security_settings,
     errors::AppError,
     infra::crypto::{decrypt_secret, derive_master_key, encrypt_secret, sha256_hex},
     infra::totp,
@@ -120,20 +119,7 @@ pub async fn verify_and_disable(
     code: &str,
     master_key: &[u8; 32],
 ) -> Result<(), AppError> {
-    let row = sqlx::query(
-        "SELECT totp_secret_encrypted, backup_codes
-         FROM users
-         WHERE user_id = $1 AND is_deleted = FALSE AND totp_enabled = TRUE",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let encrypted: Option<String> = row.try_get("totp_secret_encrypted").ok().flatten();
-    let encrypted = encrypted.ok_or_else(|| AppError::BadRequest("2FA not enabled".into()))?;
-    let secret = decrypt_secret(master_key, &encrypted)
-        .map_err(|_| AppError::Internal("failed to decrypt 2FA secret".into()))?;
-    if !totp::verify(&secret, code, chrono::Utc::now().timestamp() as u64) {
+    if !verify_login(db, user_id, code, master_key).await? {
         return Err(AppError::Unauthorized("invalid verification code".into()));
     }
     sqlx::query(
@@ -147,6 +133,26 @@ pub async fn verify_and_disable(
     .bind(user_id)
     .execute(db)
     .await?;
+    Ok(())
+}
+
+/// Require a valid TOTP or backup code when the user has enabled 2FA.
+pub async fn ensure_valid_code_if_enabled(
+    db: &PgPool,
+    user_id: &str,
+    code: Option<&str>,
+    master_key: &[u8; 32],
+) -> Result<(), AppError> {
+    if !status(db, user_id).await?.enabled {
+        return Ok(());
+    }
+    let code = code
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::Unauthorized("2FA code is required".into()))?;
+    if !verify_login(db, user_id, code, master_key).await? {
+        return Err(AppError::Unauthorized("invalid 2FA code".into()));
+    }
     Ok(())
 }
 
@@ -257,8 +263,9 @@ fn generate_backup_codes() -> Vec<String> {
 pub async fn ensure_2fa_for_remote_agent_access(
     db: &PgPool,
     user_id: &str,
+    required: bool,
 ) -> Result<(), AppError> {
-    if !security_settings::require_2fa_for_remote_agent_access(db).await? {
+    if !required {
         return Ok(());
     }
     let s = status(db, user_id).await?;

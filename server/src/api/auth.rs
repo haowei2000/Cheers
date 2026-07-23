@@ -350,6 +350,8 @@ pub async fn register(
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
+    #[serde(default)]
+    pub two_factor_code: Option<String>,
 }
 
 /// POST /api/v1/auth/change-password — the authenticated user rotates their own
@@ -389,6 +391,17 @@ pub async fn change_password(
             "current password is incorrect".into(),
         ));
     }
+    let master_key = two_factor::master_key(
+        state.config.secret_store_key.as_deref(),
+        &state.config.jwt_private_key_pem,
+    );
+    two_factor::ensure_valid_code_if_enabled(
+        &state.db,
+        &claims.sub,
+        body.two_factor_code.as_deref(),
+        &master_key,
+    )
+    .await?;
     let new_hash = crate::infra::crypto::hash_password(body.new_password.clone())
         .await
         .map_err(|e| AppError::Internal(format!("hash: {e}")))?;

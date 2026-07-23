@@ -18,7 +18,6 @@ pub mod invitable;
 pub mod mentions;
 pub mod messages;
 pub mod plan_store;
-pub mod security_settings;
 pub mod seed;
 pub mod sessions;
 pub mod stt_settings;

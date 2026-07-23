@@ -124,7 +124,12 @@ pub async fn create_session(
 ) -> Result<Json<Value>, AppError> {
     let user_id = ensure_channel_member(&state, channel_id, &claims).await?;
     // Security: remote agent access requires 2FA when the instance is configured for it.
-    two_factor::ensure_2fa_for_remote_agent_access(&state.db, &claims.sub).await?;
+    two_factor::ensure_2fa_for_remote_agent_access(
+        &state.db,
+        &claims.sub,
+        state.config.require_2fa_for_remote_agent_access,
+    )
+    .await?;
     let role = caller_role(&state, channel_id, user_id).await?;
     gate_initiate(
         &state,

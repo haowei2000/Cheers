@@ -662,10 +662,6 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         )
         // Admin instance settings: speech-to-text endpoint (runtime, hot-reloaded).
         .route(
-            "/api/v1/admin/settings/security",
-            get(api::security_settings::get_settings).put(api::security_settings::put_settings),
-        )
-        .route(
             "/api/v1/admin/settings/stt",
             get(api::stt_settings::get_settings).put(api::stt_settings::put_settings),
         )
