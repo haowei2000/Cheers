@@ -70,6 +70,10 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .filter_map(|s| HeaderValue::from_str(&s).ok())
         .collect::<Vec<_>>();
 
+    cors_layer(origins)
+}
+
+fn cors_layer(origins: Vec<HeaderValue>) -> CorsLayer {
     CorsLayer::new()
         .allow_methods([
             Method::GET,
@@ -86,6 +90,11 @@ fn build_cors(state: &AppState) -> CorsLayer {
             HeaderName::from_static("x-csrf-token"),
         ])
         .allow_origin(AllowOrigin::list(origins))
+        // Desktop API requests originate in WKWebView and use
+        // `credentials: include`. Browsers reject even cookie-free responses
+        // unless credentialed CORS is explicit. Origins remain fail-closed via
+        // the allowlist above, so credentials are never combined with `*`.
+        .allow_credentials(true)
 }
 
 fn build_authed_routes(state: AppState) -> Router<AppState> {
@@ -809,4 +818,47 @@ fn build_ws_routes() -> Router<AppState> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::Body,
+        http::{header, Request},
+        routing::get,
+        Router,
+    };
+    use tower::Service;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn cors_allows_credentials_for_tauri_origin() {
+        let mut service = Router::new()
+            .route("/", get(|| async {}))
+            .layer(cors_layer(vec![HeaderValue::from_static(
+                "tauri://localhost",
+            )]));
+        let response = service
+            .call(
+                Request::builder()
+                    .uri("/")
+                    .header(header::ORIGIN, "tauri://localhost")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&HeaderValue::from_static("tauri://localhost"))
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS),
+            Some(&HeaderValue::from_static("true"))
+        );
+    }
 }
