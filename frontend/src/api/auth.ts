@@ -1,4 +1,6 @@
 import { apiJson } from "./client";
+import { getServerBase, isTauri } from "@/lib/serverConfig";
+import { invokeDesktop } from "@/lib/desktop";
 
 export interface LoginResponse {
   status?: "authenticated" | "factor_required";
@@ -21,6 +23,15 @@ export async function login(credentials: {
   client?: "web" | "ios" | "macos";
   device_name?: string;
 }): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) throw new Error("Choose a Cheers server first");
+    return invokeDesktop<LoginResponse>("desktop_password_login", {
+      serverBase,
+      login: credentials.login,
+      password: credentials.password,
+    });
+  }
   return apiJson<LoginResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(credentials),
@@ -36,9 +47,89 @@ export interface TwoFactorVerifyRequest {
 export async function verifyTwoFactorLogin(
   body: TwoFactorVerifyRequest
 ): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) throw new Error("Choose a Cheers server first");
+    return invokeDesktop<LoginResponse>("desktop_verify_factor", {
+      serverBase,
+      transactionId: body.transaction_id,
+      code: body.code,
+    });
+  }
   return apiJson<LoginResponse>("/auth/2fa/login", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export interface AuthCapabilities {
+  client: "web" | "ios" | "macos";
+  providers: { password: boolean; apple: boolean; google: boolean };
+  self_service_registration: boolean;
+}
+
+export async function getAuthCapabilities(): Promise<AuthCapabilities> {
+  const client = isTauri() ? "macos" : "web";
+  return apiJson<AuthCapabilities>(`/auth/capabilities?client=${client}`);
+}
+
+export async function startOAuth(provider: "apple" | "google"): Promise<void> {
+  const client = isTauri() ? "macos" : "web";
+  const response = await apiJson<{ authorization_url: string }>(
+    `/auth/oauth/${provider}/start`,
+    {
+      method: "POST",
+      body: JSON.stringify({ client, device_name: isTauri() ? "Mac" : undefined }),
+    }
+  );
+  if (isTauri()) {
+    await invokeDesktop("desktop_open_oauth_url", { url: response.authorization_url });
+  } else {
+    window.location.assign(response.authorization_url);
+  }
+}
+
+export async function exchangeOAuthHandoff(code: string): Promise<LoginResponse> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (!serverBase) throw new Error("Choose a Cheers server first");
+    return invokeDesktop<LoginResponse>("desktop_oauth_handoff", { serverBase, code });
+  }
+  return apiJson<LoginResponse>("/auth/oauth/handoff", {
+    method: "POST",
+    body: JSON.stringify({ code, client: "web" }),
+  });
+}
+
+export interface ExternalIdentityStatus {
+  provider: "apple" | "google";
+  linked: boolean;
+  display_name: string | null;
+  email: string | null;
+  has_password: boolean;
+  can_unlink: boolean;
+  recent_authentication: boolean;
+}
+
+export async function getExternalIdentity(
+  provider: "apple" | "google"
+): Promise<ExternalIdentityStatus> {
+  return apiJson(`/users/me/external-identities/${provider}`);
+}
+
+export async function unlinkExternalIdentity(
+  provider: "apple" | "google"
+): Promise<{ provider: string; linked: false }> {
+  return apiJson(`/users/me/external-identities/${provider}`, { method: "DELETE" });
+}
+
+export async function deleteAccount(input: {
+  confirmation: string;
+  current_password?: string;
+}): Promise<{ deleted: true }> {
+  return apiJson("/users/me/delete", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 
@@ -87,6 +178,17 @@ export async function changePassword(input: {
 
 /** Server-side logout: revokes all of the user's tokens (this + other devices). */
 export async function logout(): Promise<{ ok: boolean }> {
+  if (isTauri()) {
+    const serverBase = getServerBase();
+    if (serverBase) {
+      const { useAuthStore } = await import("@/stores/authStore");
+      await invokeDesktop("desktop_logout_session", {
+        serverBase,
+        accessToken: useAuthStore.getState().token,
+      });
+    }
+    return { ok: true };
+  }
   return apiJson("/auth/logout", { method: "POST" });
 }
 

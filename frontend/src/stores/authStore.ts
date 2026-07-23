@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { User } from "@/types";
-import { apiBase } from "@/lib/serverConfig";
+import { apiBase, getServerBase, isTauri } from "@/lib/serverConfig";
+import { invokeDesktop } from "@/lib/desktop";
 
 interface AuthState {
   user: User | null;
@@ -29,6 +30,30 @@ export const useAuthStore = create<AuthState>()((set) => ({
       logout: () => set({ user: null, token: null, sessionExpired: false }),
       restoreSession: async () => {
         try {
+          if (isTauri()) {
+            const serverBase = getServerBase();
+            if (!serverBase) return;
+            const body = await invokeDesktop<{
+              access_token?: string;
+              user_id?: string;
+              username?: string;
+              display_name?: string | null;
+              role?: string;
+            } | null>("desktop_refresh_session", { serverBase }).catch(() => null);
+            if (body?.access_token && body.user_id) {
+              set({
+                user: {
+                  user_id: body.user_id,
+                  username: body.username,
+                  display_name: body.display_name ?? null,
+                  role: body.role,
+                },
+                token: body.access_token,
+                sessionExpired: false,
+              });
+            }
+            return;
+          }
           const response = await fetch(`${apiBase()}/auth/refresh`, {
             method: "POST",
             credentials: "include",

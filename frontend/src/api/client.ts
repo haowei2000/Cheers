@@ -20,7 +20,14 @@ function authHeaders(): Record<string, string> {
 // page that keeps failing. `/auth/*` is exempt: there a 401 is a credential
 // error (wrong password, bad reset code), not an expired session.
 function classifyAuthFailure(path: string, status: number): void {
-  if (status !== 401 || path.startsWith("/auth/")) return;
+  if (
+    status !== 401 ||
+    path.startsWith("/auth/") ||
+    path === "/users/me/delete" ||
+    path.startsWith("/users/me/external-identities/")
+  ) {
+    return;
+  }
   const auth = useAuthStore.getState();
   if (auth.token) auth.markSessionExpired();
 }
@@ -63,6 +70,7 @@ const MACHINE_ERROR_PREFIXES = [
   "unauthorized:",
   "forbidden:",
   "conflict:",
+  "precondition required:",
   "payload too large:",
   "database error:",
   "internal error:",

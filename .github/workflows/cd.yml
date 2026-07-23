@@ -182,6 +182,9 @@ jobs:
           APPLE_PRIVATE_KEY_P8: ${{ secrets.APPLE_PRIVATE_KEY_P8 }}
           APPLE_WEB_CLIENT_ID: ${{ vars.APPLE_WEB_CLIENT_ID }}
           APPLE_WEB_REDIRECT_URI: ${{ vars.APPLE_WEB_REDIRECT_URI }}
+          GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_SECRET: ${{ secrets.GOOGLE_WEB_CLIENT_SECRET }}
+          GOOGLE_WEB_REDIRECT_URI: ${{ vars.GOOGLE_WEB_REDIRECT_URI }}
           OAUTH_WEB_RETURN_URL: ${{ vars.OAUTH_WEB_RETURN_URL }}
         run: |
           set +x
@@ -205,6 +208,17 @@ jobs:
             fi
           done
 
+          google_count=0
+          for name in GOOGLE_WEB_CLIENT_ID GOOGLE_WEB_CLIENT_SECRET GOOGLE_WEB_REDIRECT_URI; do
+            if [ -n "${!name:-}" ]; then
+              google_count=$((google_count + 1))
+            fi
+          done
+          if [ "$google_count" -ne 0 ] && [ "$google_count" -ne 3 ]; then
+            echo "Google OAuth settings must be configured together" >&2
+            exit 1
+          fi
+
           payload="$(mktemp)"
           trap 'rm -f "$payload"' EXIT
           chmod 600 "$payload"
@@ -223,6 +237,11 @@ jobs:
           append_payload_field APPLE_PRIVATE_KEY_P8 "$APPLE_PRIVATE_KEY_P8"
           append_payload_field APPLE_WEB_CLIENT_ID "$APPLE_WEB_CLIENT_ID"
           append_payload_field APPLE_WEB_REDIRECT_URI "$APPLE_WEB_REDIRECT_URI"
+          if [ "$google_count" -eq 3 ]; then
+            append_payload_field GOOGLE_WEB_CLIENT_ID "$GOOGLE_WEB_CLIENT_ID"
+            append_payload_field GOOGLE_WEB_CLIENT_SECRET "$GOOGLE_WEB_CLIENT_SECRET"
+            append_payload_field GOOGLE_WEB_REDIRECT_URI "$GOOGLE_WEB_REDIRECT_URI"
+          fi
           append_payload_field OAUTH_WEB_RETURN_URL "$OAUTH_WEB_RETURN_URL"
 
           # The server side ignores the requested command (forced command),

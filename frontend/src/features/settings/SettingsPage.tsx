@@ -1,9 +1,31 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, User, Bot, Blocks, Users, LogOut, KeyRound, AudioLines, Bell, Plug, ShieldAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  User,
+  Bot,
+  Blocks,
+  Users,
+  LogOut,
+  KeyRound,
+  AudioLines,
+  Bell,
+  Plug,
+  ShieldAlert,
+  Link2,
+  Trash2,
+  ExternalLink,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuthStore, useIsAdmin } from "@/stores/authStore";
-import { changePassword, logout as logoutApi } from "@/api/auth";
+import {
+  changePassword,
+  deleteAccount,
+  getExternalIdentity,
+  logout as logoutApi,
+  unlinkExternalIdentity,
+  type ExternalIdentityStatus,
+} from "@/api/auth";
 import { disablePush, enablePush, getPushStatus, type PushStatus } from "@/lib/push";
 import { getServerBase, isTauri, setServerBase } from "@/lib/serverConfig";
 import {
@@ -427,6 +449,189 @@ function ChangePasswordCard({ onRotated }: { onRotated: (token: string) => void 
   );
 }
 
+function ExternalIdentitiesCard() {
+  const [identities, setIdentities] = useState<ExternalIdentityStatus[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [busy, setBusy] = useState<"apple" | "google" | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadError(false);
+    void Promise.all([getExternalIdentity("apple"), getExternalIdentity("google")])
+      .then((result) => alive && setIdentities(result))
+      .catch(() => alive && setLoadError(true));
+    return () => {
+      alive = false;
+    };
+  }, [reloadKey]);
+
+  async function unlink(identity: ExternalIdentityStatus) {
+    if (
+      !window.confirm(
+        `Unlink ${identity.provider === "apple" ? "Apple" : "Google"}? Other devices will be signed out.`
+      )
+    ) {
+      return;
+    }
+    setBusy(identity.provider);
+    try {
+      await unlinkExternalIdentity(identity.provider);
+      toast.success(`${identity.provider === "apple" ? "Apple" : "Google"} unlinked`);
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't unlink identity");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="bg-zinc-900 rounded-xl p-6 mt-4">
+      <p className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+        <Link2 className="w-4 h-4 text-indigo-400" /> Sign-in methods
+      </p>
+      <p className="text-xs text-zinc-400 mt-1 mb-4">
+        Removing a provider signs out other sessions and removes trusted devices.
+      </p>
+      {loadError ? (
+        <Button variant="secondary" size="sm" onClick={() => setReloadKey((value) => value + 1)}>
+          Retry
+        </Button>
+      ) : (
+        <div className="divide-y divide-zinc-800">
+          {(identities ?? []).map((identity) => {
+            const label = identity.provider === "apple" ? "Apple" : "Google";
+            return (
+              <div key={identity.provider} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="text-sm text-zinc-200">{label}</p>
+                  <p className="text-xs text-zinc-500 truncate">
+                    {identity.linked
+                      ? identity.email || identity.display_name || "Linked"
+                      : "Not linked"}
+                  </p>
+                </div>
+                {identity.linked && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={
+                      busy !== null ||
+                      !identity.can_unlink ||
+                      !identity.recent_authentication
+                    }
+                    title={
+                      !identity.can_unlink
+                        ? "Add another sign-in method first"
+                        : !identity.recent_authentication
+                          ? "Sign in again to make this change"
+                          : `Unlink ${label}`
+                    }
+                    onClick={() => void unlink(identity)}
+                  >
+                    {busy === identity.provider ? "Removing…" : "Unlink"}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+          {identities === null && <p className="text-xs text-zinc-500">Loading…</p>}
+        </div>
+      )}
+      {identities?.some((identity) => identity.linked && !identity.recent_authentication) && (
+        <p className="text-xs text-amber-400 mt-4">
+          Sign in again before changing a linked identity.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DeleteAccountCard({ onDeleted }: { onDeleted: () => void }) {
+  const [confirmation, setConfirmation] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function remove() {
+    if (confirmation !== "DELETE") return;
+    if (!window.confirm("Permanently delete your Cheers account and its personal data?")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await deleteAccount({
+        confirmation,
+        current_password: password || undefined,
+      });
+      onDeleted();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't delete account");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border border-red-900/70 rounded-xl p-6 mt-4">
+      <p className="text-sm font-medium text-red-300 flex items-center gap-2">
+        <Trash2 className="w-4 h-4" /> Delete account
+      </p>
+      <p className="text-xs text-zinc-400 mt-1 mb-4">
+        This permanently removes your account. Passwordless accounts must have signed in within the last five minutes.
+      </p>
+      <div className="grid gap-3 max-w-sm">
+        <Input
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Current password, if your account has one"
+          autoComplete="current-password"
+          aria-label="Current password"
+        />
+        <Input
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          placeholder="Type DELETE to confirm"
+          aria-label="Deletion confirmation"
+        />
+        <div>
+          <Button
+            variant="danger"
+            disabled={busy || confirmation !== "DELETE"}
+            onClick={() => void remove()}
+          >
+            {busy ? "Deleting…" : "Delete account"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LegalLinks() {
+  const links = [
+    ["Privacy", "https://www.tocheers.com/privacy.html"],
+    ["Terms", "https://www.tocheers.com/terms.html"],
+    ["Support", "https://www.tocheers.com/support.html"],
+    ["Account deletion", "https://www.tocheers.com/account-deletion.html"],
+  ] as const;
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-2 px-1 mt-5">
+      {links.map(([label, href]) => (
+        <a
+          key={href}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
+        >
+          {label} <ExternalLink className="w-3 h-3" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 /** Self-service editor for display name, status line (emoji + text), and bio. */
 function ProfileEditCard() {
   const user = useAuthStore((s) => s.user);
@@ -699,6 +904,8 @@ export default function SettingsPage() {
 
               <ChangePasswordCard onRotated={(token) => setToken(token)} />
 
+              <ExternalIdentitiesCard />
+
               <ServerCard />
 
               <LaunchAtLoginCard />
@@ -733,6 +940,15 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
+
+              <DeleteAccountCard
+                onDeleted={() => {
+                  logout();
+                  navigate("/login", { replace: true });
+                }}
+              />
+
+              <LegalLinks />
             </section>
           )}
         </div>

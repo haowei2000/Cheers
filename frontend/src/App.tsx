@@ -21,6 +21,7 @@ const QuickPanel = lazy(() =>
 );
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
+const OAuthCallbackPage = lazy(() => import("@/features/auth/OAuthCallbackPage"));
 const RegisterPage = lazy(() => import("@/features/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("@/features/auth/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("@/features/auth/ResetPasswordPage"));
@@ -148,6 +149,7 @@ export default function App() {
     <Suspense fallback={<Spinner />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<OAuthCallbackPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot" element={<ForgotPasswordPage />} />
         <Route path="/reset" element={<ResetPasswordPage />} />

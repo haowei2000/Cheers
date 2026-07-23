@@ -40,13 +40,21 @@ Docker Desktop 用户请把虚拟机内存至少设为 4 GB（含 bot 时 6–8 
   `APPLE_WEB_CLIENT_ID`、`APPLE_WEB_REDIRECT_URI` 和
   `OAUTH_WEB_RETURN_URL`。普通自托管实例应保持这些变量未设置，能力接口会将
   provider 标记为不可用；不得向自托管用户分发官方 `.p8` 私钥。
+  Google OAuth 还需要同时配置 `GOOGLE_WEB_CLIENT_ID`、
+  `GOOGLE_WEB_CLIENT_SECRET` 和 `GOOGLE_WEB_REDIRECT_URI`；Google 仅申请
+  `openid email profile`，不申请离线访问。
 
-### 官方生产环境 Apple 凭据
+### 官方生产环境 OAuth 凭据
 
 官方 GitHub `production` Environment 将 `APPLE_PRIVATE_KEY_P8` 保存为 Secret；
 Team/Key/Client ID 和两个 HTTPS 回调地址属于公开元数据，保存为 Environment
 Variables。CD workflow 生成带版本号、Base64 编码且字段固定在 allowlist 中的载荷，
 只通过 forced-command SSH 连接的标准输入传输。
+
+Google client secret 保存为 production Environment Secret
+`GOOGLE_WEB_CLIENT_SECRET`，client ID 和 callback URI 保存为 Environment
+Variables。未配置整组 Google 变量时 capabilities 会关闭 Google；只配置部分字段会
+直接使部署失败。
 
 服务器脚本版本化保存在 `deploy/production/deploy.sh`，生产安装路径为
 `/opt/cheers/deploy.sh`。脚本验证每个字段和 EC 私钥、验证候选 Compose 配置，并在

@@ -82,8 +82,7 @@ fn client_type(value: Option<&str>) -> Result<auth_sessions::ClientType, AppErro
     auth_sessions::ClientType::parse(value)
 }
 
-async fn response_for_session(
-    _state: &AppState,
+pub(crate) fn session_response(
     user: &auth::AuthUser,
     session: auth_sessions::IssuedSession,
     client: auth_sessions::ClientType,
@@ -183,7 +182,7 @@ pub async fn login(
     let session_id = session.session_id.clone();
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let body = response_for_session(&state, &user, session, client).await?;
+    let body = session_response(&user, session, client)?;
     let mut response = if client == auth_sessions::ClientType::Web {
         response_with_session_cookies(body, Some(&refresh), Some(&csrf))
     } else {
@@ -223,7 +222,7 @@ fn clear_auth_cookie(name: &str) -> String {
     format!("{name}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax")
 }
 
-fn response_with_session_cookies(
+pub(crate) fn response_with_session_cookies(
     body: LoginResponse,
     refresh_token: Option<&str>,
     csrf_token: Option<&str>,
@@ -471,7 +470,7 @@ pub async fn register(
     .await?;
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let body = response_for_session(&state, &user, session, client).await?;
+    let body = session_response(&user, session, client)?;
     Ok(if client == auth_sessions::ClientType::Web {
         response_with_session_cookies(body, Some(&refresh), Some(&csrf))
     } else {
@@ -740,17 +739,31 @@ pub async fn capabilities(
     axum::extract::Query(query): axum::extract::Query<CapabilitiesQuery>,
 ) -> Json<Value> {
     let client = query.client.unwrap_or_else(|| "web".into());
+    let browser_client = client == "web" || client == "macos";
+    let apple_web =
+        state.config.apple_auth.as_ref().is_some_and(|config| {
+            config.web_client_id.is_some() && config.web_redirect_uri.is_some()
+        });
+    let apple_enabled = if browser_client {
+        apple_web && (client != "web" || state.config.oauth_web_return_url.is_some())
+    } else {
+        state.config.apple_auth.is_some()
+    };
+    let google_enabled = state.config.google_auth.is_some()
+        && (client != "web" || state.config.oauth_web_return_url.is_some());
     Json(json!({
         "client": client,
         "providers": {
             "password": true,
-            "apple": state.config.apple_auth.is_some(),
-            "google": false,
+            "apple": apple_enabled,
+            "google": google_enabled,
         },
         "passkey": false,
         "password_login": true,
-        "sign_in_with_apple": state.config.apple_auth.is_some(),
-        "apple_client_id": state.config.apple_auth.as_ref().map(|value| value.client_id.clone()),
+        "sign_in_with_apple": apple_enabled,
+        "apple_client_id": state.config.apple_auth.as_ref().and_then(|value| {
+            if browser_client { value.web_client_id.clone() } else { Some(value.client_id.clone()) }
+        }),
         "self_service_registration": state.config.open_registration,
         "registration": { "open": state.config.open_registration, "invite_required": !state.config.open_registration },
         "session": { "access_token_ttl_seconds": auth_sessions::ACCESS_TOKEN_TTL_SECONDS, "refresh_idle_days": 30, "trusted_device_days": 30 }
@@ -1023,7 +1036,7 @@ pub async fn verify_two_factor_login(
     let session_id = session.session_id.clone();
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let body = response_for_session(&state, &user, session, client).await?;
+    let body = session_response(&user, session, client)?;
     let mut response = if client == auth_sessions::ClientType::Web {
         response_with_session_cookies(body, Some(&refresh), Some(&csrf))
     } else {

@@ -179,7 +179,7 @@ struct AppleIdentityStatus: Decodable {
     let appleLinked: Bool
     let hasPassword: Bool
     enum CodingKeys: String, CodingKey {
-        case appleLinked = "apple_linked"
+        case appleLinked = "linked"
         case hasPassword = "has_password"
     }
 }

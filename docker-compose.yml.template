@@ -54,6 +54,12 @@ services:
       - APPLE_KEY_ID=${APPLE_KEY_ID:-}
       - APPLE_CLIENT_ID=${APPLE_CLIENT_ID:-}
       - APPLE_PRIVATE_KEY_P8=${APPLE_PRIVATE_KEY_P8:-}
+      - APPLE_WEB_CLIENT_ID=${APPLE_WEB_CLIENT_ID:-}
+      - APPLE_WEB_REDIRECT_URI=${APPLE_WEB_REDIRECT_URI:-}
+      - GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID:-}
+      - GOOGLE_WEB_CLIENT_SECRET=${GOOGLE_WEB_CLIENT_SECRET:-}
+      - GOOGLE_WEB_REDIRECT_URI=${GOOGLE_WEB_REDIRECT_URI:-}
+      - OAUTH_WEB_RETURN_URL=${OAUTH_WEB_RETURN_URL:-}
       # Connector self-update: the release version this gateway advertises in
       # its hello + serves via /api/v1/connector/download. Unset ⇒ no update
       # signal (download proxy then tracks the latest GitHub release).

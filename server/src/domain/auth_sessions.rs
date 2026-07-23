@@ -489,6 +489,66 @@ pub async fn revoke_all_sessions(db: &PgPool, user_id: &str) -> Result<(), AppEr
     Ok(())
 }
 
+/// Sensitive account changes require a password/provider authentication no
+/// older than five minutes. A newly-created session is itself a valid step-up;
+/// later explicit step-up flows can refresh `step_up_at` without replacing it.
+pub async fn require_recent_auth(
+    db: &PgPool,
+    user_id: &str,
+    session_id: &str,
+) -> Result<(), AppError> {
+    let recent = sqlx::query(
+        "SELECT 1 FROM auth_sessions
+         WHERE session_id = $1 AND user_id = $2 AND revoked_at IS NULL
+           AND absolute_expires_at > NOW()
+           AND GREATEST(authenticated_at, COALESCE(step_up_at, authenticated_at))
+               >= NOW() - INTERVAL '5 minutes'",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?
+    .is_some();
+    if !recent {
+        return Err(AppError::PreconditionRequired(
+            "recent authentication required; sign in again before changing account access".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Identity changes keep the session that authorized the operation but revoke
+/// every other session and every trusted-device credential for the account.
+pub async fn revoke_other_sessions_and_trusted_devices(
+    db: &PgPool,
+    user_id: &str,
+    current_session_id: &str,
+) -> Result<(), AppError> {
+    let mut tx = db.begin().await?;
+    let rows = sqlx::query(
+        "SELECT session_id FROM auth_sessions
+         WHERE user_id = $1 AND session_id <> $2 AND revoked_at IS NULL
+         FOR UPDATE",
+    )
+    .bind(user_id)
+    .bind(current_session_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for row in rows {
+        let session_id: String = row.try_get("session_id")?;
+        revoke_session_in_tx(&mut tx, &session_id, "identity_changed").await?;
+    }
+    sqlx::query(
+        "UPDATE trusted_devices SET revoked_at = COALESCE(revoked_at, NOW())
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn list_sessions(
     db: &PgPool,
     user_id: &str,

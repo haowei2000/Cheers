@@ -79,6 +79,9 @@ sync_auth_environment() {
         APPLE_PRIVATE_KEY_P8 | \
         APPLE_WEB_CLIENT_ID | \
         APPLE_WEB_REDIRECT_URI | \
+        GOOGLE_WEB_CLIENT_ID | \
+        GOOGLE_WEB_CLIENT_SECRET | \
+        GOOGLE_WEB_REDIRECT_URI | \
         OAUTH_WEB_RETURN_URL)
         ;;
       *)
@@ -95,6 +98,15 @@ sync_auth_environment() {
     [[ -n "${values[$key]:-}" ]] || fail "required field is missing"
   done
 
+  local google_count=0
+  for key in GOOGLE_WEB_CLIENT_ID GOOGLE_WEB_CLIENT_SECRET GOOGLE_WEB_REDIRECT_URI; do
+    if [[ -n "${values[$key]:-}" ]]; then
+      google_count=$((google_count + 1))
+    fi
+  done
+  [[ "$google_count" -eq 0 || "$google_count" -eq 3 ]] ||
+    fail "Google OAuth fields must be configured together"
+
   [[ "${values[APPLE_TEAM_ID]}" =~ ^[A-Z0-9]{10}$ ]] ||
     fail "APPLE_TEAM_ID has an invalid format"
   [[ "${values[APPLE_KEY_ID]}" =~ ^[A-Z0-9]{10}$ ]] ||
@@ -109,6 +121,17 @@ sync_auth_environment() {
   [[ "${values[OAUTH_WEB_RETURN_URL]}" == \
     "https://www.tocheers.com/auth/callback" ]] ||
     fail "OAUTH_WEB_RETURN_URL is not the production callback"
+  if [[ "$google_count" -eq 3 ]]; then
+    [[ "${values[GOOGLE_WEB_CLIENT_ID]}" =~ ^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$ ]] ||
+      fail "GOOGLE_WEB_CLIENT_ID has an invalid format"
+    [[ "${values[GOOGLE_WEB_REDIRECT_URI]}" == \
+      "https://www.tocheers.com/api/v1/auth/oauth/google/callback" ]] ||
+      fail "GOOGLE_WEB_REDIRECT_URI is not the production callback"
+    [[ "${values[GOOGLE_WEB_CLIENT_SECRET]}" != *"'"* ]] ||
+      fail "GOOGLE_WEB_CLIENT_SECRET contains an unsupported character"
+    [[ "${values[GOOGLE_WEB_CLIENT_SECRET]}" != *$'\n'* ]] ||
+      fail "GOOGLE_WEB_CLIENT_SECRET contains an unsupported newline"
+  fi
 
   PRIVATE_KEY_FILE="$(mktemp "${DEPLOY_ROOT}/.apple-private-key.XXXXXX")"
   printf '%s\n' "${values[APPLE_PRIVATE_KEY_P8]}" > "$PRIVATE_KEY_FILE"
@@ -130,6 +153,11 @@ sync_auth_environment() {
     printf "APPLE_PRIVATE_KEY_P8='%s'\n" "${values[APPLE_PRIVATE_KEY_P8]}"
     printf "APPLE_WEB_CLIENT_ID='%s'\n" "${values[APPLE_WEB_CLIENT_ID]}"
     printf "APPLE_WEB_REDIRECT_URI='%s'\n" "${values[APPLE_WEB_REDIRECT_URI]}"
+    if [[ "$google_count" -eq 3 ]]; then
+      printf "GOOGLE_WEB_CLIENT_ID='%s'\n" "${values[GOOGLE_WEB_CLIENT_ID]}"
+      printf "GOOGLE_WEB_CLIENT_SECRET='%s'\n" "${values[GOOGLE_WEB_CLIENT_SECRET]}"
+      printf "GOOGLE_WEB_REDIRECT_URI='%s'\n" "${values[GOOGLE_WEB_REDIRECT_URI]}"
+    fi
     printf "OAUTH_WEB_RETURN_URL='%s'\n" "${values[OAUTH_WEB_RETURN_URL]}"
     printf '%s\n' "$MANAGED_END"
   } > "$MANAGED_BLOCK_FILE"

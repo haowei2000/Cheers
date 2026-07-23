@@ -624,10 +624,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             delete(api::auth::revoke_session),
         )
         .route(
-            "/api/v1/users/me/external-identities/apple",
-            get(api::apple_auth::status)
-                .post(api::apple_auth::link)
-                .delete(api::apple_auth::unlink),
+            "/api/v1/users/me/external-identities/:provider",
+            get(api::external_identities::status)
+                .post(api::external_identities::link)
+                .delete(api::external_identities::unlink),
         )
         .route(
             "/api/v1/users/me/delete",
@@ -703,6 +703,19 @@ fn build_public_routes() -> Router<AppState> {
             post(api::auth::verify_two_factor_login),
         )
         .route("/api/v1/auth/capabilities", get(api::auth::capabilities))
+        .route(
+            "/api/v1/auth/oauth/:provider/start",
+            post(api::oauth::start),
+        )
+        .route(
+            "/api/v1/auth/oauth/apple/callback",
+            post(api::oauth::apple_callback),
+        )
+        .route(
+            "/api/v1/auth/oauth/google/callback",
+            get(api::oauth::google_callback),
+        )
+        .route("/api/v1/auth/oauth/handoff", post(api::oauth::handoff))
         .route(
             "/api/v1/auth/apple/challenge",
             post(api::apple_auth::challenge),
