@@ -1,6 +1,10 @@
 import { apiJson } from "./client";
 
 export interface LoginResponse {
+  status?: "authenticated" | "factor_required";
+  transaction_id?: string;
+  allowed_factors?: string[];
+  expires_in?: number;
   requires_2fa: boolean;
   two_factor_session_id?: string;
   access_token?: string;
@@ -14,6 +18,8 @@ export interface LoginResponse {
 export async function login(credentials: {
   login: string;
   password: string;
+  client?: "web" | "ios" | "macos";
+  device_name?: string;
 }): Promise<LoginResponse> {
   return apiJson<LoginResponse>("/auth/login", {
     method: "POST",
@@ -22,8 +28,9 @@ export async function login(credentials: {
 }
 
 export interface TwoFactorVerifyRequest {
-  two_factor_session_id: string;
+  transaction_id: string;
   code: string;
+  remember_device?: boolean;
 }
 
 export async function verifyTwoFactorLogin(

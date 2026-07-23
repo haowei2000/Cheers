@@ -92,18 +92,32 @@ enum JSONValue: Codable, Equatable, Hashable {
 struct LoginRequest: Encodable {
     let login: String
     let password: String
+    let client: String = "ios"
+}
+
+struct RefreshRequest: Encodable {
+    let refreshToken: String
+    enum CodingKeys: String, CodingKey { case refreshToken = "refresh_token" }
 }
 
 struct LoginResponse: Codable {
-    let accessToken: String
-    let tokenType: String
-    let userId: String
-    let username: String
+    let status: String?
+    let transactionId: String?
+    let accessToken: String?
+    let refreshToken: String?
+    let expiresIn: Int?
+    let tokenType: String?
+    let userId: String?
+    let username: String?
     let displayName: String?
-    let role: String
+    let role: String?
 
     enum CodingKeys: String, CodingKey {
+        case status
+        case transactionId = "transaction_id"
         case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case expiresIn = "expires_in"
         case tokenType = "token_type"
         case userId = "user_id"
         case username
@@ -151,11 +165,13 @@ struct RegisterRequest: Encodable {
     let code: String
     let displayName: String?
     let inviteToken: String?
+    let client: String = "ios"
 
     enum CodingKeys: String, CodingKey {
         case username, password, email, code
         case displayName = "display_name"
         case inviteToken = "invite_token"
+        case client
     }
 }
 
@@ -187,6 +203,7 @@ struct AppleAuthorizationPayload: Encodable {
     let givenName: String?
     let familyName: String?
     let inviteToken: String?
+    let client: String = "ios"
 
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
@@ -195,6 +212,7 @@ struct AppleAuthorizationPayload: Encodable {
         case givenName = "given_name"
         case familyName = "family_name"
         case inviteToken = "invite_token"
+        case client
     }
 }
 

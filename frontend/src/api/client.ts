@@ -2,14 +2,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { apiBase, wsBase } from "@/lib/serverConfig";
 
 function getToken(): string | null {
-  try {
-    const raw = localStorage.getItem("auth");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { state?: { token?: string } };
-    return parsed?.state?.token ?? null;
-  } catch {
-    return null;
-  }
+  return useAuthStore.getState().token;
 }
 
 function authHeaders(): Record<string, string> {
@@ -41,6 +34,7 @@ export async function apiFetch(
   const url = `${apiBase()}${path}`;
   const res = await fetch(url, {
     ...init,
+    credentials: "include",
     headers: {
       ...authHeaders(),
       ...(init?.headers as Record<string, string> | undefined),

@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use axum::{
     extract::{ConnectInfo, State},
     http::HeaderMap,
+    response::{IntoResponse, Response},
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,9 @@ use uuid::Uuid;
 
 use crate::infra::crypto::MIN_PASSWORD_CHARS;
 use crate::{
-    api::middleware::Claims, app_state::AppState, domain::auth, domain::two_factor,
+    api::middleware::Claims,
+    app_state::AppState,
+    domain::{auth, auth_sessions, two_factor},
     errors::AppError,
 };
 
@@ -37,10 +40,23 @@ pub struct LoginRequest {
     /// username 或 email
     pub login: String,
     pub password: String,
+    #[serde(default)]
+    pub client: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub remember_device: bool,
 }
 
 #[derive(Serialize)]
 pub struct LoginResponse {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_id: Option<String>,
+    #[serde(default)]
+    pub allowed_factors: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<i64>,
     pub requires_2fa: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub two_factor_session_id: Option<String>,
@@ -56,6 +72,40 @@ pub struct LoginResponse {
     pub display_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub csrf_token: Option<String>,
+}
+
+fn client_type(value: Option<&str>) -> Result<auth_sessions::ClientType, AppError> {
+    auth_sessions::ClientType::parse(value)
+}
+
+async fn response_for_session(
+    _state: &AppState,
+    user: &auth::AuthUser,
+    session: auth_sessions::IssuedSession,
+    client: auth_sessions::ClientType,
+) -> Result<LoginResponse, AppError> {
+    Ok(LoginResponse {
+        status: "authenticated".into(),
+        transaction_id: None,
+        allowed_factors: Vec::new(),
+        expires_in: Some(session.expires_in),
+        requires_2fa: false,
+        two_factor_session_id: None,
+        access_token: Some(session.access_token),
+        token_type: Some("bearer".into()),
+        user_id: Some(user.id.clone()),
+        username: Some(user.username.clone()),
+        display_name: user.display_name.clone(),
+        role: Some(user.role.clone()),
+        // Browser callers receive this as HttpOnly cookies in the final handler;
+        // native clients receive it through their Keychain-facing network layer.
+        refresh_token: (client != auth_sessions::ClientType::Web).then_some(session.refresh_token),
+        csrf_token: (client != auth_sessions::ClientType::Web).then_some(session.csrf_token),
+    })
 }
 
 /// POST /api/v1/auth/login
@@ -64,7 +114,7 @@ pub async fn login(
     connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<Response, AppError> {
     // Throttle brute-force / bcrypt-DoS (audit H3): cap failed attempts per
     // client source; a successful login clears the counter.
     let limiter = crate::infra::ratelimit::login_limiter();
@@ -86,44 +136,116 @@ pub async fn login(
     };
     limiter.reset(&key);
 
+    let client = client_type(body.client.as_deref())?;
+    let remember_device = body.remember_device;
+    let trusted = auth_sessions::trusted_device_is_valid(
+        &state.db,
+        &user.id,
+        parse_cookie(&headers, "cheers_trusted_device").as_deref(),
+    )
+    .await?;
     let tf_status = two_factor::status(&state.db, &user.id).await?;
 
-    if tf_status.enabled {
-        let session_id = two_factor::create_login_session(&state.db, &user.id).await?;
+    if tf_status.enabled && !trusted {
+        let transaction = auth_sessions::create_factor_transaction(
+            &state.db,
+            &user.id,
+            client,
+            body.device_name.as_deref(),
+        )
+        .await?;
         return Ok(Json(LoginResponse {
+            status: "factor_required".into(),
+            transaction_id: Some(transaction.transaction_id),
+            allowed_factors: vec!["totp".into(), "recovery_code".into(), "passkey".into()],
+            expires_in: Some(600),
             requires_2fa: true,
-            two_factor_session_id: Some(session_id),
+            two_factor_session_id: None,
             access_token: None,
             token_type: None,
             user_id: None,
             username: None,
             display_name: None,
             role: None,
-        }));
+            refresh_token: None,
+            csrf_token: None,
+        })
+        .into_response());
     }
-
-    let user_uuid: Uuid = user
-        .id
-        .parse()
-        .map_err(|_| AppError::Internal("invalid user id".into()))?;
-
-    let token = auth::create_access_token(
+    let session = auth_sessions::finalize_login(
+        &state.db,
         &state.config,
-        user_uuid,
-        &user.role,
-        user.token_version as i64,
-    )?;
+        &user,
+        client,
+        body.device_name.as_deref(),
+    )
+    .await?;
+    let session_id = session.session_id.clone();
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let body = response_for_session(&state, &user, session, client).await?;
+    let mut response = if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    };
+    if remember_device {
+        let trusted =
+            auth_sessions::issue_trusted_device(&state.db, &user.id, &session_id, None).await?;
+        response.headers_mut().append(
+            axum::http::header::SET_COOKIE,
+            auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
+                .parse()
+                .expect("valid cookie header"),
+        );
+    }
+    Ok(response)
+}
 
-    Ok(Json(LoginResponse {
-        requires_2fa: false,
-        two_factor_session_id: None,
-        access_token: Some(token),
-        token_type: Some("bearer".into()),
-        user_id: Some(user.id),
-        username: Some(user.username),
-        display_name: user.display_name,
-        role: Some(user.role),
-    }))
+fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(axum::http::header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|part| {
+            let (key, value) = part.trim().split_once('=')?;
+            (key == name).then(|| value.to_string())
+        })
+}
+
+fn auth_cookie(name: &str, value: &str, http_only: bool, max_age: i64) -> String {
+    let http_only = if http_only { "; HttpOnly" } else { "" };
+    format!("{name}={value}; Max-Age={max_age}; Path=/; Secure{http_only}; SameSite=Lax")
+}
+
+fn clear_auth_cookie(name: &str) -> String {
+    format!("{name}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax")
+}
+
+fn response_with_session_cookies(
+    body: LoginResponse,
+    refresh_token: Option<&str>,
+    csrf_token: Option<&str>,
+) -> Response {
+    let mut response = Json(body).into_response();
+    if let Some(refresh) = refresh_token {
+        response.headers_mut().append(
+            axum::http::header::SET_COOKIE,
+            auth_cookie("cheers_refresh", refresh, true, 30 * 24 * 60 * 60)
+                .parse()
+                .expect("valid cookie header"),
+        );
+    }
+    if let Some(csrf) = csrf_token {
+        response.headers_mut().append(
+            axum::http::header::SET_COOKIE,
+            auth_cookie("cheers_csrf", csrf, false, 30 * 24 * 60 * 60)
+                .parse()
+                .expect("valid cookie header"),
+        );
+    }
+    response
 }
 
 #[derive(Deserialize)]
@@ -232,6 +354,10 @@ pub struct RegisterRequest {
     /// this call's auto-login, so the new account lands in the workspace.
     #[serde(default)]
     pub invite_token: Option<String>,
+    #[serde(default)]
+    pub client: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
 }
 
 /// POST /api/v1/auth/register (public) — self-service sign-up. Creates a `member`
@@ -243,8 +369,9 @@ pub async fn register(
     connect_info: Option<ConnectInfo<SocketAddr>>,
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<Response, AppError> {
     ensure_may_register(&state, body.invite_token.as_deref()).await?;
+    let client = client_type(body.client.as_deref())?;
     let limiter = crate::infra::ratelimit::register_limiter();
     let key = crate::infra::ratelimit::client_key(
         &headers,
@@ -332,18 +459,24 @@ pub async fn register(
     .execute(&state.db)
     .await?;
 
-    // Auto-login: a fresh account starts at token_version 0.
-    let token = auth::create_access_token(&state.config, user_id, "member", 0)?;
-    Ok(Json(LoginResponse {
-        requires_2fa: false,
-        two_factor_session_id: None,
-        access_token: Some(token),
-        token_type: Some("bearer".into()),
-        user_id: Some(user_id.to_string()),
-        username: Some(username),
-        display_name,
-        role: Some("member".into()),
-    }))
+    // Auto-login goes through the same session issuer as every other provider.
+    let user = auth::load_auth_user(&state.db, &user_id.to_string()).await?;
+    let session = auth_sessions::finalize_login(
+        &state.db,
+        &state.config,
+        &user,
+        client,
+        body.device_name.as_deref(),
+    )
+    .await?;
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let body = response_for_session(&state, &user, session, client).await?;
+    Ok(if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    })
 }
 
 #[derive(Deserialize)]
@@ -425,16 +558,20 @@ pub async fn change_password(
     // own device re-enables via the Settings toggle.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
 
-    // Mint a fresh token at the new version so the current caller stays signed in.
-    let new_version = row.try_get::<i32, _>("token_version").unwrap_or(0) as i64 + 1;
-    let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
-    let user_uuid: Uuid = claims
-        .sub
-        .parse()
-        .map_err(|_| AppError::Internal("invalid user id".into()))?;
-    let token = auth::create_access_token(&state.config, user_uuid, &role, new_version)?;
+    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
+    let user = auth::load_auth_user(&state.db, &claims.sub).await?;
+    let session = auth_sessions::finalize_login(
+        &state.db,
+        &state.config,
+        &user,
+        auth_sessions::ClientType::Web,
+        None,
+    )
+    .await?;
 
-    Ok(Json(json!({ "ok": true, "access_token": token })))
+    Ok(Json(
+        json!({ "ok": true, "access_token": session.access_token, "expires_in": session.expires_in }),
+    ))
 }
 
 /// POST /api/v1/auth/logout — server-side revocation. Bumps the caller's
@@ -443,11 +580,8 @@ pub async fn change_password(
 pub async fn logout(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
-) -> Result<Json<Value>, AppError> {
-    sqlx::query("UPDATE users SET token_version = token_version + 1 WHERE user_id = $1")
-        .bind(&claims.sub)
-        .execute(&state.db)
-        .await?;
+) -> Result<Response, AppError> {
+    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
     // Revocation must reach live sockets too, not just future HTTP requests.
     if let Ok(uid) = claims.sub.parse::<Uuid>() {
         state.fanout.kick_user(uid);
@@ -455,7 +589,177 @@ pub async fn logout(
     // Logout revokes every session, so no device should keep receiving
     // lock-screen pushes either.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response.headers_mut().append(
+        axum::http::header::SET_COOKIE,
+        clear_auth_cookie("cheers_refresh")
+            .parse()
+            .expect("valid cookie header"),
+    );
+    response.headers_mut().append(
+        axum::http::header::SET_COOKIE,
+        clear_auth_cookie("cheers_csrf")
+            .parse()
+            .expect("valid cookie header"),
+    );
+    response.headers_mut().append(
+        axum::http::header::SET_COOKIE,
+        clear_auth_cookie("cheers_trusted_device")
+            .parse()
+            .expect("valid cookie header"),
+    );
+    Ok(response)
+}
+
+#[derive(Deserialize)]
+pub struct RefreshRequest {
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub csrf_token: Option<String>,
+}
+
+/// POST /api/v1/auth/refresh. Browser callers use the HttpOnly cookie and an
+/// Origin-bound CSRF header; native callers may submit the Keychain token.
+pub async fn refresh(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RefreshRequest>,
+) -> Result<Response, AppError> {
+    if let Some(origin) = headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+    {
+        if !state
+            .config
+            .allowed_origins()
+            .iter()
+            .any(|allowed| allowed == origin)
+        {
+            return Err(AppError::Forbidden("refresh origin is not allowed".into()));
+        }
+    }
+    let refresh_token = body
+        .refresh_token
+        .or_else(|| parse_cookie(&headers, "cheers_refresh"))
+        .ok_or_else(|| AppError::Unauthorized("refresh token is required".into()))?;
+    let csrf = body
+        .csrf_token
+        .or_else(|| {
+            headers
+                .get("x-csrf-token")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned)
+        })
+        .or_else(|| parse_cookie(&headers, "cheers_csrf"));
+    let rotated = auth_sessions::rotate_refresh_token(
+        &state.db,
+        &state.config,
+        &refresh_token,
+        csrf.as_deref(),
+    )
+    .await?;
+    let client = sqlx::query_scalar::<_, String>(
+        "SELECT client_type FROM auth_sessions WHERE session_id = $1",
+    )
+    .bind(&rotated.session_id)
+    .fetch_one(&state.db)
+    .await?;
+    let is_web = client == "web";
+    let body = LoginResponse {
+        status: "authenticated".into(),
+        transaction_id: None,
+        allowed_factors: Vec::new(),
+        expires_in: Some(rotated.expires_in),
+        requires_2fa: false,
+        two_factor_session_id: None,
+        access_token: Some(rotated.access_token),
+        token_type: Some("bearer".into()),
+        user_id: Some(rotated.user.id.clone()),
+        username: Some(rotated.user.username.clone()),
+        display_name: rotated.user.display_name.clone(),
+        role: Some(rotated.user.role.clone()),
+        refresh_token: (!is_web).then_some(rotated.refresh_token.clone()),
+        csrf_token: (!is_web).then_some(rotated.csrf_token.clone().unwrap_or_default()),
+    };
+    Ok(if is_web {
+        response_with_session_cookies(
+            body,
+            Some(&rotated.refresh_token),
+            rotated.csrf_token.as_deref(),
+        )
+    } else {
+        Json(body).into_response()
+    })
+}
+
+pub async fn logout_current(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Value>, AppError> {
+    auth_sessions::revoke_session(&state.db, &claims.sub, &claims.sid).await?;
+    if let Ok(uid) = claims.sub.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
     Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn logout_all(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Value>, AppError> {
+    auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
+    if let Ok(uid) = claims.sub.parse::<Uuid>() {
+        state.fanout.kick_user(uid);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<auth_sessions::SessionSummary>>, AppError> {
+    Ok(Json(
+        auth_sessions::list_sessions(&state.db, &claims.sub, &claims.sid).await?,
+    ))
+}
+
+pub async fn revoke_session(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    axum::extract::Path(session_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    if !auth_sessions::revoke_session(&state.db, &claims.sub, &session_id).await? {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn capabilities(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<CapabilitiesQuery>,
+) -> Json<Value> {
+    let client = query.client.unwrap_or_else(|| "web".into());
+    Json(json!({
+        "client": client,
+        "providers": {
+            "password": true,
+            "apple": state.config.apple_auth.is_some(),
+            "google": false,
+        },
+        "passkey": false,
+        "password_login": true,
+        "sign_in_with_apple": state.config.apple_auth.is_some(),
+        "apple_client_id": state.config.apple_auth.as_ref().map(|value| value.client_id.clone()),
+        "self_service_registration": state.config.open_registration,
+        "registration": { "open": state.config.open_registration, "invite_required": !state.config.open_registration },
+        "session": { "access_token_ttl_seconds": auth_sessions::ACCESS_TOKEN_TTL_SECONDS, "refresh_idle_days": 30, "trusted_device_days": 30 }
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct CapabilitiesQuery {
+    pub client: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -615,8 +919,13 @@ pub struct TwoFactorEnableResponse {
 
 #[derive(Deserialize)]
 pub struct TwoFactorVerifyRequest {
-    pub two_factor_session_id: String,
+    #[serde(default)]
+    pub transaction_id: Option<String>,
+    #[serde(default)]
+    pub two_factor_session_id: Option<String>,
     pub code: String,
+    #[serde(default)]
+    pub remember_device: bool,
 }
 
 #[derive(Deserialize)]
@@ -685,43 +994,55 @@ pub async fn disable_two_factor(
 pub async fn verify_two_factor_login(
     State(state): State<AppState>,
     Json(body): Json<TwoFactorVerifyRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
-    let Some(user_id) =
-        two_factor::consume_login_session(&state.db, &body.two_factor_session_id).await?
-    else {
-        return Err(AppError::Unauthorized(
-            "invalid or expired 2FA session".into(),
-        ));
-    };
+) -> Result<Response, AppError> {
+    let transaction_id = body
+        .transaction_id
+        .as_deref()
+        .ok_or_else(|| AppError::Unauthorized("authentication transaction is required".into()))?;
+    let (user_id, client, device_name) =
+        auth_sessions::factor_transaction_user(&state.db, transaction_id).await?;
+    let remember_device = body.remember_device;
     let master_key = two_factor::master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
     );
     if !two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await? {
+        auth_sessions::record_factor_failure(&state.db, transaction_id).await?;
         return Err(AppError::Unauthorized("invalid 2FA code".into()));
     }
-    let row = sqlx::query(
-        "SELECT user_id, username, display_name, role, token_version
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE AND is_suspended = FALSE",
+    auth_sessions::consume_factor_transaction(&state.db, transaction_id).await?;
+    let user = auth::load_auth_user(&state.db, &user_id).await?;
+    let session = auth_sessions::finalize_login(
+        &state.db,
+        &state.config,
+        &user,
+        client,
+        device_name.as_deref(),
     )
-    .bind(&user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let user_uuid: Uuid = user_id
-        .parse()
-        .map_err(|_| AppError::Internal("invalid user id".into()))?;
-    let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
-    let token_version: i32 = row.try_get("token_version").unwrap_or(0);
-    let token = auth::create_access_token(&state.config, user_uuid, &role, token_version as i64)?;
-    Ok(Json(LoginResponse {
-        requires_2fa: false,
-        two_factor_session_id: None,
-        access_token: Some(token),
-        token_type: Some("bearer".into()),
-        user_id: Some(user_id),
-        username: Some(row.try_get("username").map_err(AppError::Db)?),
-        display_name: row.try_get("display_name").ok(),
-        role: Some(role),
-    }))
+    .await?;
+    let session_id = session.session_id.clone();
+    let refresh = session.refresh_token.clone();
+    let csrf = session.csrf_token.clone();
+    let body = response_for_session(&state, &user, session, client).await?;
+    let mut response = if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(body).into_response()
+    };
+    if remember_device {
+        let trusted = auth_sessions::issue_trusted_device(
+            &state.db,
+            &user.id,
+            &session_id,
+            device_name.as_deref(),
+        )
+        .await?;
+        response.headers_mut().append(
+            axum::http::header::SET_COOKIE,
+            auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
+                .parse()
+                .expect("valid cookie header"),
+        );
+    }
+    Ok(response)
 }

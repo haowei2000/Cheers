@@ -164,16 +164,19 @@ pub async fn verify_login(
     code: &str,
     master_key: &[u8; 32],
 ) -> Result<bool, AppError> {
+    let mut tx = db.begin().await?;
     let row = sqlx::query(
         "SELECT totp_secret_encrypted, backup_codes, totp_enabled
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
+         FROM users WHERE user_id = $1 AND is_deleted = FALSE
+         FOR UPDATE",
     )
     .bind(user_id)
-    .fetch_optional(db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
     let enabled: bool = row.try_get("totp_enabled").unwrap_or(false);
     if !enabled {
+        tx.commit().await?;
         return Ok(false);
     }
     let encrypted: Option<String> = row.try_get("totp_secret_encrypted").ok().flatten();
@@ -182,6 +185,7 @@ pub async fn verify_login(
     let secret = decrypt_secret(master_key, &encrypted)
         .map_err(|_| AppError::Internal("failed to decrypt 2FA secret".into()))?;
     if totp::verify(&secret, code, chrono::Utc::now().timestamp() as u64) {
+        tx.commit().await?;
         return Ok(true);
     }
     // Fall back to backup codes.
@@ -197,12 +201,14 @@ pub async fn verify_login(
                 sqlx::query("UPDATE users SET backup_codes = $2 WHERE user_id = $1")
                     .bind(user_id)
                     .bind(Value::Array(updated))
-                    .execute(db)
+                    .execute(&mut *tx)
                     .await?;
+                tx.commit().await?;
                 return Ok(true);
             }
         }
     }
+    tx.commit().await?;
     Ok(false)
 }
 

@@ -121,10 +121,11 @@ export default function RegisterPage() {
         display_name: form.display_name.trim() || undefined,
         invite_token: inviteToken || undefined,
       });
+      if (!res.user_id || !res.access_token) throw new Error("Registration response is incomplete");
       setAuth(
         {
           user_id: res.user_id,
-          display_name: res.display_name,
+          display_name: res.display_name ?? null,
           username: form.username.trim(),
           role: res.role,
         },

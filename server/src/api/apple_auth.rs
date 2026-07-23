@@ -2,7 +2,7 @@
 //! app's Apple credentials. Unconfigured/self-hosted gateways fail closed and
 //! advertise the feature as unavailable.
 
-use axum::{extract::State, Extension, Json};
+use axum::{extract::State, response::IntoResponse, Extension, Json};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{
     decode, decode_header, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
@@ -16,7 +16,7 @@ use crate::{
     api::{auth::LoginResponse, middleware::Claims},
     app_state::AppState,
     config::AppleAuthConfig,
-    domain::auth,
+    domain::{auth, auth_sessions, two_factor},
     errors::AppError,
     infra::crypto,
 };
@@ -85,6 +85,10 @@ pub struct AppleAuthorizationRequest {
     pub family_name: Option<String>,
     #[serde(default)]
     pub invite_token: Option<String>,
+    #[serde(default)]
+    pub client: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -266,8 +270,10 @@ pub(crate) async fn verify_recent_for_user(
     let (apple, tokens) = verify_authorization(state, request).await?;
     let row = sqlx::query(
         "SELECT identity_id FROM auth_external_identities
-         WHERE provider = 'apple' AND subject = $1 AND user_id = $2",
+         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default'
+           AND subject = $2 AND user_id = $3",
     )
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -333,51 +339,109 @@ async fn persist_refresh_token(
     Ok(())
 }
 
-async fn login_response(state: &AppState, user_id: &str) -> Result<LoginResponse, AppError> {
-    let row = sqlx::query(
-        "SELECT username, display_name, role, token_version, is_suspended
-         FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    if row.try_get::<bool, _>("is_suspended").unwrap_or(false) {
-        return Err(AppError::Forbidden("account suspended".into()));
+struct AppleLoginResult {
+    body: LoginResponse,
+    refresh_token: Option<String>,
+    csrf_token: Option<String>,
+}
+
+async fn login_response(
+    state: &AppState,
+    user_id: &str,
+    client: auth_sessions::ClientType,
+    device_name: Option<&str>,
+) -> Result<AppleLoginResult, AppError> {
+    let user = auth::load_auth_user(&state.db, user_id).await?;
+    if two_factor::status(&state.db, user_id).await?.enabled {
+        let transaction =
+            auth_sessions::create_factor_transaction(&state.db, user_id, client, device_name)
+                .await?;
+        return Ok(AppleLoginResult {
+            body: LoginResponse {
+                status: "factor_required".into(),
+                transaction_id: Some(transaction.transaction_id),
+                allowed_factors: vec!["totp".into(), "recovery_code".into(), "passkey".into()],
+                expires_in: Some(600),
+                requires_2fa: true,
+                two_factor_session_id: None,
+                access_token: None,
+                token_type: None,
+                user_id: None,
+                username: None,
+                display_name: None,
+                role: None,
+                refresh_token: None,
+                csrf_token: None,
+            },
+            refresh_token: None,
+            csrf_token: None,
+        });
     }
-    let role: String = row.try_get("role").unwrap_or_else(|_| "member".into());
-    let token_version = row.try_get::<i32, _>("token_version").unwrap_or(0) as i64;
-    Ok(LoginResponse {
-        requires_2fa: false,
-        two_factor_session_id: None,
-        access_token: Some(auth::create_access_token(
-            state.config.as_ref(),
-            user_id
-                .parse()
-                .map_err(|_| AppError::Internal("invalid user id".into()))?,
-            &role,
-            token_version,
-        )?),
-        token_type: Some("bearer".into()),
-        user_id: Some(user_id.into()),
-        username: Some(row.try_get("username").unwrap_or_default()),
-        display_name: row.try_get("display_name").ok(),
-        role: Some(role),
+    let session =
+        auth_sessions::finalize_login(&state.db, &state.config, &user, client, device_name).await?;
+    Ok(AppleLoginResult {
+        body: LoginResponse {
+            status: "authenticated".into(),
+            transaction_id: None,
+            allowed_factors: Vec::new(),
+            expires_in: Some(session.expires_in),
+            requires_2fa: false,
+            two_factor_session_id: None,
+            access_token: Some(session.access_token),
+            token_type: Some("bearer".into()),
+            user_id: Some(user.id),
+            username: Some(user.username),
+            display_name: user.display_name,
+            role: Some(user.role),
+            refresh_token: (client != auth_sessions::ClientType::Web)
+                .then_some(session.refresh_token.clone()),
+            csrf_token: (client != auth_sessions::ClientType::Web)
+                .then_some(session.csrf_token.clone()),
+        },
+        refresh_token: Some(session.refresh_token),
+        csrf_token: Some(session.csrf_token),
     })
+}
+
+fn apple_login_response(
+    result: AppleLoginResult,
+    client: auth_sessions::ClientType,
+) -> axum::response::Response {
+    let mut response = Json(result.body).into_response();
+    if client == auth_sessions::ClientType::Web {
+        if let Some(refresh) = result.refresh_token {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                format!("cheers_refresh={refresh}; Max-Age=2592000; Path=/; Secure; HttpOnly; SameSite=Lax").parse().unwrap(),
+            );
+        }
+        if let Some(csrf) = result.csrf_token {
+            response.headers_mut().append(
+                axum::http::header::SET_COOKIE,
+                format!("cheers_csrf={csrf}; Max-Age=2592000; Path=/; Secure; SameSite=Lax")
+                    .parse()
+                    .unwrap(),
+            );
+        }
+    }
+    response
 }
 
 pub async fn authorize(
     State(state): State<AppState>,
     Json(request): Json<AppleAuthorizationRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<axum::response::Response, AppError> {
     let (apple, tokens) = verify_authorization(&state, &request).await?;
+    let client = auth_sessions::ClientType::parse(request.client.as_deref())?;
     if let Some(row) = sqlx::query(
-        "SELECT identity_id, user_id FROM auth_external_identities WHERE provider = 'apple' AND subject = $1",
-    ).bind(&apple.sub).fetch_optional(&state.db).await? {
+        "SELECT identity_id, user_id FROM auth_external_identities
+         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default' AND subject = $2",
+    ).bind(APPLE_ISSUER).bind(&apple.sub).fetch_optional(&state.db).await? {
         let identity_id: String = row.try_get("identity_id")?;
         let user_id: String = row.try_get("user_id")?;
         persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-        return Ok(Json(login_response(&state, &user_id).await?));
+        let result = login_response(&state, &user_id, client, request.device_name.as_deref()).await?;
+        return Ok(apple_login_response(result, client));
     }
 
     crate::api::auth::ensure_may_register(&state, request.invite_token.as_deref()).await?;
@@ -415,10 +479,11 @@ pub async fn authorize(
     .await?;
     sqlx::query(
         "INSERT INTO auth_external_identities
-         (identity_id, provider, subject, user_id, corp_id, display_name, email, profile)
-         VALUES ($1, 'apple', $2, $3, $4, $5, $6, $7)",
+         (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile)
+         VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7, $8)",
     )
     .bind(&identity_id)
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .bind(&user_id)
     .bind(&require_config(&state)?.team_id)
@@ -429,7 +494,8 @@ pub async fn authorize(
     .await?;
     tx.commit().await?;
     persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-    Ok(Json(login_response(&state, &user_id).await?))
+    let result = login_response(&state, &user_id, client, request.device_name.as_deref()).await?;
+    Ok(apple_login_response(result, client))
 }
 
 pub async fn link(
@@ -439,8 +505,10 @@ pub async fn link(
 ) -> Result<Json<Value>, AppError> {
     let (apple, tokens) = verify_authorization(&state, &request).await?;
     if let Some(row) = sqlx::query(
-        "SELECT identity_id, user_id FROM auth_external_identities WHERE provider = 'apple' AND subject = $1",
+        "SELECT identity_id, user_id FROM auth_external_identities
+         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default' AND subject = $2",
     )
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .fetch_optional(&state.db)
     .await?
@@ -459,10 +527,11 @@ pub async fn link(
     let email = verified_email(&apple);
     sqlx::query(
         "INSERT INTO auth_external_identities
-         (identity_id, provider, subject, user_id, corp_id, display_name, email, profile)
-         VALUES ($1, 'apple', $2, $3, $4, $5, $6, $7)",
+         (identity_id, provider, issuer, provider_config_id, subject, user_id, corp_id, display_name, email, profile)
+         VALUES ($1, 'apple', $2, 'default', $3, $4, $5, $6, $7, $8)",
     )
     .bind(&identity_id)
+    .bind(APPLE_ISSUER)
     .bind(&apple.sub)
     .bind(&claims.sub)
     .bind(&require_config(&state)?.team_id)
@@ -618,8 +687,9 @@ pub async fn events(
     .events;
 
     let identity = sqlx::query(
-        "SELECT identity_id, user_id FROM auth_external_identities WHERE provider = 'apple' AND subject = $1",
-    ).bind(&event.sub).fetch_optional(&state.db).await?;
+        "SELECT identity_id, user_id FROM auth_external_identities
+         WHERE provider = 'apple' AND issuer = $1 AND provider_config_id = 'default' AND subject = $2",
+    ).bind(APPLE_ISSUER).bind(&event.sub).fetch_optional(&state.db).await?;
     let Some(identity) = identity else {
         return Ok(Json(json!({"processed": true})));
     };

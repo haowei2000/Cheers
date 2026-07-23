@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { login } from "@/api/auth";
+import { login, verifyTwoFactorLogin } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,17 +17,25 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [form, setForm] = useState({ login: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [factorCode, setFactorCode] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!form.login || !form.password) return;
     setLoading(true);
     try {
-      const res = await login(form);
+      const res = await login({ ...form, client: "web" });
+      if (res.status === "factor_required" || res.requires_2fa) {
+        setTransactionId(res.transaction_id ?? null);
+        if (!res.transaction_id) throw new Error("Authentication transaction is missing");
+        return;
+      }
+      if (!res.access_token || !res.user_id) throw new Error("Login response is incomplete");
       setAuth(
         {
           user_id: res.user_id,
-          display_name: res.display_name,
+          display_name: res.display_name ?? null,
           username: form.login,
           role: res.role,
         },
@@ -36,6 +44,33 @@ export default function LoginPage() {
       navigate(redirect, { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFactorSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!transactionId || !factorCode) return;
+    setLoading(true);
+    try {
+      const res = await verifyTwoFactorLogin({
+        transaction_id: transactionId,
+        code: factorCode,
+      });
+      if (!res.access_token || !res.user_id) throw new Error("Authentication response is incomplete");
+      setAuth(
+        {
+          user_id: res.user_id,
+          display_name: res.display_name ?? null,
+          username: res.username ?? form.login,
+          role: res.role,
+        },
+        res.access_token
+      );
+      navigate(redirect, { replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Verification failed");
     } finally {
       setLoading(false);
     }
@@ -64,7 +99,30 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <form
+        {transactionId ? <form
+          onSubmit={handleFactorSubmit}
+          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
+        >
+          <div className="space-y-1.5">
+            <label htmlFor="factor-code" className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              Verification code
+            </label>
+            <Input
+              id="factor-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              value={factorCode}
+              onChange={(e) => setFactorCode(e.target.value)}
+            />
+          </div>
+          <Button type="submit" className="w-full" loading={loading} disabled={!factorCode}>
+            Verify
+          </Button>
+          <button type="button" className="w-full text-xs text-zinc-400 hover:text-zinc-200" onClick={() => setTransactionId(null)}>
+            Back to sign in
+          </button>
+        </form> : <form
           onSubmit={handleSubmit}
           className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
         >
@@ -122,7 +180,7 @@ export default function LoginPage() {
               Forgot password?
             </Link>
           </div>
-        </form>
+        </form>}
       </div>
     </div>
   );

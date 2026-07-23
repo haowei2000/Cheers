@@ -4,6 +4,7 @@ pub mod acp_policy;
 pub mod acp_session_updates;
 pub mod approval;
 pub mod auth;
+pub mod auth_sessions;
 pub mod bot_event_policy;
 pub mod bot_events;
 pub mod bot_status_scheduler;

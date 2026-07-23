@@ -98,6 +98,8 @@ function SessionExpiredTakeover() {
 }
 
 export default function App() {
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const authInitialized = useAuthStore((s) => s.initialized);
   // The quick panel loads the SPA in its own window with ?quickpanel=1. It's a
   // lean composer with no ChatLayout, so the main-window-only bridges must NOT
   // run there: initDeepLinks in a ChatLayout-less window would redirect and
@@ -113,12 +115,22 @@ export default function App() {
     if (isQuickPanel) return;
     initPushBridge();
   }, [isQuickPanel]);
+
+  useEffect(() => {
+    if (isQuickPanel) return;
+    void restoreSession();
+    const refreshTimer = window.setInterval(() => void restoreSession(), 8 * 60 * 1000);
+    return () => window.clearInterval(refreshTimer);
+  }, [isQuickPanel, restoreSession]);
+
   // cheers:// deep links (desktop): drain the cold-start link + listen for warm
   // opens, routing through the push channel-open path.
   useEffect(() => {
     if (isQuickPanel) return;
     return initDeepLinks();
   }, [isQuickPanel]);
+
+  if (!isQuickPanel && !authInitialized) return <Spinner />;
 
   if (isQuickPanel) {
     return (
