@@ -34,6 +34,13 @@ gateway:
   # reach the operator. Only meaningful when secrets.vapidPrivateKey is set;
   # empty uses the gateway's built-in default.
   vapidSubject: ""
+  # Passkeys / WebAuthn (optional). When both are set, capabilities.passkey becomes
+  # true and iOS can register/assert passkeys. Example for production:
+  #   extraEnv:
+  #     WEBAUTHN_RP_ID: tocheers.com
+  #     WEBAUTHN_RP_ORIGIN: https://www.tocheers.com
+  #     WEBAUTHN_RP_NAME: Cheers
+  # Also serve /.well-known/apple-app-site-association (gateway route + website/).
   extraEnv: {} # map of EXTRA_VAR: value
   resources: {}
   #  requests: { cpu: 100m, memory: 128Mi }

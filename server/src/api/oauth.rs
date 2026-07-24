@@ -776,7 +776,20 @@ pub async fn handoff(
             context["device_name"].as_str(),
         )
         .await?;
-        return Ok(Json(json!({"status":"factor_required","transaction_id":factor.transaction_id,"allowed_factors":["totp","recovery_code","passkey"],"expires_in":600,"requires_2fa":true})).into_response());
+        let allowed_factors = crate::domain::webauthn::allowed_login_factors(
+            &state.db,
+            state.webauthn.as_deref(),
+            &user_id,
+        )
+        .await?;
+        return Ok(Json(json!({
+            "status": "factor_required",
+            "transaction_id": factor.transaction_id,
+            "allowed_factors": allowed_factors,
+            "expires_in": 600,
+            "requires_2fa": true
+        }))
+        .into_response());
     }
     let session = auth_sessions::finalize_login(
         &state.db,

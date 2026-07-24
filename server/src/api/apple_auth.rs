@@ -434,11 +434,17 @@ async fn login_response(
         let transaction =
             auth_sessions::create_factor_transaction(&state.db, user_id, client, device_name)
                 .await?;
+        let allowed_factors = crate::domain::webauthn::allowed_login_factors(
+            &state.db,
+            state.webauthn.as_deref(),
+            user_id,
+        )
+        .await?;
         return Ok(AppleLoginResult {
             body: LoginResponse {
                 status: "factor_required".into(),
                 transaction_id: Some(transaction.transaction_id),
-                allowed_factors: vec!["totp".into(), "recovery_code".into(), "passkey".into()],
+                allowed_factors,
                 expires_in: Some(600),
                 requires_2fa: true,
                 two_factor_session_id: None,

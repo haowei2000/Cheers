@@ -13,6 +13,7 @@ struct DrawerView: View {
     @State private var query = ""
     @State private var newAsDM = false
     @State private var showNew = false
+    @State private var showNewWorkspace = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -114,6 +115,10 @@ struct DrawerView: View {
         ForEach(shell.workspaces) { ws in
             Button { shell.selectWorkspace(ws.workspaceId) } label: { Text(ws.name) }
         }
+        Divider()
+        Button { showNewWorkspace = true } label: {
+            Label("New workspace", systemImage: "plus")
+        }
     }
 
     // MARK: Channel + DM list
@@ -163,6 +168,13 @@ struct DrawerView: View {
             HStack(spacing: 11) {
                 if row.channel.isDM {
                     ChannelAvatarView(channel: row.channel, size: 30)
+                } else if row.channel.isVoice {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 30, height: 30)
+                        .background(Theme.bgRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 } else {
                     Text("#")
                         .font(.system(size: 15, weight: .semibold))
@@ -270,6 +282,11 @@ struct DrawerView: View {
         .padding(.bottom, max(bottomInset, 16))
         .sheet(isPresented: $showNew) {
             NewConversationSheet(startAsDM: newAsDM)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showNewWorkspace) {
+            NewWorkspaceSheet()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }

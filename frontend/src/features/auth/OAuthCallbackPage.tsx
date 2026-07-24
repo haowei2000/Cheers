@@ -21,7 +21,12 @@ export default function OAuthCallbackPage() {
       .then((outcome) => {
         if (outcome.status === "factor_required" || outcome.requires_2fa) {
           if (!outcome.transaction_id) throw new Error("Authentication transaction is missing");
-          navigate(`/login?factor_transaction=${encodeURIComponent(outcome.transaction_id)}`, { replace: true });
+          const factors = (outcome.allowed_factors ?? []).join(",");
+          const qs = new URLSearchParams({
+            factor_transaction: outcome.transaction_id,
+          });
+          if (factors) qs.set("allowed_factors", factors);
+          navigate(`/login?${qs.toString()}`, { replace: true });
           return;
         }
         if (!outcome.access_token || !outcome.user_id) throw new Error("Login response is incomplete");

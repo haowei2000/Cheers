@@ -322,7 +322,14 @@ pub async fn create_bot(
     .bind(body.processor_data_use)
     .bind(body.processor_policy_version.unwrap_or_else(|| "1".into()))
     .fetch_one(&state.db)
-    .await?;
+    .await
+    .map_err(|e| match &e {
+        sqlx::Error::Database(de) if de.is_unique_violation() => AppError::Conflict(format!(
+            "bot username '{}' is already taken — choose another name, or switch to Existing bot",
+            body.username.trim()
+        )),
+        _ => AppError::Db(e),
+    })?;
     Ok(Json(json!({
         "bot_id": row.try_get::<String, _>("bot_id").unwrap_or_default(),
         "username": row.try_get::<String, _>("username").unwrap_or_default(),

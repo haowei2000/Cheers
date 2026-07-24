@@ -62,6 +62,16 @@ export async function verifyTwoFactorLogin(
   });
 }
 
+export async function sendTwoFactorEmail(transactionId: string): Promise<{
+  ok: boolean;
+  email_hint?: string;
+}> {
+  return apiJson("/auth/2fa/email/send", {
+    method: "POST",
+    body: JSON.stringify({ transaction_id: transactionId }),
+  });
+}
+
 export interface AuthCapabilities {
   client: "web" | "ios" | "macos";
   providers: { password: boolean; apple: boolean; google: boolean };

@@ -170,6 +170,14 @@ pub struct Config {
     /// `REQUIRE_2FA_FOR_REMOTE_AGENT_ACCESS` and defaults to true.
     pub require_2fa_for_remote_agent_access: bool,
 
+    /// WebAuthn relying-party id (e.g. `tocheers.com`). When set together with
+    /// `webauthn_rp_origin`, Passkey registration and 2FA assertion are enabled.
+    pub webauthn_rp_id: Option<String>,
+    /// Allowed browser/app origin for WebAuthn ceremonies (e.g. `https://www.tocheers.com`).
+    pub webauthn_rp_origin: Option<String>,
+    /// Human-readable RP name shown in authenticator UI (default `Cheers`).
+    pub webauthn_rp_name: String,
+
     /// Whether the rate limiter may key clients on `X-Real-IP` /
     /// `X-Forwarded-For`. Default **false** (use the peer socket address): the
     /// headers are client-controlled whenever the gateway port is directly
@@ -380,6 +388,19 @@ impl Config {
                 true,
             ),
 
+            webauthn_rp_id: env::var("WEBAUTHN_RP_ID")
+                .or_else(|_| env::var("CHEERS_WEBAUTHN_RP_ID"))
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            webauthn_rp_origin: env::var("WEBAUTHN_RP_ORIGIN")
+                .or_else(|_| env::var("CHEERS_WEBAUTHN_RP_ORIGIN"))
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            webauthn_rp_name: env::var("WEBAUTHN_RP_NAME")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "Cheers".into()),
+
             trust_proxy_headers: env_flag("TRUST_PROXY_HEADERS", false),
 
             orphan_reclaim_threshold_secs: env::var("ORPHAN_RECLAIM_THRESHOLD_SECS")
@@ -446,6 +467,11 @@ impl Config {
             self.livekit_api_key.as_deref()?,
             self.livekit_api_secret.as_deref()?,
         ))
+    }
+
+    /// Whether Passkey / WebAuthn ceremonies are configured for this instance.
+    pub fn webauthn_enabled(&self) -> bool {
+        self.webauthn_rp_id.is_some() && self.webauthn_rp_origin.is_some()
     }
 
     /// StepFun's ASR API accepts PCM-over-JSON/SSE rather than the generic

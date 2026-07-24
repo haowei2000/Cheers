@@ -101,6 +101,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
     // Routes under this branch all require JWT authentication.
     Router::new()
         // Two-factor authentication (TOTP) management for the authenticated user.
+        .route("/api/v1/auth/2fa/status", get(api::auth::two_factor_status))
         .route("/api/v1/auth/2fa/setup", post(api::auth::setup_two_factor))
         .route(
             "/api/v1/auth/2fa/enable",
@@ -109,6 +110,22 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/auth/2fa/disable",
             post(api::auth::disable_two_factor),
+        )
+        .route(
+            "/api/v1/auth/passkey/register/options",
+            post(api::passkey::register_options),
+        )
+        .route(
+            "/api/v1/auth/passkey/register/finish",
+            post(api::passkey::register_finish),
+        )
+        .route(
+            "/api/v1/auth/passkey/credentials",
+            get(api::passkey::list_credentials),
+        )
+        .route(
+            "/api/v1/auth/passkey/credentials/:credential_pk",
+            delete(api::passkey::delete_credential),
         )
         // Server-level workbench plugin store (install = admin; list/bundle = any member).
         .route(
@@ -716,7 +733,27 @@ fn build_public_routes() -> Router<AppState> {
             "/api/v1/auth/2fa/login",
             post(api::auth::verify_two_factor_login),
         )
+        .route(
+            "/api/v1/auth/2fa/email/send",
+            post(api::auth::send_two_factor_email),
+        )
+        .route(
+            "/api/v1/auth/2fa/passkey/options",
+            post(api::passkey::factor_options),
+        )
+        .route(
+            "/api/v1/auth/2fa/passkey/verify",
+            post(api::passkey::factor_verify),
+        )
         .route("/api/v1/auth/capabilities", get(api::auth::capabilities))
+        .route(
+            "/.well-known/apple-app-site-association",
+            get(apple_app_site_association),
+        )
+        .route(
+            "/apple-app-site-association",
+            get(apple_app_site_association),
+        )
         .route(
             "/api/v1/auth/oauth/:provider/start",
             post(api::oauth::start),
@@ -823,6 +860,21 @@ fn build_ws_routes() -> Router<AppState> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+/// Apple Associated Domains file for Passkeys (`webcredentials`).
+/// Served from the gateway so production can point the apex / www host at this
+/// process (or proxy these paths) without a separate static site deploy.
+async fn apple_app_site_association() -> impl axum::response::IntoResponse {
+    let body = serde_json::json!({
+        "webcredentials": {
+            "apps": ["8M272Q9TAD.app.cheers.ios"]
+        }
+    });
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        axum::Json(body),
+    )
 }
 
 #[cfg(test)]

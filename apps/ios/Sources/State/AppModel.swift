@@ -8,6 +8,12 @@ struct UserSession: Equatable {
     let username: String?
 }
 
+/// Intermediate login step when the account has 2FA enabled.
+struct FactorChallenge: Equatable {
+    let transactionId: String
+    let allowedFactors: [String]
+}
+
 /// Root app state: server config, auth session, and the shared realtime socket.
 /// Token lives in the Keychain; non-secret session fields in UserDefaults.
 @MainActor
@@ -92,14 +98,51 @@ final class AppModel {
 
     // MARK: Auth flows
 
-    func login(server: String, login loginName: String, password: String) async throws {
+    /// Returns a factor challenge when 2FA is required; `nil` means the session is live.
+    @discardableResult
+    func login(server: String, login loginName: String, password: String) async throws -> FactorChallenge? {
         guard let base = APIClient.normalizeBaseURL(server) else {
             throw APIError.invalidBaseURL
         }
         let client = APIClient(baseURL: base, token: nil)
         let response = try await client.login(login: loginName, password: password)
+        return try finishLoginOrChallenge(base: base, response: response)
+    }
 
-        try finishLogin(base: base, response: response)
+    func completeTwoFactorLogin(
+        server: String,
+        transactionId: String,
+        code: String,
+        rememberDevice: Bool = true
+    ) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else {
+            throw APIError.invalidBaseURL
+        }
+        let client = APIClient(baseURL: base, token: nil)
+        let response = try await client.verifyTwoFactorLogin(
+            transactionId: transactionId,
+            code: code,
+            rememberDevice: rememberDevice
+        )
+        _ = try finishLoginOrChallenge(base: base, response: response)
+    }
+
+    func completeTwoFactorPasskeyLogin(
+        server: String,
+        transactionId: String,
+        credential: [String: Any],
+        rememberDevice: Bool = true
+    ) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else {
+            throw APIError.invalidBaseURL
+        }
+        let client = APIClient(baseURL: base, token: nil)
+        let response = try await client.passkeyFactorVerify(
+            transactionId: transactionId,
+            credential: credential,
+            rememberDevice: rememberDevice
+        )
+        _ = try finishLoginOrChallenge(base: base, response: response)
     }
 
     func appleCapabilities(server: String) async throws -> (AuthCapabilities, AppleChallenge?) {
@@ -121,21 +164,35 @@ final class AppModel {
     func register(server: String, request: RegisterRequest) async throws {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let response = try await APIClient(baseURL: base, token: nil).register(request)
-        try finishLogin(base: base, response: response)
+        _ = try finishLoginOrChallenge(base: base, response: response)
     }
 
-    func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws {
+    @discardableResult
+    func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws -> FactorChallenge? {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let response = try await APIClient(baseURL: base, token: nil).appleLogin(payload)
+        return try finishLoginOrChallenge(base: base, response: response)
+    }
+
+    private func finishLoginOrChallenge(base: URL, response: LoginResponse) throws -> FactorChallenge? {
+        if response.needsFactor {
+            guard let transactionId = response.transactionId, !transactionId.isEmpty else {
+                throw APIError.http(status: 401, detail: "Authentication transaction is missing.")
+            }
+            return FactorChallenge(
+                transactionId: transactionId,
+                allowedFactors: response.allowedFactors ?? ["totp", "recovery_code"]
+            )
+        }
         try finishLogin(base: base, response: response)
+        return nil
     }
 
     private func finishLogin(base: URL, response: LoginResponse) throws {
-        guard response.status != "factor_required",
-              let accessToken = response.accessToken,
+        guard let accessToken = response.accessToken,
               let userId = response.userId,
               let role = response.role else {
-            throw APIError.http(status: 401, detail: "Additional verification is required.")
+            throw APIError.http(status: 401, detail: "Login response is incomplete.")
         }
         serverURLString = base.absoluteString
         token = accessToken
@@ -182,11 +239,16 @@ final class AppModel {
 
     /// Changes the password and replaces the locally held token. The gateway
     /// revokes every older session and push registration as part of this flow.
-    func changePassword(currentPassword: String, newPassword: String) async throws {
+    func changePassword(
+        currentPassword: String,
+        newPassword: String,
+        twoFactorCode: String? = nil
+    ) async throws {
         guard let api else { throw APIError.unauthorized }
         let response = try await api.changePassword(
             currentPassword: currentPassword,
-            newPassword: newPassword
+            newPassword: newPassword,
+            twoFactorCode: twoFactorCode
         )
         token = response.accessToken
         _ = KeychainStore.set(response.accessToken, for: Keys.token)
@@ -198,7 +260,7 @@ final class AppModel {
         }
     }
 
-    /// Local sign-out (used on 401 / revoked token).
+    /// Local sign-out (used on 401 / invalidated token).
     func clearSession() {
         socket.disconnect()
         socketConnected = false

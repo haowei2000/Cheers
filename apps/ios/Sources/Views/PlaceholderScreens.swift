@@ -21,8 +21,8 @@ struct ChannelInfoView: View {
     }
 }
 
-/// New channel (name + public/private → POST /channels) or New DM (pick a bot →
-/// POST /channels/dm). On success it opens the new conversation.
+/// New channel (name + text/voice + public/private → POST /channels) or New DM
+/// (pick a bot → POST /channels/dm). On success it opens the new conversation.
 struct NewConversationSheet: View {
     let startAsDM: Bool
     @Environment(AppModel.self) private var app
@@ -31,9 +31,22 @@ struct NewConversationSheet: View {
 
     @State private var name = ""
     @State private var isPrivate = false
+    @State private var kind: ChannelKind = .text
     @State private var bots: [BotDto] = []
     @State private var busy = false
     @State private var errorText: String?
+
+    private enum ChannelKind: String, CaseIterable, Identifiable {
+        case text, voice
+        var id: String { rawValue }
+        var label: String { self == .text ? "Text" : "Voice" }
+        var symbol: String { self == .text ? "number" : "waveform" }
+        var footer: String {
+            self == .text
+                ? "Standard chat timeline."
+                : "Chat plus a LiveKit voice room. Join from the meeting strip at the top."
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -66,10 +79,25 @@ struct NewConversationSheet: View {
                     .font(.system(size: 16))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+            }
+
+            Section {
+                Picker("Type", selection: $kind) {
+                    ForEach(ChannelKind.allCases) { option in
+                        Label(option.label, systemImage: option.symbol).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } footer: {
+                Text(kind.footer)
+            }
+
+            Section {
                 Toggle("Private", isOn: $isPrivate)
             } footer: {
                 Text(isPrivate ? "Only invited members can find and join." : "Anyone in the workspace can join.")
             }
+
             if let workspaceName = shell.selectedWorkspace?.name {
                 Section("Workspace") { Text(workspaceName).foregroundStyle(Theme.textSecondary) }
             }
@@ -96,6 +124,7 @@ struct NewConversationSheet: View {
                     workspaceId: wsId,
                     name: name.trimmingCharacters(in: .whitespaces),
                     isPrivate: isPrivate,
+                    kind: kind.rawValue,
                     purpose: nil
                 )
                 dismiss()

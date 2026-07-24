@@ -236,6 +236,12 @@ pub fn password_reset_limiter() -> &'static FixedWindowLimiter {
     LIMITER.get_or_init(|| FixedWindowLimiter::new(10, Duration::from_secs(300)))
 }
 
+/// Throttle login-2FA email code sends per client: 5 per 5-minute window.
+pub fn login_2fa_email_limiter() -> &'static FixedWindowLimiter {
+    static LIMITER: OnceLock<FixedWindowLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| FixedWindowLimiter::new(5, Duration::from_secs(300)))
+}
+
 /// Throttle public self-service sign-ups per client so open registration can't be
 /// script-flooded with junk accounts: 5 per 5-minute window per source.
 pub fn register_limiter() -> &'static FixedWindowLimiter {
