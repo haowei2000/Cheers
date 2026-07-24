@@ -49,6 +49,7 @@ import { WorkbenchManager } from "@/features/workbench/WorkbenchManager";
 import { AdminUsers } from "./AdminUsers";
 import { AdminSttSettings } from "./AdminSttSettings";
 import { AdminReports } from "./AdminReports";
+import { PasskeyCard, TwoFactorCard } from "./SecurityCards";
 
 type SectionId =
   | "profile"
@@ -903,6 +904,10 @@ export default function SettingsPage() {
               </h2>
 
               <ChangePasswordCard onRotated={(token) => setToken(token)} />
+
+              <TwoFactorCard />
+
+              <PasskeyCard />
 
               <ExternalIdentitiesCard />
 

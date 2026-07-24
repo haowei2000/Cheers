@@ -15,6 +15,8 @@ export interface LoginResponse {
   username?: string;
   display_name?: string | null;
   role?: string;
+  /** Native/desktop only — persist and re-present to skip 2FA on trusted devices. */
+  trusted_device?: string;
 }
 
 export async function login(credentials: {
@@ -54,6 +56,7 @@ export async function verifyTwoFactorLogin(
       serverBase,
       transactionId: body.transaction_id,
       code: body.code,
+      rememberDevice: body.remember_device ?? true,
     });
   }
   return apiJson<LoginResponse>("/auth/2fa/login", {
@@ -76,11 +79,99 @@ export interface AuthCapabilities {
   client: "web" | "ios" | "macos";
   providers: { password: boolean; apple: boolean; google: boolean };
   self_service_registration: boolean;
+  passkey?: boolean;
+  passkey_rp_id?: string | null;
 }
 
 export async function getAuthCapabilities(): Promise<AuthCapabilities> {
   const client = isTauri() ? "macos" : "web";
   return apiJson<AuthCapabilities>(`/auth/capabilities?client=${client}`);
+}
+
+// ─── TOTP 2FA management ───────────────────────────────────────────────────
+
+export async function twoFactorStatus(): Promise<{ enabled: boolean }> {
+  return apiJson("/auth/2fa/status");
+}
+
+export async function setupTwoFactor(): Promise<{
+  secret: string;
+  provisioning_uri: string;
+}> {
+  return apiJson("/auth/2fa/setup", { method: "POST", body: "{}" });
+}
+
+export async function enableTwoFactor(code: string): Promise<{ backup_codes: string[] }> {
+  return apiJson("/auth/2fa/enable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function disableTwoFactor(code: string): Promise<{ ok: boolean }> {
+  return apiJson("/auth/2fa/disable", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+// ─── Passkeys ──────────────────────────────────────────────────────────────
+
+export interface PasskeyCredential {
+  credential_pk: string;
+  credential_id: string;
+  name: string;
+  created_at: string;
+  last_used_at?: string | null;
+  backup_eligible?: boolean;
+  backup_state?: boolean;
+}
+
+export async function passkeyRegisterOptions(name?: string): Promise<Record<string, unknown>> {
+  return apiJson("/auth/passkey/register/options", {
+    method: "POST",
+    body: JSON.stringify({ name: name || undefined }),
+  });
+}
+
+export async function passkeyRegisterFinish(
+  transactionId: string,
+  credential: Record<string, unknown>
+): Promise<PasskeyCredential> {
+  return apiJson("/auth/passkey/register/finish", {
+    method: "POST",
+    body: JSON.stringify({ transaction_id: transactionId, credential }),
+  });
+}
+
+export async function listPasskeys(): Promise<PasskeyCredential[]> {
+  return apiJson("/auth/passkey/credentials");
+}
+
+export async function deletePasskey(credentialPk: string): Promise<{ ok: boolean }> {
+  return apiJson(`/auth/passkey/credentials/${encodeURIComponent(credentialPk)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function passkeyFactorOptions(
+  transactionId: string
+): Promise<Record<string, unknown>> {
+  return apiJson("/auth/2fa/passkey/options", {
+    method: "POST",
+    body: JSON.stringify({ transaction_id: transactionId }),
+  });
+}
+
+export async function passkeyFactorVerify(input: {
+  transaction_id: string;
+  credential: Record<string, unknown>;
+  remember_device?: boolean;
+}): Promise<LoginResponse> {
+  return apiJson("/auth/2fa/passkey/verify", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function startOAuth(provider: "apple" | "google"): Promise<void> {

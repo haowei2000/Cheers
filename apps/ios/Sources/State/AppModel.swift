@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 struct UserSession: Equatable {
     let userId: String
@@ -29,6 +30,7 @@ final class AppModel {
     private enum Keys {
         static let token = "access_token"
         static let refreshToken = "refresh_token"
+        static let trustedDevice = "trusted_device"
         static let serverURL = "server_url"
         static let userId = "user_id"
         static let displayName = "display_name"
@@ -105,7 +107,12 @@ final class AppModel {
             throw APIError.invalidBaseURL
         }
         let client = APIClient(baseURL: base, token: nil)
-        let response = try await client.login(login: loginName, password: password)
+        let response = try await client.login(
+            login: loginName,
+            password: password,
+            trustedDevice: KeychainStore.get(Keys.trustedDevice),
+            deviceName: UIDevice.current.name
+        )
         return try finishLoginOrChallenge(base: base, response: response)
     }
 
@@ -148,9 +155,59 @@ final class AppModel {
     func appleCapabilities(server: String) async throws -> (AuthCapabilities, AppleChallenge?) {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
         let client = APIClient(baseURL: base, token: nil)
-        let capabilities = try await client.authCapabilities()
+        let capabilities = try await client.authCapabilities(client: "ios")
         let challenge = capabilities.signInWithApple ? try await client.appleChallenge() : nil
         return (capabilities, challenge)
+    }
+
+    func forgotPassword(server: String, email: String) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        try await APIClient(baseURL: base, token: nil).forgotPassword(email: email)
+    }
+
+    func resetPassword(server: String, email: String, code: String, newPassword: String) async throws {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        try await APIClient(baseURL: base, token: nil).resetPassword(
+            email: email,
+            code: code,
+            newPassword: newPassword
+        )
+    }
+
+    /// Exchanges the `cheers://` handoff code from Google OAuth for a session.
+    @discardableResult
+    func completeGoogleOAuth(server: String, callbackURL: URL) async throws -> FactorChallenge? {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+              let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+              !code.isEmpty
+        else {
+            if let err = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "error" })?.value {
+                throw APIError.http(status: 401, detail: err)
+            }
+            throw APIError.http(status: 401, detail: "Google sign-in did not return a code.")
+        }
+        let response = try await APIClient(baseURL: base, token: nil)
+            .exchangeOAuthHandoff(
+                code: code,
+                client: "ios",
+                trustedDevice: KeychainStore.get(Keys.trustedDevice)
+            )
+        return try finishLoginOrChallenge(base: base, response: response)
+    }
+
+    func startGoogleOAuth(server: String, deviceName: String?) async throws -> URL {
+        guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        let started = try await APIClient(baseURL: base, token: nil).startOAuth(
+            provider: "google",
+            client: "ios",
+            deviceName: deviceName
+        )
+        guard let url = URL(string: started.authorizationURL) else {
+            throw APIError.http(status: 500, detail: "Invalid Google authorization URL.")
+        }
+        return url
     }
 
     func requestRegisterCode(server: String, email: String, inviteToken: String?) async throws {
@@ -170,6 +227,13 @@ final class AppModel {
     @discardableResult
     func loginWithApple(server: String, payload: AppleAuthorizationPayload) async throws -> FactorChallenge? {
         guard let base = APIClient.normalizeBaseURL(server) else { throw APIError.invalidBaseURL }
+        var payload = payload
+        if payload.trustedDevice == nil {
+            payload.trustedDevice = KeychainStore.get(Keys.trustedDevice)
+        }
+        if payload.deviceName == nil {
+            payload.deviceName = UIDevice.current.name
+        }
         let response = try await APIClient(baseURL: base, token: nil).appleLogin(payload)
         return try finishLoginOrChallenge(base: base, response: response)
     }
@@ -199,6 +263,9 @@ final class AppModel {
         KeychainStore.set(accessToken, for: Keys.token)
         if let refreshToken = response.refreshToken {
             KeychainStore.set(refreshToken, for: Keys.refreshToken)
+        }
+        if let trusted = response.trustedDevice, !trusted.isEmpty {
+            KeychainStore.set(trusted, for: Keys.trustedDevice)
         }
 
         let defaults = UserDefaults.standard
@@ -270,6 +337,7 @@ final class AppModel {
         session = nil
         KeychainStore.remove(Keys.token)
         KeychainStore.remove(Keys.refreshToken)
+        KeychainStore.remove(Keys.trustedDevice)
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: Keys.userId)
         defaults.removeObject(forKey: Keys.displayName)
