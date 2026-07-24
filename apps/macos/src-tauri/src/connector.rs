@@ -495,8 +495,9 @@ pub struct DetectedAgent {
     pub installable: bool,
 }
 
-/// Which ACP agents are available: every **npx** entry from the live registry,
-/// plus OpenCode (binary/npm). Login-PATH lookup marks what's already installed.
+/// Which ACP agents are available: every **npx/uvx** entry from the live
+/// registry, plus OpenCode (binary/npm). Login-PATH lookup marks what's already
+/// installed (for uvx agents: whether `uvx` itself is on PATH).
 #[tauri::command]
 pub fn detect_agents() -> Vec<DetectedAgent> {
     let mut out = Vec::new();
@@ -518,20 +519,34 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
         });
     }
 
-    for launch in crate::acp_registry::list_npx_agents() {
+    let uvx_path = resolve_on_login_path("uvx");
+    for launch in crate::acp_registry::list_package_agents() {
         let key = crate::acp_registry::cheers_key_for(&launch.id);
         if !seen.insert(key.clone()) {
             continue;
         }
-        let cmd = crate::acp_registry::infer_bin_name(&launch.package);
-        let path = resolve_on_login_path(&cmd);
+        let cmd = crate::acp_registry::adapter_command_for(&launch);
+        let args = crate::acp_registry::adapter_args_for(&launch);
+        let (installed, path) = match launch.kind {
+            crate::acp_registry::DistKind::Npx => {
+                let path = resolve_on_login_path(&cmd);
+                (
+                    path.is_some(),
+                    path.map(|p| p.to_string_lossy().into_owned()),
+                )
+            }
+            crate::acp_registry::DistKind::Uvx => (
+                uvx_path.is_some(),
+                uvx_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            ),
+        };
         out.push(DetectedAgent {
             key,
             label: launch.name,
             command: cmd,
-            args: launch.args,
-            installed: path.is_some(),
-            path: path.map(|p| p.to_string_lossy().into_owned()),
+            args,
+            installed,
+            path,
             installable: true,
         });
     }
@@ -553,23 +568,40 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
     out
 }
 
-/// One-click install of a registry/builtin agent (npm). Long-running → blocking thread.
+/// One-click install of a registry/builtin agent (npm or uv). Long-running → blocking thread.
 #[tauri::command]
 pub async fn install_agent(key: String) -> Result<String, String> {
-    let install_cmd = if key == "opencode" {
-        BUILTIN_OPENCODE.3.to_string()
-    } else {
-        let launch = crate::acp_registry::npx_launch_by_cheers_key(&key)
-            .ok_or_else(|| format!("unknown agent '{key}'"))?;
-        if !is_safe_npm_spec(&launch.package) {
-            return Err(format!(
-                "refusing unsafe npm package spec: {}",
-                launch.package
-            ));
+    if key == "opencode" {
+        return run_login_shell_install(BUILTIN_OPENCODE.3.to_string()).await;
+    }
+    let launch = crate::acp_registry::package_launch_by_cheers_key(&key)
+        .ok_or_else(|| format!("unknown agent '{key}'"))?;
+    match launch.kind {
+        crate::acp_registry::DistKind::Npx => {
+            if !is_safe_npm_spec(&launch.package) {
+                return Err(format!(
+                    "refusing unsafe npm package spec: {}",
+                    launch.package
+                ));
+            }
+            run_login_shell_install(format!("npm install -g {}", launch.package)).await
         }
-        // Pin to the registry version when present.
-        format!("npm install -g {}", launch.package)
-    };
+        crate::acp_registry::DistKind::Uvx => {
+            if !is_safe_uv_spec(&launch.package) {
+                return Err(format!(
+                    "refusing unsafe uv package spec: {}",
+                    launch.package
+                ));
+            }
+            let package = launch.package.clone();
+            tauri::async_runtime::spawn_blocking(move || install_uvx_agent(&package))
+                .await
+                .map_err(|e| e.to_string())?
+        }
+    }
+}
+
+async fn run_login_shell_install(install_cmd: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let out = std::process::Command::new(&shell)
@@ -590,6 +622,38 @@ pub async fn install_agent(key: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Ensure `uv`/`uvx` exists (Astral installer), then warm the package cache via `uvx`.
+fn install_uvx_agent(package: &str) -> Result<String, String> {
+    if resolve_on_login_path("uvx").is_none() {
+        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        // Official installer: https://docs.astral.sh/uv/getting-started/installation/
+        let out = std::process::Command::new(&shell)
+            .args(["-lic", "curl -LsSf https://astral.sh/uv/install.sh | sh"])
+            .output()
+            .map_err(|e| format!("uv install failed to start: {e}"))?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(format!(
+                "uv install failed — {}",
+                err.trim().lines().last().unwrap_or("see terminal")
+            ));
+        }
+    }
+    // Warm/download the tool; `--help` fetches without spawning ACP.
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let warm = format!("uvx '{package}' --help");
+    let _ = std::process::Command::new(&shell)
+        .args(["-lic", &warm])
+        .output();
+    if resolve_on_login_path("uvx").is_none() {
+        return Err(
+            "uv installed but uvx is still not on the login PATH — open a new terminal or restart Cheers"
+                .into(),
+        );
+    }
+    Ok("installed".to_string())
+}
+
 /// The npm package an agent's install command installs, if any
 /// ("npm install -g <pkg>" -> <pkg>). Non-npm or empty installers -> None.
 fn npm_package_of(install: &str) -> Option<&str> {
@@ -606,6 +670,15 @@ fn is_safe_npm_spec(spec: &str) -> bool {
         && !s.contains("..")
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '.' | '-' | '_'))
+}
+
+/// PyPI / uv specs (`pkg==1.2.3`, `pkg@1.2.3`) — same charset as npm plus `=`.
+fn is_safe_uv_spec(spec: &str) -> bool {
+    let s = spec.trim();
+    !s.is_empty()
+        && !s.contains("..")
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '.' | '-' | '_' | '='))
 }
 
 /// Compare dotted release versions by their numeric [major, minor, patch] core
@@ -704,7 +777,10 @@ pub async fn check_agent_updates() -> Result<Vec<AgentUpdate>, String> {
         let mut entries: Vec<(String, String, String)> = Vec::new();
         // OpenCode
         entries.push(("opencode".into(), "OpenCode".into(), "opencode-ai".into()));
-        for launch in crate::acp_registry::list_npx_agents() {
+        for launch in crate::acp_registry::list_package_agents() {
+            if launch.kind != crate::acp_registry::DistKind::Npx {
+                continue; // uvx version checks are a follow-up
+            }
             let key = crate::acp_registry::cheers_key_for(&launch.id);
             let pkg = crate::acp_registry::package_name_unversioned(&launch.package);
             entries.push((key, launch.name, pkg));
@@ -2012,6 +2088,8 @@ mod tests {
         assert_eq!(npm_package_of(""), None);
         assert!(is_safe_npm_spec("@google/gemini-cli@0.52.0"));
         assert!(!is_safe_npm_spec("evil; rm -rf /"));
+        assert!(is_safe_uv_spec("fast-agent-acp==0.9.22"));
+        assert!(!is_safe_uv_spec("evil$(rm)"));
     }
 
     // `workspace_cwd_allowed` is written pure (no direct I/O): `~` expansion and

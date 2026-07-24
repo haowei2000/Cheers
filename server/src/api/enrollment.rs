@@ -621,7 +621,7 @@ fn build_agent_catalog() -> Vec<Value> {
             .map(str::to_string)
             .collect();
 
-    for launch in acp_registry::list_npx_agents() {
+    for launch in acp_registry::list_package_agents() {
         if seen.contains(&launch.id) {
             continue;
         }
@@ -632,7 +632,7 @@ fn build_agent_catalog() -> Vec<Value> {
             "version": launch.version,
             "package": launch.package,
             "args": launch.args,
-            "source": "registry-npx",
+            "source": format!("registry-{}", launch.kind.as_str()),
             "installable": true,
         }));
     }

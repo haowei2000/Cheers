@@ -439,7 +439,7 @@ export function BotOnboardingWizard({
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
-                    {a.source === "registry-npx" ? " (registry)" : ""}
+                    {a.source.startsWith("registry-") ? " (registry)" : ""}
                   </option>
                 ))}
               </select>

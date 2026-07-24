@@ -16,7 +16,7 @@
 //! sidecar (mode 3 manual + mode 2 script write the plaintext there with 0600),
 //! keeping the secret out of the (potentially copied / committed) config body.
 
-use crate::domain::acp_registry::{self, NpxLaunch};
+use crate::domain::acp_registry::{self, PackageLaunch};
 
 /// WS sub-paths the connector dials on the gateway's agent-bridge.
 const CONTROL_PATH: &str = "/ws/agent-bridge/control";
@@ -129,7 +129,7 @@ fn generic_preset() -> AgentPreset {
     }
 }
 
-fn preset_from_npx(launch: &NpxLaunch) -> AgentPreset {
+fn preset_from_package(launch: &PackageLaunch) -> AgentPreset {
     let mut env_allow = strings(&["HOME", "PATH"]);
     for k in &launch.env_keys {
         if !env_allow.iter().any(|e| e == k) {
@@ -137,11 +137,12 @@ fn preset_from_npx(launch: &NpxLaunch) -> AgentPreset {
         }
     }
     AgentPreset {
-        command: acp_registry::infer_bin_name(&launch.package),
-        args: launch.args.clone(),
+        command: acp_registry::adapter_command_for(launch),
+        args: acp_registry::adapter_args_for(launch),
         env_allow,
         permission_mode: None,
         allowed_modes: vec![],
+        // uvx needs a working uv toolchain on PATH; npx agents just need PATH.
         allowed_config_options: strings(&["model"]),
         needs_edit: false,
     }
@@ -157,8 +158,8 @@ fn preset_for(agent_type: &str) -> AgentPreset {
         "generic" => return generic_preset(),
         _ => {}
     }
-    if let Some(launch) = acp_registry::npx_launch_for(&id) {
-        return preset_from_npx(&launch);
+    if let Some(launch) = acp_registry::package_launch_for(&id) {
+        return preset_from_package(&launch);
     }
     generic_preset()
 }
@@ -672,6 +673,34 @@ mod tests {
         });
         assert!(toml.contains("command = \"gemini\""));
         assert!(toml.contains(r#"args    = ["--acp"]"#));
+        assert!(!toml.contains("PLACEHOLDER"));
+    }
+
+    #[test]
+    fn renders_registry_uvx_agent_via_uvx_launcher() {
+        crate::domain::acp_registry::seed_cache_for_test(
+            r#"{
+              "agents": [{
+                "id": "fast-agent",
+                "name": "fast-agent",
+                "version": "0.9.22",
+                "distribution": {
+                  "uvx": {
+                    "package": "fast-agent-acp==0.9.22",
+                    "args": ["-x"]
+                  }
+                }
+              }]
+            }"#,
+        );
+        let toml = render_toml(&RenderParams {
+            account_id: "fast",
+            agent_type: "fast-agent",
+            public_base: "ws://localhost:30080",
+            token_ref: TokenRef::File("secrets/fast.token".into()),
+        });
+        assert!(toml.contains("command = \"uvx\""));
+        assert!(toml.contains(r#"args    = ["fast-agent-acp==0.9.22", "-x"]"#));
         assert!(!toml.contains("PLACEHOLDER"));
     }
 }
