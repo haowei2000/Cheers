@@ -85,23 +85,36 @@ function fmtMem(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
-const AGENT_TYPES: readonly AgentType[] = ["claude", "codex", "opencode", "cursor", "generic"];
-
-/** Narrow a bot's stored `bridge_provider` (a free-form string server-side) to
- *  an agent type this UI can act on. */
+/** Non-empty bridge_provider / agent id (legacy short name or registry id). */
 function isAgentType(v: string | undefined): v is AgentType {
-  return !!v && (AGENT_TYPES as readonly string[]).includes(v);
+  return !!v && v.trim().length > 0;
 }
 
-/** Is this agent's ACP adapter resolvable on the login PATH right now?
- *  Asked fresh (not from cached picker state) so an agent installed in another
- *  window counts. A failed detect returns true: onboarding then proceeds and
- *  `connector_write_onboarded` reports the real resolution error, which beats
- *  blocking setup because a probe broke. */
-async function adapterInstalled(agentType: AgentType): Promise<boolean> {
+/** Install any registry/builtin agent that is missing but installable.
+ *  Auth is handled generically by the connector via ACP `authenticate`
+ *  after initialize — not here. */
+async function ensureAdapterReady(agentType: AgentType): Promise<boolean> {
   try {
     const agents = await invokeDesktop<DetectedAgent[]>("detect_agents");
-    return agents.find((a) => a.key === agentType)?.installed ?? true;
+    const a = agents.find((x) => x.key === agentType);
+    if (!a) return true;
+    if (a.installed) return true;
+    if (!a.installable) {
+      toast.error(
+        `${a.label} isn't installed on this Mac and can't be auto-installed — install it manually, then try again`
+      );
+      return false;
+    }
+    const toastId = toast.loading(`Installing ${a.label}…`);
+    try {
+      await invokeDesktop("install_agent", { key: agentType });
+      toast.success(`${a.label} installed`, { id: toastId });
+      return true;
+    } catch (e) {
+      const detail = typeof e === "string" ? e : "install failed";
+      toast.error(detail, { id: toastId });
+      return false;
+    }
   } catch {
     return true;
   }
@@ -191,7 +204,7 @@ export function ConnectorManager() {
   const [health, setHealth] = useState<Record<string, ConnectorHealth>>({});
   const [roots, setRoots] = useState<ConnectorRoots | null>(null);
   const [openers, setOpeners] = useState<Opener[]>([]);
-  const [deleteConfigToo, setDeleteConfigToo] = useState(false);
+  const [keepConfig, setKeepConfig] = useState(false);
   // Card highlighted while a Finder folder is dragged over it (drag-to-grant).
   const [dragOverName, setDragOverName] = useState<string | null>(null);
   // Onboarding: create-or-pick a bot, then the gateway mint→redeem flow.
@@ -361,16 +374,12 @@ export function ConnectorManager() {
     setOnboarding(true);
     try {
       const redeemed = await redeemEnrollmentCode(code);
-      if (
-        isAgentType(redeemed.agent_type) &&
-        !(await adapterInstalled(redeemed.agent_type))
-      ) {
+      if (isAgentType(redeemed.agent_type) && !(await ensureAdapterReady(redeemed.agent_type))) {
         // The code is spent by now — redeeming is what rotates the token, and
         // it can't be undone. Say so plainly instead of a bare "not installed",
         // because the user's next step is to install and mint a fresh code.
         toast.error(
-          `This bot needs the ${redeemed.agent_type} adapter, which isn't installed on this Mac. ` +
-            `Install it, then ask for a new code — this one is now used up.`
+          `This bot needs the ${redeemed.agent_type} adapter. Install failed or isn't available — ask for a new code after installing.`
         );
         return;
       }
@@ -403,12 +412,9 @@ export function ConnectorManager() {
       // new bot token, which destructively replaces the old one and kicks any
       // live connector — so a client-side failure *after* that point strands
       // the bot: nobody holds the token the gateway now expects, and re-running
-      // onboarding is the only way back. Checking here keeps "adapter not
-      // installed" a side-effect-free error.
-      if (!(await adapterInstalled(agentType))) {
-        toast.error(
-          `${agentType} isn't installed on this Mac — pick it in the agent list above to install it, then try again`
-        );
+      // onboarding is the only way back. Auto-install installable agents here
+      // so "not installed" stays a side-effect-free error path.
+      if (!(await ensureAdapterReady(agentType))) {
         return;
       }
 
@@ -673,7 +679,7 @@ export function ConnectorManager() {
                   danger
                   disabled={busy === inst.name}
                   onClick={() => {
-                    setDeleteConfigToo(false);
+                    setKeepConfig(false);
                     setModal({ kind: "delete", inst });
                   }}
                 />
@@ -884,21 +890,24 @@ export function ConnectorManager() {
         <Dialog title="Remove connector" onClose={() => setModal(null)} maxWidth="max-w-md">
           <p className="text-sm text-zinc-300">
             Remove the local connector <b>{modal.inst.name}</b> (stops it and
-            deletes its state + logs). This does <b>not</b> delete the bot on the
-            server — do that from the web Bots settings.
+            deletes its state, logs, and config). This does <b>not</b> delete the
+            bot on the server — do that from the web Bots settings.
           </p>
           <label className="flex items-center gap-2 mt-3 text-xs text-zinc-400 cursor-pointer w-fit">
             <input
               type="checkbox"
-              checked={deleteConfigToo}
-              onChange={(e) => setDeleteConfigToo(e.target.checked)}
+              checked={keepConfig}
+              onChange={(e) => setKeepConfig(e.target.checked)}
             />
-            Also delete its config file
+            Keep a backup of the config as{" "}
+            <code className="bg-zinc-800 rounded px-1">.toml.kept</code> (won&apos;t
+            show in the list)
           </label>
           <div className="flex gap-2 mt-4">
             <Button
               variant="danger"
               size="sm"
+              className="bg-red-950/70 hover:bg-red-900/80 text-red-300"
               disabled={busy === modal.inst.name}
               onClick={() =>
                 void act(
@@ -906,7 +915,7 @@ export function ConnectorManager() {
                   () =>
                     invokeDesktop("connector_delete", {
                       name: modal.inst.name,
-                      deleteConfig: deleteConfigToo,
+                      deleteConfig: !keepConfig,
                     }),
                   "Connector removed"
                 ).then((ok) => ok && setModal(null))
@@ -1107,13 +1116,9 @@ function OnboardForm(props: {
         <AgentPicker
           value={p.agentType}
           onPick={(key) => {
-            // The picker offers claude/codex/opencode/cursor/gemini/custom; onboarding
-            // needs one of the server's agent types (custom → generic).
-            const t: AgentType =
-              key === "claude" || key === "codex" || key === "opencode" || key === "cursor"
-                ? key
-                : "generic";
-            p.setAgentType(t);
+            // Picker keys are Cheers agent ids (claude/codex/opencode/registry-id)
+            // or "custom" → generic placeholder config.
+            p.setAgentType(key === "custom" ? "generic" : key);
           }}
         />
       </Field>

@@ -41,6 +41,10 @@ struct SystemMessageView: View {
             let resolved = message.contentData?["resolved"]?.boolValue == true
             return resolved ? "Approval request (resolved)" : "Approval request — respond from the web app"
         }
+        if message.msgType == "auth_required" {
+            let resolved = message.contentData?["resolved"]?.boolValue == true
+            return resolved ? "Agent sign-in (resolved)" : "Agent sign-in required"
+        }
         return message.content
     }
 }

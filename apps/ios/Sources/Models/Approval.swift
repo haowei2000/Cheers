@@ -91,3 +91,41 @@ struct ResolveResponse: Decodable {
     let delivered: Bool
     let decision: String
 }
+
+/// ACP agent re-auth card from `msg_type: "auth_required"`.
+struct AuthRequiredRequest {
+    let requestId: String
+    let title: String
+    let description: String
+    let methodId: String?
+    let link: String?
+    let authType: String?
+    let botOwnerId: String?
+    let resolved: Bool
+    let chosenAction: String?
+    let resolvedKind: String?
+
+    init?(contentData: JSONValue?) {
+        guard let data = contentData,
+              let requestId = data["request_id"]?.stringValue, !requestId.isEmpty else {
+            return nil
+        }
+        self.requestId = requestId
+        self.title = data["name"]?.stringValue ?? "Sign in required"
+        self.description = data["description"]?.stringValue
+            ?? "This agent needs authentication before it can continue."
+        self.methodId = data["method_id"]?.stringValue
+        self.link = data["link"]?.stringValue
+        self.authType = data["auth_type"]?.stringValue
+        self.botOwnerId = data["bot_owner_id"]?.stringValue
+        self.resolved = data["resolved"]?.boolValue == true
+        self.chosenAction = data["chosen_action"]?.stringValue
+        self.resolvedKind = data["resolved_kind"]?.stringValue
+    }
+}
+
+struct AuthAckResponse: Decodable {
+    let ok: Bool
+    let delivered: Bool
+    let action: String
+}

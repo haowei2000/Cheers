@@ -635,6 +635,10 @@ mod fixture_tests {
                 "control/to_connector/permission_resolution.json",
                 "PermissionResolution",
             ),
+            (
+                "control/to_connector/auth_acknowledged.json",
+                "AuthAcknowledged",
+            ),
         ] {
             let frame: ControlInbound = serde_json::from_value(load(rel))
                 .unwrap_or_else(|e| panic!("{rel} failed to parse: {e}"));
@@ -649,6 +653,13 @@ mod fixture_tests {
                 ControlInbound::PermissionResolution { resolution, .. } => {
                     assert_eq!(resolution.resolution, "allow", "{rel}");
                     "PermissionResolution"
+                }
+                ControlInbound::AuthAcknowledged {
+                    request_id, action, ..
+                } => {
+                    assert_eq!(request_id, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "{rel}");
+                    assert_eq!(action, "retry", "{rel}");
+                    "AuthAcknowledged"
                 }
                 other => panic!("{rel}: unexpected variant {other:?}"),
             };
@@ -1042,6 +1053,28 @@ mod fixture_tests {
                 reason: "timeout".into(),
             },
             "data/to_gateway/permission_cancel.json",
+        );
+        assert_round_trips(
+            &DataOutbound::AuthRequired {
+                v: BRIDGE_PROTOCOL_VERSION,
+                client_msg_id: "client-msg-auth-1".into(),
+                channel_id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb".into(),
+                request_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+                task_id: Some("99999999-aaaa-4bbb-8ccc-dddddddddddd".into()),
+                msg_id: Some("33333333-4444-4555-8666-777777777777".into()),
+                method_id: "browser_login".into(),
+                name: Some("Sign in".into()),
+                description: Some(
+                    "Complete agent auth in the browser, then tap I've signed in.".into(),
+                ),
+                link: Some("https://example.com/login".into()),
+                auth_type: Some("agent".into()),
+                provider_session_key: Some(KEY.into()),
+                provider_session_id: Some("acp-session-1".into()),
+                session_id: Some("11111111-2222-4333-8444-555555555555".into()),
+                acp_capability: None,
+            },
+            "data/to_gateway/auth_required.json",
         );
         assert_round_trips(
             &DataOutbound::SessionUpdate {

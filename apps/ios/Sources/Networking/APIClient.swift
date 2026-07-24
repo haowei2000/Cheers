@@ -611,11 +611,29 @@ struct APIClient: Sendable {
             as: ResolveResponse.self
         )
     }
+
+    /// Acknowledge an ACP agent re-auth card (`retry` / `cancel`).
+    func ackAuthRequired(
+        channelId: String,
+        requestId: String,
+        action: String
+    ) async throws -> AuthAckResponse {
+        let encoded = requestId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? requestId
+        return try await postJSON(
+            "/channels/\(channelId)/auth-required/\(encoded)/ack",
+            body: AuthAckRequest(action: action),
+            as: AuthAckResponse.self
+        )
+    }
 }
 
 struct ResolvePermissionRequest: Encodable {
     let optionId: String
     enum CodingKeys: String, CodingKey { case optionId = "option_id" }
+}
+
+struct AuthAckRequest: Encodable {
+    let action: String
 }
 
 extension APIClient {

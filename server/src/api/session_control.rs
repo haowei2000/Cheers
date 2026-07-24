@@ -664,7 +664,7 @@ pub async fn session_controls(
         // The agent's preset mode — the session's effective mode when no per-session
         // override is set. Lets the UI show the current mode read-only even without a
         // set_mode grant. Per-session overrides come from each session's session_config.
-        "current_mode": default_mode.unwrap_or(""),
+        "current_mode": default_mode.unwrap_or_default(),
         "config_options": advertised_config_options(&state, bot_id).await,
     })))
 }

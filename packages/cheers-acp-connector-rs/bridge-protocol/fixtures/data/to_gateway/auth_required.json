@@ -1,0 +1,17 @@
+{
+  "type": "auth_required",
+  "v": 1,
+  "client_msg_id": "client-msg-auth-1",
+  "channel_id": "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+  "request_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "task_id": "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+  "msg_id": "33333333-4444-4555-8666-777777777777",
+  "method_id": "browser_login",
+  "name": "Sign in",
+  "description": "Complete agent auth in the browser, then tap I've signed in.",
+  "link": "https://example.com/login",
+  "auth_type": "agent",
+  "provider_session_key": "cheers:channel:77777777-8888-4999-8aaa-bbbbbbbbbbbb:bot:6f9619ff-8b86-4d01-b42d-00c04fc964ff",
+  "provider_session_id": "acp-session-1",
+  "session_id": "11111111-2222-4333-8444-555555555555"
+}

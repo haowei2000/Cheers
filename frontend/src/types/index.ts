@@ -173,6 +173,23 @@ export interface PermissionContentData {
   chosen_kind?: string;
 }
 
+/** content_data payload of a `msg_type: "auth_required"` message. */
+export interface AuthRequiredContentData {
+  kind?: "agent_bridge_auth_required";
+  request_id?: string;
+  method_id?: string;
+  name?: string;
+  description?: string;
+  link?: string | null;
+  auth_type?: string | null;
+  bot_owner_id?: string;
+  resolved?: boolean;
+  resolved_by?: string;
+  resolved_at?: string;
+  resolved_kind?: string;
+  chosen_action?: "retry" | "cancel" | string;
+}
+
 export interface Message {
   msg_id: string;
   channel_seq?: number;
@@ -187,6 +204,8 @@ export interface Message {
     | "announcement"
     | "routing"
     | "permission"
+    | "auth_required"
+    | "task_claim_confirmation"
     | "notification";
   /** The message this one replies to. Wire name is `reply_to_msg_id` on every
    *  server path (REST DTO + WS frames) — the DB column `in_reply_to_msg_id`
@@ -198,8 +217,12 @@ export interface Message {
   is_deleted?: boolean;
   is_partial?: boolean;
   error?: string | null;
-  /** Structured payload for system messages (ACP approval cards, etc.). */
-  content_data?: PermissionContentData | Record<string, unknown> | null;
+  /** Structured payload for system messages (ACP approval / auth cards, etc.). */
+  content_data?:
+    | PermissionContentData
+    | AuthRequiredContentData
+    | Record<string, unknown>
+    | null;
   /** Resource-context bundle the sender attached (docs/design/RESOURCE_CONTEXT.md).
    *  Rendered as context chips under the message. */
   context_bundle?: {
@@ -264,9 +287,9 @@ export interface BotItem {
   avatar_url?: string;
   scope?: "private" | "friend" | "everyone";
   binding_type?: string;
-  /** Which ACP agent this bot was registered for ("claude" | "codex" |
-   *  "opencode" | "generic"). Set at creation and returned by GET /bots — the
-   *  connector setup UI must read it rather than re-defaulting, or it renders a
+  /** Which ACP agent this bot was registered for (legacy short name or ACP
+   *  registry id). Set at creation and returned by GET /bots — the desktop
+   *  connector setup must read it rather than re-defaulting, or it renders a
    *  config for the wrong agent. */
   bridge_provider?: string;
   /** Live: a connector bridge is bound right now (from the registry). */

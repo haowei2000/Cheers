@@ -71,7 +71,7 @@ pub async fn list_permissions(
     crate::api::bots::ensure_bot_owner_or_admin(&state, &claims, &bot_id).await?;
     let (agent_type, current) = load_posture(&state, &bot_id).await?;
     let (default_mode, allowed) = connector_config::posture_preset(&agent_type);
-    let permission_mode = current.or_else(|| default_mode.map(str::to_string));
+    let permission_mode = current.or(default_mode);
     let cc = load_connector_control(&state, &bot_id).await?;
     // Mode is a first-class posture control for preset-backed agents, so drop the
     // duplicate `mode` config option the agent also advertises (see connector_config).

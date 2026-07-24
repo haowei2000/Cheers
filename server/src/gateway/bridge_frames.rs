@@ -281,6 +281,24 @@ pub(crate) fn permission_resolution_frame(
     })
 }
 
+/// Human acknowledgment of a forwarded `auth_required` card.
+pub(crate) fn auth_acknowledged_frame(
+    request_id: &str,
+    message_id: &str,
+    action: &str,
+    resolved_by: &str,
+    resolved_at: &str,
+) -> Value {
+    frame_value(&proto::ControlInbound::AuthAcknowledged {
+        v: BRIDGE_PROTOCOL_VERSION,
+        request_id: request_id.to_string(),
+        action: action.to_string(),
+        message_id: Some(message_id.to_string()),
+        resolved_by: Some(resolved_by.to_string()),
+        resolved_at: Some(resolved_at.to_string()),
+    })
+}
+
 /// Ask the connector to upload a staged workspace file to S3. Version-less by
 /// contract.
 pub(crate) fn realize_file_frame(

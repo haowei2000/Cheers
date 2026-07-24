@@ -63,7 +63,16 @@ pub async fn start_loopback() -> anyhow::Result<(LoopbackHandle, mpsc::Receiver<
                     let expected_token = expected_token.clone();
                     tokio::spawn(async move {
                         if let Err(err) = handle_connection(stream, tx, &expected_token).await {
-                            tracing::warn!("loopback resource request failed: {err}");
+                            // Client-side aborts are common and expected: the MCP
+                            // process dies when the ACP agent cancels a tool, or
+                            // reqwest drops a timed-out keep-alive. Those surface
+                            // as ConnectionReset / BrokenPipe — not as a missing
+                            // MCP binary or a protocol bug.
+                            if is_benign_client_disconnect(&err) {
+                                tracing::debug!("loopback client disconnected: {err}");
+                            } else {
+                                tracing::warn!("loopback resource request failed: {err}");
+                            }
                         }
                     });
                 }
@@ -75,6 +84,40 @@ pub async fn start_loopback() -> anyhow::Result<(LoopbackHandle, mpsc::Receiver<
         }
     });
     Ok((LoopbackHandle { url, token, addr }, rx))
+}
+
+/// True when the peer closed the TCP socket mid-request (RST / broken pipe /
+/// unexpected EOF). Not actionable beyond debug — the MCP client already moved on.
+fn is_benign_client_disconnect(err: &anyhow::Error) -> bool {
+    use std::io::ErrorKind;
+    for cause in err.chain() {
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            match io.kind() {
+                ErrorKind::ConnectionReset
+                | ErrorKind::BrokenPipe
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::UnexpectedEof => return true,
+                _ => {}
+            }
+            // macOS often reports reset as os error 54 without a mapped kind
+            // on older Rust; keep the string match as a belt-and-braces check.
+            let msg = io.to_string().to_ascii_lowercase();
+            if msg.contains("connection reset")
+                || msg.contains("broken pipe")
+                || msg.contains("connection abort")
+            {
+                return true;
+            }
+        }
+        let msg = cause.to_string().to_ascii_lowercase();
+        if msg.contains("connection reset by peer")
+            || msg.contains("broken pipe")
+            || msg == "connection closed before http headers"
+        {
+            return true;
+        }
+    }
+    false
 }
 
 async fn handle_connection(
@@ -335,6 +378,16 @@ mod tests {
         headers.clear();
         headers.insert("x-cheers-loopback-token".to_string(), "secret".to_string());
         assert!(request_has_token(&headers, "secret"));
+    }
+
+    #[test]
+    fn classifies_connection_reset_as_benign() {
+        let err = anyhow!(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+        assert!(is_benign_client_disconnect(&err));
+        let err = anyhow!("connection reset by peer (os error 54)");
+        assert!(is_benign_client_disconnect(&err));
+        let err = anyhow!("loopback request body JSON");
+        assert!(!is_benign_client_disconnect(&err));
     }
 
     fn req(version: &str, connection: Option<&str>) -> HttpRequest {

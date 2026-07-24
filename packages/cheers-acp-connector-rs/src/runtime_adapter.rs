@@ -80,6 +80,9 @@ pub trait RuntimeAdapter: Send {
     async fn start(&mut self) -> anyhow::Result<Value>;
     async fn stop(&mut self) -> anyhow::Result<()>;
     async fn restart(&mut self) -> anyhow::Result<Value>;
+    /// Re-run ACP `authenticate` using the method advertised at initialize.
+    /// No-op when the agent advertised no authMethods.
+    async fn authenticate(&mut self) -> anyhow::Result<()>;
     async fn new_session(
         &mut self,
         options: SessionStartOptions,

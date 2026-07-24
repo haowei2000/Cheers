@@ -9,6 +9,7 @@ import { FileGrid } from "./fileView";
 import { MessageContextChips } from "./context/ContextPickBar";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
+import { AuthRequiredCard } from "./AuthRequiredCard";
 import { TaskClaimConfirmationCard } from "./TaskClaimConfirmationCard";
 import { BotTracePanel } from "./BotTracePanel";
 import { stopTurn } from "./stopTurn";
@@ -241,6 +242,21 @@ export const MessageItem = memo(function MessageItem({
         <div className="w-9 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <PermissionCard
+            message={message}
+            channelId={channelId}
+            currentUserId={currentUserId}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (message.msg_type === "auth_required") {
+    return (
+      <div className="flex items-start gap-3 px-4 py-0.5">
+        <div className="w-9 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <AuthRequiredCard
             message={message}
             channelId={channelId}
             currentUserId={currentUserId}

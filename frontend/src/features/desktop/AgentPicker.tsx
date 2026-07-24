@@ -9,6 +9,7 @@ export interface DetectedAgent {
   key: string;
   label: string;
   command: string;
+  args?: string[];
   installed: boolean;
   path: string | null;
   installable: boolean;
@@ -49,9 +50,10 @@ export function AgentPicker({
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="max-h-56 overflow-y-auto overscroll-contain">
+      <div className="flex flex-wrap gap-2">
       {agents.map((a) => {
-        const icon = agentIconFor(a.key);
+        const icon = agentIconFor(a.key) ?? agentIconFor(a.label);
         const selected = value === a.key;
         return (
           <div key={a.key} className="relative">
@@ -82,7 +84,9 @@ export function AgentPicker({
                   <Terminal className="w-4 h-4" />
                 )}
               </span>
-              <span className="text-[11px] text-zinc-300">{a.label}</span>
+              <span className="text-[11px] text-zinc-300 truncate w-full text-center">
+                {a.label}
+              </span>
               <span className="text-[9px] text-zinc-500">
                 {a.installed ? "installed" : a.installable ? "not installed" : "unavailable"}
               </span>
@@ -122,6 +126,7 @@ export function AgentPicker({
         <span className="text-[11px] text-zinc-300">Custom</span>
         <span className="text-[9px] text-zinc-500">command</span>
       </button>
+      </div>
     </div>
   );
 }
