@@ -109,12 +109,7 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             // via `agent login` / CURSOR_API_KEY / CURSOR_AUTH_TOKEN).
             command: "agent",
             args: &["acp"],
-            env_allow: &[
-                "HOME",
-                "PATH",
-                "CURSOR_API_KEY",
-                "CURSOR_AUTH_TOKEN",
-            ],
+            env_allow: &["HOME", "PATH", "CURSOR_API_KEY", "CURSOR_AUTH_TOKEN"],
             // Cursor advertises agent / plan / ask — default to full tool access.
             permission_mode: Some("agent"),
             allowed_modes: &["agent", "plan", "ask"],

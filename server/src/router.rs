@@ -101,10 +101,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
     // Routes under this branch all require JWT authentication.
     Router::new()
         // Two-factor authentication (TOTP) management for the authenticated user.
-        .route(
-            "/api/v1/auth/2fa/status",
-            get(api::auth::two_factor_status),
-        )
+        .route("/api/v1/auth/2fa/status", get(api::auth::two_factor_status))
         .route("/api/v1/auth/2fa/setup", post(api::auth::setup_two_factor))
         .route(
             "/api/v1/auth/2fa/enable",
@@ -870,10 +867,7 @@ async fn apple_app_site_association() -> impl axum::response::IntoResponse {
         }
     });
     (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "application/json",
-        )],
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
         axum::Json(body),
     )
 }

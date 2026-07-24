@@ -85,12 +85,11 @@ impl WebauthnService {
 }
 
 pub async fn user_has_passkeys(db: &PgPool, user_id: &str) -> Result<bool, AppError> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await?;
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(db)
+            .await?;
     Ok(count > 0)
 }
 
@@ -111,24 +110,22 @@ pub async fn allowed_login_factors(
 }
 
 pub async fn user_has_email(db: &PgPool, user_id: &str) -> Result<bool, AppError> {
-    let email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await?
-    .flatten();
+    let email: Option<String> =
+        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await?
+            .flatten();
     Ok(email.as_deref().is_some_and(|e| !e.trim().is_empty()))
 }
 
 pub async fn user_email(db: &PgPool, user_id: &str) -> Result<Option<String>, AppError> {
-    let email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await?
-    .flatten();
+    let email: Option<String> =
+        sqlx::query_scalar("SELECT email FROM users WHERE user_id = $1 AND is_deleted = FALSE")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await?
+            .flatten();
     Ok(email.filter(|e| !e.trim().is_empty()))
 }
 
@@ -205,7 +202,10 @@ mod email_hint_tests {
     }
 }
 
-pub async fn list_credentials(db: &PgPool, user_id: &str) -> Result<Vec<StoredCredential>, AppError> {
+pub async fn list_credentials(
+    db: &PgPool,
+    user_id: &str,
+) -> Result<Vec<StoredCredential>, AppError> {
     let rows = sqlx::query(
         "SELECT credential_pk, credential_id, name, backup_eligible, backup_state,
                 created_at, last_used_at
@@ -403,13 +403,12 @@ pub async fn delete_credential(
     user_id: &str,
     credential_pk: &str,
 ) -> Result<(), AppError> {
-    let result = sqlx::query(
-        "DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2",
-    )
-    .bind(credential_pk)
-    .bind(user_id)
-    .execute(db)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM webauthn_credentials WHERE credential_pk = $1 AND user_id = $2")
+            .bind(credential_pk)
+            .bind(user_id)
+            .execute(db)
+            .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -471,9 +470,7 @@ pub async fn finish_authentication(
     .await?
     .ok_or_else(|| AppError::Unauthorized("invalid authentication transaction".into()))?;
 
-    let challenge: serde_json::Value = row
-        .try_get("challenge_json")
-        .unwrap_or_else(|_| json!({}));
+    let challenge: serde_json::Value = row.try_get("challenge_json").unwrap_or_else(|_| json!({}));
     if challenge.is_null() {
         return Err(AppError::BadRequest(
             "passkey assertion was not started for this login".into(),

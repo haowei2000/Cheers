@@ -1126,8 +1126,7 @@ pub async fn send_two_factor_email(
     let email = crate::domain::webauthn::user_email(&state.db, &user_id)
         .await?
         .ok_or_else(|| AppError::BadRequest("no email on this account".into()))?;
-    let code =
-        crate::domain::webauthn::issue_login_2fa_email_code(&state.db, &email).await?;
+    let code = crate::domain::webauthn::issue_login_2fa_email_code(&state.db, &email).await?;
     crate::infra::email::send_login_2fa_code(&state.config, &email, &code).await;
     Ok(Json(json!({
         "ok": true,
