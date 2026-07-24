@@ -100,6 +100,10 @@ jobs:
             ${{ matrix.asset_mcp }}
           # On tag pushes this creates/updates the release for the tag; each matrix
           # job appends its binaries to the same release.
+          # Keep this false: desktop auto-update reads
+          # releases/latest/download/latest.json, and a connector release must
+          # not steal GitHub's "latest" pointer from the desktop feed.
+          make_latest: false
           fail_on_unmatched_files: true
 
   # Signed update manifest for the connector's opt-in self-updater ([update]
@@ -162,4 +166,5 @@ jobs:
           files: |
             connector-manifest.json
             connector-manifest.json.sig
+          make_latest: false
           fail_on_unmatched_files: true
