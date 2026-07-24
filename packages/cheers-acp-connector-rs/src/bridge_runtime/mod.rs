@@ -725,6 +725,11 @@ impl RuntimeContext {
             ControlInbound::PermissionResolution { resolution, .. } => {
                 self.handle_permission_resolution(resolution).await?;
             }
+            ControlInbound::AuthAcknowledged {
+                request_id, action, ..
+            } => {
+                self.handle_auth_acknowledged(request_id, action).await?;
+            }
             ControlInbound::ChannelJoined { channel, .. } => {
                 if let Some(name) = &channel.channel_name {
                     self.shared
@@ -1929,7 +1934,41 @@ impl RuntimeContext {
         let start_options = self.session_start_options(&task).await;
         // Evaluation turns retain Cheers MCP solely to record their decision
         // through the gateway-owned task-claim resource.
-        let acp_session_id = self.ensure_acp_session(&task, start_options).await?;
+        let acp_session_id = match self.ensure_acp_session(&task, start_options).await {
+            Ok(id) => id,
+            Err(err) => {
+                let message = err.to_string();
+                tracing::error!(account = %self.account_id, "ensure_acp_session failed: {message}");
+                if evaluation_id.is_some() {
+                    if let Some(evaluation_id) = evaluation_id {
+                        let _ = self
+                            .io
+                            .send_data(DataOutbound::ClaimEvaluationResult {
+                                v: BRIDGE_PROTOCOL_VERSION,
+                                evaluation_id,
+                                content: None,
+                                error: Some(message),
+                            })
+                            .await;
+                    }
+                } else {
+                    let _ = self
+                        .io
+                        .send_data_expect_terminal_ack(DataOutbound::Error {
+                            v: BRIDGE_PROTOCOL_VERSION,
+                            client_msg_id: Uuid::new_v4().to_string(),
+                            msg_id: task.msg_id.clone(),
+                            message,
+                            provider_session_key: Some(task.provider_session_key.clone()),
+                            provider_session_id: None,
+                            session_id: task.session_id.clone(),
+                            acp_capability: None,
+                        })
+                        .await;
+                }
+                return Ok(());
+            }
+        };
         let run = Arc::new(Mutex::new(ActiveRun {
             task_id: task.task_id.clone(),
             msg_id: task.msg_id.clone(),
@@ -2027,9 +2066,25 @@ impl RuntimeContext {
         // ordering is still guaranteed by `session_lock` above; the pending-id
         // map routes each session's response independently.
         let requester = self.adapter.lock().await.requester();
-        let prompt_result = requester
-            .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
-            .await;
+        let prompt_result = match requester
+            .prompt(
+                &acp_session_id,
+                prompt.clone(),
+                self.config.agent.prompt_timeout_ms,
+            )
+            .await
+        {
+            Ok(result) => Ok(result),
+            Err(err) => match self.recover_agent_auth(&task, &err).await {
+                Ok(()) => {
+                    let requester = self.adapter.lock().await.requester();
+                    requester
+                        .prompt(&acp_session_id, prompt, self.config.agent.prompt_timeout_ms)
+                        .await
+                }
+                Err(_) => Err(err),
+            },
+        };
 
         match prompt_result {
             Ok(result) => {
@@ -2195,8 +2250,18 @@ impl RuntimeContext {
             ));
         }
         let new_session = {
-            let mut adapter = self.adapter.lock().await;
-            adapter.new_session(options).await?
+            let first = {
+                let mut adapter = self.adapter.lock().await;
+                adapter.new_session(options.clone()).await
+            };
+            match first {
+                Ok(session) => session,
+                Err(err) => {
+                    self.recover_agent_auth(task, &err).await?;
+                    let mut adapter = self.adapter.lock().await;
+                    adapter.new_session(options).await?
+                }
+            }
         };
         self.report_session_snapshot(&new_session.metadata).await;
         self.state
@@ -2725,6 +2790,7 @@ struct SharedRuntimeState {
     by_acp_session: HashMap<String, Arc<Mutex<ActiveRun>>>,
     by_provider_key: HashMap<String, Arc<Mutex<ActiveRun>>>,
     pending_permissions: HashMap<String, PendingPermission>,
+    pending_auths: HashMap<String, PendingAuth>,
     pending_resources: HashMap<String, oneshot::Sender<LoopbackResponse>>,
     session_locks: HashMap<String, Arc<Mutex<()>>>,
     channel_names: std::collections::HashMap<String, String>,
@@ -2827,6 +2893,11 @@ async fn watch_loop(
 struct PendingPermission {
     params: Value,
     respond_to: oneshot::Sender<PermissionOutcome>,
+}
+
+struct PendingAuth {
+    respond_to: oneshot::Sender<auth::AuthAckAction>,
+    method_id: String,
 }
 
 struct ActiveRun {
@@ -2992,6 +3063,7 @@ enum RuntimeInput {
     AbortPendingResources,
 }
 
+mod auth;
 mod config;
 mod frames;
 mod io;

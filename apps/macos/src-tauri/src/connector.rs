@@ -471,43 +471,14 @@ fn login_path_dirs() -> Vec<PathBuf> {
     path_dirs
 }
 
-/// Known ACP agents: (key, label, primary command, npm/other install command).
-/// An empty install command means "no known installer" (e.g. gemini has no
-/// ACP adapter yet). Install strings are constants — never user input — so
-/// running them through the login shell can't inject.
-const KNOWN_AGENTS: &[(&str, &str, &str, &str)] = &[
-    (
-        "claude",
-        "Claude",
-        "claude-agent-acp",
-        "npm install -g @agentclientprotocol/claude-agent-acp",
-    ),
-    (
-        "codex",
-        "Codex",
-        "codex-acp",
-        "npm install -g @agentclientprotocol/codex-acp",
-    ),
-    // OpenCode's ACP mode is a subcommand of its main binary (`opencode acp`),
-    // so the adapter command IS `opencode` — matching the gateway preset.
-    (
-        "opencode",
-        "OpenCode",
-        "opencode",
-        "npm install -g opencode-ai",
-    ),
-    // Cursor CLI ACP mode is `agent acp` (https://cursor.com/docs/cli/acp).
-    // Official installer puts `agent` on ~/.local/bin.
-    (
-        "cursor",
-        "Cursor",
-        "agent",
-        "curl https://cursor.com/install -fsS | bash",
-    ),
-    // No ACP adapter exists for Gemini yet; empty command → never "installed"
-    // (the plain `gemini` CLI is NOT an ACP adapter), shown as unavailable.
-    ("gemini", "Gemini", "", ""),
-];
+/// Known first-class agents that are NOT (only) npx in the registry.
+/// OpenCode is binary-distributed; keep the prior npm install path.
+const BUILTIN_OPENCODE: (&str, &str, &str, &str) = (
+    "opencode",
+    "OpenCode",
+    "opencode",
+    "npm install -g opencode-ai",
+);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DetectedAgent {
@@ -515,6 +486,8 @@ pub struct DetectedAgent {
     pub label: String,
     /// The config `adapter.command` this agent uses.
     pub command: String,
+    /// Extra argv after `command` (e.g. `["--acp"]`, `["acp"]`).
+    pub args: Vec<String>,
     pub installed: bool,
     /// Absolute path when installed (bake this into the config).
     pub path: Option<String>,
@@ -522,54 +495,158 @@ pub struct DetectedAgent {
     pub installable: bool,
 }
 
-/// Which known ACP agents are installed on this machine (login-PATH lookup), so
-/// the config form can offer the user's own agents as icons + a one-click
-/// install for the rest.
+/// Which ACP agents are available: every **npx/uvx/binary** entry from the live
+/// registry, plus OpenCode (binary/npm). Login-PATH lookup marks what's already
+/// installed (for uvx agents: whether `uvx` itself is on PATH; for binary:
+/// PATH or `~/.cheers/agents/<id>/`).
 #[tauri::command]
 pub fn detect_agents() -> Vec<DetectedAgent> {
-    KNOWN_AGENTS
-        .iter()
-        .map(|(key, label, cmd, install)| {
-            // Resolve exactly the command the gateway preset writes — no
-            // per-agent aliasing. A fallback here would report "installed" for
-            // a command `absolutize_adapter_command` then fails to resolve,
-            // and onboarding's pre-flight check would wave through a config
-            // that can't start. An empty command (gemini) never resolves.
-            let path = if cmd.is_empty() {
-                None
-            } else {
-                resolve_on_login_path(cmd)
-            };
-            DetectedAgent {
-                key: (*key).into(),
-                label: (*label).into(),
-                command: (*cmd).into(),
-                installed: path.is_some(),
-                path: path.map(|p| p.to_string_lossy().into_owned()),
-                installable: !install.is_empty(),
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // OpenCode first (also binary in the registry — keep the npm install path).
+    {
+        let (key, label, cmd, install) = BUILTIN_OPENCODE;
+        let path = resolve_on_login_path(cmd);
+        seen.insert(key.to_string());
+        out.push(DetectedAgent {
+            key: key.into(),
+            label: label.into(),
+            command: cmd.into(),
+            args: vec!["acp".into()],
+            installed: path.is_some(),
+            path: path.map(|p| p.to_string_lossy().into_owned()),
+            installable: !install.is_empty(),
+        });
+    }
+
+    let uvx_path = resolve_on_login_path("uvx");
+    for launch in crate::acp_registry::list_package_agents() {
+        let key = crate::acp_registry::cheers_key_for(&launch.id);
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let cmd = crate::acp_registry::adapter_command_for(&launch);
+        let args = crate::acp_registry::adapter_args_for(&launch);
+        let (installed, path) = match launch.kind {
+            crate::acp_registry::DistKind::Npx => {
+                let path = resolve_on_login_path(&cmd);
+                (
+                    path.is_some(),
+                    path.map(|p| p.to_string_lossy().into_owned()),
+                )
             }
+            crate::acp_registry::DistKind::Uvx => (
+                uvx_path.is_some(),
+                uvx_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            ),
+        };
+        out.push(DetectedAgent {
+            key,
+            label: launch.name,
+            command: cmd,
+            args,
+            installed,
+            path,
+            installable: true,
+        });
+    }
+
+    for launch in crate::acp_registry::list_binary_agents() {
+        let key = crate::acp_registry::cheers_key_for(&launch.id);
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let Some(target) = crate::acp_registry::binary_target_for_host(&launch) else {
+            // No archive for this Mac arch — still list it so the UI can explain.
+            out.push(DetectedAgent {
+                key,
+                label: launch.name,
+                command: String::new(),
+                args: vec![],
+                installed: false,
+                path: None,
+                installable: false,
+            });
+            continue;
+        };
+        let cmd = crate::acp_registry::bin_name_from_cmd(&target.cmd);
+        let args = target.args.clone();
+        let path = resolve_on_login_path(&cmd)
+            .or_else(|| resolve_cheers_agent_bin(&launch.id, &target.cmd));
+        out.push(DetectedAgent {
+            key,
+            label: launch.name,
+            command: cmd,
+            args,
+            installed: path.is_some(),
+            path: path.map(|p| p.to_string_lossy().into_owned()),
+            installable: true,
+        });
+    }
+
+    // Stable order: builtins-ish first, Cursor next, then A–Z.
+    out.sort_by(|a, b| {
+        let rank = |k: &str| match k {
+            "claude" => 0,
+            "codex" => 1,
+            "opencode" => 2,
+            "cursor" => 3,
+            _ => 10,
+        };
+        rank(&a.key).cmp(&rank(&b.key)).then_with(|| {
+            a.label
+                .to_ascii_lowercase()
+                .cmp(&b.label.to_ascii_lowercase())
         })
-        .collect()
+    });
+    out
 }
 
-/// One-click install of a known agent's ACP package (npm etc.). Runs the
-/// hardcoded install command through the login shell (which has npm on PATH).
-/// Long-running, so it's offloaded to a blocking thread.
+/// One-click install of a registry/builtin agent (npm, uv, or binary archive).
 #[tauri::command]
 pub async fn install_agent(key: String) -> Result<String, String> {
-    let install = KNOWN_AGENTS
-        .iter()
-        .find(|(k, _, _, _)| *k == key)
-        .map(|(_, _, _, i)| *i)
-        .ok_or("unknown agent")?;
-    if install.is_empty() {
-        return Err("no one-click installer is available for this agent".into());
+    if key == "opencode" {
+        return run_login_shell_install(BUILTIN_OPENCODE.3.to_string()).await;
     }
-    let install = install.to_string();
+    if let Some(launch) = crate::acp_registry::package_launch_by_cheers_key(&key) {
+        return match launch.kind {
+            crate::acp_registry::DistKind::Npx => {
+                if !is_safe_npm_spec(&launch.package) {
+                    return Err(format!(
+                        "refusing unsafe npm package spec: {}",
+                        launch.package
+                    ));
+                }
+                run_login_shell_install(format!("npm install -g {}", launch.package)).await
+            }
+            crate::acp_registry::DistKind::Uvx => {
+                if !is_safe_uv_spec(&launch.package) {
+                    return Err(format!(
+                        "refusing unsafe uv package spec: {}",
+                        launch.package
+                    ));
+                }
+                let package = launch.package.clone();
+                tauri::async_runtime::spawn_blocking(move || install_uvx_agent(&package))
+                    .await
+                    .map_err(|e| e.to_string())?
+            }
+        };
+    }
+    if let Some(launch) = crate::acp_registry::binary_launch_by_cheers_key(&key) {
+        return tauri::async_runtime::spawn_blocking(move || install_binary_agent(&launch))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Err(format!("unknown agent '{key}'"))
+}
+
+async fn run_login_shell_install(install_cmd: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let out = std::process::Command::new(&shell)
-            .args(["-lic", &install])
+            .args(["-lic", &install_cmd])
             .output()
             .map_err(|e| e.to_string())?;
         if out.status.success() {
@@ -586,12 +663,182 @@ pub async fn install_agent(key: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// The npm package an agent's install command installs, if any
-/// ("npm install -g <pkg>" -> <pkg>). Non-npm or empty installers -> None.
-fn npm_package_of(install: &str) -> Option<&str> {
-    install
-        .strip_prefix("npm install -g ")
-        .and_then(|rest| rest.split_whitespace().next())
+/// Ensure `uv`/`uvx` exists (Astral installer), then warm the package cache via `uvx`.
+fn install_uvx_agent(package: &str) -> Result<String, String> {
+    if resolve_on_login_path("uvx").is_none() {
+        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        // Official installer: https://docs.astral.sh/uv/getting-started/installation/
+        let out = std::process::Command::new(&shell)
+            .args(["-lic", "curl -LsSf https://astral.sh/uv/install.sh | sh"])
+            .output()
+            .map_err(|e| format!("uv install failed to start: {e}"))?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(format!(
+                "uv install failed — {}",
+                err.trim().lines().last().unwrap_or("see terminal")
+            ));
+        }
+    }
+    // Warm/download the tool; `--help` fetches without spawning ACP.
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let warm = format!("uvx '{package}' --help");
+    let _ = std::process::Command::new(&shell)
+        .args(["-lic", &warm])
+        .output();
+    if resolve_on_login_path("uvx").is_none() {
+        return Err(
+            "uv installed but uvx is still not on the login PATH — open a new terminal or restart Cheers"
+                .into(),
+        );
+    }
+    Ok("installed".to_string())
+}
+
+/// `~/.cheers/agents/<id>/` — extracted registry binary agents live here.
+fn cheers_agents_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("no home directory")?;
+    let dir = home.join(".cheers/agents");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Absolute path to an extracted registry binary, if present and executable.
+fn resolve_cheers_agent_bin(agent_id: &str, cmd: &str) -> Option<PathBuf> {
+    let safe = safe_name(agent_id);
+    let rel = cmd.trim().trim_start_matches("./").replace('\\', "/");
+    if rel.is_empty() || rel.contains("..") {
+        return None;
+    }
+    let candidate = cheers_agents_dir().ok()?.join(&safe).join(rel);
+    if candidate.is_file() {
+        candidate.canonicalize().ok().or(Some(candidate))
+    } else {
+        None
+    }
+}
+
+fn is_safe_https_archive_url(url: &str) -> bool {
+    let Ok(u) = url::Url::parse(url.trim()) else {
+        return false;
+    };
+    if u.scheme() != "https" {
+        return false;
+    }
+    let Some(host) = u.host_str() else {
+        return false;
+    };
+    // Registry archives are first-party CDN / GitHub / vendor downloads.
+    host == "cdn.agentclientprotocol.com"
+        || host.ends_with(".cursor.com")
+        || host == "downloads.cursor.com"
+        || host == "github.com"
+        || host == "objects.githubusercontent.com"
+        || host.ends_with(".githubusercontent.com")
+        || host.ends_with(".github.com")
+}
+
+/// Download + extract a registry binary agent into `~/.cheers/agents/<id>/`.
+fn install_binary_agent(launch: &crate::acp_registry::BinaryLaunch) -> Result<String, String> {
+    let target = crate::acp_registry::binary_target_for_host(launch).ok_or_else(|| {
+        format!(
+            "no binary for platform {}",
+            crate::acp_registry::host_platform()
+        )
+    })?;
+    if !is_safe_https_archive_url(&target.archive) {
+        return Err(format!("refusing archive URL host: {}", target.archive));
+    }
+    let dest = cheers_agents_dir()?.join(safe_name(&launch.id));
+    if dest.exists() {
+        fs::remove_dir_all(&dest).map_err(|e| format!("clear old install: {e}"))?;
+    }
+    fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+
+    let archive_name = if target.archive.contains(".zip") {
+        "agent.zip"
+    } else {
+        "agent.tar.gz"
+    };
+    let archive_path = dest.join(archive_name);
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    // Quote URL for the shell; host already allowlisted.
+    let download = format!(
+        "curl -fsSL --retry 3 -o '{}' '{}'",
+        archive_path.display(),
+        target.archive.replace('\'', "'\\''")
+    );
+    let out = std::process::Command::new(&shell)
+        .args(["-lic", &download])
+        .output()
+        .map_err(|e| format!("download failed to start: {e}"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "download failed — {}",
+            err.trim().lines().last().unwrap_or("see terminal")
+        ));
+    }
+
+    let extract = if archive_name.ends_with(".zip") {
+        format!(
+            "ditto -x -k '{}' '{}'",
+            archive_path.display(),
+            dest.display()
+        )
+    } else {
+        format!(
+            "tar -xzf '{}' -C '{}'",
+            archive_path.display(),
+            dest.display()
+        )
+    };
+    let out = std::process::Command::new(&shell)
+        .args(["-lic", &extract])
+        .output()
+        .map_err(|e| format!("extract failed to start: {e}"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "extract failed — {}",
+            err.trim().lines().last().unwrap_or("see terminal")
+        ));
+    }
+    let _ = fs::remove_file(&archive_path);
+
+    let bin = resolve_cheers_agent_bin(&launch.id, &target.cmd).ok_or_else(|| {
+        format!(
+            "archive extracted but '{}' was not found under {}",
+            target.cmd,
+            dest.display()
+        )
+    })?;
+    let _ = std::process::Command::new("chmod")
+        .args(["+x", &bin.to_string_lossy()])
+        .status();
+    let _ = std::process::Command::new("xattr")
+        .args(["-cr", &dest.to_string_lossy()])
+        .status();
+    Ok("installed".to_string())
+}
+
+/// Registry package specs must be plain npm names (`@scope/pkg@1.2.3`) — no
+/// shell metacharacters — before we interpolate into a login-shell command.
+fn is_safe_npm_spec(spec: &str) -> bool {
+    let s = spec.trim();
+    !s.is_empty()
+        && !s.contains("..")
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '.' | '-' | '_'))
+}
+
+/// PyPI / uv specs (`pkg==1.2.3`, `pkg@1.2.3`) — same charset as npm plus `=`.
+fn is_safe_uv_spec(spec: &str) -> bool {
+    let s = spec.trim();
+    !s.is_empty()
+        && !s.contains("..")
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '.' | '-' | '_' | '='))
 }
 
 /// Compare dotted release versions by their numeric [major, minor, patch] core
@@ -621,8 +868,9 @@ fn version_is_newer(installed: &str, latest: &str) -> bool {
 
 /// Installed global versions for the given npm packages, in one shot
 /// (`npm ls -g --depth=0 --json <pkg...>`). Missing packages are absent from the
-/// map. Package names are KNOWN_AGENTS constants — never user input — so
-/// interpolating them into the login-shell command can't inject.
+/// map. Package names come from the ACP registry (or OpenCode's fixed install) —
+/// never free-form user input — so interpolating them into the login-shell
+/// command can't inject.
 fn npm_global_versions(pkgs: &[&str]) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     if pkgs.is_empty() {
@@ -652,7 +900,7 @@ fn npm_global_versions(pkgs: &[&str]) -> std::collections::HashMap<String, Strin
 }
 
 /// Latest published version of `pkg` (`npm view <pkg> version`), or None when
-/// offline / not found. `pkg` is a KNOWN_AGENTS constant.
+/// offline / not found. `pkg` is a registry package name (or OpenCode's).
 fn npm_latest_version(pkg: &str) -> Option<String> {
     let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let out = std::process::Command::new(&shell)
@@ -681,41 +929,47 @@ pub struct AgentUpdate {
     pub outdated: bool,
 }
 
-/// Check installed vs latest versions of the known ACP adapter npm packages so
-/// the connector UI can offer a one-click upgrade. Reads installed versions in a
-/// single `npm ls` and the latest of each INSTALLED package via `npm view`
-/// (skipping the network for adapters that aren't installed). Long-running
-/// (network), so it runs on a blocking thread. Upgrading reuses `install_agent`
-/// (`npm install -g <pkg>` reinstalls to latest).
+/// Check installed vs latest versions of npx-registry ACP adapters (plus OpenCode).
+/// Upgrading reuses `install_agent`.
 #[tauri::command]
 pub async fn check_agent_updates() -> Result<Vec<AgentUpdate>, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let pkgs: Vec<&str> = KNOWN_AGENTS
-            .iter()
-            .filter_map(|(_, _, _, install)| npm_package_of(install))
-            .collect();
+        let mut entries: Vec<(String, String, String)> = Vec::new();
+        // OpenCode
+        entries.push(("opencode".into(), "OpenCode".into(), "opencode-ai".into()));
+        for launch in crate::acp_registry::list_package_agents() {
+            if launch.kind != crate::acp_registry::DistKind::Npx {
+                continue; // uvx version checks are a follow-up
+            }
+            let key = crate::acp_registry::cheers_key_for(&launch.id);
+            let pkg = crate::acp_registry::package_name_unversioned(&launch.package);
+            entries.push((key, launch.name, pkg));
+        }
+        // Dedupe by package
+        let mut seen_pkg = std::collections::HashSet::new();
+        entries.retain(|(_, _, pkg)| seen_pkg.insert(pkg.clone()));
+
+        let pkgs: Vec<&str> = entries.iter().map(|(_, _, p)| p.as_str()).collect();
         let installed = npm_global_versions(&pkgs);
-        KNOWN_AGENTS
-            .iter()
-            .filter_map(|(key, label, _cmd, install)| {
-                let pkg = npm_package_of(install)?;
-                let installed_version = installed.get(pkg).cloned();
-                // Only hit the network for packages that are actually installed.
+        entries
+            .into_iter()
+            .map(|(key, label, pkg)| {
+                let installed_version = installed.get(&pkg).cloned();
                 let latest_version = installed_version
                     .as_ref()
-                    .and_then(|_| npm_latest_version(pkg));
+                    .and_then(|_| npm_latest_version(&pkg));
                 let outdated = match (&installed_version, &latest_version) {
                     (Some(i), Some(l)) => version_is_newer(i, l),
                     _ => false,
                 };
-                Some(AgentUpdate {
-                    key: (*key).into(),
-                    label: (*label).into(),
-                    package: pkg.into(),
+                AgentUpdate {
+                    key,
+                    label,
+                    package: pkg,
                     installed: installed_version,
                     latest: latest_version,
                     outdated,
-                })
+                }
             })
             .collect::<Vec<_>>()
     })
@@ -998,11 +1252,47 @@ pub async fn connector_restart(
     Ok(out)
 }
 
+/// True when `path` lives under `~/.cheers/` (canonical when possible; logical
+/// prefix fallback so a just-deleted / never-created path still classifies).
+fn path_under_cheers(path: &Path) -> bool {
+    let Some(base) = dirs::home_dir().map(|h| h.join(".cheers")) else {
+        return false;
+    };
+    match (path.canonicalize(), base.canonicalize()) {
+        (Ok(c), Ok(b)) => c.starts_with(&b),
+        _ => path.starts_with(&base),
+    }
+}
+
+/// Config TOMLs owned by this instance that are safe to delete or stash.
+/// Prefers the path recorded in daemon.json, and always includes the desktop
+/// onboarded location `~/.cheers/cheers-daemon.<name>.toml` — `read_instances`
+/// re-lists that file as a stopped connector when the service dir is gone, so
+/// delete must touch it even when metadata is missing (failed first start).
+fn deletable_configs_for(name: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(p) = read_metadata_by_name(name).map(|m| m.config_path) {
+        if path_under_cheers(&p) {
+            out.push(p);
+        }
+    }
+    if let Some(p) = dirs::home_dir().map(|h| {
+        h.join(".cheers")
+            .join(format!("cheers-daemon.{}.toml", safe_name(name)))
+    }) {
+        if p.exists() && !out.iter().any(|existing| existing == &p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
 /// Remove a LOCAL connector instance: stop it, delete its service directory
-/// (daemon.json + logs), drop it from supervisor/start-with-app state, and —
-/// when `delete_config` is set — delete its config TOML too (only if that
-/// config lives under `~/.cheers/`). This removes the local daemon only; the
-/// bot account on the gateway is unaffected (delete that from the web Bots UI).
+/// (daemon.json + logs), drop it from supervisor/start-with-app state, and
+/// either delete its config TOML or rename it to `*.toml.kept` so
+/// `read_instances`' orphan-config scan cannot resurrect the card. Keeping the
+/// file under the live `cheers-daemon.*.toml` name made "delete" look like a
+/// no-op. The bot account on the gateway is unaffected.
 #[tauri::command]
 pub async fn connector_delete(
     app: tauri::AppHandle,
@@ -1010,8 +1300,10 @@ pub async fn connector_delete(
     name: String,
     delete_config: bool,
 ) -> Result<(), String> {
-    // Capture the config path before we remove the service dir that records it.
-    let config_path = read_metadata_by_name(&name).map(|m| m.config_path);
+    // Match start/restart: daemon dirs + managed keys use the sanitized form.
+    let name = safe_name(&name);
+    // Resolve configs before ripping out the service dir that records them.
+    let configs = deletable_configs_for(&name);
 
     // Forget it from the supervisor BEFORE stopping: the supervisor loop takes
     // a one-shot `managed` snapshot each tick, and a still-queued revive would
@@ -1029,28 +1321,23 @@ pub async fn connector_delete(
     // Best-effort stop; a dead/never-started instance has nothing to stop.
     let _ = run_cli(&app, &["--name", &name, "stop"]).await;
 
-    // Remove the service directory (state + logs). safe_name matches the
-    // sanitized on-disk directory the connector created.
+    // Remove the service directory (state + logs).
     if let Some(home) = connector_home() {
-        let service_dir = home.join(safe_name(&name));
+        let service_dir = home.join(&name);
         if service_dir.is_dir() {
             fs::remove_dir_all(&service_dir).map_err(|e| e.to_string())?;
         }
     }
 
-    // Optionally delete the config file — but only within ~/.cheers/, never an
-    // arbitrary path a stale daemon.json might reference.
-    if delete_config {
-        if let Some(cfg) = config_path {
-            let under_cheers = cfg
-                .canonicalize()
-                .ok()
-                .zip(dirs::home_dir().map(|h| h.join(".cheers")))
-                .map(|(c, base)| c.starts_with(&base))
-                .unwrap_or(false);
-            if under_cheers {
-                let _ = fs::remove_file(&cfg);
-            }
+    // Config handling — only paths under ~/.cheers/ (already filtered).
+    // delete_config: remove the file. keep: rename to *.toml.kept so the orphan
+    // scan (which matches cheers-daemon.<name>.toml exactly) no longer lists it.
+    for cfg in configs {
+        if delete_config {
+            let _ = fs::remove_file(&cfg);
+        } else if cfg.exists() {
+            let kept = cfg.with_extension("toml.kept");
+            let _ = fs::rename(&cfg, &kept);
         }
     }
     Ok(())
@@ -1959,6 +2246,10 @@ mod tests {
             Some("@agentclientprotocol/claude-agent-acp")
         );
         assert_eq!(npm_package_of(""), None);
+        assert!(is_safe_npm_spec("@google/gemini-cli@0.52.0"));
+        assert!(!is_safe_npm_spec("evil; rm -rf /"));
+        assert!(is_safe_uv_spec("fast-agent-acp==0.9.22"));
+        assert!(!is_safe_uv_spec("evil$(rm)"));
     }
 
     // `workspace_cwd_allowed` is written pure (no direct I/O): `~` expansion and
@@ -2015,5 +2306,31 @@ mod tests {
             Some("   ".into()),
             vec!["/root".into()]
         ));
+    }
+
+    #[test]
+    fn path_under_cheers_logical_prefix() {
+        let home = dirs::home_dir().expect("home");
+        let inside = home.join(".cheers/cheers-daemon.bot.toml");
+        let outside = home.join("elsewhere/config.toml");
+        assert!(path_under_cheers(&inside));
+        assert!(!path_under_cheers(&outside));
+        assert!(!path_under_cheers(Path::new("/tmp/not-cheers.toml")));
+    }
+
+    #[test]
+    fn keep_config_rename_escapes_orphan_scan_pattern() {
+        // Orphan scan matches cheers-daemon.<name>.toml exactly; *.toml.kept must not.
+        let live = PathBuf::from("/Users/u/.cheers/cheers-daemon.claude.toml");
+        let kept = live.with_extension("toml.kept");
+        assert_eq!(
+            kept.file_name().and_then(|n| n.to_str()),
+            Some("cheers-daemon.claude.toml.kept")
+        );
+        let file = kept.file_name().and_then(|n| n.to_str()).unwrap();
+        assert!(file
+            .strip_prefix("cheers-daemon.")
+            .and_then(|n| n.strip_suffix(".toml"))
+            .is_none());
     }
 }

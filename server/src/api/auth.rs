@@ -46,6 +46,10 @@ pub struct LoginRequest {
     pub device_name: Option<String>,
     #[serde(default)]
     pub remember_device: bool,
+    /// Native clients present a previously issued trusted-device secret here
+    /// (web uses the `cheers_trusted_device` cookie instead).
+    #[serde(default)]
+    pub trusted_device: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -76,6 +80,10 @@ pub struct LoginResponse {
     pub refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub csrf_token: Option<String>,
+    /// Native clients persist this (Keychain) and present it on later logins so
+    /// Apple/Google/password can skip 2FA the same way the web cookie does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trusted_device: Option<String>,
 }
 
 fn client_type(value: Option<&str>) -> Result<auth_sessions::ClientType, AppError> {
@@ -104,6 +112,7 @@ pub(crate) fn session_response(
         // native clients receive it through their Keychain-facing network layer.
         refresh_token: (client != auth_sessions::ClientType::Web).then_some(session.refresh_token),
         csrf_token: (client != auth_sessions::ClientType::Web).then_some(session.csrf_token),
+        trusted_device: None,
     })
 }
 
@@ -137,12 +146,9 @@ pub async fn login(
 
     let client = client_type(body.client.as_deref())?;
     let remember_device = body.remember_device;
-    let trusted = auth_sessions::trusted_device_is_valid(
-        &state.db,
-        &user.id,
-        parse_cookie(&headers, "cheers_trusted_device").as_deref(),
-    )
-    .await?;
+    let presented = presented_trusted_device(&headers, body.trusted_device.as_deref());
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, &user.id, presented.as_deref()).await?;
     let tf_status = two_factor::status(&state.db, &user.id).await?;
 
     if tf_status.enabled && !trusted {
@@ -174,6 +180,7 @@ pub async fn login(
             role: None,
             refresh_token: None,
             csrf_token: None,
+            trusted_device: None,
         })
         .into_response());
     }
@@ -188,26 +195,40 @@ pub async fn login(
     let session_id = session.session_id.clone();
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let body = session_response(&user, session, client)?;
-    let mut response = if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(body).into_response()
-    };
+    let device_name = body.device_name.clone();
+    let mut login_body = session_response(&user, session, client)?;
     if remember_device {
-        let trusted =
-            auth_sessions::issue_trusted_device(&state.db, &user.id, &session_id, None).await?;
+        let trusted = auth_sessions::issue_trusted_device(
+            &state.db,
+            &user.id,
+            &session_id,
+            device_name.as_deref(),
+        )
+        .await?;
+        if client != auth_sessions::ClientType::Web {
+            login_body.trusted_device = Some(trusted.clone());
+        }
+        let mut response = if client == auth_sessions::ClientType::Web {
+            response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
+        } else {
+            Json(login_body).into_response()
+        };
         response.headers_mut().append(
             axum::http::header::SET_COOKIE,
             auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
                 .parse()
                 .expect("valid cookie header"),
         );
+        return Ok(response);
     }
-    Ok(response)
+    Ok(if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(login_body).into_response()
+    })
 }
 
-fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+pub(crate) fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(axum::http::header::COOKIE)?
         .to_str()
@@ -217,6 +238,17 @@ fn parse_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
             let (key, value) = part.trim().split_once('=')?;
             (key == name).then(|| value.to_string())
         })
+}
+
+/// Prefer an explicitly presented native credential; fall back to the web cookie.
+pub(crate) fn presented_trusted_device(
+    headers: &HeaderMap,
+    body_value: Option<&str>,
+) -> Option<String> {
+    if let Some(value) = body_value.map(str::trim).filter(|value| !value.is_empty()) {
+        return Some(value.to_string());
+    }
+    parse_cookie(headers, "cheers_trusted_device")
 }
 
 fn auth_cookie(name: &str, value: &str, http_only: bool, max_age: i64) -> String {
@@ -686,6 +718,7 @@ pub async fn refresh(
         role: Some(rotated.user.role.clone()),
         refresh_token: (!is_web).then_some(rotated.refresh_token.clone()),
         csrf_token: (!is_web).then_some(rotated.csrf_token.clone().unwrap_or_default()),
+        trusted_device: None,
     };
     Ok(if is_web {
         response_with_session_cookies(
@@ -1073,12 +1106,7 @@ pub async fn verify_two_factor_login(
     let session_id = session.session_id.clone();
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let body = session_response(&user, session, client)?;
-    let mut response = if client == auth_sessions::ClientType::Web {
-        response_with_session_cookies(body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(body).into_response()
-    };
+    let mut login_body = session_response(&user, session, client)?;
     if remember_device {
         let trusted = auth_sessions::issue_trusted_device(
             &state.db,
@@ -1087,14 +1115,27 @@ pub async fn verify_two_factor_login(
             device_name.as_deref(),
         )
         .await?;
+        if client != auth_sessions::ClientType::Web {
+            login_body.trusted_device = Some(trusted.clone());
+        }
+        let mut response = if client == auth_sessions::ClientType::Web {
+            response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
+        } else {
+            Json(login_body).into_response()
+        };
         response.headers_mut().append(
             axum::http::header::SET_COOKIE,
             auth_cookie("cheers_trusted_device", &trusted, true, 30 * 24 * 60 * 60)
                 .parse()
                 .expect("valid cookie header"),
         );
+        return Ok(response);
     }
-    Ok(response)
+    Ok(if client == auth_sessions::ClientType::Web {
+        response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(login_body).into_response()
+    })
 }
 
 #[derive(Deserialize)]

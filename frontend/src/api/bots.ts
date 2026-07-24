@@ -5,8 +5,25 @@ export async function listBots(): Promise<BotItem[]> {
   return apiJson<BotItem[]>("/bots");
 }
 
-/** ACP agent kinds the onboarding presets know how to configure. */
-export type AgentType = "claude" | "codex" | "opencode" | "cursor" | "generic";
+/** ACP agent id for enrollment presets: legacy short names (`claude`/`codex`/
+ *  `opencode`/`generic`) or an ACP registry id (`gemini`, `cline`, …). */
+export type AgentType = string;
+
+export interface AcpAgentInfo {
+  id: string;
+  name: string;
+  version?: string;
+  package?: string;
+  args?: string[];
+  source: string;
+  installable: boolean;
+}
+
+/** Catalog of agents Cheers can quick-configure (builtins + registry npx). */
+export async function listAcpAgents(): Promise<AcpAgentInfo[]> {
+  const res = await apiJson<{ agents: AcpAgentInfo[] }>("/acp/agents");
+  return res.agents ?? [];
+}
 
 export interface CreateBotInput {
   username: string;

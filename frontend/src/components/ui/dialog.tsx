@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -10,6 +11,13 @@ import { cn } from "@/lib/cn";
 //    explicit `ariaLabel` when title is omitted) so screen readers announce it.
 //  - Focus is trapped inside while open and returned to the invoking element on close,
 //    so keyboard and screen-reader users can't wander into the inert background.
+//
+// Portal: always mount on document.body. Settings / Friends / similar pages scroll
+// inside an overflow-y-auto ancestor that also sets -webkit-overflow-scrolling:touch;
+// in WKWebView (Tauri desktop) that makes position:fixed resolve against the scroller,
+// so a Dialog rendered in-tree opens off-screen after you've scrolled — the delete
+// confirm on Connector looked like a dead button. Portalling matches DESIGN.md §2.4
+// ("escape a transform/overflow ancestor → portal to document.body").
 //
 // Responsive behavior:
 //  - Desktop (>= md): unchanged look — top-aligned centered card. The card additionally
@@ -96,9 +104,9 @@ export function Dialog({
     };
   }, [previouslyFocused]);
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-24 max-md:items-end max-md:pt-0"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 pt-24 max-md:items-end max-md:pt-0"
       onClick={onClose}
     >
       <div
@@ -125,6 +133,7 @@ export function Dialog({
               {title}
             </h2>
             <button
+              type="button"
               onClick={onClose}
               title="Close"
               aria-label="Close"
@@ -136,6 +145,7 @@ export function Dialog({
         )}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

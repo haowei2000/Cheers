@@ -93,6 +93,16 @@ struct LoginRequest: Encodable {
     let login: String
     let password: String
     let client: String = "ios"
+    var rememberDevice: Bool = true
+    var trustedDevice: String? = nil
+    var deviceName: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case login, password, client
+        case rememberDevice = "remember_device"
+        case trustedDevice = "trusted_device"
+        case deviceName = "device_name"
+    }
 }
 
 struct RefreshRequest: Encodable {
@@ -113,6 +123,7 @@ struct LoginResponse: Codable {
     let username: String?
     let displayName: String?
     let role: String?
+    let trustedDevice: String?
 
     var needsFactor: Bool {
         status == "factor_required" || requires2fa == true
@@ -131,6 +142,7 @@ struct LoginResponse: Codable {
         case username
         case displayName = "display_name"
         case role
+        case trustedDevice = "trusted_device"
     }
 }
 
@@ -195,14 +207,22 @@ struct OkFlagResponse: Decodable {
 }
 
 struct AuthCapabilities: Decodable {
+    struct Providers: Decodable {
+        let password: Bool?
+        let apple: Bool?
+        let google: Bool?
+    }
+
     let passwordLogin: Bool
     let signInWithApple: Bool
+    let signInWithGoogle: Bool
     let appleClientId: String?
     let selfServiceRegistration: Bool
     let passkey: Bool
     let passkeyRpId: String?
 
     enum CodingKeys: String, CodingKey {
+        case providers
         case passwordLogin = "password_login"
         case signInWithApple = "sign_in_with_apple"
         case appleClientId = "apple_client_id"
@@ -213,8 +233,14 @@ struct AuthCapabilities: Decodable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        passwordLogin = try values.decode(Bool.self, forKey: .passwordLogin)
-        signInWithApple = try values.decode(Bool.self, forKey: .signInWithApple)
+        let providers = try values.decodeIfPresent(Providers.self, forKey: .providers)
+        passwordLogin = try values.decodeIfPresent(Bool.self, forKey: .passwordLogin)
+            ?? providers?.password
+            ?? true
+        signInWithApple = try values.decodeIfPresent(Bool.self, forKey: .signInWithApple)
+            ?? providers?.apple
+            ?? false
+        signInWithGoogle = providers?.google ?? false
         appleClientId = try values.decodeIfPresent(String.self, forKey: .appleClientId)
         selfServiceRegistration = try values.decodeIfPresent(Bool.self, forKey: .selfServiceRegistration) ?? false
         passkey = try values.decodeIfPresent(Bool.self, forKey: .passkey) ?? false
@@ -364,6 +390,8 @@ struct AppleAuthorizationPayload: Encodable {
     let familyName: String?
     let inviteToken: String?
     let client: String = "ios"
+    var trustedDevice: String? = nil
+    var deviceName: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
@@ -373,6 +401,8 @@ struct AppleAuthorizationPayload: Encodable {
         case familyName = "family_name"
         case inviteToken = "invite_token"
         case client
+        case trustedDevice = "trusted_device"
+        case deviceName = "device_name"
     }
 }
 
@@ -437,6 +467,81 @@ struct BlockedUserDto: Decodable, Identifiable {
         case username
         case displayName = "display_name"
         case avatarURL = "avatar_url"
+    }
+}
+
+struct FriendDto: Decodable, Identifiable {
+    let friendshipId: String
+    let friendId: String
+    let status: String
+    let username: String
+    let displayName: String?
+    let avatarURL: String?
+    var id: String { friendshipId }
+
+    enum CodingKeys: String, CodingKey {
+        case friendshipId = "friendship_id"
+        case friendId = "friend_id"
+        case status
+        case username
+        case displayName = "display_name"
+        case avatarURL = "avatar_url"
+    }
+}
+
+struct FriendRequestDto: Decodable, Identifiable {
+    let friendshipId: String
+    let userId: String
+    let username: String
+    let displayName: String?
+    let avatarURL: String?
+    let direction: String?
+    var id: String { friendshipId }
+
+    enum CodingKeys: String, CodingKey {
+        case friendshipId = "friendship_id"
+        case userId = "user_id"
+        case username
+        case displayName = "display_name"
+        case avatarURL = "avatar_url"
+        case direction
+    }
+}
+
+struct UserSearchResultDto: Decodable, Identifiable {
+    let userId: String
+    let username: String
+    let displayName: String?
+    let avatarURL: String?
+    var id: String { userId }
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case username
+        case displayName = "display_name"
+        case avatarURL = "avatar_url"
+    }
+}
+
+struct FriendActionResultDto: Decodable {
+    let friendId: String
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case friendId = "friend_id"
+        case status
+    }
+}
+
+struct OAuthStartResponse: Decodable {
+    let transactionId: String
+    let authorizationURL: String
+    let expiresIn: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+        case authorizationURL = "authorization_url"
+        case expiresIn = "expires_in"
     }
 }
 

@@ -182,12 +182,7 @@ pub async fn factor_verify(
     let session_id = session.session_id.clone();
     let refresh = session.refresh_token.clone();
     let csrf = session.csrf_token.clone();
-    let login_body = auth::session_response(&user, session, client)?;
-    let mut response = if client == auth_sessions::ClientType::Web {
-        auth::response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
-    } else {
-        Json(login_body).into_response()
-    };
+    let mut login_body = auth::session_response(&user, session, client)?;
     if body.remember_device {
         let trusted = auth_sessions::issue_trusted_device(
             &state.db,
@@ -196,6 +191,14 @@ pub async fn factor_verify(
             device_name.as_deref(),
         )
         .await?;
+        if client != auth_sessions::ClientType::Web {
+            login_body.trusted_device = Some(trusted.clone());
+        }
+        let mut response = if client == auth_sessions::ClientType::Web {
+            auth::response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
+        } else {
+            Json(login_body).into_response()
+        };
         response.headers_mut().append(
             axum::http::header::SET_COOKIE,
             format!(
@@ -205,6 +208,11 @@ pub async fn factor_verify(
             .parse()
             .expect("valid cookie header"),
         );
+        return Ok(response);
     }
-    Ok(response)
+    Ok(if client == auth_sessions::ClientType::Web {
+        auth::response_with_session_cookies(login_body, Some(&refresh), Some(&csrf))
+    } else {
+        Json(login_body).into_response()
+    })
 }

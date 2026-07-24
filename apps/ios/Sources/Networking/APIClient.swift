@@ -195,13 +195,135 @@ struct APIClient: Sendable {
 
     // MARK: Auth
 
-    func login(login loginName: String, password: String) async throws -> LoginResponse {
+    func login(
+        login loginName: String,
+        password: String,
+        trustedDevice: String? = nil,
+        deviceName: String? = nil
+    ) async throws -> LoginResponse {
         // Unauthenticated call — token intentionally ignored by the server here.
-        try await postJSON("/auth/login", body: LoginRequest(login: loginName, password: password), as: LoginResponse.self)
+        try await postJSON(
+            "/auth/login",
+            body: LoginRequest(
+                login: loginName,
+                password: password,
+                trustedDevice: trustedDevice,
+                deviceName: deviceName
+            ),
+            as: LoginResponse.self
+        )
     }
 
-    func authCapabilities() async throws -> AuthCapabilities {
-        try await getJSON("/auth/capabilities", as: AuthCapabilities.self)
+    func authCapabilities(client: String = "ios") async throws -> AuthCapabilities {
+        try await getJSON(
+            "/auth/capabilities",
+            query: [URLQueryItem(name: "client", value: client)],
+            as: AuthCapabilities.self
+        )
+    }
+
+    func forgotPassword(email: String) async throws {
+        struct Body: Encodable { let email: String }
+        _ = try await postJSON("/auth/forgot-password", body: Body(email: email), as: OkResponse.self)
+    }
+
+    func resetPassword(email: String, code: String, newPassword: String) async throws {
+        struct Body: Encodable {
+            let email: String
+            let code: String
+            let newPassword: String
+            enum CodingKeys: String, CodingKey {
+                case email, code
+                case newPassword = "new_password"
+            }
+        }
+        _ = try await postJSON(
+            "/auth/reset-password",
+            body: Body(email: email, code: code, newPassword: newPassword),
+            as: OkResponse.self
+        )
+    }
+
+    func startOAuth(provider: String, client: String = "ios", deviceName: String?) async throws -> OAuthStartResponse {
+        struct Body: Encodable {
+            let client: String
+            let deviceName: String?
+            enum CodingKeys: String, CodingKey {
+                case client
+                case deviceName = "device_name"
+            }
+        }
+        return try await postJSON(
+            "/auth/oauth/\(provider)/start",
+            body: Body(client: client, deviceName: deviceName),
+            as: OAuthStartResponse.self
+        )
+    }
+
+    func exchangeOAuthHandoff(
+        code: String,
+        client: String = "ios",
+        trustedDevice: String? = nil
+    ) async throws -> LoginResponse {
+        struct Body: Encodable {
+            let code: String
+            let client: String
+            let trustedDevice: String?
+            enum CodingKeys: String, CodingKey {
+                case code, client
+                case trustedDevice = "trusted_device"
+            }
+        }
+        return try await postJSON(
+            "/auth/oauth/handoff",
+            body: Body(code: code, client: client, trustedDevice: trustedDevice),
+            as: LoginResponse.self
+        )
+    }
+
+    func listFriends() async throws -> [FriendDto] {
+        try await getJSON("/friends", as: [FriendDto].self)
+    }
+
+    func sendFriendRequest(friendId: String) async throws -> FriendActionResultDto {
+        try await postJSON(
+            "/friends",
+            body: ["friend_id": friendId],
+            as: FriendActionResultDto.self
+        )
+    }
+
+    func removeFriend(friendId: String) async throws {
+        let request = try makeRequest(
+            "DELETE",
+            "/friends",
+            query: [URLQueryItem(name: "friend_id", value: friendId)]
+        )
+        _ = try await send(request)
+    }
+
+    func listFriendRequests(direction: String) async throws -> [FriendRequestDto] {
+        try await getJSON(
+            "/friends/requests",
+            query: [URLQueryItem(name: "direction", value: direction)],
+            as: [FriendRequestDto].self
+        )
+    }
+
+    func acceptFriendRequest(userId: String) async throws -> FriendActionResultDto {
+        try await postJSON(
+            "/friends/requests/\(userId)/accept",
+            body: EmptyRequest(),
+            as: FriendActionResultDto.self
+        )
+    }
+
+    func searchUsers(query: String) async throws -> [UserSearchResultDto] {
+        try await getJSON(
+            "/friends/search",
+            query: [URLQueryItem(name: "q", value: query)],
+            as: [UserSearchResultDto].self
+        )
     }
 
     func requestRegisterCode(email: String, inviteToken: String?) async throws {
@@ -611,11 +733,29 @@ struct APIClient: Sendable {
             as: ResolveResponse.self
         )
     }
+
+    /// Acknowledge an ACP agent re-auth card (`retry` / `cancel`).
+    func ackAuthRequired(
+        channelId: String,
+        requestId: String,
+        action: String
+    ) async throws -> AuthAckResponse {
+        let encoded = requestId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? requestId
+        return try await postJSON(
+            "/channels/\(channelId)/auth-required/\(encoded)/ack",
+            body: AuthAckRequest(action: action),
+            as: AuthAckResponse.self
+        )
+    }
 }
 
 struct ResolvePermissionRequest: Encodable {
     let optionId: String
     enum CodingKeys: String, CodingKey { case optionId = "option_id" }
+}
+
+struct AuthAckRequest: Encodable {
+    let action: String
 }
 
 extension APIClient {

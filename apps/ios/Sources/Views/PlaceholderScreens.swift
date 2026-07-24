@@ -1,15 +1,7 @@
 import SwiftUI
 
-// Friends and Channel-info are simple secondary screens for v1. Notifications
-// and Fleet live in their own files (ActivityView.swift / AgentsView.swift).
-
-struct FriendsView: View {
-    var body: some View {
-        ScreenScaffold(title: "Friends") {
-            ComingSoon(icon: "person.2", text: "Friends & DMs")
-        }
-    }
-}
+// Channel-info is a simple secondary screen for v1. Friends lives in
+// FriendsView.swift; Notifications / Fleet in ActivityView / AgentsView.
 
 struct ChannelInfoView: View {
     let channel: ChannelDto

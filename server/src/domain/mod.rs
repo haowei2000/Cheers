@@ -1,6 +1,7 @@
 pub mod acp_capability;
 pub mod acp_events;
 pub mod acp_policy;
+pub mod acp_registry;
 pub mod acp_session_updates;
 pub mod approval;
 pub mod auth;

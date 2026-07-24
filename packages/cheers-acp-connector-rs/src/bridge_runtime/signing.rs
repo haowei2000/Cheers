@@ -102,6 +102,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         DataOutbound::Send { .. } => Some("send"),
         DataOutbound::ResourceReq { .. } => Some("resource_req"),
         DataOutbound::PermissionRequest { .. } => Some("permission_request"),
+        DataOutbound::AuthRequired { .. } => Some("auth_required"),
         DataOutbound::SessionUpdate { .. } => Some("session_update"),
         DataOutbound::Trace { .. } => Some("trace"),
         DataOutbound::Auth { .. }
@@ -111,6 +112,7 @@ pub(super) fn signed_frame_type(frame: &DataOutbound) -> Option<&'static str> {
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::WorkspaceEvent { .. }
         | DataOutbound::PermissionCancel { .. }
+        | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
         | DataOutbound::Unknown => None,
@@ -125,6 +127,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::Send { acp_capability, .. }
         | DataOutbound::ResourceReq { acp_capability, .. }
         | DataOutbound::PermissionRequest { acp_capability, .. }
+        | DataOutbound::AuthRequired { acp_capability, .. }
         | DataOutbound::SessionUpdate { acp_capability, .. }
         | DataOutbound::Trace { acp_capability, .. } => {
             *acp_capability = Some(envelope);
@@ -136,6 +139,7 @@ pub(super) fn attach_envelope(frame: &mut DataOutbound, envelope: AcpCapabilityE
         | DataOutbound::WorkspaceRes { .. }
         | DataOutbound::WorkspaceEvent { .. }
         | DataOutbound::PermissionCancel { .. }
+        | DataOutbound::AuthCancel { .. }
         | DataOutbound::AcpEvent { .. }
         | DataOutbound::FileUpload { .. }
         | DataOutbound::Unknown => {}

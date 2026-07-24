@@ -36,6 +36,77 @@ type SharedWriter = Arc<Mutex<Option<ChildStdin>>>;
 /// <https://agentclientprotocol.com/protocol/v1/initialization>
 pub(crate) const ACP_PROTOCOL_VERSION: u16 = 1;
 
+/// One advertised ACP auth method, parsed from an `initialize` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AuthMethodInfo {
+    pub id: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub link: Option<String>,
+    /// ACP method type when present (`agent` / `env_var` / `terminal`).
+    pub auth_type: Option<String>,
+}
+
+fn auth_method_id(m: &Value) -> Option<&str> {
+    m.get("id")
+        .or_else(|| m.get("methodId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+fn auth_method_info(m: &Value) -> Option<AuthMethodInfo> {
+    Some(AuthMethodInfo {
+        id: auth_method_id(m)?.to_string(),
+        name: m.get("name").and_then(Value::as_str).map(str::to_string),
+        description: m
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        link: m.get("link").and_then(Value::as_str).map(str::to_string),
+        auth_type: m.get("type").and_then(Value::as_str).map(str::to_string),
+    })
+}
+
+/// Pick an ACP `authenticate` method from the agent's initialize response.
+/// Uses the first advertised method (ACP agents typically list one; when several
+/// exist the agent orders them by preference). Wire shape uses `id` or `methodId`.
+pub(crate) fn preferred_auth_method(initialize: &Value) -> Option<AuthMethodInfo> {
+    let methods = initialize.get("authMethods")?.as_array()?;
+    methods.iter().find_map(auth_method_info)
+}
+
+pub(crate) fn preferred_auth_method_id(initialize: &Value) -> Option<String> {
+    preferred_auth_method(initialize).map(|m| m.id)
+}
+
+/// Heuristic: agent/session errors that mean "need (re)authenticate".
+pub(crate) fn looks_like_auth_error(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("authentication required")
+        || lower.contains("authenticate(")
+        || lower.contains("not logged in")
+        || lower.contains("auth required")
+        || lower.contains("please log in")
+        || lower.contains("please sign in")
+        || (lower.contains("unauthorized") && lower.contains("auth"))
+}
+
+pub(crate) fn auth_failure_hint(method: &AuthMethodInfo) -> String {
+    let label = method
+        .name
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(method.id.as_str());
+    match method.description.as_deref().filter(|s| !s.is_empty()) {
+        Some(desc) => format!("Complete agent auth ({label}): {desc}"),
+        None => format!(
+            "Complete agent auth ({label}), then restart the connector. \
+             EnvVar methods need the advertised keys in the connector env; \
+             Agent methods usually open a browser/CLI login when authenticate runs."
+        ),
+    }
+}
+
 /// The outcome of ACP protocol-version negotiation given the version the agent
 /// echoed in its `initialize` response.
 #[derive(Debug, PartialEq, Eq)]
@@ -59,24 +130,6 @@ fn negotiate_protocol_version(returned: Option<u64>) -> VersionDecision {
         Some(version) => VersionDecision::Unsupported(version),
         None => VersionDecision::Missing,
     }
-}
-
-/// Prefer `cursor_login` when advertised (Cursor CLI ACP); otherwise the first
-/// `authMethods[].id`. Empty / missing methods → no authenticate call (Claude /
-/// Codex / OpenCode typically don't require one after initialize).
-pub(crate) fn preferred_auth_method_id(initialize_response: &Value) -> Option<String> {
-    let methods = initialize_response.get("authMethods")?.as_array()?;
-    let ids: Vec<&str> = methods
-        .iter()
-        .filter_map(|m| m.get("id").and_then(Value::as_str))
-        .collect();
-    if ids.is_empty() {
-        return None;
-    }
-    if ids.iter().any(|id| *id == "cursor_login") {
-        return Some("cursor_login".into());
-    }
-    Some(ids[0].to_string())
 }
 
 /// The single source of truth for the `clientCapabilities` Cheers advertises in
@@ -608,25 +661,6 @@ impl RuntimeAdapter for AcpAdapter {
                 );
             }
         }
-        if let Some(method_id) = preferred_auth_method_id(&response) {
-            self.request(
-                "authenticate",
-                json!({ "methodId": method_id }),
-                self.request_timeout_ms(),
-            )
-            .await
-            .with_context(|| {
-                format!(
-                    "ACP authenticate with methodId={method_id} failed \
-                     (for Cursor: run `agent login` or set CURSOR_API_KEY)"
-                )
-            })?;
-            tracing::info!(
-                account = %self.account_id,
-                method_id = %method_id,
-                "authenticated ACP agent"
-            );
-        }
         tracing::info!(
             account = %self.account_id,
             agent = %response
@@ -636,6 +670,30 @@ impl RuntimeAdapter for AcpAdapter {
                 .unwrap_or("unknown"),
             "initialized ACP agent"
         );
+        // Agents that advertise authMethods require `authenticate` before
+        // session/new (ACP authentication). Skipping yields "Authentication required".
+        if let Some(method) = preferred_auth_method(&response) {
+            tracing::info!(
+                account = %self.account_id,
+                method_id = %method.id,
+                "ACP agent requires authenticate; calling it"
+            );
+            if let Err(e) = self
+                .request(
+                    "authenticate",
+                    json!({ "methodId": method.id }),
+                    self.request_timeout_ms(),
+                )
+                .await
+            {
+                let _ = self.stop().await;
+                let hint = auth_failure_hint(&method);
+                return Err(anyhow!(
+                    "ACP authenticate({}) failed: {e}. {hint}",
+                    method.id
+                ));
+            }
+        }
         self.initialize_response = Some(response.clone());
         Ok(response)
     }
@@ -655,6 +713,31 @@ impl RuntimeAdapter for AcpAdapter {
     async fn restart(&mut self) -> anyhow::Result<Value> {
         self.stop().await?;
         self.start().await
+    }
+
+    async fn authenticate(&mut self) -> anyhow::Result<()> {
+        let Some(init) = self.initialize_response.clone() else {
+            return Err(anyhow!("ACP authenticate called before initialize"));
+        };
+        let Some(method) = preferred_auth_method(&init) else {
+            return Ok(());
+        };
+        tracing::info!(
+            account = %self.account_id,
+            method_id = %method.id,
+            "ACP re-authenticate"
+        );
+        self.request(
+            "authenticate",
+            json!({ "methodId": method.id }),
+            self.request_timeout_ms(),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            let hint = auth_failure_hint(&method);
+            anyhow!("ACP authenticate({}) failed: {e}. {hint}", method.id)
+        })
     }
 
     async fn new_session(
@@ -1281,27 +1364,33 @@ mod tests {
     }
 
     #[test]
-    fn prefers_cursor_login_when_advertised() {
+    fn picks_first_advertised_auth_method() {
+        let init = json!({
+            "authMethods": [
+                { "id": "browser_login", "name": "Browser Login" },
+                { "id": "api_key", "name": "API Key" }
+            ]
+        });
         assert_eq!(
-            preferred_auth_method_id(&json!({
-                "authMethods": [
-                    { "id": "other" },
-                    { "id": "cursor_login", "name": "Cursor" }
-                ]
-            })),
-            Some("cursor_login".into())
-        );
-        assert_eq!(
-            preferred_auth_method_id(&json!({
-                "authMethods": [{ "id": "token" }]
-            })),
-            Some("token".into())
+            preferred_auth_method_id(&init).as_deref(),
+            Some("browser_login")
         );
         assert_eq!(preferred_auth_method_id(&json!({})), None);
         assert_eq!(
-            preferred_auth_method_id(&json!({ "authMethods": [] })),
-            None
+            preferred_auth_method_id(&json!({ "authMethods": [{ "methodId": "env" }] })).as_deref(),
+            Some("env")
         );
+        let with_desc = preferred_auth_method(&json!({
+            "authMethods": [{
+                "id": "login",
+                "name": "Sign in",
+                "description": "Open the vendor login page"
+            }]
+        }))
+        .expect("method");
+        assert_eq!(with_desc.id, "login");
+        assert_eq!(with_desc.name.as_deref(), Some("Sign in"));
+        assert!(auth_failure_hint(&with_desc).contains("Open the vendor login page"));
     }
 
     fn test_adapter(initialize_response: Option<Value>) -> AcpAdapter {

@@ -6,6 +6,8 @@ import {
   exchangeOAuthHandoff,
   getAuthCapabilities,
   login,
+  passkeyFactorOptions,
+  passkeyFactorVerify,
   sendTwoFactorEmail,
   startOAuth,
   verifyTwoFactorLogin,
@@ -14,6 +16,7 @@ import {
 } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
 import { onOAuthHandoff } from "@/lib/oauthCallback";
+import { getPasskey } from "@/lib/webauthn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -103,6 +106,7 @@ export default function LoginPage() {
       const res = await verifyTwoFactorLogin({
         transaction_id: transactionId,
         code: factorCode,
+        remember_device: true,
       });
       completeOutcome(res);
     } catch (err) {
@@ -131,9 +135,31 @@ export default function LoginPage() {
     }
   }
 
+  async function handlePasskey() {
+    if (!transactionId) return;
+    setLoading(true);
+    try {
+      const options = await passkeyFactorOptions(transactionId);
+      const credential = await getPasskey(options);
+      const res = await passkeyFactorVerify({
+        transaction_id: transactionId,
+        credential,
+        remember_device: true,
+      });
+      completeOutcome(res);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Passkey verification failed";
+      if (/cancel|abort/i.test(msg)) return;
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const factorHelp = (() => {
     const parts = ["authenticator app", "backup code"];
     if (allowedFactors.includes("email")) parts.push("email code");
+    if (allowedFactors.includes("passkey")) parts.push("Passkey");
     if (parts.length === 2) return `Enter a code from your ${parts[0]} or ${parts[1]}.`;
     return `Enter a code from your ${parts.slice(0, -1).join(", ")}, or ${parts[parts.length - 1]}.`;
   })();
@@ -197,6 +223,17 @@ export default function LoginPage() {
                 : emailHint
                   ? `Send code to ${emailHint}`
                   : "Send email code"}
+            </Button>
+          )}
+          {allowedFactors.includes("passkey") && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              disabled={loading}
+              onClick={() => void handlePasskey()}
+            >
+              Use Passkey
             </Button>
           )}
           <button

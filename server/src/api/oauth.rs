@@ -56,6 +56,8 @@ pub struct StartResponse {
 pub struct HandoffRequest {
     pub code: String,
     pub client: Option<String>,
+    #[serde(default)]
+    pub trusted_device: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -748,6 +750,7 @@ async fn persist_apple_refresh_token(
 
 pub async fn handoff(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<HandoffRequest>,
 ) -> Result<Response, AppError> {
     let requested_client = body
@@ -768,7 +771,11 @@ pub async fn handoff(
     ))?);
     let context: Value = row.try_get("context_json")?;
     let user = auth_domain::load_auth_user(&state.db, &user_id).await?;
-    if two_factor::status(&state.db, &user_id).await?.enabled {
+    let presented =
+        crate::api::auth::presented_trusted_device(&headers, body.trusted_device.as_deref());
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, &user_id, presented.as_deref()).await?;
+    if two_factor::status(&state.db, &user_id).await?.enabled && !trusted {
         let factor = auth_sessions::create_factor_transaction(
             &state.db,
             &user_id,

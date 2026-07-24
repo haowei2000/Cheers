@@ -43,6 +43,7 @@
 		CE000000000000000000021B /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011C /* AgentsView.swift */; };
 		CE000000000000000000040D /* BotOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000040C /* BotOnboardingView.swift */; };
 		CE000000000000000000021C /* ApprovalCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011D /* ApprovalCardView.swift */; };
+		CE0000000000000000000440 /* AuthRequiredCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000441 /* AuthRequiredCardView.swift */; };
 		CE000000000000000000021D /* ApprovalSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011E /* ApprovalSheetView.swift */; };
 		CE000000000000000000021E /* PushRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE000000000000000000011F /* PushRouter.swift */; };
 		CE000000000000000000021F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000120 /* Assets.xcassets */; };
@@ -56,6 +57,9 @@
 		CE0000000000000000000432 /* BotDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000424 /* BotDetailView.swift */; };
 		CE0000000000000000000433 /* PasskeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000425 /* PasskeyController.swift */; };
 		CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000426 /* PasskeySettingsView.swift */; };
+		CE0000000000000000000435 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000427 /* ForgotPasswordView.swift */; };
+		CE0000000000000000000436 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000428 /* FriendsView.swift */; };
+		CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000429 /* GoogleOAuthSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -95,6 +99,7 @@
 		CE000000000000000000011C /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
 		CE000000000000000000040C /* BotOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotOnboardingView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011D /* ApprovalCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalCardView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000441 /* AuthRequiredCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRequiredCardView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011E /* ApprovalSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSheetView.swift; sourceTree = "<group>"; };
 		CE000000000000000000011F /* PushRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRouter.swift; sourceTree = "<group>"; };
 		CE0000000000000000000120 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -110,6 +115,9 @@
 		CE0000000000000000000424 /* BotDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotDetailView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000425 /* PasskeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyController.swift; sourceTree = "<group>"; };
 		CE0000000000000000000426 /* PasskeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeySettingsView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000427 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000428 /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000429 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +172,7 @@
 				CE0000000000000000000103 /* KeychainStore.swift */,
 				CE000000000000000000011F /* PushRouter.swift */,
 				CE0000000000000000000425 /* PasskeyController.swift */,
+				CE0000000000000000000429 /* GoogleOAuthSession.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -208,6 +217,8 @@
 				CE000000000000000000010A /* AvatarView.swift */,
 				CE000000000000000000010B /* LoginView.swift */,
 				CE0000000000000000000421 /* RegisterView.swift */,
+				CE0000000000000000000427 /* ForgotPasswordView.swift */,
+				CE0000000000000000000428 /* FriendsView.swift */,
 				CE000000000000000000010C /* ConversationListView.swift */,
 				CE000000000000000000010D /* ChatView.swift */,
 				CE000000000000000000010E /* MessageBubble.swift */,
@@ -230,6 +241,7 @@
 				CE0000000000000000000426 /* PasskeySettingsView.swift */,
 				CE0000000000000000000423 /* NewWorkspaceSheet.swift */,
 				CE000000000000000000011D /* ApprovalCardView.swift */,
+				CE0000000000000000000441 /* AuthRequiredCardView.swift */,
 				CE000000000000000000011E /* ApprovalSheetView.swift */,
 				CE0000000000000000000413 /* VoiceMeetingStrip.swift */,
 				CE0000000000000000000415 /* TaskClaimConfirmationFooter.swift */,
@@ -327,6 +339,8 @@
 				CE000000000000000000020A /* AvatarView.swift in Sources */,
 				CE000000000000000000020B /* LoginView.swift in Sources */,
 				CE0000000000000000000420 /* RegisterView.swift in Sources */,
+				CE0000000000000000000435 /* ForgotPasswordView.swift in Sources */,
+				CE0000000000000000000436 /* FriendsView.swift in Sources */,
 				CE000000000000000000020C /* ConversationListView.swift in Sources */,
 				CE000000000000000000020D /* ChatView.swift in Sources */,
 				CE000000000000000000020E /* MessageBubble.swift in Sources */,
@@ -353,7 +367,9 @@
 				CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */,
 				CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */,
 				CE0000000000000000000433 /* PasskeyController.swift in Sources */,
+				CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */,
 				CE000000000000000000021C /* ApprovalCardView.swift in Sources */,
+				CE0000000000000000000440 /* AuthRequiredCardView.swift in Sources */,
 				CE000000000000000000021D /* ApprovalSheetView.swift in Sources */,
 				CE000000000000000000021E /* PushRouter.swift in Sources */,
 				CE0000000000000000000410 /* VoiceRoomModel.swift in Sources */,

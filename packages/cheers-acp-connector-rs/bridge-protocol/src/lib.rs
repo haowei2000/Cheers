@@ -378,6 +378,22 @@ pub struct PermissionResolution {
     pub extra: serde_json::Map<String, Value>,
 }
 
+/// Human acknowledgment of a forwarded `auth_required` card.
+/// `action` is `"retry"` (re-run ACP authenticate) or `"cancel"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthAcknowledgment {
+    pub request_id: String,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigStatusRejectedField {
     pub field: String,
@@ -585,6 +601,22 @@ pub enum ControlInbound {
         v: u32,
         #[serde(flatten)]
         resolution: PermissionResolution,
+    },
+    /// Human acknowledged an `auth_required` card — connector should retry
+    /// ACP `authenticate` (action=`retry`) or abort the waiting turn (`cancel`).
+    #[serde(rename = "auth_acknowledged")]
+    AuthAcknowledged {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        /// `"retry"` | `"cancel"`
+        action: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_by: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_at: Option<String>,
     },
     #[serde(rename = "pong")]
     Pong,
@@ -1067,6 +1099,47 @@ pub enum DataOutbound {
     /// so the channel card stops hanging "pending" forever.
     #[serde(rename = "permission_cancel")]
     PermissionCancel {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        request_id: String,
+        /// "timeout" | "cancelled"
+        reason: String,
+    },
+    /// ACP agent authentication expired / failed mid-turn. Surfaces as a channel
+    /// card so the bot owner can complete login (or set env credentials) and ack.
+    #[serde(rename = "auth_required")]
+    AuthRequired {
+        #[serde(default = "default_bridge_protocol_version")]
+        v: u32,
+        client_msg_id: String,
+        channel_id: String,
+        request_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        msg_id: Option<String>,
+        method_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link: Option<String>,
+        /// ACP auth method type when known (`agent` / `env_var` / `terminal`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auth_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_session_key: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acp_capability: Option<AcpCapabilityEnvelope>,
+    },
+    /// Finalize a previously-forwarded `auth_required` card locally (timeout).
+    #[serde(rename = "auth_cancel")]
+    AuthCancel {
         #[serde(default = "default_bridge_protocol_version")]
         v: u32,
         request_id: String,

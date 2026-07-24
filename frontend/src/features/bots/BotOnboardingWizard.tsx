@@ -30,7 +30,9 @@ import {
   mintEnrollmentCode,
   revokeEnrollmentCodes,
   getEnrollmentGuidance,
+  listAcpAgents,
   type AgentType,
+  type AcpAgentInfo,
   type ConnectorConfig,
   type ConnectorDiscovery,
   type EnrollmentCode,
@@ -60,12 +62,11 @@ curl -fsSL -o ~/.cheers/bin/cce-acp-connector \\
 chmod +x ~/.cheers/bin/cce-acp-connector
 export PATH="$HOME/.cheers/bin:$PATH"`;
 
-const AGENTS: { value: AgentType; label: string }[] = [
-  { value: "claude", label: "Claude" },
-  { value: "codex", label: "Codex" },
-  { value: "opencode", label: "OpenCode" },
-  { value: "cursor", label: "Cursor" },
-  { value: "generic", label: "Something else" },
+const FALLBACK_AGENTS: AcpAgentInfo[] = [
+  { id: "claude", name: "Claude", source: "builtin", installable: true },
+  { id: "codex", name: "Codex", source: "builtin", installable: true },
+  { id: "opencode", name: "OpenCode", source: "builtin", installable: true },
+  { id: "generic", name: "Something else", source: "builtin", installable: false },
 ];
 
 function CopyBtn({ value, label }: { value: string; label?: string }) {
@@ -174,6 +175,7 @@ export function BotOnboardingWizard({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [agentType, setAgentType] = useState<AgentType>("codex");
+  const [agentCatalog, setAgentCatalog] = useState<AcpAgentInfo[]>(FALLBACK_AGENTS);
   const [existingId, setExistingId] = useState(bots[0]?.bot_id ?? "");
   const [bot, setBot] = useState<BotItem | null>(null);
 
@@ -191,15 +193,23 @@ export function BotOnboardingWizard({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    listAcpAgents()
+      .then((agents) => {
+        if (agents.length) setAgentCatalog(agents);
+      })
+      .catch(() => {});
+  }, []);
+
   // Picking an existing bot adopts the agent it was registered for, so the
   // config and enrollment code the panels mint below match its actual adapter.
   useEffect(() => {
     if (pick !== "existing") return;
     const provider = bots.find((b) => b.bot_id === existingId)?.bridge_provider;
-    if (provider && AGENTS.some((a) => a.value === provider)) {
-      setAgentType(provider as AgentType);
+    if (provider && agentCatalog.some((a) => a.id === provider)) {
+      setAgentType(provider);
     }
-  }, [pick, existingId, bots]);
+  }, [pick, existingId, bots, agentCatalog]);
 
   /** The agent a bot is actually registered for. For a brand-new bot that's the
    * picker value; for an existing one it's whatever it was created with —
@@ -207,8 +217,8 @@ export function BotOnboardingWizard({
   function agentTypeFor(b: BotItem): AgentType {
     if (pick === "create") return agentType;
     const provider = b.bridge_provider;
-    return AGENTS.some((a) => a.value === provider)
-      ? (provider as AgentType)
+    return provider && agentCatalog.some((a) => a.id === provider)
+      ? provider
       : agentType;
   }
 
@@ -423,12 +433,13 @@ export function BotOnboardingWizard({
               </label>
               <select
                 value={agentType}
-                onChange={(e) => setAgentType(e.target.value as AgentType)}
+                onChange={(e) => setAgentType(e.target.value)}
                 className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {AGENTS.map((a) => (
-                  <option key={a.value} value={a.value}>
-                    {a.label}
+                {agentCatalog.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                    {a.source.startsWith("registry-") ? " (registry)" : ""}
                   </option>
                 ))}
               </select>
