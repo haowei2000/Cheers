@@ -349,13 +349,46 @@ pub async fn find_pending_by_request_id(
     db: &PgPool,
     request_id: &str,
 ) -> Result<Option<PendingPermission>, sqlx::Error> {
+    find_pending_by_request_id_of_type(db, request_id, "permission").await
+}
+
+/// Same as [`find_pending_by_request_id`] for an arbitrary interactive `msg_type`
+/// (e.g. `auth_required`).
+pub async fn find_pending_by_request_id_of_type(
+    db: &PgPool,
+    request_id: &str,
+    msg_type: &str,
+) -> Result<Option<PendingPermission>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
          FROM messages
-         WHERE msg_type = 'permission' AND content_data->>'request_id' = $1
+         WHERE msg_type = $2 AND content_data->>'request_id' = $1
          LIMIT 1",
     )
     .bind(request_id)
+    .bind(msg_type)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.and_then(row_to_pending))
+}
+
+/// Find a channel-scoped interactive card (`permission` / `auth_required`).
+pub async fn find_pending_of_type(
+    db: &PgPool,
+    channel_id: Uuid,
+    request_id: &str,
+    msg_type: &str,
+) -> Result<Option<PendingPermission>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT msg_id, channel_id, sender_id, channel_seq, content, content_data
+         FROM messages
+         WHERE channel_id = $1 AND msg_type = $3
+           AND content_data->>'request_id' = $2
+         LIMIT 1",
+    )
+    .bind(channel_id.to_string())
+    .bind(request_id)
+    .bind(msg_type)
     .fetch_optional(db)
     .await?;
     Ok(row.and_then(row_to_pending))

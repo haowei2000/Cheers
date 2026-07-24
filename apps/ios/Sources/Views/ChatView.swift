@@ -401,7 +401,7 @@ struct ChatView: View {
 
     // MARK: Item building
 
-    private static let systemTypes: Set<String> = ["routing", "announcement", "notification", "permission"]
+    private static let systemTypes: Set<String> = ["routing", "announcement", "notification", "permission", "auth_required"]
 
     private func rebuildMessageItems() {
         let interval = timelinePerformanceSignposter.beginInterval("BuildPresentationItems")
@@ -710,6 +710,8 @@ private struct ChatTimelineRow: View {
         case .system(let message):
             if message.msgType == "permission" {
                 ApprovalCardView(message: message)
+            } else if message.msgType == "auth_required" {
+                AuthRequiredCardView(message: message)
             } else {
                 SystemMessageView(message: message)
             }

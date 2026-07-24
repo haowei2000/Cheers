@@ -33,7 +33,9 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::acp_adapter::{default_client_capabilities, ACP_PROTOCOL_VERSION};
+use crate::acp_adapter::{
+    default_client_capabilities, preferred_auth_method, ACP_PROTOCOL_VERSION,
+};
 use crate::bridge::{ConfigStatusRejectedField, ConnectorControlSettings, PermissionOption};
 use crate::config::StdioAgentConfig;
 use crate::runtime_adapter::{
@@ -324,6 +326,32 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
                 .unwrap_or("unknown"),
             "initialized ACP agent (runtime transport)"
         );
+        if let Some(method) = preferred_auth_method(&response) {
+            tracing::info!(
+                account = %self.account_id,
+                method_id = %method.id,
+                "ACP agent requires authenticate; calling it"
+            );
+            if let Err(e) = self
+                .request(
+                    "authenticate",
+                    json!({ "methodId": method.id }),
+                    self.request_timeout_ms(),
+                )
+                .await
+            {
+                let _ = self.stop().await;
+                let hint = method
+                    .description
+                    .as_deref()
+                    .or(method.name.as_deref())
+                    .unwrap_or(method.id.as_str());
+                return Err(anyhow::anyhow!(
+                    "ACP authenticate({}) failed: {e}. Complete agent auth: {hint}",
+                    method.id
+                ));
+            }
+        }
         self.initialize_response = Some(response.clone());
         Ok(response)
     }
@@ -343,6 +371,38 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
     async fn restart(&mut self) -> anyhow::Result<Value> {
         self.stop().await?;
         self.start().await
+    }
+
+    async fn authenticate(&mut self) -> anyhow::Result<()> {
+        let Some(init) = self.initialize_response.clone() else {
+            return Err(anyhow::anyhow!("ACP authenticate called before initialize"));
+        };
+        let Some(method) = preferred_auth_method(&init) else {
+            return Ok(());
+        };
+        tracing::info!(
+            account = %self.account_id,
+            method_id = %method.id,
+            "ACP re-authenticate (runtime transport)"
+        );
+        self.request(
+            "authenticate",
+            json!({ "methodId": method.id }),
+            self.request_timeout_ms(),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            let hint = method
+                .description
+                .as_deref()
+                .or(method.name.as_deref())
+                .unwrap_or(method.id.as_str());
+            anyhow::anyhow!(
+                "ACP authenticate({}) failed: {e}. Complete agent auth: {hint}",
+                method.id
+            )
+        })
     }
 
     async fn new_session(
@@ -922,6 +982,13 @@ impl AcpAdapterKind {
         match self {
             Self::HandRolled(a) => a.apply_settings(settings).await,
             Self::Runtime(a) => a.apply_settings(settings).await,
+        }
+    }
+
+    pub async fn authenticate(&mut self) -> anyhow::Result<()> {
+        match self {
+            Self::HandRolled(a) => a.authenticate().await,
+            Self::Runtime(a) => a.authenticate().await,
         }
     }
 

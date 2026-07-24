@@ -911,6 +911,33 @@ async fn handle_data_frame(frame: &Value, state: &AppState, bot: &BotInfo, socke
         "permission_cancel" => {
             handle_permission_cancel_frame(frame, state, bot).await;
         }
+        // ── ACP agent auth expired / failed — channel card for human re-login ─
+        "auth_required" => {
+            let client_msg_id = client_msg_id(frame);
+            match handle_auth_required_frame(frame, state, bot).await {
+                Ok(message_id) => {
+                    if let Some(client_msg_id) = client_msg_id {
+                        let _ =
+                            ws_send(socket, &send_ack_ok(&client_msg_id, message_id, false)).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(bot_id = %bot.bot_id, err = e, "auth_required rejected");
+                    if let Some(client_msg_id) = client_msg_id {
+                        let _ = ws_send(
+                            socket,
+                            &send_ack_err(&client_msg_id, "AUTH_REQUIRED_FAILED", e),
+                        )
+                        .await;
+                    } else {
+                        let _ = ws_send(socket, &bridge_error("AUTH_REQUIRED_FAILED", e)).await;
+                    }
+                }
+            }
+        }
+        "auth_cancel" => {
+            handle_auth_cancel_frame(frame, state, bot).await;
+        }
         "session_update" => {
             if let Err(e) =
                 handle_session_update(&state.db, bot.bot_id, &bot.provider_account_id, frame).await
@@ -1746,6 +1773,220 @@ async fn handle_permission_request_frame(
     }
 
     Ok(msg_id)
+}
+
+/// Persist an ACP agent re-auth card and fan it out to the channel.
+async fn handle_auth_required_frame(
+    frame: &Value,
+    state: &AppState,
+    bot: &BotInfo,
+) -> Result<Uuid, &'static str> {
+    let channel_id: Uuid = frame
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .and_then(|raw| raw.parse().ok())
+        .ok_or("missing channel_id")?;
+    ensure_bot_channel_member(&state.db, bot.bot_id, channel_id).await?;
+
+    let method_id = frame
+        .get("method_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("missing method_id")?;
+    let name = frame
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Sign in required");
+    let description = frame
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("This agent needs you to complete authentication, then tap I've signed in.");
+    let content = if name == "Sign in required" {
+        description.to_string()
+    } else {
+        format!("{name}\n\n{description}")
+    };
+    let msg_id = Uuid::new_v4();
+    let content_data = json!({
+        "kind": "agent_bridge_auth_required",
+        "request_id": frame.get("request_id").cloned().unwrap_or(Value::Null),
+        "task_id": frame.get("task_id").cloned().unwrap_or(Value::Null),
+        "source_msg_id": frame.get("msg_id").cloned().unwrap_or(Value::Null),
+        "session_id": frame.get("session_id").cloned().unwrap_or(Value::Null),
+        "provider_session_key": frame.get("provider_session_key").cloned().unwrap_or(Value::Null),
+        "provider_session_id": frame.get("provider_session_id").cloned().unwrap_or(Value::Null),
+        "method_id": method_id,
+        "name": name,
+        "description": description,
+        "link": frame.get("link").cloned().unwrap_or(Value::Null),
+        "auth_type": frame.get("auth_type").cloned().unwrap_or(Value::Null),
+        "resolved": false,
+        "bot_owner_id": bot.owner_id.clone(),
+    });
+    let content_data_for_db = content_data.to_string();
+
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::gateway::log_db_err("auth_required: begin tx"))?;
+    let channel_seq =
+        channel_seq::allocate(&mut tx, channel_id)
+            .await
+            .map_err(crate::gateway::log_db_err(
+                "auth_required: allocate channel_seq",
+            ))?;
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, msg_type,
+             is_partial, content_data, file_ids, channel_seq)
+         VALUES ($1, $2, 'bot', $3, $4, 'auth_required', FALSE, $5::jsonb, '[]'::jsonb, $6)",
+    )
+    .bind(msg_id.to_string())
+    .bind(channel_id.to_string())
+    .bind(bot.bot_id.to_string())
+    .bind(&content)
+    .bind(&content_data_for_db)
+    .bind(channel_seq)
+    .execute(&mut *tx)
+    .await
+    .map_err(crate::gateway::log_db_err("auth_required: insert message"))?;
+    tx.commit()
+        .await
+        .map_err(crate::gateway::log_db_err("auth_required: commit tx"))?;
+
+    if let Some(owner) = bot
+        .owner_id
+        .as_deref()
+        .and_then(|raw| raw.parse::<Uuid>().ok())
+    {
+        crate::notify::push_to_user(
+            state,
+            owner,
+            crate::notify::PushKind::PermissionRequest {
+                channel_id,
+                request_id: frame
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                bot_name: bot
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| bot.username.clone()),
+                title: name.to_string(),
+                approve_option_id: Some("retry".to_string()),
+                reject_option_id: Some("cancel".to_string()),
+            },
+        );
+    }
+
+    let wire = WireFrame::channel(
+        channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": msg_id,
+            "channel_id": channel_id,
+            "channel_seq": channel_seq,
+            "sender_type": "bot",
+            "sender_id": bot.bot_id,
+            "content": content,
+            "msg_type": "auth_required",
+            "is_partial": false,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
+            "content_data": content_data,
+        }),
+    );
+    state.fanout.broadcast_channel(channel_id, wire).await;
+    Ok(msg_id)
+}
+
+async fn handle_auth_cancel_frame(frame: &Value, state: &AppState, bot: &BotInfo) {
+    let Some(request_id) = frame.get("request_id").and_then(Value::as_str) else {
+        return;
+    };
+    let reason = frame
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("timeout");
+    let pending = match crate::domain::approval::find_pending_by_request_id_of_type(
+        &state.db,
+        request_id,
+        "auth_required",
+    )
+    .await
+    {
+        Ok(Some(p)) => p,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, request_id, "auth_cancel: lookup failed");
+            return;
+        }
+    };
+    if pending.bot_id != bot.bot_id
+        || pending
+            .content_data
+            .get("resolved")
+            .and_then(Value::as_bool)
+            == Some(true)
+    {
+        return;
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    let patch = json!({
+        "resolved": true,
+        "resolved_kind": reason,
+        "resolved_at": now,
+        "chosen_action": "cancel",
+    });
+    if let Ok(true) = crate::domain::approval::patch_content_data_if_unresolved(
+        &state.db,
+        pending.msg_id,
+        patch.clone(),
+    )
+    .await
+    {
+        let mut content_data = pending.content_data.clone();
+        if let (Value::Object(target), Value::Object(src)) = (&mut content_data, &patch) {
+            for (k, v) in src {
+                target.insert(k.clone(), v.clone());
+            }
+        }
+        let wire = WireFrame::channel(
+            pending.channel_id,
+            "message",
+            json!({
+                "v": MESSAGE_SCHEMA_VERSION,
+                "msg_id": pending.msg_id,
+                "channel_id": pending.channel_id,
+                "channel_seq": pending.channel_seq,
+                "sender_type": "bot",
+                "sender_id": pending.bot_id,
+                "content": pending.content,
+                "msg_type": "auth_required",
+                "is_partial": false,
+                "reply_to_msg_id": null,
+                "file_ids": [],
+                "mentions": [],
+                "files": [],
+                "content_data": content_data,
+            }),
+        );
+        state
+            .fanout
+            .broadcast_channel(pending.channel_id, wire)
+            .await;
+        tracing::info!(request_id, reason, "auth_required card finalized");
+    }
 }
 
 /// Finalize a still-pending approval card after the connector reported the ACP

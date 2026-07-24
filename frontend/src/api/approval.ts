@@ -38,6 +38,18 @@ export async function resolvePermission(
   );
 }
 
+/** Acknowledge an ACP agent re-auth card (`retry` = I've signed in). */
+export async function ackAuthRequired(
+  channelId: string,
+  requestId: string,
+  action: "retry" | "cancel"
+): Promise<{ ok: boolean; delivered: boolean; action: string }> {
+  return apiJson(
+    `/channels/${channelId}/auth-required/${encodeURIComponent(requestId)}/ack`,
+    { method: "POST", body: JSON.stringify({ action }) }
+  );
+}
+
 /** Request approver rights for a pending permission (any channel member). */
 export async function requestApprovalAccess(
   channelId: string,

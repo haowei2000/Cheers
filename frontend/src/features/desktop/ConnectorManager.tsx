@@ -90,15 +90,31 @@ function isAgentType(v: string | undefined): v is AgentType {
   return !!v && v.trim().length > 0;
 }
 
-/** Is this agent's ACP adapter resolvable on the login PATH right now?
- *  Asked fresh (not from cached picker state) so an agent installed in another
- *  window counts. A failed detect returns true: onboarding then proceeds and
- *  `connector_write_onboarded` reports the real resolution error, which beats
- *  blocking setup because a probe broke. */
-async function adapterInstalled(agentType: AgentType): Promise<boolean> {
+/** Install any registry/builtin agent that is missing but installable.
+ *  Auth is handled generically by the connector via ACP `authenticate`
+ *  after initialize — not here. */
+async function ensureAdapterReady(agentType: AgentType): Promise<boolean> {
   try {
     const agents = await invokeDesktop<DetectedAgent[]>("detect_agents");
-    return agents.find((a) => a.key === agentType)?.installed ?? true;
+    const a = agents.find((x) => x.key === agentType);
+    if (!a) return true;
+    if (a.installed) return true;
+    if (!a.installable) {
+      toast.error(
+        `${a.label} isn't installed on this Mac and can't be auto-installed — install it manually, then try again`
+      );
+      return false;
+    }
+    const toastId = toast.loading(`Installing ${a.label}…`);
+    try {
+      await invokeDesktop("install_agent", { key: agentType });
+      toast.success(`${a.label} installed`, { id: toastId });
+      return true;
+    } catch (e) {
+      const detail = typeof e === "string" ? e : "install failed";
+      toast.error(detail, { id: toastId });
+      return false;
+    }
   } catch {
     return true;
   }
@@ -358,16 +374,12 @@ export function ConnectorManager() {
     setOnboarding(true);
     try {
       const redeemed = await redeemEnrollmentCode(code);
-      if (
-        isAgentType(redeemed.agent_type) &&
-        !(await adapterInstalled(redeemed.agent_type))
-      ) {
+      if (isAgentType(redeemed.agent_type) && !(await ensureAdapterReady(redeemed.agent_type))) {
         // The code is spent by now — redeeming is what rotates the token, and
         // it can't be undone. Say so plainly instead of a bare "not installed",
         // because the user's next step is to install and mint a fresh code.
         toast.error(
-          `This bot needs the ${redeemed.agent_type} adapter, which isn't installed on this Mac. ` +
-            `Install it, then ask for a new code — this one is now used up.`
+          `This bot needs the ${redeemed.agent_type} adapter. Install failed or isn't available — ask for a new code after installing.`
         );
         return;
       }
@@ -400,12 +412,9 @@ export function ConnectorManager() {
       // new bot token, which destructively replaces the old one and kicks any
       // live connector — so a client-side failure *after* that point strands
       // the bot: nobody holds the token the gateway now expects, and re-running
-      // onboarding is the only way back. Checking here keeps "adapter not
-      // installed" a side-effect-free error.
-      if (!(await adapterInstalled(agentType))) {
-        toast.error(
-          `${agentType} isn't installed on this Mac — pick it in the agent list above to install it, then try again`
-        );
+      // onboarding is the only way back. Auto-install installable agents here
+      // so "not installed" stays a side-effect-free error path.
+      if (!(await ensureAdapterReady(agentType))) {
         return;
       }
 

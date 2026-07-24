@@ -822,14 +822,6 @@ fn install_binary_agent(launch: &crate::acp_registry::BinaryLaunch) -> Result<St
     Ok("installed".to_string())
 }
 
-/// The npm package an agent's install command installs, if any
-/// ("npm install -g <pkg>" -> <pkg>). Non-npm or empty installers -> None.
-fn npm_package_of(install: &str) -> Option<&str> {
-    install
-        .strip_prefix("npm install -g ")
-        .and_then(|rest| rest.split_whitespace().next())
-}
-
 /// Registry package specs must be plain npm names (`@scope/pkg@1.2.3`) — no
 /// shell metacharacters — before we interpolate into a login-shell command.
 fn is_safe_npm_spec(spec: &str) -> bool {

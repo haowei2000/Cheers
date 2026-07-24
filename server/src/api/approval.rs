@@ -578,3 +578,107 @@ pub async fn revoke_approver(
     .await?;
     Ok(Json(json!({ "ok": true })))
 }
+
+// ── POST /channels/:cid/auth-required/:request_id/ack ───────────────────────
+
+#[derive(Deserialize)]
+pub struct AuthAckRequest {
+    /// `"retry"` (I've signed in — re-run authenticate) or `"cancel"`.
+    pub action: String,
+}
+
+/// Acknowledge an ACP agent re-auth card. Only the bot owner may ack.
+pub async fn ack_auth_required(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((channel_id, request_id)): Path<(Uuid, String)>,
+    Json(body): Json<AuthAckRequest>,
+) -> Result<Json<Value>, AppError> {
+    let uid = user_id(&claims)?;
+    let action = body.action.trim().to_ascii_lowercase();
+    if action != "retry" && action != "cancel" {
+        return Err(AppError::BadRequest(
+            "action must be 'retry' or 'cancel'".into(),
+        ));
+    }
+    let pending =
+        approval::find_pending_of_type(&state.db, channel_id, &request_id, "auth_required")
+            .await?
+            .ok_or(AppError::NotFound)?;
+    if ensure_member(&state, channel_id, uid, &claims.role)
+        .await
+        .is_err()
+        && approval::bot_owner(&state.db, pending.bot_id).await? != Some(uid)
+    {
+        return Err(AppError::Forbidden(
+            "not authorized to acknowledge this bot's auth request".into(),
+        ));
+    }
+    if approval::bot_owner(&state.db, pending.bot_id).await? != Some(uid) {
+        return Err(AppError::Forbidden(
+            "only the bot owner can acknowledge agent auth".into(),
+        ));
+    }
+    if pending
+        .content_data
+        .get("resolved")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Err(AppError::Conflict("auth request already resolved".into()));
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    let patch = json!({
+        "resolved": true,
+        "resolved_by": uid.to_string(),
+        "resolved_at": now,
+        "chosen_action": action,
+    });
+    if !approval::patch_content_data_if_unresolved(&state.db, pending.msg_id, patch.clone()).await?
+    {
+        return Err(AppError::Conflict("auth request already resolved".into()));
+    }
+
+    let frame = crate::gateway::bridge_frames::auth_acknowledged_frame(
+        &request_id,
+        &pending.msg_id.to_string(),
+        &action,
+        &uid.to_string(),
+        &now,
+    );
+    let delivered = state.bot_locator.dispatch_task(pending.bot_id, frame).await;
+
+    let mut content_data = pending.content_data.clone();
+    if let (Value::Object(target), Value::Object(src)) = (&mut content_data, &patch) {
+        for (k, v) in src {
+            target.insert(k.clone(), v.clone());
+        }
+    }
+    let wire = WireFrame::channel(
+        channel_id,
+        "message",
+        json!({
+            "v": MESSAGE_SCHEMA_VERSION,
+            "msg_id": pending.msg_id,
+            "channel_id": channel_id,
+            "channel_seq": pending.channel_seq,
+            "sender_type": "bot",
+            "sender_id": pending.bot_id,
+            "content": pending.content,
+            "msg_type": "auth_required",
+            "is_partial": false,
+            "reply_to_msg_id": null,
+            "file_ids": [],
+            "mentions": [],
+            "files": [],
+            "content_data": content_data,
+        }),
+    );
+    state.fanout.broadcast_channel(channel_id, wire).await;
+
+    Ok(Json(json!({
+        "ok": true,
+        "delivered": delivered,
+        "action": action,
+    })))
+}
