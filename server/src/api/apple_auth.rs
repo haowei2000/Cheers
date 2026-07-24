@@ -433,12 +433,8 @@ async fn login_response(
     trusted_credential: Option<&str>,
 ) -> Result<AppleLoginResult, AppError> {
     let user = auth::load_auth_user(&state.db, user_id).await?;
-    let trusted = auth_sessions::trusted_device_is_valid(
-        &state.db,
-        user_id,
-        trusted_credential,
-    )
-    .await?;
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, user_id, trusted_credential).await?;
     if two_factor::status(&state.db, user_id).await?.enabled && !trusted {
         let transaction =
             auth_sessions::create_factor_transaction(&state.db, user_id, client, device_name)
@@ -529,10 +525,8 @@ pub async fn authorize(
 ) -> Result<axum::response::Response, AppError> {
     let (apple, tokens) = verify_authorization(&state, &request).await?;
     let client = auth_sessions::ClientType::parse(request.client.as_deref())?;
-    let presented = crate::api::auth::presented_trusted_device(
-        &headers,
-        request.trusted_device.as_deref(),
-    );
+    let presented =
+        crate::api::auth::presented_trusted_device(&headers, request.trusted_device.as_deref());
     if let Some((identity_id, user_id)) = ensure_native_identity_for_existing(
         &state,
         &apple.sub,

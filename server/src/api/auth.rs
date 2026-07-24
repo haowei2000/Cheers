@@ -110,7 +110,7 @@ pub(crate) fn session_response(
         role: Some(user.role.clone()),
         // Browser callers receive this as HttpOnly cookies in the final handler;
         // native clients receive it through their Keychain-facing network layer.
-            refresh_token: (client != auth_sessions::ClientType::Web).then_some(session.refresh_token),
+        refresh_token: (client != auth_sessions::ClientType::Web).then_some(session.refresh_token),
         csrf_token: (client != auth_sessions::ClientType::Web).then_some(session.csrf_token),
         trusted_device: None,
     })
@@ -147,12 +147,8 @@ pub async fn login(
     let client = client_type(body.client.as_deref())?;
     let remember_device = body.remember_device;
     let presented = presented_trusted_device(&headers, body.trusted_device.as_deref());
-    let trusted = auth_sessions::trusted_device_is_valid(
-        &state.db,
-        &user.id,
-        presented.as_deref(),
-    )
-    .await?;
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, &user.id, presented.as_deref()).await?;
     let tf_status = two_factor::status(&state.db, &user.id).await?;
 
     if tf_status.enabled && !trusted {
