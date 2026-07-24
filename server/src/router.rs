@@ -485,10 +485,7 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             "/api/v1/enrollment/guidance",
             get(api::enrollment::guidance),
         )
-        .route(
-            "/api/v1/acp/agents",
-            get(api::enrollment::list_acp_agents),
-        )
+        .route("/api/v1/acp/agents", get(api::enrollment::list_acp_agents))
         .route(
             "/api/v1/bots/:bot_id/capability-delegations",
             get(api::acp_capability::list_delegations).post(api::acp_capability::create_delegation),

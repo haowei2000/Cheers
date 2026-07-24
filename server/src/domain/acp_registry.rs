@@ -15,8 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-const REGISTRY_URL: &str =
-    "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
+const REGISTRY_URL: &str = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -154,10 +153,7 @@ fn fetch_registry_blocking() -> Result<HashMap<String, NpxLaunch>, String> {
         .user_agent(concat!("cheers-gateway/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(REGISTRY_URL)
-        .send()
-        .map_err(|e| e.to_string())?;
+    let resp = client.get(REGISTRY_URL).send().map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("registry HTTP {}", resp.status()));
     }
@@ -198,7 +194,11 @@ pub fn npx_launch_for(agent_type: &str) -> Option<NpxLaunch> {
 /// All cached npx agents (triggers a fetch on cold cache). Sorted by name.
 pub fn list_npx_agents() -> Vec<NpxLaunch> {
     let mut list: Vec<_> = cache_get().into_values().collect();
-    list.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    list.sort_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    });
     list
 }
 

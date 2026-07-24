@@ -544,9 +544,11 @@ pub fn detect_agents() -> Vec<DetectedAgent> {
             "opencode" => 2,
             _ => 10,
         };
-        rank(&a.key)
-            .cmp(&rank(&b.key))
-            .then_with(|| a.label.to_ascii_lowercase().cmp(&b.label.to_ascii_lowercase()))
+        rank(&a.key).cmp(&rank(&b.key)).then_with(|| {
+            a.label
+                .to_ascii_lowercase()
+                .cmp(&b.label.to_ascii_lowercase())
+        })
     });
     out
 }
@@ -560,7 +562,10 @@ pub async fn install_agent(key: String) -> Result<String, String> {
         let launch = crate::acp_registry::npx_launch_by_cheers_key(&key)
             .ok_or_else(|| format!("unknown agent '{key}'"))?;
         if !is_safe_npm_spec(&launch.package) {
-            return Err(format!("refusing unsafe npm package spec: {}", launch.package));
+            return Err(format!(
+                "refusing unsafe npm package spec: {}",
+                launch.package
+            ));
         }
         // Pin to the registry version when present.
         format!("npm install -g {}", launch.package)
@@ -698,11 +703,7 @@ pub async fn check_agent_updates() -> Result<Vec<AgentUpdate>, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let mut entries: Vec<(String, String, String)> = Vec::new();
         // OpenCode
-        entries.push((
-            "opencode".into(),
-            "OpenCode".into(),
-            "opencode-ai".into(),
-        ));
+        entries.push(("opencode".into(), "OpenCode".into(), "opencode-ai".into()));
         for launch in crate::acp_registry::list_npx_agents() {
             let key = crate::acp_registry::cheers_key_for(&launch.id);
             let pkg = crate::acp_registry::package_name_unversioned(&launch.package);

@@ -7,9 +7,9 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod acp_registry;
 mod approval;
 mod audit;
-mod acp_registry;
 mod changes;
 mod connector;
 mod deeplink;
