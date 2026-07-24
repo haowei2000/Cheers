@@ -89,6 +89,8 @@ pub struct AppleAuthorizationRequest {
     pub client: Option<String>,
     #[serde(default)]
     pub device_name: Option<String>,
+    #[serde(default)]
+    pub trusted_device: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -428,9 +430,12 @@ async fn login_response(
     user_id: &str,
     client: auth_sessions::ClientType,
     device_name: Option<&str>,
+    trusted_credential: Option<&str>,
 ) -> Result<AppleLoginResult, AppError> {
     let user = auth::load_auth_user(&state.db, user_id).await?;
-    if two_factor::status(&state.db, user_id).await?.enabled {
+    let trusted =
+        auth_sessions::trusted_device_is_valid(&state.db, user_id, trusted_credential).await?;
+    if two_factor::status(&state.db, user_id).await?.enabled && !trusted {
         let transaction =
             auth_sessions::create_factor_transaction(&state.db, user_id, client, device_name)
                 .await?;
@@ -456,6 +461,7 @@ async fn login_response(
                 role: None,
                 refresh_token: None,
                 csrf_token: None,
+                trusted_device: None,
             },
             refresh_token: None,
             csrf_token: None,
@@ -481,6 +487,7 @@ async fn login_response(
                 .then_some(session.refresh_token.clone()),
             csrf_token: (client != auth_sessions::ClientType::Web)
                 .then_some(session.csrf_token.clone()),
+            trusted_device: None,
         },
         refresh_token: Some(session.refresh_token),
         csrf_token: Some(session.csrf_token),
@@ -513,10 +520,13 @@ fn apple_login_response(
 
 pub async fn authorize(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<AppleAuthorizationRequest>,
 ) -> Result<axum::response::Response, AppError> {
     let (apple, tokens) = verify_authorization(&state, &request).await?;
     let client = auth_sessions::ClientType::parse(request.client.as_deref())?;
+    let presented =
+        crate::api::auth::presented_trusted_device(&headers, request.trusted_device.as_deref());
     if let Some((identity_id, user_id)) = ensure_native_identity_for_existing(
         &state,
         &apple.sub,
@@ -528,8 +538,14 @@ pub async fn authorize(
     .await?
     {
         persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-        let result =
-            login_response(&state, &user_id, client, request.device_name.as_deref()).await?;
+        let result = login_response(
+            &state,
+            &user_id,
+            client,
+            request.device_name.as_deref(),
+            presented.as_deref(),
+        )
+        .await?;
         return Ok(apple_login_response(result, client));
     }
 
@@ -583,7 +599,14 @@ pub async fn authorize(
     .await?;
     tx.commit().await?;
     persist_refresh_token(&state, &identity_id, tokens.refresh_token.as_deref()).await?;
-    let result = login_response(&state, &user_id, client, request.device_name.as_deref()).await?;
+    let result = login_response(
+        &state,
+        &user_id,
+        client,
+        request.device_name.as_deref(),
+        presented.as_deref(),
+    )
+    .await?;
     Ok(apple_login_response(result, client))
 }
 

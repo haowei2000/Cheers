@@ -32,6 +32,8 @@ pub struct AuthOutcome {
     pub refresh_token: Option<String>,
     #[serde(skip_serializing)]
     pub csrf_token: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub trusted_device: Option<String>,
 }
 
 fn origin(raw: &str) -> Result<String, String> {
@@ -71,6 +73,7 @@ fn keychain_set(server: &str, secret: &str, value: &str) -> Result<(), String> {
 fn clear_keychain(server: &str) {
     let _ = delete_generic_password(KEYCHAIN_SERVICE, &account(server, "refresh"));
     let _ = delete_generic_password(KEYCHAIN_SERVICE, &account(server, "csrf"));
+    let _ = delete_generic_password(KEYCHAIN_SERVICE, &account(server, "trusted"));
 }
 
 fn persist_session(server: &str, outcome: &mut AuthOutcome) -> Result<(), String> {
@@ -79,6 +82,9 @@ fn persist_session(server: &str, outcome: &mut AuthOutcome) -> Result<(), String
     }
     if let Some(csrf) = outcome.csrf_token.take() {
         keychain_set(server, "csrf", &csrf)?;
+    }
+    if let Some(trusted) = outcome.trusted_device.take() {
+        keychain_set(server, "trusted", &trusted)?;
     }
     Ok(())
 }
@@ -119,12 +125,18 @@ pub async fn desktop_password_login(
     password: String,
 ) -> Result<AuthOutcome, String> {
     let server = origin(&server_base)?;
-    let mut outcome = post(
-        &server,
-        "/auth/login",
-        json!({"login": login, "password": password, "client": "macos", "device_name": "Mac"}),
-    )
-    .await?;
+    let trusted = keychain_get(&server, "trusted");
+    let mut body = json!({
+        "login": login,
+        "password": password,
+        "client": "macos",
+        "device_name": "Mac",
+        "remember_device": true,
+    });
+    if let Some(trusted) = trusted {
+        body["trusted_device"] = json!(trusted);
+    }
+    let mut outcome = post(&server, "/auth/login", body).await?;
     persist_session(&server, &mut outcome)?;
     Ok(outcome)
 }
@@ -134,12 +146,17 @@ pub async fn desktop_verify_factor(
     server_base: String,
     transaction_id: String,
     code: String,
+    remember_device: Option<bool>,
 ) -> Result<AuthOutcome, String> {
     let server = origin(&server_base)?;
     let mut outcome = post(
         &server,
         "/auth/2fa/login",
-        json!({"transaction_id": transaction_id, "code": code}),
+        json!({
+            "transaction_id": transaction_id,
+            "code": code,
+            "remember_device": remember_device.unwrap_or(true),
+        }),
     )
     .await?;
     persist_session(&server, &mut outcome)?;
@@ -152,12 +169,11 @@ pub async fn desktop_oauth_handoff(
     code: String,
 ) -> Result<AuthOutcome, String> {
     let server = origin(&server_base)?;
-    let mut outcome = post(
-        &server,
-        "/auth/oauth/handoff",
-        json!({"code": code, "client": "macos"}),
-    )
-    .await?;
+    let mut body = json!({"code": code, "client": "macos"});
+    if let Some(trusted) = keychain_get(&server, "trusted") {
+        body["trusted_device"] = json!(trusted);
+    }
+    let mut outcome = post(&server, "/auth/oauth/handoff", body).await?;
     persist_session(&server, &mut outcome)?;
     Ok(outcome)
 }

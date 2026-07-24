@@ -1,6 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 import CryptoKit
+import UIKit
 
 struct LoginView: View {
     @Environment(AppModel.self) private var app
@@ -16,11 +17,14 @@ struct LoginView: View {
     @State private var isBusy = false
     @State private var errorText: String?
     @State private var appleEnabled = false
+    @State private var googleEnabled = false
     @State private var capabilityLoaded = false
     @State private var registrationEnabled = false
     @State private var appleChallenge: AppleChallenge?
     @State private var showingRegistration = false
+    @State private var showingForgotPassword = false
     @State private var passkeyController = PasskeyController()
+    @State private var googleOAuth = GoogleOAuthSession()
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, username, password, factor }
@@ -49,6 +53,10 @@ struct LoginView: View {
                 openRegistration: registrationEnabled
             )
             .environment(app)
+        }
+        .sheet(isPresented: $showingForgotPassword) {
+            ForgotPasswordView(server: $server)
+                .environment(app)
         }
         .onAppear {
             server = app.serverURLString
@@ -133,12 +141,47 @@ struct LoginView: View {
             .disabled(!canSubmit || isBusy)
             .padding(.top, 4)
 
+            Button {
+                focusedField = nil
+                showingForgotPassword = true
+            } label: {
+                Text("Forgot password?")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(minHeight: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.accentHover)
+            .disabled(isBusy)
+
             HStack {
                 Rectangle().fill(Theme.border).frame(height: 1)
                 Text("or").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
                 Rectangle().fill(Theme.border).frame(height: 1)
             }
             .padding(.vertical, 2)
+
+            if googleEnabled {
+                Button(action: submitGoogle) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "g.circle.fill")
+                            .font(.system(size: 18))
+                        Text("Continue with Google")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
+                    .background(Theme.bgRaised)
+                    .foregroundStyle(Theme.textPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Theme.borderStrong, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+            }
 
             SignInWithAppleButton(.signIn) { request in
                 request.requestedScopes = [.fullName, .email]
@@ -465,14 +508,43 @@ struct LoginView: View {
         do {
             let (capabilities, challenge) = try await app.appleCapabilities(server: server)
             appleEnabled = capabilities.signInWithApple
+            googleEnabled = capabilities.signInWithGoogle
             registrationEnabled = capabilities.selfServiceRegistration
             appleChallenge = challenge
             capabilityLoaded = true
         } catch {
             appleEnabled = false
+            googleEnabled = false
             registrationEnabled = false
             appleChallenge = nil
             capabilityLoaded = true
+        }
+    }
+
+    private func submitGoogle() {
+        guard !isBusy else { return }
+        isBusy = true
+        errorText = nil
+        focusedField = nil
+        Task {
+            defer { isBusy = false }
+            do {
+                let authURL = try await app.startGoogleOAuth(
+                    server: server,
+                    deviceName: UIDevice.current.name
+                )
+                let callback = try await googleOAuth.authenticate(authorizationURL: authURL)
+                if let factor = try await app.completeGoogleOAuth(server: server, callbackURL: callback) {
+                    factorChallenge = factor
+                    factorCode = ""
+                    focusedField = .factor
+                }
+            } catch let oauthError as GoogleOAuthError {
+                if case .cancelled = oauthError { return }
+                errorText = oauthError.localizedDescription
+            } catch {
+                errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 
