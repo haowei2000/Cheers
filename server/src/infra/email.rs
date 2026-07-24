@@ -41,6 +41,19 @@ pub async fn send_password_reset_code(config: &Config, to_email: &str, code: &st
     .await;
 }
 
+/// Deliver a one-time code for the login 2FA step (password already verified).
+pub async fn send_login_2fa_code(config: &Config, to_email: &str, code: &str) {
+    deliver(
+        config,
+        to_email,
+        "Your Cheers sign-in code",
+        "Use this code to finish signing in to Cheers:",
+        code,
+        "login 2fa",
+    )
+    .await;
+}
+
 /// Send the code to `to_email`, preferring Brevo and falling back to log delivery so
 /// the flow still works in dev (or if the provider is briefly unreachable). `kind`
 /// is a short label for the logs (e.g. `registration`).

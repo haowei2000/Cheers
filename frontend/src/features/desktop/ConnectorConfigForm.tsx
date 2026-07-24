@@ -182,7 +182,13 @@ export function ConnectorConfigForm({
             value={agentKey}
             onPick={(key, cmdPath) => {
               setAgentKey(key);
-              if (cmdPath) patch({ adapter_command: cmdPath });
+              if (cmdPath) {
+                // Subcommand ACP agents (OpenCode / Cursor) need `acp` in args —
+                // matching the gateway connector_config presets.
+                const adapter_args =
+                  key === "opencode" || key === "cursor" ? ["acp"] : [];
+                patch({ adapter_command: cmdPath, adapter_args });
+              }
             }}
           />
         </Field>

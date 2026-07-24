@@ -27,6 +27,7 @@ pub mod trace;
 pub mod two_factor;
 pub mod usage_store;
 pub mod voice_config;
+pub mod webauthn;
 pub mod workbench_official;
 pub mod workbench_official_templates;
 pub mod workbench_plugins;

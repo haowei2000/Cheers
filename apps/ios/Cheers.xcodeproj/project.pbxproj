@@ -51,6 +51,11 @@
 		CE0000000000000000000414 /* TaskClaimConfirmationFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000415 /* TaskClaimConfirmationFooter.swift */; };
 		CE0000000000000000000416 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = CE0000000000000000000418 /* LiveKit */; };
 		CE0000000000000000000230 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000128 /* PrivacyInfo.xcprivacy */; };
+		CE0000000000000000000430 /* TwoFactorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000422 /* TwoFactorSettingsView.swift */; };
+		CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000423 /* NewWorkspaceSheet.swift */; };
+		CE0000000000000000000432 /* BotDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000424 /* BotDetailView.swift */; };
+		CE0000000000000000000433 /* PasskeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000425 /* PasskeyController.swift */; };
+		CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000426 /* PasskeySettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -100,6 +105,11 @@
 		CE0000000000000000000411 /* VoiceRoomModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRoomModel.swift; sourceTree = "<group>"; };
 		CE0000000000000000000413 /* VoiceMeetingStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMeetingStrip.swift; sourceTree = "<group>"; };
 		CE0000000000000000000415 /* TaskClaimConfirmationFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskClaimConfirmationFooter.swift; sourceTree = "<group>"; };
+		CE0000000000000000000422 /* TwoFactorSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TwoFactorSettingsView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000423 /* NewWorkspaceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewWorkspaceSheet.swift; sourceTree = "<group>"; };
+		CE0000000000000000000424 /* BotDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotDetailView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000425 /* PasskeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyController.swift; sourceTree = "<group>"; };
+		CE0000000000000000000426 /* PasskeySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeySettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +163,7 @@
 				CE0000000000000000000102 /* Theme.swift */,
 				CE0000000000000000000103 /* KeychainStore.swift */,
 				CE000000000000000000011F /* PushRouter.swift */,
+				CE0000000000000000000425 /* PasskeyController.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -214,6 +225,10 @@
 				CE000000000000000000011B /* ActivityView.swift */,
 				CE000000000000000000011C /* AgentsView.swift */,
 				CE000000000000000000040C /* BotOnboardingView.swift */,
+				CE0000000000000000000424 /* BotDetailView.swift */,
+				CE0000000000000000000422 /* TwoFactorSettingsView.swift */,
+				CE0000000000000000000426 /* PasskeySettingsView.swift */,
+				CE0000000000000000000423 /* NewWorkspaceSheet.swift */,
 				CE000000000000000000011D /* ApprovalCardView.swift */,
 				CE000000000000000000011E /* ApprovalSheetView.swift */,
 				CE0000000000000000000413 /* VoiceMeetingStrip.swift */,
@@ -333,6 +348,11 @@
 				CE000000000000000000021A /* ActivityView.swift in Sources */,
 				CE000000000000000000021B /* AgentsView.swift in Sources */,
 				CE000000000000000000040D /* BotOnboardingView.swift in Sources */,
+				CE0000000000000000000432 /* BotDetailView.swift in Sources */,
+				CE0000000000000000000430 /* TwoFactorSettingsView.swift in Sources */,
+				CE0000000000000000000434 /* PasskeySettingsView.swift in Sources */,
+				CE0000000000000000000431 /* NewWorkspaceSheet.swift in Sources */,
+				CE0000000000000000000433 /* PasskeyController.swift in Sources */,
 				CE000000000000000000021C /* ApprovalCardView.swift in Sources */,
 				CE000000000000000000021D /* ApprovalSheetView.swift in Sources */,
 				CE000000000000000000021E /* PushRouter.swift in Sources */,

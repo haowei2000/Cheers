@@ -112,6 +112,10 @@ async function toApiError(res: Response): Promise<ApiError> {
       }
     }
   }
+  // Older gateways answered unique violations with a bare "conflict".
+  if (res.status === 409 && (!detail || detail.toLowerCase() === "conflict")) {
+    detail = "That name is already taken — choose another, or use Existing bot";
+  }
   return new ApiError(detail || `Request failed (HTTP ${res.status})`, res.status);
 }
 

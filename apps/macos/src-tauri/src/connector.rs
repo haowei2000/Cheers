@@ -496,6 +496,14 @@ const KNOWN_AGENTS: &[(&str, &str, &str, &str)] = &[
         "opencode",
         "npm install -g opencode-ai",
     ),
+    // Cursor CLI ACP mode is `agent acp` (https://cursor.com/docs/cli/acp).
+    // Official installer puts `agent` on ~/.local/bin.
+    (
+        "cursor",
+        "Cursor",
+        "agent",
+        "curl https://cursor.com/install -fsS | bash",
+    ),
     // No ACP adapter exists for Gemini yet; empty command → never "installed"
     // (the plain `gemini` CLI is NOT an ACP adapter), shown as unavailable.
     ("gemini", "Gemini", "", ""),

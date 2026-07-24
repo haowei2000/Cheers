@@ -18,6 +18,7 @@ struct BotOnboardingView: View {
     @Environment(\.dismiss) private var dismiss
 
     let existingBots: [BotDto]
+    var preselectedBot: BotDto? = nil
     var onDone: () -> Void
 
     private enum Step { case choose, mode, connect }
@@ -75,6 +76,15 @@ struct BotOnboardingView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Close") { onDone(); dismiss() }
+                }
+            }
+            .onAppear {
+                if let preselectedBot {
+                    bot = preselectedBot
+                    existingId = preselectedBot.botId
+                    pickExisting = true
+                    agentType = preselectedBot.agentType
+                    step = .mode
                 }
             }
         }

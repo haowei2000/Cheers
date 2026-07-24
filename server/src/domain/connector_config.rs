@@ -103,6 +103,19 @@ fn preset_for(agent_type: &str) -> AgentPreset {
             allowed_config_options: &["model"],
             needs_edit: false,
         },
+        "cursor" => AgentPreset {
+            // Cursor CLI ACP mode is `agent acp` (stdio JSON-RPC). See
+            // https://cursor.com/docs/cli/acp — auth is `cursor_login` (pre-auth
+            // via `agent login` / CURSOR_API_KEY / CURSOR_AUTH_TOKEN).
+            command: "agent",
+            args: &["acp"],
+            env_allow: &["HOME", "PATH", "CURSOR_API_KEY", "CURSOR_AUTH_TOKEN"],
+            // Cursor advertises agent / plan / ask — default to full tool access.
+            permission_mode: Some("agent"),
+            allowed_modes: &["agent", "plan", "ask"],
+            allowed_config_options: &["model"],
+            needs_edit: false,
+        },
         _ => AgentPreset {
             command: "/path/to/your-acp-agent",
             args: &[],
@@ -209,7 +222,7 @@ pub fn overlay_model_state(
 pub struct RenderParams<'a> {
     /// Bot display/login name; sanitized into a TOML bare key.
     pub account_id: &'a str,
-    /// One of claude | codex | opencode | generic (anything else → generic).
+    /// One of claude | codex | opencode | cursor | generic (anything else → generic).
     pub agent_type: &'a str,
     /// Public WS base, e.g. `ws://localhost:30080` or `wss://host`. No trailing
     /// path — the control/data sub-paths are appended here.
@@ -544,6 +557,23 @@ mod tests {
         assert!(toml.contains(r#"args    = ["acp"]"#));
         assert!(!toml.contains("opencode-acp"));
         // A real resolvable command is not a placeholder needing a hand edit.
+        assert!(!toml.contains("PLACEHOLDER"));
+    }
+
+    /// Cursor CLI exposes ACP as `agent acp` (https://cursor.com/docs/cli/acp).
+    #[test]
+    fn renders_cursor_as_agent_acp_subcommand() {
+        let toml = render_toml(&RenderParams {
+            account_id: "Cursor",
+            agent_type: "cursor",
+            public_base: "wss://example.test",
+            token_ref: TokenRef::File("secrets/cursor.token".into()),
+        });
+        assert!(toml.contains(r#"command = "agent""#));
+        assert!(toml.contains(r#"args    = ["acp"]"#));
+        assert!(toml.contains(r#"permission_mode = "agent""#));
+        assert!(toml.contains("CURSOR_API_KEY"));
+        assert!(toml.contains(r#"allowed_modes        = ["agent", "plan", "ask"]"#));
         assert!(!toml.contains("PLACEHOLDER"));
     }
 

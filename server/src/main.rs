@@ -98,9 +98,25 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("push not configured (APNS_* or PUSH_RELAY_URL) — OS push disabled");
     }
 
+    let webauthn = match server::domain::webauthn::WebauthnService::from_config(&config) {
+        Ok(Some(service)) => {
+            tracing::info!(rp_id = %service.rp_id(), "WebAuthn / Passkeys enabled");
+            Some(Arc::new(service))
+        }
+        Ok(None) => {
+            tracing::info!("WebAuthn not configured (WEBAUTHN_RP_ID / WEBAUTHN_RP_ORIGIN unset)");
+            None
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "invalid WebAuthn configuration; Passkeys disabled");
+            None
+        }
+    };
+
     let state = AppState {
         db,
         config: config.clone(),
+        webauthn,
         s3,
         fanout,
         conn_manager,

@@ -153,10 +153,16 @@ pub async fn login(
             body.device_name.as_deref(),
         )
         .await?;
+        let allowed_factors = crate::domain::webauthn::allowed_login_factors(
+            &state.db,
+            state.webauthn.as_deref(),
+            &user.id,
+        )
+        .await?;
         return Ok(Json(LoginResponse {
             status: "factor_required".into(),
             transaction_id: Some(transaction.transaction_id),
-            allowed_factors: vec!["totp".into(), "recovery_code".into(), "passkey".into()],
+            allowed_factors,
             expires_in: Some(600),
             requires_2fa: true,
             two_factor_session_id: None,
@@ -751,6 +757,7 @@ pub async fn capabilities(
     };
     let google_enabled = state.config.google_auth.is_some()
         && (client != "web" || state.config.oauth_web_return_url.is_some());
+    let passkey_enabled = state.webauthn.is_some();
     Json(json!({
         "client": client,
         "providers": {
@@ -758,7 +765,8 @@ pub async fn capabilities(
             "apple": apple_enabled,
             "google": google_enabled,
         },
-        "passkey": false,
+        "passkey": passkey_enabled,
+        "passkey_rp_id": state.webauthn.as_ref().map(|w| w.rp_id()),
         "password_login": true,
         "sign_in_with_apple": apple_enabled,
         "apple_client_id": state.config.apple_auth.as_ref().and_then(|value| {
@@ -946,6 +954,22 @@ pub struct TwoFactorDisableRequest {
     pub code: String,
 }
 
+#[derive(Serialize)]
+pub struct TwoFactorStatusResponse {
+    pub enabled: bool,
+}
+
+/// GET /api/v1/auth/2fa/status — whether TOTP 2FA is currently enabled for the caller.
+pub async fn two_factor_status(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<TwoFactorStatusResponse>, AppError> {
+    let status = two_factor::status(&state.db, &claims.sub).await?;
+    Ok(Json(TwoFactorStatusResponse {
+        enabled: status.enabled,
+    }))
+}
+
 /// POST /api/v1/auth/2fa/setup — generate a TOTP secret for the caller.
 /// The secret is stored encrypted but not yet enabled; the caller must verify
 /// a code via `/auth/2fa/enable` to activate 2FA.
@@ -953,6 +977,12 @@ pub async fn setup_two_factor(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<TwoFactorSetupResponse>, AppError> {
+    let current = two_factor::status(&state.db, &claims.sub).await?;
+    if current.enabled {
+        return Err(AppError::BadRequest(
+            "2FA is already enabled; disable it before starting a new setup".into(),
+        ));
+    }
     let master_key = two_factor::master_key(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
@@ -1003,7 +1033,7 @@ pub async fn disable_two_factor(
 
 /// POST /api/v1/auth/2fa/login — complete login when 2FA is enabled.
 /// Consumes the intermediate session returned by `/auth/login` and issues a
-/// normal access token after the TOTP code or backup code is verified.
+/// normal access token after a TOTP code, backup code, or email OTP is verified.
 pub async fn verify_two_factor_login(
     State(state): State<AppState>,
     Json(body): Json<TwoFactorVerifyRequest>,
@@ -1019,7 +1049,14 @@ pub async fn verify_two_factor_login(
         state.config.secret_store_key.as_deref(),
         &state.config.jwt_private_key_pem,
     );
-    if !two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await? {
+    let totp_ok = two_factor::verify_login(&state.db, &user_id, &body.code, &master_key).await?;
+    let email_ok = if totp_ok {
+        false
+    } else {
+        crate::domain::webauthn::consume_login_2fa_email_code(&state.db, &user_id, &body.code)
+            .await?
+    };
+    if !totp_ok && !email_ok {
         auth_sessions::record_factor_failure(&state.db, transaction_id).await?;
         return Err(AppError::Unauthorized("invalid 2FA code".into()));
     }
@@ -1058,4 +1095,41 @@ pub async fn verify_two_factor_login(
         );
     }
     Ok(response)
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorEmailSendRequest {
+    pub transaction_id: String,
+}
+
+/// POST /api/v1/auth/2fa/email/send — mail a one-time code for the pending login
+/// factor challenge. Requires a valid `factor_required` transaction.
+pub async fn send_two_factor_email(
+    State(state): State<AppState>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+    headers: HeaderMap,
+    Json(body): Json<TwoFactorEmailSendRequest>,
+) -> Result<Json<Value>, AppError> {
+    let limiter = crate::infra::ratelimit::login_2fa_email_limiter();
+    let key = crate::infra::ratelimit::client_key(
+        &headers,
+        connect_info.map(|ConnectInfo(a)| a),
+        state.config.trust_proxy_headers,
+    );
+    if let Some(retry_after_secs) = limiter.retry_after(&key) {
+        return Err(AppError::TooManyRequests { retry_after_secs });
+    }
+    limiter.record_failure(&key);
+
+    let (user_id, _client, _device_name) =
+        auth_sessions::factor_transaction_user(&state.db, &body.transaction_id).await?;
+    let email = crate::domain::webauthn::user_email(&state.db, &user_id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("no email on this account".into()))?;
+    let code = crate::domain::webauthn::issue_login_2fa_email_code(&state.db, &email).await?;
+    crate::infra::email::send_login_2fa_code(&state.config, &email, &code).await;
+    Ok(Json(json!({
+        "ok": true,
+        "email_hint": crate::domain::webauthn::mask_email(&email),
+    })))
 }

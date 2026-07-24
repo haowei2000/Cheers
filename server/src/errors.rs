@@ -91,7 +91,19 @@ impl IntoResponse for AppError {
         let detail = match &self {
             Self::Db(e) if status == StatusCode::CONFLICT => {
                 tracing::debug!(error = %e, "unique-constraint conflict");
-                "conflict".to_string()
+                // Prefer a readable 4xx over a bare "conflict" — callers strip the
+                // `conflict:` thiserror prefix, so an empty payload would toast as
+                // literally just the word "conflict".
+                if let sqlx::Error::Database(ref de) = e {
+                    let constraint = de.constraint().unwrap_or("");
+                    if constraint.contains("username") {
+                        "username already taken".to_string()
+                    } else {
+                        "resource already exists".to_string()
+                    }
+                } else {
+                    "resource already exists".to_string()
+                }
             }
             Self::Db(e) => {
                 tracing::error!(error = %e, "database error");

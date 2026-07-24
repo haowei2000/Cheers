@@ -85,7 +85,7 @@ function fmtMem(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
-const AGENT_TYPES: readonly AgentType[] = ["claude", "codex", "opencode", "generic"];
+const AGENT_TYPES: readonly AgentType[] = ["claude", "codex", "opencode", "cursor", "generic"];
 
 /** Narrow a bot's stored `bridge_provider` (a free-form string server-side) to
  *  an agent type this UI can act on. */
@@ -1107,10 +1107,10 @@ function OnboardForm(props: {
         <AgentPicker
           value={p.agentType}
           onPick={(key) => {
-            // The picker offers claude/codex/opencode/gemini/custom; onboarding
+            // The picker offers claude/codex/opencode/cursor/gemini/custom; onboarding
             // needs one of the server's agent types (custom → generic).
             const t: AgentType =
-              key === "claude" || key === "codex" || key === "opencode"
+              key === "claude" || key === "codex" || key === "opencode" || key === "cursor"
                 ? key
                 : "generic";
             p.setAgentType(t);

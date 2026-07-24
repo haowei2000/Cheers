@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var isSigningOut = false
     @State private var showSignOutConfirm = false
     @State private var showChangePassword = false
+    @State private var showTwoFactor = false
+    @State private var showPasskeys = false
     @State private var showAppleAccount = false
     @State private var showBlockedUsers = false
     @State private var showAIConsents = false
@@ -36,6 +38,12 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showChangePassword) {
             ChangePasswordSheet()
+        }
+        .sheet(isPresented: $showTwoFactor) {
+            TwoFactorSettingsView()
+        }
+        .sheet(isPresented: $showPasskeys) {
+            PasskeySettingsView()
         }
         .sheet(isPresented: $showAppleAccount) { AppleAccountSheet() }
         .sheet(isPresented: $showBlockedUsers) { BlockedUsersSheet() }
@@ -130,11 +138,21 @@ struct SettingsView: View {
 
     private var accountSection: some View {
         Section {
-            Button {
-                showChangePassword = true
-            } label: {
+            Button { showChangePassword = true } label: {
                 Label("Change password", systemImage: "key")
                     .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.textBody)
+            }
+            .listRowBackground(Theme.bgSurface)
+
+            Button { showTwoFactor = true } label: {
+                Label("Two-factor authentication", systemImage: "lock.shield")
+                    .foregroundStyle(Theme.textBody)
+            }
+            .listRowBackground(Theme.bgSurface)
+
+            Button { showPasskeys = true } label: {
+                Label("Passkeys", systemImage: "person.badge.key")
                     .foregroundStyle(Theme.textBody)
             }
             .listRowBackground(Theme.bgSurface)
@@ -231,6 +249,8 @@ private struct ChangePasswordSheet: View {
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirmation = ""
+    @State private var twoFactorCode = ""
+    @State private var twoFactorEnabled = false
     @State private var isSaving = false
     @State private var errorText: String?
 
@@ -246,6 +266,17 @@ private struct ChangePasswordSheet: View {
                         .textContentType(.newPassword)
                 } footer: {
                     Text("Changing your password signs out other sessions. This device keeps its notification registration; other devices must sign in again.")
+                }
+
+                if twoFactorEnabled {
+                    Section {
+                        TextField("Authenticator or backup code", text: $twoFactorCode)
+                            .textContentType(.oneTimeCode)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } footer: {
+                        Text("Required because two-factor authentication is on.")
+                    }
                 }
 
                 if let errorText {
@@ -268,11 +299,15 @@ private struct ChangePasswordSheet: View {
                     .disabled(!canSave || isSaving)
                 }
             }
+            .task {
+                twoFactorEnabled = (try? await app.api?.twoFactorStatus().enabled) ?? false
+            }
         }
     }
 
     private var canSave: Bool {
-        !currentPassword.isEmpty && newPassword.count >= 12 && newPassword == confirmation
+        let factorOk = !twoFactorEnabled || !twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !currentPassword.isEmpty && newPassword.count >= 12 && newPassword == confirmation && factorOk
     }
 
     private func save() {
@@ -282,11 +317,16 @@ private struct ChangePasswordSheet: View {
         Task {
             defer { isSaving = false }
             do {
-                try await app.changePassword(currentPassword: currentPassword, newPassword: newPassword)
+                let code = twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                try await app.changePassword(
+                    currentPassword: currentPassword,
+                    newPassword: newPassword,
+                    twoFactorCode: twoFactorEnabled ? code : nil
+                )
                 dismiss()
             } catch let error as APIError {
-                if case .unauthorized = error { app.clearSession(); return }
-                errorText = error.errorDescription
+                // Wrong password / 2FA code is also 401 — don't force a local sign-out.
+                errorText = error.errorDescription ?? "Could not change password."
             } catch {
                 errorText = error.localizedDescription
             }

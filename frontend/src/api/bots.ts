@@ -6,7 +6,7 @@ export async function listBots(): Promise<BotItem[]> {
 }
 
 /** ACP agent kinds the onboarding presets know how to configure. */
-export type AgentType = "claude" | "codex" | "opencode" | "generic";
+export type AgentType = "claude" | "codex" | "opencode" | "cursor" | "generic";
 
 export interface CreateBotInput {
   username: string;

@@ -64,6 +64,7 @@ const AGENTS: { value: AgentType; label: string }[] = [
   { value: "claude", label: "Claude" },
   { value: "codex", label: "Codex" },
   { value: "opencode", label: "OpenCode" },
+  { value: "cursor", label: "Cursor" },
   { value: "generic", label: "Something else" },
 ];
 

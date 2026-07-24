@@ -9,6 +9,10 @@ struct LoginView: View {
     @State private var server = AppModel.defaultServerURL
     @State private var username = ""
     @State private var password = ""
+    @State private var factorCode = ""
+    @State private var factorChallenge: FactorChallenge?
+    @State private var emailHint: String?
+    @State private var emailSent = false
     @State private var isBusy = false
     @State private var errorText: String?
     @State private var appleEnabled = false
@@ -16,15 +20,20 @@ struct LoginView: View {
     @State private var registrationEnabled = false
     @State private var appleChallenge: AppleChallenge?
     @State private var showingRegistration = false
+    @State private var passkeyController = PasskeyController()
     @FocusState private var focusedField: Field?
 
-    private enum Field { case server, username, password }
+    private enum Field { case server, username, password, factor }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 header
-                card
+                if factorChallenge != nil {
+                    factorCard
+                } else {
+                    card
+                }
                 legalLinks
             }
             .padding(.horizontal, 24)
@@ -64,7 +73,7 @@ struct LoginView: View {
                 .tracking(-0.4)
                 .foregroundStyle(Theme.textPrimary)
 
-            Text("Sign in to your workspace")
+            Text(factorChallenge == nil ? "Sign in to your workspace" : "Two-factor verification")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textMuted)
         }
@@ -182,6 +191,138 @@ struct LoginView: View {
         )
     }
 
+    private var factorCard: some View {
+        VStack(spacing: 14) {
+            Text(factorHelpText)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Verification code")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                TextField(factorPlaceholder, text: $factorCode)
+                    .textContentType(.oneTimeCode)
+                    .keyboardType(.asciiCapable)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .focused($focusedField, equals: .factor)
+                    .submitLabel(.go)
+                    .onSubmit { submitFactor() }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Theme.bgRaised)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(focusedField == .factor ? Theme.accentHover.opacity(0.6) : Theme.borderStrong, lineWidth: 1)
+                    )
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button(action: submitFactor) {
+                HStack(spacing: 8) {
+                    if isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    }
+                    Text(isBusy ? "Verifying…" : "Verify")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(canSubmitFactor ? Theme.accent : Theme.accent.opacity(0.5))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .disabled(!canSubmitFactor || isBusy)
+
+            if factorChallenge?.allowedFactors.contains("email") == true {
+                Button(action: sendEmailCode) {
+                    Label(
+                        emailSent
+                            ? (emailHint.map { "Resend code to \($0)" } ?? "Resend email code")
+                            : (emailHint.map { "Send code to \($0)" } ?? "Send email code"),
+                        systemImage: "envelope"
+                    )
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accentHover)
+                .disabled(isBusy)
+            }
+
+            if factorChallenge?.allowedFactors.contains("passkey") == true {
+                Button(action: submitPasskey) {
+                    Label(isBusy ? "Waiting for Passkey…" : "Use Passkey", systemImage: "person.badge.key.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accentHover)
+                .disabled(isBusy)
+            }
+
+            Button("Back to sign in") {
+                factorChallenge = nil
+                factorCode = ""
+                emailHint = nil
+                emailSent = false
+                errorText = nil
+            }
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Theme.accentHover)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(.plain)
+            .disabled(isBusy)
+        }
+        .padding(24)
+        .background(Theme.bgSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Theme.border, lineWidth: 1)
+        )
+        .onAppear { focusedField = .factor }
+    }
+
+    private var factorHelpText: String {
+        let factors = factorChallenge?.allowedFactors ?? []
+        var parts: [String] = ["authenticator app", "backup code"]
+        if factors.contains("email") {
+            parts.append("email code")
+        }
+        if factors.contains("passkey") {
+            parts.append("Passkey")
+        }
+        let joined: String
+        switch parts.count {
+        case 0, 1:
+            joined = parts.first ?? "verification code"
+        case 2:
+            joined = "\(parts[0]) or \(parts[1])"
+        default:
+            joined = parts.dropLast().joined(separator: ", ") + ", or \(parts.last!)"
+        }
+        return "Enter a code from your \(joined)."
+    }
+
+    private var factorPlaceholder: String {
+        if factorChallenge?.allowedFactors.contains("email") == true {
+            return "123456 or email code"
+        }
+        return "123456"
+    }
+
     private func field(_ label: String, text: Binding<String>, placeholder: String, field: Field) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
@@ -208,6 +349,10 @@ struct LoginView: View {
             && !password.isEmpty
     }
 
+    private var canSubmitFactor: Bool {
+        !factorCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var legalLinks: some View {
         VStack(spacing: 6) {
             Link("Privacy Policy", destination: AppModel.privacyPolicyURL)
@@ -225,7 +370,89 @@ struct LoginView: View {
         Task {
             defer { isBusy = false }
             do {
-                try await app.login(server: server, login: username, password: password)
+                if let challenge = try await app.login(server: server, login: username, password: password) {
+                    factorChallenge = challenge
+                    factorCode = ""
+                    emailHint = nil
+                    emailSent = false
+                    focusedField = .factor
+                }
+            } catch {
+                errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func submitFactor() {
+        guard let challenge = factorChallenge, canSubmitFactor, !isBusy else { return }
+        errorText = nil
+        isBusy = true
+        Task {
+            defer { isBusy = false }
+            do {
+                try await app.completeTwoFactorLogin(
+                    server: server,
+                    transactionId: challenge.transactionId,
+                    code: factorCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            } catch {
+                errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func sendEmailCode() {
+        guard let challenge = factorChallenge, !isBusy else { return }
+        errorText = nil
+        isBusy = true
+        Task {
+            defer { isBusy = false }
+            do {
+                guard let base = APIClient.normalizeBaseURL(server) else {
+                    throw APIError.invalidBaseURL
+                }
+                let client = APIClient(baseURL: base, token: nil)
+                let result = try await client.sendTwoFactorEmail(transactionId: challenge.transactionId)
+                emailHint = result.emailHint
+                emailSent = true
+                focusedField = .factor
+            } catch {
+                errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func submitPasskey() {
+        guard let challenge = factorChallenge, !isBusy else { return }
+        errorText = nil
+        isBusy = true
+        Task {
+            defer { isBusy = false }
+            do {
+                guard let base = APIClient.normalizeBaseURL(server) else {
+                    throw APIError.invalidBaseURL
+                }
+                let client = APIClient(baseURL: base, token: nil)
+                let options = try await client.passkeyFactorOptions(transactionId: challenge.transactionId)
+                let rpId = options.rpId ?? options.publicKey.rpId ?? ""
+                guard !rpId.isEmpty else { throw PasskeyError.invalidChallenge }
+                let challengeData = try PasskeyCodec.decodeBase64URL(options.publicKey.challenge)
+                let allowed = try (options.publicKey.allowCredentials ?? []).map {
+                    try PasskeyCodec.decodeBase64URL($0.id)
+                }
+                let assertion = try await passkeyController.assert(
+                    rpId: rpId,
+                    challenge: challengeData,
+                    allowedCredentialIds: allowed
+                )
+                let credential = PasskeyCodec.assertionCredentialJSON(assertion)
+                try await app.completeTwoFactorPasskeyLogin(
+                    server: server,
+                    transactionId: challenge.transactionId,
+                    credential: credential
+                )
+            } catch PasskeyError.cancelled {
+                // User dismissed Face ID / passkey sheet.
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
             }
@@ -282,7 +509,11 @@ struct LoginView: View {
             Task {
                 defer { isBusy = false }
                 do {
-                    try await app.loginWithApple(server: server, payload: payload)
+                    if let factor = try await app.loginWithApple(server: server, payload: payload) {
+                        factorChallenge = factor
+                        factorCode = ""
+                        focusedField = .factor
+                    }
                 } catch {
                     errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
                     await loadAppleCapability()

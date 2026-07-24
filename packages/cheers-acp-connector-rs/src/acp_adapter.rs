@@ -61,6 +61,24 @@ fn negotiate_protocol_version(returned: Option<u64>) -> VersionDecision {
     }
 }
 
+/// Prefer `cursor_login` when advertised (Cursor CLI ACP); otherwise the first
+/// `authMethods[].id`. Empty / missing methods → no authenticate call (Claude /
+/// Codex / OpenCode typically don't require one after initialize).
+pub(crate) fn preferred_auth_method_id(initialize_response: &Value) -> Option<String> {
+    let methods = initialize_response.get("authMethods")?.as_array()?;
+    let ids: Vec<&str> = methods
+        .iter()
+        .filter_map(|m| m.get("id").and_then(Value::as_str))
+        .collect();
+    if ids.is_empty() {
+        return None;
+    }
+    if ids.iter().any(|id| *id == "cursor_login") {
+        return Some("cursor_login".into());
+    }
+    Some(ids[0].to_string())
+}
+
 /// The single source of truth for the `clientCapabilities` Cheers advertises in
 /// `initialize`. Cheers is a headless relay: the only agent→client method it
 /// serves is `session/request_permission` (see `peer_method_supported`), so
@@ -589,6 +607,25 @@ impl RuntimeAdapter for AcpAdapter {
                      {ACP_PROTOCOL_VERSION} (spec requires the agent to echo it)"
                 );
             }
+        }
+        if let Some(method_id) = preferred_auth_method_id(&response) {
+            self.request(
+                "authenticate",
+                json!({ "methodId": method_id }),
+                self.request_timeout_ms(),
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "ACP authenticate with methodId={method_id} failed \
+                     (for Cursor: run `agent login` or set CURSOR_API_KEY)"
+                )
+            })?;
+            tracing::info!(
+                account = %self.account_id,
+                method_id = %method_id,
+                "authenticated ACP agent"
+            );
         }
         tracing::info!(
             account = %self.account_id,
@@ -1241,6 +1278,30 @@ mod tests {
         assert!(!peer_method_supported("terminal/wait_for_exit"));
         assert!(!peer_method_supported("terminal/kill"));
         assert!(!peer_method_supported("terminal/release"));
+    }
+
+    #[test]
+    fn prefers_cursor_login_when_advertised() {
+        assert_eq!(
+            preferred_auth_method_id(&json!({
+                "authMethods": [
+                    { "id": "other" },
+                    { "id": "cursor_login", "name": "Cursor" }
+                ]
+            })),
+            Some("cursor_login".into())
+        );
+        assert_eq!(
+            preferred_auth_method_id(&json!({
+                "authMethods": [{ "id": "token" }]
+            })),
+            Some("token".into())
+        );
+        assert_eq!(preferred_auth_method_id(&json!({})), None);
+        assert_eq!(
+            preferred_auth_method_id(&json!({ "authMethods": [] })),
+            None
+        );
     }
 
     fn test_adapter(initialize_response: Option<Value>) -> AcpAdapter {

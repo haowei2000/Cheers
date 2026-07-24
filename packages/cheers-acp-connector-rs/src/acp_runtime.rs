@@ -315,6 +315,25 @@ impl RuntimeAdapter for RuntimeAcpAdapter {
                 self.request_timeout_ms(),
             )
             .await?;
+        if let Some(method_id) = crate::acp_adapter::preferred_auth_method_id(&response) {
+            self.request(
+                "authenticate",
+                json!({ "methodId": method_id }),
+                self.request_timeout_ms(),
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "ACP authenticate with methodId={method_id} failed \
+                     (for Cursor: run `agent login` or set CURSOR_API_KEY)"
+                )
+            })?;
+            tracing::info!(
+                account = %self.account_id,
+                method_id = %method_id,
+                "authenticated ACP agent (runtime transport)"
+            );
+        }
         tracing::info!(
             account = %self.account_id,
             agent = %response

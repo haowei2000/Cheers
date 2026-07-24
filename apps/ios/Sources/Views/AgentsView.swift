@@ -9,6 +9,7 @@ struct FleetView: View {
     @State private var model = AgentsModel()
     @State private var sheetItem: ApprovalItem?
     @State private var showOnboarding = false
+    @State private var selectedBot: BotDto?
 
     var body: some View {
         ScreenScaffold(title: "Fleet") {
@@ -39,7 +40,10 @@ struct FleetView: View {
                         emptyState
                     } else {
                         ForEach(model.bots) { bot in
-                            botRow(bot)
+                            Button { selectedBot = bot } label: {
+                                botRow(bot)
+                            }
+                            .buttonStyle(.plain)
                             if bot.id != model.bots.last?.id {
                                 Divider().overlay(Theme.border).padding(.leading, 60)
                             }
@@ -62,6 +66,11 @@ struct FleetView: View {
         }
         .sheet(isPresented: $showOnboarding) {
             BotOnboardingView(existingBots: model.bots) {
+                Task { await model.load() }
+            }
+        }
+        .sheet(item: $selectedBot) { bot in
+            BotDetailView(bot: bot) {
                 Task { await model.load() }
             }
         }
@@ -174,7 +183,7 @@ struct FleetView: View {
             ZStack(alignment: .bottomTrailing) {
                 AvatarView(seedId: bot.botId, name: bot.name, size: 44)
                 Circle()
-                    .fill(bot.online ? Theme.online : Theme.textFaint)
+                    .fill(bot.isDisabled == true ? Theme.danger : (bot.online ? Theme.online : Theme.textFaint))
                     .frame(width: 12, height: 12)
                     .overlay(Circle().stroke(Theme.bgApp, lineWidth: 2.5))
                     .offset(x: 1, y: 1)
@@ -190,16 +199,30 @@ struct FleetView: View {
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(Theme.botBadgeBg)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
+                    if bot.isDisabled == true {
+                        Text("OFF")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.danger)
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Theme.danger.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
                 }
                 Text(statusLine(bot))
                     .font(.system(size: 12.5)).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
             Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textFaint)
         }
         .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityHint("Opens bot management")
     }
 
     private func statusLine(_ bot: BotDto) -> String {
+        if bot.isDisabled == true { return "Disabled" }
         if let text = bot.statusText, !text.isEmpty {
             if let emoji = bot.statusEmoji, !emoji.isEmpty { return "\(emoji) \(text)" }
             return text

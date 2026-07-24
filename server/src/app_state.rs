@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use crate::{
     config::Config,
+    domain::webauthn::WebauthnService,
     gateway::{
         realtime::{fanout::Fanout, manager::ConnectionManager},
         registry::{BotLocator, BotRegistry},
@@ -17,6 +18,8 @@ use crate::{
 pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Config>,
+    /// Configured WebAuthn relying party; `None` when Passkeys are disabled.
+    pub webauthn: Option<Arc<WebauthnService>>,
     /// S3 / RustFS client for gateway-proxied file upload/download.
     pub s3: aws_sdk_s3::Client,
     /// 广播给浏览器连接的 fan-out 实现（可替换：单实例=进程内，多实例=Redis）。

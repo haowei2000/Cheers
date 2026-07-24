@@ -71,13 +71,14 @@ fn normalize_agent_type(raw: Option<&str>) -> String {
         Some("claude") => "claude".into(),
         Some("codex") => "codex".into(),
         Some("opencode") => "opencode".into(),
+        Some("cursor") => "cursor".into(),
         _ => "generic".into(),
     }
 }
 
 #[derive(Deserialize)]
 pub struct MintRequest {
-    /// claude | codex | opencode | generic (drives the rendered adapter.command).
+    /// claude | codex | opencode | cursor | generic (drives the rendered adapter.command).
     #[serde(default)]
     pub agent_type: Option<String>,
 }

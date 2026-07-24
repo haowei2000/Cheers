@@ -6,6 +6,7 @@ import {
   exchangeOAuthHandoff,
   getAuthCapabilities,
   login,
+  sendTwoFactorEmail,
   startOAuth,
   verifyTwoFactorLogin,
   type AuthCapabilities,
@@ -30,7 +31,17 @@ export default function LoginPage() {
   const [transactionId, setTransactionId] = useState<string | null>(
     params.get("factor_transaction")
   );
+  const [allowedFactors, setAllowedFactors] = useState<string[]>(() => {
+    const raw = params.get("allowed_factors");
+    if (raw) return raw.split(",").map((s) => s.trim()).filter(Boolean);
+    // Deep-link / OAuth resume without factors: offer the common code factors.
+    return params.get("factor_transaction")
+      ? ["totp", "recovery_code", "email"]
+      : [];
+  });
   const [factorCode, setFactorCode] = useState("");
+  const [emailHint, setEmailHint] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState(false);
   const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
 
   useEffect(() => {
@@ -51,6 +62,10 @@ export default function LoginPage() {
     if (res.status === "factor_required" || res.requires_2fa) {
       if (!res.transaction_id) throw new Error("Authentication transaction is missing");
       setTransactionId(res.transaction_id);
+      setAllowedFactors(res.allowed_factors ?? ["totp", "recovery_code"]);
+      setEmailHint(null);
+      setEmailSent(false);
+      setFactorCode("");
       return;
     }
     if (!res.access_token || !res.user_id) throw new Error("Login response is incomplete");
@@ -97,6 +112,32 @@ export default function LoginPage() {
     }
   }
 
+  async function handleSendEmailCode() {
+    if (!transactionId) return;
+    setLoading(true);
+    try {
+      const res = await sendTwoFactorEmail(transactionId);
+      setEmailHint(res.email_hint ?? null);
+      setEmailSent(true);
+      toast.success(
+        res.email_hint
+          ? `Code sent to ${res.email_hint}`
+          : "Code sent to your email"
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send email code");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const factorHelp = (() => {
+    const parts = ["authenticator app", "backup code"];
+    if (allowedFactors.includes("email")) parts.push("email code");
+    if (parts.length === 2) return `Enter a code from your ${parts[0]} or ${parts[1]}.`;
+    return `Enter a code from your ${parts.slice(0, -1).join(", ")}, or ${parts[parts.length - 1]}.`;
+  })();
+
   return (
     // h-full + internal scroll (the app root is overflow-hidden); my-auto centers the
     // card when it fits and lets it scroll when the on-screen keyboard shrinks the
@@ -124,23 +165,51 @@ export default function LoginPage() {
           onSubmit={handleFactorSubmit}
           className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
         >
+          <p className="text-sm text-zinc-400">{factorHelp}</p>
           <div className="space-y-1.5">
             <label htmlFor="factor-code" className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
               Verification code
             </label>
             <Input
               id="factor-code"
-              inputMode="numeric"
               autoComplete="one-time-code"
               autoFocus
               value={factorCode}
               onChange={(e) => setFactorCode(e.target.value)}
+              placeholder={allowedFactors.includes("email") ? "123456 or email code" : "123456"}
             />
           </div>
           <Button type="submit" className="w-full" loading={loading} disabled={!factorCode}>
             Verify
           </Button>
-          <button type="button" className="w-full text-xs text-zinc-400 hover:text-zinc-200" onClick={() => setTransactionId(null)}>
+          {allowedFactors.includes("email") && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              disabled={loading}
+              onClick={() => void handleSendEmailCode()}
+            >
+              {emailSent
+                ? emailHint
+                  ? `Resend code to ${emailHint}`
+                  : "Resend email code"
+                : emailHint
+                  ? `Send code to ${emailHint}`
+                  : "Send email code"}
+            </Button>
+          )}
+          <button
+            type="button"
+            className="w-full text-xs text-zinc-400 hover:text-zinc-200"
+            onClick={() => {
+              setTransactionId(null);
+              setAllowedFactors([]);
+              setEmailHint(null);
+              setEmailSent(false);
+              setFactorCode("");
+            }}
+          >
             Back to sign in
           </button>
         </form> : <form

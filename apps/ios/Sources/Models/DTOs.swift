@@ -103,6 +103,8 @@ struct RefreshRequest: Encodable {
 struct LoginResponse: Codable {
     let status: String?
     let transactionId: String?
+    let allowedFactors: [String]?
+    let requires2fa: Bool?
     let accessToken: String?
     let refreshToken: String?
     let expiresIn: Int?
@@ -112,9 +114,15 @@ struct LoginResponse: Codable {
     let displayName: String?
     let role: String?
 
+    var needsFactor: Bool {
+        status == "factor_required" || requires2fa == true
+    }
+
     enum CodingKeys: String, CodingKey {
         case status
         case transactionId = "transaction_id"
+        case allowedFactors = "allowed_factors"
+        case requires2fa = "requires_2fa"
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
@@ -126,17 +134,81 @@ struct LoginResponse: Codable {
     }
 }
 
+struct TwoFactorLoginRequest: Encodable {
+    let transactionId: String
+    let code: String
+    let rememberDevice: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+        case code
+        case rememberDevice = "remember_device"
+    }
+}
+
+struct TwoFactorEmailSendResponse: Decodable {
+    let ok: Bool
+    let emailHint: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case emailHint = "email_hint"
+    }
+}
+
+struct TwoFactorEmailSendRequest: Encodable {
+    let transactionId: String
+
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+    }
+}
+
+struct TwoFactorStatusResponse: Decodable {
+    let enabled: Bool
+}
+
+struct TwoFactorSetupResponse: Decodable {
+    let secret: String
+    let provisioningUri: String
+
+    enum CodingKeys: String, CodingKey {
+        case secret
+        case provisioningUri = "provisioning_uri"
+    }
+}
+
+struct TwoFactorCodeRequest: Encodable {
+    let code: String
+}
+
+struct TwoFactorEnableResponse: Decodable {
+    let backupCodes: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case backupCodes = "backup_codes"
+    }
+}
+
+struct OkFlagResponse: Decodable {
+    let ok: Bool?
+}
+
 struct AuthCapabilities: Decodable {
     let passwordLogin: Bool
     let signInWithApple: Bool
     let appleClientId: String?
     let selfServiceRegistration: Bool
+    let passkey: Bool
+    let passkeyRpId: String?
 
     enum CodingKeys: String, CodingKey {
         case passwordLogin = "password_login"
         case signInWithApple = "sign_in_with_apple"
         case appleClientId = "apple_client_id"
         case selfServiceRegistration = "self_service_registration"
+        case passkey
+        case passkeyRpId = "passkey_rp_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -145,7 +217,95 @@ struct AuthCapabilities: Decodable {
         signInWithApple = try values.decode(Bool.self, forKey: .signInWithApple)
         appleClientId = try values.decodeIfPresent(String.self, forKey: .appleClientId)
         selfServiceRegistration = try values.decodeIfPresent(Bool.self, forKey: .selfServiceRegistration) ?? false
+        passkey = try values.decodeIfPresent(Bool.self, forKey: .passkey) ?? false
+        passkeyRpId = try values.decodeIfPresent(String.self, forKey: .passkeyRpId)
     }
+}
+
+// MARK: - Passkeys / WebAuthn
+
+struct PasskeyCredentialDto: Decodable, Identifiable, Hashable {
+    let credentialPk: String
+    let credentialId: String
+    let name: String
+    let createdAt: String
+    let lastUsedAt: String?
+    let backupEligible: Bool?
+    let backupState: Bool?
+
+    var id: String { credentialPk }
+
+    enum CodingKeys: String, CodingKey {
+        case credentialPk = "credential_pk"
+        case credentialId = "credential_id"
+        case name
+        case createdAt = "created_at"
+        case lastUsedAt = "last_used_at"
+        case backupEligible = "backup_eligible"
+        case backupState = "backup_state"
+    }
+}
+
+/// Registration options returned by POST /auth/passkey/register/options.
+struct PasskeyRegisterOptionsResponse: Decodable {
+    let transactionId: String
+    let rpId: String
+    let publicKey: PasskeyPublicKeyCreationOptions
+
+    enum CodingKeys: String, CodingKey {
+        case transactionId = "transaction_id"
+        case rpId = "rp_id"
+        case publicKey
+    }
+}
+
+struct PasskeyPublicKeyCreationOptions: Decodable {
+    let challenge: String
+    let rp: PasskeyRp
+    let user: PasskeyUser
+}
+
+struct PasskeyRp: Decodable {
+    let id: String?
+    let name: String?
+}
+
+struct PasskeyUser: Decodable {
+    let id: String
+    let name: String
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case displayName
+    }
+}
+
+struct PasskeyAssertOptionsResponse: Decodable {
+    let rpId: String?
+    let publicKey: PasskeyPublicKeyRequestOptions
+
+    enum CodingKeys: String, CodingKey {
+        case rpId = "rp_id"
+        case publicKey
+    }
+}
+
+struct PasskeyPublicKeyRequestOptions: Decodable {
+    let challenge: String
+    let rpId: String?
+    let allowCredentials: [PasskeyAllowCredential]?
+
+    enum CodingKeys: String, CodingKey {
+        case challenge
+        case rpId
+        case allowCredentials
+    }
+}
+
+struct PasskeyAllowCredential: Decodable {
+    let id: String
+    let type: String?
 }
 
 struct RegisterCodeRequest: Encodable {
@@ -326,10 +486,26 @@ struct CreateReportRequest: Encodable {
 struct ChangePasswordRequest: Encodable {
     let currentPassword: String
     let newPassword: String
+    let twoFactorCode: String?
 
     enum CodingKeys: String, CodingKey {
         case currentPassword = "current_password"
         case newPassword = "new_password"
+        case twoFactorCode = "two_factor_code"
+    }
+}
+
+struct CreateWorkspaceRequest: Encodable {
+    let name: String
+}
+
+struct UpdateBotProfileRequest: Encodable {
+    var displayName: String?
+    var description: String?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case description
     }
 }
 
@@ -852,7 +1028,7 @@ struct BotDto: Decodable, Identifiable {
 // about that hand-off; nothing here starts an agent locally.
 
 enum AgentType: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, opencode, generic
+    case claude, codex, opencode, cursor, generic
 
     var id: String { rawValue }
 
@@ -861,6 +1037,7 @@ enum AgentType: String, CaseIterable, Identifiable, Codable {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .opencode: return "OpenCode"
+        case .cursor: return "Cursor"
         case .generic: return "Other ACP agent"
         }
     }
@@ -872,6 +1049,7 @@ enum AgentType: String, CaseIterable, Identifiable, Codable {
         case .claude: return "claude-agent-acp"
         case .codex: return "codex-acp"
         case .opencode: return "opencode acp"
+        case .cursor: return "agent acp"
         case .generic: return "your own ACP binary"
         }
     }
@@ -994,6 +1172,8 @@ struct BotStatusDto: Decodable {
     let isOnline: Bool?
     let bridgeConnected: Bool?
     let liveEnrollmentCodes: Int?
+    let statusText: String?
+    let statusEmoji: String?
 
     var connected: Bool { bridgeConnected ?? isOnline ?? false }
 
@@ -1003,6 +1183,8 @@ struct BotStatusDto: Decodable {
         case isOnline = "is_online"
         case bridgeConnected = "bridge_connected"
         case liveEnrollmentCodes = "live_enrollment_codes"
+        case statusText = "status_text"
+        case statusEmoji = "status_emoji"
     }
 }
 
@@ -1168,11 +1350,12 @@ struct ChannelCreateRequest: Encodable {
     let workspaceId: String
     let name: String
     let type: String          // "public" | "private"
+    let kind: String          // "text" | "voice"
     var purpose: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case workspaceId = "workspace_id"
-        case name, type, purpose
+        case name, type, kind, purpose
     }
 }
 

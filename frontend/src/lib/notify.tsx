@@ -96,7 +96,25 @@ export const notify = {
  *  yields "Error: …" / "[object Object]" — the api client already humanizes
  *  ApiError messages, so `e.message` is the renderable sentence. */
 export function messageOf(e: unknown, fallback = "Something went wrong"): string {
-  if (e instanceof Error) return e.message || fallback;
-  if (typeof e === "string" && e.trim()) return e.trim();
+  if (e instanceof Error) {
+    const msg = e.message?.trim();
+    // Legacy gateway unique-violation bodies were literally "conflict".
+    if (msg && msg.toLowerCase() !== "conflict") return msg;
+    if (
+      "status" in e &&
+      typeof (e as { status?: unknown }).status === "number" &&
+      (e as { status: number }).status === 409
+    ) {
+      return "That name is already taken — choose another, or use Existing bot";
+    }
+    return msg || fallback;
+  }
+  if (typeof e === "string" && e.trim()) {
+    const msg = e.trim();
+    if (msg.toLowerCase() === "conflict") {
+      return "That name is already taken — choose another, or use Existing bot";
+    }
+    return msg;
+  }
   return fallback;
 }

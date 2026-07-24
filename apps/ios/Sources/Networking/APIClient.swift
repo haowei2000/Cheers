@@ -131,11 +131,14 @@ struct APIClient: Sendable {
                required.code == "ai_consent_required" {
                 throw APIError.aiConsentRequired(required.disclosures)
             }
-            // 401 means "session revoked/expired" only on authenticated calls.
-            // Unauthenticated ones (login) must surface the server's detail
-            // ("invalid credentials", 429-style lockout text) instead of the
-            // misleading "Session expired" copy.
+            // 401 means "session revoked/expired" only when the body is empty.
+            // Authenticated management calls (change-password, 2FA enable/disable)
+            // also use 401 for wrong credentials / codes — surface that detail.
             if http.statusCode == 401, token != nil {
+                let detail = (try? JSONDecoder().decode(ApiErrorBody.self, from: data))?.detail
+                if let detail, !detail.isEmpty {
+                    throw APIError.http(status: 401, detail: detail)
+                }
                 throw APIError.unauthorized
             }
             // AppError bodies are { "detail": "..." }; auth middleware 401s are empty.
@@ -290,18 +293,130 @@ struct APIClient: Sendable {
         try await postEmpty("/auth/logout")
     }
 
-    func changePassword(currentPassword: String, newPassword: String) async throws -> ChangePasswordResponse {
+    func changePassword(
+        currentPassword: String,
+        newPassword: String,
+        twoFactorCode: String? = nil
+    ) async throws -> ChangePasswordResponse {
         try await postJSON(
             "/auth/change-password",
-            body: ChangePasswordRequest(currentPassword: currentPassword, newPassword: newPassword),
+            body: ChangePasswordRequest(
+                currentPassword: currentPassword,
+                newPassword: newPassword,
+                twoFactorCode: twoFactorCode
+            ),
             as: ChangePasswordResponse.self
         )
+    }
+
+    func verifyTwoFactorLogin(
+        transactionId: String,
+        code: String,
+        rememberDevice: Bool = true
+    ) async throws -> LoginResponse {
+        try await postJSON(
+            "/auth/2fa/login",
+            body: TwoFactorLoginRequest(
+                transactionId: transactionId,
+                code: code,
+                rememberDevice: rememberDevice
+            ),
+            as: LoginResponse.self
+        )
+    }
+
+    func sendTwoFactorEmail(transactionId: String) async throws -> TwoFactorEmailSendResponse {
+        try await postJSON(
+            "/auth/2fa/email/send",
+            body: TwoFactorEmailSendRequest(transactionId: transactionId),
+            as: TwoFactorEmailSendResponse.self
+        )
+    }
+
+    func twoFactorStatus() async throws -> TwoFactorStatusResponse {
+        try await getJSON("/auth/2fa/status", as: TwoFactorStatusResponse.self)
+    }
+
+    func setupTwoFactor() async throws -> TwoFactorSetupResponse {
+        try await postJSON("/auth/2fa/setup", body: EmptyRequest(), as: TwoFactorSetupResponse.self)
+    }
+
+    func enableTwoFactor(code: String) async throws -> TwoFactorEnableResponse {
+        try await postJSON("/auth/2fa/enable", body: TwoFactorCodeRequest(code: code), as: TwoFactorEnableResponse.self)
+    }
+
+    func disableTwoFactor(code: String) async throws {
+        _ = try await postJSON("/auth/2fa/disable", body: TwoFactorCodeRequest(code: code), as: OkFlagResponse.self)
+    }
+
+    // MARK: Passkeys
+
+    func passkeyRegisterOptions(name: String? = nil) async throws -> PasskeyRegisterOptionsResponse {
+        struct Body: Encodable {
+            let name: String?
+        }
+        return try await postJSON(
+            "/auth/passkey/register/options",
+            body: Body(name: name),
+            as: PasskeyRegisterOptionsResponse.self
+        )
+    }
+
+    func passkeyRegisterFinish(transactionId: String, credential: [String: Any]) async throws -> PasskeyCredentialDto {
+        let body: [String: Any] = [
+            "transaction_id": transactionId,
+            "credential": credential,
+        ]
+        return try await postRawJSON("/auth/passkey/register/finish", object: body, as: PasskeyCredentialDto.self)
+    }
+
+    func listPasskeys() async throws -> [PasskeyCredentialDto] {
+        try await getJSON("/auth/passkey/credentials", as: [PasskeyCredentialDto].self)
+    }
+
+    func deletePasskey(credentialPk: String) async throws {
+        try await deleteEmpty("/auth/passkey/credentials/\(credentialPk)")
+    }
+
+    func passkeyFactorOptions(transactionId: String) async throws -> PasskeyAssertOptionsResponse {
+        struct Body: Encodable {
+            let transactionId: String
+            enum CodingKeys: String, CodingKey { case transactionId = "transaction_id" }
+        }
+        return try await postJSON(
+            "/auth/2fa/passkey/options",
+            body: Body(transactionId: transactionId),
+            as: PasskeyAssertOptionsResponse.self
+        )
+    }
+
+    func passkeyFactorVerify(
+        transactionId: String,
+        credential: [String: Any],
+        rememberDevice: Bool = true
+    ) async throws -> LoginResponse {
+        let body: [String: Any] = [
+            "transaction_id": transactionId,
+            "credential": credential,
+            "remember_device": rememberDevice,
+        ]
+        return try await postRawJSON("/auth/2fa/passkey/verify", object: body, as: LoginResponse.self)
+    }
+
+    private func postRawJSON<T: Decodable>(_ path: String, object: [String: Any], as type: T.Type) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let request = try makeRequest("POST", path, body: data)
+        return try decode(type, from: try await send(request))
     }
 
     // MARK: Workspaces / channels
 
     func listWorkspaces() async throws -> [WorkspaceDto] {
         try await getJSON("/workspaces", as: [WorkspaceDto].self)
+    }
+
+    func createWorkspace(name: String) async throws -> WorkspaceDto {
+        try await postJSON("/workspaces", body: CreateWorkspaceRequest(name: name), as: WorkspaceDto.self)
     }
 
     func personalWorkspace() async throws -> WorkspaceDto {
@@ -532,6 +647,26 @@ extension APIClient {
         try await getJSON("/bots", as: [BotDto].self)
     }
 
+    func disableBot(botId: String) async throws {
+        try await postEmpty("/bots/\(botId)/disable")
+    }
+
+    func enableBot(botId: String) async throws {
+        try await postEmpty("/bots/\(botId)/enable")
+    }
+
+    func deleteBot(botId: String) async throws {
+        try await deleteEmpty("/bots/\(botId)")
+    }
+
+    func updateBotProfile(botId: String, displayName: String?, description: String?) async throws {
+        _ = try await patchJSON(
+            "/bots/\(botId)/profile",
+            body: UpdateBotProfileRequest(displayName: displayName, description: description),
+            as: JSONValue.self
+        )
+    }
+
     // MARK: Bot onboarding
     //
     // The phone can create a bot and mint credentials, but never runs the
@@ -594,10 +729,22 @@ extension APIClient {
 
     // MARK: Create channel / DM
 
-    func createChannel(workspaceId: String, name: String, isPrivate: Bool, purpose: String?) async throws -> ChannelDto {
+    func createChannel(
+        workspaceId: String,
+        name: String,
+        isPrivate: Bool,
+        kind: String = "text",
+        purpose: String?
+    ) async throws -> ChannelDto {
         try await postJSON(
             "/channels",
-            body: ChannelCreateRequest(workspaceId: workspaceId, name: name, type: isPrivate ? "private" : "public", purpose: purpose),
+            body: ChannelCreateRequest(
+                workspaceId: workspaceId,
+                name: name,
+                type: isPrivate ? "private" : "public",
+                kind: kind,
+                purpose: purpose
+            ),
             as: ChannelDto.self
         )
     }
