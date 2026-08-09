@@ -106,12 +106,11 @@ async function copyMessage(message: Message) {
 }
 
 /** Hover toolbar: reply · copy · forward · select. Hidden while streaming.
- *  `reversed` rows (own messages) put the header on the right, so the toolbar
- *  anchors left to avoid overlapping the name/timestamp/avatar. */
+ *  The toolbar's right edge follows the message content so it always expands
+ *  leftward and remains reachable beside right-aligned own messages. */
 function ActionBar({
   message,
   actions,
-  reversed,
   anchorRef,
   visible,
   onEnter,
@@ -124,7 +123,6 @@ function ActionBar({
 }: {
   message: Message;
   actions: MessageActionHandlers;
-  reversed?: boolean;
   anchorRef: RefObject<HTMLElement | null>;
   visible: boolean;
   onEnter: () => void;
@@ -141,7 +139,7 @@ function ActionBar({
     <FloatingLayer
       anchorRef={anchorRef}
       placement="up"
-      align={reversed ? "start" : "end"}
+      align="end"
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       onFocus={onEnter}
@@ -830,7 +828,6 @@ export const MessageItem = memo(function MessageItem({
           <ActionBar
             message={message}
             actions={actions}
-            reversed={isOwnAlignedRight}
             anchorRef={contentRef}
             visible={actionsVisible}
             onEnter={showActionBar}
@@ -913,7 +910,7 @@ export const MessageItem = memo(function MessageItem({
       <div
         ref={contentRef}
         className={cn(
-          "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
+          "flex min-w-0 flex-1 flex-col gap-1.5 md:w-fit md:max-w-[52rem] md:flex-[0_1_auto]",
           isOwnAlignedRight && "items-end",
         )}
       >
@@ -956,7 +953,6 @@ export const MessageItem = memo(function MessageItem({
         <ActionBar
           message={message}
           actions={actions}
-          reversed={isOwnAlignedRight}
           anchorRef={contentRef}
           visible={actionsVisible}
           onEnter={showActionBar}
