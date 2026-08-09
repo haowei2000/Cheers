@@ -853,6 +853,39 @@ struct APIClient: Sendable {
         try await postJSON("/channels/\(channelId)/messages", body: body, as: MessageDto.self)
     }
 
+    func listDiscussions(
+        channelId: String,
+        cursor: String? = nil,
+        query searchQuery: String? = nil,
+        limit: Int = 30
+    ) async throws -> ListDiscussionsResponseDto {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        if let searchQuery, !searchQuery.isEmpty {
+            query.append(URLQueryItem(name: "q", value: searchQuery))
+        }
+        return try await getJSON(
+            "/channels/\(channelId)/discussions",
+            query: query,
+            as: ListDiscussionsResponseDto.self
+        )
+    }
+
+    func discussion(
+        channelId: String,
+        rootMessageId: String,
+        before: String? = nil,
+        limit: Int = 50
+    ) async throws -> DiscussionDetailResponseDto {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        return try await getJSON(
+            "/channels/\(channelId)/discussions/\(rootMessageId)",
+            query: query,
+            as: DiscussionDetailResponseDto.self
+        )
+    }
+
     // MARK: Voice
 
     func joinVoice(channelId: String) async throws -> VoiceJoinResponse {

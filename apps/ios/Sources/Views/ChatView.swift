@@ -279,11 +279,19 @@ struct ChatView: View {
             if model.channel.isVoice {
                 VoiceMeetingStrip(voice: voice)
             }
-            messageScroll
+            if model.channel.isDiscuss {
+                DiscussionChannelView(model: model, currentUserId: app.session?.userId) {
+                    composerDock
+                }
+            } else {
+                messageScroll
+            }
             TaskClaimsPanelView(model: model)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            composerDock
+            if !model.channel.isDiscuss {
+                composerDock
+            }
         }
         .background(Theme.bgApp)
         .navigationBarTitleDisplayMode(.inline)
@@ -675,6 +683,11 @@ struct ChatView: View {
     }
 
     private func jumpToSearchResult(_ message: MessageDto) {
+        if model.channel.isDiscuss {
+            let rootId = message.threadRootMsgId ?? message.msgId
+            Task { await model.selectDiscussion(rootId) }
+            return
+        }
         jumpToMessage(msgId: message.msgId, requestId: nil, known: message)
     }
 

@@ -248,6 +248,9 @@ export interface Message {
    *  server path (REST DTO + WS frames) — the DB column `in_reply_to_msg_id`
    *  never crosses the API boundary. */
   reply_to_msg_id?: string | null;
+  /** Top-level discussion root for replies; absent/null on root messages and
+   *  older gateway frames. */
+  thread_root_msg_id?: string | null;
   files?: FileInfo[];
   file_ids?: string[];
   mentions?: MessageMention[];

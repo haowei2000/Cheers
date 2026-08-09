@@ -740,6 +740,8 @@ struct ChannelDto: Codable, Identifiable, Hashable {
     /// `text` (default) or `voice`. Voice channels retain the normal message
     /// timeline and composer, with a LiveKit meeting strip above them.
     let kind: String?
+    /// `chat` (default) or `discuss`. Older gateways omit this field.
+    let conversationMode: String?
     let purpose: String?
     let autoAssist: Bool?
     let allowMemberInvites: Bool?
@@ -751,6 +753,7 @@ struct ChannelDto: Codable, Identifiable, Hashable {
     var id: String { channelId }
     var isDM: Bool { channelType == "dm" }
     var isVoice: Bool { kind == "voice" }
+    var isDiscuss: Bool { conversationMode == "discuss" }
     var displayName: String {
         if isDM, let peerName, !peerName.isEmpty { return peerName }
         if isDM { return String(localized: "Unknown participant") }
@@ -764,6 +767,7 @@ struct ChannelDto: Codable, Identifiable, Hashable {
         case avatarUrl = "avatar_url"
         case channelType = "type"
         case kind
+        case conversationMode = "conversation_mode"
         case purpose
         case autoAssist = "auto_assist"
         case allowMemberInvites = "allow_member_invites"
@@ -1178,7 +1182,11 @@ struct MessageDto: Codable, Identifiable, Hashable {
     var content: String
     var msgType: String?
     var isPartial: Bool?
+    var isDeleted: Bool?
     var replyToMsgId: String?
+    /// Top-level discussion message for replies. Nil for root messages and
+    /// frames produced by older gateways.
+    var threadRootMsgId: String?
     var fileIds: [String]?
     var mentions: [MessageMention]?
     var files: [MessageFileRef]?
@@ -1203,13 +1211,98 @@ struct MessageDto: Codable, Identifiable, Hashable {
         case content
         case msgType = "msg_type"
         case isPartial = "is_partial"
+        case isDeleted = "is_deleted"
         case replyToMsgId = "reply_to_msg_id"
+        case threadRootMsgId = "thread_root_msg_id"
         case fileIds = "file_ids"
         case mentions
         case files
         case createdAt = "created_at"
         case contentData = "content_data"
     }
+}
+
+// MARK: - Discussions (server/src/api/discussions.rs)
+
+struct DiscussionReplyPreviewDto: Codable, Hashable {
+    let msgId: String
+    let senderId: String
+    let senderType: String
+    let senderName: String
+    let content: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case msgId = "msg_id"
+        case senderId = "sender_id"
+        case senderType = "sender_type"
+        case senderName = "sender_name"
+        case content
+        case createdAt = "created_at"
+    }
+}
+
+struct DiscussionParticipantDto: Codable, Identifiable, Hashable {
+    let memberId: String
+    let memberType: String
+    let name: String
+    let avatarUrl: String?
+    var id: String { "\(memberType):\(memberId)" }
+
+    enum CodingKeys: String, CodingKey {
+        case memberId = "member_id"
+        case memberType = "member_type"
+        case name
+        case avatarUrl = "avatar_url"
+    }
+}
+
+struct DiscussionSummaryDto: Codable, Identifiable, Hashable {
+    let root: MessageDto
+    let replyCount: Int
+    let lastActivityAt: String
+    let lastReply: DiscussionReplyPreviewDto?
+    let participants: [DiscussionParticipantDto]
+    let participantCount: Int
+    var id: String { root.msgId }
+
+    enum CodingKeys: String, CodingKey {
+        case root
+        case replyCount = "reply_count"
+        case lastActivityAt = "last_activity_at"
+        case lastReply = "last_reply"
+        case participants
+        case participantCount = "participant_count"
+    }
+}
+
+struct DiscussionListMetaDto: Codable, Hashable {
+    let nextCursor: String?
+    let hasMore: Bool
+    enum CodingKeys: String, CodingKey {
+        case nextCursor = "next_cursor"
+        case hasMore = "has_more"
+    }
+}
+
+struct ListDiscussionsResponseDto: Codable, Hashable {
+    let discussions: [DiscussionSummaryDto]
+    let meta: DiscussionListMetaDto
+}
+
+struct DiscussionDetailMetaDto: Codable, Hashable {
+    let hasMoreBefore: Bool
+    let limit: Int
+    enum CodingKeys: String, CodingKey {
+        case hasMoreBefore = "has_more_before"
+        case limit
+    }
+}
+
+struct DiscussionDetailResponseDto: Codable, Hashable {
+    let root: MessageDto
+    let replies: [MessageDto]
+    let meta: DiscussionDetailMetaDto
 }
 
 struct ListMessagesMeta: Decodable {

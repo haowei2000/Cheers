@@ -43,6 +43,7 @@ import {
 import { getChannelCache, setChannelCache, seedFromCache } from "./chatCache";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
+import { DiscussionView } from "./DiscussionView";
 import { ReplyComposerBanner } from "./ReplyComposerBanner";
 import { MembersPopover } from "./MembersPopover";
 import { ForwardDialog } from "./ForwardDialog";
@@ -201,6 +202,13 @@ export function ChannelView({
   usePopoverDismiss(membersOpen, closeMembers, membersRootRef);
   // Message actions: reply target, multi-select set, pending forward payload.
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [discussionComposerRoot, setDiscussionComposerRoot] =
+    useState<Message | null>(null);
+  const [creatingDiscussion, setCreatingDiscussion] = useState(false);
+  const [openDiscussionRequest, setOpenDiscussionRequest] = useState<{
+    id: string;
+    nonce: number;
+  } | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -259,6 +267,9 @@ export function ChannelView({
     setCommands([]);
     setMembersOpen(false);
     setReplyTo(null);
+    setDiscussionComposerRoot(null);
+    setCreatingDiscussion(false);
+    setOpenDiscussionRequest(null);
     setSelectMode(false);
     setSelectedIds(new Set());
     setForward(null);
@@ -1423,12 +1434,29 @@ export function ChannelView({
         ...(mentionNames.length ? { mention_names: mentionNames } : {}),
         ...(fileIds.length ? { file_ids: fileIds } : {}),
         ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
-        ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
+        ...(replyTo
+          ? { reply_to_msg_id: replyTo.msg_id }
+          : channel.conversation_mode === "discuss" &&
+              !creatingDiscussion &&
+              discussionComposerRoot
+            ? { reply_to_msg_id: discussionComposerRoot.msg_id }
+            : {}),
         ...(bundle ? { context_bundle: bundle } : {}),
       };
       try {
         const { content: body, ...opts } = sendParams;
-        await sendMessage(channel.channel_id, body, opts);
+        const sent = await sendMessage(channel.channel_id, body, opts);
+        if (
+          channel.conversation_mode === "discuss" &&
+          creatingDiscussion
+        ) {
+          setOpenDiscussionRequest((current) => ({
+            id: sent.msg_id,
+            nonce: (current?.nonce ?? 0) + 1,
+          }));
+          setCreatingDiscussion(false);
+          setDiscussionComposerRoot(sent);
+        }
         setReplyTo(null);
         useContextPickStore.getState().clear(channel.channel_id);
       } catch (error) {
@@ -1438,7 +1466,13 @@ export function ChannelView({
         throw error;
       }
     },
-    [channel, selectedSessionId, replyTo, user],
+    [
+      channel,
+      selectedSessionId,
+      replyTo,
+      creatingDiscussion,
+      discussionComposerRoot,
+    ],
   );
 
   // Retry a failed send: flip the placeholder to "sending", replay the original
@@ -1508,6 +1542,15 @@ export function ChannelView({
   const selectedMessages = useMemo(
     () => messages.filter((m) => selectedIds.has(m.msg_id)),
     [messages, selectedIds],
+  );
+  const discussionRealtimeVersion = useMemo(
+    () =>
+      messages.reduce(
+        (version, message) =>
+          Math.max(version, message.channel_seq ?? 0),
+        0,
+      ) * 1_000 + messages.length,
+    [messages],
   );
 
   // Live pending ACP permission cards — feeds the ViewBoard minimal Approvals dropdown.
@@ -1876,7 +1919,13 @@ export function ChannelView({
               anyWorkOpen ? "md:min-w-[20rem] min-[1100px]:min-w-[24rem]" : ""
             }`}
           >
-            <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
+            <div
+              className={`flex h-full w-full min-w-0 flex-col ${
+                channel.conversation_mode === "discuss"
+                  ? ""
+                  : "md:mx-auto md:max-w-[52rem]"
+              }`}
+            >
               {channel.kind === "voice" && (
                 <Suspense
                   fallback={
@@ -1915,7 +1964,59 @@ export function ChannelView({
                 </Banner>
               )}
               {/* Messages */}
-              {loading ? (
+              {channel.conversation_mode === "discuss" ? (
+                <ResolveRefContext.Provider value={resolveAndOpenRef}>
+                  <DiscussionView
+                    channelId={channel.channel_id}
+                    currentUserId={user?.user_id}
+                    senderNames={memberNames}
+                    actions={messageActions}
+                    replyToId={replyTo && !selectMode ? replyTo.msg_id : null}
+                    realtimeVersion={discussionRealtimeVersion}
+                    openDiscussionId={openDiscussionRequest?.id ?? null}
+                    footer={
+                      !selectMode ? (
+                        <>
+                          {replyTo && (
+                            <ReplyComposerBanner
+                              message={replyTo}
+                              senderName={memberNames.get(replyTo.sender_id)}
+                              onCancel={() => setReplyTo(null)}
+                            />
+                          )}
+                          <ContextPickBar
+                            channelId={channel.channel_id}
+                            replyTo={replyTo}
+                            draftText={draftText}
+                            files={channelFiles}
+                            onBrowseWorkbench={browseWorkbench}
+                            onBrowseWorkspace={browseWorkspace}
+                            onJumpToSource={jumpToContextSource}
+                          />
+                          <MessageComposer
+                            channelId={channel.channel_id}
+                            channelName={channel.name}
+                            mentionables={mentionables}
+                            commands={commands}
+                            toolbar={composerToolbar}
+                            onMentionsChange={setMentionedBots}
+                            onTextChange={setDraftText}
+                            prefill={composePrefill}
+                            streamingCount={streamingIds.length}
+                            onStopStreaming={stopStreaming}
+                            onSend={handleSend}
+                          />
+                        </>
+                      ) : null
+                    }
+                    onComposerContextChange={(root, creating) => {
+                      setDiscussionComposerRoot(root);
+                      setCreatingDiscussion(creating);
+                      if (!creating) setReplyTo(null);
+                    }}
+                  />
+                </ResolveRefContext.Provider>
+              ) : loading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
                 </div>
@@ -1992,7 +2093,7 @@ export function ChannelView({
 
               {/* Same composer for root sends and replies — reply only pre-fills
                   session / @ / context (and sets reply_to on send). Esc clears nesting. */}
-              {!selectMode && (
+              {!selectMode && channel.conversation_mode !== "discuss" && (
                 <>
                   {replyTo && (
                     <ReplyComposerBanner

@@ -164,12 +164,13 @@ pub async fn create_message(
         .await
         .map_err(AppError::Db)?;
 
-    sqlx::query(
+    let thread_root_msg_id: Option<String> = sqlx::query_scalar(
         "INSERT INTO messages
             (msg_id, channel_id, sender_type, sender_id, content, msg_type,
              is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
              context_bundle)
-         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9, $10)",
+         VALUES ($1, $2, 'user', $3, $4, $5, FALSE, FALSE, $6, $7, $8, $9, $10)
+         RETURNING thread_root_msg_id",
     )
     .bind(msg_id.to_string())
     .bind(params.channel_id.to_string())
@@ -181,7 +182,7 @@ pub async fn create_message(
     .bind(now)
     .bind(seq)
     .bind(row_bundle.clone())
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(AppError::Db)?;
 
@@ -204,7 +205,9 @@ pub async fn create_message(
         content: params.content.clone(),
         msg_type: msg_type.to_string(),
         is_partial: false,
+        is_deleted: false,
         reply_to_msg_id: params.reply_to_msg_id.map(|id| id.to_string()),
+        thread_root_msg_id,
         file_ids: file_ids.clone(),
         mentions: mentions
             .iter()
@@ -236,12 +239,14 @@ pub async fn create_message(
             "content": dto.content,
             "msg_type": dto.msg_type,
             "is_partial": false,
+            "is_deleted": false,
             "file_ids": &dto.file_ids,
             "mentions": &dto.mentions,
             "files": &dto.files,
             // Reply linkage rides the live frame too — without it the reply's
             // quote block only appears after a history refetch.
             "reply_to_msg_id": dto.reply_to_msg_id,
+            "thread_root_msg_id": dto.thread_root_msg_id,
             "created_at": now,
             // Context chips render live (and on reload via the DTO) without a refetch.
             "context_bundle": dto.context_bundle,
@@ -759,10 +764,12 @@ async fn ensure_member(db: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(
 /// 返回顺序为创建时间升序（调用者可直接返回）。
 /// Shared SELECT projection + FROM/JOIN for channel message listing.
 /// Callers append their own WHERE / ORDER BY / LIMIT (with placeholders).
-const MESSAGE_LIST_SELECT: &str = "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
+pub(crate) const MESSAGE_LIST_SELECT: &str =
+    "SELECT m.msg_id AS id, m.channel_id, m.sender_type, m.sender_id,
         m.channel_seq, u.display_name AS sender_name,
-        m.content, m.msg_type, m.is_partial, m.file_ids,
-        m.in_reply_to_msg_id AS reply_to_msg_id, m.created_at, m.content_data,
+        m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
+        m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
+        m.created_at, m.content_data,
         m.context_bundle
  FROM messages m
  LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id";
@@ -1088,7 +1095,7 @@ async fn fetch_anchor(
     Ok(anchor)
 }
 
-async fn hydrate_message_rows(
+pub(crate) async fn hydrate_message_rows(
     db: &PgPool,
     rows: &[sqlx::postgres::PgRow],
 ) -> Result<Vec<MessageDto>, AppError> {

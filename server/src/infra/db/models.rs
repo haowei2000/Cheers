@@ -92,7 +92,10 @@ pub struct MessageDto {
     pub content: String,
     pub msg_type: String,
     pub is_partial: bool,
+    pub is_deleted: bool,
     pub reply_to_msg_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub thread_root_msg_id: Option<String>,
     pub file_ids: Vec<String>,
     pub mentions: Vec<MessageMention>,
     pub files: Vec<MessageFileRef>,
@@ -124,7 +127,9 @@ impl MessageDto {
                 .try_get("msg_type")
                 .unwrap_or_else(|_| "text".to_string()),
             is_partial: row.try_get("is_partial").unwrap_or(false),
+            is_deleted: row.try_get("is_deleted").unwrap_or(false),
             reply_to_msg_id: row.try_get("reply_to_msg_id").ok(),
+            thread_root_msg_id: row.try_get("thread_root_msg_id").ok(),
             file_ids: match row.try_get::<Vec<String>, _>("file_ids") {
                 Ok(ids) => ids,
                 Err(_) => row
