@@ -232,7 +232,10 @@ struct DiscussionChannelView<Footer: View>: View {
                                     isOwn: false,
                                     showAvatar: true,
                                     formattedTime: formattedTime(reply),
-                                    onReply: { model.beginReply(to: reply) }
+                                    onReply: { model.beginReply(to: reply) },
+                                    onMention: currentUserId == reply.senderId
+                                        ? nil
+                                        : { model.mentionSender(of: reply) }
                                 )
                             }
                         }

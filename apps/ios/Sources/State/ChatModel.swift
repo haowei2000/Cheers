@@ -86,8 +86,12 @@ final class ChatModel {
     /// lives outside ChatModel while typing, so model text changes must not be
     /// observed on every keystroke; this increments only after a confirmed send.
     private(set) var composerClearTick = 0
-    /// Inject / replace composer text from outside (e.g. Reply prefill `@bot`).
+    /// Ask the leaf composer to apply an external prefill and focus itself.
     private(set) var composerPrefillTick = 0
+    /// Stable mention request consumed by the leaf composer against its live
+    /// local draft, so an external shortcut never replaces text the model has
+    /// intentionally not observed on every keystroke.
+    private(set) var composerPrefillMention: MentionCandidate?
     /// Message being replied to (set by the bubble context menu); sent as
     /// reply_to_msg_id and cleared on success.
     var replyTo: MessageDto?
@@ -588,7 +592,19 @@ final class ChatModel {
         }
     }
 
-    // MARK: Reply
+    // MARK: Reply and mentions
+
+    /// Add a channel member to the current draft and bring the composer into
+    /// focus through its existing prefill signal. This never sends a message.
+    func mentionSender(of message: MessageDto) {
+        guard let senderId = message.senderId,
+              senderId != app?.session?.userId,
+              let candidate = mentionPool.first(where: { $0.id == senderId })
+        else { return }
+
+        composerPrefillMention = candidate
+        composerPrefillTick += 1
+    }
 
     /// Start a reply under `message`. Same bottom composer as a normal send —
     /// only defaults are copied: session, `@bot`, and source message context.
@@ -612,21 +628,8 @@ final class ChatModel {
         if let bot {
             selectedSessionBotId = bot.senderId
             selectedSessionId = MessageTree.messageSessionId(bot)
-            let label = bot.senderName
-                ?? mentionPool.first(where: { $0.id == bot.senderId })?.label
-            if let label {
-                let token = "@\(label) "
-                let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    composerText = token
-                } else if !composerText.contains("@\(label)") {
-                    composerText = token + composerText
-                }
-                if let candidate = mentionPool.first(where: { $0.id == bot.senderId }),
-                   !pickedMentions.contains(candidate)
-                {
-                    pickedMentions.append(candidate)
-                }
+            if let candidate = mentionPool.first(where: { $0.id == bot.senderId }) {
+                composerPrefillMention = candidate
                 composerPrefillTick += 1
             }
         }

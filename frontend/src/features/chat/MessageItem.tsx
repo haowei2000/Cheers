@@ -12,6 +12,8 @@ import {
   ListTree,
   ChevronDown,
   ChevronRight,
+  AtSign,
+  UserRound,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
@@ -38,6 +40,8 @@ import { messageDetailsMeta } from "./messageDetails";
 export interface MessageActionHandlers {
   onReply: (m: Message) => void;
   onForward: (m: Message) => void;
+  /** Insert this sender as a picked composer mention. Never sends. */
+  onMention?: (m: Message) => void;
   /** Toggle this message in the multi-select set (entering select mode if off). */
   onToggleSelect: (m: Message) => void;
   /** Re-send a message whose send failed (client-only `_status: "failed"`). */
@@ -115,6 +119,8 @@ function ActionBar({
   hasDetails,
   detailsExpanded,
   onToggleDetails,
+  canMention,
+  mentionLabel,
 }: {
   message: Message;
   actions: MessageActionHandlers;
@@ -126,6 +132,8 @@ function ActionBar({
   hasDetails?: boolean;
   detailsExpanded?: boolean;
   onToggleDetails?: () => void;
+  canMention?: boolean;
+  mentionLabel?: string;
 }) {
   const btn =
     "flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
@@ -153,6 +161,17 @@ function ActionBar({
           onClick={onToggleDetails}
         >
           <ListTree className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {canMention && actions.onMention && (
+        <button
+          type="button"
+          title={`Mention @${mentionLabel ?? "member"}`}
+          aria-label={`Mention ${mentionLabel ?? "member"}`}
+          className={btn}
+          onClick={() => actions.onMention?.(message)}
+        >
+          <AtSign className="h-3.5 w-3.5" />
         </button>
       )}
       <button type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
@@ -244,19 +263,17 @@ function ReplyPreview({
     />
   );
   const source = (
-    <span className="flex min-w-0 items-center gap-1.5 py-0.5">
-      {repliedTo && (
-        <Avatar
-          name={who}
-          src={avatarUrl}
-          id={repliedTo.sender_id}
-          size="xs"
-          className="h-4 w-4 text-[8px]"
-        />
-      )}
-      {who && (
-        <span className="flex-shrink-0 font-semibold text-zinc-300 group-hover/reply:text-zinc-100">
-          {who}
+    <span className="flex min-w-0 items-center gap-2 py-0.5">
+      {repliedTo && who && (
+        <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 text-indigo-300 transition-colors group-hover/reply:text-indigo-200">
+          <Avatar
+            name={who}
+            src={avatarUrl}
+            id={repliedTo.sender_id}
+            size="xs"
+            className="h-4 w-4 shrink-0 text-[8px]"
+          />
+          <span className="truncate font-semibold">@{who}</span>
         </span>
       )}
       <span className="truncate text-zinc-500 group-hover/reply:text-zinc-400">
@@ -451,6 +468,171 @@ export const MessageItem = memo(function MessageItem({
       member_type: message.sender_type,
     });
   };
+  const canMention = Boolean(
+    actions?.onMention && !isOwn && !selectMode && !message._status,
+  );
+  const avatarRef = useRef<HTMLButtonElement>(null);
+  const profileClickTimerRef = useRef<number | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressAvatarClickRef = useRef(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+
+  const clearProfileClickTimer = () => {
+    if (profileClickTimerRef.current !== null) {
+      window.clearTimeout(profileClickTimerRef.current);
+      profileClickTimerRef.current = null;
+    }
+  };
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  };
+  const mentionSender = () => {
+    if (!canMention) return;
+    clearProfileClickTimer();
+    profileCard?.close();
+    setAvatarMenuOpen(false);
+    actions?.onMention?.(message);
+  };
+  const handleAvatarClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (suppressAvatarClickRef.current) {
+      suppressAvatarClickRef.current = false;
+      event.preventDefault();
+      return;
+    }
+    if (!canMention || event.detail === 0) {
+      openProfile(event.currentTarget);
+      return;
+    }
+    clearProfileClickTimer();
+    const anchor = event.currentTarget;
+    profileClickTimerRef.current = window.setTimeout(() => {
+      profileClickTimerRef.current = null;
+      openProfile(anchor);
+    }, 240);
+  };
+  const handleAvatarDoubleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!canMention) return;
+    event.preventDefault();
+    event.stopPropagation();
+    mentionSender();
+  };
+  const handleAvatarPointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!canMention || event.pointerType === "mouse") return;
+    clearLongPressTimer();
+    longPressStartRef.current = { x: event.clientX, y: event.clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      suppressAvatarClickRef.current = true;
+      setAvatarMenuOpen(true);
+      navigator.vibrate?.(10);
+      window.setTimeout(() => {
+        // Some mobile browsers do not synthesize the click that normally
+        // follows pointer-up after a long press. Never suppress a later tap.
+        suppressAvatarClickRef.current = false;
+      }, 800);
+    }, 500);
+  };
+  const handleAvatarPointerMove = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const start = longPressStartRef.current;
+    if (!start) return;
+    if (
+      Math.abs(event.clientX - start.x) > 10 ||
+      Math.abs(event.clientY - start.y) > 10
+    ) {
+      clearLongPressTimer();
+    }
+  };
+  const handleAvatarContextMenu = (
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    if (!canMention) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearProfileClickTimer();
+    setAvatarMenuOpen(true);
+  };
+
+  useEffect(
+    () => () => {
+      if (profileClickTimerRef.current !== null) {
+        window.clearTimeout(profileClickTimerRef.current);
+      }
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return;
+    const dismiss = () => setAvatarMenuOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismiss();
+    };
+    document.addEventListener("mousedown", dismiss);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [avatarMenuOpen]);
+
+  const avatarInteractionProps = {
+    ref: avatarRef,
+    onClick: handleAvatarClick,
+    onDoubleClick: handleAvatarDoubleClick,
+    onPointerDown: handleAvatarPointerDown,
+    onPointerMove: handleAvatarPointerMove,
+    onPointerUp: clearLongPressTimer,
+    onPointerCancel: clearLongPressTimer,
+    onPointerLeave: clearLongPressTimer,
+    onContextMenu: handleAvatarContextMenu,
+    onDragStart: (event: React.DragEvent<HTMLButtonElement>) =>
+      event.preventDefault(),
+  };
+  const avatarMenu = avatarMenuOpen ? (
+    <FloatingLayer
+      anchorRef={avatarRef}
+      placement="down"
+      align={isOwnAlignedRight ? "end" : "start"}
+      role="menu"
+      className="w-56 overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900 p-1.5 shadow-xl shadow-black/40"
+    >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={mentionSender}
+        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+      >
+        <AtSign className="h-4 w-4" />
+        <span className="min-w-0 truncate">Mention @{name}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          const anchor = avatarRef.current;
+          setAvatarMenuOpen(false);
+          if (anchor) openProfile(anchor);
+        }}
+        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+      >
+        <UserRound className="h-4 w-4" />
+        View profile
+      </button>
+    </FloatingLayer>
+  ) : null;
   // Discuss already expresses the relationship through nesting and its connector
   // rail. Chat and orphan replies use the compact, clickable source preview.
   const quote = hideReplyQuote ? null : (
@@ -586,12 +768,10 @@ export const MessageItem = memo(function MessageItem({
         {nested && (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openProfile(e.currentTarget);
-            }}
-            className="mt-0.5 w-7 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
-            title="View profile"
+            {...avatarInteractionProps}
+            className="mt-0.5 flex h-11 w-11 flex-shrink-0 touch-manipulation select-none items-center justify-center rounded-full transition-opacity hover:opacity-80"
+            title={canMention ? `View profile · double-click to mention @${name}` : "View profile"}
+            aria-label={`View profile for ${name}`}
           >
             <Avatar
               name={name}
@@ -601,6 +781,7 @@ export const MessageItem = memo(function MessageItem({
             />
           </button>
         )}
+        {avatarMenu}
         {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
         <div
           ref={contentRef}
@@ -657,6 +838,8 @@ export const MessageItem = memo(function MessageItem({
             hasDetails={detailsMeta.hasDetails}
             detailsExpanded={detailsExpanded}
             onToggleDetails={() => setDetailsExpanded((value) => !value)}
+            canMention={canMention}
+            mentionLabel={name}
           />
         )}
       </div>
@@ -685,12 +868,19 @@ export const MessageItem = memo(function MessageItem({
           author header beside the avatar so the topic remains document-like. */}
       <button
         type="button"
-        onClick={(e) => openProfile(e.currentTarget)}
+        {...avatarInteractionProps}
         className={cn(
-          "mt-0.5 flex-shrink-0 rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+          "mt-0.5 flex-shrink-0 touch-manipulation select-none rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
           showChatIdentityUnderAvatar && "flex w-14 flex-col items-center gap-0.5",
+          !showChatIdentityUnderAvatar && "flex h-11 w-11 items-center justify-center",
         )}
-        title={hasName ? name : message.sender_id}
+        title={
+          canMention
+            ? `View profile · double-click to mention @${name}`
+            : hasName
+              ? name
+              : message.sender_id
+        }
         aria-label={`View profile for ${name}`}
       >
         <Avatar
@@ -717,6 +907,7 @@ export const MessageItem = memo(function MessageItem({
           </>
         )}
       </button>
+      {avatarMenu}
 
       {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
       <div
@@ -773,6 +964,8 @@ export const MessageItem = memo(function MessageItem({
           hasDetails={detailsMeta.hasDetails}
           detailsExpanded={detailsExpanded}
           onToggleDetails={() => setDetailsExpanded((value) => !value)}
+          canMention={canMention}
+          mentionLabel={name}
         />
       )}
     </div>

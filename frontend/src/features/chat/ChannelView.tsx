@@ -52,6 +52,7 @@ import {
   MessageComposer,
   type MentionCandidate,
   type CommandCandidate,
+  type ComposerPrefill,
 } from "./MessageComposer";
 import { SessionChip } from "./SessionChip";
 import { ComposerModelPopover } from "./ComposerModelPopover";
@@ -960,10 +961,8 @@ export function ChannelView({
     line?: number;
   }>({});
   // Composer prefill (a plugin's cheers:compose — G4): suggestion only, never a send.
-  const [composePrefill, setComposePrefill] = useState<{
-    text: string;
-    seq: number;
-  } | null>(null);
+  const [composePrefill, setComposePrefill] =
+    useState<ComposerPrefill | null>(null);
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
 
   // The work lane is the bounded canvas the instrument windows drag/resize +
@@ -1420,7 +1419,11 @@ export function ChannelView({
   // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
   // reviews, edits, and presses send; that keystroke is what makes it a channel action.
   const composeMessage = useCallback((text: string) => {
-    setComposePrefill((p) => ({ text, seq: (p?.seq ?? 0) + 1 }));
+    setComposePrefill((p) => ({
+      kind: "text",
+      text,
+      seq: (p?.seq ?? 0) + 1,
+    }));
   }, []);
 
   const handleSend = useCallback(
@@ -1601,6 +1604,8 @@ export function ChannelView({
           mentionables.find((x) => x.id === bot!.sender_id)?.label;
         if (label) {
           setComposePrefill((p) => ({
+            kind: "mention",
+            memberId: bot!.sender_id,
             text: `@${label} `,
             seq: (p?.seq ?? 0) + 1,
           }));
@@ -1615,6 +1620,24 @@ export function ChannelView({
     [messages, mentionables, channel?.channel_id],
   );
 
+  const mentionMember = useCallback(
+    (memberId: string) => {
+      if (memberId === user?.user_id) return;
+      const candidate = mentionables.find((item) => item.id === memberId);
+      if (!candidate) {
+        toast.error("This member is no longer available to mention");
+        return;
+      }
+      setComposePrefill((previous) => ({
+        kind: "mention",
+        memberId: candidate.id,
+        text: `@${candidate.label} `,
+        seq: (previous?.seq ?? 0) + 1,
+      }));
+    },
+    [mentionables, user?.user_id],
+  );
+
   // Stable identity: selection state deliberately NOT captured here (it travels
   // as scalar props), so a selection toggle only re-renders the affected rows
   // instead of defeating memo(MessageItem) list-wide.
@@ -1626,6 +1649,7 @@ export function ChannelView({
       },
       onForward: (m) =>
         setForward({ content: buildForwardContent([m]), count: 1 }),
+      onMention: (m) => mentionMember(m.sender_id),
       onToggleSelect: (m) => {
         setSelectMode(true);
         // Entering select mode — disarm reply so the next send can't silently
@@ -1640,7 +1664,7 @@ export function ChannelView({
       },
       onRetry: retryMessage,
     }),
-    [buildForwardContent, retryMessage, applyReplyDefaults],
+    [buildForwardContent, retryMessage, applyReplyDefaults, mentionMember],
   );
 
   const clearSelection = () => {
@@ -1766,7 +1790,11 @@ export function ChannelView({
     : channel.name;
 
   return (
-    <ProfileCardProvider members={memberById}>
+    <ProfileCardProvider
+      members={memberById}
+      currentUserId={user?.user_id}
+      onMention={(member) => mentionMember(member.member_id)}
+    >
       {/* Desktop: instrument panels DOCK into a dedicated work area on the right,
         which reserves real layout space. The chat column is always width-capped:
         centered while the work area is closed, docked against it when open.
