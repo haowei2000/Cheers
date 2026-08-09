@@ -312,6 +312,8 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         created_at: now,
         content_data: None,
         context_bundle,
+        trace_count: Some(0),
+        trace_has_failure: Some(false),
     };
 
     tracing::debug!(

@@ -222,6 +222,8 @@ pub async fn create_message(
         created_at: now,
         content_data: None,
         context_bundle: row_bundle.clone(),
+        trace_count: Some(0),
+        trace_has_failure: Some(false),
     };
 
     // ── 4. 再 fanout 终态帧（已落库，现在安全投递）────────────────────
@@ -770,9 +772,20 @@ pub(crate) const MESSAGE_LIST_SELECT: &str =
         m.content, m.msg_type, m.is_partial, m.is_deleted, m.file_ids,
         m.in_reply_to_msg_id AS reply_to_msg_id, m.thread_root_msg_id,
         m.created_at, m.content_data,
-        m.context_bundle
+        m.context_bundle,
+        trace_stats.trace_count,
+        trace_stats.trace_has_failure
  FROM messages m
- LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id";
+ LEFT JOIN users u ON m.sender_type = 'user' AND u.user_id = m.sender_id
+ LEFT JOIN LATERAL (
+    SELECT COUNT(*)::BIGINT AS trace_count,
+           COALESCE(BOOL_OR(
+             mt.phase IN ('prompt_failed', 'terminal_ack_failed')
+             OR mt.status IN ('failed', 'error')
+           ), FALSE) AS trace_has_failure
+      FROM message_traces mt
+     WHERE mt.msg_id = m.msg_id
+ ) trace_stats ON TRUE";
 
 pub async fn list_channel_messages(
     db: &PgPool,

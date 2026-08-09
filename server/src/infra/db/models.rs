@@ -108,6 +108,13 @@ pub struct MessageDto {
     /// refs to Cheers resources the sender picked up. NULL for messages with none.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub context_bundle: Option<Value>,
+    /// Durable agent-step metadata. These fields are populated on list/detail
+    /// reads so clients can hide empty disclosure chrome without eagerly
+    /// fetching every trace timeline.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub trace_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub trace_has_failure: Option<bool>,
 }
 
 impl MessageDto {
@@ -143,6 +150,8 @@ impl MessageDto {
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
             content_data: row.try_get::<Value, _>("content_data").ok(),
             context_bundle: row.try_get::<Value, _>("context_bundle").ok(),
+            trace_count: row.try_get("trace_count").ok(),
+            trace_has_failure: row.try_get("trace_has_failure").ok(),
         }
     }
 }

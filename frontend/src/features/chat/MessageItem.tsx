@@ -1,5 +1,18 @@
-import { memo, useContext, useRef, useState, type RefObject } from "react";
-import { Square, MessageCircleMore, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
+import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  Square,
+  MessageCircleMore,
+  Copy,
+  Forward,
+  CheckSquare,
+  Check,
+  AlertCircle,
+  RotateCw,
+  Loader2,
+  ListTree,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -17,6 +30,7 @@ import type { Message } from "@/types";
 import { useProfileCard } from "./ProfileHovercard";
 import { FloatingLayer } from "@/components/ui/floating-layer";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
+import { messageDetailsMeta } from "./messageDetails";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -98,6 +112,9 @@ function ActionBar({
   visible,
   onEnter,
   onLeave,
+  hasDetails,
+  detailsExpanded,
+  onToggleDetails,
 }: {
   message: Message;
   actions: MessageActionHandlers;
@@ -106,6 +123,9 @@ function ActionBar({
   visible: boolean;
   onEnter: () => void;
   onLeave: () => void;
+  hasDetails?: boolean;
+  detailsExpanded?: boolean;
+  onToggleDetails?: () => void;
 }) {
   const btn =
     "flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
@@ -123,6 +143,18 @@ function ActionBar({
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
+      {hasDetails && onToggleDetails && (
+        <button
+          type="button"
+          title={detailsExpanded ? "Hide details" : "Show details"}
+          aria-label={detailsExpanded ? "Hide message details" : "Show message details"}
+          aria-expanded={detailsExpanded}
+          className={btn}
+          onClick={onToggleDetails}
+        >
+          <ListTree className="h-3.5 w-3.5" />
+        </button>
+      )}
       <button type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
         <MessageCircleMore className="w-3.5 h-3.5" />
       </button>
@@ -363,16 +395,27 @@ export const MessageItem = memo(function MessageItem({
     message.sender_name || senderName || message.sender_id.slice(0, 8);
   const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
+  const actionableApprovalCount = (pendingApprovals ?? []).filter(
+    (approval) =>
+      !(approval.content_data as { resolved?: boolean } | null | undefined)?.resolved,
+  ).length;
+  const detailsMeta = messageDetailsMeta(message, actionableApprovalCount);
+  const [detailsExpanded, setDetailsExpanded] = useState(
+    actionableApprovalCount > 0 || Boolean(focusRequestId),
+  );
+
+  useEffect(() => {
+    if (actionableApprovalCount > 0 || focusRequestId) setDetailsExpanded(true);
+  }, [actionableApprovalCount, focusRequestId]);
 
   const active = message._streaming || message.is_partial;
-  // Agent steps: always after a finished bot turn; also during an active turn
-  // when there are live events or a pending approval folded into this message.
+  // Agent steps only exist when the list DTO or live frame proves that content
+  // exists. This prevents empty completed bot turns from showing disclosure
+  // chrome such as "Agent steps · 0".
   const showTrace =
     isBot &&
     !!channelId &&
-    (!active ||
-      (pendingApprovals?.length ?? 0) > 0 ||
-      (message._trace_events?.length ?? 0) > 0);
+    detailsMeta.hasTrace;
   const tracePanel = showTrace ? (
     <BotTracePanel
       key={`trace-${message.msg_id}`}
@@ -383,6 +426,9 @@ export const MessageItem = memo(function MessageItem({
       currentUserId={currentUserId}
       streaming={!!active}
       focusRequestId={focusRequestId}
+      expanded={detailsExpanded}
+      onExpandedChange={setDetailsExpanded}
+      showToggle={false}
     />
   ) : null;
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
@@ -420,6 +466,69 @@ export const MessageItem = memo(function MessageItem({
       reversed={isOwnAlignedRight}
     />
   );
+  const detailsSummary = [
+    detailsMeta.traceCount > 0
+      ? `${detailsMeta.traceCount} step${detailsMeta.traceCount === 1 ? "" : "s"}`
+      : null,
+    detailsMeta.contextCount > 0
+      ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean).join(" · ");
+  const detailsSection = detailsMeta.hasDetails ? (
+    <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
+      {detailsMeta.hasFailure && (
+        <div role="alert" className="flex min-h-8 items-center gap-1.5 text-[11px] text-red-400">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Agent step failed</span>
+          {!detailsExpanded && (
+            <button
+              type="button"
+              onClick={() => setDetailsExpanded(true)}
+              className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+            >
+              View details
+            </button>
+          )}
+        </div>
+      )}
+      {actionableApprovalCount === 0 && (
+        <button
+          type="button"
+          onClick={() => setDetailsExpanded((value) => !value)}
+          aria-expanded={detailsExpanded}
+          className="relative inline-flex h-8 items-center gap-1.5 self-start rounded-md px-1.5 text-[11px] text-zinc-400 transition-colors after:absolute after:-inset-y-1.5 after:inset-x-0 hover:bg-zinc-800/60 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        >
+          {detailsExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+          <span className="font-medium">Details</span>
+          {detailsSummary && <span className="text-zinc-500">· {detailsSummary}</span>}
+        </button>
+      )}
+      {detailsExpanded && (
+        <div className="mt-1 flex w-full min-w-0 flex-col gap-2 rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2.5 text-left md:min-w-[18rem]">
+          {detailsMeta.contextCount > 0 && (
+            <section aria-label="Referenced context">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                Context · {detailsMeta.contextCount}
+              </p>
+              <MessageContextChips bundle={message.context_bundle} />
+            </section>
+          )}
+          {showTrace && (
+            <section aria-label="Agent steps">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                Agent steps · {detailsMeta.traceCount}
+              </p>
+              {tracePanel}
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
   const selected = Boolean(selectedProp);
   const rowSelectProps = selectable
     ? {
@@ -534,7 +643,7 @@ export const MessageItem = memo(function MessageItem({
           {message._status && (
             <SendStatus message={message} onRetry={actions?.onRetry} />
           )}
-          {tracePanel}
+          {detailsSection}
         </div>
         {showActions && (
           <ActionBar
@@ -545,6 +654,9 @@ export const MessageItem = memo(function MessageItem({
             visible={actionsVisible}
             onEnter={showActionBar}
             onLeave={hideActionBar}
+            hasDetails={detailsMeta.hasDetails}
+            detailsExpanded={detailsExpanded}
+            onToggleDetails={() => setDetailsExpanded((value) => !value)}
           />
         )}
       </div>
@@ -647,7 +759,7 @@ export const MessageItem = memo(function MessageItem({
         {message._status && (
           <SendStatus message={message} onRetry={actions?.onRetry} />
         )}
-        {tracePanel}
+        {detailsSection}
       </div>
       {showActions && (
         <ActionBar
@@ -658,6 +770,9 @@ export const MessageItem = memo(function MessageItem({
           visible={actionsVisible}
           onEnter={showActionBar}
           onLeave={hideActionBar}
+          hasDetails={detailsMeta.hasDetails}
+          detailsExpanded={detailsExpanded}
+          onToggleDetails={() => setDetailsExpanded((value) => !value)}
         />
       )}
     </div>
@@ -785,7 +900,6 @@ function MessageBody({
         </div>
       )}
       <FileGrid files={files} className="mt-1" />
-      <MessageContextChips bundle={message.context_bundle} className="mt-1" />
     </div>
   );
 }
