@@ -7,6 +7,10 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { isComposing } from "@/lib/ime";
+import {
+  ConversationModePicker,
+  type ConversationMode,
+} from "./ConversationModePicker";
 
 // Create a channel in the given workspace, then add it to the store and select it
 // (it opens in the normal chat view). Mirrors the NewDmDialog pattern.
@@ -25,6 +29,7 @@ export function NewChannelDialog({
   const [name, setName] = useState("");
   const [type, setType] = useState<"public" | "private">("public");
   const [kind, setKind] = useState<"text" | "voice">("text");
+  const [conversationMode, setConversationMode] = useState<ConversationMode>("chat");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -37,6 +42,7 @@ export function NewChannelDialog({
         name: trimmed,
         type,
         kind,
+        conversation_mode: conversationMode,
       });
       upsertChannel(ch);
       selectChannel(ch.channel_id);
@@ -93,6 +99,13 @@ export function NewChannelDialog({
               {t === "public" ? "Public" : "Private"}
             </button>
           ))}
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+            Conversation layout
+          </p>
+          <ConversationModePicker value={conversationMode} onChange={setConversationMode} />
         </div>
 
         <div className="flex gap-2">

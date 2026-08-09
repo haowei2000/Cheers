@@ -92,7 +92,10 @@ pub struct MessageDto {
     pub content: String,
     pub msg_type: String,
     pub is_partial: bool,
+    pub is_deleted: bool,
     pub reply_to_msg_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub thread_root_msg_id: Option<String>,
     pub file_ids: Vec<String>,
     pub mentions: Vec<MessageMention>,
     pub files: Vec<MessageFileRef>,
@@ -105,6 +108,13 @@ pub struct MessageDto {
     /// refs to Cheers resources the sender picked up. NULL for messages with none.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub context_bundle: Option<Value>,
+    /// Durable agent-step metadata. These fields are populated on list/detail
+    /// reads so clients can hide empty disclosure chrome without eagerly
+    /// fetching every trace timeline.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub trace_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub trace_has_failure: Option<bool>,
 }
 
 impl MessageDto {
@@ -124,7 +134,9 @@ impl MessageDto {
                 .try_get("msg_type")
                 .unwrap_or_else(|_| "text".to_string()),
             is_partial: row.try_get("is_partial").unwrap_or(false),
+            is_deleted: row.try_get("is_deleted").unwrap_or(false),
             reply_to_msg_id: row.try_get("reply_to_msg_id").ok(),
+            thread_root_msg_id: row.try_get("thread_root_msg_id").ok(),
             file_ids: match row.try_get::<Vec<String>, _>("file_ids") {
                 Ok(ids) => ids,
                 Err(_) => row
@@ -138,6 +150,8 @@ impl MessageDto {
             created_at: row.try_get("created_at").unwrap_or_else(|_| Utc::now()),
             content_data: row.try_get::<Value, _>("content_data").ok(),
             context_bundle: row.try_get::<Value, _>("context_bundle").ok(),
+            trace_count: row.try_get("trace_count").ok(),
+            trace_has_failure: row.try_get("trace_has_failure").ok(),
         }
     }
 }

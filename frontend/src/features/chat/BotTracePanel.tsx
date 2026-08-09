@@ -55,6 +55,11 @@ interface Props {
   streaming?: boolean;
   /** Deep-link: expand and focus the approval with this request_id. */
   focusRequestId?: string | null;
+  /** Controlled disclosure state when Agent steps live inside message Details. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+  /** False when the parent message renders the unified Details trigger. */
+  showToggle?: boolean;
 }
 
 type EventVisual = { Icon: LucideIcon; tone: string; label: string };
@@ -757,13 +762,22 @@ export function BotTracePanel({
   currentUserId,
   streaming = false,
   focusRequestId = null,
+  expanded: controlledExpanded,
+  onExpandedChange,
+  showToggle = true,
 }: Props) {
-  const [expanded, setExpanded] = useState(
+  const [internalExpanded, setInternalExpanded] = useState(
     pendingApprovals.some(
       (message) =>
         !(message.content_data as PermissionContentData | null | undefined)?.resolved,
     ) || !!focusRequestId,
   );
+  const expanded = controlledExpanded ?? internalExpanded;
+  const updateExpanded = (next: boolean | ((current: boolean) => boolean)) => {
+    const value = typeof next === "function" ? next(expanded) : next;
+    if (controlledExpanded === undefined) setInternalExpanded(value);
+    onExpandedChange?.(value);
+  };
   const [showAll, setShowAll] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [events, setEvents] = useState<TraceEvent[] | null>(null);
@@ -836,16 +850,20 @@ export function BotTracePanel({
 
   // Keep Agent steps open while something still needs a decision.
   useEffect(() => {
-    if (hasActionable) setExpanded(true);
+    if (hasActionable) updateExpanded(true);
+    // The controlled parent owns identity; only the actionable state should
+    // trigger this transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasActionable]);
 
   // Deep-link from ViewBoard: open panel and focus the matching approval row.
   useEffect(() => {
     if (!focusRequestId) return;
-    setExpanded(true);
+    updateExpanded(true);
     setShowAll(true);
     const match = timeline.find((e) => e.request_id === focusRequestId);
     if (match) setActiveEventId(match.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequestId, timeline]);
 
   // After the turn finishes, drop the "latest only" filter so history is full by default.
@@ -893,39 +911,48 @@ export function BotTracePanel({
 
   return (
     <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        title={expanded ? "Hide agent steps" : "Show agent steps"}
-        className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
-      >
-        {expanded ? (
-          <ChevronDown className="w-3 h-3" />
-        ) : (
-          <ChevronRight className="w-3 h-3" />
-        )}
-        <span>
-          Agent steps
-          {latestOnly
-            ? " · latest"
-            : events !== null || timeline.length > 0 || hasActionable
-              ? ` · ${timeline.length}`
-              : ""}
-        </span>
-        {pendingCount > 0 ? (
-          <span className="inline-flex items-center gap-0.5 text-amber-400/80">
-            <ShieldCheck className="w-3 h-3" />
-            {pendingCount} pending
+      {showToggle && (
+        <button
+          type="button"
+          onClick={() => updateExpanded((value) => !value)}
+          aria-expanded={expanded}
+          title={expanded ? "Hide agent steps" : "Show agent steps"}
+          className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          {expanded ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
+          )}
+          <span>
+            Agent steps
+            {latestOnly
+              ? " · latest"
+              : events !== null || timeline.length > 0 || hasActionable
+                ? ` · ${timeline.length}`
+                : ""}
           </span>
-        ) : approvalCount > 0 ? (
-          <span className="inline-flex items-center gap-0.5 text-zinc-400">
-            <ShieldCheck className="w-3 h-3" />
-            {approvalCount}
-          </span>
-        ) : null}
-        {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-      </button>
+          {pendingCount > 0 ? (
+            <span className="inline-flex items-center gap-0.5 text-amber-400/80">
+              <ShieldCheck className="w-3 h-3" />
+              {pendingCount} pending
+            </span>
+          ) : approvalCount > 0 ? (
+            <span className="inline-flex items-center gap-0.5 text-zinc-400">
+              <ShieldCheck className="w-3 h-3" />
+              {approvalCount}
+            </span>
+          ) : null}
+          {loading && <Loader2 className="w-3 h-3 animate-spin" />}
+        </button>
+      )}
+
+      {!showToggle && expanded && loading && !hasRows && (
+        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading steps…
+        </div>
+      )}
 
       {expanded && hasRows && (
         <div className="mt-2 flex flex-col gap-1">

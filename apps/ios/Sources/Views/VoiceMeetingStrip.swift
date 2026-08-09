@@ -24,6 +24,22 @@ struct VoiceMeetingStrip: View {
                 voiceActions
             }
 
+            if voice.isConnected && !voice.participantNames.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(voice.participantNames, id: \.self) { name in
+                            Label(name, systemImage: "person.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 9)
+                                .frame(minHeight: 32)
+                                .background(.quaternary, in: Capsule())
+                        }
+                    }
+                }
+                .accessibilityLabel("Voice participants")
+            }
+
             if let latest = voice.transcripts.last, !latest.text.isEmpty {
                 HStack(alignment: .top, spacing: 7) {
                     Image(systemName: "captions.bubble")
@@ -37,6 +53,21 @@ struct VoiceMeetingStrip: View {
                 }
                 .padding(9)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+            }
+
+            if voice.canManageTranscription {
+                Button {
+                    Task { await voice.setTranscription(voice.transcriptionStatus != "active") }
+                } label: {
+                    Label(
+                        voice.transcriptionStatus == "active" ? "Stop live captions" : "Start live captions",
+                        systemImage: voice.transcriptionStatus == "active" ? "captions.bubble.fill" : "captions.bubble"
+                    )
+                    .font(.caption.weight(.medium))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityValue(voice.transcriptionStatus == "active" ? "On" : "Off")
             }
 
             if let error = voice.errorMessage {
@@ -65,7 +96,7 @@ struct VoiceMeetingStrip: View {
                     }
                 } label: {
                     Image(systemName: voice.micEnabled ? "mic.fill" : "mic.slash.fill")
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.circle)
@@ -76,7 +107,7 @@ struct VoiceMeetingStrip: View {
                     Task { await voice.leave() }
                 } label: {
                     Image(systemName: "phone.down.fill")
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.circle)
@@ -89,10 +120,10 @@ struct VoiceMeetingStrip: View {
             } label: {
                 if voice.isJoining {
                     ProgressView()
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                 } else {
                     Image(systemName: "phone.fill")
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                 }
             }
             .buttonStyle(.borderedProminent)

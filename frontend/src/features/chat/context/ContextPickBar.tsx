@@ -194,7 +194,7 @@ export function ContextPickBar({
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div className="mt-1 flex items-center flex-wrap gap-1.5 px-4 py-1.5">
+    <div className="mx-auto mt-1 flex w-full max-w-[72rem] items-center flex-wrap gap-1.5 px-4 py-1.5 max-md:px-3">
       {/* Suggested context (F3): one-click to add, one-click to dismiss; never
           auto-committed. Rendered as dashed "ghost" chips, distinct from picks. */}
       {suggestions.map((sg) => {

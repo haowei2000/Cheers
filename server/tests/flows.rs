@@ -332,6 +332,22 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
 
     let trigger = Uuid::new_v4();
     let bot = Uuid::new_v4();
+    let trigger_author = seed_user(&db).await;
+    add_member(&db, ch, trigger_author, "user").await;
+
+    // Dispatch is only valid for a durable same-channel trigger. Migration 0071
+    // enforces that contract so placeholders always have a resolvable thread root.
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial)
+         VALUES ($1, $2, 'user', $3, 'trigger', FALSE)",
+    )
+    .bind(trigger.to_string())
+    .bind(ch.to_string())
+    .bind(trigger_author.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
 
     let make_params = || DispatchParams {
         context_bundle: None,
@@ -529,6 +545,22 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
 
     let trigger = Uuid::new_v4();
     let session = Uuid::new_v4();
+    let trigger_author = seed_user(&db).await;
+    add_member(&db, ch, trigger_author, "user").await;
+
+    // A production dispatch always follows a persisted channel message. Keep
+    // the fixture aligned with the database reply/thread invariant.
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial)
+         VALUES ($1, $2, 'user', $3, 'trigger', FALSE)",
+    )
+    .bind(trigger.to_string())
+    .bind(ch.to_string())
+    .bind(trigger_author.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
 
     // 派发占位（在线 → Dispatched），并注册流。
     let res = dispatcher::dispatch(
@@ -3219,6 +3251,17 @@ async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
 
     // A proactively posts a message @-mentioning B (the WS-boundary side effect).
     let a_post = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial, channel_seq)
+         VALUES ($1, $2, 'bot', $3, '@bot-b follow up', FALSE, 7)",
+    )
+    .bind(a_post.to_string())
+    .bind(ch.to_string())
+    .bind(bot_a.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
     let counter = Arc::new(CountingBotLocator::default());
     let bot_locator: Arc<dyn BotLocator> = counter.clone();
     // Await the spawned trigger handle so the assertions below see its effects.

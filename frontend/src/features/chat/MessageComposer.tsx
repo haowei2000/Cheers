@@ -42,6 +42,7 @@ import { isAudioFile } from "./fileUtils";
 import { CommandPalette, type CommandCandidate } from "./CommandPalette";
 import { ExistingFilePicker } from "./ExistingFilePicker";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
+import { appendMentionToken } from "./mentionInsertion";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -55,6 +56,16 @@ export interface MentionCandidate {
   isOnline?: boolean | null;
   /** Bots: whether the agent accepts audio prompts (unknown → false, fail-safe). */
   canReceiveAudio?: boolean;
+}
+
+export interface ComposerPrefill {
+  text: string;
+  seq: number;
+  /** Mention requests append inline, de-duplicate the token, and focus the
+   * composer. Ordinary suggested content retains the existing new-line mode. */
+  kind?: "text" | "mention";
+  /** Stable member identity avoids ambiguous label-prefix matching. */
+  memberId?: string;
 }
 
 // Group @-mention tokens the server expands to real members (findings 3a). Their
@@ -93,7 +104,7 @@ interface Props {
       `seq` bumps per request so the same text can be prefilled again. Any `@label`
       tokens matching `mentionables` are registered as picked mentions, so the
       suggested command routes to its bot when the user presses send. */
-  prefill?: { text: string; seq: number } | null;
+  prefill?: ComposerPrefill | null;
   /** Bot turns currently streaming in the channel. With an empty draft the send
       button morphs into Stop; a typed draft always keeps Send (concurrent sends
       are legal in a channel chat). */
@@ -227,8 +238,17 @@ function MessageComposerImpl({
   useEffect(() => {
     if (!prefill || prefill.seq === prefillSeq.current) return;
     prefillSeq.current = prefill.seq;
-    setText((t) => (t.trim() ? `${t}\n${prefill.text}` : prefill.text));
-    const mentioned = mentionables.filter((m) => prefill.text.includes(`@${m.label}`));
+    setText((t) =>
+      prefill.kind === "mention"
+        ? appendMentionToken(t, prefill.text.replace(/^@/, "").trim())
+        : t.trim()
+          ? `${t}\n${prefill.text}`
+          : prefill.text,
+    );
+    const mentioned =
+      prefill.kind === "mention" && prefill.memberId
+        ? mentionables.filter((m) => m.id === prefill.memberId)
+        : mentionables.filter((m) => prefill.text.includes(`@${m.label}`));
     if (mentioned.length) {
       setPicked((prev) => {
         const have = new Set(prev.map((p) => p.id));
@@ -976,7 +996,7 @@ function MessageComposerImpl({
     // Mobile: tighter gutters + safe-area bottom padding so the input clears the
     // home indicator; the dvh root + interactive-widget=resizes-content keep it
     // above the on-screen keyboard.
-    <div className="px-4 pb-4 pt-2 relative max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="relative mx-auto w-full max-w-[72rem] px-4 pb-4 pt-2 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
         <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-10">
           {filteredMentions.map((c, i) => (

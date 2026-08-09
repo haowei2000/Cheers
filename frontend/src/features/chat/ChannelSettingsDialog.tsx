@@ -34,6 +34,10 @@ import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { InviteLinksSection } from "./InviteLinksSection";
 import type { Channel, MemberItem } from "@/types";
 import { TaskClaimSettings } from "./TaskClaimSettings";
+import {
+  ConversationModePicker,
+  type ConversationMode,
+} from "./ConversationModePicker";
 
 // Channel admin panel: rename/purpose, member list (add/remove members — users
 // AND bots, invited alike), and delete. Management controls are gated on the
@@ -55,6 +59,9 @@ export function ChannelSettingsDialog({
 
   const [name, setName] = useState(channel.name);
   const [purpose, setPurpose] = useState(channel.purpose ?? "");
+  const [conversationMode, setConversationMode] = useState<ConversationMode>(
+    channel.conversation_mode ?? "chat",
+  );
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [savingMeta, setSavingMeta] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -106,6 +113,7 @@ export function ChannelSettingsDialog({
       const updated = await updateChannel(channel.channel_id, {
         name: trimmed,
         purpose: purpose.trim() || null,
+        conversation_mode: conversationMode,
       });
       patchChannel(channel.channel_id, updated);
       toast.success("Saved");
@@ -213,6 +221,18 @@ export function ChannelSettingsDialog({
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
+          {channel.type !== "dm" && (
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+                Conversation layout
+              </label>
+              <ConversationModePicker
+                value={conversationMode}
+                onChange={setConversationMode}
+                disabled={!canManage}
+              />
+            </div>
+          )}
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Purpose
           </label>

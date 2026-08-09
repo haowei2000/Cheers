@@ -256,12 +256,13 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     let channel_seq = channel_seq::allocate(&mut tx, channel_id)
         .await
         .map_err(super::db_err("messages.create: allocate channel_seq"))?;
-    sqlx::query(
+    let thread_root_msg_id: Option<String> = sqlx::query_scalar(
         "INSERT INTO messages
          (msg_id, channel_id, sender_type, sender_id, content, msg_type,
           is_partial, is_deleted, in_reply_to_msg_id, file_ids, created_at, channel_seq,
           context_bundle)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11)",
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7, $8, $9, $10, $11)
+         RETURNING thread_root_msg_id",
     )
     .bind(msg_id.to_string())
     .bind(channel_id.to_string())
@@ -274,7 +275,7 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
     .bind(now)
     .bind(channel_seq)
     .bind(context_bundle.clone())
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(super::db_err("messages.create: insert message"))?;
     mentions::insert_batch(&mut tx, msg_id, &mentions)
@@ -302,13 +303,17 @@ pub async fn handle_create(db: &PgPool, principal: &Principal, params: &Value) -
         content,
         msg_type,
         is_partial: false,
+        is_deleted: false,
         reply_to_msg_id,
+        thread_root_msg_id,
         file_ids,
         mentions: mention_dtos,
         files,
         created_at: now,
         content_data: None,
         context_bundle,
+        trace_count: Some(0),
+        trace_has_failure: Some(false),
     };
 
     tracing::debug!(

@@ -28,6 +28,8 @@ export interface Channel {
   type: string;
   /** Interaction kind, independent from public/private/DM access semantics. */
   kind?: "text" | "voice";
+  /** Message presentation, independent from access and text/voice semantics. */
+  conversation_mode?: "chat" | "discuss";
   workspace_id?: string;
   purpose?: string | null;
   auto_assist?: boolean;
@@ -246,6 +248,9 @@ export interface Message {
    *  server path (REST DTO + WS frames) — the DB column `in_reply_to_msg_id`
    *  never crosses the API boundary. */
   reply_to_msg_id?: string | null;
+  /** Top-level discussion root for replies; absent/null on root messages and
+   *  older gateway frames. */
+  thread_root_msg_id?: string | null;
   files?: FileInfo[];
   file_ids?: string[];
   mentions?: MessageMention[];
@@ -270,6 +275,10 @@ export interface Message {
       params?: unknown;
     }>;
   } | null;
+  /** Persisted agent-step summary used to decide whether Details exists without
+   *  eagerly loading the full trace timeline. Older/live frames may omit it. */
+  trace_count?: number;
+  trace_has_failure?: boolean;
   _streaming?: boolean;
   /** Latest agent progress (trace) title shown while streaming. */
   _trace?: string | null;

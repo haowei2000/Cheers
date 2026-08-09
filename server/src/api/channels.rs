@@ -22,6 +22,10 @@ pub struct ChannelDto {
     pub channel_type: String,
     /// Interaction kind, orthogonal to public/private/DM access semantics.
     pub kind: String,
+    /// Message presentation, orthogonal to access and interaction kind.
+    /// `chat` is chronological with own messages on the right; `discuss`
+    /// groups replies below their root and keeps every participant on the left.
+    pub conversation_mode: String,
     pub purpose: Option<String>,
     pub auto_assist: bool,
     pub allow_member_invites: bool,
@@ -60,6 +64,7 @@ pub struct ChannelCreateRequest {
     #[serde(rename = "type")]
     pub channel_type: Option<String>,
     pub kind: Option<String>,
+    pub conversation_mode: Option<String>,
     pub purpose: Option<String>,
     pub allow_member_invites: Option<bool>,
     pub allow_bot_adds: Option<bool>,
@@ -76,6 +81,7 @@ pub struct ChannelUpdateRequest {
     #[serde(rename = "type")]
     pub channel_type: Option<String>,
     pub auto_assist: Option<bool>,
+    pub conversation_mode: Option<String>,
     pub allow_member_invites: Option<bool>,
     pub allow_bot_adds: Option<bool>,
 }
@@ -120,6 +126,9 @@ fn dto(row: sqlx::postgres::PgRow) -> ChannelDto {
         avatar_url: row.try_get("avatar_url").ok(),
         channel_type: row.try_get("type").unwrap_or_else(|_| "public".to_string()),
         kind: row.try_get("kind").unwrap_or_else(|_| "text".to_string()),
+        conversation_mode: row
+            .try_get("conversation_mode")
+            .unwrap_or_else(|_| "chat".to_string()),
         purpose: row.try_get("purpose").ok(),
         auto_assist: row.try_get("auto_assist").unwrap_or(false),
         allow_member_invites: row.try_get("allow_member_invites").unwrap_or(true),
@@ -212,7 +221,8 @@ pub async fn list_channels(
         // (`cm.member_id IS NOT NULL`) lives inside the lateral WHERE, so non-members
         // scan zero rows and an aggregate over zero rows still yields one row of 0 —
         // preserving the old CASE-based "non-members get 0" invariant.
-        "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind, c.purpose,
+        "SELECT DISTINCT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
+                c.conversation_mode, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds, c.created_at,
                 (cm.member_id IS NOT NULL) AS is_member,
                 cm.role AS my_role,
@@ -357,7 +367,8 @@ pub async fn create_dm(
             .await;
     }
     let row = sqlx::query(
-        "SELECT channel_id, workspace_id, name, avatar_url, type, kind, purpose, auto_assist,
+        "SELECT channel_id, workspace_id, name, avatar_url, type, kind, conversation_mode,
+                purpose, auto_assist,
                 allow_member_invites, allow_bot_adds
          FROM channels WHERE channel_id = $1",
     )
@@ -399,7 +410,8 @@ pub async fn list_dms(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<Value>>, AppError> {
     let rows = sqlx::query(
-        "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind, c.purpose, c.auto_assist,
+        "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
+                c.conversation_mode, c.purpose, c.auto_assist,
                 c.allow_member_invites, c.allow_bot_adds,
                 COALESCE((
                     -- Bounded unread scan: cap at the newest 100 unread messages so a
@@ -485,6 +497,12 @@ pub async fn create_channel(
             "channel kind must be text or voice".into(),
         ));
     }
+    let conversation_mode = body.conversation_mode.unwrap_or_else(|| "chat".into());
+    if !matches!(conversation_mode.as_str(), "chat" | "discuss") {
+        return Err(AppError::BadRequest(
+            "conversation mode must be chat or discuss".into(),
+        ));
+    }
     // Validate initial bots before writing the channel so a bad/unauthorized bot
     // cannot leave behind a partially-created channel. A newly-created channel
     // cannot already carry a channel-scoped session_create grant, so the only
@@ -516,15 +534,18 @@ pub async fn create_channel(
     let mut tx = state.db.begin().await?;
     let row = sqlx::query(
         "INSERT INTO channels
-            (channel_id, workspace_id, name, type, kind, purpose, allow_member_invites, allow_bot_adds)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING channel_id, workspace_id, name, avatar_url, type, kind, purpose, auto_assist, allow_member_invites, allow_bot_adds",
+            (channel_id, workspace_id, name, type, kind, conversation_mode, purpose,
+             allow_member_invites, allow_bot_adds)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING channel_id, workspace_id, name, avatar_url, type, kind,
+                   conversation_mode, purpose, auto_assist, allow_member_invites, allow_bot_adds",
     )
     .bind(&channel_id)
     .bind(&body.workspace_id)
     .bind(body.name.trim())
     .bind(&channel_type)
     .bind(&kind)
+    .bind(&conversation_mode)
     .bind(&body.purpose)
     .bind(body.allow_member_invites.unwrap_or(true))
     .bind(body.allow_bot_adds.unwrap_or(true))
@@ -713,7 +734,8 @@ pub async fn get_channel(
         return Err(AppError::Forbidden("not a channel member".into()));
     }
     let row = sqlx::query(
-        "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind, c.purpose,
+        "SELECT c.channel_id, c.workspace_id, c.name, c.avatar_url, c.type, c.kind,
+                c.conversation_mode, c.purpose,
                 c.auto_assist, c.allow_member_invites, c.allow_bot_adds,
                 cm.role AS my_role,
                 (cm.role IN ('owner', 'admin') OR $2::boolean) AS can_manage
@@ -737,6 +759,13 @@ pub async fn update_channel(
     Json(body): Json<ChannelUpdateRequest>,
 ) -> Result<Json<ChannelDto>, AppError> {
     ensure_channel_admin(&state, &channel_id, &claims.sub, &claims.role).await?;
+    if let Some(mode) = body.conversation_mode.as_deref() {
+        if !matches!(mode, "chat" | "discuss") {
+            return Err(AppError::BadRequest(
+                "conversation mode must be chat or discuss".into(),
+            ));
+        }
+    }
     let row = sqlx::query(
         "UPDATE channels
          SET name = COALESCE($2, name),
@@ -744,9 +773,11 @@ pub async fn update_channel(
              type = COALESCE($4, type),
              auto_assist = COALESCE($5, auto_assist),
              allow_member_invites = COALESCE($6, allow_member_invites),
-             allow_bot_adds = COALESCE($7, allow_bot_adds)
+             allow_bot_adds = COALESCE($7, allow_bot_adds),
+             conversation_mode = COALESCE($8, conversation_mode)
          WHERE channel_id = $1
-         RETURNING channel_id, workspace_id, name, avatar_url, type, kind, purpose, auto_assist, allow_member_invites, allow_bot_adds",
+         RETURNING channel_id, workspace_id, name, avatar_url, type, kind,
+                   conversation_mode, purpose, auto_assist, allow_member_invites, allow_bot_adds",
     )
     .bind(&channel_id)
     .bind(body.name)
@@ -755,6 +786,7 @@ pub async fn update_channel(
     .bind(body.auto_assist)
     .bind(body.allow_member_invites)
     .bind(body.allow_bot_adds)
+    .bind(body.conversation_mode)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;

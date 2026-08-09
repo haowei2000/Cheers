@@ -1,5 +1,20 @@
-import { memo, useContext, useRef, useState, type RefObject } from "react";
-import { Square, MessageCircleMore, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
+import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  Square,
+  MessageCircleMore,
+  Copy,
+  Forward,
+  CheckSquare,
+  Check,
+  AlertCircle,
+  RotateCw,
+  Loader2,
+  ListTree,
+  ChevronDown,
+  ChevronRight,
+  AtSign,
+  UserRound,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -17,6 +32,7 @@ import type { Message } from "@/types";
 import { useProfileCard } from "./ProfileHovercard";
 import { FloatingLayer } from "@/components/ui/floating-layer";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
+import { messageDetailsMeta } from "./messageDetails";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -24,6 +40,8 @@ import { useHoverIntent } from "@/hooks/useHoverIntent";
 export interface MessageActionHandlers {
   onReply: (m: Message) => void;
   onForward: (m: Message) => void;
+  /** Insert this sender as a picked composer mention. Never sends. */
+  onMention?: (m: Message) => void;
   /** Toggle this message in the multi-select set (entering select mode if off). */
   onToggleSelect: (m: Message) => void;
   /** Re-send a message whose send failed (client-only `_status: "failed"`). */
@@ -35,6 +53,9 @@ interface Props {
   isConsecutive?: boolean;
   /** True when rendered as a sub-message under a parent (compact chrome). */
   nested?: boolean;
+  /** Chat mirrors the current user's messages to the right; Discuss keeps all
+   * participants on the left so the thread reads as one continuous document. */
+  alignOwnMessages?: boolean;
   /** Parent is in the loaded window — skip the quote strip (parent is above). */
   hideReplyQuote?: boolean;
   currentUserId?: string;
@@ -85,53 +106,85 @@ async function copyMessage(message: Message) {
 }
 
 /** Hover toolbar: reply · copy · forward · select. Hidden while streaming.
- *  `reversed` rows (own messages) put the header on the right, so the toolbar
- *  anchors left to avoid overlapping the name/timestamp/avatar. */
+ *  The toolbar's right edge follows the message content so it always expands
+ *  leftward and remains reachable beside right-aligned own messages. */
 function ActionBar({
   message,
   actions,
-  reversed,
   anchorRef,
   visible,
   onEnter,
   onLeave,
+  hasDetails,
+  detailsExpanded,
+  onToggleDetails,
+  canMention,
+  mentionLabel,
 }: {
   message: Message;
   actions: MessageActionHandlers;
-  reversed?: boolean;
   anchorRef: RefObject<HTMLElement | null>;
   visible: boolean;
   onEnter: () => void;
   onLeave: () => void;
+  hasDetails?: boolean;
+  detailsExpanded?: boolean;
+  onToggleDetails?: () => void;
+  canMention?: boolean;
+  mentionLabel?: string;
 }) {
   const btn =
-    "flex items-center justify-center w-7 h-7 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/70";
+    "flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
   return (
     <FloatingLayer
       anchorRef={anchorRef}
       placement="up"
-      align={reversed ? "start" : "end"}
+      align="end"
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity",
+        "flex items-center gap-0.5 rounded-lg border border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
-      <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
+      {hasDetails && onToggleDetails && (
+        <button
+          type="button"
+          title={detailsExpanded ? "Hide details" : "Show details"}
+          aria-label={detailsExpanded ? "Hide message details" : "Show message details"}
+          aria-expanded={detailsExpanded}
+          className={btn}
+          onClick={onToggleDetails}
+        >
+          <ListTree className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {canMention && actions.onMention && (
+        <button
+          type="button"
+          title={`Mention @${mentionLabel ?? "member"}`}
+          aria-label={`Mention ${mentionLabel ?? "member"}`}
+          className={btn}
+          onClick={() => actions.onMention?.(message)}
+        >
+          <AtSign className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
         <MessageCircleMore className="w-3.5 h-3.5" />
       </button>
-      <button type="button" title="Copy text" className={btn} onClick={() => void copyMessage(message)}>
+      <button type="button" title="Copy text" aria-label="Copy text" className={btn} onClick={() => void copyMessage(message)}>
         <Copy className="w-3.5 h-3.5" />
       </button>
-      <button type="button" title="Forward" className={btn} onClick={() => actions.onForward(message)}>
+      <button type="button" title="Forward" aria-label="Forward" className={btn} onClick={() => actions.onForward(message)}>
         <Forward className="w-3.5 h-3.5" />
       </button>
       <button
         type="button"
         title="Select (multi-select)"
+        aria-label="Select message"
         className={btn}
         onClick={() => actions.onToggleSelect(message)}
       >
@@ -176,15 +229,19 @@ function SendStatus({
   );
 }
 
-/** Quote block shown above a reply's body, linking it to the original. */
-function ReplyQuote({
+/** Discord-style source preview shown above a flat Chat reply. */
+function ReplyPreview({
   message,
   repliedTo,
   nameOf,
+  avatarUrl,
+  reversed,
 }: {
   message: Message;
   repliedTo?: Message | null;
   nameOf?: (senderId: string) => string;
+  avatarUrl?: string;
+  reversed?: boolean;
 }) {
   if (!message.reply_to_msg_id) return null;
   const excerpt = repliedTo
@@ -192,12 +249,72 @@ function ReplyQuote({
       (repliedTo.files?.length ? "(attachment)" : "(empty message)")
     : "original message not in view";
   const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
+  const connector = (
+    <span
+      aria-hidden
+      className={cn(
+        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-700/80",
+        reversed
+          ? "ml-2 rounded-tr-lg border-r"
+          : "mr-2 rounded-tl-lg border-l",
+      )}
+    />
+  );
+  const source = (
+    <span className="flex min-w-0 items-center gap-2 py-0.5">
+      {repliedTo && who && (
+        <span className="flex max-w-[45%] shrink-0 items-center gap-1.5 text-indigo-300 transition-colors group-hover/reply:text-indigo-200">
+          <Avatar
+            name={who}
+            src={avatarUrl}
+            id={repliedTo.sender_id}
+            size="xs"
+            className="h-4 w-4 shrink-0 text-[8px]"
+          />
+          <span className="truncate font-semibold">@{who}</span>
+        </span>
+      )}
+      <span className="truncate text-zinc-500 group-hover/reply:text-zinc-400">
+        {excerpt}
+      </span>
+    </span>
+  );
+
+  const jumpToSource = () => {
+    if (!repliedTo) return;
+    document
+      .querySelector<HTMLElement>(
+        `[data-msg-id="${CSS.escape(repliedTo.msg_id)}"]`,
+      )
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
   return (
-    <div className="flex items-center gap-1.5 mb-0.5 pl-2 border-l-2 border-zinc-700 text-[11px] text-zinc-400 max-w-full">
-      <Reply className="w-3 h-3 flex-shrink-0 rotate-180" />
-      {who && <span className="font-medium text-zinc-400 flex-shrink-0">{who}</span>}
-      <span className="truncate italic">{excerpt}</span>
-    </div>
+    <button
+      type="button"
+      disabled={!repliedTo}
+      onClick={jumpToSource}
+      aria-label={repliedTo ? `Jump to message from ${who}` : undefined}
+      className={cn(
+        "group/reply -mb-0.5 flex max-w-full items-start text-left text-[11px] leading-5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+        repliedTo ? "cursor-pointer" : "cursor-default",
+        reversed && "self-end",
+      )}
+      title={excerpt}
+    >
+      {reversed ? (
+        <>
+          {source}
+          {connector}
+        </>
+      ) : (
+        <>
+          {connector}
+          {source}
+        </>
+      )}
+    </button>
   );
 }
 
@@ -222,6 +339,7 @@ export const MessageItem = memo(function MessageItem({
   message,
   isConsecutive,
   nested = false,
+  alignOwnMessages = true,
   hideReplyQuote = false,
   currentUserId,
   channelId,
@@ -283,20 +401,36 @@ export const MessageItem = memo(function MessageItem({
   }
 
   const isOwn = message.sender_id === currentUserId;
+  const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
+  // Chat keeps the identity attached to the avatar so message content starts at
+  // the top of the row. Discuss deliberately retains its document-style author
+  // header above the body. `alignOwnMessages` is enabled only by the Chat layout.
+  const showChatIdentityUnderAvatar = alignOwnMessages && !nested;
   const name =
     message.sender_name || senderName || message.sender_id.slice(0, 8);
   const hasName = Boolean(message.sender_name || senderName);
   const isBot = message.sender_type === "bot";
+  const actionableApprovalCount = (pendingApprovals ?? []).filter(
+    (approval) =>
+      !(approval.content_data as { resolved?: boolean } | null | undefined)?.resolved,
+  ).length;
+  const detailsMeta = messageDetailsMeta(message, actionableApprovalCount);
+  const [detailsExpanded, setDetailsExpanded] = useState(
+    actionableApprovalCount > 0 || Boolean(focusRequestId),
+  );
+
+  useEffect(() => {
+    if (actionableApprovalCount > 0 || focusRequestId) setDetailsExpanded(true);
+  }, [actionableApprovalCount, focusRequestId]);
 
   const active = message._streaming || message.is_partial;
-  // Agent steps: always after a finished bot turn; also during an active turn
-  // when there are live events or a pending approval folded into this message.
+  // Agent steps only exist when the list DTO or live frame proves that content
+  // exists. This prevents empty completed bot turns from showing disclosure
+  // chrome such as "Agent steps · 0".
   const showTrace =
     isBot &&
     !!channelId &&
-    (!active ||
-      (pendingApprovals?.length ?? 0) > 0 ||
-      (message._trace_events?.length ?? 0) > 0);
+    detailsMeta.hasTrace;
   const tracePanel = showTrace ? (
     <BotTracePanel
       key={`trace-${message.msg_id}`}
@@ -307,15 +441,16 @@ export const MessageItem = memo(function MessageItem({
       currentUserId={currentUserId}
       streaming={!!active}
       focusRequestId={focusRequestId}
+      expanded={detailsExpanded}
+      onExpandedChange={setDetailsExpanded}
+      showToggle={false}
     />
   ) : null;
-  const quote = hideReplyQuote ? null : (
-    <ReplyQuote message={message} repliedTo={repliedTo} nameOf={nameOf} />
-  );
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
   const showActions = actions && !active && !selectMode && !message._status;
   const selectable = Boolean(actions && selectMode);
   const rowRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   // Delayed hide (not instant setState-on-leave) so the bar survives the gap
   // between the row and the floating toolbar while the cursor crosses it —
   // see useHoverIntent.
@@ -331,6 +466,249 @@ export const MessageItem = memo(function MessageItem({
       member_type: message.sender_type,
     });
   };
+  const canMention = Boolean(
+    actions?.onMention && !isOwn && !selectMode && !message._status,
+  );
+  const avatarRef = useRef<HTMLButtonElement>(null);
+  const profileClickTimerRef = useRef<number | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressAvatarClickRef = useRef(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+
+  const clearProfileClickTimer = () => {
+    if (profileClickTimerRef.current !== null) {
+      window.clearTimeout(profileClickTimerRef.current);
+      profileClickTimerRef.current = null;
+    }
+  };
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  };
+  const mentionSender = () => {
+    if (!canMention) return;
+    clearProfileClickTimer();
+    profileCard?.close();
+    setAvatarMenuOpen(false);
+    actions?.onMention?.(message);
+  };
+  const handleAvatarClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (suppressAvatarClickRef.current) {
+      suppressAvatarClickRef.current = false;
+      event.preventDefault();
+      return;
+    }
+    if (!canMention || event.detail === 0) {
+      openProfile(event.currentTarget);
+      return;
+    }
+    clearProfileClickTimer();
+    const anchor = event.currentTarget;
+    profileClickTimerRef.current = window.setTimeout(() => {
+      profileClickTimerRef.current = null;
+      openProfile(anchor);
+    }, 240);
+  };
+  const handleAvatarDoubleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!canMention) return;
+    event.preventDefault();
+    event.stopPropagation();
+    mentionSender();
+  };
+  const handleAvatarPointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!canMention || event.pointerType === "mouse") return;
+    clearLongPressTimer();
+    longPressStartRef.current = { x: event.clientX, y: event.clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      suppressAvatarClickRef.current = true;
+      setAvatarMenuOpen(true);
+      navigator.vibrate?.(10);
+      window.setTimeout(() => {
+        // Some mobile browsers do not synthesize the click that normally
+        // follows pointer-up after a long press. Never suppress a later tap.
+        suppressAvatarClickRef.current = false;
+      }, 800);
+    }, 500);
+  };
+  const handleAvatarPointerMove = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const start = longPressStartRef.current;
+    if (!start) return;
+    if (
+      Math.abs(event.clientX - start.x) > 10 ||
+      Math.abs(event.clientY - start.y) > 10
+    ) {
+      clearLongPressTimer();
+    }
+  };
+  const handleAvatarContextMenu = (
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    if (!canMention) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearProfileClickTimer();
+    setAvatarMenuOpen(true);
+  };
+
+  useEffect(
+    () => () => {
+      if (profileClickTimerRef.current !== null) {
+        window.clearTimeout(profileClickTimerRef.current);
+      }
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return;
+    const dismiss = () => setAvatarMenuOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismiss();
+    };
+    document.addEventListener("mousedown", dismiss);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [avatarMenuOpen]);
+
+  const avatarInteractionProps = {
+    ref: avatarRef,
+    onClick: handleAvatarClick,
+    onDoubleClick: handleAvatarDoubleClick,
+    onPointerDown: handleAvatarPointerDown,
+    onPointerMove: handleAvatarPointerMove,
+    onPointerUp: clearLongPressTimer,
+    onPointerCancel: clearLongPressTimer,
+    onPointerLeave: clearLongPressTimer,
+    onContextMenu: handleAvatarContextMenu,
+    onDragStart: (event: React.DragEvent<HTMLButtonElement>) =>
+      event.preventDefault(),
+  };
+  const avatarMenu = avatarMenuOpen ? (
+    <FloatingLayer
+      anchorRef={avatarRef}
+      placement="down"
+      align={isOwnAlignedRight ? "end" : "start"}
+      role="menu"
+      className="w-56 overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900 p-1.5 shadow-xl shadow-black/40"
+    >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={mentionSender}
+        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+      >
+        <AtSign className="h-4 w-4" />
+        <span className="min-w-0 truncate">Mention @{name}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          const anchor = avatarRef.current;
+          setAvatarMenuOpen(false);
+          if (anchor) openProfile(anchor);
+        }}
+        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+      >
+        <UserRound className="h-4 w-4" />
+        View profile
+      </button>
+    </FloatingLayer>
+  ) : null;
+  // Discuss already expresses the relationship through nesting and its connector
+  // rail. Chat and orphan replies use the compact, clickable source preview.
+  const quote = hideReplyQuote ? null : (
+    <ReplyPreview
+      message={message}
+      repliedTo={repliedTo}
+      nameOf={nameOf}
+      avatarUrl={
+        repliedTo
+          ? profileCard?.memberOf(repliedTo.sender_id)?.avatar_url ?? undefined
+          : undefined
+      }
+      reversed={isOwnAlignedRight}
+    />
+  );
+  const detailsSummary = [
+    detailsMeta.traceCount > 0
+      ? `${detailsMeta.traceCount} step${detailsMeta.traceCount === 1 ? "" : "s"}`
+      : null,
+    detailsMeta.contextCount > 0
+      ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean).join(" · ");
+  const detailsSection = detailsMeta.hasDetails ? (
+    <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
+      {detailsMeta.hasFailure && (
+        <div role="alert" className="flex min-h-8 items-center gap-1.5 text-[11px] text-red-400">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Agent step failed</span>
+          {!detailsExpanded && (
+            <button
+              type="button"
+              onClick={() => setDetailsExpanded(true)}
+              className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+            >
+              View details
+            </button>
+          )}
+        </div>
+      )}
+      {actionableApprovalCount === 0 && (
+        <button
+          type="button"
+          onClick={() => setDetailsExpanded((value) => !value)}
+          aria-expanded={detailsExpanded}
+          className="relative inline-flex h-8 items-center gap-1.5 self-start rounded-md px-1.5 text-[11px] text-zinc-400 transition-colors after:absolute after:-inset-y-1.5 after:inset-x-0 hover:bg-zinc-800/60 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        >
+          {detailsExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+          <span className="font-medium">Details</span>
+          {detailsSummary && <span className="text-zinc-500">· {detailsSummary}</span>}
+        </button>
+      )}
+      {detailsExpanded && (
+        <div className="mt-1 flex w-full min-w-0 flex-col gap-2 rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2.5 text-left md:min-w-[18rem]">
+          {detailsMeta.contextCount > 0 && (
+            <section aria-label="Referenced context">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                Context · {detailsMeta.contextCount}
+              </p>
+              <MessageContextChips bundle={message.context_bundle} />
+            </section>
+          )}
+          {showTrace && (
+            <section aria-label="Agent steps">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                Agent steps · {detailsMeta.traceCount}
+              </p>
+              {tracePanel}
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
   const selected = Boolean(selectedProp);
   const rowSelectProps = selectable
     ? {
@@ -358,9 +736,11 @@ export const MessageItem = memo(function MessageItem({
     return (
       <div
         className={cn(
-          "group relative flex items-start gap-3 hover:z-20 focus-within:z-20 hover:bg-zinc-900/40 transition-colors",
-          // Outer gaps (MessageList) own inter-message spacing; keep row chrome tight.
-          nested ? "px-1 py-0" : "px-4 py-0",
+          "group relative flex items-start gap-3 rounded-lg transition-colors hover:z-20 focus-within:z-20",
+          nested
+            ? "w-full bg-zinc-900/20 px-2.5 py-2 hover:bg-zinc-900/50 md:w-fit md:max-w-[56rem]"
+            : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
+          isOwnAlignedRight && "flex-row-reverse",
           selectable && "cursor-pointer",
           selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
         )}
@@ -370,10 +750,15 @@ export const MessageItem = memo(function MessageItem({
         onMouseLeave={hideActionBar}
         onFocusCapture={showActionBar}
       >
-        {selectable && <SelectBox selected={selected} />}
+        {selectable && (
+          <SelectBox
+            selected={selected}
+            className={isOwnAlignedRight ? "order-last" : undefined}
+          />
+        )}
         {!nested && (
           <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
-            <span className="text-[11px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity select-none">
+            <span className="whitespace-nowrap text-[10px] tabular-nums text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 select-none">
               {formatTime(message.created_at)}
             </span>
           </div>
@@ -381,12 +766,10 @@ export const MessageItem = memo(function MessageItem({
         {nested && (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openProfile(e.currentTarget);
-            }}
-            className="mt-0.5 w-7 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
-            title="View profile"
+            {...avatarInteractionProps}
+            className="mt-0.5 flex h-11 w-11 flex-shrink-0 touch-manipulation select-none items-center justify-center rounded-full transition-opacity hover:opacity-80"
+            title={canMention ? `View profile · double-click to mention @${name}` : "View profile"}
+            aria-label={`View profile for ${name}`}
           >
             <Avatar
               name={name}
@@ -396,8 +779,15 @@ export const MessageItem = memo(function MessageItem({
             />
           </button>
         )}
+        {avatarMenu}
         {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div
+          ref={contentRef}
+          className={cn(
+            "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
+            isOwnAlignedRight && "items-end",
+          )}
+        >
           {nested && (
             <div className="flex items-baseline gap-1.5">
               <button
@@ -432,16 +822,21 @@ export const MessageItem = memo(function MessageItem({
           {message._status && (
             <SendStatus message={message} onRetry={actions?.onRetry} />
           )}
-          {tracePanel}
+          {detailsSection}
         </div>
         {showActions && (
           <ActionBar
             message={message}
             actions={actions}
-            anchorRef={rowRef}
+            anchorRef={contentRef}
             visible={actionsVisible}
             onEnter={showActionBar}
             onLeave={hideActionBar}
+            hasDetails={detailsMeta.hasDetails}
+            detailsExpanded={detailsExpanded}
+            onToggleDetails={() => setDetailsExpanded((value) => !value)}
+            canMention={canMention}
+            mentionLabel={name}
           />
         )}
       </div>
@@ -451,9 +846,8 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div
       className={cn(
-        // Outer gaps (MessageList) own inter-message spacing; keep row chrome tight.
-        "group relative flex items-start gap-3 px-4 py-0 hover:z-20 focus-within:z-20 hover:bg-zinc-900/40 transition-colors",
-        isOwn && "flex-row-reverse",
+        "group relative mx-2 flex items-start gap-3 rounded-xl px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
+        isOwnAlignedRight && "flex-row-reverse",
         selectable && "cursor-pointer",
         selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
       )}
@@ -465,14 +859,26 @@ export const MessageItem = memo(function MessageItem({
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
       {selectable && (
-        <SelectBox selected={selected} className={isOwn ? "order-last" : undefined} />
+        <SelectBox selected={selected} className={isOwnAlignedRight ? "order-last" : undefined} />
       )}
-      {/* Avatar — click to open the sender's profile card */}
+      {/* Chat puts compact identity metadata below the avatar; Discuss keeps its
+          author header beside the avatar so the topic remains document-like. */}
       <button
         type="button"
-        onClick={(e) => openProfile(e.currentTarget)}
-        className="mt-0.5 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
-        title="View profile"
+        {...avatarInteractionProps}
+        className={cn(
+          "mt-0.5 flex-shrink-0 touch-manipulation select-none rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+          showChatIdentityUnderAvatar && "flex w-14 flex-col items-center gap-0.5",
+          !showChatIdentityUnderAvatar && "flex h-11 w-11 items-center justify-center",
+        )}
+        title={
+          canMention
+            ? `View profile · double-click to mention @${name}`
+            : hasName
+              ? name
+              : message.sender_id
+        }
+        aria-label={`View profile for ${name}`}
       >
         <Avatar
           name={name}
@@ -480,38 +886,56 @@ export const MessageItem = memo(function MessageItem({
           id={message.sender_id}
           size="sm"
         />
+        {showChatIdentityUnderAvatar && (
+          <>
+            <span className="mt-0.5 block w-full truncate text-center text-[10px] font-medium leading-3 text-zinc-400">
+              {name}
+            </span>
+            <span className="flex items-center justify-center gap-1 whitespace-nowrap text-[9px] leading-3 text-zinc-500">
+              {isBot && (
+                <span className="font-semibold uppercase tracking-wide text-indigo-400">
+                  Bot
+                </span>
+              )}
+              <span className="tabular-nums">
+                {formatTime(message.created_at)}
+              </span>
+            </span>
+          </>
+        )}
       </button>
+      {avatarMenu}
 
       {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
       <div
+        ref={contentRef}
         className={cn(
-          "flex-1 min-w-0 flex flex-col gap-1",
-          isOwn && "items-end",
+          "flex min-w-0 flex-1 flex-col gap-1.5 md:w-fit md:max-w-[52rem] md:flex-[0_1_auto]",
+          isOwnAlignedRight && "items-end",
         )}
       >
-        <div className="flex items-baseline gap-2">
-          <button
-            type="button"
-            onClick={(e) => openProfile(e.currentTarget)}
-            className={cn(
-              "text-sm font-semibold text-zinc-100 hover:underline",
-              isOwn && "order-2",
-            )}
-            title={hasName ? "View profile" : message.sender_id}
-          >
-            {name}
-          </button>
-          {isBot && (
-            <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
-              BOT
-            </span>
-          )}
-          <span className="text-[11px] text-zinc-400 tabular-nums">
-            {formatTime(message.created_at)}
-          </span>
-        </div>
-
         {quote}
+        {!showChatIdentityUnderAvatar && (
+          <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
+            <button
+              type="button"
+              onClick={(e) => openProfile(e.currentTarget)}
+              className="text-sm font-semibold text-zinc-100 hover:underline"
+              title={hasName ? "View profile" : message.sender_id}
+            >
+              {name}
+            </button>
+            {isBot && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
+                BOT
+              </span>
+            )}
+            <span className="text-[11px] text-zinc-400 tabular-nums">
+              {formatTime(message.created_at)}
+            </span>
+          </div>
+        )}
+
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
         {message.msg_type === "task_claim_confirmation" && (
           <TaskClaimConfirmationCard
@@ -523,17 +947,21 @@ export const MessageItem = memo(function MessageItem({
         {message._status && (
           <SendStatus message={message} onRetry={actions?.onRetry} />
         )}
-        {tracePanel}
+        {detailsSection}
       </div>
       {showActions && (
         <ActionBar
           message={message}
           actions={actions}
-          reversed={isOwn}
-          anchorRef={rowRef}
+          anchorRef={contentRef}
           visible={actionsVisible}
           onEnter={showActionBar}
           onLeave={hideActionBar}
+          hasDetails={detailsMeta.hasDetails}
+          detailsExpanded={detailsExpanded}
+          onToggleDetails={() => setDetailsExpanded((value) => !value)}
+          canMention={canMention}
+          mentionLabel={name}
         />
       )}
     </div>
@@ -661,7 +1089,6 @@ function MessageBody({
         </div>
       )}
       <FileGrid files={files} className="mt-1" />
-      <MessageContextChips bundle={message.context_bundle} className="mt-1" />
     </div>
   );
 }

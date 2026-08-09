@@ -279,11 +279,19 @@ struct ChatView: View {
             if model.channel.isVoice {
                 VoiceMeetingStrip(voice: voice)
             }
-            messageScroll
+            if model.channel.isDiscuss {
+                DiscussionChannelView(model: model, currentUserId: app.session?.userId) {
+                    composerDock
+                }
+            } else {
+                messageScroll
+            }
             TaskClaimsPanelView(model: model)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            composerDock
+            if !model.channel.isDiscuss {
+                composerDock
+            }
         }
         .background(Theme.bgApp)
         .navigationBarTitleDisplayMode(.inline)
@@ -429,6 +437,7 @@ struct ChatView: View {
                 clearTick: model.composerClearTick,
                 prefillTick: model.composerPrefillTick,
                 prefillText: model.composerText,
+                prefillMention: model.composerPrefillMention,
                 placeholder: composerPlaceholder,
                 isSending: model.isSending,
                 onSend: { draft in await model.send(draft: draft) },
@@ -656,6 +665,7 @@ struct ChatView: View {
                 jumpTargetId = message.msgId
                 jumpTargetTick += 1
             },
+            onMention: { model.mentionSender(of: $0) },
             onForward: { forwardMessage = $0 },
             onFile: { previewFile = $0 },
             onReport: { reportTarget = $0 },
@@ -675,6 +685,11 @@ struct ChatView: View {
     }
 
     private func jumpToSearchResult(_ message: MessageDto) {
+        if model.channel.isDiscuss {
+            let rootId = message.threadRootMsgId ?? message.msgId
+            Task { await model.selectDiscussion(rootId) }
+            return
+        }
         jumpToMessage(msgId: message.msgId, requestId: nil, known: message)
     }
 
@@ -924,6 +939,7 @@ private struct ChatCollectionTimeline: UIViewRepresentable {
     @Binding var atBottom: Bool
     let onLoadOlder: () -> Void
     let onReply: (MessageDto) -> Void
+    let onMention: (MessageDto) -> Void
     let onForward: (MessageDto) -> Void
     let onFile: (MessageFileRef) -> Void
     let onReport: (MessageDto) -> Void
@@ -992,6 +1008,7 @@ private struct ChatCollectionTimeline: UIViewRepresentable {
                         : nil,
                     onLoadOlder: self.parent.onLoadOlder,
                     onReply: self.parent.onReply,
+                    onMention: self.parent.onMention,
                     onForward: self.parent.onForward,
                     onFile: self.parent.onFile,
                     onReport: self.parent.onReport,
@@ -1132,6 +1149,7 @@ private struct ChatTimelineRow: View {
     var focusTraceRequestId: String? = nil
     let onLoadOlder: () -> Void
     let onReply: (MessageDto) -> Void
+    let onMention: (MessageDto) -> Void
     let onForward: (MessageDto) -> Void
     let onFile: (MessageFileRef) -> Void
     let onReport: (MessageDto) -> Void
@@ -1192,6 +1210,7 @@ private struct ChatTimelineRow: View {
                     repliedTo: hideReplyQuote ? nil : repliedTo,
                     nested: depth > 0,
                     onReply: { onReply(message) },
+                    onMention: isOwn ? nil : { onMention(message) },
                     onForward: { onForward(message) },
                     onTapFile: onFile,
                     onReport: { onReport(message) },
