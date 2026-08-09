@@ -1,5 +1,5 @@
 import { memo, useContext, useRef, useState, type RefObject } from "react";
-import { Square, MessageCircleMore, Reply, CornerDownRight, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
+import { Square, MessageCircleMore, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -185,13 +185,10 @@ function ReplyQuote({
   message,
   repliedTo,
   nameOf,
-  compact,
 }: {
   message: Message;
   repliedTo?: Message | null;
   nameOf?: (senderId: string) => string;
-  /** Parent is immediately above this nested row; identify it without repeating text. */
-  compact?: boolean;
 }) {
   if (!message.reply_to_msg_id) return null;
   const excerpt = repliedTo
@@ -199,15 +196,6 @@ function ReplyQuote({
       (repliedTo.files?.length ? "(attachment)" : "(empty message)")
     : "original message not in view";
   const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
-  if (compact) {
-    return (
-      <div className="mb-0.5 inline-flex max-w-full items-center gap-1 text-[11px] text-zinc-500">
-        <CornerDownRight className="h-3 w-3 flex-shrink-0 text-zinc-600" />
-        <span>Reply to</span>
-        {who && <span className="truncate font-medium text-zinc-400">{who}</span>}
-      </div>
-    );
-  }
   return (
     <div
       className="mb-1 flex max-w-full items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-400"
@@ -331,12 +319,13 @@ export const MessageItem = memo(function MessageItem({
       focusRequestId={focusRequestId}
     />
   ) : null;
-  const quote = (
+  // Discuss already expresses the relationship through nesting and its connector
+  // line. Keep the quote only when the parent is not visible, or in flat Chat.
+  const quote = hideReplyQuote ? null : (
     <ReplyQuote
       message={message}
       repliedTo={repliedTo}
       nameOf={nameOf}
-      compact={hideReplyQuote}
     />
   );
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
