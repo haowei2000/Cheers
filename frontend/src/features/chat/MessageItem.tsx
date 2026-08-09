@@ -1,5 +1,5 @@
 import { memo, useContext, useRef, useState, type RefObject } from "react";
-import { Square, MessageCircleMore, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
+import { Square, MessageCircleMore, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -180,15 +180,19 @@ function SendStatus({
   );
 }
 
-/** Quote block shown above a reply's body, linking it to the original. */
-function ReplyQuote({
+/** Discord-style source preview shown above a flat Chat reply. */
+function ReplyPreview({
   message,
   repliedTo,
   nameOf,
+  avatarUrl,
+  reversed,
 }: {
   message: Message;
   repliedTo?: Message | null;
   nameOf?: (senderId: string) => string;
+  avatarUrl?: string;
+  reversed?: boolean;
 }) {
   if (!message.reply_to_msg_id) return null;
   const excerpt = repliedTo
@@ -196,16 +200,74 @@ function ReplyQuote({
       (repliedTo.files?.length ? "(attachment)" : "(empty message)")
     : "original message not in view";
   const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
+  const connector = (
+    <span
+      aria-hidden
+      className={cn(
+        "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-700/80",
+        reversed
+          ? "ml-2 rounded-tr-lg border-r"
+          : "mr-2 rounded-tl-lg border-l",
+      )}
+    />
+  );
+  const source = (
+    <span className="flex min-w-0 items-center gap-1.5 py-0.5">
+      {repliedTo && (
+        <Avatar
+          name={who}
+          src={avatarUrl}
+          id={repliedTo.sender_id}
+          size="xs"
+          className="h-4 w-4 text-[8px]"
+        />
+      )}
+      {who && (
+        <span className="flex-shrink-0 font-semibold text-zinc-300 group-hover/reply:text-zinc-100">
+          {who}
+        </span>
+      )}
+      <span className="truncate text-zinc-500 group-hover/reply:text-zinc-400">
+        {excerpt}
+      </span>
+    </span>
+  );
+
+  const jumpToSource = () => {
+    if (!repliedTo) return;
+    document
+      .querySelector<HTMLElement>(
+        `[data-msg-id="${CSS.escape(repliedTo.msg_id)}"]`,
+      )
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
   return (
-    <div
-      className="mb-1 flex max-w-full items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-400"
+    <button
+      type="button"
+      disabled={!repliedTo}
+      onClick={jumpToSource}
+      aria-label={repliedTo ? `Jump to message from ${who}` : undefined}
+      className={cn(
+        "group/reply -mb-0.5 flex max-w-full items-start text-left text-[11px] leading-5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+        repliedTo ? "cursor-pointer" : "cursor-default",
+        reversed && "self-end",
+      )}
       title={excerpt}
     >
-      <Reply className="w-3 h-3 flex-shrink-0 rotate-180" />
-      <span className="text-zinc-500">Replying to</span>
-      {who && <span className="font-medium text-zinc-300 flex-shrink-0">{who}</span>}
-      <span className="truncate italic">{excerpt}</span>
-    </div>
+      {reversed ? (
+        <>
+          {source}
+          {connector}
+        </>
+      ) : (
+        <>
+          {connector}
+          {source}
+        </>
+      )}
+    </button>
   );
 }
 
@@ -319,15 +381,6 @@ export const MessageItem = memo(function MessageItem({
       focusRequestId={focusRequestId}
     />
   ) : null;
-  // Discuss already expresses the relationship through nesting and its connector
-  // line. Keep the quote only when the parent is not visible, or in flat Chat.
-  const quote = hideReplyQuote ? null : (
-    <ReplyQuote
-      message={message}
-      repliedTo={repliedTo}
-      nameOf={nameOf}
-    />
-  );
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
   const showActions = actions && !active && !selectMode && !message._status;
   const selectable = Boolean(actions && selectMode);
@@ -348,6 +401,21 @@ export const MessageItem = memo(function MessageItem({
       member_type: message.sender_type,
     });
   };
+  // Discuss already expresses the relationship through nesting and its connector
+  // rail. Chat and orphan replies use the compact, clickable source preview.
+  const quote = hideReplyQuote ? null : (
+    <ReplyPreview
+      message={message}
+      repliedTo={repliedTo}
+      nameOf={nameOf}
+      avatarUrl={
+        repliedTo
+          ? profileCard?.memberOf(repliedTo.sender_id)?.avatar_url ?? undefined
+          : undefined
+      }
+      reversed={isOwnAlignedRight}
+    />
+  );
   const selected = Boolean(selectedProp);
   const rowSelectProps = selectable
     ? {
@@ -520,6 +588,7 @@ export const MessageItem = memo(function MessageItem({
           isOwnAlignedRight && "items-end",
         )}
       >
+        {quote}
         <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
           <button
             type="button"
@@ -539,7 +608,6 @@ export const MessageItem = memo(function MessageItem({
           </span>
         </div>
 
-        {quote}
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
         {message.msg_type === "task_claim_confirmation" && (
           <TaskClaimConfirmationCard

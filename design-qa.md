@@ -66,6 +66,58 @@ final result: passed
 
 ---
 
+# Web Chat Discord-Style Reply Preview Design QA
+
+## Target
+
+- Source visual truth: `/var/folders/tn/l7kr202d20q7j7rcxdy62pwc0000gn/T/codex-clipboard-efebc850-f286-4147-94db-b4b436766dc2.png`
+- Browser implementation screenshot: `/Users/haowei/.codex/visualizations/2026/08/08/019fe02c-a025-70f1-acac-7c7d0aa1f26c/chat-discord-reply-implementation.png`
+- Focused implementation crop: `/Users/haowei/.codex/visualizations/2026/08/08/019fe02c-a025-70f1-acac-7c7d0aa1f26c/chat-discord-reply-implementation-focus.png`
+- Combined comparison: `/Users/haowei/.codex/visualizations/2026/08/08/019fe02c-a025-70f1-acac-7c7d0aa1f26c/chat-discord-reply-comparison.png`
+- Browser viewport: 1280 × 720 CSS pixels at standard density
+- Source pixels: 1820 × 524
+- Focused implementation source crop: 860 × 380, normalized to 1280 × 566 for comparison
+- State: dark-mode Chat channel with both right-aligned current-user and left-aligned bot replies
+
+## Full-view comparison evidence
+
+The implementation preserves Cheers' existing channel frame while matching the reference reply hierarchy: a compact source row sits above the reply author header, a small real member avatar and semibold author precede a single-line excerpt, and a muted elbow connector joins the preview to the reply row. Current-user replies mirror the connector to the right without reversing the source text. Discuss retains its separate nested-thread presentation.
+
+## Focused comparison evidence
+
+The combined comparison shows the reference above and the normalized Chat message region below. The focused bot state matches the source's left-to-right sequence of connector, source avatar, source author, excerpt, then the reply author's normal header and body. The right-aligned state is an intentional Cheers-specific adaptation required by Chat mode.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing Cheers system sans is retained; the source preview uses the established 11 px metadata scale, semibold source name, 20 px line height, and a single truncated excerpt.
+- Spacing and layout rhythm: 16 px source avatar, 6 px inline gaps, 32 px elbow width, and a tight preview-to-header transition reproduce the compact Discord rhythm without adding a card.
+- Colors and visual tokens: existing zinc metadata, border, hover, and focus tokens preserve dark-mode contrast and match the source's subdued reply context.
+- Image quality and asset fidelity: the existing production `Avatar` component renders real user/bot avatars or the established identity fallback; no placeholder or generated image asset is required.
+- Copy and content: the preview shows the resolved source author and up to 120 characters of source text, with attachment and out-of-view fallbacks.
+
+## Interaction and responsive checks
+
+- The preview is keyboard focusable and clicking it smoothly returns to the loaded source message.
+- Long source text truncates within the message content width rather than expanding the timeline.
+- The source content remains left-to-right when the current user's reply is mirrored to the right.
+- The local production build, authenticated channel route, Chat chronology, and bot reply state were exercised in the in-app browser.
+
+## Findings
+
+No actionable P0, P1, or P2 differences remain. Different message copy, avatar identities, and the mirrored current-user state are intentional product adaptations rather than visual drift. No focused asset-quality issue remains because the preview reuses the production avatar pipeline.
+
+## Comparison history
+
+- Pass 1: no P0/P1/P2 mismatch was found. The reference hierarchy and spacing were reproduced without requiring a post-comparison correction.
+
+## Follow-up polish
+
+- P3: a future message-focus flash could make the click-to-source jump more noticeable in very long channels.
+
+final result: passed
+
+---
+
 # Web Workbench Design QA
 
 ## Target
