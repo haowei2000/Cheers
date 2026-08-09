@@ -209,6 +209,14 @@ export function ChannelView({
     id: string;
     nonce: number;
   } | null>(null);
+  const handleDiscussionComposerContextChange = useCallback(
+    (root: Message | null, creating: boolean) => {
+      setDiscussionComposerRoot(root);
+      setCreatingDiscussion(creating);
+      if (!creating) setReplyTo(null);
+    },
+    [],
+  );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -2009,11 +2017,7 @@ export function ChannelView({
                         </>
                       ) : null
                     }
-                    onComposerContextChange={(root, creating) => {
-                      setDiscussionComposerRoot(root);
-                      setCreatingDiscussion(creating);
-                      if (!creating) setReplyTo(null);
-                    }}
+                    onComposerContextChange={handleDiscussionComposerContextChange}
                   />
                 </ResolveRefContext.Provider>
               ) : loading ? (

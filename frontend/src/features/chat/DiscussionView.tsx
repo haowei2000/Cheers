@@ -100,6 +100,11 @@ export function DiscussionView({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const storageKey = `cheers:last-discussion:${channelId}`;
+  const onComposerContextChangeRef = useRef(onComposerContextChange);
+
+  useEffect(() => {
+    onComposerContextChangeRef.current = onComposerContextChange;
+  }, [onComposerContextChange]);
 
   useEffect(() => {
     const node = rootRef.current;
@@ -170,7 +175,7 @@ export function DiscussionView({
   const refreshDetail = useCallback(async (showSpinner = true) => {
     if (!selectedId) {
       setDetail(null);
-      onComposerContextChange(null, creating);
+      onComposerContextChangeRef.current(null, creating);
       return;
     }
     if (showSpinner) setLoadingDetail(true);
@@ -178,15 +183,15 @@ export function DiscussionView({
       setDetailError(null);
       const response = await getDiscussion(channelId, selectedId, { limit: 50 });
       setDetail(response);
-      onComposerContextChange(response.root, false);
+      onComposerContextChangeRef.current(response.root, false);
     } catch (error) {
       setDetail(null);
       setDetailError(error instanceof Error ? error.message : "Couldn't load this discussion");
-      onComposerContextChange(null, false);
+      onComposerContextChangeRef.current(null, false);
     } finally {
       setLoadingDetail(false);
     }
-  }, [channelId, creating, onComposerContextChange, selectedId]);
+  }, [channelId, creating, selectedId]);
 
   useEffect(() => {
     void refreshDetail();
