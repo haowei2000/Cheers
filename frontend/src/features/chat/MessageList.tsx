@@ -6,6 +6,7 @@ import { formatDayLabel, sameDay } from "@/lib/format";
 import type { Message } from "@/types";
 import {
   groupMessagesByReply,
+  isVisuallyConsecutive,
   isFoldedPermission,
   permissionSourceId,
 } from "./messageTree";
@@ -205,9 +206,7 @@ export function MessageList({
       depth === 0 &&
       !showDayLabel &&
       !!prevRoot &&
-      prevRoot.sender_id === msg.sender_id &&
-      prevRoot.sender_type === msg.sender_type &&
-      !prevRoot.is_deleted;
+      isVisuallyConsecutive(prevRoot, msg);
     const parentInView = !!(
       msg.reply_to_msg_id && byId.has(msg.reply_to_msg_id)
     );
@@ -221,12 +220,14 @@ export function MessageList({
         : null;
 
     return (
-      <div key={msg.msg_id}>
+      <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
         {showDayLabel && (
-          <div className="flex justify-center px-4 pt-8 pb-2">
-            <span className="text-xs text-zinc-400 font-medium">
+          <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
+            <span className="h-px flex-1 bg-zinc-800/80" />
+            <span className="rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
               {formatDayLabel(msg.created_at)}
             </span>
+            <span className="h-px flex-1 bg-zinc-800/80" />
           </div>
         )}
         <div
@@ -263,8 +264,8 @@ export function MessageList({
             <div
               className={
                 depth === 0
-                  ? "relative ml-12 mr-4 mt-2 flex flex-col gap-2"
-                  : "relative ml-4 mt-2 flex flex-col gap-2"
+                  ? "relative ml-10 mr-3 mt-2.5 flex flex-col gap-2 md:ml-14 md:mr-5"
+                  : "relative ml-3 mt-2 flex flex-col gap-2"
               }
             >
               {kids.map((child, i) => {
@@ -276,14 +277,14 @@ export function MessageList({
                       aria-hidden
                       className={
                         isLast
-                          ? "pointer-events-none absolute left-0 top-0 h-3 w-px bg-zinc-700"
-                          : "pointer-events-none absolute bottom-0 left-0 top-0 w-px bg-zinc-700"
+                          ? "pointer-events-none absolute left-0 top-0 h-4 w-px bg-zinc-700/70"
+                          : "pointer-events-none absolute bottom-0 left-0 top-0 w-px bg-zinc-700/70"
                       }
                     />
                     {/* Horizontal stub → L-corner into the nested row (no ↳ glyph). */}
                     <span
                       aria-hidden
-                      className="pointer-events-none absolute left-0 top-3 w-3 border-t border-zinc-700"
+                      className="pointer-events-none absolute left-0 top-4 w-3 border-t border-zinc-700/70"
                     />
                     {renderNode(child, depth + 1, null)}
                   </div>
@@ -302,17 +303,20 @@ export function MessageList({
       onScroll={handleScroll}
       className="chat-scrollbar flex-1 overflow-y-auto overscroll-contain py-2"
     >
-      {loading && (
-        <div className="flex justify-center py-4">
-          <Spinner size={20} className="text-zinc-600" />
-        </div>
-      )}
+      <div className="mx-auto w-full max-w-[72rem]">
+        {loading && (
+          <div className="flex justify-center py-4">
+            <Spinner size={20} className="text-zinc-600" />
+          </div>
+        )}
 
-      {/* Wide gap: root message ↔ root message. */}
-      <div className="flex flex-col gap-4">
-        {roots.map((msg, i) => renderNode(msg, 0, i > 0 ? roots[i - 1]! : null))}
+        {/* Wide gap: root message ↔ root message. Consecutive rows pull back to
+            a compact rhythm while keeping the DOM and reply tree unchanged. */}
+        <div className="flex flex-col gap-4">
+          {roots.map((msg, i) => renderNode(msg, 0, i > 0 ? roots[i - 1]! : null))}
+        </div>
+        <div ref={bottomRef} />
       </div>
-      <div ref={bottomRef} />
     </div>
   );
 }

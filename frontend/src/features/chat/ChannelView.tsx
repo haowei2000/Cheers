@@ -43,6 +43,7 @@ import {
 import { getChannelCache, setChannelCache, seedFromCache } from "./chatCache";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
+import { ReplyComposerBanner } from "./ReplyComposerBanner";
 import { MembersPopover } from "./MembersPopover";
 import { ForwardDialog } from "./ForwardDialog";
 import type { MessageActionHandlers } from "./MessageItem";
@@ -1992,6 +1993,13 @@ export function ChannelView({
                   session / @ / context (and sets reply_to on send). Esc clears nesting. */}
               {!selectMode && (
                 <>
+                  {replyTo && (
+                    <ReplyComposerBanner
+                      message={replyTo}
+                      senderName={memberNames.get(replyTo.sender_id)}
+                      onCancel={() => setReplyTo(null)}
+                    />
+                  )}
                   <ContextPickBar
                     channelId={channel.channel_id}
                     replyTo={replyTo}

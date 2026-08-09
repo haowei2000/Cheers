@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { groupMessagesByReply, messageSessionId } from "./messageTree";
+import {
+  groupMessagesByReply,
+  isVisuallyConsecutive,
+  messageSessionId,
+} from "./messageTree";
 import type { Message } from "@/types";
 
 function msg(
@@ -86,5 +90,44 @@ describe("messageSessionId", () => {
 
   it("returns null when absent", () => {
     expect(messageSessionId(msg({ msg_id: "b", sender_id: "bot" }))).toBeNull();
+  });
+});
+
+describe("isVisuallyConsecutive", () => {
+  const at = (minute: number) => `2026-08-09T10:${String(minute).padStart(2, "0")}:00Z`;
+
+  it("groups nearby root messages from the same sender", () => {
+    const first = msg({ msg_id: "a", sender_id: "u1", created_at: at(0) });
+    const next = msg({ msg_id: "b", sender_id: "u1", created_at: at(4) });
+    expect(isVisuallyConsecutive(first, next)).toBe(true);
+  });
+
+  it("restores the author header after the visual grouping window", () => {
+    const first = msg({ msg_id: "a", sender_id: "u1", created_at: at(0) });
+    const next = msg({ msg_id: "b", sender_id: "u1", created_at: at(6) });
+    expect(isVisuallyConsecutive(first, next)).toBe(false);
+  });
+
+  it("never folds a reply into a previous root message", () => {
+    const first = msg({ msg_id: "a", sender_id: "u1", created_at: at(0) });
+    const reply = msg({
+      msg_id: "b",
+      sender_id: "u1",
+      created_at: at(1),
+      reply_to_msg_id: "missing-parent",
+    });
+    expect(isVisuallyConsecutive(first, reply)).toBe(false);
+  });
+
+  it("keeps structured message types visually independent", () => {
+    const first = msg({ msg_id: "a", sender_id: "bot", created_at: at(0) });
+    const task = msg({
+      msg_id: "b",
+      sender_id: "bot",
+      sender_type: "bot",
+      msg_type: "task_claim_confirmation",
+      created_at: at(1),
+    });
+    expect(isVisuallyConsecutive(first, task)).toBe(false);
   });
 });

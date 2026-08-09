@@ -976,7 +976,7 @@ function MessageComposerImpl({
     // Mobile: tighter gutters + safe-area bottom padding so the input clears the
     // home indicator; the dvh root + interactive-widget=resizes-content keep it
     // above the on-screen keyboard.
-    <div className="px-4 pb-4 pt-2 relative max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="relative mx-auto w-full max-w-[72rem] px-4 pb-4 pt-2 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
         <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-10">
           {filteredMentions.map((c, i) => (

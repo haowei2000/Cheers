@@ -106,7 +106,7 @@ export function messageContextItem(msg: ReplyTargetLike): ContextItem | undefine
     id: `msg:${msg.channel_seq}`,
     verb: "channel.messages.by-seq",
     params: { min_seq: msg.channel_seq, max_seq: msg.channel_seq },
-    label: who ? `Reply to ${who}` : `Message #${msg.channel_seq}`,
+    label: who ? `Message from ${who}` : `Message #${msg.channel_seq}`,
     kind: "message",
   };
 }

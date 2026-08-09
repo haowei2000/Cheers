@@ -1,5 +1,5 @@
 import { memo, useContext, useRef, useState, type RefObject } from "react";
-import { Square, MessageCircleMore, Reply, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
+import { Square, MessageCircleMore, Reply, CornerDownRight, Copy, Forward, CheckSquare, Check, AlertCircle, RotateCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -105,7 +105,7 @@ function ActionBar({
   onLeave: () => void;
 }) {
   const btn =
-    "flex items-center justify-center w-7 h-7 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700/70";
+    "flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
   return (
     <FloatingLayer
       anchorRef={anchorRef}
@@ -116,22 +116,23 @@ function ActionBar({
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-1 rounded-lg bg-zinc-800 px-1 py-0.5 shadow-lg transition-opacity",
+        "flex items-center gap-0.5 rounded-lg border border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
-      <button type="button" title="Reply" className={btn} onClick={() => actions.onReply(message)}>
+      <button type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
         <MessageCircleMore className="w-3.5 h-3.5" />
       </button>
-      <button type="button" title="Copy text" className={btn} onClick={() => void copyMessage(message)}>
+      <button type="button" title="Copy text" aria-label="Copy text" className={btn} onClick={() => void copyMessage(message)}>
         <Copy className="w-3.5 h-3.5" />
       </button>
-      <button type="button" title="Forward" className={btn} onClick={() => actions.onForward(message)}>
+      <button type="button" title="Forward" aria-label="Forward" className={btn} onClick={() => actions.onForward(message)}>
         <Forward className="w-3.5 h-3.5" />
       </button>
       <button
         type="button"
         title="Select (multi-select)"
+        aria-label="Select message"
         className={btn}
         onClick={() => actions.onToggleSelect(message)}
       >
@@ -181,10 +182,13 @@ function ReplyQuote({
   message,
   repliedTo,
   nameOf,
+  compact,
 }: {
   message: Message;
   repliedTo?: Message | null;
   nameOf?: (senderId: string) => string;
+  /** Parent is immediately above this nested row; identify it without repeating text. */
+  compact?: boolean;
 }) {
   if (!message.reply_to_msg_id) return null;
   const excerpt = repliedTo
@@ -192,10 +196,23 @@ function ReplyQuote({
       (repliedTo.files?.length ? "(attachment)" : "(empty message)")
     : "original message not in view";
   const who = repliedTo ? nameOf?.(repliedTo.sender_id) ?? repliedTo.sender_id.slice(0, 8) : "";
+  if (compact) {
+    return (
+      <div className="mb-0.5 inline-flex max-w-full items-center gap-1 text-[11px] text-zinc-500">
+        <CornerDownRight className="h-3 w-3 flex-shrink-0 text-zinc-600" />
+        <span>Reply to</span>
+        {who && <span className="truncate font-medium text-zinc-400">{who}</span>}
+      </div>
+    );
+  }
   return (
-    <div className="flex items-center gap-1.5 mb-0.5 pl-2 border-l-2 border-zinc-700 text-[11px] text-zinc-400 max-w-full">
+    <div
+      className="mb-1 flex max-w-full items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-400"
+      title={excerpt}
+    >
       <Reply className="w-3 h-3 flex-shrink-0 rotate-180" />
-      {who && <span className="font-medium text-zinc-400 flex-shrink-0">{who}</span>}
+      <span className="text-zinc-500">Replying to</span>
+      {who && <span className="font-medium text-zinc-300 flex-shrink-0">{who}</span>}
       <span className="truncate italic">{excerpt}</span>
     </div>
   );
@@ -309,13 +326,19 @@ export const MessageItem = memo(function MessageItem({
       focusRequestId={focusRequestId}
     />
   ) : null;
-  const quote = hideReplyQuote ? null : (
-    <ReplyQuote message={message} repliedTo={repliedTo} nameOf={nameOf} />
+  const quote = (
+    <ReplyQuote
+      message={message}
+      repliedTo={repliedTo}
+      nameOf={nameOf}
+      compact={hideReplyQuote}
+    />
   );
   // A failed/sending placeholder isn't a real server message — no reply/forward/select.
   const showActions = actions && !active && !selectMode && !message._status;
   const selectable = Boolean(actions && selectMode);
   const rowRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   // Delayed hide (not instant setState-on-leave) so the bar survives the gap
   // between the row and the floating toolbar while the cursor crosses it —
   // see useHoverIntent.
@@ -358,9 +381,11 @@ export const MessageItem = memo(function MessageItem({
     return (
       <div
         className={cn(
-          "group relative flex items-start gap-3 hover:z-20 focus-within:z-20 hover:bg-zinc-900/40 transition-colors",
-          // Outer gaps (MessageList) own inter-message spacing; keep row chrome tight.
-          nested ? "px-1 py-0" : "px-4 py-0",
+          "group relative flex items-start gap-3 rounded-lg transition-colors hover:z-20 focus-within:z-20",
+          nested
+            ? "w-full bg-zinc-900/20 px-2.5 py-2 hover:bg-zinc-900/50 md:w-fit md:max-w-[56rem]"
+            : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
+          isOwn && !nested && "flex-row-reverse",
           selectable && "cursor-pointer",
           selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
         )}
@@ -370,10 +395,15 @@ export const MessageItem = memo(function MessageItem({
         onMouseLeave={hideActionBar}
         onFocusCapture={showActionBar}
       >
-        {selectable && <SelectBox selected={selected} />}
+        {selectable && (
+          <SelectBox
+            selected={selected}
+            className={isOwn && !nested ? "order-last" : undefined}
+          />
+        )}
         {!nested && (
           <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
-            <span className="text-[11px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity select-none">
+            <span className="whitespace-nowrap text-[10px] tabular-nums text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 select-none">
               {formatTime(message.created_at)}
             </span>
           </div>
@@ -397,7 +427,13 @@ export const MessageItem = memo(function MessageItem({
           </button>
         )}
         {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div
+          ref={contentRef}
+          className={cn(
+            "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
+            isOwn && !nested && "items-end",
+          )}
+        >
           {nested && (
             <div className="flex items-baseline gap-1.5">
               <button
@@ -438,7 +474,8 @@ export const MessageItem = memo(function MessageItem({
           <ActionBar
             message={message}
             actions={actions}
-            anchorRef={rowRef}
+            reversed={isOwn && !nested}
+            anchorRef={contentRef}
             visible={actionsVisible}
             onEnter={showActionBar}
             onLeave={hideActionBar}
@@ -451,8 +488,7 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div
       className={cn(
-        // Outer gaps (MessageList) own inter-message spacing; keep row chrome tight.
-        "group relative flex items-start gap-3 px-4 py-0 hover:z-20 focus-within:z-20 hover:bg-zinc-900/40 transition-colors",
+        "group relative mx-2 flex items-start gap-3 rounded-xl px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
         isOwn && "flex-row-reverse",
         selectable && "cursor-pointer",
         selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
@@ -484,19 +520,17 @@ export const MessageItem = memo(function MessageItem({
 
       {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
       <div
+        ref={contentRef}
         className={cn(
-          "flex-1 min-w-0 flex flex-col gap-1",
+          "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
           isOwn && "items-end",
         )}
       >
-        <div className="flex items-baseline gap-2">
+        <div className={cn("flex items-center gap-2", isOwn && "flex-row-reverse")}>
           <button
             type="button"
             onClick={(e) => openProfile(e.currentTarget)}
-            className={cn(
-              "text-sm font-semibold text-zinc-100 hover:underline",
-              isOwn && "order-2",
-            )}
+            className="text-sm font-semibold text-zinc-100 hover:underline"
             title={hasName ? "View profile" : message.sender_id}
           >
             {name}
@@ -530,7 +564,7 @@ export const MessageItem = memo(function MessageItem({
           message={message}
           actions={actions}
           reversed={isOwn}
-          anchorRef={rowRef}
+          anchorRef={contentRef}
           visible={actionsVisible}
           onEnter={showActionBar}
           onLeave={hideActionBar}
