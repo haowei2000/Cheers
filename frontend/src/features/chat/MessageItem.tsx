@@ -355,6 +355,10 @@ export const MessageItem = memo(function MessageItem({
 
   const isOwn = message.sender_id === currentUserId;
   const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
+  // Chat keeps the identity attached to the avatar so message content starts at
+  // the top of the row. Discuss deliberately retains its document-style author
+  // header above the body. `alignOwnMessages` is enabled only by the Chat layout.
+  const showChatIdentityUnderAvatar = alignOwnMessages && !nested;
   const name =
     message.sender_name || senderName || message.sender_id.slice(0, 8);
   const hasName = Boolean(message.sender_name || senderName);
@@ -565,12 +569,17 @@ export const MessageItem = memo(function MessageItem({
       {selectable && (
         <SelectBox selected={selected} className={isOwnAlignedRight ? "order-last" : undefined} />
       )}
-      {/* Avatar — click to open the sender's profile card */}
+      {/* Chat puts compact identity metadata below the avatar; Discuss keeps its
+          author header beside the avatar so the topic remains document-like. */}
       <button
         type="button"
         onClick={(e) => openProfile(e.currentTarget)}
-        className="mt-0.5 flex-shrink-0 rounded-full hover:opacity-80 transition-opacity"
-        title="View profile"
+        className={cn(
+          "mt-0.5 flex-shrink-0 rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+          showChatIdentityUnderAvatar && "flex w-14 flex-col items-center gap-0.5",
+        )}
+        title={hasName ? name : message.sender_id}
+        aria-label={`View profile for ${name}`}
       >
         <Avatar
           name={name}
@@ -578,6 +587,23 @@ export const MessageItem = memo(function MessageItem({
           id={message.sender_id}
           size="sm"
         />
+        {showChatIdentityUnderAvatar && (
+          <>
+            <span className="mt-0.5 block w-full truncate text-center text-[10px] font-medium leading-3 text-zinc-400">
+              {name}
+            </span>
+            <span className="flex items-center justify-center gap-1 whitespace-nowrap text-[9px] leading-3 text-zinc-500">
+              {isBot && (
+                <span className="font-semibold uppercase tracking-wide text-indigo-400">
+                  Bot
+                </span>
+              )}
+              <span className="tabular-nums">
+                {formatTime(message.created_at)}
+              </span>
+            </span>
+          </>
+        )}
       </button>
 
       {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
@@ -589,24 +615,26 @@ export const MessageItem = memo(function MessageItem({
         )}
       >
         {quote}
-        <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
-          <button
-            type="button"
-            onClick={(e) => openProfile(e.currentTarget)}
-            className="text-sm font-semibold text-zinc-100 hover:underline"
-            title={hasName ? "View profile" : message.sender_id}
-          >
-            {name}
-          </button>
-          {isBot && (
-            <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
-              BOT
+        {!showChatIdentityUnderAvatar && (
+          <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
+            <button
+              type="button"
+              onClick={(e) => openProfile(e.currentTarget)}
+              className="text-sm font-semibold text-zinc-100 hover:underline"
+              title={hasName ? "View profile" : message.sender_id}
+            >
+              {name}
+            </button>
+            {isBot && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
+                BOT
+              </span>
+            )}
+            <span className="text-[11px] text-zinc-400 tabular-nums">
+              {formatTime(message.created_at)}
             </span>
-          )}
-          <span className="text-[11px] text-zinc-400 tabular-nums">
-            {formatTime(message.created_at)}
-          </span>
-        </div>
+          </div>
+        )}
 
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
         {message.msg_type === "task_claim_confirmation" && (
