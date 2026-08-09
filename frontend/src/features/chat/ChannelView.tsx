@@ -1941,6 +1941,7 @@ export function ChannelView({
                     selectedIds={selectedIds}
                     focusMsg={focusMsg}
                     replyToId={replyTo && !selectMode ? replyTo.msg_id : null}
+                    conversationMode={channel.conversation_mode ?? "chat"}
                   />
                 </ResolveRefContext.Provider>
               )}

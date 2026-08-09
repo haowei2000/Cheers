@@ -35,6 +35,9 @@ interface Props {
   isConsecutive?: boolean;
   /** True when rendered as a sub-message under a parent (compact chrome). */
   nested?: boolean;
+  /** Chat mirrors the current user's messages to the right; Discuss keeps all
+   * participants on the left so the thread reads as one continuous document. */
+  alignOwnMessages?: boolean;
   /** Parent is in the loaded window — skip the quote strip (parent is above). */
   hideReplyQuote?: boolean;
   currentUserId?: string;
@@ -239,6 +242,7 @@ export const MessageItem = memo(function MessageItem({
   message,
   isConsecutive,
   nested = false,
+  alignOwnMessages = true,
   hideReplyQuote = false,
   currentUserId,
   channelId,
@@ -300,6 +304,7 @@ export const MessageItem = memo(function MessageItem({
   }
 
   const isOwn = message.sender_id === currentUserId;
+  const isOwnAlignedRight = isOwn && alignOwnMessages && !nested;
   const name =
     message.sender_name || senderName || message.sender_id.slice(0, 8);
   const hasName = Boolean(message.sender_name || senderName);
@@ -385,7 +390,7 @@ export const MessageItem = memo(function MessageItem({
           nested
             ? "w-full bg-zinc-900/20 px-2.5 py-2 hover:bg-zinc-900/50 md:w-fit md:max-w-[56rem]"
             : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
-          isOwn && !nested && "flex-row-reverse",
+          isOwnAlignedRight && "flex-row-reverse",
           selectable && "cursor-pointer",
           selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
         )}
@@ -398,7 +403,7 @@ export const MessageItem = memo(function MessageItem({
         {selectable && (
           <SelectBox
             selected={selected}
-            className={isOwn && !nested ? "order-last" : undefined}
+            className={isOwnAlignedRight ? "order-last" : undefined}
           />
         )}
         {!nested && (
@@ -431,7 +436,7 @@ export const MessageItem = memo(function MessageItem({
           ref={contentRef}
           className={cn(
             "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
-            isOwn && !nested && "items-end",
+            isOwnAlignedRight && "items-end",
           )}
         >
           {nested && (
@@ -474,7 +479,7 @@ export const MessageItem = memo(function MessageItem({
           <ActionBar
             message={message}
             actions={actions}
-            reversed={isOwn && !nested}
+            reversed={isOwnAlignedRight}
             anchorRef={contentRef}
             visible={actionsVisible}
             onEnter={showActionBar}
@@ -489,7 +494,7 @@ export const MessageItem = memo(function MessageItem({
     <div
       className={cn(
         "group relative mx-2 flex items-start gap-3 rounded-xl px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
-        isOwn && "flex-row-reverse",
+        isOwnAlignedRight && "flex-row-reverse",
         selectable && "cursor-pointer",
         selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
       )}
@@ -501,7 +506,7 @@ export const MessageItem = memo(function MessageItem({
     >
       {/* order-last on reversed (own) rows keeps the checkbox column visually left. */}
       {selectable && (
-        <SelectBox selected={selected} className={isOwn ? "order-last" : undefined} />
+        <SelectBox selected={selected} className={isOwnAlignedRight ? "order-last" : undefined} />
       )}
       {/* Avatar — click to open the sender's profile card */}
       <button
@@ -523,10 +528,10 @@ export const MessageItem = memo(function MessageItem({
         ref={contentRef}
         className={cn(
           "flex min-w-0 flex-1 flex-col gap-1.5 md:flex-none md:w-fit md:max-w-[52rem]",
-          isOwn && "items-end",
+          isOwnAlignedRight && "items-end",
         )}
       >
-        <div className={cn("flex items-center gap-2", isOwn && "flex-row-reverse")}>
+        <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
           <button
             type="button"
             onClick={(e) => openProfile(e.currentTarget)}
@@ -563,7 +568,7 @@ export const MessageItem = memo(function MessageItem({
         <ActionBar
           message={message}
           actions={actions}
-          reversed={isOwn}
+          reversed={isOwnAlignedRight}
           anchorRef={contentRef}
           visible={actionsVisible}
           onEnter={showActionBar}

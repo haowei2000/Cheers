@@ -28,6 +28,8 @@ export interface Channel {
   type: string;
   /** Interaction kind, independent from public/private/DM access semantics. */
   kind?: "text" | "voice";
+  /** Message presentation, independent from access and text/voice semantics. */
+  conversation_mode?: "chat" | "discuss";
   workspace_id?: string;
   purpose?: string | null;
   auto_assist?: boolean;

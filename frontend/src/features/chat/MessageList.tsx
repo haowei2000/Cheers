@@ -5,11 +5,11 @@ import { MessageItem, type MessageActionHandlers } from "./MessageItem";
 import { formatDayLabel, sameDay } from "@/lib/format";
 import type { Message } from "@/types";
 import {
-  groupMessagesByReply,
   isVisuallyConsecutive,
   isFoldedPermission,
   permissionSourceId,
 } from "./messageTree";
+import { layoutMessages, type ConversationMode } from "./conversationMode";
 
 // Chat timeline spacing (3 levels):
 //   tight  — within one message (body ↔ files ↔ Agent steps): gap-1
@@ -44,6 +44,8 @@ interface Props {
   focusMsg?: { msgId: string; nonce: number; requestId?: string | null } | null;
   /** When set, scroll the reply target into view (composer stays at the bottom). */
   replyToId?: string | null;
+  /** `chat` is a flat chronological timeline; `discuss` nests replies by topic. */
+  conversationMode?: ConversationMode;
 }
 
 export function MessageList({
@@ -59,6 +61,7 @@ export function MessageList({
   selectedIds,
   focusMsg,
   replyToId,
+  conversationMode = "chat",
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -80,9 +83,9 @@ export function MessageList({
     return map;
   }, [messages]);
 
-  const { roots, childrenByParent, byId } = useMemo(
-    () => groupMessagesByReply(messages),
-    [messages],
+  const { roots, childrenByParent, byId, topLevel } = useMemo(
+    () => layoutMessages(messages, conversationMode),
+    [conversationMode, messages],
   );
 
   // External jump (ViewBoard history rows): scroll to the anchored row + flash.
@@ -130,14 +133,11 @@ export function MessageList({
     [senderNames],
   );
 
-  // Count every rendered message (roots + nested) for auto-scroll growth.
-  const renderedCount = useMemo(() => {
-    let n = 0;
-    for (const m of messages) {
-      if (!isFoldedPermission(m)) n += 1;
-    }
-    return n;
-  }, [messages]);
+  // Both modes render the same set of messages; only their presentation differs.
+  const renderedCount = messages.reduce(
+    (count, message) => count + (isFoldedPermission(message) ? 0 : 1),
+    0,
+  );
   const prevLenRef = useRef(renderedCount);
 
   // Channel switch: the next content commit is a whole new timeline (cache seed
@@ -189,10 +189,72 @@ export function MessageList({
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [replyToId]);
 
-  if (!loading && roots.length === 0) {
+  if (!loading && topLevel.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
         No messages yet. Start the conversation!
+      </div>
+    );
+  }
+
+  function focusRequestIdFor(msg: Message) {
+    return focusMsg &&
+      (focusMsg.msgId === msg.msg_id ||
+        (approvalsBySource.get(msg.msg_id) ?? []).some(
+          (approval) => approval.msg_id === focusMsg.msgId,
+        ))
+      ? focusMsg.requestId ?? null
+      : null;
+  }
+
+  function renderDayLabel(msg: Message) {
+    return (
+      <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
+        <span className="h-px flex-1 bg-zinc-800/80" />
+        <span className="rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
+          {formatDayLabel(msg.created_at)}
+        </span>
+        <span className="h-px flex-1 bg-zinc-800/80" />
+      </div>
+    );
+  }
+
+  function rowHighlightClass(msg: Message) {
+    return msg.msg_id === highlightId
+      ? "rounded-lg bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
+      : "transition-colors duration-700";
+  }
+
+  function renderChatMessage(msg: Message, previous: Message | null) {
+    const showDayLabel = !previous || !sameDay(previous.created_at, msg.created_at);
+    const isConsecutive =
+      !showDayLabel && !!previous && isVisuallyConsecutive(previous, msg);
+    return (
+      <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
+        {showDayLabel && renderDayLabel(msg)}
+        <div
+          data-msg-id={msg.msg_id}
+          style={ROW_CONTENT_VISIBILITY}
+          className={rowHighlightClass(msg)}
+        >
+          <MessageItem
+            message={msg}
+            isConsecutive={isConsecutive}
+            alignOwnMessages
+            currentUserId={currentUserId}
+            channelId={channelId}
+            senderName={senderNames?.get(msg.sender_id)}
+            actions={actions}
+            selectMode={selectMode}
+            selected={selectedIds?.has(msg.msg_id) ?? false}
+            repliedTo={
+              msg.reply_to_msg_id ? byId.get(msg.reply_to_msg_id) ?? null : null
+            }
+            nameOf={nameOf}
+            pendingApprovals={approvalsBySource.get(msg.msg_id)}
+            focusRequestId={focusRequestIdFor(msg)}
+          />
+        </div>
       </div>
     );
   }
@@ -210,39 +272,20 @@ export function MessageList({
     const parentInView = !!(
       msg.reply_to_msg_id && byId.has(msg.reply_to_msg_id)
     );
-    const focusRequestId =
-      focusMsg &&
-      (focusMsg.msgId === msg.msg_id ||
-        (approvalsBySource.get(msg.msg_id) ?? []).some(
-          (a) => a.msg_id === focusMsg.msgId,
-        ))
-        ? focusMsg.requestId ?? null
-        : null;
 
     return (
       <div key={msg.msg_id} className={isConsecutive ? "-mt-2.5" : undefined}>
-        {showDayLabel && (
-          <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
-            <span className="h-px flex-1 bg-zinc-800/80" />
-            <span className="rounded-full border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
-              {formatDayLabel(msg.created_at)}
-            </span>
-            <span className="h-px flex-1 bg-zinc-800/80" />
-          </div>
-        )}
+        {showDayLabel && renderDayLabel(msg)}
         <div
           data-msg-id={msg.msg_id}
           style={ROW_CONTENT_VISIBILITY}
-          className={
-            msg.msg_id === highlightId
-              ? "rounded-lg bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/40 transition-colors duration-700"
-              : "transition-colors duration-700"
-          }
+          className={rowHighlightClass(msg)}
         >
           <MessageItem
             message={msg}
             isConsecutive={!!isConsecutive}
             nested={depth > 0}
+            alignOwnMessages={false}
             hideReplyQuote={parentInView}
             currentUserId={currentUserId}
             channelId={channelId}
@@ -257,7 +300,7 @@ export function MessageList({
             }
             nameOf={nameOf}
             pendingApprovals={approvalsBySource.get(msg.msg_id)}
-            focusRequestId={focusRequestId}
+            focusRequestId={focusRequestIdFor(msg)}
           />
           {kids.length > 0 && (
             // Medium gap: parent ↔ replies, and sibling replies.
@@ -310,10 +353,15 @@ export function MessageList({
           </div>
         )}
 
-        {/* Wide gap: root message ↔ root message. Consecutive rows pull back to
-            a compact rhythm while keeping the DOM and reply tree unchanged. */}
+        {/* Chat stays chronological. Discuss groups replies directly below roots. */}
         <div className="flex flex-col gap-4">
-          {roots.map((msg, i) => renderNode(msg, 0, i > 0 ? roots[i - 1]! : null))}
+          {conversationMode === "discuss"
+            ? roots.map((msg, i) =>
+                renderNode(msg, 0, i > 0 ? roots[i - 1]! : null),
+              )
+            : topLevel.map((msg, i) =>
+                renderChatMessage(msg, i > 0 ? topLevel[i - 1]! : null),
+              )}
         </div>
         <div ref={bottomRef} />
       </div>

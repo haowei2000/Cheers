@@ -68,6 +68,7 @@ export async function createChannel(data: {
   name: string;
   type?: string;
   kind?: "text" | "voice";
+  conversation_mode?: "chat" | "discuss";
   purpose?: string;
   initial_bot_ids?: string[];
 }): Promise<Channel> {
@@ -129,6 +130,7 @@ export async function updateChannel(
     purpose?: string | null;
     type?: string;
     auto_assist?: boolean;
+    conversation_mode?: "chat" | "discuss";
     allow_member_invites?: boolean;
     allow_bot_adds?: boolean;
   }
