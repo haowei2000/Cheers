@@ -19,6 +19,13 @@ const invite: NotificationItem = {
   channel_id: "channel-1",
 };
 
+const existingInvite: NotificationItem = {
+  id: "channel:channel-existing",
+  kind: "channel_invite",
+  title: "already-pending-room",
+  channel_id: "channel-existing",
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -33,27 +40,36 @@ describe("notificationStore polling reconciliation", () => {
     useNotificationStore.setState({ items: [], loaded: false });
   });
 
-  it("does not erase an invite received while an older poll is in flight", async () => {
+  it("refreshes after a live invite races a poll, restoring existing notifications", async () => {
     const pending = deferred<NotificationItem[]>();
-    listNotifications.mockReturnValueOnce(pending.promise);
+    listNotifications
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce([invite, existingInvite]);
 
     const refresh = useNotificationStore.getState().refresh();
     useNotificationStore.getState().upsert(invite);
-    pending.resolve([]);
+    pending.resolve([existingInvite]);
     await refresh;
+    await vi.waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
 
-    expect(useNotificationStore.getState().items).toEqual([invite]);
+    expect(useNotificationStore.getState()).toMatchObject({
+      items: [invite, existingInvite],
+      loaded: true,
+    });
   });
 
   it("does not resurrect an invite resolved while a poll is in flight", async () => {
     useNotificationStore.getState().upsert(invite);
     const pending = deferred<NotificationItem[]>();
-    listNotifications.mockReturnValueOnce(pending.promise);
+    listNotifications
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce([]);
 
     const refresh = useNotificationStore.getState().refresh();
     useNotificationStore.getState().removeById(invite.id);
     pending.resolve([invite]);
     await refresh;
+    await vi.waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
 
     expect(useNotificationStore.getState().items).toEqual([]);
   });

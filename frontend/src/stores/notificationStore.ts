@@ -24,7 +24,7 @@ interface NotificationState {
 let liveRevision = 0;
 let refreshSequence = 0;
 
-export const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set, get) => ({
   items: [],
   loaded: false,
   upsert: (item) => {
@@ -51,10 +51,14 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     const requestSequence = ++refreshSequence;
     try {
       const items = await listNotifications();
-      if (
-        liveRevision !== revisionAtStart ||
-        requestSequence !== refreshSequence
-      )
+      if (liveRevision !== revisionAtStart) {
+        // Keep the just-applied live mutation, then fetch a snapshot that started
+        // after it. Otherwise an initial poll racing one WS update would leave
+        // unrelated, pre-existing notifications absent until the next interval.
+        void get().refresh();
+        return;
+      }
+      if (requestSequence !== refreshSequence)
         return;
       set({ items, loaded: true });
     } catch {
