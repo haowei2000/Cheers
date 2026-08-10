@@ -269,7 +269,7 @@ pub fn push_to_user(state: &AppState, user_id: Uuid, kind: PushKind) {
                 return;
             }
         }
-        let tokens = device_tokens(&db, user_id).await;
+        let tokens = active_device_tokens(&db, user_id).await;
         if tokens.is_empty() {
             tracing::debug!(%user_id, kind = kind_label, "apns skipped: no device tokens");
             return;
@@ -603,17 +603,47 @@ pub fn approval_option_ids(options: &Value) -> (Option<String>, Option<String>) 
     (approve, reject)
 }
 
-async fn device_tokens(db: &PgPool, user_id: Uuid) -> Vec<String> {
-    sqlx::query("SELECT push_token FROM user_devices WHERE user_id = $1")
-        .bind(user_id.to_string())
-        .fetch_all(db)
+#[doc(hidden)]
+pub async fn active_device_tokens(db: &PgPool, user_id: Uuid) -> Vec<String> {
+    sqlx::query(
+        "SELECT d.push_token
+         FROM user_devices d
+         JOIN users u ON u.user_id = d.user_id
+         WHERE d.user_id = $1
+           AND u.is_suspended = FALSE
+           AND u.is_deleted = FALSE",
+    )
+    .bind(user_id.to_string())
+    .fetch_all(db)
+    .await
+    .map(|rows| {
+        rows.into_iter()
+            .filter_map(|r| r.try_get::<String, _>("push_token").ok())
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// Revoke every native push registration owned by a user. Call this whenever
+/// all sessions are invalidated so lost or offline devices stop receiving APNs.
+pub async fn revoke_user_devices(db: &PgPool, user_id: &str) {
+    match sqlx::query("DELETE FROM user_devices WHERE user_id = $1")
+        .bind(user_id)
+        .execute(db)
         .await
-        .map(|rows| {
-            rows.into_iter()
-                .filter_map(|r| r.try_get::<String, _>("push_token").ok())
-                .collect()
-        })
-        .unwrap_or_default()
+    {
+        Ok(result) if result.rows_affected() > 0 => {
+            tracing::info!(
+                user_id,
+                devices = result.rows_affected(),
+                "native push devices revoked"
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(user_id, %error, "failed to revoke native push devices");
+        }
+    }
 }
 
 #[cfg(test)]

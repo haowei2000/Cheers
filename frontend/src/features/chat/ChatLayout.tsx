@@ -89,7 +89,21 @@ export default function ChatLayout() {
   const upsertNotification = useNotificationStore((s) => s.upsert);
   const removeNotificationById = useNotificationStore((s) => s.removeById);
   useEffect(() => {
-    void refreshNotifications();
+    const refresh = () => void refreshNotifications();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [refreshNotifications]);
   useEffect(() => {
     // Clear any in-memory snapshot left by a previous login before hydrating the
@@ -103,6 +117,10 @@ export default function ChatLayout() {
       });
   }, [setVoicePresence]);
   useUserSocket((frameType, raw) => {
+    if (frameType === "connected") {
+      void refreshNotifications();
+      return;
+    }
     if (frameType === "voice_presence") {
       const snapshot = raw as VoicePresenceSnapshot | null;
       if (snapshot?.channel_id && Array.isArray(snapshot.participants)) {

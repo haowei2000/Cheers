@@ -94,8 +94,8 @@ final class ActivityModel {
     func declineInvite(_ notification: NotificationDto) async {
         guard let api = app?.api else { return }
         do {
-            if notification.kind == "friend_request", let requester = notification.requesterUserId {
-                try await api.removeFriend(friendId: requester)
+            if notification.kind == "friend_request", let friendshipId = notification.friendshipId {
+                try await api.cancelFriendRequest(friendshipId: friendshipId)
             } else if notification.kind == "bot_channel_invite",
                       let channelId = notification.channelId,
                       let botId = notification.botId {

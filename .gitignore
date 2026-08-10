@@ -1,6 +1,7 @@
 # 环境与密钥
 .env
 .env.local
+.env.1password
 *.pem
 *.p8
 *.p12

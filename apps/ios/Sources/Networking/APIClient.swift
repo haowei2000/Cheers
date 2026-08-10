@@ -343,6 +343,14 @@ struct APIClient: Sendable {
         _ = try await send(request)
     }
 
+    func cancelFriendRequest(friendshipId: String) async throws {
+        let request = try makeRequest(
+            "DELETE",
+            "/friends/requests/\(friendshipId)"
+        )
+        _ = try await send(request)
+    }
+
     func listFriendRequests(direction: String) async throws -> [FriendRequestDto] {
         try await getJSON(
             "/friends/requests",

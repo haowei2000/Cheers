@@ -2,7 +2,7 @@ import { apiJson } from "./client";
 import { acceptChannelInvite, declineChannelInvite } from "./channels";
 import { acceptBotChannelInvite, declineBotChannelInvite } from "./channels";
 import { acceptInvite, declineInvite } from "./workspaces";
-import { acceptFriendRequest, removeFriend } from "./friends";
+import { acceptFriendRequest, cancelFriendRequest } from "./friends";
 
 /** One actionable item in the notification center (a pending invitation). */
 export interface NotificationItem {
@@ -16,6 +16,7 @@ export interface NotificationItem {
   actor_id?: string | null;
   actor_name?: string | null;
   created_at?: string | null;
+  friendship_id?: string | null;
   workspace_id?: string | null;
   channel_id?: string | null;
   requester_user_id?: string | null;
@@ -48,8 +49,8 @@ export async function acceptNotification(n: NotificationItem): Promise<void> {
 
 /** Decline an invite of either kind. */
 export async function declineNotification(n: NotificationItem): Promise<void> {
-  if (n.kind === "friend_request" && n.requester_user_id) {
-    await removeFriend(n.requester_user_id);
+  if (n.kind === "friend_request" && n.friendship_id) {
+    await cancelFriendRequest(n.friendship_id);
   } else if (n.kind === "bot_channel_invite" && n.channel_id && n.bot_id) {
     await declineBotChannelInvite(n.channel_id, n.bot_id);
   } else if (n.kind === "channel_invite" && n.channel_id) {

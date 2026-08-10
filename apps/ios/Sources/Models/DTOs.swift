@@ -1381,6 +1381,7 @@ struct NotificationDto: Decodable, Identifiable {
     let actorId: String?
     let actorName: String?
     let createdAt: String?
+    let friendshipId: String?
     let workspaceId: String?
     let channelId: String?
     let requesterUserId: String?
@@ -1397,6 +1398,7 @@ struct NotificationDto: Decodable, Identifiable {
         case actorId = "actor_id"
         case actorName = "actor_name"
         case createdAt = "created_at"
+        case friendshipId = "friendship_id"
         case workspaceId = "workspace_id"
         case channelId = "channel_id"
         case requesterUserId = "requester_user_id"
