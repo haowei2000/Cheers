@@ -210,7 +210,7 @@ cce-acp-connector --help                <span class="c"># 打印出帮助 = 成�
     <p>两个二进制要装到同一目录。默认 <code>inject_cheers = true</code> 时，连接器会在自己旁边查找
       <code>cheers-mcp-server</code>，以便把 Cheers 工具暴露给智能体。</p>
     <div class="callout"><strong>如果仓库是私有的</strong>，直接 <code>curl</code> 会返回 404。改用 GitHub CLI 下载，例如
-      <code>gh release download -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -p "cheers-mcp-server-$os-$arch" -D ~/.cheers/bin</code>，
+      <code>gh release download connector-v0.1.36 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -p "cheers-mcp-server-$os-$arch" -D ~/.cheers/bin</code>，
       再 <code>chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</code>
       （请固定 <code>connector-v*</code> 标签——<code>releases/latest</code> 指向桌面应用）。</div>
 

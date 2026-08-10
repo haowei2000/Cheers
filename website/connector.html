@@ -215,7 +215,7 @@ cce-acp-connector --help                <span class="c"># prints help = success<
       the connector looks for <code>cheers-mcp-server</code> next to itself to expose Cheers tools to the agent.</p>
     <div class="callout"><strong>If the repo is private</strong>, plain <code>curl</code> returns a 404. Download with the
       GitHub CLI instead, e.g.
-      <code>gh release download -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -p "cheers-mcp-server-$os-$arch" -D ~/.cheers/bin</code>
+      <code>gh release download connector-v0.1.36 -R haowei2000/Cheers -p "cce-acp-connector-$os-$arch" -p "cheers-mcp-server-$os-$arch" -D ~/.cheers/bin</code>
       then <code>chmod +x ~/.cheers/bin/cce-acp-connector ~/.cheers/bin/cheers-mcp-server</code>
       (pin a <code>connector-v*</code> tag — <code>releases/latest</code> points at the desktop app).</div>
 
