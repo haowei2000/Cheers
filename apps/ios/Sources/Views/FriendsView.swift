@@ -249,7 +249,7 @@ struct FriendsView: View {
         }
         .swipeActions {
             Button(incoming ? "Decline" : "Cancel", role: .destructive) {
-                Task { await remove(friendId: req.userId) }
+                Task { await cancelRequest(friendshipId: req.friendshipId) }
             }
         }
     }
@@ -445,6 +445,18 @@ struct FriendsView: View {
         defer { isBusy = false }
         do {
             try await api.removeFriend(friendId: friendId)
+            await reload()
+        } catch {
+            errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func cancelRequest(friendshipId: String) async {
+        guard let api = app.api, !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await api.cancelFriendRequest(friendshipId: friendshipId)
             await reload()
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription

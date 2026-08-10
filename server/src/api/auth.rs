@@ -594,6 +594,7 @@ pub async fn change_password(
     // (typically "device lost/compromised") must silence them all; the user's
     // own device re-enables via the Settings toggle.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
+    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
 
     auth_sessions::revoke_all_sessions(&state.db, &claims.sub).await?;
     let user = auth::load_auth_user(&state.db, &claims.sub).await?;
@@ -626,6 +627,7 @@ pub async fn logout(
     // Logout revokes every session, so no device should keep receiving
     // lock-screen pushes either.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
+    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
     let mut response = Json(json!({ "ok": true })).into_response();
     response.headers_mut().append(
         axum::http::header::SET_COOKIE,
@@ -750,6 +752,8 @@ pub async fn logout_all(
     if let Ok(uid) = claims.sub.parse::<Uuid>() {
         state.fanout.kick_user(uid);
     }
+    crate::infra::web_push::revoke_user_subscriptions(&state.db, &claims.sub).await;
+    crate::notify::revoke_user_devices(&state.db, &claims.sub).await;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -941,6 +945,7 @@ pub async fn reset_password(
     // …and push subscriptions: a compromised-credential reset must silence
     // every previously-enrolled device.
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
+    crate::notify::revoke_user_devices(&state.db, &user_id).await;
     // Burn this + any other live reset codes for the email.
     sqlx::query(
         "UPDATE email_codes SET used = TRUE

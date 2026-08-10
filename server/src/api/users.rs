@@ -431,6 +431,7 @@ pub async fn suspend_user(
         state.fanout.kick_user(uid);
     }
     crate::infra::web_push::revoke_user_subscriptions(&state.db, &user_id).await;
+    crate::notify::revoke_user_devices(&state.db, &user_id).await;
     Ok(Json(json!({ "user_id": user_id, "suspended": true })))
 }
 

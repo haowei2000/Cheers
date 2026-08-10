@@ -19,6 +19,7 @@ import { isComposing } from "@/lib/ime";
 import {
   listFriends,
   removeFriend,
+  cancelFriendRequest,
   listFriendRequests,
   acceptFriendRequest,
   sendFriendRequest,
@@ -224,7 +225,7 @@ function RequestsTab({ onChange }: { onChange: () => void }) {
 
   async function decline(u: FriendRequestItem, incomingSide: boolean) {
     try {
-      await removeFriend(u.user_id);
+      await cancelFriendRequest(u.friendship_id);
       if (incomingSide) {
         setIncoming((p) => p.filter((x) => x.user_id !== u.user_id));
         onChange();

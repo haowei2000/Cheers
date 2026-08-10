@@ -25,6 +25,8 @@ pub struct NotificationDto {
     pub actor_name: Option<String>,
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub friendship_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_id: Option<String>,
@@ -148,7 +150,7 @@ pub async fn deliver_notification_by_id(
     user_id: &str,
     notification_id: &str,
 ) -> Result<(), AppError> {
-    if let Some(item) = load_notifications(state, user_id)
+    if let Some(item) = load_notifications(&state.db, user_id)
         .await?
         .into_iter()
         .find(|item| item.id == notification_id)
@@ -165,7 +167,7 @@ pub async fn deliver_unlocked_channel_invites(
     user_id: &str,
     workspace_id: &str,
 ) -> Result<(), AppError> {
-    let items = load_notifications(state, user_id).await?;
+    let items = load_notifications(&state.db, user_id).await?;
     for item in items.into_iter().filter(|item| {
         item.kind == "channel_invite" && item.workspace_id.as_deref() == Some(workspace_id)
     }) {
@@ -174,8 +176,11 @@ pub async fn deliver_unlocked_channel_invites(
     Ok(())
 }
 
-async fn load_notifications(
-    state: &AppState,
+/// Build the canonical durable Activity snapshot. Keeping this at the database
+/// seam lets integration tests verify the same DTOs used by REST, WS, Web Push,
+/// and APNs rather than reproducing their joins in test-only code.
+pub async fn load_notifications(
+    db: &sqlx::PgPool,
     user_id: &str,
 ) -> Result<Vec<NotificationDto>, AppError> {
     let friend_rows = sqlx::query(
@@ -187,7 +192,7 @@ async fn load_notifications(
          WHERE f.friend_id = $1 AND f.status = 'pending'",
     )
     .bind(user_id)
-    .fetch_all(&state.db)
+    .fetch_all(db)
     .await?;
 
     let workspace_rows = sqlx::query(
@@ -200,7 +205,7 @@ async fn load_notifications(
          WHERE wm.user_id = $1 AND wm.status = 'pending'",
     )
     .bind(user_id)
-    .fetch_all(&state.db)
+    .fetch_all(db)
     .await?;
 
     // Queued two-stage invitations are intentionally hidden until the target
@@ -219,7 +224,7 @@ async fn load_notifications(
          WHERE ci.user_id = $1",
     )
     .bind(user_id)
-    .fetch_all(&state.db)
+    .fetch_all(db)
     .await?;
 
     let bot_rows = sqlx::query(
@@ -235,7 +240,7 @@ async fn load_notifications(
          WHERE bci.owner_user_id = $1",
     )
     .bind(user_id)
-    .fetch_all(&state.db)
+    .fetch_all(db)
     .await?;
 
     let mut items = Vec::with_capacity(
@@ -253,6 +258,7 @@ async fn load_notifications(
             actor_id: Some(actor_id.clone()),
             actor_name: row.try_get("actor_name").ok(),
             created_at: row.try_get("created_at").ok(),
+            friendship_id: Some(friendship_id),
             workspace_id: None,
             channel_id: None,
             requester_user_id: Some(actor_id),
@@ -272,6 +278,7 @@ async fn load_notifications(
             actor_id: row.try_get("actor_id").ok(),
             actor_name: row.try_get("actor_name").ok(),
             created_at: row.try_get("created_at").ok(),
+            friendship_id: None,
             workspace_id: Some(workspace_id),
             channel_id: None,
             requester_user_id: None,
@@ -291,6 +298,7 @@ async fn load_notifications(
             actor_id: row.try_get("actor_id").ok(),
             actor_name: row.try_get("actor_name").ok(),
             created_at: row.try_get("created_at").ok(),
+            friendship_id: None,
             workspace_id: row.try_get("workspace_id").ok(),
             channel_id: Some(channel_id),
             requester_user_id: None,
@@ -312,6 +320,7 @@ async fn load_notifications(
             actor_id: row.try_get("actor_id").ok(),
             actor_name: row.try_get("actor_name").ok(),
             created_at: row.try_get("created_at").ok(),
+            friendship_id: None,
             workspace_id: row.try_get("workspace_id").ok(),
             channel_id: Some(channel_id),
             requester_user_id: None,
@@ -339,5 +348,5 @@ pub async fn list_notifications(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<NotificationDto>>, AppError> {
-    Ok(Json(load_notifications(&state, &claims.sub).await?))
+    Ok(Json(load_notifications(&state.db, &claims.sub).await?))
 }

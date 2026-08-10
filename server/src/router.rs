@@ -684,6 +684,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             get(api::friends::list_friend_requests),
         )
         .route(
+            "/api/v1/friends/requests/:friendship_id",
+            delete(api::friends::cancel_friend_request),
+        )
+        .route(
             "/api/v1/friends/requests/:user_id/accept",
             post(api::friends::accept_friend),
         )

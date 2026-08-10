@@ -98,10 +98,23 @@ impl WireFrame {
                 | "message_done"
                 | "message_deleted"
                 | "notification"
+                | "notification_resolved"
                 | "bot_unavailable"
                 | "voice_transcript_final"
                 | "task_claim_created"
                 | "task_claim_updated"
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn activity_delivery_and_resolution_are_terminal() {
+        assert!(WireFrame::user("notification", json!({})).is_terminal());
+        assert!(WireFrame::user("notification_resolved", json!({})).is_terminal());
     }
 }

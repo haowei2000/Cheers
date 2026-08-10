@@ -37,10 +37,20 @@ export function sendFriendRequest(friendId: string): Promise<FriendActionResult>
   });
 }
 
-/** Remove a friend, cancel an outgoing request, or decline an incoming one. */
+/** Remove an accepted friend relationship. */
 export function removeFriend(friendId: string): Promise<{ removed: boolean }> {
   return apiJson<{ removed: boolean }>(
     `/friends?friend_id=${encodeURIComponent(friendId)}`,
+    { method: "DELETE" }
+  );
+}
+
+/** Decline or cancel one exact pending request. Stale calls are harmless. */
+export function cancelFriendRequest(
+  friendshipId: string
+): Promise<{ removed: boolean }> {
+  return apiJson<{ removed: boolean }>(
+    `/friends/requests/${encodeURIComponent(friendshipId)}`,
     { method: "DELETE" }
   );
 }

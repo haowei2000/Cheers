@@ -53,6 +53,9 @@ export function useUserSocket(onFrame: (type: string, data: unknown) => void) {
       }
       if (frame.type === "auth_ok") {
         retryRef.current = 0;
+        // Reconcile durable user-scoped events missed while the socket was
+        // offline. The caller re-polls Activity before relying on live frames.
+        cbRef.current("connected", undefined);
         return;
       }
       if (frame.type === "auth_err") {
