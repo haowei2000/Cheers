@@ -1,5 +1,7 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Select as UiSelect } from "@/components/ui/select";
 // Composer-side session target (docs/arch/SESSION_MODEL.md) — the successor to
-// the old native-<select> SessionSwitcher. A chip that shows where the next
+// the old native-<UiSelect> SessionSwitcher. A chip that shows where the next
 // message goes ("Auto" = mention routing → each bot's primary session, or one
 // pinned bot+session), opening a popover with every live session grouped by
 // bot, plus "New session…" (grant-gated) and a jump to the Sessions board.
@@ -16,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ArrowRight, Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { controlHeightClasses } from "@/components/ui/control-size";
 import {
   getSessionControls,
   listChannelBotSessions,
@@ -303,14 +306,14 @@ export function SessionChip({
   let rowIndex = 0;
   const rowCls = (i: number, isSelected: boolean) =>
     cn(
-      "flex w-full items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-left transition-colors",
+      "flex w-full items-center gap-2 px-2.5 py-1.5 rounded-sm text-sm text-left transition-colors",
       i === activeIndex ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:bg-zinc-800",
       isSelected && "text-indigo-200"
     );
 
   return (
     <div ref={rootRef} className="relative inline-flex min-w-0">
-      <button
+      <UiButton variant="plain"
         type="button"
         onClick={toggle}
         onKeyDown={handleKeyDown}
@@ -322,7 +325,8 @@ export function SessionChip({
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
         className={cn(
-          "inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 max-md:py-2 text-[11px] transition-colors",
+          "inline-flex min-w-0 items-center gap-1.5 rounded-sm px-2 text-[11px] transition-colors",
+          controlHeightClasses.regular,
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
           selected || open
             ? "bg-indigo-600/15 text-indigo-200"
@@ -338,7 +342,7 @@ export function SessionChip({
           {selected ? `@${selected.bot_name} · ${tagOf(selected)}` : "Auto"}
         </span>
         <ChevronDown className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")} />
-      </button>
+      </UiButton>
 
       {open && (
         <PopoverPanel className="w-72 max-w-[calc(100vw-2rem)] max-h-72 overflow-y-auto p-1">
@@ -377,7 +381,7 @@ export function SessionChip({
                     key={s.session_id}
                     title={tagOf(s)}
                     subtitle={s.cwd || "default"}
-                    leading={<span className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))} />}
+                    leading={<span data-design-system-exempt="presence" className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))} />}
                     status={<span className="text-[11px] text-zinc-400">{s.status}</span>}
                     trailing={isSel ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
                     selected={isSel}
@@ -407,7 +411,7 @@ export function SessionChip({
             (() => {
               const idx = rowIndex++;
               return (
-                <button
+                <UiButton variant="plain"
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();
@@ -419,13 +423,13 @@ export function SessionChip({
                 >
                   <Plus className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                   New session…
-                </button>
+                </UiButton>
               );
             })()}
           {(() => {
             const idx = rowIndex++;
             return (
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -437,7 +441,7 @@ export function SessionChip({
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                 Manage sessions…
-              </button>
+              </UiButton>
             );
           })()}
         </PopoverPanel>

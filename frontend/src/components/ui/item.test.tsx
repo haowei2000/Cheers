@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { EntityItem, ItemRow, OperationsItem } from "@/components/ui/item";
+import { EntityItem, ItemGroup, ItemList, ItemRow, OperationsItem, WorkbenchItem } from "@/components/ui/item";
 import { PresentationProvider } from "@/components/ui/presentation";
+import { ControlSizeProvider } from "@/components/ui/control-size";
 
 function render(level: "max" | "medium" | "minimal") {
   return renderToStaticMarkup(
@@ -60,7 +61,51 @@ describe("ItemRow presentation levels", () => {
       <OperationsItem title="Approval" actions={<button type="button">Approve</button>} />
     );
     expect(markup).toContain("data-item-actions");
+    expect(markup).toContain('role="listitem"');
     expect(markup.match(/<button/g)).toHaveLength(1);
     expect(markup).not.toMatch(/<button[^>]*>.*<button/s);
+  });
+
+  it("inherits control height independently from presentation anatomy", () => {
+    const markup = renderToStaticMarkup(
+      <PresentationProvider level="max">
+        <ControlSizeProvider size="compact">
+          <EntityItem title="Ada" subtitle="Engineer" />
+        </ControlSizeProvider>
+      </PresentationProvider>
+    );
+    expect(markup).toContain('data-presentation-level="max"');
+    expect(markup).toContain('data-control-size="compact"');
+    expect(markup).toContain("Engineer");
+    expect(markup).toContain("min-h-7");
+  });
+
+  it.each(["max", "medium", "minimal"] as const)(
+    "lets an ItemList provide the %s anatomy to its rows",
+    (level) => {
+      const markup = renderToStaticMarkup(
+        <ItemList presentationLevel={level} controlSize="regular">
+          <EntityItem title="Ada" subtitle="Engineer" metadata="Online" />
+        </ItemList>,
+      );
+      expect(markup).toContain(`data-presentation-level="${level}"`);
+      expect(markup).toContain('data-control-size="regular"');
+      expect(markup).toContain("min-h-9");
+      expect(markup.includes("Engineer")).toBe(level !== "minimal");
+      expect(markup.includes("Online")).toBe(level === "max");
+    },
+  );
+
+  it("groups an expandable summary and detail into one list position", () => {
+    const markup = renderToStaticMarkup(
+      <ItemList presentationLevel="medium" controlSize="regular">
+        <ItemGroup>
+          <WorkbenchItem containerRole="presentation" title="changed.ts" />
+          <div>Diff detail</div>
+        </ItemGroup>
+      </ItemList>,
+    );
+    expect(markup.match(/role="listitem"/g)).toHaveLength(1);
+    expect(markup).toContain("Diff detail");
   });
 });

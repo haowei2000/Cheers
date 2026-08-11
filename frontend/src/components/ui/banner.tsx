@@ -1,6 +1,8 @@
 import type { ComponentType, ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { Button } from "./button";
+import { IconButton } from "./icon-button";
 
 type Severity = "error" | "warning" | "info" | "success";
 
@@ -46,7 +48,7 @@ export function Banner({
     <div
       role={severity === "error" ? "alert" : "status"}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm",
+        "flex items-center gap-2.5 rounded-sm px-3 py-2 text-sm",
         severityCls[severity],
         className
       )}
@@ -54,27 +56,28 @@ export function Banner({
       {Icon && <Icon className="w-4 h-4 flex-shrink-0" />}
       <div className="flex-1 min-w-0">{children}</div>
       {action && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          controlSize="compact"
           onClick={action.onClick}
           className={cn(
-            "flex-shrink-0 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors",
+            "flex-shrink-0 px-2.5 font-semibold",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
             actionCls[severity]
           )}
         >
           {action.label}
-        </button>
+        </Button>
       )}
       {onDismiss && (
-        <button
-          type="button"
+        <IconButton
           onClick={onDismiss}
-          aria-label="Dismiss"
-          className="flex-shrink-0 p-0.5 rounded opacity-60 hover:opacity-100 transition-opacity"
+          label="Dismiss"
+          controlSize="compact"
+          className="flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
         >
           <X className="w-4 h-4" />
-        </button>
+        </IconButton>
       )}
     </div>
   );

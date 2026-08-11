@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
 import {
   type ReactNode,
   useCallback,
@@ -24,6 +26,8 @@ import {
 } from "@/api/discussions";
 import { Avatar } from "@/components/ui/avatar";
 import { ErrorState } from "@/components/ui/error-state";
+import { ItemRow } from "@/components/ui/item";
+import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import type { Message } from "@/types";
@@ -270,21 +274,22 @@ export function DiscussionView({
           <label className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
             <span className="sr-only">Search discussions</span>
-            <input
+            <UiInput
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search discussions"
-              className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900/70 pl-9 pr-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/20"
+              className="bg-zinc-900/70 pl-9 pr-3 placeholder:text-zinc-500"
             />
           </label>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={startDiscussion}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 text-sm font-medium text-white transition-colors hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+            controlSize="regular"
+            className="shrink-0 bg-indigo-500 text-white hover:bg-indigo-400 focus-visible:ring-indigo-400"
           >
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New discussion</span>
-          </button>
+          </UiButton>
         </div>
       </div>
       <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
@@ -296,7 +301,7 @@ export function DiscussionView({
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <MessageCircle className="h-8 w-8 text-zinc-600" />
             <div><p className="text-sm font-medium text-zinc-200">No discussions yet</p><p className="mt-1 text-xs text-zinc-500">Start a topic for the channel.</p></div>
-            <button type="button" onClick={startDiscussion} className="text-sm font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</button>
+            <UiButton variant="plain" type="button" onClick={startDiscussion} className="text-sm font-medium text-indigo-300 hover:text-indigo-200">Start the first discussion</UiButton>
           </div>
         ) : (
           <div className="space-y-2">
@@ -304,50 +309,45 @@ export function DiscussionView({
               const copy = titleAndPreview(topic.root);
               const selected = selectedId === topic.root.msg_id && !creating;
               return (
-                <button
+                <ItemRow
                   key={topic.root.msg_id}
-                  type="button"
+                  kind="conversation"
+                  presentationLevel="max"
+                  controlSize="regular"
                   onClick={() => selectDiscussion(topic.root.msg_id)}
-                  className={cn(
-                    "group w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60",
-                    selected
-                      ? "border-indigo-500/50 bg-indigo-500/10"
-                      : "border-zinc-800 bg-zinc-900/45 hover:border-zinc-700 hover:bg-zinc-900/80",
+                  selected={selected}
+                  leading={<Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="sm" />}
+                  title={copy.title}
+                  subtitle={copy.preview}
+                  metadata={topic.last_reply ? (
+                    <>
+                      <span className="font-medium text-zinc-400">{topic.last_reply.sender_name}</span>
+                      <span className="mx-1">·</span>{topic.last_reply.content || "Attachment"}
+                    </>
+                  ) : undefined}
+                  status={(
+                    <span className={cn("inline-flex shrink-0 items-center gap-2 text-zinc-500", controlTextClasses.compact)}>
+                      <span className="inline-flex items-center gap-1"><MessageCircle className={controlIconClasses.compact} />{topic.reply_count}</span>
+                      <span className="inline-flex items-center gap-1"><Users className={controlIconClasses.compact} />{topic.participant_count}</span>
+                    </span>
                   )}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2">
-                        <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">{copy.title}</h3>
-                        <span className="shrink-0 text-[11px] tabular-nums text-zinc-500">{relativeActivity(topic.last_activity_at)}</span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{copy.preview}</p>
-                      {topic.last_reply && (
-                        <p className="mt-2 truncate text-[11px] text-zinc-500">
-                          <span className="font-medium text-zinc-400">{topic.last_reply.sender_name}</span>
-                          <span className="mx-1">·</span>{topic.last_reply.content || "Attachment"}
-                        </p>
-                      )}
-                      <div className="mt-2.5 flex items-center gap-3 text-[11px] text-zinc-500">
-                        <span className="inline-flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" />{topic.reply_count}</span>
-                        <span className="inline-flex min-w-0 items-center gap-1"><Users className="h-3.5 w-3.5" />{topic.participant_count}</span>
-                        <div className="flex -space-x-1.5">
-                          {topic.participants.map((participant) => (
-                            <Avatar key={`${participant.member_type}:${participant.member_id}`} name={participant.name} src={participant.avatar_url ?? undefined} id={participant.member_id} size="xs" className="ring-2 ring-zinc-900" />
-                          ))}
-                        </div>
-                        <ChevronRight className="ml-auto h-4 w-4 text-zinc-600 transition-transform group-hover:translate-x-0.5" />
-                      </div>
-                    </div>
-                  </div>
-                </button>
+                  trailing={(
+                    <span className={cn("inline-flex items-center gap-1 tabular-nums text-zinc-500", controlTextClasses.compact)}>
+                      {relativeActivity(topic.last_activity_at)}
+                      <ChevronRight className={cn(controlIconClasses.regular, "text-zinc-600 transition-transform group-hover/item:translate-x-0.5")} />
+                    </span>
+                  )}
+                  className={cn(
+                    "border-b-0 px-3",
+                    !selected && "bg-zinc-900/45 hover:bg-zinc-900/80",
+                  )}
+                />
               );
             })}
             {nextCursor && (
-              <button type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className="flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 disabled:opacity-50">
+              <UiButton variant="plain" controlSize="regular" type="button" disabled={loadingMore} onClick={() => void loadMoreTopics()} className="w-full text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load more
-              </button>
+              </UiButton>
             )}
           </div>
         )}
@@ -358,9 +358,9 @@ export function DiscussionView({
   const detailPane = (
     <section className="flex min-h-0 flex-[1.5] flex-col bg-zinc-950">
       {(selectedId || creating) && !isWide && (
-        <button type="button" onClick={backToTopics} className="flex h-11 items-center gap-2 border-b border-zinc-800 px-3 text-sm font-medium text-zinc-300 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500/70">
+        <UiButton variant="plain" controlSize="comfortable" type="button" onClick={backToTopics} className="w-full justify-start border-b border-zinc-800 text-zinc-300 hover:bg-zinc-900 focus-visible:ring-inset">
           <ArrowLeft className="h-4 w-4" />Discussions
-        </button>
+        </UiButton>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
       {creating ? (
@@ -388,9 +388,9 @@ export function DiscussionView({
           <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto py-3">
             <div className="mx-auto flex max-w-[56rem] flex-col gap-2 px-2 md:px-4">
               {detail.meta.has_more_before && (
-                <button type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 disabled:opacity-50">
+                <UiButton variant="plain" controlSize="regular" type="button" disabled={loadingOlder} onClick={() => void loadOlderReplies()} className="mx-auto text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200">
                   {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Load older replies
-                </button>
+                </UiButton>
               )}
               {detail.replies.length === 0 ? (
                 <div className="py-16 text-center text-sm text-zinc-500">No replies yet. Continue the discussion below.</div>

@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Select as UiSelect } from "@/components/ui/select";
 // ViewBoardDrawer — host for the channel's ViewBoards (the instrument plane),
 // SEPARATE from the file-based Workbench. On desktop it's a draggable/resizable
 // floating window inside the channel's work lane; dragging snaps it to the lane's
@@ -242,7 +244,7 @@ function ViewBoardDrawerImpl({
         </span>
         <div className="flex-1" />
         {!minimal && activeBoard && ATTACHABLE_BOARDS[activeBoard.id] && (
-          <button
+          <UiButton variant="plain"
             onClick={() => {
               const meta = ATTACHABLE_BOARDS[activeBoard.id];
               const scoped = activeBoard.sessionScoped && scope;
@@ -258,24 +260,24 @@ function ViewBoardDrawerImpl({
             className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
           >
             <Plus className="w-3.5 h-3.5" />
-          </button>
+          </UiButton>
         )}
         {onToggleMinimal && (
-          <button
+          <UiButton variant="plain"
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
             className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
           >
             {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-          </button>
+          </UiButton>
         )}
-        <button
+        <UiButton variant="plain"
           onClick={onClose}
           title="Close"
           className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
         >
           <X className="w-4 h-4" />
-        </button>
+        </UiButton>
       </div>
 
       {minimal ? (
@@ -299,18 +301,18 @@ function ViewBoardDrawerImpl({
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
               return (
-                <button
+                <UiButton variant="plain"
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-none border-b px-0.5 py-1 text-xs whitespace-nowrap transition-colors ${
-                    isActive
-                      ? "border-zinc-200 text-zinc-100"
-                      : "border-transparent text-zinc-400 hover:text-zinc-200"
-                  }`}
+                  controlSize="regular" className={`inline-flex items-center gap-1.5 rounded-none border-b px-0.5 text-xs whitespace-nowrap transition-colors ${
+ isActive
+ ? "border-zinc-200 text-zinc-100"
+ : "border-transparent text-zinc-400 hover:text-zinc-200"
+ }`}
                 >
                   {Icon && <Icon className="w-3.5 h-3.5" />}
                   {b.title}
-                </button>
+                </UiButton>
               );
             })}
           </div>
@@ -319,10 +321,10 @@ function ViewBoardDrawerImpl({
             <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-1.5">
               <Layers className="w-3 h-3 text-zinc-500 flex-shrink-0" />
               <span className="text-[10px] uppercase tracking-wide text-zinc-400">Scope</span>
-              <select
+              <UiSelect
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="min-w-0 flex-1 rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                controlSize="regular" className="min-w-0 flex-1 rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">All sessions</option>
                 {sessions.map((s) => (
@@ -340,7 +342,7 @@ function ViewBoardDrawerImpl({
                     })}
                   </option>
                 ))}
-              </select>
+              </UiSelect>
             </div>
           )}
 

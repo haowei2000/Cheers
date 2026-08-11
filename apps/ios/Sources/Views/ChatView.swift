@@ -1215,19 +1215,26 @@ private struct ChatTimelineRow: View {
                     onTapFile: onFile,
                     onReport: { onReport(message) },
                     onBlock: { onBlock(message) },
-                    onStop: message.isPartial == true ? { onStop(message) } : nil
+                    onStop: message.isPartial == true ? { onStop(message) } : nil,
+                    recordAccessory: message.isBot && (
+                        message.isPartial == true
+                            || !traceEvents.isEmpty
+                            || (message.traceCount ?? 0) > 0
+                            || message.contextBundle?.items.isEmpty == false
+                            || message.traceHasFailure == true
+                    ) ? AnyView(
+                        BotTracePanelView(
+                            channelId: channelId,
+                            msgId: message.msgId,
+                            liveEvents: traceEvents,
+                            isRunning: message.isPartial == true,
+                            focusRequestId: focusTraceRequestId,
+                            contextBundle: message.contextBundle,
+                            reportedTraceCount: message.traceCount,
+                            reportedFailure: message.traceHasFailure == true
+                        )
+                    ) : nil
                 )
-                if message.isBot {
-                    BotTracePanelView(
-                        channelId: channelId,
-                        msgId: message.msgId,
-                        liveEvents: traceEvents,
-                        isRunning: message.isPartial == true,
-                        focusRequestId: focusTraceRequestId
-                    )
-                    .padding(.leading, Theme.space5 + CGFloat(depth) * 16)
-                    .padding(.trailing, Theme.space5)
-                }
                 if message.msgType == "task_claim_confirmation" {
                     TaskClaimConfirmationFooter(message: message, channelId: channelId)
                         .padding(.leading, 58 + CGFloat(depth) * 16)

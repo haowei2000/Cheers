@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Select as UiSelect } from "@/components/ui/select";
+import { Textarea as UiTextarea } from "@/components/ui/textarea";
 // Sessions inspector + controller — a ViewBoard grouped BY BOT: each bot is a
 // header, its sessions are cards under it (channel.sessions.read). The card face
 // shows the session's working directory, a `primary` badge, status, create time,
@@ -64,7 +67,7 @@ function fmtTime(iso?: string): string {
 }
 
 const selCls =
-  "rounded bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
+  "rounded-sm bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50";
 
 // ── One session = one card ────────────────────────────────────────────────────
 
@@ -207,16 +210,16 @@ function SessionCard({
           {fmtTime(s.created_at)}
         </span>}
         actions={<>
-        <button
+        <UiButton variant="plain"
           type="button"
           title={open ? "Hide details" : "Session details"}
           onClick={() => setOpen((v) => !v)}
           className={`shrink-0 ${open ? "text-indigo-300" : "text-zinc-500 hover:text-zinc-200"}`}
         >
           <Info className="w-3.5 h-3.5" />
-        </button>
+        </UiButton>
         {canClose && (
-          <button
+          <UiButton variant="plain"
             type="button"
             disabled={actionBusy}
             title="Close this session"
@@ -224,7 +227,7 @@ function SessionCard({
             className="text-zinc-500 hover:text-red-300 disabled:opacity-40 shrink-0"
           >
             <X className="w-3.5 h-3.5" />
-          </button>
+          </UiButton>
         )}
         </>}
       />
@@ -232,7 +235,7 @@ function SessionCard({
       {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
       {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white shadow-lg">
+          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-950">
             <ArrowUp className="h-3 w-3" />
             Make primary
           </span>
@@ -259,7 +262,7 @@ function SessionCard({
               {canMode && (
                 <label className="inline-flex items-center gap-1">
                   <span className="text-[10px] text-zinc-400">mode</span>
-                  <select
+                  <UiSelect
                     value={controls!.allowed_modes.includes(mode) ? mode : ""}
                     disabled={actionBusy}
                     onChange={(e) =>
@@ -276,7 +279,7 @@ function SessionCard({
                         {m}
                       </option>
                     ))}
-                  </select>
+                  </UiSelect>
                 </label>
               )}
               {canCfg &&
@@ -285,7 +288,7 @@ function SessionCard({
                   return (
                     <label key={opt.id} className="inline-flex items-center gap-1">
                       <span className="text-[10px] text-zinc-400">{opt.name}</span>
-                      <select
+                      <UiSelect
                         value={opt.options.some((o) => o.value === cur) ? cur : ""}
                         disabled={actionBusy}
                         onChange={(e) =>
@@ -304,7 +307,7 @@ function SessionCard({
                             {v.name}
                           </option>
                         ))}
-                      </select>
+                      </UiSelect>
                     </label>
                   );
                 })}
@@ -326,43 +329,43 @@ function SessionCard({
                   {dirs.length ? dirs.join(", ") : "—"}
                 </span>
                 {canEditRoots && (
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(dirs.join("\n"))}
                     className="text-indigo-300/70 hover:text-indigo-200 disabled:opacity-40 shrink-0"
                   >
                     edit
-                  </button>
+                  </UiButton>
                 )}
               </div>
             ) : (
               <div className="mt-0.5 flex flex-col gap-1">
-                <textarea
+                <UiTextarea
                   value={dirsDraft}
                   disabled={actionBusy}
                   onChange={(e) => setDirsDraft(e.target.value)}
                   placeholder="one absolute path per line"
                   rows={Math.max(2, dirsDraft.split("\n").length)}
-                  className="w-full rounded bg-zinc-800 px-1 py-0.5 font-mono text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-1 font-mono text-[10px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <div className="flex items-center gap-2">
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     disabled={actionBusy}
                     onClick={saveDirs}
-                    className="rounded bg-indigo-600/15 px-1.5 py-0.5 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
+                    controlSize="regular" className="rounded-sm bg-indigo-600/15 px-1.5 text-indigo-200 hover:bg-indigo-600/30 disabled:opacity-40"
                   >
                     Save roots
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton variant="plain"
                     type="button"
                     disabled={actionBusy}
                     onClick={() => setDirsDraft(null)}
                     className="text-zinc-400 hover:text-zinc-200"
                   >
                     cancel
-                  </button>
+                  </UiButton>
                 </div>
               </div>
             )}
@@ -621,14 +624,14 @@ function SessionsBody({
         </span>
         <div className="flex-1" />
         {creatableBots.length > 0 && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="inline-flex items-center gap-1 rounded bg-indigo-600/15 px-1.5 py-0.5 text-[10px] text-indigo-200 hover:bg-indigo-600/30"
+            controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-indigo-600/15 px-1.5 text-[10px] text-indigo-200 hover:bg-indigo-600/30"
           >
             <Plus className="w-3 h-3" />
             New session
-          </button>
+          </UiButton>
         )}
       </div>
 

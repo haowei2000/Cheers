@@ -77,6 +77,9 @@ struct MessageBubbleView: View {
     var onReport: (() -> Void)? = nil
     var onBlock: (() -> Void)? = nil
     var onStop: (() -> Void)? = nil
+    /// Compact message-record control. Kept beside the bubble so completed
+    /// activity never creates a second text row below the message.
+    var recordAccessory: AnyView? = nil
     var body: some View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: Theme.messageInnerGap) {
             if !isOwn, showAvatar {
@@ -88,6 +91,9 @@ struct MessageBubbleView: View {
                     Spacer(minLength: dynamicTypeSize.isAccessibilitySize ? Theme.space2 : Theme.space5)
                 }
                 bubble
+                if let recordAccessory {
+                    recordAccessory
+                }
                 if message.isBot, message.isPartial == true, let onStop {
                     Button {
                         NativeFeedback.lightImpact()

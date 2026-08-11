@@ -7,6 +7,7 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PresentationProvider } from "./components/ui/presentation";
+import { ControlSizeProvider } from "./components/ui/control-size";
 import "./index.css";
 
 // PWA service worker (precached shell + Web Push, see src/sw.ts). immediate:
@@ -29,7 +30,9 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <ErrorBoundary>
           <PresentationProvider>
-            <App />
+            <ControlSizeProvider size="regular">
+              <App />
+            </ControlSizeProvider>
           </PresentationProvider>
         </ErrorBoundary>
         <Toaster

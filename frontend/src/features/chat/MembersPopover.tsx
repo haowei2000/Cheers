@@ -1,9 +1,10 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { Users, Bot, Settings } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
 import { Avatar } from "@/components/ui/avatar";
 import { PopoverPanel } from "@/components/ui/popover";
-import { EntityItem, ItemList } from "@/components/ui/item";
+import { EntityItem, ItemList, OperationsItem } from "@/components/ui/item";
 import { useProfileCard } from "./ProfileHovercard";
 import type { MemberItem } from "@/types";
 
@@ -51,11 +52,11 @@ export function MembersPopover({
           </span>
         </div>
 
-        <ItemList className="max-h-72 overflow-y-auto py-1">
+        <ItemList presentationLevel="medium" controlSize="regular" className="max-h-72 overflow-y-auto py-1">
           {members === null ? (
-            <p className="px-3 py-3 text-xs text-zinc-400">Loading…</p>
+            <OperationsItem title="Loading members…" />
           ) : members.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-zinc-400">No members found</p>
+            <OperationsItem title="No members found" />
           ) : (
             members.map((m) => {
               const name = m.display_name || m.username || m.member_id.slice(0, 8);
@@ -72,20 +73,9 @@ export function MembersPopover({
                     card?.open(anchor, m);
                   }}
                   title={name}
-                  leading={<div className="relative">
-                    <Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="sm" />
-                    {m.is_online != null && (
-                      <span
-                        title={m.is_online ? "online" : "offline"}
-                        className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 ${
-                          m.is_online ? "bg-emerald-500" : "bg-zinc-600"
-                        }`}
-                      />
-                    )}
-                  </div>}
+                  leading={<Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="sm" online={m.is_online ?? undefined} />}
                   status={m.member_type === "bot" ? <Bot className="h-3 w-3 text-indigo-400" /> : undefined}
                   trailing={m.role && m.role !== "member" ? <span className="text-[10px] capitalize text-zinc-400">{m.role}</span> : undefined}
-                  className="border-0 px-3"
                 />
               );
             })
@@ -93,17 +83,17 @@ export function MembersPopover({
         </ItemList>
 
         {!isDm && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => {
               onClose();
               onManage();
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
+            controlSize="regular" className="w-full flex items-center gap-2 px-3 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
           >
             <Settings className="w-3.5 h-3.5" />
             Manage members…
-          </button>
+          </UiButton>
         )}
       </PopoverPanel>
     </>

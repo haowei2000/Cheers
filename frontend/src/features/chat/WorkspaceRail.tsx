@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Settings, LogOut, Plus, Users } from "lucide-react";
@@ -5,6 +6,7 @@ import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { IconButton } from "@/components/ui/icon-button";
+import { ControlSizeProvider, controlIconClasses } from "@/components/ui/control-size";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -29,11 +31,13 @@ function RailButton({
   children: ReactNode;
 }) {
   return (
-    <button
+    <UiButton variant="plain"
+      square
+      controlSize="comfortable"
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="group relative w-10 h-10 max-md:w-11 max-md:h-11 flex items-center justify-center"
+      className="group relative"
     >
       <div
         className={cn(
@@ -42,7 +46,7 @@ function RailButton({
         )}
       />
       {children}
-    </button>
+    </UiButton>
   );
 }
 
@@ -61,10 +65,10 @@ function WorkspaceButton({
         name={workspace.name}
         src={workspace.avatar_url}
         id={workspace.workspace_id}
-        size="sm"
+        size="md"
         className={cn(
-          "transition-all duration-150 rounded-xl",
-          selected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
+          "rounded-sm transition-colors duration-150",
+          selected ? "bg-zinc-600" : "group-hover:bg-zinc-600"
         )}
       />
     </RailButton>
@@ -97,6 +101,7 @@ export function WorkspaceRail({
     !!personalWorkspace && selectedWorkspaceId === personalWorkspace.workspace_id;
 
   return (
+    <ControlSizeProvider size="comfortable">
     <div className="w-14 h-full bg-rail flex flex-col items-center py-3 gap-2 flex-shrink-0 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))] max-md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
       {/* Personal workspace — the user's home (DMs + private space), the most important
           one, so it takes the prominent top slot. Selectable; falls back to a static brand
@@ -111,14 +116,17 @@ export function WorkspaceRail({
         disabled={!personalWorkspace}
         title={personalWorkspace ? "Personal (DMs / personal space)" : "Cheers"}
       >
-        <div
+        <img
+          src="/cheers-icon.svg"
+          alt=""
+          aria-hidden="true"
           className={cn(
-            "w-10 h-10 max-md:w-11 max-md:h-11 bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 transition-all duration-150",
-            personalSelected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
+            "h-9 w-9 rounded-sm object-cover transition-[filter,opacity] duration-150",
+            personalSelected
+              ? "brightness-110"
+              : "opacity-80 group-hover:opacity-100 group-hover:brightness-110"
           )}
-        >
-          <EditorialIcon name="correspondence" className="h-5 w-5 text-white" />
-        </div>
+        />
       </RailButton>
 
       {/* The personal workspace and team list are grouped by a small visual
@@ -145,13 +153,13 @@ export function WorkspaceRail({
           />
         ))}
 
-        <button
-          title="Add workspace"
+        <IconButton
+          label="Add workspace"
           onClick={() => setWsOpen(true)}
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-indigo-400 max-md:h-11 max-md:w-11"
+          className="text-zinc-500 hover:text-zinc-200"
         >
-          <Plus className="w-4 h-4" />
-        </button>
+          <Plus className={controlIconClasses.comfortable} />
+        </IconButton>
       </div>
 
       {/* Bottom actions */}
@@ -164,10 +172,9 @@ export function WorkspaceRail({
             navigate("/fleet");
           }}
           label="Fleet — bots & status"
-          presentationLevel="minimal"
           className="relative text-zinc-500"
         >
-          <EditorialIcon name="agentMark" className="h-4 w-4" />
+          <EditorialIcon name="agentMark" className={controlIconClasses.comfortable} />
         </IconButton>
 
         <IconButton
@@ -176,10 +183,9 @@ export function WorkspaceRail({
             navigate("/friends");
           }}
           label="Friends"
-          presentationLevel="minimal"
           className="text-zinc-500"
         >
-          <Users className="w-4 h-4" />
+          <Users className={controlIconClasses.comfortable} />
         </IconButton>
 
         <IconButton
@@ -188,10 +194,9 @@ export function WorkspaceRail({
             navigate("/settings");
           }}
           label="Settings"
-          presentationLevel="minimal"
           className="text-zinc-500"
         >
-          <Settings className="w-4 h-4" />
+          <Settings className={controlIconClasses.comfortable} />
         </IconButton>
 
         <div className="w-px h-4 bg-zinc-700/60" />
@@ -200,20 +205,20 @@ export function WorkspaceRail({
         <Avatar
           name={user?.display_name ?? user?.username}
           id={user?.user_id}
-          size="sm"
+          size="md"
         />
 
         <IconButton
           onClick={handleLogout}
           label="Sign out"
           tone="danger"
-          presentationLevel="minimal"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className={controlIconClasses.comfortable} />
         </IconButton>
       </div>
 
       {wsOpen && <NewWorkspaceDialog onClose={() => setWsOpen(false)} />}
     </div>
+    </ControlSizeProvider>
   );
 }

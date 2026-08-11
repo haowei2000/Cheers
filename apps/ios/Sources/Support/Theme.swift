@@ -24,6 +24,8 @@ enum Theme {
     static let space4: CGFloat = 16
     /// 24pt — card / form block padding.
     static let space5: CGFloat = 24
+    /// Shared restrained editorial corner radius.
+    static let cornerRadius: CGFloat = 4
     /// HIG minimum interactive hit target (pt).
     static let hitMin: CGFloat = 44
     /// Comfortable list-row vertical inset (beyond default List insets).

@@ -1194,6 +1194,11 @@ struct MessageDto: Codable, Identifiable, Hashable {
     var createdAt: String?
     /// Present for approval/system cards; omitted when null server-side.
     var contentData: JSONValue?
+    /// Secondary message record summaries. They are optional so older gateways
+    /// remain decodable while the timeline can keep Context/Trace out of body flow.
+    var contextBundle: ResourceContextBundle? = nil
+    var traceCount: Int? = nil
+    var traceHasFailure: Bool? = nil
 
     var id: String { msgId }
     var createdDate: Date? { TimeFormat.parse(createdAt) }
@@ -1219,6 +1224,9 @@ struct MessageDto: Codable, Identifiable, Hashable {
         case files
         case createdAt = "created_at"
         case contentData = "content_data"
+        case contextBundle = "context_bundle"
+        case traceCount = "trace_count"
+        case traceHasFailure = "trace_has_failure"
     }
 }
 

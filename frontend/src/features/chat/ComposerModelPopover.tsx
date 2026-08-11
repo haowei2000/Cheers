@@ -1,9 +1,11 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { ComposerBotSettings, type MentionedBot } from "./ComposerBotSettings";
 import { readBotControls } from "./sessionControlsCache";
+import { controlHeightClasses } from "@/components/ui/control-size";
 
 /**
  * Collapsed entry point for the composer's bot model/mode + config controls.
@@ -79,14 +81,15 @@ export function ComposerModelPopover({
 
   return (
     <div className="relative inline-flex min-w-0" ref={rootRef}>
-      <button
+      <UiButton variant="plain"
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Model & bot settings"
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 max-md:py-2 text-[11px] transition-colors",
+          "inline-flex min-w-0 items-center gap-1.5 rounded-sm px-2 text-[11px] transition-colors",
+          controlHeightClasses.regular,
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
           open
             ? "bg-indigo-600/15 text-indigo-200"
@@ -98,7 +101,7 @@ export function ComposerModelPopover({
         <ChevronDown
           className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")}
         />
-      </button>
+      </UiButton>
 
       {open && (
         <PopoverPanel className="min-w-[240px] max-w-[calc(100vw-2rem)] md:max-w-[420px] p-2">

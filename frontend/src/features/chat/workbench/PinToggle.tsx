@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { Pin } from "lucide-react";
 
 // Pin a file's content into every bot prompt (the semantic layer). Shared by the File
@@ -13,7 +14,7 @@ export function PinToggle({
 }) {
   const isPinned = pinned.includes(path);
   return (
-    <button
+    <UiButton variant="plain"
       onClick={() => togglePin(path)}
       title={isPinned ? "Pinned: injected into every prompt — click to unpin" : "Pin: inject this file's content into every bot prompt"}
     >
@@ -22,6 +23,6 @@ export function PinToggle({
           isPinned ? "fill-amber-400 text-amber-400" : "text-zinc-500 hover:text-zinc-300"
         }`}
       />
-    </button>
+    </UiButton>
   );
 }

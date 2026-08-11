@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Bell, Shield } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ItemList, OperationsItem } from "@/components/ui/item";
+import { ItemSection, OperationsItem } from "@/components/ui/item";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useActivityUiStore } from "@/stores/activityUiStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -184,14 +185,15 @@ export function ActivityCenter() {
 
   return (
     <>
-      <button
+      <IconButton
         onClick={() => setOpen(true)}
-        title="Activity — approvals & invites"
-        className="relative w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+        label="Activity — approvals & invites"
+        className="relative text-zinc-500"
       >
         <Bell className="w-4 h-4" />
         {badge > 0 && (
           <span
+            data-design-system-exempt="unread"
             className={`absolute -top-0.5 -right-0.5 min-w-[18px] px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
               approvalCount > 0 ? "bg-amber-600" : "bg-indigo-600"
             }`}
@@ -199,7 +201,7 @@ export function ActivityCenter() {
             {badge}
           </span>
         )}
-      </button>
+      </IconButton>
 
       {open && (
         <Dialog title="Activity" onClose={() => setOpen(false)}>
@@ -213,14 +215,16 @@ export function ActivityCenter() {
             )}
 
             {approvals.length > 0 && (
-              <section className="space-y-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+              <ItemSection
+                presentationLevel="medium"
+                controlSize="regular"
+                label={<span className="flex items-center gap-1.5">
                   <Shield className="w-3 h-3 text-amber-400" />
                   Needs approval
-                </h3>
-                <ul className="space-y-3">
+                </span>}
+              >
                   {approvals.map((a) => (
-                    <li key={a.message_id}>
+                    <div role="listitem" key={a.message_id} className="space-y-1 py-1">
                       <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">
                         {a.channel_name.trim() ? `#${a.channel_name}` : "Direct message"}
                       </p>
@@ -231,18 +235,14 @@ export function ActivityCenter() {
                         approverOverride
                         onResolved={() => approvalResolved(a.message_id)}
                       />
-                    </li>
+                    </div>
                   ))}
-                </ul>
-              </section>
+              </ItemSection>
             )}
 
             {items.length > 0 && (
-              <section className="space-y-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Invites
-                </h3>
-                <ItemList>{items.map((n) => {
+              <ItemSection label="Invites" presentationLevel="medium" controlSize="regular">
+                {items.map((n) => {
                   const key = notificationKey(n);
                   return (
                     <OperationsItem
@@ -265,11 +265,10 @@ export function ActivityCenter() {
                         Decline
                       </Button>
                       </>}
-                      className="border-0 bg-zinc-800/40"
                     />
                   );
-                })}</ItemList>
-              </section>
+                })}
+              </ItemSection>
             )}
           </div>
         </Dialog>

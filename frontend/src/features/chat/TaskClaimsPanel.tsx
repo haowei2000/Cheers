@@ -8,7 +8,7 @@ import {
   type TaskClaim,
 } from "@/api/taskClaims";
 import { Button } from "@/components/ui/button";
-import { ItemList, OperationsItem } from "@/components/ui/item";
+import { ItemSection, OperationsItem } from "@/components/ui/item";
 
 export function TaskClaimsPanel({
   channelId,
@@ -72,15 +72,16 @@ export function TaskClaimsPanel({
   };
 
   return (
-    <div className="mx-4 mb-2 max-h-72 space-y-2 overflow-y-auto">
-      <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-300/80">
-        Task claim requests · {claims.length}
-      </p>
-      <ItemList>
+    <ItemSection
+      label="Task claim requests"
+      action={<span className="font-normal tabular-nums text-zinc-500">{claims.length}</span>}
+      presentationLevel="max"
+      controlSize="regular"
+      className="mx-4 mb-2 max-h-72 overflow-y-auto"
+    >
       {claims.map((c) => (
         <OperationsItem
           key={c.claim_id}
-          presentationLevel="max"
           leading={<Bot className="h-4 w-4 text-indigo-400" />}
           title={`${c.bot_name} wants to claim a task`}
           subtitle={c.summary}
@@ -90,7 +91,7 @@ export function TaskClaimsPanel({
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="h-7 px-2 text-xs"
+                  className="px-2"
                   disabled={busy === c.claim_id}
                   onClick={() => void cancel(c)}
                 >
@@ -100,7 +101,7 @@ export function TaskClaimsPanel({
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="h-7 px-2 text-xs"
+                  className="px-2"
                   disabled={busy === c.claim_id}
                   onClick={() => void resolve(c, "reject")}
                 >
@@ -109,7 +110,7 @@ export function TaskClaimsPanel({
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 px-2 text-xs"
+                  className="px-2"
                   loading={busy === c.claim_id}
                   onClick={() => void resolve(c, "accept")}
                 >
@@ -117,10 +118,8 @@ export function TaskClaimsPanel({
                   Approve &amp; run
                 </Button>
               </> : undefined}
-          className="border-0 bg-indigo-500/10"
         />
       ))}
-      </ItemList>
-    </div>
+    </ItemSection>
   );
 }

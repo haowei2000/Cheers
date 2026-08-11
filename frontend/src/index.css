@@ -66,6 +66,7 @@
 
 :root {
   color-scheme: dark;
+  --radius-control: 4px;
 }
 
 * {
@@ -191,19 +192,19 @@ button:not(:disabled) {
 }
 
 .prose a {
-  color: #818cf8;
+  color: #d4d4d8;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .prose a:hover {
-  color: #a5b4fc;
+  color: #fafafa;
 }
 
 .prose code {
   background: #27272a;
   color: #e4e4e7;
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   /* Size is owned by the renderer's utility class (text-sm) so inline code,
      code blocks, and the backtick-path button all agree — don't override here. */
   font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
@@ -211,7 +212,7 @@ button:not(:disabled) {
 
 .prose pre {
   background: #18181b;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 1em;
   overflow-x: auto;
   margin: 0.5em 0;
@@ -268,7 +269,8 @@ button:not(:disabled) {
 }
 .prose th,
 .prose td {
-  border: 1px solid #27272a;
+  border: 0;
+  border-bottom: 1px solid #27272a;
   padding: 0.5em 0.75em;
   text-align: left;
 }
@@ -304,16 +306,16 @@ button:not(:disabled) {
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-built_in {
-  color: #c084fc !important;
+  color: #c4b5a5 !important;
 }
 .hljs-string,
 .hljs-attr,
 .hljs-attribute {
-  color: #86efac !important;
+  color: #a8b5a2 !important;
 }
 .hljs-number,
 .hljs-literal {
-  color: #fb923c !important;
+  color: #c4a484 !important;
 }
 .hljs-comment {
   color: #a1a1aa !important;
@@ -321,11 +323,11 @@ button:not(:disabled) {
 }
 .hljs-function,
 .hljs-title {
-  color: #60a5fa !important;
+  color: #aab5c4 !important;
 }
 .hljs-type,
 .hljs-class {
-  color: #f0abfc !important;
+  color: #c2aebd !important;
 }
 .hljs-variable,
 .hljs-params {
@@ -335,9 +337,9 @@ button:not(:disabled) {
   color: #94a3b8 !important;
 }
 
-/* Public/auth edition: the editorial language uses ink and rules instead of
-   the product workspace's indigo action color. Keep this scoped so chat state
-   controls retain their stronger application semantics. */
+/* Public/auth edition: the editorial language uses ink and rules. The workspace
+   now follows the same neutral accent principle, while this scope keeps the
+   public edition's reversed primary-action treatment. */
 .public-edition button,
 .public-edition input {
   font-family: "Source Sans 3", "Source Han Sans SC", "Noto Sans SC",

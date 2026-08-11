@@ -2,16 +2,17 @@
 
 > **Language**: English | [中文](DESIGN.zh-CN.md)
 
-The visual contract for the Cheers frontend. **The shared components in
-`src/components/ui/` are the source of truth** — this document records the
-canonical recipes for everything they don't cover yet, so new UI copies one
-known form instead of inventing a new one.
+The Web implementation guide for the Cheers frontend. The canonical product
+design decisions live in `../design-system/DESIGN_LANGUAGE.zh-CN.md`, with the
+machine-readable item contract in `../design-system/item-contract.json` and
+managed collection behavior in
+`../design-system/COLLECTION_MANAGER.zh-CN.md`. Shared components in
+`src/components/ui/` implement that contract.
 
-The current product language is **Editorial Correspondence**. Its cross-platform
-decisions live in `../design-system/item-contract.json` and
-`../design-system/DESIGN_LANGUAGE.zh-CN.md`. If a legacy recipe later in this
-file uses a larger radius, boxed card, or decorative border, the shared
-Editorial component wins; treat that recipe as migration inventory rather than
+The current product language is **Editorial Correspondence**. If a legacy
+recipe later in this file uses a different radius, boxed card, decorative
+border, non-standard height, multiline browse item, or neon effect, the
+canonical design language wins. Treat that recipe as migration inventory, not
 permission to introduce another visual language.
 
 Rules of engagement:
@@ -132,7 +133,12 @@ precache; CJK utility text falls through to the locale-correct platform sans.
 
 ### Shape & states
 
-- Radius: `rounded-sm` / 2px for product items and controls. `rounded-full` is reserved for avatars, presence, unread dots, and platform-native controls whose shape carries meaning.
+- Radius: the shared ordinary rectangle radius is 4px for product items,
+  controls, fields, overlays, and composer surfaces. Use the project token or
+  Tailwind utility that currently resolves to 4px; never infer the contract
+  from the utility name alone. `rounded-full` is reserved for avatars,
+  presence, unread dots, progress, and platform-native controls whose shape
+  carries meaning.
 - Separation: resting controls stay borderless. Use spacing and surface contrast first; use hairline rules only for editorial sections or dense rows that must scan as a register.
 - Focus: `focus:ring-2 focus:ring-indigo-500` (buttons use `focus-visible:`) — **never** a bare `focus:border-indigo-*` substitute
 - Error: `ring-1 ring-red-500/70` on the field — a state ring, not a resting border
@@ -147,7 +153,9 @@ precache; CJK utility text falls through to the locale-correct platform sans.
 
 Use `<Button>` (`src/components/ui/button.tsx`). Variants: `primary`
 (indigo fill), `secondary` (zinc soft fill), `ghost` (transparent), `danger`
-(red text). Sizes: `sm` (h-7), `md` (h-9), `icon` (h-8 square).
+(red text). Physical sizing must resolve through `ControlSize`: compact 28px,
+regular 36px, or comfortable 44px. An icon-only button uses the same selected
+ControlSize; it does not introduce a separate 32px tier.
 
 For contexts the component doesn't fit (dense workbench panels), the soft
 recipes are:

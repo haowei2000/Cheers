@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 /**
  * Self-contained unified-diff renderer (no external highlighter).
  *
@@ -184,9 +185,9 @@ function FileSectionView({ section }: { section: FileSection }) {
 
   return (
     <div className="border-b border-zinc-900 last:border-b-0">
-      <button
+      <UiButton variant="plain"
         onClick={() => setOpen((o) => !o)}
-        className="sticky top-[22px] z-[1] flex w-full items-center gap-1.5 border-y border-zinc-800/70 bg-zinc-900/95 px-2 py-1 text-left text-[11px] backdrop-blur-sm hover:bg-zinc-800/90"
+        controlSize="regular" className="sticky top-[22px] z-[1] flex w-full items-center gap-1.5 border-y border-zinc-800/70 bg-zinc-900/95 px-2 text-left text-[11px] backdrop-blur-sm hover:bg-zinc-800/90"
         title={section.title}
       >
         {open ? (
@@ -200,7 +201,7 @@ function FileSectionView({ section }: { section: FileSection }) {
           {section.adds > 0 && <span className="text-emerald-400">+{section.adds}</span>}
           {section.dels > 0 && <span className="text-rose-400">−{section.dels}</span>}
         </span>
-      </button>
+      </UiButton>
       {lines.map((l, i) => (
         <DiffLineItem key={i}
           tone={l.kind === "add" ? "add" : l.kind === "del" ? "remove" : "context"}
@@ -213,12 +214,12 @@ function FileSectionView({ section }: { section: FileSection }) {
         />
       ))}
       {open && hidden > 0 && (
-        <button
+        <UiButton variant="plain"
           onClick={() => setShown((s) => s + PAGE_LINES)}
-          className="block w-full px-2 py-1 text-left text-[11px] italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          controlSize="regular" className="block w-full px-2 text-left text-[11px] italic text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
         >
           … show more ({hidden} hidden lines)
-        </button>
+        </UiButton>
       )}
     </div>
   );

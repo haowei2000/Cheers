@@ -5,9 +5,11 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useWindowDrag } from "@/hooks/useWindowDrag";
 import { LaneBoundsContext } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
+import { IconButton } from "@/components/ui/icon-button";
+import { Button } from "@/components/ui/button";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
-// A NON-MODAL floating window (ViewBoard-style chrome): rounded elevated card,
+// A NON-MODAL floating window (ViewBoard-style chrome): rounded-sm elevated card,
 // no backdrop, so the chat + composer behind it stay fully usable. Draggable by
 // its title bar and resizable from the bottom-right grip (geometry persists per
 // `storageKey`); clicking anywhere in the window raises it above the others; the
@@ -134,14 +136,15 @@ export function FloatingPanel({
     </>
   );
   const titleEl = collapsed ? (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      controlSize="compact"
       onClick={toggleCollapsed}
       title="Expand"
-      className="flex items-center gap-2 min-w-0 -mx-1 rounded px-1 py-0.5 hover:bg-zinc-800/60"
+      className="min-w-0 -mx-1 px-1"
     >
       {titleLabel}
-    </button>
+    </Button>
   ) : (
     titleLabel
   );
@@ -167,7 +170,7 @@ export function FloatingPanel({
         // Absolute inside the lane, fixed over the viewport (drag.style sets the
         // matching `position` so this only decides the fallback box).
         drag.bounded ? "absolute" : "fixed",
-        "flex flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm",
+        "flex flex-col overflow-hidden rounded-sm bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm",
         // Cap to the box, leaving a 2rem inset in the lane so a default-spawned
         // window (and its bottom-right resize grip) always fits inside the
         // overflow-clip; or short of the composer over the viewport.
@@ -187,21 +190,22 @@ export function FloatingPanel({
         {titleEl}
         <div className="flex-1" />
         {!collapsed && headerExtra}
-        <button
+        <IconButton
           onClick={toggleCollapsed}
-          title={collapsed ? "Expand" : "Minimize"}
-          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
+          label={collapsed ? "Expand" : "Minimize"}
+          controlSize="compact"
+          className="text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 max-md:hidden"
         >
           {collapsed ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           onClick={onClose}
-          title="Close"
-          aria-label="Close"
-          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+          label="Close"
+          controlSize="compact"
+          className="text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
         >
           <X className="w-4 h-4" />
-        </button>
+        </IconButton>
       </div>
       {collapsed && !isMobile ? (
         summaryEl

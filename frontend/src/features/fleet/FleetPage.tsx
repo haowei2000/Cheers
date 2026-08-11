@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -45,14 +46,14 @@ function StatusChip({ bot }: { bot: FleetBot }) {
   }
   if (bot.pending_count > 0) {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-200 font-medium">
+      <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-amber-900/40 text-amber-200 font-medium">
         waiting approval
       </span>
     );
   }
   if (bot.busy_sessions > 0) {
     return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-600/15 text-indigo-200 font-medium">
+      <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-indigo-600/15 text-indigo-200 font-medium">
         working
       </span>
     );
@@ -81,6 +82,7 @@ function BotRow({
       leading={<div className="relative flex-shrink-0">
         <Avatar name={bot.bot_name} id={bot.bot_id} size="sm" />
         <span
+          data-design-system-exempt="presence"
           className={cn(
             "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900",
             bot.online ? "bg-emerald-500" : "bg-zinc-600"
@@ -98,6 +100,7 @@ function BotRow({
       ) : undefined}
       criticalStatus={bot.pending_count > 0 ? (
           <span
+            data-design-system-exempt="unread"
             className="text-[10px] font-bold bg-amber-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
             title={`${bot.pending_count} pending approval${bot.pending_count === 1 ? "" : "s"}`}
           >
@@ -272,13 +275,13 @@ export default function FleetPage() {
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="flex items-center gap-3 px-4 h-14 border-b border-zinc-800 flex-shrink-0">
-        <button
+        <UiButton variant="plain"
           onClick={() => navigate("/chat")}
           title="Back to chat"
-          className="w-8 h-8 max-md:w-11 max-md:h-11 max-md:-ml-2 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          square controlSize="regular" className=" max-md: max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </UiButton>
         <Radar className="w-4 h-4 text-indigo-400" />
         <h1 className="text-lg font-semibold">Fleet</h1>
         <div className="ml-auto flex items-center gap-2">
@@ -291,7 +294,7 @@ export default function FleetPage() {
               value={activeWsId ?? ""}
               onChange={(e) => setWsId(e.target.value)}
               aria-label="Workspace"
-              className="h-8 py-1 text-xs w-44"
+              controlSize="regular" className=" text-xs w-44"
             >
               {wsOptions.map((w) => (
                 <option key={w.workspace_id} value={w.workspace_id}>
@@ -300,15 +303,15 @@ export default function FleetPage() {
               ))}
             </Select>
           )}
-          <button
+          <UiButton variant="plain"
             onClick={() => activeWsId && refresh(activeWsId)}
             title="Refresh"
             aria-label="Refresh"
             disabled={refreshing || !activeWsId}
-            className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
+            square controlSize="regular" className=" max-md: rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
           >
             <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
-          </button>
+          </UiButton>
         </div>
       </header>
 
@@ -325,7 +328,7 @@ export default function FleetPage() {
               )}
 
               {actionableCount > 0 && (
-                <button
+                <UiButton variant="plain"
                   type="button"
                   onClick={() => {
                     // ActivityCenter lives in the chat shell rail — open the
@@ -333,7 +336,7 @@ export default function FleetPage() {
                     requestActivityOpen();
                     navigate("/chat");
                   }}
-                  className="w-full flex items-center gap-3 rounded-xl border border-amber-900/50 bg-amber-950/30 px-4 py-3 text-left hover:bg-amber-950/50 transition-colors"
+                  controlSize="regular" className="w-full flex items-center gap-3 rounded-sm bg-amber-950/30 px-4 text-left hover:bg-amber-950/50 transition-colors"
                 >
                   <Inbox className="w-4 h-4 text-amber-300 shrink-0" />
                   <div className="min-w-0 flex-1">
@@ -342,7 +345,7 @@ export default function FleetPage() {
                     </p>
                     <p className="text-xs text-zinc-400">Review in Activity</p>
                   </div>
-                </button>
+                </UiButton>
               )}
 
               <section>
@@ -416,7 +419,7 @@ export default function FleetPage() {
           <p className="text-xs text-amber-400">
             {issued.note ?? "Store this token now — shown only once."}
           </p>
-          <div className="rounded-lg bg-zinc-950 p-3">
+          <div className="rounded-sm bg-zinc-950 p-3">
             <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between gap-3 mt-3">

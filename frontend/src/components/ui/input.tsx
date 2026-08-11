@@ -1,19 +1,25 @@
 import { forwardRef, type InputHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
+import { controlHeightClasses, useControlSize, type ControlSize } from "./control-size";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: boolean;
+  controlSize?: ControlSize;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ error, className, ...props }, ref) => (
+  ({ error, controlSize, className, ...props }, ref) => {
+    const size = useControlSize(controlSize);
+    return (
     <input
       ref={ref}
       className={cn(
         // Borderless filled field (DESIGN.md §2.3): the fill is the affordance,
-        // rings are states (focus indigo, error red).
+        // Rings are states (neutral focus, semantic error red).
         // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
-        "h-9 w-full rounded-lg px-3 text-base md:text-sm bg-zinc-800 text-zinc-100 placeholder-zinc-400 transition-shadow",
+        "w-full rounded-sm px-3 bg-zinc-800 text-zinc-100 placeholder-zinc-400 transition-shadow",
+        controlHeightClasses[size],
+        "text-base md:text-sm",
         "focus:outline-none focus:ring-2 focus:ring-indigo-500",
         error && "ring-1 ring-red-500/70",
         "disabled:opacity-50 disabled:cursor-not-allowed",
@@ -21,6 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       )}
       {...props}
     />
-  )
+    );
+  }
 );
 Input.displayName = "Input";

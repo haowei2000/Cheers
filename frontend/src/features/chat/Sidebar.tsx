@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Menu, Radio, Settings } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -6,6 +7,7 @@ import type { Channel, VoicePresenceSnapshot, Workspace } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, ItemRow } from "@/components/ui/item";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
+import { controlIconClasses, controlMinHeightClasses, controlTextClasses } from "@/components/ui/control-size";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
@@ -50,32 +52,35 @@ function Section({ label, children, defaultOpen = true, onAdd, addLabel }: Secti
     <div className="space-y-1">
       {/* Two sibling buttons (not a span nested in the toggle) so the add control
           is its own focusable, keyboard-reachable button with valid ARIA. */}
-      <div className="group flex min-h-7 items-center gap-1 px-1">
-        <button
+      <div className={cn("group flex items-center gap-1 px-1", controlMinHeightClasses.compact)}>
+        <UiButton variant="plain"
           type="button"
+          controlSize="compact"
           onClick={toggle}
           aria-expanded={open}
-          className="font-utility flex min-h-7 flex-1 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition-colors hover:text-zinc-200 max-md:min-h-10"
+          className="font-utility flex flex-1 items-center gap-1.5 font-semibold uppercase tracking-[0.1em] text-zinc-400 transition-colors hover:text-zinc-200"
         >
           {open ? (
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown className={controlIconClasses.compact} />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className={controlIconClasses.compact} />
           )}
           <span className="flex-1 text-left">{label}</span>
-        </button>
+        </UiButton>
         {onAdd && (
-          <button
+          <UiButton variant="plain"
+            square
+            controlSize="compact"
             type="button"
             onClick={onAdd}
             aria-label={addLabel ?? "Add"}
             title={addLabel ?? "Add"}
             // Hover-revealed on desktop, revealed on keyboard focus too, and always
             // visible (with a bigger tap area) on touch.
-            className="flex h-7 w-7 items-center justify-center rounded-sm text-zinc-400 opacity-0 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 max-md:h-10 max-md:w-10 max-md:opacity-100"
+            className="text-zinc-400 opacity-0 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
           >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+            <Plus className={controlIconClasses.compact} />
+          </UiButton>
         )}
       </div>
       {open && <div className="space-y-0.5">{children}</div>}
@@ -94,13 +99,14 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
   const participants = voicePresence?.participants ?? [];
   const unread = (channel.mention_count ?? 0) > 0 ? (
     <span
+      data-design-system-exempt="unread"
       title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
-      className="text-[10px] font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+      className={cn(controlTextClasses.compact, "font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center")}
     >
       @{channel.mention_count}
     </span>
   ) : (channel.unread_count ?? 0) > 0 ? (
-    <span className="text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+    <span data-design-system-exempt="unread" className={cn(controlTextClasses.compact, "font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center")}>
       {channel.unread_count}
     </span>
   ) : null;
@@ -119,7 +125,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
           <EditorialIcon name="section" className="h-4 w-4 flex-shrink-0 opacity-70" />
         )}
         status={participants.length > 0 ? (
-          <span className="text-[10px] tabular-nums text-emerald-400">
+          <span className={cn(controlTextClasses.compact, "tabular-nums text-emerald-400")}>
             {participants.length}
           </span>
         ) : undefined}
@@ -132,6 +138,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
             <EntityItem
               key={participant.user_id}
               presentationLevel="minimal"
+              controlSize="compact"
               title={participant.display_name}
               leading={<Avatar
                 name={participant.display_name}
@@ -141,7 +148,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
                 online
               />}
               criticalStatus={<span className="sr-only">Online</span>}
-              className="border-b-0 px-1 text-xs"
+              className="border-b-0 px-1"
             />
           ))}
         </div>
@@ -194,19 +201,19 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           scrolling list, so the gap persists at any scroll offset. */}
       <div className="flex h-12 flex-shrink-0 items-center px-3">
         {onOpenNav && (
-          <button
+          <UiButton variant="plain"
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            className="w-11 h-11 -ml-2 mr-0.5 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            square controlSize="comfortable" className="-ml-2 mr-0.5 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
           >
-            <Menu className="w-5 h-5" />
-          </button>
+            <Menu className={controlIconClasses.comfortable} />
+          </UiButton>
         )}
-        <button
+        <UiButton variant="plain"
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
           title={canOpenSettings ? "Workspace settings" : undefined}
-          className="group flex h-9 w-full items-center gap-2 rounded-sm px-1 transition-colors hover:bg-zinc-800/60"
+          controlSize="regular" className="group flex w-full items-center gap-2 rounded-sm px-1 transition-colors hover:bg-zinc-800/60"
         >
           <span className="font-utility flex-1 truncate text-left text-sm font-semibold text-zinc-100">
             {workspace?.name ?? "Workspace"}
@@ -214,9 +221,9 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           {canOpenSettings && (
             // Gear, not a down-chevron: this opens the settings modal rather than
             // expanding a dropdown beneath the header, so a chevron would lie.
-            <Settings className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+            <Settings className={cn(controlIconClasses.regular, "text-zinc-500 flex-shrink-0")} />
           )}
-        </button>
+        </UiButton>
       </div>
 
       {/* Channel list */}
@@ -275,21 +282,22 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
               />
             ))}
             {dms.length === 0 && (
-              <div className="px-3 py-1 text-xs text-zinc-400">Click + to start a direct message</div>
+              <div className={cn("px-3 py-1 text-zinc-400", controlTextClasses.compact)}>Click + to start a direct message</div>
             )}
           </Section>
         )}
 
         {channels.length === 0 && (
           <div className="px-3 py-4 text-center">
-            <p className="text-xs text-zinc-400">No channels yet</p>
-            <button
+            <p className={cn("text-zinc-400", controlTextClasses.compact)}>No channels yet</p>
+            <UiButton variant="plain"
               type="button"
               onClick={() => setChannelOpen(true)}
-              className="mt-1 text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+              controlSize="compact"
+              className="mt-1 font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
             >
               Create a channel
-            </button>
+            </UiButton>
           </div>
         )}
       </div>

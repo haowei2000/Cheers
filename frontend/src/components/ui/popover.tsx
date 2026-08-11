@@ -47,7 +47,7 @@ export function usePopoverDismiss(
 /**
  * The floating surface itself. Its marker stays in the relative anchor, while
  * the visible panel is portalled to the document body so it cannot be clipped
- * by a scrolling, rounded, or transformed parent. Width/padding stay with the
+ * by a scrolling, rounded-sm, or transformed parent. Width/padding stay with the
  * caller.
  */
 export function PopoverPanel({
@@ -70,7 +70,7 @@ export function PopoverPanel({
         anchorRef={anchorRef}
         placement={placement}
         align={align}
-        className={cn("rounded-xl bg-zinc-900 shadow-xl shadow-black/40", className)}
+        className={cn("rounded-sm bg-zinc-900 shadow-xl shadow-black/40", className)}
       >
         {children}
       </FloatingLayer>

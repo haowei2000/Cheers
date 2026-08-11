@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { Bot, Search, User, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -76,31 +78,31 @@ export function NewDmDialog({
   return (
     <Dialog title="New direct message" onClose={onClose}>
       <>
-        <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+        <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
           <Search className="w-3.5 h-3.5 text-zinc-500" />
-          <input
+          <UiInput
             ref={inputRef}
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search users…"
-            className="flex-1 bg-transparent py-2 text-sm text-zinc-200 outline-none"
+            controlSize="regular" className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
           />
           {q && (
-            <button
+            <UiButton variant="plain"
               type="button"
               aria-label="Clear search"
               onClick={() => {
                 setQ("");
                 inputRef.current?.focus();
               }}
-              className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
+              className="p-1 rounded-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
             >
               <X className="w-4 h-4" />
-            </button>
+            </UiButton>
           )}
         </div>
-        <ItemList className="max-h-72 overflow-auto">
+        <ItemList presentationLevel="medium" controlSize="regular" className="max-h-72 overflow-auto">
           {users.map((u) => (
             <NavigationItem
               key={u.user_id}

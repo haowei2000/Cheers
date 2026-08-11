@@ -42,7 +42,7 @@ export function PdfViewer({ path }: { path: string }) {
           canvas.height = Math.floor(viewport.height * outputScale);
           canvas.style.width = `${Math.floor(viewport.width)}px`;
           canvas.style.height = `${Math.floor(viewport.height)}px`;
-          canvas.className = "mx-auto mb-3 max-w-full rounded shadow-lg shadow-black/30";
+          canvas.className = "mx-auto mb-3 max-w-full rounded-sm shadow-lg shadow-black/30";
           host.appendChild(canvas);
           await page.render({
             canvas,
@@ -75,7 +75,7 @@ export function PdfViewer({ path }: { path: string }) {
       )}
       <div
         ref={hostRef}
-        className="max-h-[70vh] min-h-0 overflow-auto rounded-lg bg-zinc-950/40 p-2"
+        className="max-h-[70vh] min-h-0 overflow-auto rounded-sm bg-zinc-950/40 p-2"
       />
     </div>
   );

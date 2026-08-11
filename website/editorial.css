@@ -45,7 +45,7 @@
   --code-bg: #050506;
   --code-ink: #dedee4;
   --shadow: none;
-  --radius: 2px;
+  --radius: 4px;
   --maxw: 1120px;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font: "Source Serif 4", "Source Han Serif CN", "Noto Serif SC", "Songti SC", Charter, Georgia, serif;
@@ -145,7 +145,7 @@ header.nav {
 /* Utility controls: firm, compact, square-edged. */
 .btn, .icon-btn, .dl {
   min-height: 36px;
-  border-radius: 2px !important;
+  border-radius: var(--radius) !important;
   box-shadow: none !important;
   font-size: 12px !important;
   font-weight: 650 !important;
@@ -210,7 +210,7 @@ section { padding-block: 50px !important; }
 .start-grid, .platform-grid, .link-grid, .surface-grid, .cards, .docs-grid, .steps,
 .values, .feature, .hero-frame, .panel, .callout, .doc, .start-card, .surface,
 .pcard, .step, .glass, .note, .tablewrap, .list-block {
-  border-radius: 2px !important;
+  border-radius: var(--radius) !important;
   box-shadow: none !important;
 }
 .start-grid, .platform-grid, .link-grid, .surface-grid, .cards, .docs-grid, .steps, .values {
@@ -246,7 +246,7 @@ section { padding-block: 50px !important; }
 .callout, .note { padding: 14px 16px !important; }
 .badge, .tag {
   border: 0 !important;
-  border-radius: 1px !important;
+  border-radius: var(--radius) !important;
   background: transparent !important;
   color: var(--ink-soft) !important;
   padding: 3px 7px !important;
@@ -285,13 +285,13 @@ pre.code, .code {
   max-width: 100%;
   overflow-x: auto;
   border: 0 !important;
-  border-radius: 2px !important;
+  border-radius: var(--radius) !important;
   background: var(--code-bg) !important;
   color: var(--code-ink) !important;
   box-shadow: none !important;
   line-height: 1.65;
 }
-code { border: 0 !important; border-radius: 1px !important; background: var(--accent-tint) !important; }
+code { border: 0 !important; border-radius: var(--radius) !important; background: var(--accent-tint) !important; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 0 !important; border-bottom: 1px solid var(--line) !important; }
 th { color: var(--ink) !important; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }

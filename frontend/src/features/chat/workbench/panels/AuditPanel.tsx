@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 // Audit — a ViewBoard focused on the channel's permission/approval decisions
 // (replaces the old generic Activity feed). Sourced from the REST audit log
 // (listApprovalAudit → /channels/{id}/permissions/audit), latest-first, plus
@@ -264,19 +265,19 @@ function AuditRow({
         trailing={<span className="text-[10px] tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
         actions={<>
           {e.msg_id && onJump && (
-            <button type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-[10px] text-zinc-400 hover:text-indigo-300">
+            <UiButton variant="plain" type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-[10px] text-zinc-400 hover:text-indigo-300">
               Jump
-            </button>
+            </UiButton>
           )}
           {hasDetails && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => setOpen((v) => !v)}
             className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
             Details
-          </button>
+          </UiButton>
           )}
         </>}
         className="border-b-0 border-l-0 bg-transparent"

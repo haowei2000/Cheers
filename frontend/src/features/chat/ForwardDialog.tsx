@@ -1,3 +1,4 @@
+import { Input as UiInput } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
 import { Forward, Hash, MessageCircle, Search } from "lucide-react";
 import toast from "react-hot-toast";
@@ -96,9 +97,9 @@ export function ForwardDialog({
       }
       onClose={onClose}
     >
-      <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+      <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
         <Search className="w-3.5 h-3.5 text-zinc-500" />
-        <input
+        <UiInput
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}

@@ -1,37 +1,45 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
+import {
+  controlHeightClasses,
+  controlSquareClasses,
+  controlTextClasses,
+  useControlSize,
+  type ControlSize,
+} from "./control-size";
 
-type Variant = "primary" | "ghost" | "danger" | "secondary";
-type Size = "sm" | "md" | "icon";
+type Variant = "primary" | "ghost" | "danger" | "secondary" | "plain";
+type LegacySize = "sm" | "md" | "icon";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
-  size?: Size;
+  /** @deprecated Prefer controlSize; retained while existing call sites migrate. */
+  size?: LegacySize;
+  controlSize?: ControlSize;
+  square?: boolean;
   loading?: boolean;
 }
 
 const variantCls: Record<Variant, string> = {
   primary:
-    "bg-indigo-600 text-white hover:bg-indigo-500 active:bg-indigo-700 shadow-sm",
+    "bg-indigo-100 text-zinc-950 hover:bg-white active:bg-indigo-300",
   ghost:
     "bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 active:bg-zinc-700",
   danger:
     "bg-transparent text-red-400 hover:bg-red-950 hover:text-red-300 active:bg-red-900",
   secondary:
     "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 active:bg-zinc-600",
-};
-
-const sizeCls: Record<Size, string> = {
-  sm: "h-7 px-3 text-xs rounded-md",
-  md: "h-9 px-4 text-sm rounded-lg",
-  icon: "h-8 w-8 rounded-lg flex items-center justify-center p-0",
+  plain:
+    "bg-transparent text-inherit hover:bg-zinc-800/70 active:bg-zinc-700/70",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
       variant = "primary",
-      size = "md",
+      size,
+      controlSize,
+      square = size === "icon",
       loading,
       disabled,
       className,
@@ -39,14 +47,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ...props
     },
     ref
-  ) => (
-    <button
+  ) => {
+    const inheritedSize = useControlSize(controlSize);
+    const resolvedSize = size === "sm" ? "compact" : size === "md" || size === "icon" ? "regular" : inheritedSize;
+    return <button
       ref={ref}
       disabled={disabled || loading}
+      data-control-size={resolvedSize}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 font-medium transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer",
         variantCls[variant],
-        sizeCls[size],
+        square ? controlSquareClasses[resolvedSize] : controlHeightClasses[resolvedSize],
+        controlTextClasses[resolvedSize],
+        square ? "rounded-sm p-0" : "rounded-sm px-3",
         className
       )}
       {...props}
@@ -74,7 +87,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ) : (
         children
       )}
-    </button>
-  )
+    </button>;
+  }
 );
 Button.displayName = "Button";

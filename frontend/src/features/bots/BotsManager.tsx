@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, useCallback } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import toast from "react-hot-toast";
@@ -126,14 +127,14 @@ export function BotsManager() {
           <Wand2 className="w-3.5 h-3.5" />
           Add bot
         </Button>
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => void refresh()}
           className="text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        </UiButton>
       </h2>
 
       {bots.length === 0 && !loading ? (
@@ -174,7 +175,7 @@ export function BotsManager() {
                 onPoll={pollRefresh}
               />
             ) : (
-              <div className="rounded-xl bg-zinc-900/60 p-10 text-center text-sm text-zinc-400">
+              <div className="rounded-sm bg-zinc-900/60 p-10 text-center text-sm text-zinc-400">
                 Select a bot to manage it.
               </div>
             )}
@@ -196,7 +197,7 @@ export function BotsManager() {
           <p className="text-xs text-amber-400">
             {issued.note ?? "Store this token now — shown only once."}
           </p>
-          <div className="rounded-lg bg-zinc-950 p-3">
+          <div className="rounded-sm bg-zinc-950 p-3">
             <code className="text-xs text-emerald-300 break-all">{issued.token}</code>
           </div>
           <div className="flex items-center justify-between">
