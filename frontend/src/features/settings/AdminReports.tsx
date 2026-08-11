@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { listReports, updateReport, type ContentReport } from "@/api/reports";
 import { Button } from "@/components/ui/button";
+import { OperationsItem } from "@/components/ui/item";
 
 export function AdminReports() {
   const [reports, setReports] = useState<ContentReport[]>([]);
@@ -27,16 +28,18 @@ export function AdminReports() {
       {loading && <p className="text-sm text-zinc-400">Loading…</p>}
       {!loading && reports.length === 0 && <p className="text-sm text-zinc-400">No reports.</p>}
       {reports.map((report) => (
-        <div key={report.report_id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 space-y-2">
-          <div className="flex justify-between gap-3"><span className="font-medium text-zinc-100">{report.reason} · {report.target_type}</span><span className="text-xs text-zinc-400">{report.status}</span></div>
-          <p className="text-xs font-mono text-zinc-400 break-all">Target: {report.target_id}{report.channel_id ? ` · Channel: ${report.channel_id}` : ""}</p>
-          {report.details && <p className="text-sm text-zinc-300">{report.details}</p>}
-          <div className="flex gap-2">
+        <OperationsItem key={report.report_id} presentationLevel="max"
+          title={`${report.reason} · ${report.target_type}`}
+          subtitle={`Target: ${report.target_id}${report.channel_id ? ` · Channel: ${report.channel_id}` : ""}`}
+          preview={report.details}
+          criticalStatus={<span className="text-xs text-zinc-400">{report.status}</span>}
+          actions={<>
             <Button size="sm" variant="secondary" onClick={() => void setStatus(report, "reviewing")}>Reviewing</Button>
             <Button size="sm" onClick={() => void setStatus(report, "resolved")}>Resolve</Button>
             <Button size="sm" variant="secondary" onClick={() => void setStatus(report, "dismissed")}>Dismiss</Button>
-          </div>
-        </div>
+          </>}
+          className="border-0 bg-zinc-900"
+        />
       ))}
     </div>
   );

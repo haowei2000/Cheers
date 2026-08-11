@@ -7,12 +7,42 @@ The visual contract for the Cheers frontend. **The shared components in
 canonical recipes for everything they don't cover yet, so new UI copies one
 known form instead of inventing a new one.
 
+The current product language is **Editorial Correspondence**. Its cross-platform
+decisions live in `../design-system/item-contract.json` and
+`../design-system/DESIGN_LANGUAGE.zh-CN.md`. If a legacy recipe later in this
+file uses a larger radius, boxed card, or decorative border, the shared
+Editorial component wins; treat that recipe as migration inventory rather than
+permission to introduce another visual language.
+
 Rules of engagement:
 
 1. If a shared component exists (`Button`, `Input`, `Dialog`, `Avatar`,
    `FloatingPanel`), use it. Don't re-implement its look inline.
 2. If none exists, copy the **canonical recipe** below verbatim.
 3. If you genuinely need a new pattern, add it here in the same PR.
+
+## Cross-platform item contract
+
+The platform-independent item inventory and information-density contract lives
+in `../design-system/item-contract.json`. Web renders that contract through
+`PresentationProvider`, `ItemRow`, `ItemChip`, and `IconButton`; SwiftUI and
+Compose retain native rendering while using the same anatomy and levels.
+
+`PresentationLevel` is `max | medium | minimal`, with `medium` as the default.
+A provider/container supplies the inherited level and an explicit item prop
+always wins. Responsive rules may choose the inherited default only. The
+levels change information density, never business behavior:
+
+| Level | Visible information |
+|---|---|
+| `max` | identity, title, full supporting content, preview, state, common actions |
+| `medium` | identity, title, one supporting line, state, primary/overflow action |
+| `minimal` | minimum identity/title plus every critical state |
+
+Unread, mention, approval, error, and online state must remain perceivable in
+all three levels. New semantic entity rows must use `ItemRow` instead of
+recreating the leading/title/supporting/status/trailing anatomy in a feature.
+Use `ItemGallery` as the canonical visual fixture for the three levels.
 
 ---
 
@@ -82,6 +112,13 @@ only as **states**: focus (`ring-indigo-500`) and error (`ring-red-500`).
 
 ### Typography
 
+The Web client has three semantic roles: Source Serif 4 plus Source Han Serif
+CN `display`, the same pair at text optical sizes for `reading`, and Source
+Sans 3 `utility`. The default UI face is utility; entity names, navigation,
+buttons, status, warnings, and trace labels must not inherit the reading serif.
+The Chinese serif is loaded on demand and excluded from the PWA app-shell
+precache; CJK utility text falls through to the locale-correct platform sans.
+
 | Role | Recipe |
 |---|---|
 | Page H1 | `text-lg font-semibold` |
@@ -95,7 +132,8 @@ only as **states**: focus (`ring-indigo-500`) and error (`ring-red-500`).
 
 ### Shape & states
 
-- Radius: chips/inputs/buttons `rounded-md`(sm)/`rounded-lg`(md) · cards & popovers `rounded-xl` · pills `rounded-full`
+- Radius: `rounded-sm` / 2px for product items and controls. `rounded-full` is reserved for avatars, presence, unread dots, and platform-native controls whose shape carries meaning.
+- Separation: resting controls stay borderless. Use spacing and surface contrast first; use hairline rules only for editorial sections or dense rows that must scan as a register.
 - Focus: `focus:ring-2 focus:ring-indigo-500` (buttons use `focus-visible:`) — **never** a bare `focus:border-indigo-*` substitute
 - Error: `ring-1 ring-red-500/70` on the field — a state ring, not a resting border
 - Disabled: `disabled:opacity-50` everywhere

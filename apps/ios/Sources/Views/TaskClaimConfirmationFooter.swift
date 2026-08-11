@@ -103,43 +103,26 @@ struct TaskClaimsPanelView: View {
     }
 
     private func claimRow(_ claim: TaskClaimDto) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
-                Image(systemName: "sparkles").foregroundStyle(Theme.accent)
-                Text("\(claim.botName) wants to claim a task")
-                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                Spacer()
-                Text("\(Int((claim.confidence * 100).rounded()))% · \(claim.impact)")
-                    .font(.caption2).foregroundStyle(Theme.textMuted)
-            }
-            Text(claim.summary).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-            Text(claim.proposedAction).font(.caption).foregroundStyle(Theme.textSecondary)
-                .lineLimit(3)
-            if claim.requesterId == app.session?.userId {
-                TaskClaimActionButtons(
+        CheersOperationsItem(row: CheersItemRow(
+            title: claim.summary,
+            subtitle: "\(claim.botName) wants to claim a task",
+            metadata: "\(Int((claim.confidence * 100).rounded()))% · \(claim.impact)",
+            preview: claim.proposedAction,
+            explicitLevel: .max,
+            leading: AnyView(Image(systemName: "sparkles").foregroundStyle(Theme.accent)),
+            criticalStatus: AnyView(Text("APPROVAL").font(.caption2.bold()).foregroundStyle(Theme.warning)),
+            actions: claim.requesterId == app.session?.userId ? AnyView(TaskClaimActionButtons(
                     busy: model.taskClaimBusyId == claim.claimId,
                     onDecision: { decision in Task { await model.resolveTaskClaim(claim, decision: decision) } }
-                )
-            } else if model.canManageTaskClaims {
-                Button(role: .destructive) {
+                )) : model.canManageTaskClaims ? AnyView(Button(role: .destructive) {
                     Task { await model.cancelTaskClaim(claim) }
                 } label: {
                     Label("Cancel claim", systemImage: "xmark.circle")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(model.taskClaimBusyId != nil)
-            } else {
-                Text("Waiting for the mentioned requester")
-                    .font(.caption2).foregroundStyle(Theme.textMuted)
-            }
-        }
-        .padding(11)
-        .background(Theme.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Theme.accent.opacity(0.25))
-        )
+                .disabled(model.taskClaimBusyId != nil)) : AnyView(Text("Waiting").font(.caption2).foregroundStyle(Theme.textMuted))
+        ))
     }
 }
 

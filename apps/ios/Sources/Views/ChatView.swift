@@ -1343,20 +1343,12 @@ private struct ForwardSheet: View {
                 LazyVStack(spacing: 6) {
                     ForEach(convo?.rows ?? []) { row in
                         Button { forward(to: row.channel) } label: {
-                            HStack(spacing: 11) {
-                                ChannelAvatarView(channel: row.channel, size: 34)
-                                Text(row.channel.displayName)
-                                    .font(.subheadline)
-                                    .foregroundStyle(Theme.textBody)
-                                    .lineLimit(1)
-                                Spacer()
-                                if busyId == row.channel.channelId {
-                                    ProgressView().controlSize(.small)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 48)
-                            .contentShape(Rectangle())
+                            CheersNavigationItem(row: CheersItemRow(
+                                title: row.channel.displayName,
+                                subtitle: row.channel.kind?.capitalized,
+                                leading: AnyView(ChannelAvatarView(channel: row.channel, size: 34)),
+                                trailing: busyId == row.channel.channelId ? AnyView(ProgressView().controlSize(.small)) : nil
+                            ))
                         }
                         .buttonStyle(.plain)
                         .disabled(busyId != nil)
@@ -1645,7 +1637,13 @@ private struct SessionSheet: View {
         NavigationStack {
             List {
                 Section {
-                    row(title: "Auto", subtitle: "Route by @mention to each bot's primary", selected: selectedSessionId == nil) {
+                    CheersItemButton(row: CheersItemRow(
+                        title: "Auto",
+                        subtitle: "Route by @mention to each bot's primary",
+                        selected: selectedSessionId == nil,
+                        leading: AnyView(Image(systemName: "wand.and.stars").foregroundStyle(Theme.accent)),
+                        criticalStatus: selectedSessionId == nil ? AnyView(Image(systemName: "checkmark").foregroundStyle(Theme.accent)) : nil
+                    )) {
                         selectedSessionId = nil; dismiss()
                     }
                 }
@@ -1656,20 +1654,19 @@ private struct SessionSheet: View {
                             Text("No sessions").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         ForEach(sessions) { s in
-                            HStack {
-                                Button {
+                            CheersNavigationItem(row: CheersItemRow(
+                                title: s.tag,
+                                subtitle: sessionSubtitle(s),
+                                leading: AnyView(Image(systemName: "terminal").foregroundStyle(Theme.accent)),
+                                criticalStatus: s.isPrimary == true ? AnyView(Text("PRIMARY").font(.caption2.bold()).foregroundStyle(Theme.accent)) : nil,
+                                status: selectedSessionId == s.sessionId ? AnyView(Image(systemName: "checkmark").foregroundStyle(Theme.accent)) : nil,
+                                actions: AnyView(HStack(spacing: Theme.space1) {
+                                    Button {
                                     selectedSessionId = s.sessionId; dismiss()
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(s.tag + (s.isPrimary == true ? " · primary" : ""))
-                                            .font(.subheadline).foregroundStyle(Theme.textBody)
-                                        Text(sessionSubtitle(s)).font(.caption).foregroundStyle(Theme.textSecondary)
-                                    }
-                                }
-                                Spacer()
-                                if busyId == s.sessionId { ProgressView().controlSize(.small) }
-                                else if selectedSessionId == s.sessionId { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
-                                Menu {
+                                    } label: { Text("Select") }
+                                    .buttonStyle(.borderless)
+                                    if busyId == s.sessionId { ProgressView().controlSize(.small) }
+                                    Menu {
                                     if s.isPrimary != true {
                                         Button("Make primary", systemImage: "star") {
                                             Task { await makePrimary(botId: bot.memberId, session: s) }
@@ -1678,9 +1675,9 @@ private struct SessionSheet: View {
                                     Button("Close session", systemImage: "xmark.circle", role: .destructive) {
                                         closeTarget = (bot.memberId, s)
                                     }
-                                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(Theme.textSecondary) }
-                            }
-                            .frame(minHeight: 44)
+                                    } label: { Image(systemName: "ellipsis.circle").foregroundStyle(Theme.textSecondary) }
+                                })
+                            ))
                         }
                     }
                 }
@@ -1710,22 +1707,6 @@ private struct SessionSheet: View {
             Button("Cancel", role: .cancel) { closeTarget = nil }
         } message: {
             Text("The session will disappear from this channel and can no longer receive messages.")
-        }
-    }
-
-    private func row(title: String, subtitle: String?, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline).foregroundStyle(Theme.textBody)
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle).font(.caption).foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                Spacer()
-                if selected { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
-            }
-            .frame(minHeight: 44)
         }
     }
 

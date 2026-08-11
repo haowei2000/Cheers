@@ -157,6 +157,7 @@ export function LocalOpen({
               Remote file — opens a downloaded copy
             </p>
           )}
+          {/* design-system-exempt: menu-option — opener command menu. */}
           {openers.map((op) => (
             <button
               key={op.key}

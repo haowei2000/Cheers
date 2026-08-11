@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { RefreshCw } from "lucide-react";
 import { getBotAcpEvents, type AcpEventRow } from "@/api/bots";
+import { ItemList, WorkbenchItem } from "@/components/ui/item";
 
 const homeCls: Record<string, string> = {
   cheers: "bg-indigo-950/60 border-indigo-900 text-indigo-200",
@@ -64,20 +65,18 @@ export function BotActivitySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
-        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+        <ItemList className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
-            <div key={i} className="flex items-center gap-2 rounded-md bg-zinc-950/30 px-2 py-1.5 text-[11px]">
-              <span className="text-zinc-400 tabular-nums w-20 shrink-0">{time(e.created_at)}</span>
-              <span
+            <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} metadata={time(e.created_at)}
+              status={<span
                 className={`shrink-0 rounded px-1.5 py-0.5 border text-[10px] ${homeCls[e.home] ?? homeCls.observe}`}
                 title={`home: ${e.home || "unclassified"}`}
               >
                 {e.home || "?"}
-              </span>
-              <code className="text-zinc-300 truncate">{shortName(e.name)}</code>
-            </div>
+              </span>}
+              presentationLevel="max" className="border-0 bg-zinc-950/30" />
           ))}
-        </div>
+        </ItemList>
       )}
     </div>
   );

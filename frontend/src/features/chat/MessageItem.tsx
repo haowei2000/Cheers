@@ -33,6 +33,7 @@ import { useProfileCard } from "./ProfileHovercard";
 import { FloatingLayer } from "@/components/ui/floating-layer";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
+import { usePresentationLevel } from "@/components/ui/presentation";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -352,9 +353,10 @@ export const MessageItem = memo(function MessageItem({
   pendingApprovals,
   focusRequestId,
 }: Props) {
+  const presentationLevel = usePresentationLevel();
   if (message.is_deleted) {
     return (
-      <div className="px-4 py-0.5 flex items-center gap-3 group">
+      <div data-item-kind="conversation" data-presentation-level={presentationLevel} className="px-4 py-0.5 flex items-center gap-3 group">
         {!isConsecutive && <div className="w-9 h-9 flex-shrink-0" />}
         {isConsecutive && <div className="w-9 flex-shrink-0" />}
         <span className="text-zinc-400 italic text-sm">
@@ -735,6 +737,8 @@ export const MessageItem = memo(function MessageItem({
   if (isConsecutive || nested) {
     return (
       <div
+        data-item-kind="conversation"
+        data-presentation-level={presentationLevel}
         className={cn(
           "group relative flex items-start gap-3 rounded-lg transition-colors hover:z-20 focus-within:z-20",
           nested
@@ -756,7 +760,7 @@ export const MessageItem = memo(function MessageItem({
             className={isOwnAlignedRight ? "order-last" : undefined}
           />
         )}
-        {!nested && (
+        {!nested && presentationLevel !== "minimal" && (
           <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
             <span className="whitespace-nowrap text-[10px] tabular-nums text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 select-none">
               {formatTime(message.created_at)}
@@ -805,9 +809,9 @@ export const MessageItem = memo(function MessageItem({
                   BOT
                 </span>
               )}
-              <span className="text-[10px] text-zinc-500 tabular-nums">
+              {presentationLevel !== "minimal" && <span className="text-[10px] text-zinc-500 tabular-nums">
                 {formatTime(message.created_at)}
-              </span>
+              </span>}
             </div>
           )}
           {quote}
@@ -822,7 +826,7 @@ export const MessageItem = memo(function MessageItem({
           {message._status && (
             <SendStatus message={message} onRetry={actions?.onRetry} />
           )}
-          {detailsSection}
+          {(presentationLevel !== "minimal" || actionableApprovalCount > 0) && detailsSection}
         </div>
         {showActions && (
           <ActionBar
@@ -845,6 +849,8 @@ export const MessageItem = memo(function MessageItem({
 
   return (
     <div
+      data-item-kind="conversation"
+      data-presentation-level={presentationLevel}
       className={cn(
         "group relative mx-2 flex items-start gap-3 rounded-xl px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
         isOwnAlignedRight && "flex-row-reverse",
@@ -891,7 +897,7 @@ export const MessageItem = memo(function MessageItem({
             <span className="mt-0.5 block w-full truncate text-center text-[10px] font-medium leading-3 text-zinc-400">
               {name}
             </span>
-            <span className="flex items-center justify-center gap-1 whitespace-nowrap text-[9px] leading-3 text-zinc-500">
+            {presentationLevel !== "minimal" && <span className="flex items-center justify-center gap-1 whitespace-nowrap text-[9px] leading-3 text-zinc-500">
               {isBot && (
                 <span className="font-semibold uppercase tracking-wide text-indigo-400">
                   Bot
@@ -900,7 +906,7 @@ export const MessageItem = memo(function MessageItem({
               <span className="tabular-nums">
                 {formatTime(message.created_at)}
               </span>
-            </span>
+            </span>}
           </>
         )}
       </button>
@@ -930,9 +936,9 @@ export const MessageItem = memo(function MessageItem({
                 BOT
               </span>
             )}
-            <span className="text-[11px] text-zinc-400 tabular-nums">
+            {presentationLevel !== "minimal" && <span className="text-[11px] text-zinc-400 tabular-nums">
               {formatTime(message.created_at)}
-            </span>
+            </span>}
           </div>
         )}
 
@@ -947,7 +953,7 @@ export const MessageItem = memo(function MessageItem({
         {message._status && (
           <SendStatus message={message} onRetry={actions?.onRetry} />
         )}
-        {detailsSection}
+        {(presentationLevel !== "minimal" || actionableApprovalCount > 0) && detailsSection}
       </div>
       {showActions && (
         <ActionBar
@@ -1070,10 +1076,13 @@ function MessageBody({
       {content &&
         (hasMarkdown ? (
           <PathOpenContext.Provider value={pathOpen}>
-            <MarkdownRenderer content={content} className="text-sm" />
+            <MarkdownRenderer
+              content={content}
+              className="font-reading text-[15px] font-normal leading-[1.55] tracking-[-0.005em]"
+            />
           </PathOpenContext.Provider>
         ) : (
-          <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">
+          <p className="font-reading text-[15px] font-normal leading-[1.55] tracking-[-0.005em] text-zinc-200 whitespace-pre-wrap break-words">
             {content}
           </p>
         ))}

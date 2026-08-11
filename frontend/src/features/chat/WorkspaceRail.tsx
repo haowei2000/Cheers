@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, LogOut, MessageSquare, Plus, Radar, Users } from "lucide-react";
+import { Settings, LogOut, Plus, Users } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
+import { IconButton } from "@/components/ui/icon-button";
+import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { disablePush } from "@/lib/push";
@@ -115,7 +117,7 @@ export function WorkspaceRail({
             personalSelected ? "rounded-2xl" : "rounded-xl group-hover:rounded-2xl"
           )}
         >
-          <MessageSquare className="w-5 h-5 text-white" />
+          <EditorialIcon name="correspondence" className="h-5 w-5 text-white" />
         </div>
       </RailButton>
 
@@ -146,7 +148,7 @@ export function WorkspaceRail({
         <button
           title="Add workspace"
           onClick={() => setWsOpen(true)}
-          className="w-10 h-10 max-md:w-11 max-md:h-11 rounded-2xl border-2 border-dashed border-zinc-700 text-zinc-500 hover:border-indigo-500 hover:text-indigo-400 flex items-center justify-center transition-colors flex-shrink-0"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-indigo-400 max-md:h-11 max-md:w-11"
         >
           <Plus className="w-4 h-4" />
         </button>
@@ -156,38 +158,41 @@ export function WorkspaceRail({
       <div className="flex flex-col items-center gap-2 mt-auto">
         <NotificationCenter />
 
-        <button
+        <IconButton
           onClick={() => {
             onAction?.();
             navigate("/fleet");
           }}
-          title="Fleet — bots & status"
-          className="relative w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          label="Fleet — bots & status"
+          presentationLevel="minimal"
+          className="relative text-zinc-500"
         >
-          <Radar className="w-4 h-4" />
-        </button>
+          <EditorialIcon name="agentMark" className="h-4 w-4" />
+        </IconButton>
 
-        <button
+        <IconButton
           onClick={() => {
             onAction?.();
             navigate("/friends");
           }}
-          title="Friends"
-          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          label="Friends"
+          presentationLevel="minimal"
+          className="text-zinc-500"
         >
           <Users className="w-4 h-4" />
-        </button>
+        </IconButton>
 
-        <button
+        <IconButton
           onClick={() => {
             onAction?.();
             navigate("/settings");
           }}
-          title="Settings"
-          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          label="Settings"
+          presentationLevel="minimal"
+          className="text-zinc-500"
         >
           <Settings className="w-4 h-4" />
-        </button>
+        </IconButton>
 
         <div className="w-px h-4 bg-zinc-700/60" />
 
@@ -198,14 +203,14 @@ export function WorkspaceRail({
           size="sm"
         />
 
-        <button
+        <IconButton
           onClick={handleLogout}
-          title="Sign out"
-          aria-label="Sign out"
-          className="w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          label="Sign out"
+          tone="danger"
+          presentationLevel="minimal"
         >
           <LogOut className="w-4 h-4" />
-        </button>
+        </IconButton>
       </div>
 
       {wsOpen && <NewWorkspaceDialog onClose={() => setWsOpen(false)} />}

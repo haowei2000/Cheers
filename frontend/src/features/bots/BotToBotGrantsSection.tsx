@@ -9,6 +9,7 @@ import {
   type BotGrant,
   type BotGrantKind,
 } from "@/api/bots";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 
 // Bot-to-bot grants (docs/design/RESOURCE_CONTEXT.md §4, docs/design/BOT_DISPATCH.md D2):
 // the dedicated surface for grants keyed on ANOTHER bot as subject — which bot may
@@ -208,53 +209,29 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
           (the member-allow default). Click “New rule” to deny a specific bot.
         </p>
       ) : (
-        <div className="space-y-1.5">
+        <ItemList>
           {grants.map((r: BotGrant) => (
-            <div
+            <OperationsItem
               key={`${r.grant}:${r.channel_id}:${r.subject_id}`}
-              className="flex items-center gap-2 rounded-md bg-zinc-950/30 px-2.5 py-2 text-[11px]"
-            >
-              <span
+              title={`${kindLabel[r.grant] ?? r.grant} → ${r.subject_id === "*" ? "any bot" : subjectLabel[r.subject_id] || `${r.subject_id.slice(0, 8)}…`}`}
+              subtitle={r.channel_id ? `#${r.channel_id.slice(0, 8)}` : "Bot-wide"}
+              leading={<span
                 className={`rounded px-1 py-0.5 text-[10px] border ${GRANT_BADGE[r.grant]}`}
                 title={`${r.grant} — ${kindTech[r.grant] ?? r.grant}`}
               >
                 {kindLabel[r.grant] ?? r.grant}
-              </span>
-              <span className="text-zinc-600">→</span>
-              <span className="text-zinc-200" title={r.subject_id}>
-                {r.subject_id === "*"
-                  ? "∗ any bot"
-                  : subjectLabel[r.subject_id] || `${r.subject_id.slice(0, 8)}…`}
-              </span>
-              <span className="text-zinc-600">·</span>
-              <span className="text-zinc-400" title={r.channel_id || undefined}>
-                {r.channel_id ? `#${r.channel_id.slice(0, 8)}` : "Bot-wide"}
-              </span>
-              {r.expired ? (
+              </span>}
+              criticalStatus={r.expired ? (
                 <span
                   className="rounded px-1 py-0.5 text-[10px] text-zinc-400"
                   title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
                 >
                   expired
                 </span>
-              ) : r.expires_at ? (
-                <span className="text-amber-400/80 text-[10px]" title={new Date(r.expires_at).toLocaleString()}>
-                  until {new Date(r.expires_at).toLocaleDateString()}{" "}
-                  {new Date(r.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              ) : null}
-              <span
-                className={`ml-auto ${
-                  r.expired
-                    ? "text-zinc-400 line-through"
-                    : r.decision === "allow"
-                      ? "text-emerald-300"
-                      : "text-red-300"
-                }`}
-              >
-                {r.decision}
-              </span>
-              <button
+              ) : undefined}
+              metadata={r.expires_at && !r.expired ? `until ${new Date(r.expires_at).toLocaleString()}` : undefined}
+              status={<span className={r.decision === "allow" ? "text-emerald-300" : "text-red-300"}>{r.decision}</span>}
+              actions={<button
                 type="button"
                 title="Remove this rule (back to the member-allow default)"
                 disabled={busy !== null}
@@ -270,10 +247,12 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
                 className="text-zinc-500 hover:text-red-300 disabled:opacity-40"
               >
                 <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+              </button>}
+              presentationLevel="max"
+              className="border-0 bg-zinc-950/30"
+            />
           ))}
-        </div>
+        </ItemList>
       )}
     </div>
   );

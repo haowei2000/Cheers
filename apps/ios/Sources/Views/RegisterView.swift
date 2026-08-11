@@ -73,7 +73,7 @@ struct RegisterView: View {
                 .accessibilityHidden(true)
 
             Text("Join Cheers")
-                .font(.title2.bold())
+                .font(Theme.displayFont(for: "Join Cheers"))
                 .foregroundStyle(Theme.textPrimary)
 
             Text(openRegistration

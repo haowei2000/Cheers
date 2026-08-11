@@ -40,13 +40,12 @@ struct PasskeySettingsView: View {
                             .foregroundStyle(Theme.textSecondary)
                     } else {
                         ForEach(credentials) { item in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.name)
-                                    .font(.subheadline.weight(.medium))
-                                Text("Added \(item.createdAt.prefix(10))")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.textMuted)
-                            }
+                            CheersOperationsItem(row: CheersItemRow(
+                                title: item.name,
+                                subtitle: "Added \(item.createdAt.prefix(10))",
+                                leading: AnyView(Image(systemName: "person.badge.key").foregroundStyle(Theme.accent)),
+                                status: AnyView(Text("PASSKEY").font(.caption2.bold()).foregroundStyle(Theme.textMuted))
+                            ))
                             .swipeActions {
                                 Button(role: .destructive) {
                                     Task { await delete(item) }

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
+import { NavigationItem } from "@/components/ui/item";
 import { isComposing } from "@/lib/ime";
 import { isTauri } from "@/lib/serverConfig";
 import {
@@ -1000,36 +1001,31 @@ function MessageComposerImpl({
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
         <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-10">
           {filteredMentions.map((c, i) => (
-            <button
+            <NavigationItem
               key={c.id}
+              onClick={(e) => { if (e.detail === 0) selectCandidate(c); }}
               onMouseDown={(e) => {
                 e.preventDefault();
                 selectCandidate(c);
               }}
+              title={c.label}
+              subtitle={c.sublabel ? `@${c.sublabel}` : undefined}
+              leading={c.type === "bot" ? (
+                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-500" : "text-indigo-400")} />
+              ) : (
+                <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+              )}
+              criticalStatus={c.type === "bot" ? <span className="text-[10px] text-indigo-300">{c.isOnline === false ? "OFFLINE" : "BOT"}</span> : undefined}
+              selected={i === picker.index}
               className={cn(
-                "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+                "border-0 px-3",
                 i === picker.index
                   ? "bg-indigo-600/30 text-zinc-100"
                   : c.type === "bot" && c.isOnline === false
                     ? "text-zinc-500 hover:bg-zinc-800"
                     : "text-zinc-300 hover:bg-zinc-800"
               )}
-            >
-              {c.type === "bot" ? (
-                <Bot className={cn("w-4 h-4 flex-shrink-0", c.isOnline === false ? "text-zinc-500" : "text-indigo-400")} />
-              ) : (
-                <User className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-              )}
-              <span className="font-medium">{c.label}</span>
-              {c.sublabel && (
-                <span className="text-xs text-zinc-400">@{c.sublabel}</span>
-              )}
-              {c.type === "bot" && (
-                <span className="ml-auto text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300">
-                  {c.isOnline === false ? "OFFLINE" : "BOT"}
-                </span>
-              )}
-            </button>
+            />
           ))}
         </div>
       )}

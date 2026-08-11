@@ -16,6 +16,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { DiffLineItem } from "@/components/ui/item";
 
 type DiffKind = "add" | "del" | "hunk" | "meta" | "ctx";
 
@@ -64,14 +65,6 @@ function classify(line: string): DiffKind {
   if (line.startsWith("-")) return "del";
   return "ctx";
 }
-
-const LINE_CLASS: Record<DiffKind, string> = {
-  add: "text-emerald-300 bg-emerald-500/10",
-  del: "text-rose-300 bg-rose-500/10",
-  hunk: "text-cyan-300/90 bg-cyan-500/5",
-  meta: "text-zinc-400",
-  ctx: "text-zinc-300/80",
-};
 
 /** `a/src/x.ts` → `src/x.ts` (also tolerates plain paths and `/dev/null`). */
 function stripPrefix(p: string): string {
@@ -209,14 +202,15 @@ function FileSectionView({ section }: { section: FileSection }) {
         </span>
       </button>
       {lines.map((l, i) => (
-        <div key={i} className={`flex whitespace-pre px-2 ${LINE_CLASS[l.kind]}`}>
-          {l.kind === "meta" || l.kind === "hunk" ? (
+        <DiffLineItem key={i}
+          tone={l.kind === "add" ? "add" : l.kind === "del" ? "remove" : "context"}
+          marker={l.kind === "meta" || l.kind === "hunk" ? (
             <span className="sticky left-0 inline-block w-[5.375rem] shrink-0 select-none bg-zinc-950/95" />
           ) : (
             <Gutter line={l} />
           )}
-          <span>{l.text || " "}</span>
-        </div>
+          content={l.text || " "}
+        />
       ))}
       {open && hidden > 0 && (
         <button

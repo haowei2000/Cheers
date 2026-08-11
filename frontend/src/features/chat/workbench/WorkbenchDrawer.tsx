@@ -5,6 +5,7 @@ import { useLaneWindow } from "@/hooks/useLaneWindow";
 import { ResizeGrip } from "@/components/ui/resize-grip";
 import { GlanceRow, DetailLine } from "@/components/ui/glance-row";
 import { cn } from "@/lib/cn";
+import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { makeFsClient, type SendResourceReq } from "./fsClient";
 import { errMsg } from "./jsonFile";
 import type { WorkbenchContext } from "./context";
@@ -606,23 +607,21 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                   <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400">
                     Pinned (injected into every prompt)
                   </div>
-                  {pinned.map((p) => (
-                    <div
+                  <ItemList>{pinned.map((p) => (
+                    <WorkbenchItem
                       key={p}
-                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-zinc-800/60 text-xs text-zinc-300"
-                    >
-                      <span className="truncate flex-1" title={p}>
-                        {p}
-                      </span>
-                      <button
+                      title={p}
+                      presentationLevel="minimal"
+                      actions={<button
                         onClick={() => togglePin(p)}
                         title="Unpin"
                         className="text-zinc-500 hover:text-red-400 flex-shrink-0"
                       >
                         <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                      </button>}
+                      className="border-0"
+                    />
+                  ))}</ItemList>
                 </div>
               )}
             </div>

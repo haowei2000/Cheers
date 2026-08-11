@@ -17,6 +17,16 @@ const PUBLIC_POLICY_PAGES = [
   "remote-operations.html",
   "remote-operations.zh-CN.html",
 ] as const;
+const PUBLIC_POLICY_ASSETS = [
+  ["favicon.svg", "favicon.svg"],
+  ["editorial.css", "editorial.css"],
+  ["assets/SourceSerif4Variable-Roman.ttf.woff2", "assets/SourceSerif4Variable-Roman.ttf.woff2"],
+  ["assets/SourceSerif4-OFL.txt", "assets/SourceSerif4-OFL.txt"],
+  ["assets/SourceHanSerifCN-VF.ttf.woff2", "assets/SourceHanSerifCN-VF.ttf.woff2"],
+  ["assets/SourceHanSerif-OFL.txt", "assets/SourceHanSerif-OFL.txt"],
+  ["assets/SourceSans3VF-Upright.ttf.woff2", "assets/SourceSans3VF-Upright.ttf.woff2"],
+  ["assets/SourceSans3-OFL.txt", "assets/SourceSans3-OFL.txt"],
+] as const;
 
 /** Keep website/ authoritative while shipping the App Store public URLs from
  * the same Nginx origin as the app. This runs for local and Docker builds. */
@@ -29,6 +39,11 @@ function publicPolicyPages() {
       mkdirSync(outputDir, { recursive: true });
       for (const page of PUBLIC_POLICY_PAGES) {
         copyFileSync(path.join(WEBSITE_DIR, page), path.join(outputDir, page));
+      }
+      for (const [source, destination] of PUBLIC_POLICY_ASSETS) {
+        const destinationPath = path.join(outputDir, destination);
+        mkdirSync(path.dirname(destinationPath), { recursive: true });
+        copyFileSync(path.join(WEBSITE_DIR, source), destinationPath);
       }
     },
   };
@@ -90,6 +105,9 @@ export default defineConfig({
           "**/assets/pdf-*.js",
           "**/assets/hljs-*.js",
           "**/assets/pdf.worker*",
+          // The 11 MB regional CJK font is fetched only when Chinese text is
+          // rendered. Pre-caching it would penalize every PWA installation.
+          "**/assets/SourceHanSerifCN-*.woff2",
         ],
       },
       // Dev runs without a SW (devOptions off): push testing happens against

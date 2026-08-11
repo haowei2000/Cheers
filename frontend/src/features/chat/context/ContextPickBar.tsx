@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
+import { ItemChip } from "@/components/ui/item";
 import {
   useContextPickStore,
   usePendingContext,
@@ -67,14 +68,12 @@ export function MessageContextChips({
   const chips = items.map((it, i) => {
     const Icon = iconFor(it.kind);
     return (
-      <span
+      <ItemChip
         key={`${it.kind}:${it.label}:${i}`}
-        className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-0.5 text-[11px] text-zinc-400"
-        title={`${isHandoff ? "Handed off" : "Attached"} context: ${it.label}`}
-      >
-        <Icon className="w-3 h-3" />
-        <span className="max-w-[12rem] truncate">{it.label}</span>
-      </span>
+        leading={<Icon className="w-3 h-3" />}
+        label={it.label}
+        className="max-w-[14rem]"
+      />
     );
   });
   if (isHandoff) {

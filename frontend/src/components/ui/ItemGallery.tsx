@@ -1,0 +1,225 @@
+import { AlertTriangle, User } from "lucide-react";
+import {
+  EditorialIcon,
+  editorialIconNames,
+  type EditorialIconName,
+} from "@/components/ui/editorial-icons";
+import {
+  DiffLineItem,
+  EntityItem,
+  FileTreeItem,
+  ItemChip,
+  ItemList,
+  ItemRow,
+  ItemSection,
+  NavigationItem,
+  OperationsItem,
+  WorkbenchItem,
+} from "@/components/ui/item";
+import { PresentationProvider, type PresentationLevel } from "@/components/ui/presentation";
+import { cn } from "@/lib/cn";
+
+const levels: PresentationLevel[] = ["max", "medium", "minimal"];
+
+const iconLabels: Record<EditorialIconName, string> = {
+  correspondence: "Correspondence",
+  reply: "Reply",
+  thread: "Thread",
+  section: "Section / channel",
+  edition: "Edition / workspace",
+  editorialDesk: "Editorial desk",
+  excerpt: "Context excerpt",
+  attachment: "Attachment",
+  proof: "Proof / plan",
+  approvalSeal: "Approval seal",
+  dispatch: "Dispatch / notice",
+  archive: "Archive",
+  agentMark: "Agent mark",
+  session: "Session",
+  taskDocket: "Task docket",
+  diffProof: "Diff proof",
+};
+
+/** Development/visual-test gallery. It is intentionally not exposed as a product route. */
+export function ItemGallery() {
+  return (
+    <main className="h-full overflow-y-auto bg-zinc-950 px-4 py-3 text-zinc-100 sm:px-5">
+      <header className="mb-3 border-y-4 border-double border-zinc-500 py-2">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="font-utility text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+              Cross-platform design desk
+            </p>
+            <h1 className="font-masthead text-2xl font-semibold sm:text-3xl">
+              Cheers Item Register
+            </h1>
+          </div>
+          <p className="hidden max-w-56 text-right font-utility text-[10px] font-medium uppercase leading-4 tracking-wider text-zinc-500 sm:block">
+            One anatomy · Three densities
+            <br />Web · iOS · Android
+          </p>
+        </div>
+      </header>
+
+      <section aria-labelledby="type-register" className="mb-4 grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
+        <div className="px-3 py-3">
+          <p className="font-utility text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Display · Opsz 60
+          </p>
+          <h2 id="type-register" className="mt-1 font-display text-2xl font-semibold tracking-[-0.025em]">
+            The Formal Edition · 正式版
+          </h2>
+          <p className="mt-1 font-utility text-[11px] text-zinc-500">Introductions · Hero titles · Major headings</p>
+        </div>
+        <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
+          <p className="font-utility text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Reading · Opsz 14
+          </p>
+          <p className="mt-1 font-reading text-[15px] leading-6 text-zinc-300">
+            A sturdy classical rhythm keeps long messages calm. 稳健的宋体让长消息正式而易读。
+          </p>
+          <p className="mt-1 font-utility text-[11px] text-zinc-500">Messages · Previews · Long-form copy</p>
+        </div>
+        <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
+          <p className="font-utility text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+            Utility · Source Sans 3
+          </p>
+          <p className="mt-2 font-utility text-xs font-semibold uppercase tracking-[0.08em] text-amber-300">
+            Channel name · 频道名称 · Warning · Trace active
+          </p>
+          <p className="mt-2 font-utility text-[11px] text-zinc-500">Controls · Status · Trace labels</p>
+        </div>
+      </section>
+
+      <div className="grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
+        {levels.map((level, index) => (
+          <PresentationProvider key={level} level={level}>
+            <section
+              aria-labelledby={`gallery-${level}`}
+              className={cn(
+                "space-y-1 py-3 lg:px-3",
+                index > 0 && "border-t border-zinc-700 lg:border-t-0"
+              )}
+            >
+              <div className="mb-2 flex items-baseline justify-between border-b border-zinc-600 pb-1">
+                <h2
+                  id={`gallery-${level}`}
+                  className="font-display text-lg font-semibold capitalize tracking-tight"
+                >
+                  {level}
+                </h2>
+                <span className="font-utility text-[9px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                  Edition 0{index + 1}
+                </span>
+              </div>
+              <EntityItem
+                leading={<User className="h-5 w-5" />}
+                title="Ada Lovelace"
+                subtitle="Platform engineer"
+                metadata="Online · Berlin"
+                criticalStatus={<span className="h-2 w-2 rounded-full bg-emerald-500" />}
+              />
+              <NavigationItem
+                leading={<EditorialIcon name="section" className="h-4 w-4" />}
+                title="release"
+                subtitle="3 unread messages"
+                criticalStatus={
+                  <span className="rounded-sm bg-indigo-600 px-1.5 text-[10px] font-bold text-white">
+                    3
+                  </span>
+                }
+                selected
+              />
+              <ItemRow
+                kind="conversation"
+                leading={<EditorialIcon name="agentMark" className="h-5 w-5" />}
+                title="Codex"
+                subtitle="Completed the design-system migration"
+                preview="Shared anatomy is now available on Web, iOS, and Android."
+                status={<span className="font-utility text-[10px] font-semibold text-indigo-300">BOT</span>}
+              />
+              <ItemRow
+                kind="feedback"
+                leading={<AlertTriangle className="h-5 w-5 text-amber-400" />}
+                title="Connection degraded"
+                subtitle="Messages remain readable while reconnecting."
+                criticalStatus={
+                  <span className="font-utility text-[10px] font-semibold text-amber-300">
+                    RETRYING
+                  </span>
+                }
+              />
+              <OperationsItem
+                leading={<EditorialIcon name="approvalSeal" className="h-5 w-5 text-amber-300" />}
+                title="Deploy production change"
+                subtitle="Approval required"
+                criticalStatus={<span className="h-1.5 w-1.5 rounded-full bg-red-400" />}
+                actions={<button type="button" className="rounded-sm px-2 py-1 text-xs text-amber-200 hover:bg-zinc-800">Review</button>}
+              />
+              <WorkbenchItem
+                leading={<EditorialIcon name="proof" className="h-5 w-5" />}
+                title="Release plan"
+                subtitle="4 completed · 1 active"
+                status={<span className="text-[10px] text-emerald-400">ACTIVE</span>}
+              />
+              <div className="flex flex-wrap gap-1 pt-1">
+                <ItemChip
+                  leading={<EditorialIcon name="excerpt" className="h-3 w-3" />}
+                  label="Context: release plan"
+                />
+                <ItemChip
+                  label="Approval required"
+                  criticalStatus={<span className="h-1.5 w-1.5 rounded-full bg-red-400" />}
+                />
+              </div>
+            </section>
+          </PresentationProvider>
+        ))}
+      </div>
+
+      <section aria-labelledby="specialized-register" className="mt-4 grid border-y border-zinc-700 lg:grid-cols-2 lg:divide-x lg:divide-zinc-700">
+        <ItemSection label="Specialized file tree" className="px-3 py-3">
+          <FileTreeItem depth={0} expanded disclosure={<span aria-hidden>⌄</span>} leading={<EditorialIcon name="archive" className="h-4 w-4" />} title="frontend" />
+          <FileTreeItem depth={1} selected leading={<EditorialIcon name="attachment" className="h-4 w-4" />} title="ItemGallery.tsx" />
+        </ItemSection>
+        <div className="border-t border-zinc-700 px-3 py-3 lg:border-t-0">
+          <h2 id="specialized-register" className="mb-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400">Specialized diff</h2>
+          <ItemList className="overflow-x-auto bg-zinc-950">
+            <DiffLineItem tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
+            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 2px;" />
+            <DiffLineItem lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
+          </ItemList>
+        </div>
+      </section>
+
+      <section aria-labelledby="editorial-icon-register" className="mt-4 border-y border-zinc-700 py-3">
+        <div className="mb-2 flex items-baseline justify-between border-b border-zinc-600 pb-1">
+          <h2 id="editorial-icon-register" className="font-display text-lg font-semibold tracking-tight">
+            Editorial Icon Register
+          </h2>
+          <span className="font-utility text-[9px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+            24 grid · 1.75 stroke · issue 02
+          </span>
+        </div>
+        <div className="grid grid-cols-2 border-l border-t border-zinc-700 sm:grid-cols-4 lg:grid-cols-8">
+          {editorialIconNames.map((name, index) => (
+            <figure
+              key={name}
+              className="m-0 min-h-24 border-b border-r border-zinc-700 px-2 py-3"
+            >
+              <div className="mb-3 flex items-start justify-between text-zinc-200">
+                <EditorialIcon name={name} title={iconLabels[name]} className="h-6 w-6" />
+                <span className="font-utility text-[8px] tabular-nums text-zinc-600">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+              </div>
+              <figcaption className="font-reading text-xs leading-4 text-zinc-400">
+                {iconLabels[name]}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}

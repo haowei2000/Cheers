@@ -80,6 +80,7 @@ export function NewChannelDialog({
         </div>
 
         <div className="flex gap-2">
+          {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["public", "private"] as const).map((t) => (
             <button
               key={t}
@@ -109,6 +110,7 @@ export function NewChannelDialog({
         </div>
 
         <div className="flex gap-2">
+          {/* design-system-exempt: menu-option — native segmented form choice. */}
           {(["text", "voice"] as const).map((value) => (
             <button
               type="button"

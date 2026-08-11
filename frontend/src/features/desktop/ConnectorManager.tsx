@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { Dialog } from "@/components/ui/dialog";
+import { WorkbenchItem } from "@/components/ui/item";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorHealth,
@@ -566,28 +567,26 @@ export function ConnectorManager() {
               data-connector-name={inst.name}
               data-connector-config={inst.config_path ?? ""}
               data-connector-running={inst.running ? "1" : ""}
-              className={`min-h-[132px] rounded-xl bg-zinc-800/60 p-4 flex flex-col gap-3 transition-shadow ${
+              className={`min-h-[132px] rounded-sm bg-zinc-800/60 p-3 flex flex-col gap-2 transition-shadow ${
                 dragOverName === inst.name ? "ring-2 ring-indigo-500 bg-indigo-950/20" : ""
               }`}
             >
-              <div className="flex items-start gap-2 min-w-0">
-                <span
-                  className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${
+              <WorkbenchItem
+                presentationLevel="medium"
+                leading={<span
+                  className={`h-2 w-2 rounded-full ${
                     inst.running ? "bg-emerald-500" : "bg-zinc-600"
                   }`}
                   title={inst.running ? "running" : "stopped"}
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-100 truncate">{inst.name}</p>
-                  <p className="text-[11px] text-zinc-500 truncate">
-                    {inst.running
+                />}
+                title={inst.name}
+                subtitle={inst.running
                       ? `running · pid ${inst.pid}`
                       : inst.config_path
                         ? "stopped"
                         : "stopped · no config"}
-                  </p>
-                </div>
-              </div>
+                className="border-b-0 bg-transparent px-0"
+              />
 
               {inst.running && health[inst.name] && (
                 <HealthRow
@@ -817,6 +816,7 @@ export function ConnectorManager() {
             </p>
           ) : (
             <div className="space-y-2.5">
+              {/* design-system-exempt: item-section — filesystem root grouping. */}
               {wsDirs.map((dir) => (
                 <div key={dir}>
                   <div className="flex items-center gap-2 mb-1">
@@ -834,6 +834,7 @@ export function ConnectorManager() {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-1.5 pl-5">
+                    {/* design-system-exempt: menu-option — opener command menu. */}
                     {openers.map((op) => (
                       <button
                         key={op.key}
@@ -969,6 +970,7 @@ function AuditTimeline({
   return (
     <div>
       <div className="flex flex-wrap items-center gap-1.5 mb-3">
+        {/* design-system-exempt: menu-option — audit kind filters. */}
         {kinds.map((k) => (
           <button
             key={k}
@@ -999,11 +1001,11 @@ function AuditTimeline({
           restarts, permission asks/decisions and errors.
         </p>
       ) : (
-        <ol className="space-y-1.5 max-h-[60vh] overflow-auto pr-1">
+        <div className="space-y-1.5 max-h-[60vh] overflow-auto pr-1" role="list">
           {shown.map((e, i) => (
             <AuditRow key={i} e={e} />
           ))}
-        </ol>
+        </div>
       )}
     </div>
   );
@@ -1013,25 +1015,20 @@ function AuditRow({ e }: { e: AuditEvent }) {
   const [open, setOpen] = useState(false);
   const time = e.ts.slice(11, 19); // HH:MM:SS from the rfc3339 timestamp
   return (
-    <li className="text-xs">
-      <button
-        type="button"
-        disabled={!e.extra}
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-start gap-2 text-left rounded-md px-2 py-1 hover:bg-zinc-800/60 disabled:cursor-default"
-      >
-        <span className="font-mono text-[10px] text-zinc-500 shrink-0 mt-0.5 tabular-nums">
-          {time}
-        </span>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${AUDIT_META[e.kind].dot}`} />
-        <span className="text-zinc-200 min-w-0 break-words">{e.detail}</span>
-      </button>
+    <div role="listitem" className="text-xs">
+      <WorkbenchItem
+        presentationLevel="medium"
+        title={e.detail}
+        leading={<span className={`h-1.5 w-1.5 rounded-full ${AUDIT_META[e.kind].dot}`} />}
+        trailing={<span className="font-mono text-[10px] tabular-nums">{time}</span>}
+        onClick={e.extra ? () => setOpen((o) => !o) : undefined}
+      />
       {open && e.extra && (
-        <pre className="ml-14 mt-1 mb-1 text-[11px] bg-zinc-950 rounded-md p-2 overflow-auto whitespace-pre-wrap text-zinc-400 max-h-48">
+        <pre className="ml-6 mt-1 mb-1 text-[11px] bg-zinc-950 rounded-sm p-2 overflow-auto whitespace-pre-wrap text-zinc-400 max-h-48">
           {e.extra}
         </pre>
       )}
-    </li>
+    </div>
   );
 }
 
@@ -1069,6 +1066,7 @@ function OnboardForm(props: {
         </p>
       </div>
       <div className="flex gap-1.5">
+        {/* design-system-exempt: menu-option — onboarding mode tabs. */}
         {(["existing", "new"] as const).map((m) => (
           <button
             key={m}

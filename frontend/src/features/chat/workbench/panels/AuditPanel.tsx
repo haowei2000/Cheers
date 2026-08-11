@@ -18,6 +18,7 @@ import { listApprovalAudit, type AuditEvent } from "@/api/approval";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
+import { WorkbenchItem } from "@/components/ui/item";
 import {
   registerComponentViewBoard,
   useBoardTickRefetch,
@@ -228,38 +229,18 @@ function AuditRow({
   );
 
   return (
-    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-md mb-1.5`}>
-      <div className="px-3 py-2">
-        {/* Headline: the concrete thing being approved + which bot + when. */}
-        <div className="flex items-start gap-2">
-          {e.bot_id && (
-            <Avatar
+    <li className={`border-l-2 ${t.border} bg-zinc-900/30 rounded-r-sm mb-1.5`}>
+      <WorkbenchItem
+        presentationLevel="max"
+        title={content || t.label}
+        leading={e.bot_id ? <Avatar
               name={bot?.display_name || bot?.username || short(e.bot_id)}
               src={bot?.avatar_url ?? undefined}
               id={e.bot_id}
               size="xs"
-              className="mt-px !w-5 !h-5 !text-[9px]"
-            />
-          )}
-          <div className="min-w-0 flex-1">
-            {/* Headline: clickable when the audit event anchors to a channel
-                message (jump is best-effort — resolved permission cards are
-                folded out of the list, so the jump may just toast). */}
-            {e.msg_id && onJump ? (
-              <button
-                type="button"
-                onClick={() => onJump(e.msg_id!, e.request_id)}
-                title="Jump to this approval in chat"
-                className="block w-full text-left text-xs text-zinc-200 font-medium leading-snug break-words hover:text-indigo-300 transition-colors"
-              >
-                {content || t.label}
-              </button>
-            ) : (
-              <div className="text-xs text-zinc-200 font-medium leading-snug break-words">
-                {content || t.label}
-              </div>
-            )}
-            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              className="!w-5 !h-5 !text-[9px]"
+            /> : undefined}
+        subtitle={<span className="flex items-center gap-1.5 flex-wrap">
               <span
                 className={`inline-flex items-center gap-1 text-[11px] font-medium ${t.text}`}
                 title={t.raw || undefined}
@@ -279,26 +260,30 @@ function AuditRow({
                   <MemberChip id={e.target_user_id} member={target} />
                 </>
               )}
-            </div>
-          </div>
-          <span className="text-[10px] text-zinc-400 tabular-nums whitespace-nowrap mt-px">
-            {fmtTime(e.created_at)}
-          </span>
-        </div>
-
-        {hasDetails && (
+            </span>}
+        trailing={<span className="text-[10px] tabular-nums whitespace-nowrap">{fmtTime(e.created_at)}</span>}
+        actions={<>
+          {e.msg_id && onJump && (
+            <button type="button" onClick={() => onJump(e.msg_id!, e.request_id)} className="text-[10px] text-zinc-400 hover:text-indigo-300">
+              Jump
+            </button>
+          )}
+          {hasDetails && (
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="mt-1.5 inline-flex items-center gap-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ChevronRight className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`} />
             Details
           </button>
-        )}
+          )}
+        </>}
+        className="border-b-0 border-l-0 bg-transparent"
+      />
 
         {open && (
-          <div className="mt-1.5 space-y-1 rounded bg-zinc-950/50 px-2.5 py-2 ">
+          <div className="mx-3 mb-2 space-y-1 rounded-sm bg-zinc-950/50 px-2.5 py-2">
             {decisionLabel && (
               <DetailRow label="Choice">
                 <span className={t.text}>{decisionLabel}</span>
@@ -333,7 +318,6 @@ function AuditRow({
             )}
           </div>
         )}
-      </div>
     </li>
   );
 }

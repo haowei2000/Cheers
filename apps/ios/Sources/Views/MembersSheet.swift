@@ -141,8 +141,17 @@ struct MembersSheet: View {
     }
 
     private func memberRow(_ member: ChannelMemberDto) -> some View {
-        HStack(spacing: 11) {
-            ZStack(alignment: .bottomTrailing) {
+        let subtitle: String? = member.isPending
+            ? (member.status == "pending_owner"
+                ? "Awaiting bot owner approval"
+                : member.status == "pending_workspace"
+                    ? "Awaiting workspace acceptance"
+                    : "Invited · awaiting reply")
+            : member.role.flatMap { $0 == "member" ? nil : $0.capitalized }
+        return CheersEntityItem(row: CheersItemRow(
+            title: member.name,
+            subtitle: subtitle,
+            leading: AnyView(ZStack(alignment: .bottomTrailing) {
                 AvatarView(seedId: member.memberId, name: member.name, size: 34, monochrome: true)
                 if member.isOnline == true {
                     Circle()
@@ -150,43 +159,11 @@ struct MembersSheet: View {
                         .frame(width: 10, height: 10)
                         .overlay(Circle().stroke(Theme.bgSurface, lineWidth: 2))
                 }
-            }
-            .opacity(member.isPending ? 0.5 : 1)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(member.name)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if member.isBot {
-                        Text("BOT")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(Theme.botBadgeText)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Theme.botBadgeBg, in: RoundedRectangle(cornerRadius: 3))
-                    }
-                }
-                HStack(spacing: 6) {
-                    if member.isPending {
-                        Text(member.status == "pending_owner"
-                             ? "Awaiting bot owner approval"
-                             : member.status == "pending_workspace"
-                               ? "Awaiting workspace acceptance"
-                               : "Invited · awaiting reply")
-                            .font(.caption)
-                            .foregroundStyle(Theme.warning)
-                    } else if let role = member.role, role != "member" {
-                        Text(role.capitalized)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Spacer(minLength: 8)
-            rowMenu(member)
-        }
-        .frame(minHeight: 52)
+            }.opacity(member.isPending ? 0.5 : 1)),
+            criticalStatus: member.isPending ? AnyView(Text("PENDING").font(.caption2.bold()).foregroundStyle(Theme.warning)) : nil,
+            status: member.isBot ? AnyView(Text("BOT").font(.caption2.bold()).foregroundStyle(Theme.botBadgeText)) : nil,
+            actions: AnyView(rowMenu(member))
+        ))
     }
 
     /// Role change is unavailable for pending invites (no endpoint) and for
@@ -367,40 +344,14 @@ struct InviteSheet: View {
         return Button {
             Task { await add(item) }
         } label: {
-            HStack(spacing: 11) {
-                AvatarView(seedId: item.memberId, name: item.name, size: 32, monochrome: true)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
-                        Text(item.name)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                        if item.isBot {
-                            Text("BOT")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(Theme.botBadgeText)
-                                .padding(.horizontal, 4).padding(.vertical, 1)
-                                .background(Theme.botBadgeBg, in: RoundedRectangle(cornerRadius: 3))
-                        }
-                    }
-                    if already {
-                        Text("Already in this channel")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if item.requiresWorkspaceAcceptance == true {
-                        Text("Workspace acceptance required first")
-                            .font(.caption)
-                            .foregroundStyle(Theme.warning)
-                    }
-                }
-                Spacer()
-                if !already {
-                    Image(systemName: "plus.circle")
-                        .font(.title3)
-                        .foregroundStyle(.tint)
-                }
-            }
-            .frame(minHeight: 52)
-            .contentShape(Rectangle())
+            CheersEntityItem(row: CheersItemRow(
+                title: item.name,
+                subtitle: already ? "Already in this channel" : item.requiresWorkspaceAcceptance == true ? "Workspace acceptance required first" : nil,
+                leading: AnyView(AvatarView(seedId: item.memberId, name: item.name, size: 32, monochrome: true)),
+                criticalStatus: already ? AnyView(Text("MEMBER").font(.caption2.bold()).foregroundStyle(Theme.textMuted)) : nil,
+                status: item.isBot ? AnyView(Text("BOT").font(.caption2.bold()).foregroundStyle(Theme.botBadgeText)) : nil,
+                trailing: already ? nil : AnyView(Image(systemName: "plus.circle").foregroundStyle(Theme.accent))
+            ))
             .opacity(already ? 0.45 : 1)
         }
         .buttonStyle(.plain)
@@ -486,17 +437,11 @@ struct InviteSheet: View {
     }
 
     private func linkRow(_ link: InviteLinkDto) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(inviteURL(link))
-                .font(.caption.monospaced())
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            HStack(spacing: 10) {
-                Text(usageLabel(link))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        CheersOperationsItem(row: CheersItemRow(
+            title: inviteURL(link),
+            subtitle: usageLabel(link),
+            leading: AnyView(Image(systemName: "link").foregroundStyle(Theme.accent)),
+            actions: AnyView(HStack(spacing: 10) {
                 ShareLink(item: inviteURL(link)) {
                     Image(systemName: "square.and.arrow.up")
                         .font(.subheadline.weight(.semibold))
@@ -518,8 +463,8 @@ struct InviteSheet: View {
                         .foregroundStyle(.red)
                         .frame(width: 44, height: 36)
                 }
-            }
-        }
+            })
+        ))
     }
 
     /// The link must point at the *web deployment*, not any app scheme — the

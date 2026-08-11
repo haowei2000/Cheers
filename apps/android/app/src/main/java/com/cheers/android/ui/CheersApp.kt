@@ -17,6 +17,7 @@ import androidx.navigation.navArgument
 import com.cheers.android.di.AppContainer
 import com.cheers.android.di.SessionState
 import com.cheers.android.ui.chat.ChatScreen
+import com.cheers.android.ui.components.ProvideResponsivePresentationLevel
 import com.cheers.android.ui.conversations.ConversationsScreen
 import com.cheers.android.ui.login.LoginScreen
 import com.cheers.android.ui.settings.SettingsScreen
@@ -28,16 +29,18 @@ import com.cheers.android.ui.settings.SettingsScreen
 @Composable
 fun CheersApp(container: AppContainer) {
     val sessionState by container.sessionState.collectAsStateWithLifecycle()
-    when (sessionState) {
-        SessionState.Loading -> {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
-            )
+    ProvideResponsivePresentationLevel {
+        when (sessionState) {
+            SessionState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                )
+            }
+            SessionState.LoggedOut -> LoginScreen(container)
+            is SessionState.LoggedIn -> MainNavHost(container)
         }
-        SessionState.LoggedOut -> LoginScreen(container)
-        is SessionState.LoggedIn -> MainNavHost(container)
     }
 }
 

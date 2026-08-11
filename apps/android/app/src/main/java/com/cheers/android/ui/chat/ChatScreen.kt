@@ -73,6 +73,9 @@ import com.cheers.android.data.ws.ConnectionStatus
 import com.cheers.android.di.AppContainer
 import com.cheers.android.ui.components.BotPill
 import com.cheers.android.ui.components.CheersAvatar
+import com.cheers.android.ui.components.LocalPresentationLevel
+import com.cheers.android.ui.components.PresentationLevel
+import com.cheers.android.ui.theme.cheersReadingStyle
 import com.cheers.android.ui.theme.LocalCheersColors
 import com.cheers.android.ui.theme.avatarColorFor
 import com.cheers.android.util.Format
@@ -478,6 +481,7 @@ private fun SystemNoteRow(text: String) {
 @Composable
 private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp) {
     val cc = LocalCheersColors.current
+    val presentationLevel = LocalPresentationLevel.current
     val m = item.message
     val shape = RoundedCornerShape(
         topStart = 16.dp,
@@ -552,7 +556,7 @@ private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp) {
                     if (m.content.isNotEmpty()) {
                         Text(
                             text = m.content,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = cheersReadingStyle(m.content),
                             color = if (item.isOwn) cc.onBubbleOwn else cc.onBubbleOther,
                         )
                     }
@@ -597,7 +601,7 @@ private fun BubbleRow(item: ChatItem.Bubble, maxBubbleWidth: Dp) {
                 }
             }
 
-            if (!item.isTyping && !item.isDeleted) {
+            if (presentationLevel != PresentationLevel.Minimal && !item.isTyping && !item.isDeleted) {
                 val stamp = Format.clockTime(m.createdAt)
                 if (stamp.isNotEmpty()) {
                     Row(
