@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -146,16 +149,16 @@ function HealthRow({
         {h.cpu_pct.toFixed(0)}% CPU · {fmtMem(h.mem_bytes)}
       </span>
       {reason && (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={onRestart}
           disabled={busy}
           title={`${reason} — restart this connector`}
-          className="inline-flex items-center gap-1 rounded-md bg-amber-950/60 text-amber-300 px-1.5 py-0.5 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
+          controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-950/60 text-amber-300 px-1.5 hover:bg-amber-900/60 disabled:opacity-50 min-w-0"
         >
           <AlertTriangle className="w-3 h-3 shrink-0" />
           <span className="truncate">{reason} · Restart</span>
-        </button>
+        </UiButton>
       )}
     </div>
   );
@@ -176,20 +179,20 @@ function IconBtn({
   danger?: boolean;
 }) {
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       title={label}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40 ${
-        danger
-          ? "text-rose-400 hover:bg-rose-950/50"
-          : "text-zinc-300 hover:bg-zinc-700"
-      }`}
+      square controlSize="regular" className={` rounded-sm flex items-center justify-center transition-colors disabled:opacity-40 ${
+ danger
+ ? "text-rose-400 hover:bg-rose-950/50"
+ : "text-zinc-300 hover:bg-zinc-700"
+ }`}
     >
       {icon}
-    </button>
+    </UiButton>
   );
 }
 
@@ -526,39 +529,41 @@ export function ConnectorManager() {
         Connector
       </h2>
 
-      <div className="bg-zinc-900 rounded-2xl p-6">
+      <div className="bg-zinc-900 rounded-sm p-6">
         <p className="text-sm font-medium text-zinc-200">Local connector daemons</p>
         <p className="text-xs text-zinc-400 mt-0.5 mb-4">
-          Instances under <code className="bg-zinc-800 rounded px-1">~/.cheers/acp-connector</code>.
+          Instances under <code className="bg-zinc-800 rounded-sm px-1">~/.cheers/acp-connector</code>.
           "Start with app" instances are launched on app start and revived if they die.
         </p>
 
         {/* Grid: the local setup tile is always the first item. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          <button
+          {/* design-system-exempt: drop-zone */}
+          <UiButton variant="plain"
             type="button"
             onClick={() => setModal({ kind: "onboard" })}
-            className="min-h-[132px] rounded-xl border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+            className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Plus className="w-6 h-6" />
             <span className="text-sm font-medium">Set up on this Mac</span>
             <span className="text-xs text-zinc-500">Create or attach a bot, then verify it starts</span>
-          </button>
+          </UiButton>
 
           {/* The other direction: a bot created somewhere else (the phone, the
               web UI, a teammate) hands you a one-time code, and this Mac is the
               machine that will actually run it. Without this, a code minted off
               this device had nowhere to go — the desktop could only mint and
               redeem for itself in one shot. */}
-          <button
+          {/* design-system-exempt: drop-zone */}
+          <UiButton variant="plain"
             type="button"
             onClick={() => setModal({ kind: "redeem" })}
-            className="min-h-[132px] rounded-xl border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
+            className="min-h-[132px] rounded-sm border border-dashed border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/40 text-zinc-400 hover:text-zinc-200 flex flex-col items-center justify-center gap-2 transition-colors"
           >
             <Ticket className="w-6 h-6" />
             <span className="text-sm font-medium">I have a code</span>
             <span className="text-xs text-zinc-500">Set up a bot made elsewhere</span>
-          </button>
+          </UiButton>
 
           {instances.map((inst) => (
             <div
@@ -685,7 +690,8 @@ export function ConnectorManager() {
               </div>
 
               <label className="flex items-center gap-2 text-[11px] text-zinc-400 cursor-pointer w-fit">
-                <input
+                {/* design-system-native: checkbox */}
+<input
                   type="checkbox"
                   checked={inst.start_with_app}
                   onChange={(e) =>
@@ -716,13 +722,13 @@ export function ConnectorManager() {
               Cheers app on your phone, the web UI, or a teammate. This Mac
               becomes the machine that runs it.
             </p>
-            <input
+            <UiInput
               value={enrollCode}
               onChange={(e) => setEnrollCode(e.target.value)}
               placeholder="agbenr_…"
               autoFocus
               spellCheck={false}
-              className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm font-mono text-zinc-100 placeholder:text-zinc-500 outline-none focus:ring-1 focus:ring-indigo-500"
+              controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm font-mono text-zinc-100 placeholder:text-zinc-500 outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <p className="text-xs text-zinc-500">
               Codes are single-use and expire after about 15 minutes. Using one
@@ -787,15 +793,15 @@ export function ConnectorManager() {
       {modal?.kind === "logs" && (
         <Dialog title={`Logs — ${modal.inst.name}`} onClose={() => setModal(null)} maxWidth="max-w-2xl">
           <div className="flex justify-end mb-1">
-            <button
+            <UiButton variant="plain"
               type="button"
               className="text-xs text-zinc-400 hover:text-zinc-200"
               onClick={() => void openLogs(modal.inst)}
             >
               Refresh
-            </button>
+            </UiButton>
           </div>
-          <pre className="text-xs bg-zinc-950 rounded-lg p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-300">
+          <pre className="text-xs bg-zinc-950 rounded-sm p-3 max-h-[60vh] overflow-auto whitespace-pre-wrap text-zinc-300">
             {logs}
           </pre>
         </Dialog>
@@ -812,7 +818,7 @@ export function ConnectorManager() {
           ) : wsDirs.length === 0 ? (
             <p className="text-xs text-zinc-500">
               No workspace roots on disk (check the config's{" "}
-              <code className="bg-zinc-800 rounded px-1">[policy.workspace]</code>).
+              <code className="bg-zinc-800 rounded-sm px-1">[policy.workspace]</code>).
             </p>
           ) : (
             <div className="space-y-2.5">
@@ -836,14 +842,14 @@ export function ConnectorManager() {
                   <div className="flex flex-wrap gap-1.5 pl-5">
                     {/* design-system-exempt: menu-option — opener command menu. */}
                     {openers.map((op) => (
-                      <button
+                      <UiButton variant="plain"
                         key={op.key}
                         type="button"
-                        className="text-[11px] rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2 py-1 transition-colors"
+                        controlSize="regular" className="text-[11px] rounded-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-2 transition-colors"
                         onClick={() => void openWith(modal.inst.name, dir, op.key)}
                       >
                         {op.label}
-                      </button>
+                      </UiButton>
                     ))}
                   </div>
                 </div>
@@ -895,13 +901,14 @@ export function ConnectorManager() {
             bot on the server — do that from the web Bots settings.
           </p>
           <label className="flex items-center gap-2 mt-3 text-xs text-zinc-400 cursor-pointer w-fit">
-            <input
+            {/* design-system-native: checkbox */}
+<input
               type="checkbox"
               checked={keepConfig}
               onChange={(e) => setKeepConfig(e.target.checked)}
             />
             Keep a backup of the config as{" "}
-            <code className="bg-zinc-800 rounded px-1">.toml.kept</code> (won&apos;t
+            <code className="bg-zinc-800 rounded-sm px-1">.toml.kept</code> (won&apos;t
             show in the list)
           </label>
           <div className="flex gap-2 mt-4">
@@ -972,32 +979,32 @@ function AuditTimeline({
       <div className="flex flex-wrap items-center gap-1.5 mb-3">
         {/* design-system-exempt: menu-option — audit kind filters. */}
         {kinds.map((k) => (
-          <button
+          <UiButton variant="plain"
             key={k}
             type="button"
             onClick={() => toggle(k)}
-            className={`text-[11px] rounded-md px-2 py-1 transition-colors ${
-              hidden.has(k) ? "bg-zinc-800 text-zinc-500" : "bg-zinc-700 text-zinc-100"
-            }`}
+            controlSize="regular" className={`text-[11px] rounded-sm px-2 transition-colors ${
+ hidden.has(k) ? "bg-zinc-800 text-zinc-500" : "bg-zinc-700 text-zinc-100"
+ }`}
           >
             <span
               className={`inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle ${AUDIT_META[k].dot}`}
             />
             {AUDIT_META[k].label}
-          </button>
+          </UiButton>
         ))}
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={onRefresh}
           className="text-xs text-zinc-400 hover:text-zinc-200 ml-auto"
         >
           Refresh
-        </button>
+        </UiButton>
       </div>
       {shown.length === 0 ? (
         <p className="text-xs text-zinc-500">
           No audit events yet. Per-command / file detail needs the connector running with{" "}
-          <code className="bg-zinc-800 rounded px-1">RUST_LOG=debug</code>; default logs still show
+          <code className="bg-zinc-800 rounded-sm px-1">RUST_LOG=debug</code>; default logs still show
           restarts, permission asks/decisions and errors.
         </p>
       ) : (
@@ -1058,7 +1065,7 @@ function OnboardForm(props: {
   const p = props;
   return (
     <div className="grid gap-3">
-      <div className="rounded-xl bg-indigo-950/35 p-3 text-xs text-indigo-100">
+      <div className="rounded-sm bg-indigo-950/35 p-3 text-xs text-indigo-100">
         <p className="font-medium">Four steps, all on this Mac</p>
         <p className="mt-1 text-indigo-200/75">
           Choose a bot → check its agent → save the secure local config → start and verify it.
@@ -1068,28 +1075,28 @@ function OnboardForm(props: {
       <div className="flex gap-1.5">
         {/* design-system-exempt: menu-option — onboarding mode tabs. */}
         {(["existing", "new"] as const).map((m) => (
-          <button
+          <UiButton variant="plain"
             key={m}
             type="button"
             onClick={() => p.setMode(m)}
-            className={`text-xs rounded-md px-3 py-1.5 transition-colors ${
-              p.mode === m
-                ? "bg-zinc-700 text-zinc-100"
-                : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
-            }`}
+            controlSize="regular" className={`text-xs rounded-sm px-3 transition-colors ${
+ p.mode === m
+ ? "bg-zinc-700 text-zinc-100"
+ : "bg-zinc-800 text-zinc-400 hover:text-zinc-200"
+ }`}
           >
             {m === "existing" ? "Existing bot" : "New bot"}
-          </button>
+          </UiButton>
         ))}
       </div>
 
       {p.mode === "existing" ? (
         <Field label="Bot" htmlFor="onb-bot">
-          <select
+          <UiSelect
             id="onb-bot"
             value={p.existingBotId}
             onChange={(e) => p.setExistingBotId(e.target.value)}
-            className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {p.bots.length === 0 && <option value="">No manageable bots</option>}
             {p.bots.map((b) => (
@@ -1097,7 +1104,7 @@ function OnboardForm(props: {
                 {b.display_name || b.username}
               </option>
             ))}
-          </select>
+          </UiSelect>
         </Field>
       ) : (
         <Field label="New bot username" htmlFor="onb-uname">
@@ -1124,7 +1131,7 @@ function OnboardForm(props: {
       <AgentUpdates />
 
       {p.onboardingError && (
-        <div className="rounded-xl bg-rose-950/35 p-3 text-xs text-rose-200">
+        <div className="rounded-sm bg-rose-950/35 p-3 text-xs text-rose-200">
           <p className="font-medium">Setup needs attention</p>
           <p className="mt-1 break-words text-rose-200/80">{p.onboardingError}</p>
           <p className="mt-1 text-rose-200/70">
@@ -1146,13 +1153,13 @@ function OnboardForm(props: {
       </div>
 
       <div>
-        <button
+        <UiButton variant="plain"
           type="button"
           className="text-xs text-zinc-500 hover:text-zinc-300"
           onClick={() => p.setAdvancedOpen(!p.advancedOpen)}
         >
           {p.advancedOpen ? "▾" : "▸"} Advanced: start from an existing .toml
-        </button>
+        </UiButton>
         {p.advancedOpen && (
           <div className="grid gap-3 mt-3">
             <Field label="Name" htmlFor="conn-name">

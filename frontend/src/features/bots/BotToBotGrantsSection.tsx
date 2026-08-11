@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { X, Plus } from "lucide-react";
@@ -94,7 +96,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
   const grants = data.grants;
 
   return (
-    <div className="rounded-xl bg-zinc-950/40 p-3 space-y-3">
+    <div className="rounded-sm bg-zinc-950/40 p-3 space-y-3">
       <div className="flex items-center gap-2">
         <div>
           <p className="text-xs font-medium text-zinc-300">Bot-to-bot grants</p>
@@ -106,35 +108,35 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
           </p>
         </div>
         {!creating && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => setCreating(true)}
-            className="ml-auto inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-500"
+            controlSize="regular" className="ml-auto inline-flex items-center gap-1 rounded-sm bg-indigo-600 px-2.5 text-[11px] font-medium text-white hover:bg-indigo-500"
           >
             <Plus className="w-3.5 h-3.5" />
             New rule
-          </button>
+          </UiButton>
         )}
       </div>
 
       {creating && (
-        <div className="space-y-1.5 rounded-lg bg-zinc-900/40 p-2">
+        <div className="space-y-1.5 rounded-sm bg-zinc-900/40 p-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <select
+            <UiSelect
               value={grant}
               onChange={(e) => setGrant(e.target.value as BotGrantKind)}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               {data.grant_kinds.map((k) => (
                 <option key={k.kind} value={k.kind} title={`${k.kind} — ${k.tech}`}>
                   {k.label}
                 </option>
               ))}
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="">which bot…</option>
               <option value="*">∗ any bot</option>
@@ -147,20 +149,20 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
                   ))}
                 </optgroup>
               )}
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={decision}
               onChange={(e) => setDecision(e.target.value as "allow" | "deny")}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="deny">deny</option>
               <option value="allow">allow</option>
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={expiry}
               onChange={(e) => setExpiry(e.target.value)}
               title="Time-box the rule: past the expiry it stops applying (listed as expired until deleted)"
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="">permanent</option>
               <option value="3600">for 1 hour</option>
@@ -168,8 +170,8 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               <option value="86400">for 1 day</option>
               <option value="604800">for 7 days</option>
               <option value="2592000">for 30 days</option>
-            </select>
-            <button
+            </UiSelect>
+            <UiButton variant="plain"
               type="button"
               disabled={!subjectId || busy !== null}
               onClick={() =>
@@ -185,17 +187,17 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
                   resetDraft();
                 })
               }
-              className="rounded-md bg-indigo-600 px-2 py-0.5 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-40"
+              controlSize="regular" className="rounded-sm bg-indigo-600 px-2 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-40"
             >
               Create
-            </button>
-            <button
+            </UiButton>
+            <UiButton variant="plain"
               type="button"
               onClick={resetDraft}
-              className="rounded-md bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-2 text-[11px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
             >
               Cancel
-            </button>
+            </UiButton>
           </div>
           <p className="text-[11px] text-zinc-400">
             Applies bot-wide (all channels). A concrete bot must be one you share a channel with.
@@ -216,14 +218,14 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               title={`${kindLabel[r.grant] ?? r.grant} → ${r.subject_id === "*" ? "any bot" : subjectLabel[r.subject_id] || `${r.subject_id.slice(0, 8)}…`}`}
               subtitle={r.channel_id ? `#${r.channel_id.slice(0, 8)}` : "Bot-wide"}
               leading={<span
-                className={`rounded px-1 py-0.5 text-[10px] border ${GRANT_BADGE[r.grant]}`}
+                className={`rounded-sm px-1 py-0.5 text-[10px] ${GRANT_BADGE[r.grant]}`}
                 title={`${r.grant} — ${kindTech[r.grant] ?? r.grant}`}
               >
                 {kindLabel[r.grant] ?? r.grant}
               </span>}
               criticalStatus={r.expired ? (
                 <span
-                  className="rounded px-1 py-0.5 text-[10px] text-zinc-400"
+                  className="rounded-sm px-1 py-0.5 text-[10px] text-zinc-400"
                   title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
                 >
                   expired
@@ -231,7 +233,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
               ) : undefined}
               metadata={r.expires_at && !r.expired ? `until ${new Date(r.expires_at).toLocaleString()}` : undefined}
               status={<span className={r.decision === "allow" ? "text-emerald-300" : "text-red-300"}>{r.decision}</span>}
-              actions={<button
+              actions={<UiButton variant="plain"
                 type="button"
                 title="Remove this rule (back to the member-allow default)"
                 disabled={busy !== null}
@@ -247,7 +249,7 @@ export function BotToBotGrantsSection({ botId }: { botId: string }) {
                 className="text-zinc-500 hover:text-red-300 disabled:opacity-40"
               >
                 <X className="w-3.5 h-3.5" />
-              </button>}
+              </UiButton>}
               presentationLevel="max"
               className="border-0 bg-zinc-950/30"
             />

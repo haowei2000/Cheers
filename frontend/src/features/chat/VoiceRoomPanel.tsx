@@ -407,7 +407,7 @@ export function VoiceRoomPanel({
         </div>
 
         {!connected ? (
-          <Button disabled={joining} onClick={() => void join()} className="h-11 shrink-0">
+          <Button disabled={joining} onClick={() => void join()} controlSize="comfortable" className=" shrink-0">
             {joining ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (

@@ -3,24 +3,24 @@
   "version": 1,
   "nativeElementCeilings": {
     "production": {
-      "button": 147,
-      "input": 41,
-      "select": 25,
+      "button": 87,
+      "input": 23,
+      "select": 9,
       "textarea": 4
     },
     "business": {
-      "button": 138,
-      "input": 38,
-      "select": 24,
+      "button": 78,
+      "input": 20,
+      "select": 8,
       "textarea": 3
     }
   },
   "violationCeilings": {
-    "nonStandardRadius": 205,
+    "nonStandardRadius": 73,
     "unregisteredFullRadius": 42,
-    "restingBorder": 26,
-    "hardcodedControlSize": 10,
-    "sharedControlSizeOverride": 5
+    "restingBorder": 17,
+    "hardcodedControlSize": 4,
+    "sharedControlSizeOverride": 0
   },
   "allowedNativeReasons": [
     "checkbox",
@@ -43,6 +43,7 @@
     "tree-node",
     "diff-line",
     "code-editor",
+    "composer-editor",
     "canvas-node",
     "drop-zone",
     "identity",

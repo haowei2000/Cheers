@@ -126,6 +126,7 @@ export function QuickPanel() {
               </option>
             ))}
           </Select>
+          {/* design-system-exempt: composer-editor */}
           <Textarea
             ref={textareaRef}
             value={text}

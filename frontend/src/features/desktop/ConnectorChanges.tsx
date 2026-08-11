@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { GitBranch, GitPullRequest, RotateCcw, FileText } from "lucide-react";
 import toast from "react-hot-toast";
@@ -28,7 +29,7 @@ function DiffView({ diff }: { diff: string }) {
     return <p className="text-[11px] text-zinc-500 px-2 py-1">No textual diff (binary or unchanged).</p>;
   }
   return (
-    <pre className="text-[11px] bg-zinc-950 rounded-md p-2 overflow-auto max-h-72 leading-relaxed">
+    <pre className="text-[11px] bg-zinc-950 rounded-sm p-2 overflow-auto max-h-72 leading-relaxed">
       {diff.split("\n").map((line, i) => {
         const c = line[0];
         const cls =
@@ -191,16 +192,16 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                 >
                   {f.status.trim() || "?"}
                 </span>}
-                actions={<><button
+                actions={<><UiButton variant="plain"
                   type="button"
                   onClick={() => void toggleDiff(f.path)}
                   className="text-zinc-400 hover:text-zinc-100"
                   title={f.path}
                 >
                   View diff
-                </button>
+                </UiButton>
                 {primaryOpener && (
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     title={`Open in ${primaryOpener.label}`}
                     aria-label={`Open in ${primaryOpener.label}`}
@@ -216,9 +217,9 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                     }
                   >
                     <FileText className="w-3.5 h-3.5" />
-                  </button>
+                  </UiButton>
                 )}
-                <button
+                <UiButton variant="plain"
                   type="button"
                   title="Discard changes (revert)"
                   aria-label="Discard changes"
@@ -227,7 +228,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                   onClick={() => void revert(f.path)}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                </button>
+                </UiButton>
                 </>}
                 className="border-0"
               />

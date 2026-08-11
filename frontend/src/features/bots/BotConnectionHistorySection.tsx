@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { RefreshCw, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
@@ -45,20 +46,20 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
   }, [load]);
 
   return (
-    <div className="rounded-xl bg-zinc-950/40 p-3">
+    <div className="rounded-sm bg-zinc-950/40 p-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs font-medium text-zinc-300">Connection history</span>
         <span className="text-[11px] text-zinc-400">
           bridge connects/disconnects (newest first)
         </span>
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={load}
           className="ml-auto text-zinc-500 hover:text-zinc-300"
           title="Refresh"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        </UiButton>
       </div>
       {events.length === 0 ? (
         <p className="text-[11px] text-zinc-400">
@@ -72,7 +73,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
                 <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               ) : (
                 <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
-              )} status={<span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400">
+              )} status={<span className="shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400">
                 {e.stream}
               </span>} presentationLevel="max" className="border-0 bg-zinc-950/30" />
           ))}

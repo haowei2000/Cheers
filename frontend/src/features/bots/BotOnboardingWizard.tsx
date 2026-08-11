@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState, type ReactNode } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { useNavigate } from "react-router-dom";
@@ -79,7 +82,7 @@ const FALLBACK_AGENTS: AcpAgentInfo[] = [
 function CopyBtn({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       onClick={async () => {
         try {
@@ -98,7 +101,7 @@ function CopyBtn({ value, label }: { value: string; label?: string }) {
         <Copy className="w-3.5 h-3.5" />
       )}
       {label ?? (done ? "Copied" : "Copy")}
-    </button>
+    </UiButton>
   );
 }
 
@@ -355,7 +358,7 @@ export function BotOnboardingWizard({
         {/* ── Step 0: choose / create bot ───────────────────────────── */}
         {step === 0 && (
           <div className="space-y-3">
-            <div className="rounded-xl bg-indigo-950/35 px-3 py-2.5 text-xs text-indigo-100">
+            <div className="rounded-sm bg-indigo-950/35 px-3 py-2.5 text-xs text-indigo-100">
               <p className="font-medium">A bot is an identity; a connector is where it runs.</p>
               <p className="mt-1 text-indigo-200/75">
                 {localDesktop
@@ -366,29 +369,29 @@ export function BotOnboardingWizard({
               </p>
             </div>
             <div className="flex gap-2 text-xs">
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => setPick("create")}
-                className={`rounded-lg px-3 py-1.5 ${
-                  pick === "create"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                }`}
+                controlSize="regular" className={`rounded-sm px-3 ${
+ pick === "create"
+ ? "bg-indigo-600 text-white"
+ : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+ }`}
               >
                 New bot
-              </button>
-              <button
+              </UiButton>
+              <UiButton variant="plain"
                 type="button"
                 disabled={!bots.length}
                 onClick={() => setPick("existing")}
-                className={`rounded-lg px-3 py-1.5 disabled:opacity-40 ${
-                  pick === "existing"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                }`}
+                controlSize="regular" className={`rounded-sm px-3 disabled:opacity-40 ${
+ pick === "existing"
+ ? "bg-indigo-600 text-white"
+ : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+ }`}
               >
                 Existing bot
-              </button>
+              </UiButton>
             </div>
 
             {pick === "create" ? (
@@ -398,22 +401,22 @@ export function BotOnboardingWizard({
                     <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Username
                     </label>
-                    <input
+                    <UiInput
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       placeholder="codex-main"
-                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                       Display name
                     </label>
-                    <input
+                    <UiInput
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder="Codex"
-                      className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 </div>
@@ -421,17 +424,17 @@ export function BotOnboardingWizard({
             ) : (
               <div>
                 <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">Bot</label>
-                <select
+                <UiSelect
                   value={existingId}
                   onChange={(e) => setExistingId(e.target.value)}
-                  className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {bots.map((b) => (
                     <option key={b.bot_id} value={b.bot_id}>
                       {b.display_name || b.username} (@{b.username})
                     </option>
                   ))}
-                </select>
+                </UiSelect>
               </div>
             )}
 
@@ -439,10 +442,10 @@ export function BotOnboardingWizard({
               <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide block mb-1">
                 Agent type
               </label>
-              <select
+              <UiSelect
                 value={agentType}
                 onChange={(e) => setAgentType(e.target.value)}
-                className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {agentCatalog.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -450,7 +453,7 @@ export function BotOnboardingWizard({
                     {a.source.startsWith("registry-") ? " (registry)" : ""}
                   </option>
                 ))}
-              </select>
+              </UiSelect>
             </div>
 
             <div className="flex justify-end items-center gap-2">
@@ -503,13 +506,13 @@ export function BotOnboardingWizard({
               />
             </div>
             <div className="flex justify-start">
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => setStep(0)}
                 className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
-              </button>
+              </UiButton>
             </div>
           </div>
         )}
@@ -536,7 +539,7 @@ export function BotOnboardingWizard({
             )}
             <ConnectionWatch botId={bot.bot_id} username={bot.username} />
             <div className="flex items-center justify-between">
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => {
                   setStep(1);
@@ -545,7 +548,7 @@ export function BotOnboardingWizard({
                 className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Modes
-              </button>
+              </UiButton>
               <Button
                 onClick={() => {
                   onDone();
@@ -596,19 +599,19 @@ function ConnectionWatch({ botId, username }: { botId: string; username: string 
 
   if (online === null) {
     return (
-      <p className="flex items-center gap-2 rounded-lg bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
+      <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Checking whether @{username} is connected…
       </p>
     );
   }
   return online ? (
-    <p className="flex items-center gap-2 rounded-lg bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300">
+    <p className="flex items-center gap-2 rounded-sm bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300">
       <CheckCircle2 className="w-3.5 h-3.5" />
       @{username} is online — the connector reached the gateway. You're done.
     </p>
   ) : (
-    <p className="flex items-center gap-2 rounded-lg bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
+    <p className="flex items-center gap-2 rounded-sm bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400">
       <Loader2 className="w-3.5 h-3.5 animate-spin" />
       Waiting for @{username} to connect — finish the steps above on the agent's
       machine. This updates on its own.
@@ -632,27 +635,27 @@ function ModeCard({
   disabled?: boolean;
 }) {
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex items-start gap-3 rounded-xl bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:hover:bg-zinc-800/60"
+      className="flex items-start gap-3 rounded-sm bg-zinc-800/60 p-3 text-left hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:hover:bg-zinc-800/60"
     >
-      <div className="w-9 h-9 rounded-lg bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
+      <div className="w-9 h-9 rounded-sm bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
         {icon}
       </div>
       <div className="min-w-0">
         <p className="text-sm font-medium text-zinc-100 flex items-center gap-2">
           {title}
           {badge && (
-            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+            <span className="rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
               {badge}
             </span>
           )}
         </p>
         <p className="text-xs text-zinc-400 mt-0.5">{desc}</p>
       </div>
-    </button>
+    </UiButton>
   );
 }
 
@@ -685,32 +688,32 @@ function ManualPanel({
       </p>
 
       {/* 1. config */}
-      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             1. Connector config
           </span>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={onGenConfig}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
+            controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-3 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-40"
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             {config ? "Regenerate" : "Generate config"}
-          </button>
+          </UiButton>
         </div>
         {config && (
           <>
             <ReachabilityNote reachability={config.reachability} />
-            <div className="rounded-lg bg-zinc-950 p-3 max-h-48 overflow-y-auto">
+            <div className="rounded-sm bg-zinc-950 p-3 max-h-48 overflow-y-auto">
               <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
                 {config.config_toml}
               </pre>
             </div>
             <div className="flex items-center gap-3">
               <CopyBtn value={config.config_toml} label="Copy config" />
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() =>
                   download(
@@ -721,7 +724,7 @@ function ManualPanel({
                 className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200"
               >
                 <Download className="w-3.5 h-3.5" /> Download
-              </button>
+              </UiButton>
               <span className="text-xs text-zinc-400">
                 save as <code className="text-zinc-400">{configFile}</code>
               </span>
@@ -731,7 +734,7 @@ function ManualPanel({
       </div>
 
       {/* 2. token */}
-      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             2. One-time token
@@ -746,7 +749,7 @@ function ManualPanel({
             <p className="text-xs text-amber-400">
               {token.note ?? "Shown once. Rotating replaces any previous token."}
             </p>
-            <div className="rounded-lg bg-zinc-950 p-3">
+            <div className="rounded-sm bg-zinc-950 p-3">
               <code className="text-xs text-emerald-300 break-all">
                 {token.token}
               </code>
@@ -762,9 +765,9 @@ function ManualPanel({
       </div>
 
       {/* 3. run */}
-      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <span className="text-xs font-semibold text-zinc-300">3. Start it</span>
-        <div className="rounded-lg bg-zinc-950 p-3">
+        <div className="rounded-sm bg-zinc-950 p-3">
           <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
 {`mkdir -p ~/.cheers/workspace ~/.cheers/secrets
 # (save the config + token from above into the paths shown)
@@ -779,7 +782,7 @@ cce-acp-connector status --name ${accountId}`}
             default <code className="text-zinc-400">inject_cheers</code> resolves the MCP companion
             next to the connector):
           </p>
-          <div className="rounded-lg bg-zinc-950 p-3">
+          <div className="rounded-sm bg-zinc-950 p-3">
             <pre className="text-[11px] leading-relaxed text-zinc-400 whitespace-pre-wrap break-all">
               {CONNECTOR_DOWNLOAD_CMD}
             </pre>
@@ -867,21 +870,21 @@ function ScriptPanel({
         connector so it restarts on its own after a reboot.
       </p>
 
-      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             1. Mint a one-time code
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                className="inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
-              </button>
+              </UiButton>
             )}
             <Button size="sm" onClick={mint} disabled={busy}>
               {busy ? (
@@ -902,17 +905,17 @@ function ScriptPanel({
       </div>
 
       {code && (
-        <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+        <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
           <span className="text-xs font-semibold text-zinc-300">
             2. Run on the agent's machine
           </span>
-          <div className="rounded-lg bg-zinc-950 p-3">
+          <div className="rounded-sm bg-zinc-950 p-3">
             <pre className="text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all">
               {command}
             </pre>
           </div>
           {needsApiKeyHint && (
-            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 space-y-1.5">
+            <div className="rounded-sm bg-amber-500/5 px-2.5 py-2 space-y-1.5">
               <p className="text-[11px] leading-relaxed text-amber-200/90">
                 Headless API-key auth: export{" "}
                 <code className="text-amber-100">{apiKeyVar}</code> in the{" "}
@@ -1015,21 +1018,21 @@ function AgentPanel({
         </p>
       )}
 
-      <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+      <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-zinc-300">
             1. Mint a one-time code
           </span>
           <div className="flex items-center gap-2">
             {code && (
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={revoke}
                 disabled={busy}
-                className="inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800 px-2.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Revoke
-              </button>
+              </UiButton>
             )}
             <Button size="sm" onClick={mint} disabled={busy}>
               {busy ? (
@@ -1049,11 +1052,11 @@ function AgentPanel({
       </div>
 
       {code && guidance && (
-        <div className="rounded-xl bg-zinc-800/40 p-3 space-y-2">
+        <div className="rounded-sm bg-zinc-800/40 p-3 space-y-2">
           <span className="text-xs font-semibold text-zinc-300">
             2. Paste this to your agent
           </span>
-          <div className="rounded-lg bg-zinc-950 p-3 max-h-56 overflow-y-auto">
+          <div className="rounded-sm bg-zinc-950 p-3 max-h-56 overflow-y-auto">
             <pre className="text-[11px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
               {prompt}
             </pre>

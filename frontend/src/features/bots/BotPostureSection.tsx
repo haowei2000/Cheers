@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import {
@@ -69,15 +72,15 @@ export function BotPostureSection({ botId }: { botId: string }) {
   return (
     <div className="space-y-3">
       {posture && (
-        <div className="rounded-xl bg-zinc-950/40 p-3">
+        <div className="rounded-sm bg-zinc-950/40 p-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-zinc-300">Agent posture</span>
             {posture.allowed_modes.length > 0 ? (
-              <select
+              <UiSelect
                 value={posture.permission_mode ?? ""}
                 disabled={busy}
                 onChange={(e) => changePosture(e.target.value)}
-                className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="rounded-sm bg-zinc-800 px-2 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               >
                 {posture.permission_mode == null && <option value="">(unset)</option>}
                 {posture.allowed_modes.map((m) => (
@@ -85,7 +88,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
                     {m}
                   </option>
                 ))}
-              </select>
+              </UiSelect>
             ) : (
               <span className="text-[11px] text-zinc-400">
                 {posture.agent_type} advertises its own modes — no preset envelope
@@ -113,7 +116,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
       )}
 
       {/* Session config options (model / reasoning level / …) the agent advertised. */}
-      <div className="rounded-xl bg-zinc-950/40 p-3">
+      <div className="rounded-sm bg-zinc-950/40 p-3">
         <p className="text-xs font-medium text-zinc-300">Session config options</p>
         {configOptions && configOptions.advertised.length > 0 ? (
           <div className="mt-2 space-y-2">
@@ -122,18 +125,18 @@ export function BotPostureSection({ botId }: { botId: string }) {
               return (
                 <div key={opt.id} className="flex items-center gap-2 flex-wrap">
                   <span className="text-[11px] text-zinc-400 min-w-[90px]">{opt.name}</span>
-                  <select
+                  <UiSelect
                     value={current}
                     disabled={busy}
                     onChange={(e) => changeConfigOption(opt.id, e.target.value)}
-                    className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                    controlSize="regular" className="rounded-sm bg-zinc-800 px-2 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                   >
                     {opt.options.map((v) => (
                       <option key={v.value} value={v.value}>
                         {v.name}
                       </option>
                     ))}
-                  </select>
+                  </UiSelect>
                   {configOptions.desired[opt.id] != null && (
                     <span className="text-[10px] text-indigo-400">override</span>
                   )}
@@ -169,29 +172,29 @@ export function BotPostureSection({ botId }: { botId: string }) {
               </div>
             )}
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-              <input
+              <UiInput
                 value={manualConfigId}
                 disabled={busy}
                 onChange={(e) => setManualConfigId(e.target.value)}
                 placeholder="config id"
-                className="min-w-0 rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="min-w-0 rounded-sm bg-zinc-800 px-2 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               />
-              <input
+              <UiInput
                 value={manualConfigValue}
                 disabled={busy}
                 onChange={(e) => setManualConfigValue(e.target.value)}
                 placeholder="value"
-                className="min-w-0 rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                controlSize="regular" className="min-w-0 rounded-sm bg-zinc-800 px-2 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               />
-              <button
+              <UiButton variant="plain"
                 type="button"
                 disabled={busy || !manualConfigId.trim() || !manualConfigValue.trim()}
                 onClick={submitManualConfig}
                 title="Apply this config override"
-                className="rounded-md bg-indigo-500/15 px-3 py-1 text-xs text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                controlSize="regular" className="rounded-sm bg-indigo-500/15 px-3 text-xs text-indigo-200 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Set
-              </button>
+              </UiButton>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
               This agent has not advertised selectable options. Manual overrides are still

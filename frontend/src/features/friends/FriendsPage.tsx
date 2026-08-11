@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -54,13 +56,13 @@ export default function FriendsPage() {
   return (
     <div className="h-full bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="flex items-center gap-3 px-4 h-14 border-b border-zinc-800 flex-shrink-0">
-        <button
+        <UiButton variant="plain"
           onClick={() => navigate("/chat")}
           title="Back to chat"
-          className="w-8 h-8 max-md:w-11 max-md:h-11 max-md:-ml-2 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+          square controlSize="regular" className=" max-md: max-md:-ml-2 rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex items-center justify-center transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </UiButton>
         <h1 className="text-lg font-semibold">Friends</h1>
       </header>
 
@@ -109,19 +111,19 @@ function TabBtn({
   children: ReactNode;
 }) {
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       aria-current={active ? "page" : undefined}
       onClick={onClick}
-      className={cn(
-        "px-3 py-2 max-md:py-2.5 text-sm border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
-        active
-          ? "border-indigo-500 text-zinc-100"
-          : "border-transparent text-zinc-400 hover:text-zinc-200"
-      )}
+      controlSize="regular" className={cn(
+ "px-3 max-md: text-sm border-b-2 -mb-px transition-colors flex items-center shrink-0 whitespace-nowrap",
+ active
+ ? "border-indigo-500 text-zinc-100"
+ : "border-transparent text-zinc-400 hover:text-zinc-200"
+ )}
     >
       {children}
-    </button>
+    </UiButton>
   );
 }
 
@@ -340,7 +342,7 @@ function AddTab() {
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
           <Fingerprint className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
-          <input
+          <UiInput
             value={id}
             onChange={(e) => {
               setId(e.target.value);
@@ -349,7 +351,7 @@ function AddTab() {
             onKeyDown={(e) => e.key === "Enter" && !isComposing(e) && lookup()}
             placeholder="Paste a user ID (e.g. b3dbce7e-1f94-…)"
             // text-base (16px) below md prevents iOS Safari's auto-zoom on focus.
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
+            controlSize="regular" className="w-full pl-9 pr-3 rounded-sm bg-zinc-900 text-base md:text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-mono"
           />
         </div>
         <Button onClick={lookup} disabled={busy || !id.trim()}>
@@ -428,12 +430,12 @@ function BlockedTab() {
           id={u.user_id}
           avatar={u.avatar_url}
         >
-          <button
+          <UiButton variant="plain"
             onClick={() => unblock(u)}
-            className="text-xs px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+            controlSize="regular" className="text-xs px-2.5 rounded-sm bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
           >
             Unblock
-          </button>
+          </UiButton>
         </Row>
       ))}
     </div>
@@ -484,7 +486,7 @@ function IconBtn({
       onClick={onClick}
       tone={primary ? "success" : danger ? "danger" : "neutral"}
       controlSize="compact"
-      className="rounded-md"
+      className="rounded-sm"
     >
       {children}
     </IconButton>

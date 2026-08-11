@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -43,7 +44,7 @@ import type { BotItem, Channel } from "@/types";
 export function CopyButton({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       onClick={async () => {
         try {
@@ -60,7 +61,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
     >
       {done ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
       {label ?? (done ? "Copied" : "Copy")}
-    </button>
+    </UiButton>
   );
 }
 
@@ -133,7 +134,7 @@ export function BotDetailPanel({
   const name = bot.display_name || bot.username;
 
   return (
-    <div className="rounded-xl bg-zinc-900">
+    <div className="rounded-sm bg-zinc-900">
       {/* Identity header — the avatar is the upload entry (managers); presence dot
           per §2.7 sits on it, with the online/offline pill carrying the text. */}
       <div className="flex items-center gap-3 p-4 border-b border-zinc-800">
@@ -192,20 +193,20 @@ export function BotDetailPanel({
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
           return (
-            <button
+            <UiButton variant="plain"
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
-                active
-                  ? "border-indigo-500 text-zinc-100"
-                  : "border-transparent text-zinc-400 hover:text-zinc-200"
-              )}
+              controlSize="regular" className={cn(
+ "inline-flex items-center gap-1.5 px-3 text-xs font-medium border-b-2 -mb-px transition-colors",
+ active
+ ? "border-indigo-500 text-zinc-100"
+ : "border-transparent text-zinc-400 hover:text-zinc-200"
+ )}
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
-            </button>
+            </UiButton>
           );
         })}
       </div>
@@ -328,7 +329,7 @@ function BotOverview({
       <section className="space-y-3">
         <SectionHead>Details</SectionHead>
         <MetaRow label="Bot ID">
-          <code className="flex-1 truncate rounded bg-zinc-800 px-2 py-1 text-zinc-400">
+          <code className="flex-1 truncate rounded-sm bg-zinc-800 px-2 py-1 text-zinc-400">
             {bot.bot_id}
           </code>
           <CopyButton value={bot.bot_id} label="" />
@@ -348,7 +349,7 @@ function BotOverview({
             value={channelId}
             onChange={(e) => setChannelId(e.target.value)}
             aria-label="Add bot to channel"
-            className="h-8 min-w-0 flex-1 text-xs"
+            controlSize="regular" className=" min-w-0 flex-1 text-xs"
           >
             <option value="">Add to channel…</option>
             {channels.map((c) => (
@@ -378,34 +379,34 @@ function BotOverview({
                     : "Disconnects the connector; the bot goes offline until re-enabled."
                 }
               >
-                <button
+                <UiButton variant="plain"
                   type="button"
                   onClick={toggleDisabled}
                   disabled={toggling}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors disabled:opacity-40",
-                    bot.is_disabled
-                      ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
-                      : "bg-red-950/40 text-red-300 hover:bg-red-950/70"
-                  )}
+                  controlSize="regular" className={cn(
+ "inline-flex items-center gap-1.5 rounded-sm px-3 text-xs transition-colors disabled:opacity-40",
+ bot.is_disabled
+ ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+ : "bg-red-950/40 text-red-300 hover:bg-red-950/70"
+ )}
                 >
                   {bot.is_disabled ? <Power className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
                   {bot.is_disabled ? "Enable bot" : "Disable bot"}
-                </button>
+                </UiButton>
               </Tip>
               <Tip
                 align="end"
                 content="Removes it from all channels — asks you to confirm first. This can't be undone."
               >
-                <button
+                <UiButton variant="plain"
                   type="button"
                   onClick={remove}
                   disabled={toggling}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-950/40 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
+                  controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-red-950/40 px-3 text-xs text-red-300 hover:bg-red-950/70 disabled:opacity-40 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete…
-                </button>
+                </UiButton>
               </Tip>
             </div>
           </section>
@@ -611,9 +612,10 @@ function BotStatusEditor({
         />
       </Field>
 
-      <div className="rounded-xl border border-zinc-800 p-4 space-y-3">
+      <div className="rounded-sm bg-zinc-900/35 p-4 space-y-3">
         <label className="flex items-center gap-2 text-sm text-zinc-200">
-          <input type="checkbox" checked={externalProcessor} onChange={(e) => setExternalProcessor(e.target.checked)} className="accent-indigo-500" />
+          {/* design-system-native: checkbox */}
+<input type="checkbox" checked={externalProcessor} onChange={(e) => setExternalProcessor(e.target.checked)} className="accent-indigo-500" />
           Sends channel data to an external AI provider
         </label>
         {externalProcessor && (
@@ -630,7 +632,8 @@ function BotStatusEditor({
       {/* Auto-refresh — one row. The how/why is hover help; the prompt is a dialog. */}
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-sm text-zinc-300">
-          <input
+          {/* design-system-native: checkbox */}
+<input
             type="checkbox"
             checked={auto}
             onChange={(e) => setAuto(e.target.checked)}

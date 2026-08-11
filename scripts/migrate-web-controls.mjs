@@ -20,7 +20,11 @@ const imports = {
 function normalizedControlSource(source, path) {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const edits = [];
-  const controlTags = new Set(["UiButton", "UiInput", "UiSelect", "UiTextarea"]);
+  const controlTags = new Set([
+    "UiButton", "UiInput", "UiSelect", "UiTextarea",
+    "Button", "IconButton", "Input", "Select", "Textarea",
+    "MenuOption", "TabOption",
+  ]);
 
   const visit = (node) => {
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
@@ -56,7 +60,7 @@ function normalizedControlSource(source, path) {
             if (!node.attributes.properties.some((property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "controlSize")) {
               edits.push({ start: classAttr.getStart(sourceFile), end: classAttr.getStart(sourceFile), text: `controlSize="${size}" ` });
             }
-            if (square && tag === "UiButton" && !node.attributes.properties.some((property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "square")) {
+            if (square && (tag === "UiButton" || tag === "Button") && !node.attributes.properties.some((property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === "square")) {
               edits.push({ start: classAttr.getStart(sourceFile), end: classAttr.getStart(sourceFile), text: "square " });
             }
           }
@@ -83,10 +87,12 @@ for (const path of paths) {
     required.add("UiButton");
   }
 
-  source = source.replace(/<input\b[\s\S]*?\/>/g, (node) => {
+  source = source.replace(/<input\b[\s\S]*?\/>/g, (node, offset) => {
     if (/\btype\s*=\s*["'](?:checkbox|file)["']/.test(node)) {
       const reason = /\btype\s*=\s*["']file["']/.test(node) ? "file-input" : "checkbox";
-      return `{/* design-system-native: ${reason} */}\n${node}`;
+      const marker = `design-system-native: ${reason}`;
+      if (source.slice(Math.max(0, offset - 240), offset).includes(marker)) return node;
+      return `{/* ${marker} */}\n${node}`;
     }
     required.add("UiInput");
     return node.replace(/^<input\b/, "<UiInput");

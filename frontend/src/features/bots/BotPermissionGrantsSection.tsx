@@ -1,3 +1,5 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Select as UiSelect } from "@/components/ui/select";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { X, Plus } from "lucide-react";
@@ -147,7 +149,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   }
 
   return (
-    <div className="rounded-xl bg-zinc-950/40 p-3 space-y-3">
+    <div className="rounded-sm bg-zinc-950/40 p-3 space-y-3">
       <div className="flex items-center gap-2">
         <div>
           <p className="text-xs font-medium text-zinc-300">Permission grants</p>
@@ -159,14 +161,14 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           </p>
         </div>
         {!creating && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => setCreating(true)}
-            className="ml-auto inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-500"
+            controlSize="regular" className="ml-auto inline-flex items-center gap-1 rounded-sm bg-indigo-600 px-2.5 text-[11px] font-medium text-white hover:bg-indigo-500"
           >
             <Plus className="w-3.5 h-3.5" />
             New grant
-          </button>
+          </UiButton>
         )}
       </div>
 
@@ -174,7 +176,7 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           bot-wide scope, so members-can-cancel-by-default etc. is visible, not just
           the explicit overrides below. */}
       {access.effective && access.effective.length > 0 && (
-        <div className="overflow-hidden rounded-lg ">
+        <div className="overflow-hidden rounded-sm ">
           <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-900/40">
             <p className="text-[11px] font-medium text-zinc-300">Effective defaults · Bot-wide</p>
             <span className="text-[10px] text-zinc-400">
@@ -287,13 +289,13 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
 
       {/* New-grant form */}
       {creating && (
-        <div className="rounded-lg bg-indigo-950/30 p-2.5 space-y-2">
+        <div className="rounded-sm bg-indigo-950/30 p-2.5 space-y-2">
           <div className="text-[10px] uppercase tracking-wide text-zinc-400">New grant</div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <select
+            <UiSelect
               value={perm}
               onChange={(e) => setPerm(e.target.value)}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="">permission…</option>
               {CAP_ORDER.map((cap) => {
@@ -313,25 +315,25 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                   </optgroup>
                 );
               })}
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={scope}
               onChange={(e) => {
                 setScope(e.target.value);
                 setSubject("");
               }}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               {scopeOptions.map((o) => (
                 <option key={o.val} value={o.val}>
                   {o.label}
                 </option>
               ))}
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="">domain…</option>
               <optgroup label="Roles">
@@ -355,20 +357,20 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                   </option>
                 ))}
               </optgroup>
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={decision}
               onChange={(e) => setDecision(e.target.value as "allow" | "deny")}
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="allow">allow</option>
               <option value="deny">deny</option>
-            </select>
-            <select
+            </UiSelect>
+            <UiSelect
               value={expiry}
               onChange={(e) => setExpiry(e.target.value)}
               title="Time-box the rule: past the expiry it stops applying (listed as expired until deleted)"
-              className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-300"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
             >
               <option value="">permanent</option>
               <option value="3600">for 1 hour</option>
@@ -376,8 +378,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               <option value="86400">for 1 day</option>
               <option value="604800">for 7 days</option>
               <option value="2592000">for 30 days</option>
-            </select>
-            <button
+            </UiSelect>
+            <UiButton variant="plain"
               type="button"
               disabled={!perm || !subject || busy !== null}
               onClick={() =>
@@ -398,17 +400,17 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
                   resetDraft();
                 })
               }
-              className="rounded-md bg-indigo-600 px-2 py-0.5 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-40"
+              controlSize="regular" className="rounded-sm bg-indigo-600 px-2 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-40"
             >
               Create
-            </button>
-            <button
+            </UiButton>
+            <UiButton variant="plain"
               type="button"
               onClick={resetDraft}
-              className="rounded-md bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+              controlSize="regular" className="rounded-sm bg-zinc-800 px-2 text-[11px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
             >
               Cancel
-            </button>
+            </UiButton>
           </div>
           {perm &&
             (() => {
@@ -437,14 +439,14 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               title={`${grantLabel(r.capability, r.event_class).label} → ${subjectLabel(r)}`}
               subtitle={`${r.subject_kind} · ${scopeLabel(r.channel_id)}`}
               leading={<span
-                className={`rounded px-1 py-0.5 text-[10px] border ${CAP_BADGE[r.capability]}`}
+                className={`rounded-sm px-1 py-0.5 text-[10px] ${CAP_BADGE[r.capability]}`}
                 title={`${r.capability} — ${CAPABILITY_LABEL[r.capability].desc}`}
               >
                 {CAPABILITY_LABEL[r.capability].label}
               </span>}
               criticalStatus={r.expired ? (
                 <span
-                  className="rounded px-1 py-0.5 text-[10px] text-zinc-400"
+                  className="rounded-sm px-1 py-0.5 text-[10px] text-zinc-400"
                   title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
                 >
                   expired
@@ -452,13 +454,13 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
               ) : undefined}
               metadata={r.expires_at && !r.expired ? `until ${new Date(r.expires_at).toLocaleString()}` : undefined}
               status={<span className={r.decision === "allow" ? "text-emerald-300" : "text-red-300"}>{r.decision}</span>}
-              actions={<button
+              actions={<UiButton variant="plain"
                 type="button"
                 title="Revoke this grant"
                 disabled={busy !== null}
                 onClick={() => run(`rm:${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_id}`, () => deleteEventRule(botId, { channel_id: r.channel_id || undefined, subject_kind: r.subject_kind, subject_id: r.subject_id, event_class: r.event_class, capability: r.capability }))}
                 className="text-zinc-500 hover:text-red-300 disabled:opacity-40"
-              ><X className="w-3.5 h-3.5" /></button>}
+              ><X className="w-3.5 h-3.5" /></UiButton>}
               presentationLevel="max"
               className="border-0"
             />
