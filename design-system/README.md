@@ -39,7 +39,7 @@ Typography has exactly three semantic roles:
   introductions, hero copy, and major headings;
 - `reading`: Source Serif 4 Text/Regular or Semibold (`opsz` 14 on Web) plus
   Source Han Serif CN Regular/Semibold for Chinese
-  message copy, previews, and long-form content at a 15px/17pt-equivalent size
+  message copy, previews, and long-form content at a compact 14px Web / 16pt iOS / 15sp Android base size
   and approximately 1.55 line height;
 - `utility`: Source Sans 3 on Web and the native platform sans face on iOS and
   Android for entity names, navigation labels, controls, trace labels,
