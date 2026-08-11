@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { listChannelFiles } from "@/api/files";
@@ -70,23 +71,23 @@ export function ExistingFilePicker({
             const isSel = selected.has(f.file_id);
             const checked = isAttached || isSel;
             return (
-              <button
+              <UiButton variant="plain"
                 key={f.file_id}
                 type="button"
                 disabled={isAttached}
                 onClick={() => toggle(f.file_id)}
-                className={
-                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors " +
-                  (isAttached
-                    ? "opacity-50 cursor-not-allowed"
-                    : isSel
-                      ? "bg-indigo-600/15"
-                      : "hover:bg-zinc-800/60")
-                }
+                controlSize="regular" className={
+ "flex w-full items-center gap-2.5 rounded-sm px-2.5 text-left transition-colors " +
+ (isAttached
+ ? "opacity-50 cursor-not-allowed"
+ : isSel
+ ? "bg-indigo-600/15"
+ : "hover:bg-zinc-800/60")
+ }
               >
                 <span
                   className={
-                    "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border " +
+                    "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border " +
                     (checked ? "border-indigo-500 bg-indigo-600 text-white" : "border-zinc-600")
                   }
                 >
@@ -103,7 +104,7 @@ export function ExistingFilePicker({
                   <span className="text-xs text-zinc-400">{formatBytes(f.size_bytes)}</span>
                 )}
                 {isAttached && <span className="text-[10px] text-zinc-400">Added</span>}
-              </button>
+              </UiButton>
             );
           })}
         </div>

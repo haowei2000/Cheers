@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { MessageCircle, MessagesSquare } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ConversationMode } from "./conversationMode";
@@ -39,20 +40,20 @@ export function ConversationModePicker({
         const selected = value === option.value;
         const Icon = option.icon;
         return (
-          <button
+          <UiButton variant="plain"
             key={option.value}
             type="button"
             disabled={disabled}
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
-            className={cn(
-              "min-h-16 rounded-xl border px-3 py-2.5 text-left transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-              selected
-                ? "border-indigo-500 bg-indigo-500/10 text-zinc-100"
-                : "border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800/60",
-              disabled && "cursor-not-allowed opacity-50",
-            )}
+            controlSize="comfortable" className={cn(
+ " rounded-sm border px-3 text-left transition-colors",
+ "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+ selected
+ ? "border-indigo-500 bg-indigo-500/10 text-zinc-100"
+ : "border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800/60",
+ disabled && "cursor-not-allowed opacity-50",
+ )}
           >
             <span className="flex items-center gap-2 text-sm font-semibold">
               <Icon className={cn("h-4 w-4", selected ? "text-indigo-300" : "text-zinc-500")} />
@@ -61,7 +62,7 @@ export function ConversationModePicker({
             <span className="mt-1 block text-xs leading-5 text-zinc-400">
               {option.description}
             </span>
-          </button>
+          </UiButton>
         );
       })}
     </div>

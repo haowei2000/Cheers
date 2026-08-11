@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Trash2, UserPlus, X, LogOut } from "lucide-react";
@@ -175,7 +178,7 @@ export function WorkspaceSettingsDialog({
     <Dialog title={`Workspace settings · ${workspace.name}`} onClose={onClose} maxWidth="max-w-lg">
       <div className="space-y-5">
         {!canManage && (
-          <p className="text-xs text-amber-400/80 bg-amber-950/30 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-400/80 bg-amber-950/30 rounded-sm px-3 py-2">
             You are not an admin of this workspace, so you can only view its name.
           </p>
         )}
@@ -183,11 +186,11 @@ export function WorkspaceSettingsDialog({
         <div className="space-y-2">
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Name</label>
           <div className="flex gap-2">
-            <input
+            <UiInput
               value={name}
               disabled={!canManage}
               onChange={(e) => setName(e.target.value)}
-              className="flex-1 rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              controlSize="regular" className="flex-1 rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             />
             {canManage && (
               <Button size="sm" loading={savingMeta} onClick={() => void saveMeta()}>
@@ -211,20 +214,20 @@ export function WorkspaceSettingsDialog({
                     leading={<Avatar name={m.display_name || m.username} id={m.user_id} size="sm" />}
                     criticalStatus={m.status === "pending" ? <span className="text-[10px] text-amber-400">Pending</span> : undefined}
                     actions={<>{m.user_id !== me?.user_id ? (
-                        <select
+                        <UiSelect
                           value={m.role}
                           onChange={(e) => void changeRole(m, e.target.value)}
-                          className="mt-0.5 bg-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          controlSize="regular" className="mt-0.5 bg-zinc-800 rounded-sm px-1 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                           {ROLES.map((r) => (
                             <option key={r} value={r}>
                               {r}
                             </option>
                           ))}
-                        </select>
+                        </UiSelect>
                       ) : null}
                     {m.user_id !== me?.user_id && m.role !== "owner" && (
-                      <button
+                      <UiButton variant="plain"
                         onClick={() =>
                           setConfirmState({
                             title: "Remove member",
@@ -235,10 +238,10 @@ export function WorkspaceSettingsDialog({
                         }
                         title={`Remove ${m.display_name || m.username}`}
                         aria-label={`Remove ${m.display_name || m.username}`}
-                        className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded p-1"
+                        className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded-sm p-1"
                       >
                         <X className="w-4 h-4" />
-                      </button>
+                      </UiButton>
                     )}
                     </>}
                     className="border-0 bg-zinc-950/40"
@@ -250,28 +253,28 @@ export function WorkspaceSettingsDialog({
               </ItemList>
 
               <div className="relative">
-                <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+                <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
                   <UserPlus className="w-4 h-4 text-zinc-500" />
-                  <input
+                  <UiInput
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search friends, or exact username / email…"
                     className="flex-1 bg-transparent text-sm text-zinc-200 outline-none"
                   />
-                  <select
+                  <UiSelect
                     value={role}
                     onChange={(e) => setRole(e.target.value as (typeof ROLES)[number])}
-                    className="bg-zinc-800 rounded px-1.5 py-1 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    controlSize="regular" className="bg-zinc-800 rounded-sm px-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>
                         {r}
                       </option>
                     ))}
-                  </select>
+                  </UiSelect>
                 </div>
                 {(results.length > 0 || searching || query.trim().length >= 2) && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
+                  <div className="absolute z-10 mt-1 w-full rounded-sm bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
                     {searching && (
                       <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
                     )}
@@ -281,18 +284,18 @@ export function WorkspaceSettingsDialog({
                         title={u.display_name || u.username}
                         leading={<Avatar name={u.display_name || u.username} id={u.user_id} size="sm" />}
                         status={u.membership ? (
-                          <span className="text-[10px] text-zinc-400 rounded px-1 py-0.5">
+                          <span className="text-[10px] text-zinc-400 rounded-sm px-1 py-0.5">
                             {u.membership === "pending" ? "Invited" : "Member"}
                           </span>
                         ) : undefined}
                         actions={!u.membership ? (
-                          <button
+                          <UiButton variant="plain"
                             onClick={() => void invite(u)}
                             title="Send an invite the user must accept"
                             className="text-xs text-indigo-400 hover:text-indigo-300"
                           >
                             Invite
-                          </button>
+                          </UiButton>
                         ) : undefined}
                         className="border-0 px-3"
                       />

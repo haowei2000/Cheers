@@ -1,3 +1,6 @@
+import { Button as UiButton } from "@/components/ui/button";
+import { Input as UiInput } from "@/components/ui/input";
+import { Select as UiSelect } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Bot, Trash2, UserPlus, X, LogOut } from "lucide-react";
@@ -216,11 +219,11 @@ export function ChannelSettingsDialog({
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Name
           </label>
-          <input
+          <UiInput
             value={name}
             disabled={!canManage}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           {channel.type !== "dm" && (
             <div className="space-y-1.5 pt-1">
@@ -237,12 +240,12 @@ export function ChannelSettingsDialog({
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Purpose
           </label>
-          <input
+          <UiInput
             value={purpose}
             disabled={!canManage}
             placeholder="(Optional) what this channel is for…"
             onChange={(e) => setPurpose(e.target.value)}
-            className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           {canManage && (
             <div className="flex justify-end">
@@ -293,26 +296,26 @@ export function ChannelSettingsDialog({
                   m.status === "active" &&
                   (m.member_type === "user" || m.member_type === "bot") &&
                   m.member_id !== me?.user_id ? (
-                    <select
+                    <UiSelect
                       value={m.role ?? "member"}
                       onChange={(e) => void changeRole(m, e.target.value)}
-                      className="mt-0.5 bg-zinc-800 rounded px-1 py-0.5 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      controlSize="regular" className="mt-0.5 bg-zinc-800 rounded-sm px-1 text-[11px] text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       {(m.member_type === "bot" ? BOT_ROLES : CHANNEL_ROLES).map((r) => (
                         <option key={r} value={r}>
                           {ROLE_LABELS[r] ?? r}
                         </option>
                       ))}
-                    </select>
+                    </UiSelect>
                   ) : null}
                 {canManage && m.member_id !== me?.user_id && m.role !== "owner" && (
-                  <button
+                  <UiButton variant="plain"
                     onClick={() => void removeMember(m)}
                     title="Remove member"
-                    className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded p-1"
+                    className="text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded-sm p-1"
                   >
                     <X className="w-4 h-4" />
-                  </button>
+                  </UiButton>
                 )}
                 </>}
                 className="border-0 bg-zinc-950/40"
@@ -325,9 +328,9 @@ export function ChannelSettingsDialog({
 
           {canManage && (
             <div className="relative">
-              <div className="flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+              <div className="flex items-center gap-2 rounded-sm bg-zinc-950 px-3 py-2 focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
                 <UserPlus className="w-4 h-4 text-zinc-500" />
-                <input
+                <UiInput
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Invite workspace members or bots…"
@@ -335,7 +338,7 @@ export function ChannelSettingsDialog({
                 />
               </div>
               {(results.length > 0 || searching) && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
+                <div className="absolute z-10 mt-1 w-full rounded-sm bg-zinc-900 shadow-xl shadow-black/40 max-h-44 overflow-y-auto">
                   {searching && (
                     <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
                   )}

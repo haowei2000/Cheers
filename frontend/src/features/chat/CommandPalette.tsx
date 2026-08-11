@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 // ⑦ Command palette — the "/" picker for the composer, mirroring the "@" mention
 // picker's look and keyboard model. Commands are advertised by the channel's bots
 // (ACP `available_commands_update`, surfaced via `channel.commands.read`), so both
@@ -33,7 +34,7 @@ interface Props {
  */
 export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Props) {
   return (
-    <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-20">
+    <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-sm bg-zinc-900 shadow-xl shadow-black/40 z-20">
       {commands.map((c, i) => (
         <Fragment key={`${c.botId}/${c.name}`}>
           {grouped && (i === 0 || commands[i - 1].botId !== c.botId) && (
@@ -41,17 +42,17 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
               {c.botLabel}
             </div>
           )}
-          <button
+          <UiButton variant="plain"
             onMouseDown={(e) => {
               e.preventDefault();
               onSelect(c);
             }}
-            className={cn(
-              "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
-              i === activeIndex
-                ? "bg-indigo-600/30 text-zinc-100"
-                : "text-zinc-300 hover:bg-zinc-800"
-            )}
+            controlSize="regular" className={cn(
+ "flex w-full items-center gap-2 px-3 text-left text-sm",
+ i === activeIndex
+ ? "bg-indigo-600/30 text-zinc-100"
+ : "text-zinc-300 hover:bg-zinc-800"
+ )}
           >
             <Terminal className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <span className="font-medium font-mono">/{c.name}</span>
@@ -61,11 +62,11 @@ export function CommandPalette({ commands, activeIndex, onSelect, grouped }: Pro
               </span>
             )}
             {!grouped && (
-              <span className="ml-auto text-[10px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 flex-shrink-0">
+              <span className="ml-auto text-[10px] px-1 py-0.5 rounded-sm bg-zinc-800 text-zinc-400 flex-shrink-0">
                 {c.botLabel}
               </span>
             )}
-          </button>
+          </UiButton>
         </Fragment>
       ))}
     </div>

@@ -15,6 +15,10 @@ const SHARED_CONTROLS = new Set([
   "MenuOption",
   "TabOption",
   "CheckboxField",
+  "UiButton",
+  "UiInput",
+  "UiSelect",
+  "UiTextarea",
 ]);
 const NON_STANDARD_RADIUS = new Set([
   "rounded",

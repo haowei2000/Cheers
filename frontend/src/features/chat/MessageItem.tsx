@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { memo, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import {
   Square,
@@ -131,7 +132,7 @@ function ActionBar({
   mentionLabel?: string;
 }) {
   const btn =
-    "flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
+    "flex h-8 w-8 items-center justify-center rounded-sm text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
   return (
     <FloatingLayer
       anchorRef={anchorRef}
@@ -142,12 +143,12 @@ function ActionBar({
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-0.5 rounded-lg border border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
+        "flex items-center gap-0.5 rounded-sm border border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
       {hasDetails && onOpenDetails && (
-        <button
+        <UiButton variant="plain"
           type="button"
           title="Open message record"
           aria-label="Open message record"
@@ -155,10 +156,10 @@ function ActionBar({
           onClick={(event) => onOpenDetails(event.currentTarget)}
         >
           <ListTree className="h-3.5 w-3.5" />
-        </button>
+        </UiButton>
       )}
       {canMention && actions.onMention && (
-        <button
+        <UiButton variant="plain"
           type="button"
           title={`Mention @${mentionLabel ?? "member"}`}
           aria-label={`Mention ${mentionLabel ?? "member"}`}
@@ -166,18 +167,18 @@ function ActionBar({
           onClick={() => actions.onMention?.(message)}
         >
           <AtSign className="h-3.5 w-3.5" />
-        </button>
+        </UiButton>
       )}
-      <button type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
+      <UiButton variant="plain" type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
         <MessageCircleMore className="w-3.5 h-3.5" />
-      </button>
-      <button type="button" title="Copy text" aria-label="Copy text" className={btn} onClick={() => void copyMessage(message)}>
+      </UiButton>
+      <UiButton variant="plain" type="button" title="Copy text" aria-label="Copy text" className={btn} onClick={() => void copyMessage(message)}>
         <Copy className="w-3.5 h-3.5" />
-      </button>
-      <button type="button" title="Forward" aria-label="Forward" className={btn} onClick={() => actions.onForward(message)}>
+      </UiButton>
+      <UiButton variant="plain" type="button" title="Forward" aria-label="Forward" className={btn} onClick={() => actions.onForward(message)}>
         <Forward className="w-3.5 h-3.5" />
-      </button>
-      <button
+      </UiButton>
+      <UiButton variant="plain"
         type="button"
         title="Select (multi-select)"
         aria-label="Select message"
@@ -185,7 +186,7 @@ function ActionBar({
         onClick={() => actions.onToggleSelect(message)}
       >
         <CheckSquare className="w-3.5 h-3.5" />
-      </button>
+      </UiButton>
     </FloatingLayer>
   );
 }
@@ -212,14 +213,14 @@ function SendStatus({
       <AlertCircle className="w-3 h-3 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => onRetry(message)}
           className="inline-flex items-center gap-0.5 font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
         >
           <RotateCw className="w-3 h-3" />
           Retry
-        </button>
+        </UiButton>
       )}
     </div>
   );
@@ -251,8 +252,8 @@ function ReplyPreview({
       className={cn(
         "mt-2 h-4 w-8 flex-shrink-0 border-t border-zinc-700/80",
         reversed
-          ? "ml-2 rounded-tr-lg border-r"
-          : "mr-2 rounded-tl-lg border-l",
+          ? "ml-2 rounded-tr-sm border-r"
+          : "mr-2 rounded-tl-sm border-l",
       )}
     />
   );
@@ -286,7 +287,7 @@ function ReplyPreview({
   };
 
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       disabled={!repliedTo}
       onClick={jumpToSource}
@@ -310,7 +311,7 @@ function ReplyPreview({
           {source}
         </>
       )}
-    </button>
+    </UiButton>
   );
 }
 
@@ -321,7 +322,7 @@ function SelectBox({ selected, className }: { selected: boolean; className?: str
   return (
     <span
       className={cn(
-        "flex items-center justify-center w-4 h-4 mt-1.5 rounded border flex-shrink-0",
+        "flex items-center justify-center w-4 h-4 mt-1.5 rounded-sm border flex-shrink-0",
         selected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600",
         className
       )}
@@ -605,18 +606,18 @@ export const MessageItem = memo(function MessageItem({
       placement="down"
       align={isOwnAlignedRight ? "end" : "start"}
       role="menu"
-      className="w-56 overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900 p-1.5 shadow-xl shadow-black/40"
+      className="w-56 overflow-hidden rounded-sm bg-zinc-900 p-1.5 shadow-xl shadow-black/40"
     >
-      <button
+      <UiButton variant="plain"
         type="button"
         role="menuitem"
         onClick={mentionSender}
-        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex w-full items-center gap-3 rounded-sm px-3 text-left text-sm text-indigo-300 transition-colors hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <AtSign className="h-4 w-4" />
         <span className="min-w-0 truncate">Mention @{name}</span>
-      </button>
-      <button
+      </UiButton>
+      <UiButton variant="plain"
         type="button"
         role="menuitem"
         onClick={() => {
@@ -624,11 +625,11 @@ export const MessageItem = memo(function MessageItem({
           setAvatarMenuOpen(false);
           if (anchor) openProfile(anchor);
         }}
-        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        controlSize="comfortable" className="flex w-full items-center gap-3 rounded-sm px-3 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
       >
         <UserRound className="h-4 w-4" />
         View profile
-      </button>
+      </UiButton>
     </FloatingLayer>
   ) : null;
   // Discuss already expresses the relationship through nesting and its connector
@@ -656,20 +657,20 @@ export const MessageItem = memo(function MessageItem({
   ].filter(Boolean).join(" · ");
   const folioCount = detailsMeta.traceCount + detailsMeta.contextCount;
   const folio = detailsMeta.hasDetails ? (
-    <button
+    <UiButton variant="plain"
       type="button"
       onClick={(event) => openInspector(event.currentTarget)}
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
-      className={cn(
-        "relative inline-flex h-5 min-w-5 items-center justify-center self-start px-0.5 font-mono text-[9px] tabular-nums tracking-[0.08em] text-zinc-600 transition-colors",
-        "after:absolute after:-inset-3 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
-        isOwnAlignedRight && "self-end",
-        detailsMeta.hasFailure && "text-red-400/70 hover:text-red-300",
-      )}
+      square controlSize="compact" className={cn(
+ "relative inline-flex items-center justify-center self-start px-0.5 font-mono text-[9px] tabular-nums tracking-[0.08em] text-zinc-600 transition-colors",
+ "after:absolute after:-inset-3 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+ isOwnAlignedRight && "self-end",
+ detailsMeta.hasFailure && "text-red-400/70 hover:text-red-300",
+ )}
     >
       {String(folioCount).padStart(2, "0")}
-    </button>
+    </UiButton>
   ) : null;
   const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
@@ -677,13 +678,13 @@ export const MessageItem = memo(function MessageItem({
         <div role="alert" className="flex min-h-8 items-center gap-1.5 text-[11px] text-red-400">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={(event) => openInspector(event.currentTarget)}
             className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
           >
             View record
-          </button>
+          </UiButton>
         </div>
       )}
       {tracePanel && <div className="mt-1 w-full min-w-0 text-left md:min-w-[18rem]">{tracePanel}</div>}
@@ -730,7 +731,7 @@ export const MessageItem = memo(function MessageItem({
         data-item-kind="conversation"
         data-presentation-level={presentationLevel}
         className={cn(
-          "group relative flex items-start gap-3 rounded-lg transition-colors hover:z-20 focus-within:z-20",
+          "group relative flex items-start gap-3 rounded-sm transition-colors hover:z-20 focus-within:z-20",
           nested
             ? "w-full bg-zinc-900/20 px-2.5 py-2 hover:bg-zinc-900/50 md:w-fit md:max-w-[56rem]"
             : "mx-2 px-3 py-1 hover:bg-zinc-900/45 md:mx-4 md:px-4",
@@ -758,10 +759,10 @@ export const MessageItem = memo(function MessageItem({
           </div>
         )}
         {nested && (
-          <button
+          <UiButton variant="plain"
             type="button"
             {...avatarInteractionProps}
-            className="mt-0.5 flex h-11 w-11 flex-shrink-0 touch-manipulation select-none items-center justify-center rounded-full transition-opacity hover:opacity-80"
+            square controlSize="comfortable" className="mt-0.5 flex flex-shrink-0 touch-manipulation select-none items-center justify-center rounded-full transition-opacity hover:opacity-80"
             title={canMention ? `View profile · double-click to mention @${name}` : "View profile"}
             aria-label={`View profile for ${name}`}
           >
@@ -771,7 +772,7 @@ export const MessageItem = memo(function MessageItem({
               id={message.sender_id}
               size="xs"
             />
-          </button>
+          </UiButton>
         )}
         {avatarMenu}
         {/* Tight gap: body ↔ status ↔ Agent steps within one message. */}
@@ -784,7 +785,7 @@ export const MessageItem = memo(function MessageItem({
         >
           {nested && (
             <div className="flex items-baseline gap-1.5">
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -793,9 +794,9 @@ export const MessageItem = memo(function MessageItem({
                 className="text-[11px] font-medium text-zinc-300 hover:underline truncate"
               >
                 {name}
-              </button>
+              </UiButton>
               {isBot && (
-                <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
+                <span className="text-[9px] px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
                   BOT
                 </span>
               )}
@@ -843,7 +844,7 @@ export const MessageItem = memo(function MessageItem({
       data-item-kind="conversation"
       data-presentation-level={presentationLevel}
       className={cn(
-        "group relative mx-2 flex items-start gap-3 rounded-xl px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
+        "group relative mx-2 flex items-start gap-3 rounded-sm px-3 py-2 transition-colors hover:z-20 hover:bg-zinc-900/45 focus-within:z-20 md:mx-4 md:px-4",
         isOwnAlignedRight && "flex-row-reverse",
         selectable && "cursor-pointer",
         selected && "bg-indigo-950/30 hover:bg-indigo-950/40",
@@ -860,14 +861,14 @@ export const MessageItem = memo(function MessageItem({
       )}
       {/* Chat puts compact identity metadata below the avatar; Discuss keeps its
           author header beside the avatar so the topic remains document-like. */}
-      <button
+      <UiButton variant="plain"
         type="button"
         {...avatarInteractionProps}
-        className={cn(
-          "mt-0.5 flex-shrink-0 touch-manipulation select-none rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
-          showChatIdentityUnderAvatar && "flex w-14 flex-col items-center gap-0.5",
-          !showChatIdentityUnderAvatar && "flex h-11 w-11 items-center justify-center",
-        )}
+        square controlSize="comfortable" className={cn(
+ "mt-0.5 flex-shrink-0 touch-manipulation select-none rounded-sm transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+ showChatIdentityUnderAvatar && "flex w-14 flex-col items-center gap-0.5",
+ !showChatIdentityUnderAvatar && "flex items-center justify-center",
+ )}
         title={
           canMention
             ? `View profile · double-click to mention @${name}`
@@ -900,7 +901,7 @@ export const MessageItem = memo(function MessageItem({
             </span>}
           </>
         )}
-      </button>
+      </UiButton>
       {avatarMenu}
 
       {/* Tight gap: header/body ↔ status ↔ Agent steps within one message. */}
@@ -914,16 +915,16 @@ export const MessageItem = memo(function MessageItem({
         {quote}
         {!showChatIdentityUnderAvatar && (
           <div className={cn("flex items-center gap-2", isOwnAlignedRight && "flex-row-reverse")}>
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={(e) => openProfile(e.currentTarget)}
               className="text-sm font-semibold text-zinc-100 hover:underline"
               title={hasName ? "View profile" : message.sender_id}
             >
               {name}
-            </button>
+            </UiButton>
             {isBot && (
-              <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
+              <span className="text-[10px] px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
                 BOT
               </span>
             )}
@@ -980,7 +981,7 @@ export const MessageItem = memo(function MessageItem({
 function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) {
   const [stopping, setStopping] = useState(false);
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       disabled={stopping}
       onClick={async () => {
@@ -990,12 +991,12 @@ function StopButton({ channelId, msgId }: { channelId: string; msgId: string }) 
         const ok = await stopTurn(channelId, msgId);
         if (!ok) setStopping(false);
       }}
-      className="inline-flex items-center gap-1 rounded-md bg-zinc-800/80 px-1.5 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+      controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/80 px-1.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
       title="Stop this turn — and any bot-to-bot chain it started"
     >
       <Square className="w-3 h-3" fill="currentColor" />
       {stopping ? "Stopping…" : "Stop"}
-    </button>
+    </UiButton>
   );
 }
 

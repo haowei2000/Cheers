@@ -95,6 +95,18 @@ const webAudit = auditSources(
   webAuditPolicy
 );
 for (const error of enforceAudit(webAudit, webAuditPolicy)) fail(`Web audit: ${error}`);
+if (process.exitCode) {
+  const exceededRules = new Set(
+    Object.entries(webAudit.violations)
+      .filter(([rule, count]) => count > (webAuditPolicy.violationCeilings?.[rule] ?? -1))
+      .map(([rule]) => rule)
+  );
+  for (const finding of webAudit.findings.filter(({ rule }) => exceededRules.has(rule)).slice(0, 100)) {
+    console.error(
+      `design-system: ${path.relative(root, finding.file)}:${finding.line} ${finding.rule} (${finding.token})`
+    );
+  }
+}
 
 const itemPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/item.tsx"), "utf8");
 const webControlSizeSource = await readFile(path.join(root, "frontend/src/components/ui/control-size.tsx"), "utf8");

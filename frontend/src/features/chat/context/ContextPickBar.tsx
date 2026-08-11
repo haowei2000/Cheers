@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useRef, useState } from "react";
 import {
   MessageSquarePlus,
@@ -79,7 +80,7 @@ export function MessageContextChips({
   if (isHandoff) {
     return (
       <div
-        className={`flex items-center flex-wrap gap-1.5 rounded-lg bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
+        className={`flex items-center flex-wrap gap-1.5 rounded-sm bg-indigo-600/10 px-2 py-1 ${className ?? ""}`}
       >
         <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-300">
           <CornerDownRight className="w-3 h-3" />
@@ -148,18 +149,18 @@ export function AttachContextButton({
     (s.byChannel[channelId] ?? []).some((i) => i.id === item.id)
   );
   return (
-    <button
+    <UiButton variant="plain"
       type="button"
       disabled={disabled || added}
       onClick={() => add(channelId, item)}
       title={disabled ? disabledTitle ?? "Unavailable" : added ? ADDED_TO_CONTEXT_TITLE : title}
       className={
         className ??
-        "rounded p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
+        "rounded-sm p-0.5 text-zinc-500 hover:text-indigo-300 disabled:opacity-40 disabled:hover:text-zinc-500"
       }
     >
       {added ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
-    </button>
+    </UiButton>
   );
 }
 
@@ -201,27 +202,27 @@ export function ContextPickBar({
         return (
           <span
             key={`sg:${sg.id}`}
-            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-zinc-700 pl-1 pr-1 py-0.5 text-[11px] text-zinc-500"
+            className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/50 pl-1 pr-1 py-0.5 text-[11px] text-zinc-500"
           >
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => add(channelId, sg)}
               title={`Suggested: add "${sg.label}" as context`}
-              className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:text-indigo-300"
+              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm px-1 hover:text-indigo-300"
             >
               <Icon className="w-3 h-3" />
               <span className="max-w-[12rem] truncate">{sg.label}</span>
               <MessageSquarePlus className="w-3 h-3" />
-            </button>
-            <button
+            </UiButton>
+            <UiButton variant="plain"
               type="button"
               onClick={() => dismissSuggestion(channelId, sg.id)}
               aria-label={`Dismiss suggestion ${sg.label}`}
               title="Dismiss suggestion"
-              className="rounded p-0.5 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
+              className="rounded-sm p-0.5 text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700"
             >
               <X className="w-3 h-3" />
-            </button>
+            </UiButton>
           </span>
         );
       })}
@@ -232,45 +233,45 @@ export function ContextPickBar({
         return (
           <span
             key={it.id}
-            className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 pl-2 pr-1 py-1 text-[11px] text-zinc-300"
+            className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/60 pl-2 pr-1 py-1 text-[11px] text-zinc-300"
           >
             <Icon className="w-3 h-3 text-zinc-400" />
             <span className="max-w-[12rem] truncate">{it.label}</span>
             {jumpTo && (
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => onJumpToSource(it)}
                 aria-label={`Open ${it.label} in the ${jumpTo === "workbench" ? "Workbench" : "workspace"}`}
                 title={`Open in ${jumpTo === "workbench" ? "Workbench" : "Remote workspace"}`}
-                className="ml-0.5 rounded p-0.5 text-zinc-500 hover:text-indigo-300 hover:bg-zinc-700"
+                className="ml-0.5 rounded-sm p-0.5 text-zinc-500 hover:text-indigo-300 hover:bg-zinc-700"
               >
                 <ArrowUpRight className="w-3 h-3" />
-              </button>
+              </UiButton>
             )}
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => remove(channelId, it.id)}
               aria-label={`Remove ${it.label}`}
               title="Remove"
-              className="rounded p-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700"
+              className="rounded-sm p-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700"
             >
               <X className="w-3 h-3" />
-            </button>
+            </UiButton>
           </span>
         );
       })}
 
       <div ref={rootRef} className="relative inline-flex">
-        <button
+        <UiButton variant="plain"
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
           title={ADD_CONTEXT_MENU_TITLE}
-          className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+          controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-zinc-800/60 px-2 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
         >
           <MessageSquarePlus className="w-3 h-3" />
           {ADD_CONTEXT_MENU}
-        </button>
+        </UiButton>
         {open && (
           <PopoverPanel placement="up" align="start" className="w-56 p-1">
             <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-zinc-400">
@@ -280,7 +281,7 @@ export function ContextPickBar({
               const Icon = KIND_ICON[q.kind];
               const already = items.some((i) => i.id === q.id);
               return (
-                <button
+                <UiButton variant="plain"
                   key={q.id}
                   type="button"
                   disabled={already}
@@ -288,12 +289,12 @@ export function ContextPickBar({
                     add(channelId, q);
                     setOpen(false);
                   }}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                  controlSize="regular" className="w-full flex items-center gap-2 px-2 rounded-sm text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent"
                 >
                   <Icon className="w-3.5 h-3.5 text-zinc-400" />
                   <span className="flex-1 text-left">{q.label}</span>
                   {already && <span className="text-[10px] text-zinc-500">added</span>}
-                </button>
+                </UiButton>
               );
             })}
             {(onBrowseWorkbench || onBrowseWorkspace) && (
@@ -302,34 +303,34 @@ export function ContextPickBar({
                   Browse &amp; attach
                 </p>
                 {onBrowseWorkbench && (
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     onClick={() => {
                       setOpen(false);
                       onBrowseWorkbench();
                     }}
                     title="Open the Workbench to pick a file to attach"
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-300 hover:bg-zinc-800"
+                    controlSize="regular" className="w-full flex items-center gap-2 px-2 rounded-sm text-sm text-zinc-300 hover:bg-zinc-800"
                   >
                     <PanelRight className="w-3.5 h-3.5 text-zinc-400" />
                     <span className="flex-1 text-left">Workbench files…</span>
                     <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
-                  </button>
+                  </UiButton>
                 )}
                 {onBrowseWorkspace && (
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     onClick={() => {
                       setOpen(false);
                       onBrowseWorkspace();
                     }}
                     title="Open the Remote workspace to pick a file to attach"
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-zinc-300 hover:bg-zinc-800"
+                    controlSize="regular" className="w-full flex items-center gap-2 px-2 rounded-sm text-sm text-zinc-300 hover:bg-zinc-800"
                   >
                     <FolderTree className="w-3.5 h-3.5 text-zinc-400" />
                     <span className="flex-1 text-left">Workspace files…</span>
                     <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
-                  </button>
+                  </UiButton>
                 )}
               </>
             )}

@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import {
   memo,
   useState,
@@ -1000,7 +1001,7 @@ function MessageComposerImpl({
     // above the on-screen keyboard.
     <div className="relative mx-auto w-full max-w-[72rem] px-4 pb-4 pt-2 max-md:px-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {picker?.kind === "mention" && filteredMentions.length > 0 && (
-        <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-lg bg-zinc-900 shadow-xl shadow-black/40 z-10">
+        <div className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-sm bg-zinc-900 shadow-xl shadow-black/40 z-10">
           {filteredMentions.map((c, i) => (
             <NavigationItem
               key={c.id}
@@ -1045,7 +1046,7 @@ function MessageComposerImpl({
           {attachments.map((a) => (
             <span
               key={a.file_id}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
+              className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2 py-1 text-xs text-zinc-300"
             >
               <FileText className="w-3.5 h-3.5 text-indigo-400" />
               <span
@@ -1054,7 +1055,7 @@ function MessageComposerImpl({
               >
                 {a.original_filename || a.file_id.slice(0, 8)}
               </span>
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => removeAttachment(a.file_id)}
                 className="text-zinc-400 hover:text-zinc-200"
@@ -1062,7 +1063,7 @@ function MessageComposerImpl({
                 title="Remove attachment"
               >
                 <X className="w-3 h-3" />
-              </button>
+              </UiButton>
             </span>
           ))}
           {uploading && (
@@ -1073,7 +1074,10 @@ function MessageComposerImpl({
         </div>
       )}
 
-      <input
+      {/* design-system-native: file-input */}
+      {/* design-system-native: file-input */}
+{/* design-system-native: file-input */}
+<input
         ref={fileInputRef}
         type="file"
         multiple
@@ -1091,7 +1095,7 @@ function MessageComposerImpl({
       )}
 
       {voiceWarning && (
-        <div className="mb-2 rounded-lg bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+        <div className="mb-2 rounded-sm bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
           <p className="flex items-center gap-1.5">
             <AudioLines className="h-3.5 w-3.5 flex-shrink-0" />
             {voiceWarning.deafBots.join(", ")} can't receive audio — without a transcript, it will only see the file name.
@@ -1100,31 +1104,31 @@ function MessageComposerImpl({
             <p className="mt-1 text-red-300">{voiceWarning.error}</p>
           )}
           <div className="mt-1.5 flex items-center gap-2">
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => void transcribeThenSend()}
               disabled={transcribing}
-              className="inline-flex items-center gap-1 rounded bg-amber-600/80 px-2 py-1 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
+              controlSize="regular" className="inline-flex items-center gap-1 rounded-sm bg-amber-600/80 px-2 text-amber-50 hover:bg-amber-600 disabled:opacity-50"
             >
               {transcribing && <Loader2 className="h-3 w-3 animate-spin" />}
               {transcribing ? "Transcribing…" : "Transcribe, then send"}
-            </button>
-            <button
+            </UiButton>
+            <UiButton variant="plain"
               type="button"
               onClick={() => void submit(true)}
               disabled={transcribing}
-              className="rounded bg-amber-900/40 px-2 py-1 text-amber-200 hover:bg-amber-900/60 disabled:opacity-50"
+              controlSize="regular" className="rounded-sm bg-amber-900/40 px-2 text-amber-200 hover:bg-amber-900/60 disabled:opacity-50"
             >
               Send anyway
-            </button>
-            <button
+            </UiButton>
+            <UiButton variant="plain"
               type="button"
               onClick={() => setVoiceWarning(null)}
               disabled={transcribing}
               className="ml-auto text-amber-400/70 hover:text-amber-200"
             >
               Cancel
-            </button>
+            </UiButton>
           </div>
         </div>
       )}
@@ -1140,6 +1144,7 @@ function MessageComposerImpl({
             : "focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/50"
         )}
       >
+        {/* design-system-native: composer-editor */}
         <textarea
           ref={textareaRef}
           rows={1}
@@ -1201,41 +1206,41 @@ function MessageComposerImpl({
               <Paperclip className="w-4 h-4" />
             </IconButton>
             {attachMenuOpen && (
-              <PopoverPanel className="w-48 overflow-hidden rounded-lg py-1">
-                <button
+              <PopoverPanel className="w-48 overflow-hidden rounded-sm py-1">
+                <UiButton variant="plain"
                   type="button"
                   onClick={() => {
                     setAttachMenuOpen(false);
                     fileInputRef.current?.click();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                  controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
                 >
                   <Upload className="w-3.5 h-3.5 text-zinc-500" />
                   Upload from computer
-                </button>
-                <button
+                </UiButton>
+                <UiButton variant="plain"
                   type="button"
                   onClick={() => {
                     setAttachMenuOpen(false);
                     setLibraryOpen(true);
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                  controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
                   Pick a channel file
-                </button>
+                </UiButton>
                 {isTauri() && (
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     onClick={() => {
                       setAttachMenuOpen(false);
                       void takeScreenshot();
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800"
+                    controlSize="regular" className="flex w-full items-center gap-2 px-3 text-left text-xs text-zinc-300 hover:bg-zinc-800"
                   >
                     <Camera className="w-3.5 h-3.5 text-zinc-500" />
                     Take screenshot
-                  </button>
+                  </UiButton>
                 )}
               </PopoverPanel>
             )}

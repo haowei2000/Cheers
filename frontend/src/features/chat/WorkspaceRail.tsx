@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Settings, LogOut, Plus, Users } from "lucide-react";
@@ -30,7 +31,7 @@ function RailButton({
   children: ReactNode;
 }) {
   return (
-    <button
+    <UiButton variant="plain"
       onClick={onClick}
       disabled={disabled}
       title={title}
@@ -43,7 +44,7 @@ function RailButton({
         )}
       />
       {children}
-    </button>
+    </UiButton>
   );
 }
 

@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import {
   createContext,
   useContext,
@@ -170,7 +171,7 @@ function ProfileCard({
     <div
       data-profile-card
       style={{ position: "fixed", width: CARD_W, ...pos }}
-      className="z-[60] rounded-xl bg-zinc-900 p-3 shadow-xl shadow-black/40 space-y-3"
+      className="z-[60] rounded-sm bg-zinc-900 p-3 shadow-xl shadow-black/40 space-y-3"
     >
       <div className="flex items-start gap-3">
         <div className="relative flex-shrink-0">
@@ -189,7 +190,7 @@ function ProfileCard({
           <div className="flex items-center gap-1.5">
             <span className="font-semibold text-zinc-100 truncate">{name}</span>
             {isBot && (
-              <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-900/60 text-indigo-300 font-medium">
+              <span className="text-[10px] px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
                 BOT
               </span>
             )}
@@ -226,14 +227,14 @@ function ProfileCard({
         </div>
       )}
       {onMention && (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={onMention}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-500/12 text-sm font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          controlSize="comfortable" className="flex w-full items-center justify-center gap-2 rounded-sm bg-indigo-500/12 text-sm font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
         >
           <AtSign className="h-4 w-4" />
           Mention {name}
-        </button>
+        </UiButton>
       )}
     </div>,
     document.body

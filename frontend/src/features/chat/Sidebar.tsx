@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Menu, Radio, Settings } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -52,7 +53,7 @@ function Section({ label, children, defaultOpen = true, onAdd, addLabel }: Secti
       {/* Two sibling buttons (not a span nested in the toggle) so the add control
           is its own focusable, keyboard-reachable button with valid ARIA. */}
       <div className={cn("group flex items-center gap-1 px-1", controlMinHeightClasses.compact)}>
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={toggle}
           aria-expanded={open}
@@ -64,9 +65,9 @@ function Section({ label, children, defaultOpen = true, onAdd, addLabel }: Secti
             <ChevronRight className="h-3.5 w-3.5" />
           )}
           <span className="flex-1 text-left">{label}</span>
-        </button>
+        </UiButton>
         {onAdd && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={onAdd}
             aria-label={addLabel ?? "Add"}
@@ -76,7 +77,7 @@ function Section({ label, children, defaultOpen = true, onAdd, addLabel }: Secti
             className={cn("flex items-center justify-center rounded-sm text-zinc-400 opacity-0 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 max-md:opacity-100", controlSquareClasses.compact)}
           >
             <Plus className="w-3.5 h-3.5" />
-          </button>
+          </UiButton>
         )}
       </div>
       {open && <div className="space-y-0.5">{children}</div>}
@@ -196,19 +197,19 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
           scrolling list, so the gap persists at any scroll offset. */}
       <div className="flex h-12 flex-shrink-0 items-center px-3">
         {onOpenNav && (
-          <button
+          <UiButton variant="plain"
             onClick={onOpenNav}
             title="Workspaces & navigation"
             aria-label="Open navigation"
-            className="w-11 h-11 -ml-2 mr-0.5 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
+            square controlSize="comfortable" className="-ml-2 mr-0.5 flex items-center justify-center rounded-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors flex-shrink-0"
           >
             <Menu className="w-5 h-5" />
-          </button>
+          </UiButton>
         )}
-        <button
+        <UiButton variant="plain"
           onClick={() => canOpenSettings && setWsSettingsOpen(true)}
           title={canOpenSettings ? "Workspace settings" : undefined}
-          className="group flex h-9 w-full items-center gap-2 rounded-sm px-1 transition-colors hover:bg-zinc-800/60"
+          controlSize="regular" className="group flex w-full items-center gap-2 rounded-sm px-1 transition-colors hover:bg-zinc-800/60"
         >
           <span className="font-utility flex-1 truncate text-left text-sm font-semibold text-zinc-100">
             {workspace?.name ?? "Workspace"}
@@ -218,7 +219,7 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
             // expanding a dropdown beneath the header, so a chevron would lie.
             <Settings className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
           )}
-        </button>
+        </UiButton>
       </div>
 
       {/* Channel list */}
@@ -285,13 +286,13 @@ export function Sidebar({ workspace, onOpenNav, onChannelSelected }: Props) {
         {channels.length === 0 && (
           <div className="px-3 py-4 text-center">
             <p className="text-xs text-zinc-400">No channels yet</p>
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => setChannelOpen(true)}
               className="mt-1 text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
             >
               Create a channel
-            </button>
+            </UiButton>
           </div>
         )}
       </div>

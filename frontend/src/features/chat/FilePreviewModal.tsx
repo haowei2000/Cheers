@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import hljs from "highlight.js";
@@ -73,8 +74,8 @@ function ImageBody({ file }: { file: FileInfo }) {
   if (failed) return <Centered tone="error">Failed to load image</Centered>;
   if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading image…</Centered>;
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-lg bg-zinc-950/40 p-2 text-center">
-      <img src={src} alt={file.original_filename || "image"} className="mx-auto max-w-full rounded" />
+    <div className="max-h-[70vh] overflow-auto rounded-sm bg-zinc-950/40 p-2 text-center">
+      <img src={src} alt={file.original_filename || "image"} className="mx-auto max-w-full rounded-sm" />
     </div>
   );
 }
@@ -84,7 +85,7 @@ function MarkdownBody({ file }: { file: FileInfo }) {
   if (state === "loading") return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading…</Centered>;
   if (state === "error") return <Centered tone="error">Failed to load</Centered>;
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-lg bg-zinc-950/40 p-4">
+    <div className="max-h-[70vh] overflow-auto rounded-sm bg-zinc-950/40 p-4">
       <MarkdownRenderer content={text} />
     </div>
   );
@@ -105,7 +106,7 @@ function TextBody({ file }: { file: FileInfo }) {
     html = escapeHtml(text);
   }
   return (
-    <pre className="max-h-[70vh] overflow-auto rounded-lg bg-zinc-900 p-4 text-sm leading-relaxed">
+    <pre className="max-h-[70vh] overflow-auto rounded-sm bg-zinc-900 p-4 text-sm leading-relaxed">
       <code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />
     </pre>
   );
@@ -185,7 +186,7 @@ function AudioBody({ file }: { file: FileInfo }) {
   if (failed) return <Centered tone="error">Failed to load audio</Centered>;
   if (!src) return <Centered><Loader2 className="h-4 w-4 animate-spin" /> Loading audio…</Centered>;
   return (
-    <div className="flex flex-col gap-3 rounded-lg bg-zinc-950/40 p-4">
+    <div className="flex flex-col gap-3 rounded-sm bg-zinc-950/40 p-4">
       <audio controls src={src} className="w-full" />
       {file.summary && (
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">
@@ -228,14 +229,14 @@ export function FilePreviewModal({ file, onClose }: { file: FileInfo; onClose: (
       {kind === "none" && <UnsupportedBody file={file} />}
       <div className="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs text-zinc-400">
         <span>{typeof file.size_bytes === "number" ? formatBytes(file.size_bytes) : ""}</span>
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => downloadFile(file)}
           title="Download this file"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-800 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-700"
+          controlSize="regular" className="inline-flex items-center gap-1.5 rounded-sm bg-zinc-800 px-2.5 text-zinc-200 hover:bg-zinc-700"
         >
           <Download className="h-3.5 w-3.5" /> Download
-        </button>
+        </UiButton>
       </div>
     </Dialog>
   );

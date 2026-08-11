@@ -104,7 +104,7 @@ export function MessageRecordInspector({
         tabIndex={-1}
         className={cn(
           "pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[82dvh] overflow-y-auto overscroll-contain bg-zinc-950 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 outline-none",
-          "rounded-t-xl shadow-2xl shadow-black/50",
+          "rounded-t-sm shadow-2xl shadow-black/50",
           "md:bottom-0 md:left-auto md:top-0 md:w-[23rem] md:max-h-none md:rounded-none md:border-l md:border-zinc-800/80 md:px-6 md:pb-6 md:pt-5",
         )}
       >
@@ -126,7 +126,7 @@ export function MessageRecordInspector({
             label="Close message record"
             title="Close"
             controlSize="compact"
-            className="flex h-11 w-11 shrink-0 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70 md:h-8 md:w-8"
+            className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200"
           >
             <X className="h-4 w-4" />
           </IconButton>

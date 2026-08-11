@@ -3,28 +3,29 @@
   "version": 1,
   "nativeElementCeilings": {
     "production": {
-      "button": 275,
-      "input": 52,
-      "select": 33,
-      "textarea": 5
+      "button": 147,
+      "input": 41,
+      "select": 25,
+      "textarea": 4
     },
     "business": {
-      "button": 266,
-      "input": 49,
-      "select": 32,
-      "textarea": 4
+      "button": 138,
+      "input": 38,
+      "select": 24,
+      "textarea": 3
     }
   },
   "violationCeilings": {
-    "nonStandardRadius": 362,
+    "nonStandardRadius": 205,
     "unregisteredFullRadius": 42,
-    "restingBorder": 37,
-    "hardcodedControlSize": 22,
-    "sharedControlSizeOverride": 7
+    "restingBorder": 26,
+    "hardcodedControlSize": 10,
+    "sharedControlSizeOverride": 5
   },
   "allowedNativeReasons": [
     "checkbox",
     "file-input",
+    "composer-editor",
     "code-editor",
     "canvas-node",
     "tree-node",

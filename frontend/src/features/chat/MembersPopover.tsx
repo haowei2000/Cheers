@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { Users, Bot, Settings } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
@@ -93,17 +94,17 @@ export function MembersPopover({
         </ItemList>
 
         {!isDm && (
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => {
               onClose();
               onManage();
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
+            controlSize="regular" className="w-full flex items-center gap-2 px-3 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-t border-zinc-800"
           >
             <Settings className="w-3.5 h-3.5" />
             Manage members…
-          </button>
+          </UiButton>
         )}
       </PopoverPanel>
     </>

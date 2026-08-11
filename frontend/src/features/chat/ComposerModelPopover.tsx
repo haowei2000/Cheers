@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -80,7 +81,7 @@ export function ComposerModelPopover({
 
   return (
     <div className="relative inline-flex min-w-0" ref={rootRef}>
-      <button
+      <UiButton variant="plain"
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Model & bot settings"
@@ -100,7 +101,7 @@ export function ComposerModelPopover({
         <ChevronDown
           className={cn("w-3 h-3 flex-shrink-0 transition-transform", open && "rotate-180")}
         />
-      </button>
+      </UiButton>
 
       {open && (
         <PopoverPanel className="min-w-[240px] max-w-[calc(100vw-2rem)] md:max-w-[420px] p-2">

@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -163,7 +164,7 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
   ].filter((item): item is [string, number] => typeof item[1] === "number" && item[1] > 0);
 
   return (
-    <div className="rounded-lg bg-zinc-950/45 px-3 py-3">
+    <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
         <span className="font-mono text-[11px] text-zinc-400">{result.branch ?? "Working tree"}</span>
         {result.clean === true && <span className="text-emerald-400/80">Clean</span>}
@@ -178,7 +179,7 @@ function GitStatusInspector({ presentation }: { presentation: ToolPresentation }
           {result.files.map((file, index) => {
             const marker = file.state === "untracked" ? "A" : file.index.trim() || file.worktree.trim() || "M";
             return (
-              <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-3 rounded-md px-1 py-2 hover:bg-zinc-900/60">
+              <div key={`${file.path}-${index}`} className="flex min-w-0 items-center gap-3 rounded-sm px-1 py-2 hover:bg-zinc-900/60">
                 <span className={cn(
                   "w-4 shrink-0 font-mono text-[10px]",
                   file.state === "conflicted" ? "text-red-300/80" : file.state === "untracked" ? "text-emerald-400/80" : "text-zinc-500",
@@ -279,25 +280,25 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
             const stats = diffStats(diff);
             const active = diff.path === selected.path;
             return (
-              <button
+              <UiButton variant="plain"
                 key={diff.path}
                 type="button"
                 onClick={() => setSelectedPath(diff.path)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-zinc-800",
-                  active ? "bg-indigo-600/15 text-indigo-200" : "text-zinc-400 hover:text-zinc-200",
-                )}
+                controlSize="regular" className={cn(
+ "flex w-full items-center gap-2 rounded-sm px-2 text-left transition-colors hover:bg-zinc-800",
+ active ? "bg-indigo-600/15 text-indigo-200" : "text-zinc-400 hover:text-zinc-200",
+ )}
                 title={diff.path}
               >
                 <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
                   {pathBasename(diff.path)}
                 </span>
                 <DiffDelta stats={stats} />
-              </button>
+              </UiButton>
             );
           })}
         </div>
-        <DiffView diff={fileDiffPreview(selected)} className="max-h-80 rounded-lg bg-zinc-950" />
+        <DiffView diff={fileDiffPreview(selected)} className="max-h-80 rounded-sm bg-zinc-950" />
       </div>
     </div>
   );
@@ -305,7 +306,7 @@ function FileEditInspector({ diffs }: { diffs: FileDiff[] }) {
 
 function FileEditEmptyState({ path }: { path: string | null }) {
   return (
-    <div className="rounded-lg bg-zinc-950/45 px-3 py-3">
+    <div className="rounded-sm bg-zinc-950/45 px-3 py-3">
       <div className="text-[11px] text-zinc-300">No file changes</div>
       {path && (
         <div className="mt-1 truncate font-mono text-[11px] text-zinc-400" title={path}>
@@ -393,7 +394,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
   return (
     <div className="space-y-3 p-3 text-[11px] text-zinc-400">
       {presentation && (
-        <div className="rounded-lg bg-zinc-950/45 px-3 py-2.5">
+        <div className="rounded-sm bg-zinc-950/45 px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-zinc-200">
               {TOOL_EVENT_META[presentation.event_type].label}
@@ -421,7 +422,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {showFileEditEmpty && (
         <FileEditEmptyState path={presentation?.path ?? presentation?.target ?? filePath} />
       )}
-      {outputDiff && <DiffView diff={outputDiff} className="max-h-80 rounded-lg bg-zinc-950" />}
+      {outputDiff && <DiffView diff={outputDiff} className="max-h-80 rounded-sm bg-zinc-950" />}
       {presentation && hasGitStatus && <GitStatusInspector presentation={presentation} />}
       {planEntries && (
         <div className="space-y-1.5">
@@ -468,7 +469,7 @@ function TraceEventInspector({ event }: { event: TraceEvent }) {
       {output != null && !outputDiff && !hasGitStatus && !showFileEditEmpty && (
         <div>
           <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">Output</div>
-          <div className="max-h-56 overflow-auto rounded-lg bg-zinc-950 px-2.5 py-2 text-zinc-300"><DetailValue value={output} /></div>
+          <div className="max-h-56 overflow-auto rounded-sm bg-zinc-950 px-2.5 py-2 text-zinc-300"><DetailValue value={output} /></div>
         </div>
       )}
       <RawEventData metadata={metadata} data={data} />
@@ -501,7 +502,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
   const expired = event.approval_kind === "expired" || event.status === "expired";
 
   return (
-    <div className="overflow-hidden rounded-lg bg-zinc-950/45">
+    <div className="overflow-hidden rounded-sm bg-zinc-950/45">
       <header className="flex items-start justify-between gap-3 px-3 py-2.5 border-b border-zinc-800">
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-200">{title}</p>
@@ -529,7 +530,7 @@ function ApprovalEventCard({ event }: { event: TraceEvent }) {
       {command && (
         <div className="border-b border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
           <p className="mb-1.5 text-[10px] uppercase tracking-wide text-zinc-400">Command</p>
-          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-black/40 px-2 py-1.5 font-mono text-xs text-zinc-300">
+          <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-black/40 px-2 py-1.5 font-mono text-xs text-zinc-300">
             {command}
           </pre>
           {cwd && (
@@ -614,7 +615,7 @@ function TraceItem({
       <div className="min-w-0 space-y-1.5">
         <div
           className={cn(
-            "flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left",
+            "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left",
             "bg-amber-500/5",
           )}
         >
@@ -643,16 +644,16 @@ function TraceItem({
 
   return (
     <div className="relative min-w-0">
-      <button
+      <UiButton variant="plain"
         ref={triggerRef}
         type="button"
         onClick={onToggle}
         aria-expanded={active}
         aria-label={`${active ? "Hide" : "Show"} details for ${displayTitle}`}
-        className={cn(
-          "flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-zinc-900/70",
-          active && "bg-zinc-900/70",
-        )}
+        controlSize="compact" className={cn(
+ "flex w-full items-center gap-2 rounded-sm px-2 text-left transition-colors hover:bg-zinc-900/70",
+ active && "bg-zinc-900/70",
+ )}
       >
         <Icon className={cn("h-3.5 w-3.5 shrink-0", tone)} />
         <span className="min-w-0 max-w-[45%] shrink truncate text-[11px] font-medium text-zinc-200">
@@ -674,7 +675,7 @@ function TraceItem({
             active && "rotate-90 text-zinc-300",
           )}
         />
-      </button>
+      </UiButton>
       {active &&
         createPortal(
           <FloatingPanel
@@ -912,7 +913,7 @@ export function BotTracePanel({
   return (
     <div className={cn(hasActionable ? "max-w-lg" : "max-w-md")}>
       {showToggle && (
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={() => updateExpanded((value) => !value)}
           aria-expanded={expanded}
@@ -944,7 +945,7 @@ export function BotTracePanel({
             </span>
           ) : null}
           {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-        </button>
+        </UiButton>
       )}
 
       {!showToggle && expanded && loading && !hasRows && (
@@ -979,22 +980,22 @@ export function BotTracePanel({
             );
           })}
           {latestOnly && (
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => setShowAll(true)}
               className="self-start text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors mt-0.5"
             >
               Show all {timeline.length} steps
-            </button>
+            </UiButton>
           )}
           {streaming && showAll && timeline.length > 1 && (
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => setShowAll(false)}
               className="self-start text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors mt-0.5"
             >
               Show latest only
-            </button>
+            </UiButton>
           )}
         </div>
       )}
@@ -1008,13 +1009,13 @@ export function BotTracePanel({
       {expanded && error && !loading && (
         <div className="mt-1 px-2.5 flex items-center gap-2 text-[11px] text-red-400">
           <span>Failed to load steps.</span>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => void load()}
             className="text-zinc-400 hover:text-zinc-200 underline underline-offset-2"
           >
             Retry
-          </button>
+          </UiButton>
         </div>
       )}
     </div>

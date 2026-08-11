@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { Reply, X } from "lucide-react";
 import type { Message } from "@/types";
 import { replyPreviewOf } from "./replyPreview";
@@ -15,11 +16,11 @@ export function ReplyComposerBanner({
   return (
     <div className="mx-auto w-full max-w-[72rem] px-4 pt-2 max-md:px-3">
       <div
-        className="flex items-center gap-2.5 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2"
+        className="flex items-center gap-2.5 rounded-sm bg-indigo-500/10 px-3 py-2"
         role="status"
         aria-label={`Replying to ${preview.sender}`}
       >
-        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-300">
+        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-sm bg-indigo-500/15 text-indigo-300">
           <Reply className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
@@ -28,15 +29,15 @@ export function ReplyComposerBanner({
           </p>
           <p className="truncate text-xs text-zinc-400">{preview.excerpt}</p>
         </div>
-        <button
+        <UiButton variant="plain"
           type="button"
           onClick={onCancel}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+          square controlSize="regular" className="flex flex-shrink-0 items-center justify-center rounded-sm text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
           aria-label="Cancel reply"
           title="Cancel reply (Esc)"
         >
           <X className="h-4 w-4" />
-        </button>
+        </UiButton>
       </div>
     </div>
   );

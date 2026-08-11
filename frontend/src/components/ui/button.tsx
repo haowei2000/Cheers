@@ -8,7 +8,7 @@ import {
   type ControlSize,
 } from "./control-size";
 
-type Variant = "primary" | "ghost" | "danger" | "secondary";
+type Variant = "primary" | "ghost" | "danger" | "secondary" | "plain";
 type LegacySize = "sm" | "md" | "icon";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -29,6 +29,8 @@ const variantCls: Record<Variant, string> = {
     "bg-transparent text-red-400 hover:bg-red-950 hover:text-red-300 active:bg-red-900",
   secondary:
     "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 active:bg-zinc-600",
+  plain:
+    "bg-transparent text-inherit hover:bg-zinc-800/70 active:bg-zinc-700/70",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
