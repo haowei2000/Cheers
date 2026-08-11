@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Design tokens
 //
@@ -60,8 +61,10 @@ enum Theme {
     // Resolve a complete Text to one face instead of allowing per-glyph CJK
     // fallback, which mixes metrics and makes Chinese look vertically uneven.
     static let displayFont = Font.custom("SourceSerif4Display-Semibold", size: 34, relativeTo: .largeTitle)
-    static let readingFont = Font.custom("SourceSerif4-Regular", size: 17, relativeTo: .body)
-    static let readingEmphasisFont = Font.custom("SourceSerif4-Semibold", size: 17, relativeTo: .body)
+    // The serif has a larger perceived x-height than the utility sans at the
+    // same nominal size. Keep reading copy compact while retaining Dynamic Type.
+    static let readingFont = Font.custom("SourceSerif4-Regular", size: 16, relativeTo: .body)
+    static let readingEmphasisFont = Font.custom("SourceSerif4-Semibold", size: 16, relativeTo: .body)
     static let utilityFont = Font.system(.body, design: .default)
 
     static func font(_ role: TypographyRole, for text: String, emphasized: Bool = false) -> Font {
@@ -77,10 +80,10 @@ enum Theme {
         case .reading:
             if containsChinese(text) {
                 let name = emphasized ? "SourceHanSerifCNVF-SemiBold" : "SourceHanSerifCNVF-Regular"
-                return Font.custom(name, size: 17, relativeTo: .body)
+                return Font.custom(name, size: 16, relativeTo: .body)
             }
             if containsJapaneseOrKorean(text) {
-                return Font.system(.body, design: .serif).weight(emphasized ? .semibold : .regular)
+                return scaledSystemSerifFont(emphasized: emphasized)
             }
             return emphasized ? readingEmphasisFont : readingFont
         case .utility:
@@ -100,6 +103,17 @@ enum Theme {
 
     static func utilityFont(for text: String, emphasized: Bool = false) -> Font {
         font(.utility, for: text, emphasized: emphasized)
+    }
+
+    /// Japanese and Korean use Apple's locale-aware serif glyphs. Building the
+    /// 16pt face through UIFontMetrics preserves the `.body` Dynamic Type curve
+    /// instead of falling back to SwiftUI's 17pt system body baseline.
+    private static func scaledSystemSerifFont(emphasized: Bool) -> Font {
+        let weight: UIFont.Weight = emphasized ? .semibold : .regular
+        let systemDescriptor = UIFont.systemFont(ofSize: 16, weight: weight).fontDescriptor
+        let serifDescriptor = systemDescriptor.withDesign(.serif) ?? systemDescriptor
+        let baseFont = UIFont(descriptor: serifDescriptor, size: 16)
+        return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: baseFont))
     }
 
     static func containsChinese(_ text: String) -> Bool {

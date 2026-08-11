@@ -1078,11 +1078,11 @@ function MessageBody({
           <PathOpenContext.Provider value={pathOpen}>
             <MarkdownRenderer
               content={content}
-              className="font-reading text-[15px] font-normal leading-[1.55] tracking-[-0.005em]"
+              className="font-reading text-sm font-normal leading-[1.55] tracking-[-0.005em]"
             />
           </PathOpenContext.Provider>
         ) : (
-          <p className="font-reading text-[15px] font-normal leading-[1.55] tracking-[-0.005em] text-zinc-200 whitespace-pre-wrap break-words">
+          <p className="font-reading text-sm font-normal leading-[1.55] tracking-[-0.005em] text-zinc-200 whitespace-pre-wrap break-words">
             {content}
           </p>
         ))}

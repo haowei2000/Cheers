@@ -36,8 +36,8 @@ val SourceHanSerifCNFontFamily = FontFamily(
 private val cheersReadingBaseStyle = TextStyle(
     fontFamily = SourceSerif4ReadingFontFamily,
     fontWeight = FontWeight.Normal,
-    fontSize = 16.sp,
-    lineHeight = 26.sp,
+    fontSize = 15.sp,
+    lineHeight = 24.sp,
 )
 
 private val cheersDisplayBaseStyle = TextStyle(
