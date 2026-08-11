@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, Shield } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ItemList, OperationsItem } from "@/components/ui/item";
+import { ItemSection, OperationsItem } from "@/components/ui/item";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -215,14 +215,16 @@ export function ActivityCenter() {
             )}
 
             {approvals.length > 0 && (
-              <section className="space-y-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+              <ItemSection
+                presentationLevel="medium"
+                controlSize="regular"
+                label={<span className="flex items-center gap-1.5">
                   <Shield className="w-3 h-3 text-amber-400" />
                   Needs approval
-                </h3>
-                <ul className="space-y-3">
+                </span>}
+              >
                   {approvals.map((a) => (
-                    <li key={a.message_id}>
+                    <div role="listitem" key={a.message_id} className="space-y-1 py-1">
                       <p className="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">
                         {a.channel_name.trim() ? `#${a.channel_name}` : "Direct message"}
                       </p>
@@ -233,18 +235,14 @@ export function ActivityCenter() {
                         approverOverride
                         onResolved={() => approvalResolved(a.message_id)}
                       />
-                    </li>
+                    </div>
                   ))}
-                </ul>
-              </section>
+              </ItemSection>
             )}
 
             {items.length > 0 && (
-              <section className="space-y-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Invites
-                </h3>
-                <ItemList>{items.map((n) => {
+              <ItemSection label="Invites" presentationLevel="medium" controlSize="regular">
+                {items.map((n) => {
                   const key = notificationKey(n);
                   return (
                     <OperationsItem
@@ -267,11 +265,10 @@ export function ActivityCenter() {
                         Decline
                       </Button>
                       </>}
-                      className="border-0 bg-zinc-800/40"
                     />
                   );
-                })}</ItemList>
-              </section>
+                })}
+              </ItemSection>
             )}
           </div>
         </Dialog>

@@ -102,7 +102,7 @@ export function NewDmDialog({
             </UiButton>
           )}
         </div>
-        <ItemList className="max-h-72 overflow-auto">
+        <ItemList presentationLevel="medium" controlSize="regular" className="max-h-72 overflow-auto">
           {users.map((u) => (
             <NavigationItem
               key={u.user_id}

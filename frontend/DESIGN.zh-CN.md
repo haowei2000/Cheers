@@ -2,9 +2,14 @@
 
 > **语言**: [English](DESIGN.md) | 中文
 
-Cheers 前端的视觉契约。**`src/components/ui/` 下的共享组件是唯一事实来源**——
-本文档记录它们尚未覆盖的部分的标准写法（canonical recipe），让新 UI 复制一个
-已知形态，而不是发明一个新形态。
+这是 Cheers Web 实现指南。跨端设计唯一事实源是
+`../design-system/DESIGN_LANGUAGE.zh-CN.md`，机器可读 Item 契约是
+`../design-system/item-contract.json`，可管理集合交互规范是
+`../design-system/COLLECTION_MANAGER.zh-CN.md`。`src/components/ui/` 的共享组件负责
+实现这些契约。
+
+如果本文后续旧配方出现不同圆角、卡片包框、装饰边框、非三档高度、多行 Browse Item
+或霓虹效果，以跨端设计真源为准；旧配方只作为迁移台账，不能被复制到新代码。
 
 使用规则：
 
@@ -62,7 +67,8 @@ Cheers 前端的视觉契约。**`src/components/ui/` 下的共享组件是唯�
 
 ### 形状与状态
 
-- 圆角：chip/输入框/按钮 `rounded-md`(小)/`rounded-lg`(中) · 卡片与 popover `rounded-xl` · 胶囊 `rounded-full`
+- 圆角：普通矩形统一 4px；使用当前解析为 4px 的项目 token/utility，不根据 utility 名称
+  猜测实际弧度。`rounded-full` 只用于 Avatar、Presence、Unread、Progress 等形状携带语义的对象。
 - Focus：`focus:ring-2 focus:ring-indigo-500`（按钮用 `focus-visible:`）——**禁止**用 `focus:border-indigo-*` 替代
 - 错误：字段上加 `ring-1 ring-red-500/70` —— 是状态 ring，不是常驻边框
 - Disabled：统一 `disabled:opacity-50`
@@ -75,8 +81,9 @@ Cheers 前端的视觉契约。**`src/components/ui/` 下的共享组件是唯�
 ### 2.1 按钮 —— 一律无边框
 
 用 `<Button>`（`src/components/ui/button.tsx`）。变体：`primary`（indigo 实心）、
-`secondary`（zinc 软底）、`ghost`（透明）、`danger`（红字）。尺寸：`sm`（h-7）、
-`md`（h-9）、`icon`（h-8 方形）。
+`secondary`（zinc 软底）、`ghost`（透明）、`danger`（红字）。物理尺寸只通过
+`ControlSize`：compact 28px、regular 36px、comfortable 44px。纯图标按钮使用同一档位，
+不能另建 32px 第四档。
 
 组件不适用的场景（密集 workbench 面板），软底写法：
 

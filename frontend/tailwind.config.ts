@@ -59,6 +59,9 @@ export default {
         sidebar: "#18181b",
         indigo: editorialInk,
       },
+      borderRadius: {
+        sm: "var(--radius-control)",
+      },
       keyframes: {
         "fade-in": {
           from: { opacity: "0", transform: "translateY(4px)" },

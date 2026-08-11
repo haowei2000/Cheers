@@ -26,6 +26,8 @@ import {
 } from "@/api/discussions";
 import { Avatar } from "@/components/ui/avatar";
 import { ErrorState } from "@/components/ui/error-state";
+import { ItemRow } from "@/components/ui/item";
+import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
 import type { Message } from "@/types";
@@ -307,44 +309,39 @@ export function DiscussionView({
               const copy = titleAndPreview(topic.root);
               const selected = selectedId === topic.root.msg_id && !creating;
               return (
-                <UiButton variant="plain"
+                <ItemRow
                   key={topic.root.msg_id}
-                  type="button"
+                  kind="conversation"
+                  presentationLevel="max"
+                  controlSize="regular"
                   onClick={() => selectDiscussion(topic.root.msg_id)}
-                  className={cn(
-                    "group w-full rounded-sm  p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60",
-                    selected
-                      ? "border-indigo-500/50 bg-indigo-500/10"
-                      : "border-zinc-800 bg-zinc-900/45 hover:border-zinc-700 hover:bg-zinc-900/80",
+                  selected={selected}
+                  leading={<Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="sm" />}
+                  title={copy.title}
+                  subtitle={copy.preview}
+                  metadata={topic.last_reply ? (
+                    <>
+                      <span className="font-medium text-zinc-400">{topic.last_reply.sender_name}</span>
+                      <span className="mx-1">·</span>{topic.last_reply.content || "Attachment"}
+                    </>
+                  ) : undefined}
+                  status={(
+                    <span className={cn("inline-flex shrink-0 items-center gap-2 text-zinc-500", controlTextClasses.compact)}>
+                      <span className="inline-flex items-center gap-1"><MessageCircle className={controlIconClasses.compact} />{topic.reply_count}</span>
+                      <span className="inline-flex items-center gap-1"><Users className={controlIconClasses.compact} />{topic.participant_count}</span>
+                    </span>
                   )}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <Avatar name={topic.root.sender_name ?? "Unknown"} id={topic.root.sender_id} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2">
-                        <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">{copy.title}</h3>
-                        <span className="shrink-0 text-[11px] tabular-nums text-zinc-500">{relativeActivity(topic.last_activity_at)}</span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{copy.preview}</p>
-                      {topic.last_reply && (
-                        <p className="mt-2 truncate text-[11px] text-zinc-500">
-                          <span className="font-medium text-zinc-400">{topic.last_reply.sender_name}</span>
-                          <span className="mx-1">·</span>{topic.last_reply.content || "Attachment"}
-                        </p>
-                      )}
-                      <div className="mt-2.5 flex items-center gap-3 text-[11px] text-zinc-500">
-                        <span className="inline-flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" />{topic.reply_count}</span>
-                        <span className="inline-flex min-w-0 items-center gap-1"><Users className="h-3.5 w-3.5" />{topic.participant_count}</span>
-                        <div className="flex -space-x-1.5">
-                          {topic.participants.map((participant) => (
-                            <Avatar key={`${participant.member_type}:${participant.member_id}`} name={participant.name} src={participant.avatar_url ?? undefined} id={participant.member_id} size="xs" className="ring-2 ring-zinc-900" />
-                          ))}
-                        </div>
-                        <ChevronRight className="ml-auto h-4 w-4 text-zinc-600 transition-transform group-hover:translate-x-0.5" />
-                      </div>
-                    </div>
-                  </div>
-                </UiButton>
+                  trailing={(
+                    <span className={cn("inline-flex items-center gap-1 tabular-nums text-zinc-500", controlTextClasses.compact)}>
+                      {relativeActivity(topic.last_activity_at)}
+                      <ChevronRight className={cn(controlIconClasses.regular, "text-zinc-600 transition-transform group-hover/item:translate-x-0.5")} />
+                    </span>
+                  )}
+                  className={cn(
+                    "border-b-0 px-3",
+                    !selected && "bg-zinc-900/45 hover:bg-zinc-900/80",
+                  )}
+                />
               );
             })}
             {nextCursor && (

@@ -66,7 +66,7 @@ export function BotActivitySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No events recorded yet — prompt the bot to see its activity."}
         </p>
       ) : (
-        <ItemList className="max-h-56 overflow-y-auto pr-1">
+        <ItemList presentationLevel="max" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
             <WorkbenchItem key={i} title={<code>{shortName(e.name)}</code>} metadata={time(e.created_at)}
               status={<span

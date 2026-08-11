@@ -1,8 +1,7 @@
-import { Button as UiButton } from "@/components/ui/button";
 import { Select as UiSelect } from "@/components/ui/select";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
-import { X, Plus } from "lucide-react";
+import { Pencil, ShieldCheck, Trash2 } from "lucide-react";
 import {
   getEventAccess,
   upsertEventRule,
@@ -15,17 +14,22 @@ import {
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { grantLabel, CAPABILITY_LABEL } from "./grantLabels";
-import { ItemList, OperationsItem } from "@/components/ui/item";
+import { OperationsItem } from "@/components/ui/item";
+import {
+  CollectionDeleteItem,
+  CollectionEditorItem,
+  CollectionEmptyItem,
+  CollectionManager,
+  type CollectionMode,
+} from "@/components/ui/collection-manager";
+import { controlIconClasses } from "@/components/ui/control-size";
+import { Field } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
 // Real channel roles shown as columns in the effective-defaults matrix (no `*`).
 const MATRIX_ROLES = ["owner", "admin", "member"] as const;
 const CAP_ORDER: Capability[] = ["initiate", "see", "respond"];
-const CAP_BADGE: Record<Capability, string> = {
-  initiate: "bg-sky-950/60 border-sky-900 text-sky-200",
-  see: "bg-zinc-800 border-zinc-700 text-zinc-300",
-  respond: "bg-amber-950/50 border-amber-900 text-amber-200",
-};
 
 /**
  * Bot permission grants (docs/arch/ACP_EVENT_TAXONOMY.md) — a LIST + NEW model:
@@ -37,7 +41,9 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   const [access, setAccess] = useState<EventAccess | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [membersByChannel, setMembersByChannel] = useState<Record<string, MemberItem[]>>({});
-  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<CollectionMode>({ kind: "browse" });
+  const [editing, setEditing] = useState<EventRule | null>(null);
 
   // new-grant draft
   const [perm, setPerm] = useState(""); // "cap::event"
@@ -99,13 +105,6 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
       return access?.groups.find((g) => g.ref === r.subject_id)?.label || r.subject_id;
     return nameMap[r.subject_id] || `${r.subject_id.slice(0, 8)}…`;
   };
-  const subjectBadge = (k: string) =>
-    k === "group"
-      ? "bg-violet-950/50 border-violet-900 text-violet-200"
-      : k === "user"
-      ? "bg-indigo-950/60 border-indigo-900 text-indigo-200"
-      : "bg-zinc-800 border-zinc-700 text-zinc-300";
-
   // All grants, sorted by capability → event → subject for a stable, scannable list.
   const grants = useMemo(() => {
     const rules = [...(access?.rules ?? [])];
@@ -136,7 +135,8 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
   };
 
   const resetDraft = () => {
-    setCreating(false);
+    setMode({ kind: "browse" });
+    setEditing(null);
     setPerm("");
     setScope("");
     setSubject("");
@@ -144,33 +144,124 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
     setExpiry("");
   };
 
+  const visibleGrants = grants.filter((rule) => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return true;
+    return `${grantLabel(rule.capability, rule.event_class).label} ${subjectLabel(rule)} ${scopeLabel(rule.channel_id)} ${rule.decision}`
+      .toLocaleLowerCase()
+      .includes(normalized);
+  });
+
+  const beginAdd = () => {
+    resetDraft();
+    setMode({ kind: "add" });
+  };
+  const beginEdit = (rule: EventRule) => {
+    setEditing(rule);
+    setPerm(`${rule.capability}::${rule.event_class}`);
+    setScope(rule.channel_id);
+    setSubject(`${rule.subject_kind}:${rule.subject_id}`);
+    setDecision(rule.decision);
+    setExpiry(rule.expires_at ? "preserve" : "");
+    setMode({ kind: "edit", id: `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}` });
+  };
+
+  const saveGrant = () => run(mode.kind === "edit" ? "edit" : "add", async () => {
+    const [cap, eventClass] = perm.split("::");
+    const [kind, ...subjectParts] = subject.split(":");
+    await upsertEventRule(botId, {
+      channel_id: scope || undefined,
+      subject_kind: kind as SubjectKind,
+      subject_id: subjectParts.join(":"),
+      event_class: eventClass,
+      capability: cap as Capability,
+      decision,
+      expires_at: expiry === "preserve"
+        ? editing?.expires_at || undefined
+        : expiry
+          ? new Date(Date.now() + Number(expiry) * 1000).toISOString()
+          : undefined,
+    });
+    resetDraft();
+  });
+
+  const removeGrant = (rule: EventRule) => run(
+    `rm:${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_id}`,
+    async () => {
+      await deleteEventRule(botId, {
+        channel_id: rule.channel_id || undefined,
+        subject_kind: rule.subject_kind,
+        subject_id: rule.subject_id,
+        event_class: rule.event_class,
+        capability: rule.capability,
+      });
+      resetDraft();
+    },
+  );
+
   if (!access) {
     return <p className="text-xs text-zinc-400 px-1 py-2">Loading grants…</p>;
   }
 
+  const editor = (editorMode: "add" | "edit", key?: string) => (
+    <CollectionEditorItem
+      key={key}
+      mode={editorMode}
+      title={editorMode === "add" ? "Add permission grant" : "Edit permission grant"}
+      onCancel={resetDraft}
+      onSave={() => void saveGrant()}
+      saveLabel={editorMode === "add" ? "Add grant" : "Save changes"}
+      saving={busy !== null}
+      saveDisabled={!perm || !subject}
+    >
+      <Field label="Permission">
+        <UiSelect value={perm} disabled={editorMode === "edit"} onChange={(event) => setPerm(event.target.value)} controlSize="regular">
+          <option value="">Choose permission…</option>
+          {CAP_ORDER.map((capability) => {
+            const events = capability === "initiate" ? access.initiate_events : capability === "see" ? access.see_events : access.respond_events;
+            return (
+              <optgroup key={capability} label={CAPABILITY_LABEL[capability].label}>
+                {events.map((eventClass) => <option key={`${capability}::${eventClass}`} value={`${capability}::${eventClass}`}>{grantLabel(capability, eventClass).label}</option>)}
+              </optgroup>
+            );
+          })}
+        </UiSelect>
+      </Field>
+      <Field label="Scope">
+        <UiSelect value={scope} disabled={editorMode === "edit"} onChange={(event) => { setScope(event.target.value); setSubject(""); }} controlSize="regular">
+          {scopeOptions.map((option) => <option key={option.val} value={option.val}>{option.label}</option>)}
+        </UiSelect>
+      </Field>
+      <Field label="Subject">
+        <UiSelect value={subject} disabled={editorMode === "edit"} onChange={(event) => setSubject(event.target.value)} controlSize="regular">
+          <option value="">Choose subject…</option>
+          <optgroup label="Roles">{ROLES.map((role) => <option key={role} value={`role:${role}`}>{role === "*" ? "∗ any role" : role}</option>)}</optgroup>
+          <optgroup label="Groups">{access.groups.map((group) => <option key={group.ref} value={`group:${group.ref}`}>{group.label}</option>)}</optgroup>
+          <optgroup label="Users">{usersForScope(scope).map((member) => <option key={member.member_id} value={`user:${member.member_id}`}>{member.display_name || member.username}</option>)}</optgroup>
+        </UiSelect>
+      </Field>
+      <Field label="Decision">
+        <UiSelect value={decision} onChange={(event) => setDecision(event.target.value as "allow" | "deny")} controlSize="regular">
+          <option value="allow">Allow</option><option value="deny">Deny</option>
+        </UiSelect>
+      </Field>
+      <Field label="Expiry" className="sm:col-span-2">
+        <UiSelect value={expiry} onChange={(event) => setExpiry(event.target.value)} controlSize="regular">
+          {editorMode === "edit" && editing?.expires_at && <option value="preserve">Keep current expiry</option>}
+          <option value="">Permanent</option><option value="3600">1 hour</option><option value="28800">8 hours</option><option value="86400">1 day</option><option value="604800">7 days</option><option value="2592000">30 days</option>
+        </UiSelect>
+      </Field>
+    </CollectionEditorItem>
+  );
+
   return (
-    <div className="rounded-sm bg-zinc-950/40 p-3 space-y-3">
-      <div className="flex items-center gap-2">
-        <div>
-          <p className="text-xs font-medium text-zinc-300">Permission grants</p>
-          <p className="text-[11px] text-zinc-400 mt-0.5">
+    <div className="space-y-3">
+          <p className="font-utility text-xs text-zinc-400">
             Who is authorized for what. No grant → the default: members may message the bot,
             cancel a running task, and view its activity; agent settings, session controls,
             remote file write, and answering approvals start owner-only. Precedence: user ▸
             group ▸ role ▸ ∗; deny wins ties.
           </p>
-        </div>
-        {!creating && (
-          <UiButton variant="plain"
-            type="button"
-            onClick={() => setCreating(true)}
-            controlSize="regular" className="ml-auto inline-flex items-center gap-1 rounded-sm bg-indigo-600 px-2.5 text-[11px] font-medium text-white hover:bg-indigo-500"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New grant
-          </UiButton>
-        )}
-      </div>
 
       {/* Effective defaults (read-only): the baseline decision per event × role at
           bot-wide scope, so members-can-cancel-by-default etc. is visible, not just
@@ -287,186 +378,50 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
         </div>
       )}
 
-      {/* New-grant form */}
-      {creating && (
-        <div className="rounded-sm bg-indigo-950/30 p-2.5 space-y-2">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-400">New grant</div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <UiSelect
-              value={perm}
-              onChange={(e) => setPerm(e.target.value)}
-              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
-            >
-              <option value="">permission…</option>
-              {CAP_ORDER.map((cap) => {
-                const evs =
-                  cap === "initiate"
-                    ? access.initiate_events
-                    : cap === "see"
-                    ? access.see_events
-                    : access.respond_events;
-                return (
-                  <optgroup key={cap} label={`${CAPABILITY_LABEL[cap].label} — ${CAPABILITY_LABEL[cap].desc}`}>
-                    {evs.map((ec) => (
-                      <option key={`${cap}::${ec}`} value={`${cap}::${ec}`} title={`${cap} · ${ec}`}>
-                        {grantLabel(cap, ec).label}
-                      </option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-            </UiSelect>
-            <UiSelect
-              value={scope}
-              onChange={(e) => {
-                setScope(e.target.value);
-                setSubject("");
-              }}
-              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
-            >
-              {scopeOptions.map((o) => (
-                <option key={o.val} value={o.val}>
-                  {o.label}
-                </option>
-              ))}
-            </UiSelect>
-            <UiSelect
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
-            >
-              <option value="">domain…</option>
-              <optgroup label="Roles">
-                {ROLES.map((r) => (
-                  <option key={r} value={`role:${r}`}>
-                    {r === "*" ? "∗ any role" : `${r} (role)`}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Groups">
-                {access.groups.map((g) => (
-                  <option key={g.ref} value={`group:${g.ref}`}>
-                    {g.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Users">
-                {usersForScope(scope).map((m) => (
-                  <option key={m.member_id} value={`user:${m.member_id}`}>
-                    {m.display_name || m.username}
-                  </option>
-                ))}
-              </optgroup>
-            </UiSelect>
-            <UiSelect
-              value={decision}
-              onChange={(e) => setDecision(e.target.value as "allow" | "deny")}
-              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
-            >
-              <option value="allow">allow</option>
-              <option value="deny">deny</option>
-            </UiSelect>
-            <UiSelect
-              value={expiry}
-              onChange={(e) => setExpiry(e.target.value)}
-              title="Time-box the rule: past the expiry it stops applying (listed as expired until deleted)"
-              controlSize="regular" className="rounded-sm bg-zinc-800 px-1.5 text-[11px] text-zinc-300"
-            >
-              <option value="">permanent</option>
-              <option value="3600">for 1 hour</option>
-              <option value="28800">for 8 hours</option>
-              <option value="86400">for 1 day</option>
-              <option value="604800">for 7 days</option>
-              <option value="2592000">for 30 days</option>
-            </UiSelect>
-            <UiButton variant="plain"
-              type="button"
-              disabled={!perm || !subject || busy !== null}
-              onClick={() =>
-                run("add", async () => {
-                  const [cap, ec] = perm.split("::");
-                  const [kind, ...rest] = subject.split(":");
-                  await upsertEventRule(botId, {
-                    channel_id: scope || undefined,
-                    subject_kind: kind as SubjectKind,
-                    subject_id: rest.join(":"),
-                    event_class: ec,
-                    capability: cap as Capability,
-                    decision,
-                    expires_at: expiry
-                      ? new Date(Date.now() + Number(expiry) * 1000).toISOString()
-                      : undefined,
-                  });
-                  resetDraft();
-                })
-              }
-              controlSize="regular" className="rounded-sm bg-indigo-600 px-2 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-40"
-            >
-              Create
-            </UiButton>
-            <UiButton variant="plain"
-              type="button"
-              onClick={resetDraft}
-              controlSize="regular" className="rounded-sm bg-zinc-800 px-2 text-[11px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
-            >
-              Cancel
-            </UiButton>
-          </div>
-          {perm &&
-            (() => {
-              const [cap, ec] = perm.split("::");
-              const gl = grantLabel(cap as Capability, ec);
-              return gl.desc ? (
-                <p className="text-[11px] text-zinc-400">
-                  {gl.desc} <code className="text-zinc-400">({cap} · {ec})</code>
-                </p>
-              ) : null;
-            })()}
-        </div>
-      )}
-
-      {/* Flat grants list */}
-      {grants.length === 0 ? (
-        <p className="text-[11px] text-zinc-400">
-          No grants yet — the bot uses the membership defaults. Click “New grant” to authorize a
-          user, role, or group.
-        </p>
-      ) : (
-        <ItemList className="overflow-hidden">
-          {grants.map((r) => (
-            <OperationsItem
-              key={`${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_kind}:${r.subject_id}`}
-              title={`${grantLabel(r.capability, r.event_class).label} → ${subjectLabel(r)}`}
-              subtitle={`${r.subject_kind} · ${scopeLabel(r.channel_id)}`}
-              leading={<span
-                className={`rounded-sm px-1 py-0.5 text-[10px] ${CAP_BADGE[r.capability]}`}
-                title={`${r.capability} — ${CAPABILITY_LABEL[r.capability].desc}`}
-              >
-                {CAPABILITY_LABEL[r.capability].label}
-              </span>}
-              criticalStatus={r.expired ? (
-                <span
-                  className="rounded-sm px-1 py-0.5 text-[10px] text-zinc-400"
-                  title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
-                >
-                  expired
-                </span>
-              ) : undefined}
-              metadata={r.expires_at && !r.expired ? `until ${new Date(r.expires_at).toLocaleString()}` : undefined}
-              status={<span className={r.decision === "allow" ? "text-emerald-300" : "text-red-300"}>{r.decision}</span>}
-              actions={<UiButton variant="plain"
-                type="button"
-                title="Revoke this grant"
-                disabled={busy !== null}
-                onClick={() => run(`rm:${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_id}`, () => deleteEventRule(botId, { channel_id: r.channel_id || undefined, subject_kind: r.subject_kind, subject_id: r.subject_id, event_class: r.event_class, capability: r.capability }))}
-                className="text-zinc-500 hover:text-red-300 disabled:opacity-40"
-              ><X className="w-3.5 h-3.5" /></UiButton>}
-              presentationLevel="max"
-              className="border-0"
+      <CollectionManager
+        label="Permission grants"
+        count={grants.length}
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search permission grants"
+        addLabel="Add grant"
+        onAdd={beginAdd}
+        addDisabled={mode.kind !== "browse"}
+        presentationLevel="medium"
+        controlSize="regular"
+      >
+        {mode.kind === "add" && editor("add")}
+        {visibleGrants.map((rule) => {
+          const id = `${rule.capability}:${rule.event_class}:${rule.channel_id}:${rule.subject_kind}:${rule.subject_id}`;
+          if (mode.kind === "edit" && mode.id === id) return editor("edit", id);
+          if (mode.kind === "delete" && mode.id === id) return (
+            <CollectionDeleteItem
+              key={id}
+              title={`Revoke ${grantLabel(rule.capability, rule.event_class).label} grant?`}
+              description="The membership default will apply again."
+              onCancel={resetDraft}
+              onConfirm={() => void removeGrant(rule)}
+              deleting={busy !== null}
             />
-          ))}
-        </ItemList>
-      )}
+          );
+          return (
+            <OperationsItem
+              key={id}
+              leading={<ShieldCheck className={controlIconClasses.regular} />}
+              title={`${grantLabel(rule.capability, rule.event_class).label} → ${subjectLabel(rule)}`}
+              status={<span className={rule.decision === "allow" ? "font-utility text-xs uppercase text-emerald-300" : "font-utility text-xs uppercase text-red-300"}>{rule.decision}</span>}
+              criticalStatus={rule.expired ? <span className="font-utility text-xs uppercase text-amber-400">Expired</span> : undefined}
+              actions={(
+                <>
+                  <IconButton label="Edit permission grant" controlSize="compact" onClick={() => beginEdit(rule)}><Pencil className={controlIconClasses.compact} /></IconButton>
+                  <IconButton label="Revoke permission grant" tone="danger" controlSize="compact" onClick={() => setMode({ kind: "delete", id })}><Trash2 className={controlIconClasses.compact} /></IconButton>
+                </>
+              )}
+            />
+          );
+        })}
+        {visibleGrants.length === 0 && mode.kind !== "add" && <CollectionEmptyItem query={query} onClear={() => setQuery("")} />}
+      </CollectionManager>
     </div>
   );
 }

@@ -345,7 +345,7 @@ export function PasskeyCard() {
       ) : credentials.length === 0 ? (
         <p className="text-xs text-zinc-500 mb-3">No passkeys yet.</p>
       ) : (
-        <ItemList className="mb-4">
+        <ItemList presentationLevel="max" controlSize="regular" className="mb-4">
           {credentials.map((c) => (
             <OperationsItem
               key={c.credential_pk}

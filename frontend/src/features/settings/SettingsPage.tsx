@@ -746,7 +746,7 @@ function DevicesSessionsCard() {
       ) : sessions.length === 0 ? (
         <p className="text-xs text-zinc-500">No active sessions.</p>
       ) : (
-        <ItemList>
+        <ItemList presentationLevel="max" controlSize="regular">
           {sessions.map((s) => (
             <OperationsItem
               key={s.session_id}

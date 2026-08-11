@@ -2,12 +2,18 @@
 
 > **Language**: English | [中文](DESIGN_LANGUAGE.zh-CN.md)
 
-`item-contract.json` is the platform-independent contract for reusable UI items.
+`DESIGN_LANGUAGE.zh-CN.md` is the canonical human-readable design decision
+register for Web, iOS, Android, and the public website. `item-contract.json`
+is the platform-independent machine-readable contract for reusable UI items.
 It defines information density, semantic actions, cross-platform availability,
 and the states that must remain perceivable at every presentation level.
 `INVENTORY.md` is the human-readable migration ledger for the full product.
-`DESIGN_LANGUAGE.zh-CN.md` records the product-facing decisions, usage rules,
-and phased migration boundary in Chinese.
+When an older mockup, feature-local recipe, or platform guide conflicts with
+the canonical design language, the canonical design language wins.
+
+Repository agents should apply these rules through
+`.claude/skills/cheers-design-system/SKILL.md`; its review checklist turns the
+contract into an implementation and verification workflow.
 
 ## Platform mapping
 
@@ -18,6 +24,8 @@ and phased migration boundary in Chinese.
 | inherited control size | `ControlSizeProvider` | planned native environment | planned native composition local |
 | control-size override | `controlSize` prop | planned | planned |
 | generic item | `ItemRow` | `CheersItemRow` | `CheersItemRow` |
+| inherited list | `ItemList` / `ItemSection` | planned | planned |
+| managed collection | `CollectionManager` | planned | planned |
 | component gallery | `dev/item-gallery.html` | SwiftUI previews | Compose previews |
 
 The three platforms intentionally do not share rendered UI code. They must
@@ -28,7 +36,7 @@ SwiftUI, and Compose conventions.
 
 Shared items use a formal, newspaper-inspired treatment across platforms:
 
-- near-square 2px corners for rows, chips, and icon controls;
+- one 4px corner standard for ordinary rectangular surfaces;
 - compact 4/8px spacing inside items while preserving 44pt/48dp hit targets;
 - Source Sans 3 on Web and native platform sans-serif on mobile for entity names and navigation labels, with Source Serif 4 plus Source Han Serif CN reserved for reading content;
 - hairline rules instead of shadows to separate content;

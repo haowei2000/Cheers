@@ -29,6 +29,8 @@ import { stopTurn } from "./stopTurn";
 import type { Message } from "@/types";
 import { useProfileCard } from "./ProfileHovercard";
 import { FloatingLayer } from "@/components/ui/floating-layer";
+import { IconButton } from "@/components/ui/icon-button";
+import { controlIconClasses, controlTextClasses } from "@/components/ui/control-size";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
 import { usePresentationLevel } from "@/components/ui/presentation";
@@ -131,8 +133,8 @@ function ActionBar({
   canMention?: boolean;
   mentionLabel?: string;
 }) {
-  const btn =
-    "flex h-8 w-8 items-center justify-center rounded-sm text-zinc-400 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70";
+  const actionClass =
+    "text-zinc-400 hover:bg-zinc-700/70 hover:text-zinc-100 focus-visible:ring-indigo-500/70";
   return (
     <FloatingLayer
       anchorRef={anchorRef}
@@ -148,45 +150,44 @@ function ActionBar({
       )}
     >
       {hasDetails && onOpenDetails && (
-        <UiButton variant="plain"
-          type="button"
-          title="Open message record"
-          aria-label="Open message record"
-          className={btn}
+        <IconButton
+          label="Open message record"
+          controlSize="regular"
+          className={actionClass}
           onClick={(event) => onOpenDetails(event.currentTarget)}
         >
-          <ListTree className="h-3.5 w-3.5" />
-        </UiButton>
+          <ListTree className={controlIconClasses.regular} />
+        </IconButton>
       )}
       {canMention && actions.onMention && (
-        <UiButton variant="plain"
-          type="button"
+        <IconButton
+          label={`Mention ${mentionLabel ?? "member"}`}
           title={`Mention @${mentionLabel ?? "member"}`}
-          aria-label={`Mention ${mentionLabel ?? "member"}`}
-          className={btn}
+          controlSize="regular"
+          className={actionClass}
           onClick={() => actions.onMention?.(message)}
         >
-          <AtSign className="h-3.5 w-3.5" />
-        </UiButton>
+          <AtSign className={controlIconClasses.regular} />
+        </IconButton>
       )}
-      <UiButton variant="plain" type="button" title="Reply" aria-label="Reply" className={btn} onClick={() => actions.onReply(message)}>
-        <MessageCircleMore className="w-3.5 h-3.5" />
-      </UiButton>
-      <UiButton variant="plain" type="button" title="Copy text" aria-label="Copy text" className={btn} onClick={() => void copyMessage(message)}>
-        <Copy className="w-3.5 h-3.5" />
-      </UiButton>
-      <UiButton variant="plain" type="button" title="Forward" aria-label="Forward" className={btn} onClick={() => actions.onForward(message)}>
-        <Forward className="w-3.5 h-3.5" />
-      </UiButton>
-      <UiButton variant="plain"
-        type="button"
+      <IconButton label="Reply" controlSize="regular" className={actionClass} onClick={() => actions.onReply(message)}>
+        <MessageCircleMore className={controlIconClasses.regular} />
+      </IconButton>
+      <IconButton label="Copy text" controlSize="regular" className={actionClass} onClick={() => void copyMessage(message)}>
+        <Copy className={controlIconClasses.regular} />
+      </IconButton>
+      <IconButton label="Forward" controlSize="regular" className={actionClass} onClick={() => actions.onForward(message)}>
+        <Forward className={controlIconClasses.regular} />
+      </IconButton>
+      <IconButton
+        label="Select message"
         title="Select (multi-select)"
-        aria-label="Select message"
-        className={btn}
+        controlSize="regular"
+        className={actionClass}
         onClick={() => actions.onToggleSelect(message)}
       >
-        <CheckSquare className="w-3.5 h-3.5" />
-      </UiButton>
+        <CheckSquare className={controlIconClasses.regular} />
+      </IconButton>
     </FloatingLayer>
   );
 }
@@ -202,14 +203,14 @@ function SendStatus({
 }) {
   if (message._status === "sending") {
     return (
-      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-400">
+      <div className={cn("mt-0.5 flex items-center gap-1 text-zinc-400", controlTextClasses.compact)}>
         <Loader2 className="w-3 h-3 animate-spin" />
         Sending…
       </div>
     );
   }
   return (
-    <div role="alert" className="mt-0.5 flex items-center gap-1.5 text-[11px] text-red-400">
+    <div role="alert" className={cn("mt-0.5 flex items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
       <AlertCircle className="w-3 h-3 flex-shrink-0" />
       <span>Failed to send</span>
       {onRetry && (
@@ -293,7 +294,8 @@ function ReplyPreview({
       onClick={jumpToSource}
       aria-label={repliedTo ? `Jump to message from ${who}` : undefined}
       className={cn(
-        "group/reply -mb-0.5 flex max-w-full items-start text-left text-[11px] leading-5",
+        "group/reply -mb-0.5 flex max-w-full items-start text-left leading-5",
+        controlTextClasses.compact,
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
         repliedTo ? "cursor-pointer" : "cursor-default",
         reversed && "self-end",
@@ -663,8 +665,8 @@ export const MessageItem = memo(function MessageItem({
       aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
       title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
       square controlSize="compact" className={cn(
- "relative inline-flex items-center justify-center self-start px-0.5 font-mono text-[9px] tabular-nums tracking-[0.08em] text-zinc-600 transition-colors",
- "after:absolute after:-inset-3 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+ "relative inline-flex items-center justify-center self-start font-mono tabular-nums tracking-[0.08em] text-zinc-500 transition-colors hover:bg-zinc-800/70 hover:text-zinc-200",
+ controlTextClasses.compact,
  isOwnAlignedRight && "self-end",
  detailsMeta.hasFailure && "text-red-400/70 hover:text-red-300",
  )}
@@ -675,7 +677,7 @@ export const MessageItem = memo(function MessageItem({
   const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
       {detailsMeta.hasFailure && (
-        <div role="alert" className="flex min-h-8 items-center gap-1.5 text-[11px] text-red-400">
+        <div role="alert" className={cn("flex min-h-8 items-center gap-1.5 text-red-400", controlTextClasses.compact)}>
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
           <UiButton variant="plain"
@@ -753,7 +755,7 @@ export const MessageItem = memo(function MessageItem({
         )}
         {!nested && presentationLevel !== "minimal" && (
           <div className="w-9 flex-shrink-0 flex items-center justify-end pt-1">
-            <span className="whitespace-nowrap text-[10px] tabular-nums text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 select-none">
+            <span className={cn("whitespace-nowrap tabular-nums text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 select-none", controlTextClasses.compact)}>
               {formatTime(message.created_at)}
             </span>
           </div>
@@ -792,16 +794,16 @@ export const MessageItem = memo(function MessageItem({
                   e.stopPropagation();
                   openProfile(e.currentTarget);
                 }}
-                className="text-[11px] font-medium text-zinc-300 hover:underline truncate"
+                className={cn("font-medium text-zinc-300 hover:underline truncate", controlTextClasses.compact)}
               >
                 {name}
               </UiButton>
               {isBot && (
-                <span className="text-[9px] px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
+                <span className={cn("px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium", controlTextClasses.compact)}>
                   BOT
                 </span>
               )}
-              {presentationLevel !== "minimal" && <span className="text-[10px] text-zinc-500 tabular-nums">
+              {presentationLevel !== "minimal" && <span className={cn("text-zinc-500 tabular-nums", controlTextClasses.compact)}>
                 {formatTime(message.created_at)}
               </span>}
             </div>
@@ -887,10 +889,10 @@ export const MessageItem = memo(function MessageItem({
         />
         {showChatIdentityUnderAvatar && (
           <>
-            <span className="mt-0.5 block w-full truncate text-center text-[10px] font-medium leading-3 text-zinc-400">
+            <span className={cn("mt-0.5 block w-full truncate text-center font-medium leading-3 text-zinc-400", controlTextClasses.compact)}>
               {name}
             </span>
-            {presentationLevel !== "minimal" && <span className="flex items-center justify-center gap-1 whitespace-nowrap text-[9px] leading-3 text-zinc-500">
+            {presentationLevel !== "minimal" && <span className={cn("flex items-center justify-center gap-1 whitespace-nowrap leading-3 text-zinc-500", controlTextClasses.compact)}>
               {isBot && (
                 <span className="font-semibold uppercase tracking-wide text-indigo-400">
                   Bot
@@ -925,11 +927,11 @@ export const MessageItem = memo(function MessageItem({
               {name}
             </UiButton>
             {isBot && (
-              <span className="text-[10px] px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium">
+              <span className={cn("px-1 py-0.5 rounded-sm bg-indigo-900/60 text-indigo-300 font-medium", controlTextClasses.compact)}>
                 BOT
               </span>
             )}
-            {presentationLevel !== "minimal" && <span className="text-[11px] text-zinc-400 tabular-nums">
+            {presentationLevel !== "minimal" && <span className={cn("text-zinc-400 tabular-nums", controlTextClasses.compact)}>
               {formatTime(message.created_at)}
             </span>}
           </div>

@@ -66,6 +66,7 @@
 
 :root {
   color-scheme: dark;
+  --radius-control: 4px;
 }
 
 * {
@@ -203,7 +204,7 @@ button:not(:disabled) {
   background: #27272a;
   color: #e4e4e7;
   padding: 0.15em 0.4em;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   /* Size is owned by the renderer's utility class (text-sm) so inline code,
      code blocks, and the backtick-path button all agree — don't override here. */
   font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
@@ -211,7 +212,7 @@ button:not(:disabled) {
 
 .prose pre {
   background: #18181b;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   padding: 1em;
   overflow-x: auto;
   margin: 0.5em 0;

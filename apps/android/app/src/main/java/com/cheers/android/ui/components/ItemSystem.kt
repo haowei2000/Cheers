@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import com.cheers.android.ui.theme.CheersTheme
 import com.cheers.android.ui.theme.LocalCheersColors
 
+private val EditorialCornerRadius = 4.dp
+
 @Immutable
 enum class PresentationLevel {
     Max,
@@ -79,7 +81,7 @@ fun CheersItemRow(
             .fillMaxWidth()
             .background(
                 color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
-                shape = RoundedCornerShape(2.dp),
+                shape = RoundedCornerShape(EditorialCornerRadius),
             )
             .then(clickableModifier)
             .defaultMinSize(minHeight = 48.dp)
@@ -151,7 +153,7 @@ fun CheersItemChip(
     Surface(
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = 48.dp),
-        shape = RoundedCornerShape(2.dp),
+        shape = RoundedCornerShape(EditorialCornerRadius),
         color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else cc.textSecondary,
     ) {

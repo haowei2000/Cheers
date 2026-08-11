@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GitBranch, GitPullRequest, RotateCcw, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
-import { ItemList, WorkbenchItem } from "@/components/ui/item";
+import { ItemGroup, ItemList, WorkbenchItem } from "@/components/ui/item";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorWatchStart,
@@ -182,10 +182,10 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
       {git.files.length === 0 ? (
         <p className="text-xs text-zinc-500">No changed files.</p>
       ) : (
-        <ItemList className="max-h-[55vh] overflow-auto pr-1">
+        <ItemList presentationLevel="medium" controlSize="regular" className="max-h-[55vh] overflow-auto pr-1">
           {git.files.map((f: FileStatus) => (
-            <div key={f.path} className="text-xs">
-              <WorkbenchItem title={f.path}
+            <ItemGroup key={f.path} className="text-xs">
+              <WorkbenchItem containerRole="presentation" title={f.path}
                 leading={<span
                   className="font-mono text-[10px] text-zinc-500 w-6 shrink-0 uppercase"
                   title={f.status}
@@ -241,7 +241,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                   )}
                 </div>
               )}
-            </div>
+            </ItemGroup>
           ))}
         </ItemList>
       )}

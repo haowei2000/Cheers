@@ -64,7 +64,7 @@ export function AgentUpdates() {
           Recheck
         </UiButton>
       </div>
-      <ItemList>
+      <ItemList presentationLevel="minimal" controlSize="compact">
         {outdated.map((u) => (
           <OperationsItem key={u.key} title={u.label}
             trailing={<span className="tabular-nums text-[11px]">{u.installed ?? "?"} → {u.latest ?? "?"}</span>}

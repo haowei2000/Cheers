@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/avatar";
 import { IconButton } from "@/components/ui/icon-button";
-import { ControlSizeProvider, controlSquareClasses } from "@/components/ui/control-size";
+import { ControlSizeProvider, controlIconClasses } from "@/components/ui/control-size";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
 import { useChatStore } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -32,10 +32,12 @@ function RailButton({
 }) {
   return (
     <UiButton variant="plain"
+      square
+      controlSize="comfortable"
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={cn("group relative flex items-center justify-center", controlSquareClasses.comfortable)}
+      className="group relative"
     >
       <div
         className={cn(
@@ -114,14 +116,17 @@ export function WorkspaceRail({
         disabled={!personalWorkspace}
         title={personalWorkspace ? "Personal (DMs / personal space)" : "Cheers"}
       >
-        <div
+        <img
+          src="/cheers-icon.svg"
+          alt=""
+          aria-hidden="true"
           className={cn(
-            "h-9 w-9 rounded-sm bg-zinc-200 text-zinc-950 flex items-center justify-center transition-colors duration-150",
-            personalSelected ? "bg-white" : "group-hover:bg-white"
+            "h-9 w-9 rounded-sm object-cover transition-[filter,opacity] duration-150",
+            personalSelected
+              ? "brightness-110"
+              : "opacity-80 group-hover:opacity-100 group-hover:brightness-110"
           )}
-        >
-          <EditorialIcon name="correspondence" className="h-5 w-5" />
-        </div>
+        />
       </RailButton>
 
       {/* The personal workspace and team list are grouped by a small visual
@@ -153,7 +158,7 @@ export function WorkspaceRail({
           onClick={() => setWsOpen(true)}
           className="text-zinc-500 hover:text-zinc-200"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className={controlIconClasses.comfortable} />
         </IconButton>
       </div>
 
@@ -169,7 +174,7 @@ export function WorkspaceRail({
           label="Fleet — bots & status"
           className="relative text-zinc-500"
         >
-          <EditorialIcon name="agentMark" className="h-4 w-4" />
+          <EditorialIcon name="agentMark" className={controlIconClasses.comfortable} />
         </IconButton>
 
         <IconButton
@@ -180,7 +185,7 @@ export function WorkspaceRail({
           label="Friends"
           className="text-zinc-500"
         >
-          <Users className="w-4 h-4" />
+          <Users className={controlIconClasses.comfortable} />
         </IconButton>
 
         <IconButton
@@ -191,7 +196,7 @@ export function WorkspaceRail({
           label="Settings"
           className="text-zinc-500"
         >
-          <Settings className="w-4 h-4" />
+          <Settings className={controlIconClasses.comfortable} />
         </IconButton>
 
         <div className="w-px h-4 bg-zinc-700/60" />
@@ -208,7 +213,7 @@ export function WorkspaceRail({
           label="Sign out"
           tone="danger"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className={controlIconClasses.comfortable} />
         </IconButton>
       </div>
 

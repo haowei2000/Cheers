@@ -18,7 +18,7 @@
       "utility": "Source Sans 3 on Web and the native platform sans on iOS/Android for entity names, navigation labels, controls, trace, metadata, warning, and status. The native sans fallback remains locale-correct for CJK and other scripts. Monospace is a technical sub-role for code only."
     },
     "shape": {
-      "cornerRadius": "2px/pt/dp",
+      "cornerRadius": "4px/pt/dp",
       "restingBorder": "none",
       "separator": "hairline rules for editorial or dense scanning surfaces",
       "minimumTouchTarget": { "web": "44px on touch viewports", "ios": "44pt", "android": "48dp" }

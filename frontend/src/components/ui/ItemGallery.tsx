@@ -16,7 +16,7 @@ import {
   OperationsItem,
   WorkbenchItem,
 } from "@/components/ui/item";
-import { PresentationProvider, type PresentationLevel } from "@/components/ui/presentation";
+import type { PresentationLevel } from "@/components/ui/presentation";
 import { cn } from "@/lib/cn";
 import { ControlSizeProvider, type ControlSize } from "@/components/ui/control-size";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { MenuOption } from "@/components/ui/menu-option";
 import { TabOption } from "@/components/ui/tab-option";
 import { CheckboxField } from "@/components/ui/checkbox-field";
+import { CollectionManagerDemo } from "@/components/ui/CollectionManagerDemo";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
 const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
@@ -160,8 +161,8 @@ export function ItemGallery() {
 
       <div className="grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
         {levels.map((level, index) => (
-          <PresentationProvider key={level} level={level}>
             <section
+              key={level}
               aria-labelledby={`gallery-${level}`}
               className={cn(
                 "space-y-1 py-3 lg:px-3",
@@ -179,6 +180,7 @@ export function ItemGallery() {
                   Edition 0{index + 1}
                 </span>
               </div>
+              <ItemList presentationLevel={level} controlSize="regular">
               <EntityItem
                 leading={<User className="h-5 w-5" />}
                 title="Ada Lovelace"
@@ -229,6 +231,7 @@ export function ItemGallery() {
                 subtitle="4 completed · 1 active"
                 status={<span className="text-[10px] text-emerald-400">ACTIVE</span>}
               />
+              </ItemList>
               <div className="flex flex-wrap gap-1 pt-1">
                 <ItemChip
                   leading={<EditorialIcon name="excerpt" className="h-3 w-3" />}
@@ -240,9 +243,28 @@ export function ItemGallery() {
                 />
               </div>
             </section>
-          </PresentationProvider>
         ))}
       </div>
+
+      <section aria-labelledby="collection-manager-register" className="mt-4 border-y border-zinc-700 py-3">
+        <div className="mb-3 flex flex-col gap-1 border-b border-zinc-600 pb-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-utility text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500">
+              CRUD collection pattern
+            </p>
+            <h2 id="collection-manager-register" className="font-display text-lg font-semibold tracking-tight">
+              Search · Add · Edit · Delete
+            </h2>
+          </div>
+          <p className="max-w-xl font-utility text-xs leading-5 text-zinc-500 sm:text-right">
+            Browse is the resting state. Add inserts an editor first; edit replaces its row;
+            delete replaces its row with confirmation. No detached form and no immediate destructive icon.
+          </p>
+        </div>
+        <div className="mx-auto max-w-3xl">
+          <CollectionManagerDemo />
+        </div>
+      </section>
 
       <section aria-labelledby="specialized-register" className="mt-4 grid border-y border-zinc-700 lg:grid-cols-2 lg:divide-x lg:divide-zinc-700">
         <ItemSection label="Specialized file tree" className="px-3 py-3">
@@ -253,7 +275,7 @@ export function ItemGallery() {
           <h2 id="specialized-register" className="mb-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400">Specialized diff</h2>
           <ItemList className="overflow-x-auto bg-zinc-950">
             <DiffLineItem tone="remove" lineNumber="18" marker="−" content="border-radius: 12px;" />
-            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 2px;" />
+            <DiffLineItem tone="add" lineNumber="18" marker="+" content="border-radius: 4px;" />
             <DiffLineItem lineNumber="19" marker=" " content="font-family: var(--font-utility);" />
           </ItemList>
         </div>

@@ -1,4 +1,5 @@
 import { Button as UiButton } from "@/components/ui/button";
+import { controlIconClasses } from "@/components/ui/control-size";
 import { MessageCircle, MessagesSquare } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ConversationMode } from "./conversationMode";
@@ -35,33 +36,30 @@ export function ConversationModePicker({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="group" aria-label="Conversation layout">
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Conversation layout">
       {OPTIONS.map((option) => {
         const selected = value === option.value;
         const Icon = option.icon;
         return (
-          <UiButton variant="plain"
+          <UiButton
+            variant="plain"
             key={option.value}
             type="button"
             disabled={disabled}
             aria-pressed={selected}
+            aria-label={`${option.title}: ${option.description}`}
+            title={option.description}
             onClick={() => onChange(option.value)}
-            controlSize="comfortable" className={cn(
- " rounded-sm  px-3 text-left transition-colors",
- "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
- selected
- ? "border-indigo-500 bg-indigo-500/10 text-zinc-100"
- : "border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800/60",
- disabled && "cursor-not-allowed opacity-50",
- )}
+            controlSize="regular"
+            className={cn(
+              "min-w-0 justify-start px-3 text-left",
+              selected
+                ? "bg-zinc-700 text-zinc-100"
+                : "bg-zinc-950/40 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200",
+            )}
           >
-            <span className="flex items-center gap-2 text-sm font-semibold">
-              <Icon className={cn("h-4 w-4", selected ? "text-indigo-300" : "text-zinc-500")} />
-              {option.title}
-            </span>
-            <span className="mt-1 block text-xs leading-5 text-zinc-400">
-              {option.description}
-            </span>
+            <Icon className={cn(controlIconClasses.regular, "shrink-0", selected ? "text-zinc-100" : "text-zinc-500")} />
+            <span className="min-w-0 truncate">{option.title}</span>
           </UiButton>
         );
       })}

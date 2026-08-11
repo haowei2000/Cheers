@@ -93,7 +93,7 @@ struct CheersItemRow: View {
         .padding(.horizontal, Theme.space2)
         .padding(.vertical, level == .max ? Theme.space2 : Theme.space1)
         .frame(maxWidth: .infinity, minHeight: Theme.hitMin, alignment: .leading)
-        .background(selected ? Theme.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: 2))
+        .background(selected ? Theme.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Theme.border)
@@ -204,7 +204,7 @@ struct CheersDiffLineItem: View {
                 preview: "Shared item anatomy across every client.",
                 explicitLevel: level,
                 leading: AnyView(Image(systemName: "number").frame(width: 28, height: 28)),
-                criticalStatus: AnyView(Text("3").font(.caption2.bold()).padding(4).background(Theme.accent, in: RoundedRectangle(cornerRadius: 2)))
+                criticalStatus: AnyView(Text("3").font(.caption2.bold()).padding(4).background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.cornerRadius)))
             )
         }
         CheersOperationsItem(row: CheersItemRow(

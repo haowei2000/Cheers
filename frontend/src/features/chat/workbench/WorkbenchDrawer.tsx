@@ -608,7 +608,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                   <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400">
                     Pinned (injected into every prompt)
                   </div>
-                  <ItemList>{pinned.map((p) => (
+                  <ItemList presentationLevel="minimal" controlSize="compact">{pinned.map((p) => (
                     <WorkbenchItem
                       key={p}
                       title={p}

@@ -1,11 +1,15 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import {
+  PresentationProvider,
   usePresentationLevel,
   type PresentationLevel,
 } from "@/components/ui/presentation";
 import {
+  ControlSizeProvider,
   controlMinHeightClasses,
+  controlSupportingTextClasses,
+  controlTextClasses,
   useControlSize,
   type ControlSize,
 } from "@/components/ui/control-size";
@@ -35,6 +39,8 @@ interface ItemRowBaseProps
   presentationLevel?: PresentationLevel;
   controlSize?: ControlSize;
   selected?: boolean;
+  /** Use presentation only when an ItemGroup owns the surrounding listitem role. */
+  containerRole?: "listitem" | "presentation";
 }
 
 export type ItemRowProps = ItemRowBaseProps &
@@ -69,6 +75,7 @@ export function ItemRow({
   presentationLevel,
   controlSize,
   selected,
+  containerRole = "listitem",
   className,
   onClick,
   disabled,
@@ -81,20 +88,20 @@ export function ItemRow({
       {leading && <span className="flex flex-shrink-0 items-center">{leading}</span>}
       <span className="min-w-0 flex-1 text-left">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-utility text-sm font-medium tracking-normal text-current">
+          <span className={cn("truncate font-utility font-medium tracking-normal text-current", controlTextClasses[size])}>
             {title}
           </span>
           {criticalStatus}
           {level !== "minimal" && status}
         </span>
         {level !== "minimal" && subtitle && (
-          <span className="mt-0.5 block truncate text-xs text-zinc-400">{subtitle}</span>
+          <span className={cn("mt-0.5 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{subtitle}</span>
         )}
         {level === "max" && metadata && (
-          <span className="mt-0.5 block truncate text-[11px] text-zinc-400">{metadata}</span>
+          <span className={cn("mt-0.5 block truncate text-zinc-400", controlSupportingTextClasses[size])}>{metadata}</span>
         )}
         {level === "max" && preview && (
-          <span className="mt-1 block line-clamp-2 font-reading text-sm leading-relaxed text-zinc-300">
+          <span className={cn("mt-1 block line-clamp-2 font-reading leading-relaxed text-zinc-300", controlSupportingTextClasses[size])}>
             {preview}
           </span>
         )}
@@ -141,7 +148,7 @@ export function ItemRow({
 
   return (
     <div
-      role="listitem"
+      role={containerRole}
       data-item-kind={kind}
       data-presentation-level={level}
       data-control-size={size}
@@ -171,31 +178,74 @@ export function WorkbenchItem(props: SemanticItemProps) {
   return <ItemRow kind="workbench" {...props} />;
 }
 
-export function ItemList({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div role="list" className={cn("min-w-0", className)} {...props} />;
+interface ItemListProps extends HTMLAttributes<HTMLDivElement> {
+  /** Information anatomy inherited by every semantic item in this list. */
+  presentationLevel?: PresentationLevel;
+  /** Physical rhythm inherited by every semantic item in this list. */
+  controlSize?: ControlSize;
+}
+
+export function ItemList({
+  className,
+  presentationLevel,
+  controlSize,
+  ...props
+}: ItemListProps) {
+  const level = usePresentationLevel(presentationLevel);
+  const size = useControlSize(controlSize);
+  return (
+    <PresentationProvider level={level} responsive={false}>
+      <ControlSizeProvider size={size}>
+        <div
+          role="list"
+          data-presentation-level={level}
+          data-control-size={size}
+          className={cn("min-w-0", className)}
+          {...props}
+        />
+      </ControlSizeProvider>
+    </PresentationProvider>
+  );
+}
+
+/** One list position that owns a semantic summary row plus expandable detail. */
+export function ItemGroup({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div role="listitem" className={cn("min-w-0", className)} {...props} />;
 }
 
 export function ItemSection({
   label,
   action,
+  description,
   children,
   className,
   controlSize,
+  presentationLevel,
 }: {
   label: ReactNode;
   action?: ReactNode;
+  description?: ReactNode;
   children: ReactNode;
   className?: string;
   controlSize?: ControlSize;
+  presentationLevel?: PresentationLevel;
 }) {
   const size = useControlSize(controlSize);
+  const level = usePresentationLevel(presentationLevel);
   return (
-    <section className={cn("min-w-0 space-y-1", className)}>
+    <section
+      data-presentation-level={level}
+      data-control-size={size}
+      className={cn("min-w-0 space-y-1", className)}
+    >
       <header className={cn("flex items-center gap-2 px-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400", controlMinHeightClasses[size])}>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {action}
       </header>
-      <ItemList>{children}</ItemList>
+      {description && (
+        <p className="px-1 font-utility text-xs leading-relaxed text-zinc-500">{description}</p>
+      )}
+      <ItemList presentationLevel={level} controlSize={size}>{children}</ItemList>
     </section>
   );
 }

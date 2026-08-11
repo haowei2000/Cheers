@@ -111,7 +111,7 @@ export function AdminUsers() {
           placeholder="Filter by name / username / email…"
           controlSize="regular" className="w-full rounded-sm bg-zinc-800 px-3 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
-        <ItemList>
+        <ItemList presentationLevel="max" controlSize="regular">
           {users.map((u) => (
             <EntityItem
               key={u.user_id}

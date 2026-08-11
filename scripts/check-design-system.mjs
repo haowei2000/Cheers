@@ -36,8 +36,8 @@ if (JSON.stringify(Object.keys(contract.controlSizes ?? {}).sort()) !== JSON.str
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typography ?? {}).sort()) !== JSON.stringify([...expectedTypeRoles].sort())) {
   fail("visualLanguage.typography must contain exactly display, reading, and utility");
 }
-if (contract.visualLanguage?.shape?.cornerRadius !== "2px/pt/dp") {
-  fail("visualLanguage.shape.cornerRadius must remain the shared 2px/pt/dp editorial radius");
+if (contract.visualLanguage?.shape?.cornerRadius !== "4px/pt/dp") {
+  fail("visualLanguage.shape.cornerRadius must remain the shared 4px/pt/dp editorial radius");
 }
 
 const ids = contract.itemKinds.map((item) => item.id);
@@ -109,6 +109,7 @@ if (process.exitCode) {
 }
 
 const itemPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/item.tsx"), "utf8");
+const collectionPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/collection-manager.tsx"), "utf8");
 const webControlSizeSource = await readFile(path.join(root, "frontend/src/components/ui/control-size.tsx"), "utf8");
 for (const size of expectedControlSizes) {
   if (!webControlSizeSource.includes(size)) fail(`Web control-size registry does not mention ${size}`);
@@ -116,6 +117,7 @@ for (const size of expectedControlSizes) {
 for (const primitive of [
   "ItemRow",
   "ItemList",
+  "ItemGroup",
   "ItemSection",
   "EntityItem",
   "NavigationItem",
@@ -125,6 +127,32 @@ for (const primitive of [
   "DiffLineItem",
 ]) {
   if (!itemPrimitiveSource.includes(`function ${primitive}`)) fail(`Web item primitive ${primitive} is not registered`);
+}
+for (const primitive of [
+  "CollectionManager",
+  "CollectionPickerItem",
+  "CollectionEditorItem",
+  "CollectionDeleteItem",
+  "CollectionEmptyItem",
+]) {
+  if (!collectionPrimitiveSource.includes(`function ${primitive}`)) fail(`Web collection primitive ${primitive} is not registered`);
+}
+
+// Business lists must declare both orthogonal inheritance axes at the container.
+// This prevents rows within one list from silently falling back to unrelated sizes.
+for (const file of webFiles.filter(({ path: file }) => file.includes(`${path.sep}features${path.sep}`))) {
+  for (const match of file.source.matchAll(/<ItemList\b([^>]*)>/g)) {
+    const attributes = match[1];
+    if (attributes.includes("presentationLevel=") && attributes.includes("controlSize=")) continue;
+    const line = file.source.slice(0, match.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} ItemList must declare presentationLevel and controlSize for inherited list anatomy`);
+  }
+  for (const block of file.source.matchAll(/<ItemList\b[^>]*>[\s\S]*?<\/ItemList>/g)) {
+    const rawMappedChild = block[0].match(/\.map\([\s\S]{0,260}?=>\s*\(\s*<(div|p)\b/);
+    if (!rawMappedChild) continue;
+    const line = file.source.slice(0, block.index).split("\n").length;
+    fail(`${path.relative(root, file.path)}:${line} ItemList maps a raw ${rawMappedChild[1]} wrapper; use ItemGroup or a semantic Item`);
+  }
 }
 
 const iosItemPrimitiveSource = await readFile(path.join(root, "apps/ios/Sources/Views/ShellComponents.swift"), "utf8");

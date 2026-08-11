@@ -13,6 +13,9 @@ struct BotTracePanelView: View {
     var isRunning = false
     /// When set, auto-open the steps sheet (ViewBoard Approval deep-link).
     var focusRequestId: String? = nil
+    var contextBundle: ResourceContextBundle? = nil
+    var reportedTraceCount: Int? = nil
+    var reportedFailure = false
 
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -29,47 +32,37 @@ struct BotTracePanelView: View {
     var body: some View {
         // After the authoritative read proves a completed turn had no trace,
         // remove the speculative lazy-load control.
-        if durableEvents?.isEmpty == true, !isRunning {
+        if durableEvents?.isEmpty == true,
+           !isRunning,
+           (reportedTraceCount ?? 0) == 0,
+           contextBundle?.items.isEmpty != false
+        {
             EmptyView()
         } else {
             Button {
                 showingSheet = true
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     statusIcon
-                        .frame(width: 18)
-                    Text(summary)
-                        .font(.subheadline.weight(singlePresentation == nil ? .regular : .medium))
-                        .lineLimit(1)
-                    if let summaryDetail {
-                        Text(summaryDetail)
-                            .font(.caption)
-                            .foregroundStyle(Theme.textMuted)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    if let summaryStatus {
-                        Text(summaryStatus.label)
-                            .font(.caption)
-                            .foregroundStyle(summaryStatus.color)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .frame(width: 14)
+                    Text(folioLabel)
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .tracking(0.8)
                 }
-                .foregroundStyle(.secondary)
-                .frame(minHeight: 44)
+                .foregroundStyle(recordTone)
+                .frame(width: Theme.hitMin, height: Theme.hitMin)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(summary)
-            .accessibilityHint("Shows this message's agent activity")
+            .accessibilityLabel(recordAccessibilityLabel)
+            .accessibilityHint("Shows this message's references and agent record")
             .sheet(isPresented: $showingSheet) {
                 TraceActivitySheet(
                     events: displayedEvents,
                     isRunning: isRunning,
                     loading: loading,
                     errorText: errorText,
+                    contextBundle: contextBundle,
                     retry: { Task { await loadDurableTrace() } }
                 )
                 .presentationDetents([.medium, .large])
@@ -93,6 +86,31 @@ struct BotTracePanelView: View {
         }
     }
 
+    private var recordCount: Int {
+        max(reportedTraceCount ?? 0, displayedEvents.count) + (contextBundle?.items.count ?? 0)
+    }
+
+    private var hasFailure: Bool {
+        reportedFailure || displayedEvents.contains(where: { $0.status == "failed" || $0.phase.contains("failed") })
+    }
+
+    private var folioLabel: String {
+        if isRunning { return String(localized: "LIVE") }
+        if hasFailure { return String(localized: "ERR") }
+        return String(format: "%02d", recordCount)
+    }
+
+    private var recordTone: Color {
+        if hasFailure { return Theme.danger }
+        return Theme.textMuted
+    }
+
+    private var recordAccessibilityLabel: String {
+        if isRunning { return String(localized: "Message record, running") }
+        if hasFailure { return String(localized: "Message record, contains a failed step") }
+        return String(localized: "Message record, \(recordCount) entries")
+    }
+
     @ViewBuilder
     private var statusIcon: some View {
         if loading && displayedEvents.isEmpty {
@@ -103,7 +121,7 @@ struct BotTracePanelView: View {
             } else {
                 ProgressView().controlSize(.mini)
             }
-        } else if displayedEvents.contains(where: { $0.status == "failed" || $0.phase.contains("failed") }) {
+        } else if hasFailure {
             Image(systemName: "xmark.circle")
                 .foregroundStyle(Theme.danger)
         } else if let presentation = singlePresentation {
@@ -117,37 +135,6 @@ struct BotTracePanelView: View {
     private var singlePresentation: ToolPresentation? {
         guard displayedEvents.count == 1 else { return nil }
         return displayedEvents[0].toolPresentation
-    }
-
-    private var singleGitStatus: GitStatusResult? {
-        GitStatusResult.parse(singlePresentation)
-    }
-
-    private var summary: String {
-        let events = displayedEvents
-        if isRunning {
-            let current = events.last(where: { $0.status == "in_progress" || $0.status == "pending" })
-                ?? events.last
-            return current?.compactLabel ?? String(localized: "Running")
-        }
-        guard !events.isEmpty else { return String(localized: "Agent activity") }
-        if let presentation = singlePresentation { return presentation.eventType.label }
-        return String(localized: "\(events.count) actions")
-    }
-
-    private var summaryDetail: String? {
-        guard let result = singleGitStatus else { return nil }
-        if result.clean { return String(localized: "Clean") }
-        return String(localized: "\(result.files.count) files changed")
-    }
-
-    private var summaryStatus: (label: String, color: Color)? {
-        guard singlePresentation != nil else { return nil }
-        if isRunning { return (String(localized: "Running"), Theme.textSecondary) }
-        if displayedEvents.contains(where: { $0.status == "failed" || $0.phase.contains("failed") }) {
-            return (String(localized: "Failed"), Theme.danger)
-        }
-        return (String(localized: "Done"), Theme.online)
     }
 
     private func loadDurableTrace() async {
@@ -172,6 +159,7 @@ private struct TraceActivitySheet: View {
     let isRunning: Bool
     let loading: Bool
     let errorText: String?
+    let contextBundle: ResourceContextBundle?
     let retry: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -188,7 +176,7 @@ private struct TraceActivitySheet: View {
                     content
                 }
             }
-                .navigationTitle(directGitStatus == nil ? "Agent activity" : "Git status")
+                .navigationTitle(directGitStatus == nil ? "Message record" : "Git status")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -218,7 +206,8 @@ private struct TraceActivitySheet: View {
     }
 
     private var directGitStatus: (entry: TraceEventDto, presentation: ToolPresentation, result: GitStatusResult)? {
-        guard events.count == 1,
+        guard contextBundle?.items.isEmpty != false,
+              events.count == 1,
               let presentation = events[0].toolPresentation,
               let result = GitStatusResult.parse(presentation)
         else { return nil }
@@ -240,7 +229,7 @@ private struct TraceActivitySheet: View {
                         Button("Retry", action: retry)
                             .buttonStyle(.borderedProminent)
                     }
-                } else if events.isEmpty {
+                } else if events.isEmpty, contextBundle?.items.isEmpty != false {
                     ContentUnavailableView(
                         "No activity recorded",
                         systemImage: "checkmark.circle",
@@ -248,14 +237,26 @@ private struct TraceActivitySheet: View {
                     )
                 } else {
                     List {
-                        ForEach(events) { entry in
-                            Group {
-                                if entry.hasDetail {
-                                    NavigationLink(value: entry) {
-                                        TraceStepRow(entry: entry)
+                        if let items = contextBundle?.items, !items.isEmpty {
+                            Section("References") {
+                                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                                    Label(item.label, systemImage: "doc.text")
+                                        .font(.subheadline)
+                                }
+                            }
+                        }
+                        if !events.isEmpty {
+                            Section("Agent record") {
+                                ForEach(events) { entry in
+                                    Group {
+                                        if entry.hasDetail {
+                                            NavigationLink(value: entry) {
+                                                TraceStepRow(entry: entry)
+                                            }
+                                        } else {
+                                            TraceStepRow(entry: entry)
+                                        }
                                     }
-                                } else {
-                                    TraceStepRow(entry: entry)
                                 }
                             }
                         }

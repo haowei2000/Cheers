@@ -2,7 +2,7 @@ import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Blocks, CircleCheck, Laptop, Package, Puzzle, Trash2, Upload } from "lucide-react";
 import { Banner } from "@/components/ui/banner";
-import { ItemList, WorkbenchItem } from "@/components/ui/item";
+import { ItemSection, WorkbenchItem } from "@/components/ui/item";
 import { useIsAdmin } from "@/stores/authStore";
 import { isTauri } from "@/lib/serverConfig";
 import {
@@ -179,16 +179,19 @@ export function WorkbenchManager() {
       <div className="grid gap-4 sm:grid-cols-2">
         {/* Plugins — CODE (sandboxed), admin/global */}
         {isAdmin && (
-        <div className="bg-zinc-900 rounded-sm p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Puzzle className="w-4 h-4 text-amber-400" />
-            <h3 className="text-sm font-semibold text-zinc-100">Plugins (code / sandboxed)</h3>
-            <UiButton variant="plain"
+        <ItemSection
+          label="Plugins · code / sandboxed"
+          presentationLevel="medium"
+          controlSize="regular"
+          className="border-t border-zinc-800 pt-2"
+          description="Sandboxed renderer bundles available in every channel."
+          action={<><UiButton variant="plain"
               type="button"
               onClick={() => pluginRef.current?.click()}
-              className="ml-auto inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300"
+              controlSize="compact"
+              className="text-amber-400 hover:text-amber-300"
             >
-              <Upload className="w-3.5 h-3.5" /> Upload .html
+              <Upload className="w-3.5 h-3.5" /> Upload HTML
             </UiButton>
             {/* design-system-native: file-input */}
 <input
@@ -202,13 +205,9 @@ export function WorkbenchManager() {
                 e.target.value = "";
               }}
             />
-          </div>
-          <p className="text-[11px] text-zinc-400">
-            Sandboxed plugins that ship their own renderer, available in every channel. On
-            install they run inside an isolated browser iframe.
-          </p>
-          <ItemList>
-            {plugins.length === 0 && <p className="px-2 py-3 text-xs text-zinc-400">No plugins yet.</p>}
+          </>}
+        >
+            {plugins.length === 0 && <WorkbenchItem title="No plugins yet" />}
             {plugins.map((p) => (
               <WorkbenchItem
                 key={p.plugin_id}
@@ -240,26 +239,27 @@ export function WorkbenchManager() {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </UiButton>}
-                className="border-0 bg-zinc-950/60"
               />
             ))}
-          </ItemList>
-        </div>
+        </ItemSection>
 
         )}
 
         {/* Templates — DATA (inert), admin/global */}
         {isAdmin && (
-        <div className="bg-zinc-900 rounded-sm p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-indigo-400" />
-            <h3 className="text-sm font-semibold text-zinc-100">Global templates (data)</h3>
-            <UiButton variant="plain"
+        <ItemSection
+          label="Global templates · data"
+          presentationLevel="medium"
+          controlSize="regular"
+          className="border-t border-zinc-800 pt-2"
+          description="Declarative scenario manifests available in every channel; no code execution."
+          action={<><UiButton variant="plain"
               type="button"
               onClick={() => tplRef.current?.click()}
-              className="ml-auto inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
+              controlSize="compact"
+              className="text-indigo-400 hover:text-indigo-300"
             >
-              <Upload className="w-3.5 h-3.5" /> Upload .json
+              <Upload className="w-3.5 h-3.5" /> Upload JSON
             </UiButton>
             {/* design-system-native: file-input */}
 <input
@@ -273,14 +273,10 @@ export function WorkbenchManager() {
                 e.target.value = "";
               }}
             />
-          </div>
-          <p className="text-[11px] text-zinc-400">
-            Declarative scenario manifests (referencing built-in lenses), available in every
-            channel. Pure data — no code execution, no sandbox needed.
-          </p>
-          <ItemList>
+          </>}
+        >
             {templates.length === 0 && (
-              <p className="px-2 py-3 text-xs text-zinc-400">No global templates yet.</p>
+              <WorkbenchItem title="No global templates yet" />
             )}
             {templates.map((t) => (
               <WorkbenchItem
@@ -298,25 +294,26 @@ export function WorkbenchManager() {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </UiButton>}
-                className="border-0 bg-zinc-950/60"
               />
             ))}
-          </ItemList>
-        </div>
+        </ItemSection>
         )}
 
         {/* Personal plugins — CODE (sandboxed), THIS Mac only (desktop app) */}
         {desktop && (
-          <div className="bg-zinc-900 rounded-sm p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Laptop className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-semibold text-zinc-100">On this Mac (personal)</h3>
-              <UiButton variant="plain"
+          <ItemSection
+            label="On this Mac · personal"
+            presentationLevel="medium"
+            controlSize="regular"
+            className="border-t border-zinc-800 pt-2"
+            description="Renderer plugins installed only for you on this machine."
+            action={<><UiButton variant="plain"
                 type="button"
                 onClick={() => personalRef.current?.click()}
-                className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+                controlSize="compact"
+                className="text-emerald-400 hover:text-emerald-300"
               >
-                <Upload className="w-3.5 h-3.5" /> Install .html
+                <Upload className="w-3.5 h-3.5" /> Install HTML
               </UiButton>
               {/* design-system-native: file-input */}
 <input
@@ -330,15 +327,10 @@ export function WorkbenchManager() {
                   e.target.value = "";
                 }}
               />
-            </div>
-            <p className="text-[11px] text-zinc-400">
-              Renderer plugins installed only for you, on this machine — no admin needed.
-              Stored in <code className="text-zinc-300">~/.cheers/plugins</code>; other members
-              won't see them (a file bound to one falls back to raw for them).
-            </p>
-            <ItemList>
+            </>}
+          >
               {personal.length === 0 && (
-                <p className="px-2 py-3 text-xs text-zinc-400">Nothing installed on this Mac.</p>
+                <WorkbenchItem title="Nothing installed on this Mac" />
               )}
               {personal.map((p) => (
                 <WorkbenchItem
@@ -356,11 +348,9 @@ export function WorkbenchManager() {
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </UiButton>}
-                  className="border-0 bg-zinc-950/60"
                 />
               ))}
-            </ItemList>
-          </div>
+          </ItemSection>
         )}
       </div>
     </section>

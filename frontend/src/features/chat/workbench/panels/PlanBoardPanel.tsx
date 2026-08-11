@@ -114,7 +114,7 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
               <div className="px-1 mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
                 {g.label} · {items.length}
               </div>
-              <ItemList>
+              <ItemList presentationLevel="medium" controlSize="regular">
                 {items.map((e, i) => (
                   <WorkbenchItem
                     key={`${g.key}-${i}`}

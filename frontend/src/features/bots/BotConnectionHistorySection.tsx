@@ -66,7 +66,7 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
         </p>
       ) : (
-        <ItemList className="max-h-56 overflow-y-auto pr-1">
+        <ItemList presentationLevel="max" controlSize="regular" className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
             <WorkbenchItem key={i} title={e.event} subtitle={e.reason ? reasonLabel[e.reason] ?? e.reason : undefined}
               metadata={time(e.created_at)} leading={e.event === "connected" ? (

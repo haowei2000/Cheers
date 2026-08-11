@@ -1,15 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { ChevronDown, Radio } from "lucide-react";
+import { Pencil, Radio, Trash2 } from "lucide-react";
 import { getBotMonitoring, updateBotMonitoring, type BotMonitoring } from "@/api/taskClaims";
-import { Button } from "@/components/ui/button";
+import {
+  CollectionDeleteItem,
+  CollectionEditorItem,
+  CollectionEmptyItem,
+  CollectionManager,
+  type CollectionMode,
+} from "@/components/ui/collection-manager";
+import { controlIconClasses } from "@/components/ui/control-size";
+import { Field } from "@/components/ui/field";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
-import { ItemSection, OperationsItem } from "@/components/ui/item";
+import { OperationsItem } from "@/components/ui/item";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { MemberItem } from "@/types";
 
-const defaults: Omit<BotMonitoring, "channel_id" | "bot_id"> = {
+type ClaimPolicy = Omit<BotMonitoring, "channel_id" | "bot_id">;
+
+const defaults: ClaimPolicy = {
   mode: "off",
   scope: "",
   debounce_seconds: 15,
@@ -19,6 +30,21 @@ const defaults: Omit<BotMonitoring, "channel_id" | "bot_id"> = {
   confidence_threshold: 0.75,
 };
 
+const createDefaults: ClaimPolicy = { ...defaults, mode: "text" };
+
+function botName(bot: MemberItem): string {
+  return bot.display_name || bot.username || bot.member_id.slice(0, 8);
+}
+
+function modeLabel(mode: ClaimPolicy["mode"]): string {
+  switch (mode) {
+    case "text": return "Text";
+    case "text_and_transcript": return "Text + voice";
+    case "all_activity": return "All activity";
+    default: return "Off";
+  }
+}
+
 export function TaskClaimSettings({
   channelId,
   bots,
@@ -26,162 +52,221 @@ export function TaskClaimSettings({
   channelId: string;
   bots: MemberItem[];
 }) {
-  const [selected, setSelected] = useState("");
-  const [policy, setPolicy] = useState(defaults);
+  const [policies, setPolicies] = useState<Record<string, ClaimPolicy>>({});
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<CollectionMode>({ kind: "browse" });
+  const [draftBotId, setDraftBotId] = useState("");
+  const [draft, setDraft] = useState<ClaimPolicy>(createDefaults);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
-    if (!selected && bots[0]) setSelected(bots[0].member_id);
-  }, [bots, selected]);
+    let cancelled = false;
+    setLoading(true);
+    void Promise.all(bots.map(async (bot) => {
+      try {
+        const { channel_id: _, bot_id: __, ...policy } = await getBotMonitoring(channelId, bot.member_id);
+        return [bot.member_id, policy] as const;
+      } catch {
+        return [bot.member_id, defaults] as const;
+      }
+    })).then((entries) => {
+      if (!cancelled) setPolicies(Object.fromEntries(entries));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [bots, channelId]);
 
-  useEffect(() => {
-    if (!selected) return;
-    getBotMonitoring(channelId, selected)
-      .then(({ channel_id: _, bot_id: __, ...nextPolicy }) => setPolicy(nextPolicy))
-      .catch(() => setPolicy(defaults));
-  }, [channelId, selected]);
+  const configuredBots = useMemo(
+    () => bots.filter((bot) => policies[bot.member_id]?.mode && policies[bot.member_id].mode !== "off"),
+    [bots, policies],
+  );
+  const availableBots = useMemo(
+    () => bots.filter((bot) => !policies[bot.member_id] || policies[bot.member_id].mode === "off"),
+    [bots, policies],
+  );
+  const visibleBots = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return configuredBots;
+    return configuredBots.filter((bot) => {
+      const policy = policies[bot.member_id];
+      return `${botName(bot)} ${policy?.mode ?? ""} ${policy?.scope ?? ""}`.toLocaleLowerCase().includes(normalized);
+    });
+  }, [configuredBots, policies, query]);
 
   if (!bots.length) return null;
 
+  const cancel = () => setMode({ kind: "browse" });
+  const beginAdd = () => {
+    const bot = availableBots[0];
+    if (!bot) return;
+    setDraftBotId(bot.member_id);
+    setDraft(createDefaults);
+    setMode({ kind: "add" });
+  };
+  const beginEdit = (bot: MemberItem) => {
+    setDraftBotId(bot.member_id);
+    setDraft(policies[bot.member_id] ?? createDefaults);
+    setMode({ kind: "edit", id: bot.member_id });
+  };
   const save = async () => {
+    const botId = mode.kind === "edit" ? mode.id : draftBotId;
+    if (!botId) return;
     setSaving(true);
     try {
-      const { channel_id: _, bot_id: __, ...nextPolicy } = await updateBotMonitoring(
-        channelId,
-        selected,
-        policy
-      );
-      setPolicy(nextPolicy);
-      toast.success("Task monitoring saved");
+      const { channel_id: _, bot_id: __, ...saved } = await updateBotMonitoring(channelId, botId, draft);
+      setPolicies((current) => ({ ...current, [botId]: saved }));
+      setMode({ kind: "browse" });
+      toast.success(mode.kind === "add" ? "Claim policy added" : "Claim policy saved");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save monitoring");
+      toast.error(error instanceof Error ? error.message : "Failed to save claim policy");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (botId: string) => {
+    setSaving(true);
+    try {
+      const { channel_id: _, bot_id: __, ...saved } = await updateBotMonitoring(channelId, botId, defaults);
+      setPolicies((current) => ({ ...current, [botId]: saved }));
+      setMode({ kind: "browse" });
+      toast.success("Claim policy removed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove claim policy");
     } finally {
       setSaving(false);
     }
   };
 
+  const editorBot = bots.find((bot) => bot.member_id === draftBotId);
+  const editor = (editorMode: "add" | "edit", key?: string) => (
+    <CollectionEditorItem
+      key={key}
+      mode={editorMode}
+      title={editorMode === "add" ? "Add claim policy" : `Edit ${editorBot ? botName(editorBot) : "claim policy"}`}
+      onCancel={cancel}
+      onSave={() => void save()}
+      saveLabel={editorMode === "add" ? "Add policy" : "Save changes"}
+      saving={saving}
+      saveDisabled={!draftBotId || draft.mode === "off"}
+    >
+      <Field label="Bot">
+        <Select
+          controlSize="regular"
+          value={draftBotId}
+          disabled={editorMode === "edit"}
+          onChange={(event) => setDraftBotId(event.target.value)}
+        >
+          {(editorMode === "add" ? availableBots : bots.filter((bot) => bot.member_id === draftBotId)).map((bot) => (
+            <option key={bot.member_id} value={bot.member_id}>{botName(bot)}</option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Listen to">
+        <Select
+          controlSize="regular"
+          value={draft.mode}
+          onChange={(event) => setDraft({ ...draft, mode: event.target.value as ClaimPolicy["mode"] })}
+        >
+          <option value="text">Text messages</option>
+          <option value="text_and_transcript">Text + voice transcript</option>
+          <option value="all_activity">All activity</option>
+        </Select>
+      </Field>
+      <Field label="Debounce (seconds)">
+        <Input
+          type="number"
+          min={1}
+          max={3600}
+          value={draft.debounce_seconds}
+          onChange={(event) => setDraft({ ...draft, debounce_seconds: Number(event.target.value) })}
+        />
+      </Field>
+      <Field label="Minimum interval">
+        <Input
+          type="number"
+          min={1}
+          value={draft.min_interval_seconds}
+          onChange={(event) => setDraft({ ...draft, min_interval_seconds: Number(event.target.value) })}
+        />
+      </Field>
+      <Field label="Checks per hour">
+        <Input
+          type="number"
+          min={1}
+          max={1000}
+          value={draft.max_evaluations_per_hour}
+          onChange={(event) => setDraft({ ...draft, max_evaluations_per_hour: Number(event.target.value) })}
+        />
+      </Field>
+      <Field label="Responsibility scope" className="sm:col-span-2">
+        <Textarea
+          rows={2}
+          value={draft.scope}
+          placeholder="Frontend implementation, UI bugs, and accessibility"
+          onChange={(event) => setDraft({ ...draft, scope: event.target.value })}
+        />
+      </Field>
+    </CollectionEditorItem>
+  );
+
   return (
     <section className="border-t border-zinc-800 pt-3">
-      <ItemSection label="Claims" controlSize="regular">
-        <div role="listitem">
-          <OperationsItem
-            presentationLevel="max"
-            controlSize="comfortable"
-            leading={<Radio className="h-4 w-4 text-zinc-400" />}
-            title="Proactive task claiming"
-            subtitle="A bot can inspect activity and ask before starting work."
-            metadata="Human approval is always required."
-            criticalStatus={
-              <span className="font-utility text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                {policy.mode === "off" ? "Off" : "Active"}
-              </span>
-            }
-            trailing={
-              <ChevronDown
-                className={`h-4 w-4 text-zinc-500 transition-transform ${expanded ? "rotate-180" : ""}`}
-              />
-            }
-            className={expanded ? "border-l-zinc-200 bg-zinc-900 text-zinc-100" : undefined}
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
+      <CollectionManager
+        label="Claims"
+        count={configuredBots.length}
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search claim policies"
+        addLabel="Add claim"
+        onAdd={beginAdd}
+        addDisabled={loading || mode.kind !== "browse" || availableBots.length === 0}
+      >
+        {mode.kind === "add" && editor("add")}
+        {loading ? (
+          <OperationsItem presentationLevel="medium" controlSize="regular" title="Loading claim policies…" />
+        ) : visibleBots.map((bot) => {
+          const policy = policies[bot.member_id] ?? defaults;
+          if (mode.kind === "edit" && mode.id === bot.member_id) return editor("edit", bot.member_id);
+          if (mode.kind === "delete" && mode.id === bot.member_id) return (
+            <CollectionDeleteItem
+              key={bot.member_id}
+              title={`Remove ${botName(bot)} claim policy?`}
+              description="Monitoring will be reset to Off."
+              onCancel={cancel}
+              onConfirm={() => void remove(bot.member_id)}
+              deleting={saving}
+            />
+          );
+          return (
+            <OperationsItem
+              key={bot.member_id}
+              presentationLevel="medium"
+              controlSize="regular"
+              leading={<Radio className={controlIconClasses.regular} />}
+              title={botName(bot)}
+              status={<span className="font-utility text-xs uppercase tracking-wide text-zinc-500">{modeLabel(policy.mode)}</span>}
+              actions={(
+                <>
+                  <IconButton label={`Edit ${botName(bot)} claim policy`} controlSize="compact" onClick={() => beginEdit(bot)}>
+                    <Pencil className={controlIconClasses.compact} />
+                  </IconButton>
+                  <IconButton label={`Remove ${botName(bot)} claim policy`} tone="danger" controlSize="compact" onClick={() => setMode({ kind: "delete", id: bot.member_id })}>
+                    <Trash2 className={controlIconClasses.compact} />
+                  </IconButton>
+                </>
+              )}
+            />
+          );
+        })}
+        {!loading && visibleBots.length === 0 && mode.kind !== "add" && (
+          <CollectionEmptyItem
+            query={query}
+            onClear={() => setQuery("")}
           />
-
-          {expanded && (
-            <div className="space-y-3 border-b border-zinc-800/90 px-2 py-3">
-              <fieldset className="space-y-3" aria-label="Task claiming policy">
-                <label className="block font-utility text-xs text-zinc-400">
-                  Bot
-                  <Select
-                    value={selected}
-                    onChange={(event) => setSelected(event.target.value)}
-                    className="mt-1"
-                  >
-                    {bots.map((bot) => (
-                      <option key={bot.member_id} value={bot.member_id}>
-                        {bot.display_name || bot.username || bot.member_id.slice(0, 8)}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="font-utility text-xs text-zinc-400">
-            Listen to
-            <Select
-              value={policy.mode}
-              onChange={(event) =>
-                setPolicy({ ...policy, mode: event.target.value as BotMonitoring["mode"] })
-              }
-              className="mt-1"
-            >
-              <option value="off">Off</option>
-              <option value="text">Text messages</option>
-              <option value="text_and_transcript">Text + voice transcript</option>
-              <option value="all_activity">All activity</option>
-            </Select>
-          </label>
-          <label className="font-utility text-xs text-zinc-400">
-            Debounce (seconds)
-            <Input
-              type="number"
-              min={1}
-              max={3600}
-              value={policy.debounce_seconds}
-              onChange={(event) =>
-                setPolicy({ ...policy, debounce_seconds: Number(event.target.value) })
-              }
-              className="mt-1"
-            />
-          </label>
-          <label className="font-utility text-xs text-zinc-400">
-            Minimum interval
-            <Input
-              type="number"
-              min={1}
-              value={policy.min_interval_seconds}
-              onChange={(event) =>
-                setPolicy({ ...policy, min_interval_seconds: Number(event.target.value) })
-              }
-              className="mt-1"
-            />
-          </label>
-          <label className="font-utility text-xs text-zinc-400">
-            Checks per hour
-            <Input
-              type="number"
-              min={1}
-              max={1000}
-              value={policy.max_evaluations_per_hour}
-              onChange={(event) =>
-                setPolicy({ ...policy, max_evaluations_per_hour: Number(event.target.value) })
-              }
-              className="mt-1"
-            />
-          </label>
-                </div>
-
-                <label className="block font-utility text-xs text-zinc-400">
-                  Bot responsibility scope
-                  <Textarea
-                    rows={3}
-                    value={policy.scope}
-                    placeholder="Example: frontend implementation, UI bugs, and accessibility"
-                    onChange={(event) => setPolicy({ ...policy, scope: event.target.value })}
-                    className="mt-1 resize-none"
-                  />
-                </label>
-              </fieldset>
-
-              <div className="flex justify-end">
-                <Button controlSize="regular" loading={saving} onClick={() => void save()}>
-                  Save monitoring
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </ItemSection>
+        )}
+      </CollectionManager>
     </section>
   );
 }

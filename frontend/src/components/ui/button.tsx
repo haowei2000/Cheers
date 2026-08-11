@@ -53,6 +53,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return <button
       ref={ref}
       disabled={disabled || loading}
+      data-control-size={resolvedSize}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 font-medium transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer",
         variantCls[variant],
