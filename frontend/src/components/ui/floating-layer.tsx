@@ -33,7 +33,7 @@ function resolvePlacement(
 /**
  * Renders a transient surface in the document body instead of inside its
  * trigger. This is deliberately the single escape hatch for menus, hover
- * actions and help bubbles: a scrolling or rounded parent must never crop a
+ * actions and help bubbles: a scrolling or rounded-sm parent must never crop a
  * control that has floated outside it.
  *
  * Placement flips when the preferred side is cramped (e.g. a trace inspector

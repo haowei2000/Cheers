@@ -108,7 +108,7 @@ export function MessageRecordInspector({
           "md:bottom-0 md:left-auto md:top-0 md:w-[23rem] md:max-h-none md:rounded-none md:border-l md:border-zinc-800/80 md:px-6 md:pb-6 md:pt-5",
         )}
       >
-        <div className="mx-auto mb-3 h-1 w-8 rounded-full bg-zinc-700 md:hidden" aria-hidden />
+        <div data-design-system-exempt="drag-handle" className="mx-auto mb-3 h-1 w-8 rounded-full bg-zinc-700 md:hidden" aria-hidden />
         <header className="flex items-start gap-4 border-b border-zinc-800/80 pb-4">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">

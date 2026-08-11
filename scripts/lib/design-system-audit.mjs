@@ -50,6 +50,13 @@ function classText(node, sourceFile, ts) {
   return "";
 }
 
+function attributeReason(node, sourceFile, ts, kind) {
+  const attr = node.attributes?.properties.find(
+    (property) => ts.isJsxAttribute(property) && property.name.getText(sourceFile) === `data-design-system-${kind}`
+  );
+  return attr?.initializer && ts.isStringLiteral(attr.initializer) ? attr.initializer.text : undefined;
+}
+
 function classTokens(value) {
   return value
     .replace(/["'`{}(),?:]/g, " ")
@@ -74,6 +81,7 @@ export function auditSources(files, ts, policy) {
       primitive: emptyNativeCounts(),
       development: emptyNativeCounts(),
     },
+    unexemptedBusinessNative: emptyNativeCounts(),
     violations: {
       nonStandardRadius: 0,
       unregisteredFullRadius: 0,
@@ -104,8 +112,10 @@ export function auditSources(files, ts, policy) {
         const tag = node.tagName.getText(sourceFile);
         const start = node.getStart(sourceFile);
         const line = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
-        const nativeReason = commentReason(source, start, "native");
-        const exemptReason = commentReason(source, start, "exempt");
+        const nativeReason = attributeReason(node, sourceFile, ts, "native") ?? commentReason(source, start, "native");
+        const exemptReason = attributeReason(node, sourceFile, ts, "exempt") ?? commentReason(source, start, "exempt");
+        if (nativeReason && !allowedNative.has(nativeReason)) result.invalidReasons.push({ file, reason: nativeReason, kind: "native" });
+        if (exemptReason && !allowedExempt.has(exemptReason)) result.invalidReasons.push({ file, reason: exemptReason, kind: "exempt" });
         const exempt =
           (nativeReason && allowedNative.has(nativeReason)) ||
           (exemptReason && allowedExempt.has(exemptReason));
@@ -114,6 +124,7 @@ export function auditSources(files, ts, policy) {
           const bucket = development ? "development" : primitive ? "primitive" : "business";
           result.native[bucket][tag] += 1;
           if (!development) result.native.production[tag] += 1;
+          if (bucket === "business" && !exempt) result.unexemptedBusinessNative[tag] += 1;
         }
 
         if (!development) {
@@ -162,6 +173,12 @@ export function enforceAudit(result, policy) {
       if (typeof ceiling !== "number") errors.push(`missing ${scope}.${tag} ceiling`);
       else if (count > ceiling) errors.push(`${scope} native ${tag} increased from ${ceiling} to ${count}`);
     }
+  }
+  for (const tag of RAW_TAGS) {
+    const ceiling = policy.unexemptedBusinessNativeCeilings?.[tag];
+    const count = result.unexemptedBusinessNative[tag];
+    if (typeof ceiling !== "number") errors.push(`missing unexempted business ${tag} ceiling`);
+    else if (count > ceiling) errors.push(`unexempted business native ${tag} increased from ${ceiling} to ${count}`);
   }
   for (const [rule, count] of Object.entries(result.violations)) {
     const ceiling = policy.violationCeilings?.[rule];

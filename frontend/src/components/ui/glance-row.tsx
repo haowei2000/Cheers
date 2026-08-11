@@ -46,8 +46,8 @@ export function GlanceRow({
         <ChevronRight className="w-3 h-3 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
       {bar != null && (
-        <div className="ml-[22px] h-1 overflow-hidden rounded-full bg-zinc-800">
-          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${bar}%` }} />
+        <div data-design-system-exempt="progress" className="ml-[22px] h-1 overflow-hidden rounded-full bg-zinc-800">
+          <div data-design-system-exempt="progress" className="h-full rounded-full bg-emerald-500" style={{ width: `${bar}%` }} />
         </div>
       )}
       {children && <div className="ml-[22px] w-[calc(100%-22px)] space-y-0.5">{children}</div>}

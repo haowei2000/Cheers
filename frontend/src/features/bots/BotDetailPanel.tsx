@@ -151,6 +151,7 @@ export function BotDetailPanel({
             <Avatar name={name} id={bot.bot_id} src={bot.avatar_url} size="lg" />
           )}
           <span
+            data-design-system-exempt="presence"
             className={cn(
               "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-900",
               bot.is_online ? "bg-emerald-500" : "bg-zinc-600"

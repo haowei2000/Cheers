@@ -78,7 +78,7 @@ export default function FriendsPage() {
             <TabBtn active={tab === "requests"} onClick={() => setTab("requests")}>
               Requests
               {incomingCount > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.5 rounded-full bg-rose-600 text-[10px] font-bold text-white">
+                <span data-design-system-exempt="unread" className="ml-1.5 inline-flex items-center justify-center min-w-[18px] px-1.5 py-0.5 rounded-full bg-rose-600 text-[10px] font-bold text-white">
                   {incomingCount}
                 </span>
               )}

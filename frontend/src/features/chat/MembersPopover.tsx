@@ -77,6 +77,7 @@ export function MembersPopover({
                     <Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="sm" />
                     {m.is_online != null && (
                       <span
+                        data-design-system-exempt="presence"
                         title={m.is_online ? "online" : "offline"}
                         className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 ${
                           m.is_online ? "bg-emerald-500" : "bg-zinc-600"

@@ -359,6 +359,7 @@ export function VoiceRoomPanel({
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-zinc-300">
             <span
+              data-design-system-exempt="presence"
               className={`h-2 w-2 rounded-full ${
                 connected ? "bg-emerald-400" : "bg-zinc-600"
               }`}
@@ -387,7 +388,7 @@ export function VoiceRoomPanel({
                 return (
                   <div
                     key={name}
-                    className={`flex max-w-32 items-center gap-1.5 rounded-sm border px-2 py-1 text-xs transition-colors ${
+                    className={`flex max-w-32 items-center gap-1.5 rounded-sm  px-2 py-1 text-xs transition-colors ${
                       speaking
                         ? "border-indigo-500/60 bg-indigo-500/10 text-indigo-200"
                         : "border-transparent bg-zinc-800/70 text-zinc-400"
@@ -448,7 +449,7 @@ export function VoiceRoomPanel({
               onClick={() => void disconnect()}
               title="Leave voice"
               aria-label="Leave voice meeting"
-              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-1.5 rounded-sm border border-rose-500/40 px-3 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+              controlSize="comfortable" className="flex min-w-11 items-center justify-center gap-1.5 rounded-sm  border-rose-500/40 px-3 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Leave</span>

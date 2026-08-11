@@ -96,13 +96,14 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
   const participants = voicePresence?.participants ?? [];
   const unread = (channel.mention_count ?? 0) > 0 ? (
     <span
+      data-design-system-exempt="unread"
       title={`${channel.mention_count} unread mention${(channel.mention_count ?? 0) === 1 ? "" : "s"}`}
       className="text-[10px] font-bold bg-rose-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
     >
       @{channel.mention_count}
     </span>
   ) : (channel.unread_count ?? 0) > 0 ? (
-    <span className="text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+    <span data-design-system-exempt="unread" className="text-[10px] font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
       {channel.unread_count}
     </span>
   ) : null;

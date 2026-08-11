@@ -177,6 +177,9 @@ if (!process.exitCode) {
     `web native business: button=${native.business.button}, input=${native.business.input}, select=${native.business.select}, textarea=${native.business.textarea}`
   );
   console.log(
+    `web unexempted business native: button=${webAudit.unexemptedBusinessNative.button}, input=${webAudit.unexemptedBusinessNative.input}, select=${webAudit.unexemptedBusinessNative.select}, textarea=${webAudit.unexemptedBusinessNative.textarea}`
+  );
+  console.log(
     `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-override=${violations.sharedControlSizeOverride}`
   );
 }

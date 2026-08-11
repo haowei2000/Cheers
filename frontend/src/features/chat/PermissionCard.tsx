@@ -410,6 +410,7 @@ export function PermissionCard({
  )}
             >
               <span
+                data-design-system-exempt="progress"
                 className={cn(
                   "h-3 w-3 shrink-0 rounded-full",
                   sel ? "bg-indigo-400" : "bg-zinc-700",

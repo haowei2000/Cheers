@@ -381,7 +381,7 @@ export function SessionChip({
                     key={s.session_id}
                     title={tagOf(s)}
                     subtitle={s.cwd || "default"}
-                    leading={<span className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))} />}
+                    leading={<span data-design-system-exempt="presence" className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))} />}
                     status={<span className="text-[11px] text-zinc-400">{s.status}</span>}
                     trailing={isSel ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
                     selected={isSel}

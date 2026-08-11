@@ -143,7 +143,7 @@ function ActionBar({
       onFocus={onEnter}
       onBlur={onLeave}
       className={cn(
-        "flex items-center gap-0.5 rounded-sm border border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
+        "flex items-center gap-0.5 rounded-sm  border-zinc-700/70 bg-zinc-800/95 p-0.5 shadow-xl shadow-black/30 backdrop-blur transition-opacity",
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
@@ -322,7 +322,7 @@ function SelectBox({ selected, className }: { selected: boolean; className?: str
   return (
     <span
       className={cn(
-        "flex items-center justify-center w-4 h-4 mt-1.5 rounded-sm border flex-shrink-0",
+        "flex items-center justify-center w-4 h-4 mt-1.5 rounded-sm  flex-shrink-0",
         selected ? "bg-indigo-600 border-indigo-500" : "border-zinc-600",
         className
       )}
@@ -761,6 +761,7 @@ export const MessageItem = memo(function MessageItem({
         {nested && (
           <UiButton variant="plain"
             type="button"
+            data-design-system-exempt="identity"
             {...avatarInteractionProps}
             square controlSize="comfortable" className="mt-0.5 flex flex-shrink-0 touch-manipulation select-none items-center justify-center rounded-full transition-opacity hover:opacity-80"
             title={canMention ? `View profile · double-click to mention @${name}` : "View profile"}
@@ -1029,9 +1030,9 @@ function MessageBody({
     return (
       <div className="flex items-center gap-2 py-1">
         <div className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:150ms]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
+          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />
+          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:150ms]" />
+          <span data-design-system-exempt="progress" className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
         </div>
         {message._trace && (
           <span className="text-xs text-zinc-400 italic truncate">

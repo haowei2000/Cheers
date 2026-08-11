@@ -211,7 +211,7 @@ export function MessageList({
     return (
       <div className="flex items-center gap-3 px-4 pb-2 pt-8" role="separator">
         <span className="h-px flex-1 bg-zinc-800/80" />
-        <span className="rounded-full bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
+        <span className="rounded-sm bg-zinc-950 px-2.5 py-1 text-[11px] font-medium text-zinc-500">
           {formatDayLabel(msg.created_at)}
         </span>
         <span className="h-px flex-1 bg-zinc-800/80" />

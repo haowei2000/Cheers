@@ -312,7 +312,7 @@ export function DiscussionView({
                   type="button"
                   onClick={() => selectDiscussion(topic.root.msg_id)}
                   className={cn(
-                    "group w-full rounded-sm border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60",
+                    "group w-full rounded-sm  p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60",
                     selected
                       ? "border-indigo-500/50 bg-indigo-500/10"
                       : "border-zinc-800 bg-zinc-900/45 hover:border-zinc-700 hover:bg-zinc-900/80",

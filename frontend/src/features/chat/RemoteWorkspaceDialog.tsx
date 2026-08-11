@@ -1331,7 +1331,7 @@ export function RemoteWorkspaceDialog({
                     : "bg-zinc-800 text-zinc-400"
                 }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span data-design-system-exempt="presence" className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                 <span className="text-zinc-300">{name}</span>
                 {base && <span className="text-zinc-400 truncate max-w-[140px]">· {base}</span>}
                 {sameFile && <span className="text-amber-400 shrink-0">· also editing</span>}

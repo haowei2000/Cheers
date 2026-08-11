@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { memo, useContext, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,7 +38,7 @@ function CodeBlock({
   }, [language, children]);
 
   return (
-    <pre className="rounded-lg bg-zinc-900 p-4 overflow-x-auto my-2">
+    <pre className="rounded-sm bg-zinc-900 p-4 overflow-x-auto my-2">
       <code
         className={cn("hljs text-sm leading-relaxed", language && `language-${language}`)}
         dangerouslySetInnerHTML={{ __html: highlighted }}
@@ -67,17 +68,17 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content, classN
           // Linkify a backtick-wrapped path to the remote-workspace browser.
           if (onPath && looksLikePath(text)) {
             return (
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => onPath(text)}
                 title="Open in the remote workspace"
-                className="bg-zinc-800 px-1 py-0.5 rounded text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
+                controlSize="regular" className="bg-zinc-800 px-1 rounded-sm text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
               >
                 {children} ↗
-              </button>
+              </UiButton>
             );
           }
-          return <code className="bg-zinc-800 px-1 py-0.5 rounded text-sm">{children}</code>;
+          return <code className="bg-zinc-800 px-1 py-0.5 rounded-sm text-sm">{children}</code>;
         },
         a({ href, children }) {
           return (

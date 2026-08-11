@@ -1848,7 +1848,7 @@ export function ChannelView({
                 {mentionables.length || "Members"}
                 {onlineCount > 0 && (
                   <span className="flex items-center gap-1.5 ml-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span data-design-system-exempt="presence" className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                     {onlineCount} online
                   </span>
                 )}

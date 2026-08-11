@@ -159,7 +159,7 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
         <GitBranch className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
         <span className="font-medium text-zinc-200 truncate">{git.branch || "(detached)"}</span>
         {git.dirty ? (
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="uncommitted changes" />
+          <span data-design-system-exempt="presence" className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="uncommitted changes" />
         ) : (
           <span className="text-[11px] text-zinc-500">clean</span>
         )}

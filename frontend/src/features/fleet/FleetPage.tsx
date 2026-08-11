@@ -82,6 +82,7 @@ function BotRow({
       leading={<div className="relative flex-shrink-0">
         <Avatar name={bot.bot_name} id={bot.bot_id} size="sm" />
         <span
+          data-design-system-exempt="presence"
           className={cn(
             "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900",
             bot.online ? "bg-emerald-500" : "bg-zinc-600"
@@ -99,6 +100,7 @@ function BotRow({
       ) : undefined}
       criticalStatus={bot.pending_count > 0 ? (
           <span
+            data-design-system-exempt="unread"
             className="text-[10px] font-bold bg-amber-600 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
             title={`${bot.pending_count} pending approval${bot.pending_count === 1 ? "" : "s"}`}
           >

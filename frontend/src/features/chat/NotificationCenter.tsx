@@ -193,6 +193,7 @@ export function ActivityCenter() {
         <Bell className="w-4 h-4" />
         {badge > 0 && (
           <span
+            data-design-system-exempt="unread"
             className={`absolute -top-0.5 -right-0.5 min-w-[18px] px-1.5 py-0.5 rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
               approvalCount > 0 ? "bg-amber-600" : "bg-indigo-600"
             }`}

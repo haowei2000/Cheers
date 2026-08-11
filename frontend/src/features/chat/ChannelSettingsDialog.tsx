@@ -276,6 +276,7 @@ export function ChannelSettingsDialog({
                   {(m.is_online === true ||
                     (m.is_online === false && m.member_type === "bot")) && (
                     <span
+                      data-design-system-exempt="presence"
                       className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 ${
                         m.is_online ? "bg-emerald-500" : "bg-zinc-600"
                       }`}

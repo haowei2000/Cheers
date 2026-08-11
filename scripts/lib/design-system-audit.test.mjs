@@ -12,6 +12,7 @@ const policy = {
     production: { button: 1, input: 1, select: 0, textarea: 0 },
     business: { button: 1, input: 1, select: 0, textarea: 0 },
   },
+  unexemptedBusinessNativeCeilings: { button: 1, input: 1, select: 0, textarea: 0 },
   violationCeilings: {
     nonStandardRadius: 0,
     unregisteredFullRadius: 0,
@@ -52,4 +53,11 @@ test("accepts registered semantic exemptions and rejects unknown reasons", () =>
     { file: `${root}/frontend/src/features/Bad.tsx`, source: `export const X=()=> <>/* design-system-exempt: mystery */<span/></>` },
   ], ts, policy);
   assert.match(enforceAudit(rejected, policy)[0], /unknown/);
+});
+
+test("accepts an explicit semantic exemption attribute", () => {
+  const source = `<span data-design-system-exempt="presence" className="rounded-full" />`;
+  const result = auditSources([{ file: "/repo/frontend/src/Presence.tsx", source }], ts, policy);
+  assert.equal(result.violations.unregisteredFullRadius, 0);
+  assert.deepEqual(result.invalidReasons, []);
 });

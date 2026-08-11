@@ -178,6 +178,7 @@ function ProfileCard({
           <Avatar name={name} src={member.avatar_url || undefined} id={member.member_id} size="lg" />
           {member.is_online != null && (
             <span
+              data-design-system-exempt="presence"
               className={
                 "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-zinc-900 " +
                 (member.is_online ? "bg-emerald-500" : "bg-zinc-600")

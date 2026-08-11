@@ -72,8 +72,8 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div className="rounded-md mb-3 overflow-hidden">
-      <div className="mx-2 mt-2 rounded-lg bg-zinc-900/60 px-3 py-2">
+    <div className="rounded-sm mb-3 overflow-hidden">
+      <div className="mx-2 mt-2 rounded-sm bg-zinc-900/60 px-3 py-2">
         <div className="flex items-center gap-2">
           {/* Card is titled by the bot's avatar + name (raw id in the tooltip). */}
           <Avatar
@@ -96,8 +96,9 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
             {completed}/{total}
           </span>
         </div>
-        <div className="mt-1.5 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+        <div data-design-system-exempt="progress" className="mt-1.5 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
           <div
+            data-design-system-exempt="progress"
             className="h-full rounded-full bg-emerald-500 transition-[width]"
             style={{ width: `${pct}%` }}
           />

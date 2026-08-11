@@ -579,6 +579,7 @@ export function ConnectorManager() {
               <WorkbenchItem
                 presentationLevel="medium"
                 leading={<span
+                  data-design-system-exempt="presence"
                   className={`h-2 w-2 rounded-full ${
                     inst.running ? "bg-emerald-500" : "bg-zinc-600"
                   }`}
@@ -988,6 +989,7 @@ function AuditTimeline({
  }`}
           >
             <span
+              data-design-system-exempt="presence"
               className={`inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle ${AUDIT_META[k].dot}`}
             />
             {AUDIT_META[k].label}
@@ -1026,7 +1028,7 @@ function AuditRow({ e }: { e: AuditEvent }) {
       <WorkbenchItem
         presentationLevel="medium"
         title={e.detail}
-        leading={<span className={`h-1.5 w-1.5 rounded-full ${AUDIT_META[e.kind].dot}`} />}
+        leading={<span data-design-system-exempt="presence" className={`h-1.5 w-1.5 rounded-full ${AUDIT_META[e.kind].dot}`} />}
         trailing={<span className="font-mono text-[10px] tabular-nums">{time}</span>}
         onClick={e.extra ? () => setOpen((o) => !o) : undefined}
       />

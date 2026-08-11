@@ -3,22 +3,28 @@
   "version": 1,
   "nativeElementCeilings": {
     "production": {
-      "button": 87,
-      "input": 23,
-      "select": 9,
-      "textarea": 4
+      "button": 9,
+      "input": 19,
+      "select": 1,
+      "textarea": 2
     },
     "business": {
-      "button": 78,
-      "input": 20,
-      "select": 8,
-      "textarea": 3
+      "button": 0,
+      "input": 16,
+      "select": 0,
+      "textarea": 1
     }
+  },
+  "unexemptedBusinessNativeCeilings": {
+    "button": 0,
+    "input": 0,
+    "select": 0,
+    "textarea": 0
   },
   "violationCeilings": {
     "nonStandardRadius": 73,
-    "unregisteredFullRadius": 42,
-    "restingBorder": 17,
+    "unregisteredFullRadius": 0,
+    "restingBorder": 0,
     "hardcodedControlSize": 4,
     "sharedControlSizeOverride": 0
   },

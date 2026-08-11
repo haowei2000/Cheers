@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, ClipboardList, Coins, Layers, ShieldCheck } from "lucide-react";
 import { listApprovalAudit, type AuditEvent } from "@/api/approval";
@@ -153,7 +154,7 @@ function ApprovalsGlance({
         <PopoverPanel
           placement="down"
           align="start"
-          className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 shadow-xl"
+          className="z-50 w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-sm  border-zinc-800 bg-zinc-950 p-2 shadow-xl"
         >
           <div className="px-1.5 pb-1.5 text-[11px] font-medium text-zinc-400">
             Pending approvals
@@ -164,16 +165,16 @@ function ApprovalsGlance({
               return (
                 <li
                   key={m.msg_id}
-                  className="rounded-md border border-zinc-800/80 bg-zinc-900/60 p-2"
+                  className="rounded-sm  border-zinc-800/80 bg-zinc-900/60 p-2"
                 >
-                  <button
+                  <UiButton variant="plain"
                     type="button"
                     onClick={() => jumpTo(m)}
                     className="mb-1.5 block w-full truncate text-left text-[11px] text-zinc-300 hover:text-indigo-300"
                     title="Open in message tracing"
                   >
                     {approvalPreview(m)}
-                  </button>
+                  </UiButton>
                   <PermissionCard
                     message={m}
                     channelId={ctx.channelId}
@@ -182,28 +183,28 @@ function ApprovalsGlance({
                     onResolved={close}
                   />
                   {data?.request_id && (
-                    <button
+                    <UiButton variant="plain"
                       type="button"
                       onClick={() => jumpTo(m)}
                       className="mt-1 text-[10px] text-zinc-500 hover:text-zinc-300"
                     >
                       Open in chat
-                    </button>
+                    </UiButton>
                   )}
                 </li>
               );
             })}
           </ul>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => {
               setOpen(false);
               onExpandAudit();
             }}
-            className="mt-2 w-full rounded-md px-2 py-1.5 text-left text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            controlSize="regular" className="mt-2 w-full rounded-sm px-2 text-left text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
           >
             Open full Audit board…
-          </button>
+          </UiButton>
         </PopoverPanel>
       )}
     </div>

@@ -9,7 +9,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import type { SpawnKind } from "@/features/chat/workbench/laneSnap";
 
-// A NON-MODAL floating window (ViewBoard-style chrome): rounded elevated card,
+// A NON-MODAL floating window (ViewBoard-style chrome): rounded-sm elevated card,
 // no backdrop, so the chat + composer behind it stay fully usable. Draggable by
 // its title bar and resizable from the bottom-right grip (geometry persists per
 // `storageKey`); clicking anywhere in the window raises it above the others; the

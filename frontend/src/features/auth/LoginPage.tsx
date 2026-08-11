@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Apple } from "lucide-react";
@@ -227,7 +228,7 @@ export default function LoginPage() {
               Use Passkey
             </Button>
           )}
-          <button
+          <UiButton variant="plain"
             type="button"
             className={`w-full text-xs ${publicLinkClass}`}
             onClick={() => {
@@ -239,7 +240,7 @@ export default function LoginPage() {
             }}
           >
             Back to sign in
-          </button>
+          </UiButton>
         </form> : <form
           onSubmit={handleSubmit}
           className={publicPanelClass}

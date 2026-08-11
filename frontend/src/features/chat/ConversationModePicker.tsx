@@ -47,7 +47,7 @@ export function ConversationModePicker({
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             controlSize="comfortable" className={cn(
- " rounded-sm border px-3 text-left transition-colors",
+ " rounded-sm  px-3 text-left transition-colors",
  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
  selected
  ? "border-indigo-500 bg-indigo-500/10 text-zinc-100"

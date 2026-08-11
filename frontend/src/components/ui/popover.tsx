@@ -47,7 +47,7 @@ export function usePopoverDismiss(
 /**
  * The floating surface itself. Its marker stays in the relative anchor, while
  * the visible panel is portalled to the document body so it cannot be clipped
- * by a scrolling, rounded, or transformed parent. Width/padding stay with the
+ * by a scrolling, rounded-sm, or transformed parent. Width/padding stay with the
  * caller.
  */
 export function PopoverPanel({

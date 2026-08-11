@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { createRoot, type Root } from "react-dom/client";
 import { Folder, LayoutGrid, Maximize2, X } from "lucide-react";
 import "@/index.css";
@@ -123,15 +124,15 @@ const context: WorkbenchContext = {
 function Preview() {
   return (
     <main className="flex h-full items-center justify-center bg-zinc-950 p-5 text-zinc-100">
-      <section className="flex h-full w-full max-w-[1120px] flex-col overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900 shadow-2xl shadow-black/50">
+      <section className="flex h-full w-full max-w-[1120px] flex-col overflow-hidden rounded-sm border border-zinc-700/80 bg-zinc-900 shadow-2xl shadow-black/50">
         <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
           <LayoutGrid className="h-4 w-4 text-indigo-300" />
           <h1 className="text-sm font-semibold">Workbench</h1>
           <span className="text-xs text-zinc-500"># engineering</span>
           <div className="ml-auto flex items-center gap-2">
-            <button className="flex h-9 items-center gap-2 rounded-lg bg-zinc-800 px-3 text-xs text-zinc-300"><Folder className="h-4 w-4" />Raw</button>
-            <button aria-label="Expand" className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></button>
-            <button aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-800"><X className="h-4 w-4" /></button>
+            <UiButton variant="plain" controlSize="regular" className="flex items-center gap-2 rounded-sm bg-zinc-800 px-3 text-xs text-zinc-300"><Folder className="h-4 w-4" />Raw</UiButton>
+            <UiButton variant="plain" aria-label="Expand" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><Maximize2 className="h-4 w-4" /></UiButton>
+            <UiButton variant="plain" aria-label="Close" square controlSize="regular" className="flex items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-800"><X className="h-4 w-4" /></UiButton>
           </div>
         </header>
         <div className="min-h-0 flex-1">

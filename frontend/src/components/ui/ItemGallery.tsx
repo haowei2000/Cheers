@@ -135,6 +135,29 @@ export function ItemGallery() {
         </div>
       </section>
 
+      <section aria-labelledby="state-register" className="mb-4 border-y border-zinc-700 py-3">
+        <h2 id="state-register" className="mb-2 px-1 font-utility text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400">State register</h2>
+        <div className="grid gap-px bg-zinc-800 lg:grid-cols-2">
+          <ItemList className="bg-zinc-950 px-2">
+            <NavigationItem title="Selected destination" subtitle="Current channel" selected onClick={() => undefined} />
+            <EntityItem title="Disabled identity" subtitle="Unavailable on this platform" disabled onClick={() => undefined} />
+          </ItemList>
+          <ItemList className="bg-zinc-950 px-2">
+            <OperationsItem
+              title="Composite approval"
+              subtitle="Critical status remains visible"
+              criticalStatus={<span className="text-[10px] font-semibold text-red-300">ERROR</span>}
+              actions={<><Button variant="ghost" controlSize="compact">Inspect</Button><Button variant="danger" controlSize="compact">Reject</Button></>}
+            />
+            <OperationsItem
+              title="Loading operation"
+              subtitle="Actions retain the shared height"
+              actions={<Button variant="secondary" controlSize="compact" loading>Loading</Button>}
+            />
+          </ItemList>
+        </div>
+      </section>
+
       <div className="grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
         {levels.map((level, index) => (
           <PresentationProvider key={level} level={level}>

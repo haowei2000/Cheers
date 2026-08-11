@@ -87,7 +87,7 @@ export function ExistingFilePicker({
               >
                 <span
                   className={
-                    "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border " +
+                    "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm  " +
                     (checked ? "border-indigo-500 bg-indigo-600 text-white" : "border-zinc-600")
                   }
                 >

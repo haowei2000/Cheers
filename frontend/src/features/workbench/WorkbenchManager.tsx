@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Blocks, CircleCheck, Laptop, Package, Puzzle, Trash2, Upload } from "lucide-react";
 import { Banner } from "@/components/ui/banner";
@@ -178,18 +179,19 @@ export function WorkbenchManager() {
       <div className="grid gap-4 sm:grid-cols-2">
         {/* Plugins — CODE (sandboxed), admin/global */}
         {isAdmin && (
-        <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
+        <div className="bg-zinc-900 rounded-sm p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Puzzle className="w-4 h-4 text-amber-400" />
             <h3 className="text-sm font-semibold text-zinc-100">Plugins (code / sandboxed)</h3>
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => pluginRef.current?.click()}
               className="ml-auto inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300"
             >
               <Upload className="w-3.5 h-3.5" /> Upload .html
-            </button>
-            <input
+            </UiButton>
+            {/* design-system-native: file-input */}
+<input
               ref={pluginRef}
               type="file"
               accept=".html,text/html"
@@ -216,12 +218,12 @@ export function WorkbenchManager() {
                 status={p.origin === "system" ? (
                   <span
                     title="Official plugin, seeded by the gateway release. Updates ship with releases; it can't be overwritten by upload (copy under a new id to customize). Deleting it sticks until a release carries a newer version."
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 flex-shrink-0"
+                    className="text-[10px] px-1.5 py-0.5 rounded-sm bg-indigo-500/15 text-indigo-300 flex-shrink-0"
                   >
                     Official
                   </span>
                 ) : undefined}
-                actions={<button
+                actions={<UiButton variant="plain"
                   onClick={async () => {
                     if (
                       p.origin === "system" &&
@@ -237,7 +239,7 @@ export function WorkbenchManager() {
                   className="text-zinc-500 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                </button>}
+                </UiButton>}
                 className="border-0 bg-zinc-950/60"
               />
             ))}
@@ -248,18 +250,19 @@ export function WorkbenchManager() {
 
         {/* Templates — DATA (inert), admin/global */}
         {isAdmin && (
-        <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
+        <div className="bg-zinc-900 rounded-sm p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-indigo-400" />
             <h3 className="text-sm font-semibold text-zinc-100">Global templates (data)</h3>
-            <button
+            <UiButton variant="plain"
               type="button"
               onClick={() => tplRef.current?.click()}
               className="ml-auto inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
             >
               <Upload className="w-3.5 h-3.5" /> Upload .json
-            </button>
-            <input
+            </UiButton>
+            {/* design-system-native: file-input */}
+<input
               ref={tplRef}
               type="file"
               accept=".json,application/json"
@@ -285,7 +288,7 @@ export function WorkbenchManager() {
                 title={t.title}
                 subtitle={t.id}
                 leading={<Package className="w-3.5 h-3.5 text-indigo-400/70 flex-shrink-0" />}
-                actions={<button
+                actions={<UiButton variant="plain"
                   onClick={async () => {
                     await deleteGlobalTemplate(t.id);
                     await reload();
@@ -294,7 +297,7 @@ export function WorkbenchManager() {
                   className="text-zinc-500 hover:text-red-400"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                </button>}
+                </UiButton>}
                 className="border-0 bg-zinc-950/60"
               />
             ))}
@@ -304,18 +307,19 @@ export function WorkbenchManager() {
 
         {/* Personal plugins — CODE (sandboxed), THIS Mac only (desktop app) */}
         {desktop && (
-          <div className="bg-zinc-900 rounded-2xl p-5 space-y-3">
+          <div className="bg-zinc-900 rounded-sm p-5 space-y-3">
             <div className="flex items-center gap-2">
               <Laptop className="w-4 h-4 text-emerald-400" />
               <h3 className="text-sm font-semibold text-zinc-100">On this Mac (personal)</h3>
-              <button
+              <UiButton variant="plain"
                 type="button"
                 onClick={() => personalRef.current?.click()}
                 className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
               >
                 <Upload className="w-3.5 h-3.5" /> Install .html
-              </button>
-              <input
+              </UiButton>
+              {/* design-system-native: file-input */}
+<input
                 ref={personalRef}
                 type="file"
                 accept=".html,.htm,text/html"
@@ -342,7 +346,7 @@ export function WorkbenchManager() {
                   title={p.title}
                   subtitle={p.id}
                   leading={<Laptop className="w-3.5 h-3.5 text-emerald-400/70 flex-shrink-0" />}
-                  actions={<button
+                  actions={<UiButton variant="plain"
                     onClick={async () => {
                       await removePersonalPlugin(p.id);
                       await reloadPersonal();
@@ -351,7 +355,7 @@ export function WorkbenchManager() {
                     className="text-zinc-500 hover:text-red-400"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                  </button>}
+                  </UiButton>}
                   className="border-0 bg-zinc-950/60"
                 />
               ))}

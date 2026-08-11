@@ -1,3 +1,4 @@
+import { Button as UiButton } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ResourceError } from "../../hooks/useChatRealtime";
 import type { FsClient } from "../fsClient";
@@ -238,21 +239,21 @@ export function SandboxRenderer({
       )}
       {dev && (
         <>
-          <button
+          <UiButton variant="plain"
             type="button"
             onClick={() => setDevOpen((v) => !v)}
             title="Protocol inspector (session-loaded plugins only)"
-            className="absolute bottom-2 right-2 z-10 rounded bg-zinc-900/90 px-2 py-1 text-[11px] text-zinc-300 ring-1 ring-zinc-700 hover:text-white"
+            controlSize="regular" className="absolute bottom-2 right-2 z-10 rounded-sm bg-zinc-900/90 px-2 text-[11px] text-zinc-300 ring-1 ring-zinc-700 hover:text-white"
           >
             {devOpen ? "Hide" : "Dev"} · {devEvents.length}
-          </button>
+          </UiButton>
           {devOpen && (
             <div className="absolute inset-x-0 bottom-0 z-10 flex h-1/2 flex-col border-t border-zinc-700 bg-zinc-950/95">
               <div className="flex items-center justify-between px-2 py-1 text-[11px] text-zinc-400">
                 <span>Protocol inspector · {plugin.plugin_id}</span>
-                <button type="button" onClick={() => setDevEvents([])} className="hover:text-white">
+                <UiButton variant="plain" type="button" onClick={() => setDevEvents([])} className="hover:text-white">
                   Clear
-                </button>
+                </UiButton>
               </div>
               <div className="flex-1 overflow-auto px-2 pb-2 font-mono text-[11px] leading-relaxed">
                 {devEvents.length === 0 ? (

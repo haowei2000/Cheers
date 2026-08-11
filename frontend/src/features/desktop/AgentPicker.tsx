@@ -76,6 +76,7 @@ export function AgentPicker({
  } ${a.installed ? "" : "opacity-50"}`}
             >
               <span
+                data-design-system-exempt="identity"
                 className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
                 style={{ backgroundColor: icon?.bg ?? "#3f3f46", color: icon?.fg ?? "#e4e4e7" }}
               >
@@ -98,7 +99,7 @@ export function AgentPicker({
                 title={`Install ${a.label}`}
                 disabled={installing !== null}
                 onClick={() => void install(a.key)}
-                square controlSize="compact" className="absolute -top-1 -right-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
+                square controlSize="compact" className="absolute -top-1 -right-1 rounded-sm bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center"
               >
                 {installing === a.key ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -121,7 +122,7 @@ export function AgentPicker({
  : "bg-zinc-800/60 hover:bg-zinc-800"
  }`}
       >
-        <span className="w-8 h-8 rounded-full bg-zinc-700 text-zinc-300 flex items-center justify-center">
+        <span data-design-system-exempt="identity" className="w-8 h-8 rounded-full bg-zinc-700 text-zinc-300 flex items-center justify-center">
           <Wrench className="w-4 h-4" />
         </span>
         <span className="text-[11px] text-zinc-300">Custom</span>
