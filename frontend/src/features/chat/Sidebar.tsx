@@ -6,6 +6,7 @@ import type { Channel, VoicePresenceSnapshot, Workspace } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { EntityItem, ItemRow } from "@/components/ui/item";
 import { EditorialIcon } from "@/components/ui/editorial-icons";
+import { controlMinHeightClasses, controlSquareClasses } from "@/components/ui/control-size";
 import { NewDmDialog } from "./NewDmDialog";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { WorkspaceSettingsDialog } from "./WorkspaceSettingsDialog";
@@ -50,12 +51,12 @@ function Section({ label, children, defaultOpen = true, onAdd, addLabel }: Secti
     <div className="space-y-1">
       {/* Two sibling buttons (not a span nested in the toggle) so the add control
           is its own focusable, keyboard-reachable button with valid ARIA. */}
-      <div className="group flex min-h-7 items-center gap-1 px-1">
+      <div className={cn("group flex items-center gap-1 px-1", controlMinHeightClasses.compact)}>
         <button
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          className="font-utility flex min-h-7 flex-1 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition-colors hover:text-zinc-200 max-md:min-h-10"
+          className={cn("font-utility flex flex-1 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400 transition-colors hover:text-zinc-200", controlMinHeightClasses.compact)}
         >
           {open ? (
             <ChevronDown className="h-3.5 w-3.5" />
@@ -72,7 +73,7 @@ function Section({ label, children, defaultOpen = true, onAdd, addLabel }: Secti
             title={addLabel ?? "Add"}
             // Hover-revealed on desktop, revealed on keyboard focus too, and always
             // visible (with a bigger tap area) on touch.
-            className="flex h-7 w-7 items-center justify-center rounded-sm text-zinc-400 opacity-0 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 max-md:h-10 max-md:w-10 max-md:opacity-100"
+            className={cn("flex items-center justify-center rounded-sm text-zinc-400 opacity-0 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 group-hover:opacity-100 max-md:opacity-100", controlSquareClasses.compact)}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -132,6 +133,7 @@ function ChannelItem({ channel, selected, onClick, voicePresence }: ChannelItemP
             <EntityItem
               key={participant.user_id}
               presentationLevel="minimal"
+              controlSize="compact"
               title={participant.display_name}
               leading={<Avatar
                 name={participant.display_name}

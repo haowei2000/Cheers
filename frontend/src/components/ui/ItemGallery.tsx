@@ -1,4 +1,4 @@
-import { AlertTriangle, User } from "lucide-react";
+import { AlertTriangle, Plus, User } from "lucide-react";
 import {
   EditorialIcon,
   editorialIconNames,
@@ -18,8 +18,16 @@ import {
 } from "@/components/ui/item";
 import { PresentationProvider, type PresentationLevel } from "@/components/ui/presentation";
 import { cn } from "@/lib/cn";
+import { ControlSizeProvider, type ControlSize } from "@/components/ui/control-size";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { MenuOption } from "@/components/ui/menu-option";
+import { TabOption } from "@/components/ui/tab-option";
+import { CheckboxField } from "@/components/ui/checkbox-field";
 
 const levels: PresentationLevel[] = ["max", "medium", "minimal"];
+const controlSizes: ControlSize[] = ["comfortable", "regular", "compact"];
 
 const iconLabels: Record<EditorialIconName, string> = {
   correspondence: "Correspondence",
@@ -91,6 +99,42 @@ export function ItemGallery() {
         </div>
       </section>
 
+      <section aria-labelledby="control-size-register" className="mb-4 border-y border-zinc-700 py-3">
+        <div className="mb-2 flex items-baseline justify-between border-b border-zinc-600 pb-1">
+          <h2 id="control-size-register" className="font-display text-lg font-semibold tracking-tight">
+            Control Height Register
+          </h2>
+          <span className="font-utility text-[9px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+            44 · 36 · 28 px
+          </span>
+        </div>
+        <div className="grid gap-px bg-zinc-800 lg:grid-cols-3">
+          {controlSizes.map((size) => (
+            <ControlSizeProvider key={size} size={size}>
+              <div className="space-y-2 bg-zinc-950 p-3">
+                <p className="font-utility text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  {size}
+                </p>
+                <EntityItem title="Aligned item" leading={<User className="h-4 w-4" />} />
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary">Button</Button>
+                  <IconButton label={`${size} add`}><Plus className="h-4 w-4" /></IconButton>
+                  <Input aria-label={`${size} input`} placeholder="Input" />
+                </div>
+                <div role="tablist" className="flex items-center gap-1">
+                  <TabOption label="Active" selected />
+                  <TabOption label="Archive" selected={false} />
+                </div>
+                <div role="menu">
+                  <MenuOption label="Open correspondence" leading={<EditorialIcon name="correspondence" className="h-4 w-4" />} />
+                </div>
+                <CheckboxField label="Include resolved items" />
+              </div>
+            </ControlSizeProvider>
+          ))}
+        </div>
+      </section>
+
       <div className="grid border-y border-zinc-700 lg:grid-cols-3 lg:divide-x lg:divide-zinc-700">
         {levels.map((level, index) => (
           <PresentationProvider key={level} level={level}>
@@ -154,7 +198,7 @@ export function ItemGallery() {
                 title="Deploy production change"
                 subtitle="Approval required"
                 criticalStatus={<span className="h-1.5 w-1.5 rounded-full bg-red-400" />}
-                actions={<button type="button" className="rounded-sm px-2 py-1 text-xs text-amber-200 hover:bg-zinc-800">Review</button>}
+                actions={<Button variant="ghost" controlSize="compact" className="px-2 text-amber-200">Review</Button>}
               />
               <WorkbenchItem
                 leading={<EditorialIcon name="proof" className="h-5 w-5" />}

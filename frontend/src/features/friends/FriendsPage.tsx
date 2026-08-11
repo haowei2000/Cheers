@@ -483,7 +483,7 @@ function IconBtn({
       label={title}
       onClick={onClick}
       tone={primary ? "success" : danger ? "danger" : "neutral"}
-      presentationLevel="minimal"
+      controlSize="compact"
       className="rounded-md"
     >
       {children}

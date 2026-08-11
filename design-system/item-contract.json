@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": 1,
+  "version": 2,
   "defaultPresentationLevel": "medium",
+  "defaultControlSize": "regular",
   "visualLanguage": {
     "name": "Editorial Correspondence",
     "principles": [
@@ -42,11 +43,27 @@
       "visibleSlots": ["leading", "title", "criticalStatus", "overflowAction"]
     }
   },
+  "controlSizes": {
+    "comfortable": {
+      "web": "44px",
+      "description": "Primary navigation, workspace rail, and prominent touch controls."
+    },
+    "regular": {
+      "web": "36px",
+      "description": "Default buttons, fields, list items, and composer controls."
+    },
+    "compact": {
+      "web": "28px",
+      "description": "Dense desktop utilities and section controls; touch viewports retain a 44px hit target."
+    }
+  },
   "invariants": [
     "An explicit item presentation level overrides the inherited container level.",
     "Responsive rules may choose an inherited default but never replace an explicit item level.",
     "Critical error, approval, unread, mention, and online state remains perceivable at every level.",
     "Presentation level changes information density, not business behavior or API data.",
+    "Control size changes physical height, not visible information or business state.",
+    "Presentation level and control size inherit and override independently.",
     "Web, iOS, and Android share anatomy and semantics while retaining platform-native navigation, motion, typography, and accessibility behavior."
   ],
   "semanticActions": {
@@ -62,8 +79,6 @@
     "reject": "x"
   },
   "legacyBaselines": {
-    "webRawButtonElements": 303,
-    "webRawInputElements": 54,
     "iosDirectButtonCalls": 186,
     "androidDirectButtonCalls": 6
   },

@@ -2,6 +2,7 @@ import { cloneElement, isValidElement, useId, useRef, useState, type ReactElemen
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FloatingLayer } from "./floating-layer";
+import { IconButton } from "./icon-button";
 
 // Hover help (DESIGN.md §2.14). Supplementary explanation that shows on hover
 // AND keyboard focus (touch: tapping the trigger focuses it → reveals the tip).
@@ -41,15 +42,14 @@ export function Tip({
         "aria-describedby": id,
       })
     ) : (
-      <button
-        type="button"
-        aria-label={label}
+      <IconButton
+        label={label}
+        controlSize="compact"
         aria-describedby={id}
-        // Small glyph, but pad the hit target out to a usable size.
-        className="-m-1 inline-flex items-center justify-center rounded p-1 text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="-m-1 text-zinc-500 transition-colors hover:text-zinc-300"
       >
         <Info className="h-3.5 w-3.5" />
-      </button>
+      </IconButton>
     );
 
   return (
@@ -69,7 +69,7 @@ export function Tip({
           align={align}
           id={id}
           role="tooltip"
-          className="pointer-events-none w-max max-w-[230px] rounded-lg bg-zinc-700 px-2.5 py-1.5 text-left text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-100 shadow-xl shadow-black/40"
+          className="pointer-events-none w-max max-w-[230px] rounded-sm bg-zinc-700 px-2.5 py-1.5 text-left text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-100 shadow-xl shadow-black/40"
         >
           {content}
         </FloatingLayer>

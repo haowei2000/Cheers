@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { EntityItem, ItemRow, OperationsItem } from "@/components/ui/item";
 import { PresentationProvider } from "@/components/ui/presentation";
+import { ControlSizeProvider } from "@/components/ui/control-size";
 
 function render(level: "max" | "medium" | "minimal") {
   return renderToStaticMarkup(
@@ -60,7 +61,22 @@ describe("ItemRow presentation levels", () => {
       <OperationsItem title="Approval" actions={<button type="button">Approve</button>} />
     );
     expect(markup).toContain("data-item-actions");
+    expect(markup).toContain('role="listitem"');
     expect(markup.match(/<button/g)).toHaveLength(1);
     expect(markup).not.toMatch(/<button[^>]*>.*<button/s);
+  });
+
+  it("inherits control height independently from presentation anatomy", () => {
+    const markup = renderToStaticMarkup(
+      <PresentationProvider level="max">
+        <ControlSizeProvider size="compact">
+          <EntityItem title="Ada" subtitle="Engineer" />
+        </ControlSizeProvider>
+      </PresentationProvider>
+    );
+    expect(markup).toContain('data-presentation-level="max"');
+    expect(markup).toContain('data-control-size="compact"');
+    expect(markup).toContain("Engineer");
+    expect(markup).toContain("min-h-7");
   });
 });

@@ -5,6 +5,7 @@ import { ItemList, OperationsItem } from "@/components/ui/item";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useActivityUiStore } from "@/stores/activityUiStore";
 import { useChatStore } from "@/stores/chatStore";
@@ -184,10 +185,10 @@ export function ActivityCenter() {
 
   return (
     <>
-      <button
+      <IconButton
         onClick={() => setOpen(true)}
-        title="Activity — approvals & invites"
-        className="relative w-8 h-8 max-md:w-11 max-md:h-11 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center justify-center transition-colors"
+        label="Activity — approvals & invites"
+        className="relative text-zinc-500"
       >
         <Bell className="w-4 h-4" />
         {badge > 0 && (
@@ -199,7 +200,7 @@ export function ActivityCenter() {
             {badge}
           </span>
         )}
-      </button>
+      </IconButton>
 
       {open && (
         <Dialog title="Activity" onClose={() => setOpen(false)}>

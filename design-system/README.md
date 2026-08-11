@@ -15,6 +15,8 @@ and phased migration boundary in Chinese.
 |---|---|---|---|
 | inherited level | `PresentationProvider` | `EnvironmentValues.presentationLevel` | `LocalPresentationLevel` |
 | local override | `presentationLevel` prop | `.presentationLevel(_:)` | `presentationLevel` parameter |
+| inherited control size | `ControlSizeProvider` | planned native environment | planned native composition local |
+| control-size override | `controlSize` prop | planned | planned |
 | generic item | `ItemRow` | `CheersItemRow` | `CheersItemRow` |
 | component gallery | `dev/item-gallery.html` | SwiftUI previews | Compose previews |
 
@@ -31,6 +33,8 @@ Shared items use a formal, newspaper-inspired treatment across platforms:
 - Source Sans 3 on Web and native platform sans-serif on mobile for entity names and navigation labels, with Source Serif 4 plus Source Han Serif CN reserved for reading content;
 - hairline rules instead of shadows to separate content;
 - restrained neutral surfaces, with color reserved for semantic state.
+- no colored glow, neon gradient, or decorative saturated shadow; neutral
+  shadows are allowed only when a floating layer needs spatial separation.
 
 Typography has exactly three semantic roles:
 
@@ -58,6 +62,12 @@ fallback on mobile.
 
 Circles remain valid only when they carry meaning, such as avatars, presence,
 or unread dots. Presentation level changes information density, not touch size.
+
+Web controls use an independent three-tier height scale: `comfortable` = 44px,
+`regular` = 36px (default), and `compact` = 28px. Touch viewports preserve a
+minimum 44px hit target. Workspace navigation uses comfortable; ordinary items,
+fields, buttons, and composer controls use regular; dense section utilities use
+compact. A size change must never remove information or critical state.
 
 ## Web gallery
 

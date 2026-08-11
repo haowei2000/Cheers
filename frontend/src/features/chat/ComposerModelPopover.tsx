@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { ComposerBotSettings, type MentionedBot } from "./ComposerBotSettings";
 import { readBotControls } from "./sessionControlsCache";
+import { controlHeightClasses } from "@/components/ui/control-size";
 
 /**
  * Collapsed entry point for the composer's bot model/mode + config controls.
@@ -86,7 +87,8 @@ export function ComposerModelPopover({
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 max-md:py-2 text-[11px] transition-colors",
+          "inline-flex min-w-0 items-center gap-1.5 rounded-sm px-2 text-[11px] transition-colors",
+          controlHeightClasses.regular,
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
           open
             ? "bg-indigo-600/15 text-indigo-200"

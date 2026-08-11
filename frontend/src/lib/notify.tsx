@@ -1,6 +1,8 @@
 import toast from "react-hot-toast";
 import { AlertCircle, CircleCheck, Info, TriangleAlert, X } from "lucide-react";
 import type { ComponentType } from "react";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 
 // Tier S of the global error system: a thin semantic layer over react-hot-toast.
 // Adds the severity icon and an optional ACTION (the exit — "Retry", "Reload"),
@@ -49,7 +51,7 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
     (t) => (
       <div
         role={severity === "error" ? "alert" : "status"}
-        className={`pointer-events-auto flex max-w-xs items-start gap-2.5 rounded-xl bg-zinc-900 px-3 py-2.5 shadow-xl shadow-black/40 transition-all duration-150 ${
+        className={`pointer-events-auto flex max-w-xs items-start gap-2.5 rounded-sm bg-zinc-900 px-3 py-2.5 shadow-xl shadow-black/40 transition-[opacity,transform] duration-150 ${
           t.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
         }`}
       >
@@ -58,27 +60,28 @@ function show(severity: Severity, message: string, opts?: NotifyOpts): string {
           <span className="break-words">{message}</span>
           {opts?.action && (
             <div className="mt-1">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                controlSize="compact"
                 onClick={() => {
                   toast.dismiss(t.id);
                   opts.action!.onClick();
                 }}
-                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
+                className="px-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline"
               >
                 {opts.action.label}
-              </button>
+              </Button>
             </div>
           )}
         </div>
-        <button
-          type="button"
+        <IconButton
           onClick={() => toast.dismiss(t.id)}
-          aria-label="Dismiss"
-          className="mt-0.5 flex-shrink-0 text-zinc-500 transition-colors hover:text-zinc-300"
+          label="Dismiss"
+          controlSize="compact"
+          className="-my-1 -mr-1 flex-shrink-0 text-zinc-500 transition-colors hover:text-zinc-300"
         >
           <X className="h-4 w-4" />
-        </button>
+        </IconButton>
       </div>
     ),
     { duration }

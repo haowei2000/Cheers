@@ -36,7 +36,7 @@ import { tags as t } from "@lezer/highlight";
 // workspace actually carries); every other extension is a small core module, so the whole
 // thing stays tree-shakeable and out of the main-bundle-size budget this repo guards.
 
-// Theme matches the panel chrome: zinc-950 inset field, zinc-200 text, indigo focus ring
+// Theme matches the panel chrome: zinc-950 inset field, zinc-200 text, neutral focus ring
 // (see frontend/DESIGN.md). Syntax colors are tinted "data-coding" hues — never chrome.
 const theme = EditorView.theme(
   {
@@ -52,7 +52,7 @@ const theme = EditorView.theme(
         "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
       lineHeight: "1.6",
     },
-    ".cm-content": { padding: "12px 0", caretColor: "#a5b4fc" /* indigo-300 */ },
+    ".cm-content": { padding: "12px 0", caretColor: "#d4d4d8" /* editorial ink */ },
     ".cm-gutters": {
       backgroundColor: "#09090b",
       color: "#52525b", // zinc-600
@@ -60,12 +60,12 @@ const theme = EditorView.theme(
     },
     ".cm-activeLineGutter": { backgroundColor: "transparent", color: "#a1a1aa" /* zinc-400 */ },
     ".cm-activeLine": { backgroundColor: "#18181b40" /* zinc-900/25 */ },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#a5b4fc" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#d4d4d8" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: "#4f46e526", // indigo-600/15
+      backgroundColor: "#52525b3d", // zinc-600/24
     },
     ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
-      backgroundColor: "#6366f133", // indigo-500/20
+      backgroundColor: "#71717a33", // zinc-500/20
       outline: "none",
     },
   },
@@ -73,16 +73,16 @@ const theme = EditorView.theme(
 );
 
 const highlight = HighlightStyle.define([
-  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword], color: "#c4b5fd" }, // violet-300
-  { tag: [t.string, t.special(t.string)], color: "#86efac" }, // green-300
-  { tag: [t.number, t.bool, t.null, t.atom], color: "#fcd34d" }, // amber-300
-  { tag: [t.propertyName], color: "#7dd3fc" }, // sky-300 (json keys)
+  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword], color: "#c4b5a5" }, // muted umber
+  { tag: [t.string, t.special(t.string)], color: "#a8b5a2" }, // muted sage
+  { tag: [t.number, t.bool, t.null, t.atom], color: "#c4a484" }, // muted ochre
+  { tag: [t.propertyName], color: "#aab5c4" }, // muted blue-grey (json keys)
   { tag: [t.comment, t.lineComment, t.blockComment], color: "#71717a", fontStyle: "italic" }, // zinc-500
   { tag: [t.heading], color: "#e4e4e7", fontWeight: "bold" },
-  { tag: [t.link, t.url], color: "#93c5fd", textDecoration: "underline" }, // blue-300
+  { tag: [t.link, t.url], color: "#b8bec7", textDecoration: "underline" },
   { tag: [t.emphasis], fontStyle: "italic" },
   { tag: [t.strong], fontWeight: "bold" },
-  { tag: [t.monospace], color: "#fda4af" }, // rose-300 (inline code)
+  { tag: [t.monospace], color: "#c7b4b4" }, // muted rose (inline code)
   { tag: [t.punctuation, t.separator], color: "#a1a1aa" }, // zinc-400
   { tag: [t.invalid], color: "#f87171" }, // red-400
 ]);

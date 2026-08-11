@@ -44,6 +44,7 @@ import { CommandPalette, type CommandCandidate } from "./CommandPalette";
 import { ExistingFilePicker } from "./ExistingFilePicker";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
 import { appendMentionToken } from "./mentionInsertion";
+import { IconButton } from "@/components/ui/icon-button";
 
 export type { CommandCandidate } from "./CommandPalette";
 
@@ -1133,7 +1134,7 @@ function MessageComposerImpl({
           along the bottom. The ring is the focus state — no resting border. */}
       <div
         className={cn(
-          "rounded-xl bg-zinc-800/80 transition-all",
+          "rounded-sm bg-zinc-800/80 transition-[background-color,box-shadow]",
           disabled
             ? "opacity-60"
             : "focus-within:bg-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/50"
@@ -1158,21 +1159,21 @@ function MessageComposerImpl({
               : `Message ${channelName ? `#${channelName}` : "..."} — @ to mention a bot`
           }
           // text-base (16px) below md stops iOS Safari's auto-zoom on focus.
-          className="block w-full bg-transparent text-base md:text-sm text-zinc-100 placeholder-zinc-400 resize-none outline-none leading-relaxed px-3 pt-2.5 pb-1 min-h-[24px] max-h-[200px]"
+          className="block min-h-9 max-h-[200px] w-full resize-none bg-transparent px-3 pb-2 pt-2 text-base leading-relaxed text-zinc-100 outline-none placeholder-zinc-400 md:text-sm"
         />
 
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
-          <button
-            type="button"
+          <IconButton
             onClick={() => (dictating ? stopDictation() : void startDictation())}
             disabled={disabled || !channelId || uploading || sending || transcribingDictation}
+            controlSize="regular"
+            label={dictating ? "Stop dictation" : "Start voice dictation"}
             className={cn(
-              "w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
+              "disabled:opacity-40",
               dictating
                 ? "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 animate-pulse"
                 : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50",
             )}
-            aria-label={dictating ? "Stop dictation" : "Start voice dictation"}
             title={transcribingDictation ? "Transcribing voice input…" : dictating ? "Stop dictation" : "Start voice dictation"}
           >
             {transcribingDictation ? (
@@ -1182,23 +1183,23 @@ function MessageComposerImpl({
             ) : (
               <Mic className="w-4 h-4" />
             )}
-          </button>
+          </IconButton>
           <div ref={attachRef} className="relative flex-shrink-0">
-            <button
-              type="button"
+            <IconButton
               onClick={() => setAttachMenuOpen((o) => !o)}
               disabled={disabled || !channelId}
+              controlSize="regular"
+              label="Attach file"
               className={cn(
-                "w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40",
+                "disabled:opacity-40",
                 attachMenuOpen
                   ? "text-zinc-200 bg-zinc-700/50"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
               )}
-              aria-label="Attach file"
               title="Attach file"
             >
               <Paperclip className="w-4 h-4" />
-            </button>
+            </IconButton>
             {attachMenuOpen && (
               <PopoverPanel className="w-48 overflow-hidden rounded-lg py-1">
                 <button
@@ -1247,45 +1248,46 @@ function MessageComposerImpl({
           )}
 
           {commands.length > 0 && (
-            <button
-              type="button"
+            <IconButton
               onClick={openCommandPicker}
               disabled={disabled || sending}
-              className="w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 flex-shrink-0"
-              aria-label="Insert a command"
+              controlSize="regular"
+              className="disabled:opacity-40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50"
+              label="Insert a command"
               title="Commands (/)"
             >
               <SquareSlash className="w-4 h-4" />
-            </button>
+            </IconButton>
           )}
 
           <div className="flex-1" />
 
           {showStop ? (
-            <button
+            <IconButton
               onClick={() => void stopStreaming()}
               disabled={stopping}
-              className="flex-shrink-0 w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-all duration-150 bg-zinc-700/50 text-red-400 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-50"
-              aria-label={stopTitle}
+              controlSize="regular"
+              className="bg-zinc-700/50 text-red-400 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-50"
+              label={stopTitle}
               title={stopTitle}
             >
               <Square className="w-3.5 h-3.5" fill="currentColor" />
-            </button>
+            </IconButton>
           ) : (
-            <button
+            <IconButton
               onClick={() => void submit()}
               disabled={!canSend}
+              controlSize="regular"
+              label="Send message"
               className={cn(
-                "flex-shrink-0 w-8 h-8 max-md:w-10 max-md:h-10 rounded-lg flex items-center justify-center transition-all duration-150",
                 canSend
                   ? "bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer shadow-sm"
                   : "bg-zinc-700/50 text-zinc-600 cursor-not-allowed"
               )}
-              aria-label="Send message"
               title="Send message"
             >
               <SendHorizontal className="w-4 h-4" />
-            </button>
+            </IconButton>
           )}
         </div>
       </div>

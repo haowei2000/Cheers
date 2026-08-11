@@ -90,7 +90,7 @@ export function TaskClaimsPanel({
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="h-7 px-2 text-xs"
+                  className="px-2"
                   disabled={busy === c.claim_id}
                   onClick={() => void cancel(c)}
                 >
@@ -100,7 +100,7 @@ export function TaskClaimsPanel({
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="h-7 px-2 text-xs"
+                  className="px-2"
                   disabled={busy === c.claim_id}
                   onClick={() => void resolve(c, "reject")}
                 >
@@ -109,7 +109,7 @@ export function TaskClaimsPanel({
                 </Button>
                 <Button
                   size="sm"
-                  className="h-7 px-2 text-xs"
+                  className="px-2"
                   loading={busy === c.claim_id}
                   onClick={() => void resolve(c, "accept")}
                 >

@@ -1,10 +1,17 @@
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { auditSources, enforceAudit } from "./lib/design-system-audit.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const contractPath = path.join(root, "design-system/item-contract.json");
 const contract = JSON.parse(await readFile(contractPath, "utf8"));
+const webAuditPolicy = JSON.parse(
+  await readFile(path.join(root, "design-system/web-audit.json"), "utf8")
+);
+const require = createRequire(path.join(root, "frontend/package.json"));
+const ts = require("typescript");
 
 const fail = (message) => {
   console.error(`design-system: ${message}`);
@@ -12,12 +19,19 @@ const fail = (message) => {
 };
 
 const expectedLevels = ["max", "medium", "minimal"];
+const expectedControlSizes = ["comfortable", "regular", "compact"];
 const expectedTypeRoles = ["display", "reading", "utility"];
 if (contract.defaultPresentationLevel !== "medium") {
   fail("defaultPresentationLevel must remain medium");
 }
+if (contract.defaultControlSize !== "regular") {
+  fail("defaultControlSize must remain regular");
+}
 if (JSON.stringify(Object.keys(contract.presentationLevels).sort()) !== JSON.stringify([...expectedLevels].sort())) {
   fail("presentationLevels must contain exactly max, medium, and minimal");
+}
+if (JSON.stringify(Object.keys(contract.controlSizes ?? {}).sort()) !== JSON.stringify([...expectedControlSizes].sort())) {
+  fail("controlSizes must contain exactly comfortable, regular, and compact");
 }
 if (JSON.stringify(Object.keys(contract.visualLanguage?.typography ?? {}).sort()) !== JSON.stringify([...expectedTypeRoles].sort())) {
   fail("visualLanguage.typography must contain exactly display, reading, and utility");
@@ -66,8 +80,6 @@ const webFiles = await sourceFiles(path.join(root, "frontend/src"), ".tsx");
 const iosSource = await sourceText(path.join(root, "apps/ios/Sources"), ".swift");
 const androidSource = await sourceText(path.join(root, "apps/android/app/src/main/java"), ".kt");
 const legacyCounts = {
-  webRawButtonElements: (webSource.match(/<button\b/g) ?? []).length,
-  webRawInputElements: (webSource.match(/<input\b/g) ?? []).length,
   iosDirectButtonCalls: (iosSource.match(/\bButton\s*\(/g) ?? []).length,
   androidDirectButtonCalls: (androidSource.match(/\b(?:Button|IconButton|TextButton|FilledTonalButton)\s*\(/g) ?? []).length,
 };
@@ -77,7 +89,18 @@ for (const [name, count] of Object.entries(legacyCounts)) {
   else if (count > ceiling) fail(`${name} increased from ceiling ${ceiling} to ${count}; use a shared design-system primitive`);
 }
 
+const webAudit = auditSources(
+  webFiles.map(({ path: file, source }) => ({ file, source })),
+  ts,
+  webAuditPolicy
+);
+for (const error of enforceAudit(webAudit, webAuditPolicy)) fail(`Web audit: ${error}`);
+
 const itemPrimitiveSource = await readFile(path.join(root, "frontend/src/components/ui/item.tsx"), "utf8");
+const webControlSizeSource = await readFile(path.join(root, "frontend/src/components/ui/control-size.tsx"), "utf8");
+for (const size of expectedControlSizes) {
+  if (!webControlSizeSource.includes(size)) fail(`Web control-size registry does not mention ${size}`);
+}
 for (const primitive of [
   "ItemRow",
   "ItemList",
@@ -130,5 +153,18 @@ for (const [platform, relative] of Object.entries(registryFiles)) {
 }
 
 if (!process.exitCode) {
-  console.log(`design-system: valid (${ids.length} item kinds, ${expectedLevels.length} presentation levels; legacy duplication did not increase)`);
+  const native = webAudit.native;
+  const violations = webAudit.violations;
+  console.log(
+    `design-system: valid (${ids.length} item kinds, ${expectedLevels.length} presentation levels, ${expectedControlSizes.length} control sizes)`
+  );
+  console.log(
+    `web native production: button=${native.production.button}, input=${native.production.input}, select=${native.production.select}, textarea=${native.production.textarea}`
+  );
+  console.log(
+    `web native business: button=${native.business.button}, input=${native.business.input}, select=${native.business.select}, textarea=${native.business.textarea}`
+  );
+  console.log(
+    `web visual debt: radius=${violations.nonStandardRadius}, full=${violations.unregisteredFullRadius}, border=${violations.restingBorder}, hardcoded-size=${violations.hardcodedControlSize}, shared-override=${violations.sharedControlSizeOverride}`
+  );
 }

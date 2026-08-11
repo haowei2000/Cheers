@@ -611,7 +611,7 @@ function WorkbenchDrawerImpl({ open, onClose, channelId, sendResourceReq, openFi
                     <WorkbenchItem
                       key={p}
                       title={p}
-                      presentationLevel="minimal"
+                      controlSize="compact"
                       actions={<button
                         onClick={() => togglePin(p)}
                         title="Unpin"

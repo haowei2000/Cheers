@@ -10,8 +10,6 @@ import {
   RotateCw,
   Loader2,
   ListTree,
-  ChevronDown,
-  ChevronRight,
   AtSign,
   UserRound,
 } from "lucide-react";
@@ -21,7 +19,6 @@ import { formatTime } from "@/lib/format";
 import { Avatar } from "@/components/ui/avatar";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { FileGrid } from "./fileView";
-import { MessageContextChips } from "./context/ContextPickBar";
 import { PathOpenContext, ResolveRefContext } from "./workspaceLink";
 import { PermissionCard } from "./PermissionCard";
 import { AuthRequiredCard } from "./AuthRequiredCard";
@@ -34,6 +31,7 @@ import { FloatingLayer } from "@/components/ui/floating-layer";
 import { useHoverIntent } from "@/hooks/useHoverIntent";
 import { messageDetailsMeta } from "./messageDetails";
 import { usePresentationLevel } from "@/components/ui/presentation";
+import { MessageRecordInspector } from "./MessageRecordInspector";
 
 /** Per-message action callbacks. Identity must be STABLE across selection
  *  changes — selection state travels as the scalar `selectMode`/`selected`
@@ -117,8 +115,7 @@ function ActionBar({
   onEnter,
   onLeave,
   hasDetails,
-  detailsExpanded,
-  onToggleDetails,
+  onOpenDetails,
   canMention,
   mentionLabel,
 }: {
@@ -129,8 +126,7 @@ function ActionBar({
   onEnter: () => void;
   onLeave: () => void;
   hasDetails?: boolean;
-  detailsExpanded?: boolean;
-  onToggleDetails?: () => void;
+  onOpenDetails?: (trigger: HTMLElement) => void;
   canMention?: boolean;
   mentionLabel?: string;
 }) {
@@ -150,14 +146,13 @@ function ActionBar({
         visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
       )}
     >
-      {hasDetails && onToggleDetails && (
+      {hasDetails && onOpenDetails && (
         <button
           type="button"
-          title={detailsExpanded ? "Hide details" : "Show details"}
-          aria-label={detailsExpanded ? "Hide message details" : "Show message details"}
-          aria-expanded={detailsExpanded}
+          title="Open message record"
+          aria-label="Open message record"
           className={btn}
-          onClick={onToggleDetails}
+          onClick={(event) => onOpenDetails(event.currentTarget)}
         >
           <ListTree className="h-3.5 w-3.5" />
         </button>
@@ -417,13 +412,12 @@ export const MessageItem = memo(function MessageItem({
       !(approval.content_data as { resolved?: boolean } | null | undefined)?.resolved,
   ).length;
   const detailsMeta = messageDetailsMeta(message, actionableApprovalCount);
-  const [detailsExpanded, setDetailsExpanded] = useState(
-    actionableApprovalCount > 0 || Boolean(focusRequestId),
-  );
+  const [inspectorOpen, setInspectorOpen] = useState(Boolean(focusRequestId));
+  const inspectorTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (actionableApprovalCount > 0 || focusRequestId) setDetailsExpanded(true);
-  }, [actionableApprovalCount, focusRequestId]);
+    if (focusRequestId) setInspectorOpen(true);
+  }, [focusRequestId]);
 
   const active = message._streaming || message.is_partial;
   // Agent steps only exist when the list DTO or live frame proves that content
@@ -433,7 +427,8 @@ export const MessageItem = memo(function MessageItem({
     isBot &&
     !!channelId &&
     detailsMeta.hasTrace;
-  const tracePanel = showTrace ? (
+  const keepTraceInline = Boolean(active || actionableApprovalCount > 0);
+  const tracePanel = showTrace && keepTraceInline ? (
     <BotTracePanel
       key={`trace-${message.msg_id}`}
       channelId={channelId!}
@@ -443,8 +438,7 @@ export const MessageItem = memo(function MessageItem({
       currentUserId={currentUserId}
       streaming={!!active}
       focusRequestId={focusRequestId}
-      expanded={detailsExpanded}
-      onExpandedChange={setDetailsExpanded}
+      expanded
       showToggle={false}
     />
   ) : null;
@@ -457,6 +451,10 @@ export const MessageItem = memo(function MessageItem({
   // between the row and the floating toolbar while the cursor crosses it —
   // see useHoverIntent.
   const { visible: actionsVisible, show: showActionBar, hide: hideActionBar } = useHoverIntent();
+  const openInspector = (trigger: HTMLElement) => {
+    inspectorTriggerRef.current = trigger;
+    setInspectorOpen(true);
+  };
 
   // Click the sender's avatar/name → open their profile card (bio/status). In
   // select mode the row-click owns the interaction, so skip it there.
@@ -656,60 +654,52 @@ export const MessageItem = memo(function MessageItem({
       ? `${detailsMeta.contextCount} context${detailsMeta.contextCount === 1 ? "" : "s"}`
       : null,
   ].filter(Boolean).join(" · ");
-  const detailsSection = detailsMeta.hasDetails ? (
+  const folioCount = detailsMeta.traceCount + detailsMeta.contextCount;
+  const folio = detailsMeta.hasDetails ? (
+    <button
+      type="button"
+      onClick={(event) => openInspector(event.currentTarget)}
+      aria-label={`Open message record${detailsSummary ? `, ${detailsSummary}` : ""}`}
+      title={`Message record${detailsSummary ? ` · ${detailsSummary}` : ""}`}
+      className={cn(
+        "relative inline-flex h-5 min-w-5 items-center justify-center self-start px-0.5 font-mono text-[9px] tabular-nums tracking-[0.08em] text-zinc-600 transition-colors",
+        "after:absolute after:-inset-3 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70",
+        isOwnAlignedRight && "self-end",
+        detailsMeta.hasFailure && "text-red-400/70 hover:text-red-300",
+      )}
+    >
+      {String(folioCount).padStart(2, "0")}
+    </button>
+  ) : null;
+  const detailsSection = detailsMeta.hasDetails && (detailsMeta.hasFailure || keepTraceInline) ? (
     <div className={cn("flex max-w-full flex-col", isOwnAlignedRight && "items-end")}>
       {detailsMeta.hasFailure && (
         <div role="alert" className="flex min-h-8 items-center gap-1.5 text-[11px] text-red-400">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Agent step failed</span>
-          {!detailsExpanded && (
-            <button
-              type="button"
-              onClick={() => setDetailsExpanded(true)}
-              className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
-            >
-              View details
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={(event) => openInspector(event.currentTarget)}
+            className="font-medium text-red-300 underline underline-offset-2 hover:text-red-200"
+          >
+            View record
+          </button>
         </div>
       )}
-      {actionableApprovalCount === 0 && (
-        <button
-          type="button"
-          onClick={() => setDetailsExpanded((value) => !value)}
-          aria-expanded={detailsExpanded}
-          className="relative inline-flex h-8 items-center gap-1.5 self-start rounded-md px-1.5 text-[11px] text-zinc-400 transition-colors after:absolute after:-inset-y-1.5 after:inset-x-0 hover:bg-zinc-800/60 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
-        >
-          {detailsExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
-          <span className="font-medium">Details</span>
-          {detailsSummary && <span className="text-zinc-500">· {detailsSummary}</span>}
-        </button>
-      )}
-      {detailsExpanded && (
-        <div className="mt-1 flex w-full min-w-0 flex-col gap-2 rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2.5 text-left md:min-w-[18rem]">
-          {detailsMeta.contextCount > 0 && (
-            <section aria-label="Referenced context">
-              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Context · {detailsMeta.contextCount}
-              </p>
-              <MessageContextChips bundle={message.context_bundle} />
-            </section>
-          )}
-          {showTrace && (
-            <section aria-label="Agent steps">
-              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                Agent steps · {detailsMeta.traceCount}
-              </p>
-              {tracePanel}
-            </section>
-          )}
-        </div>
-      )}
+      {tracePanel && <div className="mt-1 w-full min-w-0 text-left md:min-w-[18rem]">{tracePanel}</div>}
     </div>
+  ) : null;
+  const inspector = inspectorOpen && detailsMeta.hasDetails ? (
+    <MessageRecordInspector
+      message={message}
+      channelId={channelId}
+      currentUserId={currentUserId}
+      pendingApprovals={pendingApprovals}
+      focusRequestId={focusRequestId}
+      meta={detailsMeta}
+      triggerRef={inspectorTriggerRef}
+      onClose={() => setInspectorOpen(false)}
+    />
   ) : null;
   const selected = Boolean(selectedProp);
   const rowSelectProps = selectable
@@ -816,6 +806,7 @@ export const MessageItem = memo(function MessageItem({
           )}
           {quote}
           <MessageBody message={message} channelId={channelId} isBot={isBot} />
+          {presentationLevel !== "minimal" && folio}
           {message.msg_type === "task_claim_confirmation" && (
             <TaskClaimConfirmationCard
               message={message}
@@ -837,12 +828,12 @@ export const MessageItem = memo(function MessageItem({
             onEnter={showActionBar}
             onLeave={hideActionBar}
             hasDetails={detailsMeta.hasDetails}
-            detailsExpanded={detailsExpanded}
-            onToggleDetails={() => setDetailsExpanded((value) => !value)}
+            onOpenDetails={openInspector}
             canMention={canMention}
             mentionLabel={name}
           />
         )}
+        {inspector}
       </div>
     );
   }
@@ -943,6 +934,7 @@ export const MessageItem = memo(function MessageItem({
         )}
 
         <MessageBody message={message} channelId={channelId} isBot={isBot} />
+        {presentationLevel !== "minimal" && folio}
         {message.msg_type === "task_claim_confirmation" && (
           <TaskClaimConfirmationCard
             message={message}
@@ -964,12 +956,12 @@ export const MessageItem = memo(function MessageItem({
           onEnter={showActionBar}
           onLeave={hideActionBar}
           hasDetails={detailsMeta.hasDetails}
-          detailsExpanded={detailsExpanded}
-          onToggleDetails={() => setDetailsExpanded((value) => !value)}
+          onOpenDetails={openInspector}
           canMention={canMention}
           mentionLabel={name}
         />
       )}
+      {inspector}
     </div>
   );
 });

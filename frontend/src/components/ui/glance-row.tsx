@@ -34,7 +34,7 @@ export function GlanceRow({
       type="button"
       onClick={onClick}
       title={title ?? `Open ${label}`}
-      className="group flex w-full flex-col gap-1 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/60"
+      className="group flex w-full flex-col gap-1 rounded-sm px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/60"
     >
       <div className="flex items-center gap-2">
         <Icon className="w-3.5 h-3.5 flex-shrink-0 text-zinc-500" />

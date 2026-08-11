@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "nativeElementCeilings": {
+    "production": {
+      "button": 275,
+      "input": 52,
+      "select": 33,
+      "textarea": 5
+    },
+    "business": {
+      "button": 266,
+      "input": 49,
+      "select": 32,
+      "textarea": 4
+    }
+  },
+  "violationCeilings": {
+    "nonStandardRadius": 362,
+    "unregisteredFullRadius": 42,
+    "restingBorder": 37,
+    "hardcodedControlSize": 22,
+    "sharedControlSizeOverride": 7
+  },
+  "allowedNativeReasons": [
+    "checkbox",
+    "file-input",
+    "code-editor",
+    "canvas-node",
+    "tree-node",
+    "diff-line"
+  ],
+  "allowedExemptReasons": [
+    "item-section",
+    "form-suggestion",
+    "menu-option",
+    "code-list",
+    "form-field",
+    "step-indicator",
+    "trace-line",
+    "table-row",
+    "tree-node",
+    "diff-line",
+    "code-editor",
+    "canvas-node",
+    "drop-zone",
+    "identity",
+    "presence",
+    "unread",
+    "progress",
+    "drag-handle"
+  ]
+}

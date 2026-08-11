@@ -647,7 +647,8 @@ function BotStatusEditor({
               min={5}
               value={interval}
               onChange={(e) => setIntervalMin(e.target.value)}
-              className="h-8 w-16 text-center"
+              controlSize="compact"
+              className="w-16 text-center"
               aria-label="Interval minutes"
             />
             <span className="text-xs text-zinc-400">min</span>

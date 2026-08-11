@@ -232,7 +232,7 @@ function SessionCard({
       {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
       {showHot && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white shadow-lg">
+          <span className="inline-flex items-center gap-1 rounded-sm bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-950">
             <ArrowUp className="h-3 w-3" />
             Make primary
           </span>

@@ -20,6 +20,7 @@ Cheers 是人与 Agent 协作的工作空间。新版界面使用“编辑部、
 3. **接近直角**：通用圆角固定为 2px/pt/dp。头像、在线点、未读点保留圆形，因为形状本身携带语义。
 4. **紧凑不等于难点**：内部间距以 4/8 为主，但 Web 触屏至少 44px、iOS 至少 44pt、Android 至少 48dp。
 5. **颜色只表达含义**：普通层级使用中性墨色；强调、在线、未读、warning、error、approval 才使用语义色。
+6. **不使用霓虹效果**：禁止彩色发光、装饰性渐变和高饱和彩色阴影。黑色阴影只表达浮层空间关系；默认焦点、选中和主操作使用中性墨色。
 
 ## 3. 三类字体
 
@@ -45,6 +46,11 @@ Cheers 是人与 Agent 协作的工作空间。新版界面使用“编辑部、
 
 容器通过 React Provider、SwiftUI Environment、Compose CompositionLocal 设置默认档位；
 单个 Item 的显式设置优先，响应式只能决定未显式设置时的默认值。档位只改变信息密度，不改变业务状态或 API 数据。
+
+控件高度使用独立三级体系，不与 PresentationLevel 混用：`comfortable = 44px`、
+`regular = 36px`（默认）、`compact = 28px`。Workspace Rail 使用 comfortable，
+普通 Item、Button、Input 与 Composer 控件使用 regular，密集 section 工具使用 compact。
+触控视口无论视觉档位如何都保留至少 44px 命中区域；改变高度不能隐藏错误、审批、未读等状态。
 
 ## 5. 图标语言
 
@@ -86,5 +92,6 @@ Android 尚未提供的产品能力只在契约中标记 unavailable，不创建
 - 设计语言采用「Editorial Correspondence」，保持暗色产品工作区和移动端系统主题能力。
 - Source Serif 4 为开源字体资产；显示与正文使用不同 optical size，无衬线承担所有工具语义。
 - `max / medium / minimal` 表示信息展示层级，不是控件尺寸。
+- `comfortable / regular / compact` 表示控件高度，与信息展示层级独立继承和覆盖。
 - 网站、政策和帮助内容与产品共享字体和语义原则，但页面排版可以更接近正式出版物。
 - 本轮不修改 MIT 开源许可。

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ArrowRight, Check, ChevronDown, Folder, Layers, LayoutDashboard, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { controlHeightClasses } from "@/components/ui/control-size";
 import {
   getSessionControls,
   listChannelBotSessions,
@@ -322,7 +323,8 @@ export function SessionChip({
             : "Session target — Auto routes by @mention to each bot's primary session"
         }
         className={cn(
-          "inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 max-md:py-2 text-[11px] transition-colors",
+          "inline-flex min-w-0 items-center gap-1.5 rounded-sm px-2 text-[11px] transition-colors",
+          controlHeightClasses.regular,
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
           selected || open
             ? "bg-indigo-600/15 text-indigo-200"
