@@ -15,6 +15,7 @@ import {
 } from "@/api/auth";
 import { createPasskey, passkeyTransactionId } from "@/lib/webauthn";
 import { Button } from "@/components/ui/button";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 
 const inputCls =
@@ -200,6 +201,7 @@ export function TwoFactorCard() {
             Save these backup codes now — each works once if you lose your authenticator.
           </p>
           <ul className="rounded-lg bg-zinc-800 px-3 py-2 font-mono text-sm text-zinc-100 space-y-1">
+            {/* design-system-exempt: code-list — recovery codes preserve ordered code semantics. */}
             {backupCodes.map((c) => (
               <li key={c}>{c}</li>
             ))}
@@ -343,25 +345,19 @@ export function PasskeyCard() {
       ) : credentials.length === 0 ? (
         <p className="text-xs text-zinc-500 mb-3">No passkeys yet.</p>
       ) : (
-        <ul className="space-y-2 mb-4">
+        <ItemList className="mb-4">
           {credentials.map((c) => (
-            <li
+            <OperationsItem
               key={c.credential_pk}
-              className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800/70 px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="text-sm text-zinc-100 truncate">{c.name}</p>
-                <p className="text-[11px] text-zinc-500">
-                  Added {c.created_at.slice(0, 10)}
-                  {c.last_used_at ? ` · last used ${c.last_used_at.slice(0, 10)}` : ""}
-                </p>
-              </div>
-              <Button variant="danger" size="sm" onClick={() => void remove(c.credential_pk)}>
+              title={c.name}
+              subtitle={`Added ${c.created_at.slice(0, 10)}${c.last_used_at ? ` · last used ${c.last_used_at.slice(0, 10)}` : ""}`}
+              actions={<Button variant="danger" size="sm" onClick={() => void remove(c.credential_pk)}>
                 Delete
-              </Button>
-            </li>
+              </Button>}
+              className="border-0 bg-zinc-800/70"
+            />
           ))}
-        </ul>
+        </ItemList>
       )}
 
       {available && (

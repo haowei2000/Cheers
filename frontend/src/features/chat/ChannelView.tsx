@@ -43,6 +43,8 @@ import {
 import { getChannelCache, setChannelCache, seedFromCache } from "./chatCache";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageList } from "./MessageList";
+import { DiscussionView } from "./DiscussionView";
+import { ReplyComposerBanner } from "./ReplyComposerBanner";
 import { MembersPopover } from "./MembersPopover";
 import { ForwardDialog } from "./ForwardDialog";
 import type { MessageActionHandlers } from "./MessageItem";
@@ -50,6 +52,7 @@ import {
   MessageComposer,
   type MentionCandidate,
   type CommandCandidate,
+  type ComposerPrefill,
 } from "./MessageComposer";
 import { SessionChip } from "./SessionChip";
 import { ComposerModelPopover } from "./ComposerModelPopover";
@@ -200,6 +203,21 @@ export function ChannelView({
   usePopoverDismiss(membersOpen, closeMembers, membersRootRef);
   // Message actions: reply target, multi-select set, pending forward payload.
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [discussionComposerRoot, setDiscussionComposerRoot] =
+    useState<Message | null>(null);
+  const [creatingDiscussion, setCreatingDiscussion] = useState(false);
+  const [openDiscussionRequest, setOpenDiscussionRequest] = useState<{
+    id: string;
+    nonce: number;
+  } | null>(null);
+  const handleDiscussionComposerContextChange = useCallback(
+    (root: Message | null, creating: boolean) => {
+      setDiscussionComposerRoot(root);
+      setCreatingDiscussion(creating);
+      if (!creating) setReplyTo(null);
+    },
+    [],
+  );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -258,6 +276,9 @@ export function ChannelView({
     setCommands([]);
     setMembersOpen(false);
     setReplyTo(null);
+    setDiscussionComposerRoot(null);
+    setCreatingDiscussion(false);
+    setOpenDiscussionRequest(null);
     setSelectMode(false);
     setSelectedIds(new Set());
     setForward(null);
@@ -940,10 +961,8 @@ export function ChannelView({
     line?: number;
   }>({});
   // Composer prefill (a plugin's cheers:compose — G4): suggestion only, never a send.
-  const [composePrefill, setComposePrefill] = useState<{
-    text: string;
-    seq: number;
-  } | null>(null);
+  const [composePrefill, setComposePrefill] =
+    useState<ComposerPrefill | null>(null);
   const [filesFocus, setFilesFocus] = useState<string | undefined>(undefined);
 
   // The work lane is the bounded canvas the instrument windows drag/resize +
@@ -1400,7 +1419,11 @@ export function ChannelView({
   // A renderer plugin suggested a message (cheers:compose). Prefill only — the human
   // reviews, edits, and presses send; that keystroke is what makes it a channel action.
   const composeMessage = useCallback((text: string) => {
-    setComposePrefill((p) => ({ text, seq: (p?.seq ?? 0) + 1 }));
+    setComposePrefill((p) => ({
+      kind: "text",
+      text,
+      seq: (p?.seq ?? 0) + 1,
+    }));
   }, []);
 
   const handleSend = useCallback(
@@ -1422,12 +1445,29 @@ export function ChannelView({
         ...(mentionNames.length ? { mention_names: mentionNames } : {}),
         ...(fileIds.length ? { file_ids: fileIds } : {}),
         ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
-        ...(replyTo ? { reply_to_msg_id: replyTo.msg_id } : {}),
+        ...(replyTo
+          ? { reply_to_msg_id: replyTo.msg_id }
+          : channel.conversation_mode === "discuss" &&
+              !creatingDiscussion &&
+              discussionComposerRoot
+            ? { reply_to_msg_id: discussionComposerRoot.msg_id }
+            : {}),
         ...(bundle ? { context_bundle: bundle } : {}),
       };
       try {
         const { content: body, ...opts } = sendParams;
-        await sendMessage(channel.channel_id, body, opts);
+        const sent = await sendMessage(channel.channel_id, body, opts);
+        if (
+          channel.conversation_mode === "discuss" &&
+          creatingDiscussion
+        ) {
+          setOpenDiscussionRequest((current) => ({
+            id: sent.msg_id,
+            nonce: (current?.nonce ?? 0) + 1,
+          }));
+          setCreatingDiscussion(false);
+          setDiscussionComposerRoot(sent);
+        }
         setReplyTo(null);
         useContextPickStore.getState().clear(channel.channel_id);
       } catch (error) {
@@ -1437,7 +1477,13 @@ export function ChannelView({
         throw error;
       }
     },
-    [channel, selectedSessionId, replyTo, user],
+    [
+      channel,
+      selectedSessionId,
+      replyTo,
+      creatingDiscussion,
+      discussionComposerRoot,
+    ],
   );
 
   // Retry a failed send: flip the placeholder to "sending", replay the original
@@ -1508,6 +1554,15 @@ export function ChannelView({
     () => messages.filter((m) => selectedIds.has(m.msg_id)),
     [messages, selectedIds],
   );
+  const discussionRealtimeVersion = useMemo(
+    () =>
+      messages.reduce(
+        (version, message) =>
+          Math.max(version, message.channel_seq ?? 0),
+        0,
+      ) * 1_000 + messages.length,
+    [messages],
+  );
 
   // Live pending ACP permission cards — feeds the ViewBoard minimal Approvals dropdown.
   const pendingPermissionMessages = useMemo(
@@ -1549,6 +1604,8 @@ export function ChannelView({
           mentionables.find((x) => x.id === bot!.sender_id)?.label;
         if (label) {
           setComposePrefill((p) => ({
+            kind: "mention",
+            memberId: bot!.sender_id,
             text: `@${label} `,
             seq: (p?.seq ?? 0) + 1,
           }));
@@ -1563,6 +1620,24 @@ export function ChannelView({
     [messages, mentionables, channel?.channel_id],
   );
 
+  const mentionMember = useCallback(
+    (memberId: string) => {
+      if (memberId === user?.user_id) return;
+      const candidate = mentionables.find((item) => item.id === memberId);
+      if (!candidate) {
+        toast.error("This member is no longer available to mention");
+        return;
+      }
+      setComposePrefill((previous) => ({
+        kind: "mention",
+        memberId: candidate.id,
+        text: `@${candidate.label} `,
+        seq: (previous?.seq ?? 0) + 1,
+      }));
+    },
+    [mentionables, user?.user_id],
+  );
+
   // Stable identity: selection state deliberately NOT captured here (it travels
   // as scalar props), so a selection toggle only re-renders the affected rows
   // instead of defeating memo(MessageItem) list-wide.
@@ -1574,6 +1649,7 @@ export function ChannelView({
       },
       onForward: (m) =>
         setForward({ content: buildForwardContent([m]), count: 1 }),
+      onMention: (m) => mentionMember(m.sender_id),
       onToggleSelect: (m) => {
         setSelectMode(true);
         // Entering select mode — disarm reply so the next send can't silently
@@ -1588,7 +1664,7 @@ export function ChannelView({
       },
       onRetry: retryMessage,
     }),
-    [buildForwardContent, retryMessage, applyReplyDefaults],
+    [buildForwardContent, retryMessage, applyReplyDefaults, mentionMember],
   );
 
   const clearSelection = () => {
@@ -1714,7 +1790,11 @@ export function ChannelView({
     : channel.name;
 
   return (
-    <ProfileCardProvider members={memberById}>
+    <ProfileCardProvider
+      members={memberById}
+      currentUserId={user?.user_id}
+      onMention={(member) => mentionMember(member.member_id)}
+    >
       {/* Desktop: instrument panels DOCK into a dedicated work area on the right,
         which reserves real layout space. The chat column is always width-capped:
         centered while the work area is closed, docked against it when open.
@@ -1875,7 +1955,13 @@ export function ChannelView({
               anyWorkOpen ? "md:min-w-[20rem] min-[1100px]:min-w-[24rem]" : ""
             }`}
           >
-            <div className="flex flex-col h-full w-full min-w-0 md:max-w-[52rem] md:mx-auto">
+            <div
+              className={`flex h-full w-full min-w-0 flex-col ${
+                channel.conversation_mode === "discuss"
+                  ? ""
+                  : "md:mx-auto md:max-w-[52rem]"
+              }`}
+            >
               {channel.kind === "voice" && (
                 <Suspense
                   fallback={
@@ -1914,7 +2000,55 @@ export function ChannelView({
                 </Banner>
               )}
               {/* Messages */}
-              {loading ? (
+              {channel.conversation_mode === "discuss" ? (
+                <ResolveRefContext.Provider value={resolveAndOpenRef}>
+                  <DiscussionView
+                    channelId={channel.channel_id}
+                    currentUserId={user?.user_id}
+                    senderNames={memberNames}
+                    actions={messageActions}
+                    replyToId={replyTo && !selectMode ? replyTo.msg_id : null}
+                    realtimeVersion={discussionRealtimeVersion}
+                    openDiscussionId={openDiscussionRequest?.id ?? null}
+                    footer={
+                      !selectMode ? (
+                        <>
+                          {replyTo && (
+                            <ReplyComposerBanner
+                              message={replyTo}
+                              senderName={memberNames.get(replyTo.sender_id)}
+                              onCancel={() => setReplyTo(null)}
+                            />
+                          )}
+                          <ContextPickBar
+                            channelId={channel.channel_id}
+                            replyTo={replyTo}
+                            draftText={draftText}
+                            files={channelFiles}
+                            onBrowseWorkbench={browseWorkbench}
+                            onBrowseWorkspace={browseWorkspace}
+                            onJumpToSource={jumpToContextSource}
+                          />
+                          <MessageComposer
+                            channelId={channel.channel_id}
+                            channelName={channel.name}
+                            mentionables={mentionables}
+                            commands={commands}
+                            toolbar={composerToolbar}
+                            onMentionsChange={setMentionedBots}
+                            onTextChange={setDraftText}
+                            prefill={composePrefill}
+                            streamingCount={streamingIds.length}
+                            onStopStreaming={stopStreaming}
+                            onSend={handleSend}
+                          />
+                        </>
+                      ) : null
+                    }
+                    onComposerContextChange={handleDiscussionComposerContextChange}
+                  />
+                </ResolveRefContext.Provider>
+              ) : loading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <Loader2 className="w-5 h-5 text-zinc-600 animate-spin" />
                 </div>
@@ -1940,6 +2074,7 @@ export function ChannelView({
                     selectedIds={selectedIds}
                     focusMsg={focusMsg}
                     replyToId={replyTo && !selectMode ? replyTo.msg_id : null}
+                    conversationMode={channel.conversation_mode ?? "chat"}
                   />
                 </ResolveRefContext.Provider>
               )}
@@ -1990,8 +2125,15 @@ export function ChannelView({
 
               {/* Same composer for root sends and replies — reply only pre-fills
                   session / @ / context (and sets reply_to on send). Esc clears nesting. */}
-              {!selectMode && (
+              {!selectMode && channel.conversation_mode !== "discuss" && (
                 <>
+                  {replyTo && (
+                    <ReplyComposerBanner
+                      message={replyTo}
+                      senderName={memberNames.get(replyTo.sender_id)}
+                      onCancel={() => setReplyTo(null)}
+                    />
+                  )}
                   <ContextPickBar
                     channelId={channel.channel_id}
                     replyTo={replyTo}

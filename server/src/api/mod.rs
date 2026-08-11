@@ -8,6 +8,7 @@ pub mod bots;
 pub mod channels;
 pub mod compliance;
 pub mod devices;
+pub mod discussions;
 pub mod enrollment;
 pub mod external_identities;
 pub mod files;

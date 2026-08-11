@@ -3,6 +3,7 @@ import { Users, Bot, Settings } from "lucide-react";
 import { listChannelMembers } from "@/api/channels";
 import { Avatar } from "@/components/ui/avatar";
 import { PopoverPanel } from "@/components/ui/popover";
+import { EntityItem, ItemList } from "@/components/ui/item";
 import { useProfileCard } from "./ProfileHovercard";
 import type { MemberItem } from "@/types";
 
@@ -50,7 +51,7 @@ export function MembersPopover({
           </span>
         </div>
 
-        <div className="max-h-72 overflow-y-auto py-1">
+        <ItemList className="max-h-72 overflow-y-auto py-1">
           {members === null ? (
             <p className="px-3 py-3 text-xs text-zinc-400">Loading…</p>
           ) : members.length === 0 ? (
@@ -59,9 +60,8 @@ export function MembersPopover({
             members.map((m) => {
               const name = m.display_name || m.username || m.member_id.slice(0, 8);
               return (
-                <button
+                <EntityItem
                   key={m.member_id}
-                  type="button"
                   onClick={(e) => {
                     // Close this popover before opening the hovercard so the two
                     // transient layers never stack (one popover at a time). The
@@ -71,9 +71,8 @@ export function MembersPopover({
                     onClose();
                     card?.open(anchor, m);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-zinc-800/60 transition-colors"
-                >
-                  <div className="relative">
+                  title={name}
+                  leading={<div className="relative">
                     <Avatar name={name} src={m.avatar_url ?? undefined} id={m.member_id} size="sm" />
                     {m.is_online != null && (
                       <span
@@ -83,23 +82,15 @@ export function MembersPopover({
                         }`}
                       />
                     )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-zinc-200 truncate flex items-center gap-1.5">
-                      {name}
-                      {m.member_type === "bot" && (
-                        <Bot className="w-3 h-3 text-indigo-400 flex-shrink-0" />
-                      )}
-                    </p>
-                  </div>
-                  {m.role && m.role !== "member" && (
-                    <span className="text-[10px] text-zinc-400 capitalize">{m.role}</span>
-                  )}
-                </button>
+                  </div>}
+                  status={m.member_type === "bot" ? <Bot className="h-3 w-3 text-indigo-400" /> : undefined}
+                  trailing={m.role && m.role !== "member" ? <span className="text-[10px] capitalize text-zinc-400">{m.role}</span> : undefined}
+                  className="border-0 px-3"
+                />
               );
             })
           )}
-        </div>
+        </ItemList>
 
         {!isDm && (
           <button

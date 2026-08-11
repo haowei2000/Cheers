@@ -64,6 +64,13 @@ services:
       - APNS_TEAM_ID=${APNS_TEAM_ID:-}
       - APNS_TOPIC=${APNS_TOPIC:-app.cheers.ios}
       - APNS_SANDBOX=${APNS_SANDBOX:-false}
+      # Browser Web Push. Store the P-256 private key in the deployment secret
+      # manager and inject it here; never commit the PEM.
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@tocheers.com}
+      # Optional alternative to direct APNs for self-hosted deployments.
+      - PUSH_RELAY_URL=${PUSH_RELAY_URL:-}
+      - PUSH_RELAY_KEY=${PUSH_RELAY_KEY:-}
       - GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID:-}
       - GOOGLE_WEB_CLIENT_SECRET=${GOOGLE_WEB_CLIENT_SECRET:-}
       - GOOGLE_WEB_REDIRECT_URI=${GOOGLE_WEB_REDIRECT_URI:-}

@@ -15,6 +15,8 @@
         ],
         "frontend": [
           "frontend/**",
+          "design-system/**",
+          "scripts/check-design-system.mjs",
           "website/**"
         ],
         "plugin": [
@@ -26,6 +28,8 @@
         ],
         "ios": [
           "apps/ios/**",
+          "design-system/**",
+          "scripts/check-design-system.mjs",
           "scripts/check-pbxproj.py"
         ]
       }

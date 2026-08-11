@@ -8,6 +8,7 @@ import {
   type TaskClaim,
 } from "@/api/taskClaims";
 import { Button } from "@/components/ui/button";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 
 export function TaskClaimsPanel({
   channelId,
@@ -75,21 +76,17 @@ export function TaskClaimsPanel({
       <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-300/80">
         Task claim requests · {claims.length}
       </p>
+      <ItemList>
       {claims.map((c) => (
-        <div
+        <OperationsItem
           key={c.claim_id}
-          className="flex max-w-[92%] gap-2 rounded-2xl rounded-tl-md border border-indigo-500/30 bg-indigo-500/10 px-3 py-2.5 shadow-sm"
-        >
-          <Bot className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium text-indigo-300">{c.bot_name} wants to claim a task</p>
-            <p className="mt-0.5 text-sm font-medium text-zinc-100">{c.summary}</p>
-            <p className="mt-1 text-xs leading-relaxed text-zinc-400">{c.proposed_action}</p>
-            <p className="mt-1 text-[11px] text-zinc-500">
-              {Math.round(c.confidence * 100)}% confidence · {c.impact} impact
-            </p>
-            {canManage && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+          presentationLevel="max"
+          leading={<Bot className="h-4 w-4 text-indigo-400" />}
+          title={`${c.bot_name} wants to claim a task`}
+          subtitle={c.summary}
+          preview={c.proposed_action}
+          metadata={`${Math.round(c.confidence * 100)}% confidence · ${c.impact} impact`}
+          actions={canManage ? <>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -119,11 +116,11 @@ export function TaskClaimsPanel({
                   <Check className="h-3 w-3" />
                   Approve &amp; run
                 </Button>
-              </div>
-            )}
-          </div>
-        </div>
+              </> : undefined}
+          className="border-0 bg-indigo-500/10"
+        />
       ))}
+      </ItemList>
     </div>
   );
 }

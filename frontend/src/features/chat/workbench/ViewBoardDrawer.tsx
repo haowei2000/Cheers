@@ -192,11 +192,11 @@ function ViewBoardDrawerImpl({
   // and `cn` runs tailwind-merge: a hardcoded `flex` in this chrome would win the
   // display conflict over `hidden`, so a CLOSED drawer would still render visible.
   const cardChrome =
-    "min-h-0 flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm";
+    "min-h-0 flex-col overflow-hidden rounded-sm bg-zinc-900/95 shadow-xl shadow-black/45 backdrop-blur-sm";
   const shellClass = isMobile
     ? // z-40: above the chat chrome (z-30 header, z-10/z-20 composer popups,
       // sticky DiffView headers) but below true modals (z-50).
-      `fixed top-14 left-2 right-3 z-40 flex flex-col overflow-hidden rounded-xl bg-zinc-900/95 shadow-2xl shadow-black/50 backdrop-blur-sm transition-[opacity,transform] duration-200 ${
+      `fixed top-14 left-2 right-3 z-40 flex flex-col overflow-hidden rounded-sm bg-zinc-900/95 shadow-xl shadow-black/45 backdrop-blur-sm transition-[opacity,transform] duration-200 ${
         minimal
           ? "max-h-[calc(100dvh-4.5rem)]"
           : "bottom-[max(0.5rem,env(safe-area-inset-bottom))]"
@@ -234,7 +234,7 @@ function ViewBoardDrawerImpl({
     >
       <div
         {...(float ? drag.handleProps : {})}
-        className="mx-2 mt-2 flex h-10 flex-shrink-0 select-none items-center gap-2 rounded-lg bg-zinc-900/70 px-3"
+        className="mx-3 mt-2 flex h-9 flex-shrink-0 select-none items-center gap-2 border-y border-zinc-800/90 px-1"
       >
         <LayoutDashboard className="w-4 h-4 text-zinc-400" />
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -255,7 +255,7 @@ function ViewBoardDrawerImpl({
               });
             }}
             title={addToContextTitle("this board")}
-            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
+            className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-300"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -264,7 +264,7 @@ function ViewBoardDrawerImpl({
           <button
             onClick={onToggleMinimal}
             title={minimal ? "Expand" : "Minimize"}
-            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+            className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
           >
             {minimal ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
           </button>
@@ -272,7 +272,7 @@ function ViewBoardDrawerImpl({
         <button
           onClick={onClose}
           title="Close"
-          className="rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+          className="rounded-sm p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
         >
           <X className="w-4 h-4" />
         </button>
@@ -294,7 +294,7 @@ function ViewBoardDrawerImpl({
         </div>
       ) : (
         <>
-          <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1 overflow-x-auto rounded-lg bg-zinc-900/50 px-2 py-1.5">
+          <div className="mx-3 mb-2 flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-0 border-b border-zinc-800 px-0 py-1">
             {boards.map((b) => {
               const isActive = activeBoard?.id === b.id;
               const Icon = b.icon;
@@ -302,10 +302,10 @@ function ViewBoardDrawerImpl({
                 <button
                   key={b.id}
                   onClick={() => setActive(b.id)}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs whitespace-nowrap transition-colors ${
+                  className={`inline-flex items-center gap-1.5 rounded-none border-b px-0.5 py-1 text-xs whitespace-nowrap transition-colors ${
                     isActive
-                      ? "bg-zinc-800 text-zinc-100"
-                      : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+                      ? "border-zinc-200 text-zinc-100"
+                      : "border-transparent text-zinc-400 hover:text-zinc-200"
                   }`}
                 >
                   {Icon && <Icon className="w-3.5 h-3.5" />}
@@ -316,13 +316,13 @@ function ViewBoardDrawerImpl({
           </div>
 
           {activeBoard?.sessionScoped && (
-            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 rounded-lg bg-zinc-900/40 px-3 py-1.5">
+            <div className="mx-3 mb-2 flex flex-shrink-0 items-center gap-2 border-b border-zinc-800 px-1 py-1.5">
               <Layers className="w-3 h-3 text-zinc-500 flex-shrink-0" />
               <span className="text-[10px] uppercase tracking-wide text-zinc-400">Scope</span>
               <select
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
-                className="min-w-0 flex-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="min-w-0 flex-1 rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">All sessions</option>
                 {sessions.map((s) => (

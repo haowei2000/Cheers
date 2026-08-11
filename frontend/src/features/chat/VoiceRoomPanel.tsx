@@ -325,7 +325,7 @@ export function VoiceRoomPanel({
   }, [channelId, consenting]);
 
   const toggleTranscription = useCallback(async () => {
-    if (!canManage || changingTranscription) return;
+    if (!serverCanManage || changingTranscription) return;
     const enabled = transcriptionStatus !== "active";
     setChangingTranscription(true);
     if (enabled) setTranscriptionStatus("starting");
@@ -345,7 +345,7 @@ export function VoiceRoomPanel({
     } finally {
       setChangingTranscription(false);
     }
-  }, [canManage, changingTranscription, channelId, transcriptionStatus]);
+  }, [serverCanManage, changingTranscription, channelId, transcriptionStatus]);
 
   const speakingName =
     activeSpeaker || latestInterim?.participant_identity || null;
@@ -406,7 +406,7 @@ export function VoiceRoomPanel({
         </div>
 
         {!connected ? (
-          <Button disabled={joining} onClick={() => void join()} className="shrink-0">
+          <Button disabled={joining} onClick={() => void join()} className="h-11 shrink-0">
             {joining ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -427,7 +427,9 @@ export function VoiceRoomPanel({
                     : "Unmute microphone"
                   : "Listen-only member"
               }
-              className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              aria-label={micEnabled ? "Mute microphone" : "Unmute microphone"}
+              aria-pressed={micEnabled}
+              className={`flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40 ${
                 micEnabled
                   ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
                   : "bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
@@ -444,7 +446,8 @@ export function VoiceRoomPanel({
               type="button"
               onClick={() => void disconnect()}
               title="Leave voice"
-              className="flex h-8 items-center gap-1.5 rounded-md border border-rose-500/40 px-2.5 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/10"
+              aria-label="Leave voice meeting"
+              className="flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-rose-500/40 px-3 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <PhoneOff className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Leave</span>
@@ -486,7 +489,8 @@ export function VoiceRoomPanel({
             disabled={!connected || changingTranscription}
             onClick={() => void toggleTranscription()}
             title={!connected ? "Join the room first" : undefined}
-            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-pressed={transcriptionStatus === "active"}
+            className="flex min-h-9 shrink-0 items-center gap-1 rounded-lg px-2.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {changingTranscription ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -507,7 +511,7 @@ export function VoiceRoomPanel({
             type="button"
             disabled={consenting}
             onClick={() => void grantConsent()}
-            className="inline-flex items-center gap-1 rounded bg-indigo-500 px-2 py-1 font-medium text-white hover:bg-indigo-400 disabled:opacity-60"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-indigo-500 px-3 font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-60"
           >
             {consenting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />}
             Accept &amp; speak
@@ -516,7 +520,7 @@ export function VoiceRoomPanel({
             type="button"
             disabled={consenting}
             onClick={() => setConsentRequired(false)}
-            className="text-zinc-400 hover:text-zinc-200"
+            className="min-h-11 rounded-lg px-3 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
           >
             Listen only
           </button>

@@ -1,4 +1,4 @@
-.PHONY: lint fix test docs-pages
+.PHONY: lint fix test docs-pages design-system-check
 
 lint:
 	cd server && cargo clippy --all-targets
@@ -11,3 +11,6 @@ test:
 
 docs-pages:
 	node scripts/generate-architecture-status-page.mjs
+
+design-system-check:
+	node scripts/check-design-system.mjs

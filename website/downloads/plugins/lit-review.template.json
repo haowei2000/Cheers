@@ -1,0 +1,17 @@
+{
+  "id": "lit-review",
+  "title": "Literature review",
+  "views": [
+    { "id": "notes", "title": "Reading notes", "file": "research/reading-notes.md", "lens": "markdown" }
+  ],
+  "seed": {
+    "research/papers.json": {
+      "papers": [
+        { "title": "Attention Is All You Need", "authors": "Vaswani et al.", "venue": "NeurIPS", "year": "2017", "status": "Read", "rating": 5, "notes": "Transformer architecture" },
+        { "title": "", "authors": "", "venue": "", "year": "", "status": "To read", "rating": 0, "notes": "" }
+      ]
+    },
+    "research/reading-notes.md": "# Reading notes\n\nOne section per paper. Keep quotes short and always note the page number.\n\n## Attention Is All You Need (2017)\n\n- Key idea: replace recurrence entirely with self-attention.\n- Relevance to our work: baseline for the ablation in §4.\n",
+    "prompts/summarize-paper.md": "You are a research assistant. Summarize the paper I give you in five bullets: problem, method, key result, limitation, and relevance to our project. End with three follow-up papers worth reading."
+  }
+}

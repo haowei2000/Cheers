@@ -333,6 +333,14 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
             post(api::messages::send_message).get(api::messages::list_messages),
         )
         .route(
+            "/api/v1/channels/:channel_id/discussions",
+            get(api::discussions::list_discussions),
+        )
+        .route(
+            "/api/v1/channels/:channel_id/discussions/:root_msg_id",
+            get(api::discussions::get_discussion),
+        )
+        .route(
             "/api/v1/channels/:channel_id/task-claims",
             get(api::task_claims::list_claims),
         )
@@ -674,6 +682,10 @@ fn build_authed_routes(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/friends/requests",
             get(api::friends::list_friend_requests),
+        )
+        .route(
+            "/api/v1/friends/requests/:friendship_id",
+            delete(api::friends::cancel_friend_request),
         )
         .route(
             "/api/v1/friends/requests/:user_id/accept",

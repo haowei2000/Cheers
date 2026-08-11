@@ -6,6 +6,12 @@ import SwiftUI
 // light/dark adaptation. Product-specific color values do not belong here.
 
 enum Theme {
+    enum TypographyRole {
+        case display
+        case reading
+        case utility
+    }
+
     // MARK: Spacing (spacing-first grouping; HIG hit floor)
     /// 4pt — tight intra-row gaps (name / subtitle stacks).
     static let space1: CGFloat = 4
@@ -49,6 +55,85 @@ enum Theme {
     static let textSecondary = Color.secondary
     static let textMuted = Color(uiColor: .tertiaryLabel)
     static let textFaint = Color(uiColor: .quaternaryLabel)
+
+    // Source Serif 4 and Source Han Serif CN are bundled under SIL OFL 1.1.
+    // Resolve a complete Text to one face instead of allowing per-glyph CJK
+    // fallback, which mixes metrics and makes Chinese look vertically uneven.
+    static let displayFont = Font.custom("SourceSerif4Display-Semibold", size: 34, relativeTo: .largeTitle)
+    static let readingFont = Font.custom("SourceSerif4-Regular", size: 17, relativeTo: .body)
+    static let readingEmphasisFont = Font.custom("SourceSerif4-Semibold", size: 17, relativeTo: .body)
+    static let utilityFont = Font.system(.body, design: .default)
+
+    static func font(_ role: TypographyRole, for text: String, emphasized: Bool = false) -> Font {
+        switch role {
+        case .display:
+            if containsChinese(text) {
+                return Font.custom("SourceHanSerifCNVF-SemiBold", size: 34, relativeTo: .largeTitle)
+            }
+            if containsJapaneseOrKorean(text) {
+                return Font.system(.largeTitle, design: .serif).weight(.semibold)
+            }
+            return displayFont
+        case .reading:
+            if containsChinese(text) {
+                let name = emphasized ? "SourceHanSerifCNVF-SemiBold" : "SourceHanSerifCNVF-Regular"
+                return Font.custom(name, size: 17, relativeTo: .body)
+            }
+            if containsJapaneseOrKorean(text) {
+                return Font.system(.body, design: .serif).weight(emphasized ? .semibold : .regular)
+            }
+            return emphasized ? readingEmphasisFont : readingFont
+        case .utility:
+            // The system sans family supplies locale-correct glyphs for every
+            // installed language and remains the native face for utility UI.
+            return Font.system(.body, design: .default).weight(emphasized ? .semibold : .regular)
+        }
+    }
+
+    static func readingFont(for text: String, emphasized: Bool = false) -> Font {
+        font(.reading, for: text, emphasized: emphasized)
+    }
+
+    static func displayFont(for text: String) -> Font {
+        font(.display, for: text, emphasized: true)
+    }
+
+    static func utilityFont(for text: String, emphasized: Bool = false) -> Font {
+        font(.utility, for: text, emphasized: emphasized)
+    }
+
+    static func containsChinese(_ text: String) -> Bool {
+        containsHan(text) && !containsJapaneseOrKorean(text)
+    }
+
+    private static func containsHan(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3400...0x4DBF,   // CJK Extension A
+                 0x4E00...0x9FFF,   // CJK Unified Ideographs
+                 0xF900...0xFAFF,   // CJK Compatibility Ideographs
+                 0x20000...0x2FA1F: // Supplementary CJK extensions
+                true
+            default:
+                false
+            }
+        }
+    }
+
+    private static func containsJapaneseOrKorean(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3040...0x30FF,   // Hiragana and Katakana
+                 0x31F0...0x31FF,   // Katakana extensions
+                 0x1100...0x11FF,   // Hangul Jamo
+                 0x3130...0x318F,   // Hangul compatibility Jamo
+                 0xAC00...0xD7AF:   // Hangul syllables
+                true
+            default:
+                false
+            }
+        }
+    }
 
     // Interactive emphasis follows the app's system tint. Badge emphasis uses
     // semantic fills and labels instead of a product-specific purple palette.

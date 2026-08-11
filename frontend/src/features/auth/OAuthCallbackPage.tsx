@@ -4,6 +4,11 @@ import { exchangeOAuthHandoff } from "@/api/auth";
 import { errorMessage } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  PublicPageShell,
+  publicLinkClass,
+  publicPanelClass,
+} from "@/components/public/PublicPageShell";
 
 export default function OAuthCallbackPage() {
   const [params] = useSearchParams();
@@ -80,23 +85,28 @@ export default function OAuthCallbackPage() {
   }, [navigate, params, setAuth]);
 
   return (
-    <div className="h-full bg-zinc-950 flex items-center justify-center p-6 text-zinc-100">
-      {error ? (
-        <div className="max-w-sm text-center">
-          <h1 className="text-lg font-semibold">Couldn&apos;t sign in</h1>
+    <PublicPageShell
+      title={error ? "Couldn't sign in" : linkedMessage ? "Account linked" : "Completing sign-in"}
+      description={error ?? linkedMessage ?? "Please keep this page open while we verify the handoff."}
+    >
+      <div className={`${publicPanelClass} text-center`}>
+        {error ? (
+        <div>
+          <h2 className="font-masthead text-xl">Couldn&apos;t sign in</h2>
           <p className="mt-2 text-sm text-zinc-400">{error}</p>
-          <button className="mt-5 text-sm text-indigo-400 hover:text-indigo-300" onClick={() => navigate("/login", { replace: true })}>
+          <button className={`mt-5 text-sm ${publicLinkClass}`} onClick={() => navigate("/login", { replace: true })}>
             Back to sign in
           </button>
         </div>
       ) : linkedMessage ? (
-        <div className="max-w-sm text-center">
-          <h1 className="text-lg font-semibold">Linked</h1>
+        <div>
+          <h2 className="font-masthead text-xl">Linked</h2>
           <p className="mt-2 text-sm text-zinc-400">{linkedMessage}</p>
         </div>
       ) : (
         <Spinner size={24} className="text-zinc-500" />
       )}
-    </div>
+      </div>
+    </PublicPageShell>
   );
 }

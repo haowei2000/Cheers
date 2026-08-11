@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { registerLens, type LensProps } from "./registry";
 import { isComposing } from "@/lib/ime";
+import { WorkbenchItem } from "@/components/ui/item";
 
 // ── table: array of row objects; columns from config, else inferred ──────────
 interface TableConfig {
@@ -158,18 +159,23 @@ function KanbanLens({ data, onChange }: LensProps) {
           </div>
           <div className="p-1 space-y-1">
             {c.items.map((it, ii) => (
-              <div key={ii} className="group bg-zinc-800/70 rounded px-1.5 py-1 text-zinc-200 flex items-center gap-1">
+              <WorkbenchItem
+                key={ii}
+                presentationLevel="minimal"
+                title={it}
+                actions={<>
                 <button onClick={() => moveItem(ci, ii, -1)} disabled={ci === 0} title="Move left" className="disabled:opacity-50">
                   <ChevronLeft className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
                 </button>
-                <span className="flex-1 break-words">{it}</span>
                 <button onClick={() => moveItem(ci, ii, 1)} disabled={ci === cols.length - 1} title="Move right" className="disabled:opacity-50">
                   <ChevronRight className="w-3 h-3 text-zinc-500 hover:text-zinc-200" />
                 </button>
                 <button onClick={() => delItem(ci, ii)} title="Delete" className="opacity-0 group-hover:opacity-100">
                   <X className="w-3 h-3 text-zinc-600 hover:text-red-400" />
                 </button>
-              </div>
+                </>}
+                className="border-b-0 bg-zinc-800/70 px-1.5 text-zinc-200"
+              />
             ))}
             <div className="flex items-center gap-1 pt-1">
               <input

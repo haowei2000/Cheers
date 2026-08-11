@@ -26,6 +26,7 @@ use serde_json::Value;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use server::api::{friends, notifications};
 use server::domain::channel_seq;
 use server::domain::dms;
 use server::domain::messages::{self, CreateMessageParams};
@@ -332,6 +333,22 @@ async fn r5_concurrent_dispatch_dispatches_task_exactly_once(db: PgPool) {
 
     let trigger = Uuid::new_v4();
     let bot = Uuid::new_v4();
+    let trigger_author = seed_user(&db).await;
+    add_member(&db, ch, trigger_author, "user").await;
+
+    // Dispatch is only valid for a durable same-channel trigger. Migration 0071
+    // enforces that contract so placeholders always have a resolvable thread root.
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial)
+         VALUES ($1, $2, 'user', $3, 'trigger', FALSE)",
+    )
+    .bind(trigger.to_string())
+    .bind(ch.to_string())
+    .bind(trigger_author.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
 
     let make_params = || DispatchParams {
         context_bundle: None,
@@ -529,6 +546,22 @@ async fn flow4_done_finalizes_and_second_done_is_idempotent(db: PgPool) {
 
     let trigger = Uuid::new_v4();
     let session = Uuid::new_v4();
+    let trigger_author = seed_user(&db).await;
+    add_member(&db, ch, trigger_author, "user").await;
+
+    // A production dispatch always follows a persisted channel message. Keep
+    // the fixture aligned with the database reply/thread invariant.
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial)
+         VALUES ($1, $2, 'user', $3, 'trigger', FALSE)",
+    )
+    .bind(trigger.to_string())
+    .bind(ch.to_string())
+    .bind(trigger_author.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
 
     // 派发占位（在线 → Dispatched），并注册流。
     let res = dispatcher::dispatch(
@@ -1223,6 +1256,90 @@ async fn deferred_workspace_invariant_allows_transient_invalid_rows(db: PgPool) 
 }
 
 #[sqlx::test]
+async fn stale_friend_decline_cannot_delete_an_accepted_friendship(db: PgPool) {
+    let requester = seed_user(&db).await;
+    let target = seed_user(&db).await;
+    let friendship_id = Uuid::new_v4().to_string();
+    let pair = if requester.to_string() <= target.to_string() {
+        format!("{requester}:{target}")
+    } else {
+        format!("{target}:{requester}")
+    };
+    sqlx::query(
+        "INSERT INTO friendships (friendship_id, user_id, friend_id, pair_key, status)
+         VALUES ($1, $2, $3, $4, 'pending')",
+    )
+    .bind(&friendship_id)
+    .bind(requester.to_string())
+    .bind(target.to_string())
+    .bind(pair)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "UPDATE friendships SET status = 'accepted', responded_at = NOW()
+         WHERE friendship_id = $1",
+    )
+    .bind(&friendship_id)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let removed = friends::delete_pending_friend_request(&db, &friendship_id, &target.to_string())
+        .await
+        .unwrap();
+    assert!(removed.is_none(), "stale decline must be a harmless no-op");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM friendships WHERE friendship_id = $1")
+            .bind(&friendship_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(status, "accepted", "accepted relationship must survive");
+}
+
+#[sqlx::test]
+async fn native_push_devices_are_revoked_and_suspended_users_are_filtered(db: PgPool) {
+    let user = seed_user(&db).await;
+    sqlx::query(
+        "INSERT INTO user_devices (user_id, push_token, platform)
+         VALUES ($1, 'test-device-token', 'ios')",
+    )
+    .bind(user.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        server::notify::active_device_tokens(&db, user).await.len(),
+        1
+    );
+
+    sqlx::query("UPDATE users SET is_suspended = TRUE WHERE user_id = $1")
+        .bind(user.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(
+        server::notify::active_device_tokens(&db, user)
+            .await
+            .is_empty(),
+        "suspended users must never be selected for APNs delivery"
+    );
+
+    server::notify::revoke_user_devices(&db, &user.to_string()).await;
+    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_devices WHERE user_id = $1")
+        .bind(user.to_string())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        remaining, 0,
+        "global revocation deletes native device tokens"
+    );
+}
+
+#[sqlx::test]
 async fn stale_workspace_decline_keeps_unlocked_channel_invites(db: PgPool) {
     let workspace = seed_workspace(&db).await;
     let channel = seed_channel(&db, workspace).await;
@@ -1295,6 +1412,126 @@ async fn stale_workspace_decline_keeps_unlocked_channel_invites(db: PgPool) {
     .await
     .unwrap();
     assert_eq!(remaining, 0, "a real decline consumes queued invites");
+}
+
+#[sqlx::test]
+async fn channel_invite_activity_tracks_normal_and_two_stage_lifecycle(db: PgPool) {
+    let inviter = seed_user(&db).await;
+    let invitee = seed_user(&db).await;
+
+    // Normal invitation: an active workspace member sees the channel Activity
+    // DTO immediately, and deleting the durable invite resolves polling too.
+    let workspace = seed_workspace(&db).await;
+    let channel = seed_channel(&db, workspace).await;
+    sqlx::query(
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+         VALUES ($1, $2, 'member', 'active')",
+    )
+    .bind(workspace.to_string())
+    .bind(invitee.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO channel_invites (channel_id, user_id, role, invited_by)
+         VALUES ($1, $2, 'member', $3)",
+    )
+    .bind(channel.to_string())
+    .bind(invitee.to_string())
+    .bind(inviter.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let visible = notifications::load_notifications(&db, &invitee.to_string())
+        .await
+        .unwrap();
+    let item = visible
+        .iter()
+        .find(|item| item.id == format!("channel:{channel}"))
+        .expect("active workspace member must see the channel invitation");
+    assert_eq!(item.kind, "channel_invite");
+    assert_eq!(
+        item.workspace_id.as_deref(),
+        Some(workspace.to_string().as_str())
+    );
+    assert_eq!(item.actor_id.as_deref(), Some(inviter.to_string().as_str()));
+
+    sqlx::query("DELETE FROM channel_invites WHERE channel_id = $1 AND user_id = $2")
+        .bind(channel.to_string())
+        .bind(invitee.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    assert!(
+        notifications::load_notifications(&db, &invitee.to_string())
+            .await
+            .unwrap()
+            .iter()
+            .all(|item| item.id != format!("channel:{channel}")),
+        "accept/decline deletion must resolve the polled Activity item"
+    );
+
+    // Two-stage private invitation: only the workspace action is visible while
+    // membership is pending; activating it atomically unlocks the queued channel
+    // action in the same canonical Activity query used by every transport.
+    let queued_workspace = seed_workspace(&db).await;
+    let queued_channel = seed_channel(&db, queued_workspace).await;
+    sqlx::query("UPDATE channels SET type = 'private' WHERE channel_id = $1")
+        .bind(queued_channel.to_string())
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO workspace_memberships
+            (workspace_id, user_id, role, status, invited_by, invited_at)
+         VALUES ($1, $2, 'member', 'pending', $3, NOW())",
+    )
+    .bind(queued_workspace.to_string())
+    .bind(invitee.to_string())
+    .bind(inviter.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO channel_invites (channel_id, user_id, role, invited_by)
+         VALUES ($1, $2, 'member', $3)",
+    )
+    .bind(queued_channel.to_string())
+    .bind(invitee.to_string())
+    .bind(inviter.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let queued = notifications::load_notifications(&db, &invitee.to_string())
+        .await
+        .unwrap();
+    assert!(queued.iter().any(|item| {
+        item.id == format!("workspace:{queued_workspace}") && item.kind == "workspace_invite"
+    }));
+    assert!(queued
+        .iter()
+        .all(|item| item.id != format!("channel:{queued_channel}")));
+
+    sqlx::query(
+        "UPDATE workspace_memberships SET status = 'active'
+         WHERE workspace_id = $1 AND user_id = $2",
+    )
+    .bind(queued_workspace.to_string())
+    .bind(invitee.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
+    let unlocked = notifications::load_notifications(&db, &invitee.to_string())
+        .await
+        .unwrap();
+    assert!(unlocked
+        .iter()
+        .any(|item| item.id == format!("channel:{queued_channel}")));
+    assert!(unlocked
+        .iter()
+        .all(|item| item.id != format!("workspace:{queued_workspace}")));
 }
 
 #[sqlx::test]
@@ -3219,6 +3456,17 @@ async fn proactive_post_inherits_active_bot_chain(db: PgPool) {
 
     // A proactively posts a message @-mentioning B (the WS-boundary side effect).
     let a_post = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO messages
+            (msg_id, channel_id, sender_type, sender_id, content, is_partial, channel_seq)
+         VALUES ($1, $2, 'bot', $3, '@bot-b follow up', FALSE, 7)",
+    )
+    .bind(a_post.to_string())
+    .bind(ch.to_string())
+    .bind(bot_a.to_string())
+    .execute(&db)
+    .await
+    .unwrap();
     let counter = Arc::new(CountingBotLocator::default());
     let bot_locator: Arc<dyn BotLocator> = counter.clone();
     // Await the spawned trigger handle so the assertions below see its effects.

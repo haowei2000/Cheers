@@ -26,25 +26,13 @@ struct FleetView: View {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     if activity.pending.count > 0 {
                         Button { shell.push(.activity) } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "shield.lefthalf.filled")
-                                    .foregroundStyle(Theme.warning)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(activity.pending.count) waiting on you")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Theme.textPrimary)
-                                    Text("Review in Activity")
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Theme.textFaint)
-                            }
-                            .padding(12)
-                            .background(Theme.bgSurface)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            CheersOperationsItem(row: CheersItemRow(
+                                title: "\(activity.pending.count) waiting on you",
+                                subtitle: "Review in Activity",
+                                leading: AnyView(Image(systemName: "shield.lefthalf.filled").foregroundStyle(Theme.warning)),
+                                criticalStatus: AnyView(Text("\(activity.pending.count)").font(.caption2.bold()).foregroundStyle(Theme.warning)),
+                                trailing: AnyView(Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Theme.textFaint))
+                            ))
                         }
                         .buttonStyle(.plain)
                     }
@@ -159,8 +147,10 @@ struct FleetView: View {
     }
 
     private func botRow(_ bot: BotDto) -> some View {
-        HStack(spacing: 12) {
-            ZStack(alignment: .bottomTrailing) {
+        CheersEntityItem(row: CheersItemRow(
+            title: bot.name,
+            subtitle: statusLine(bot),
+            leading: AnyView(ZStack(alignment: .bottomTrailing) {
                 AvatarView(
                     seedId: bot.botId,
                     name: bot.name,
@@ -172,37 +162,13 @@ struct FleetView: View {
                     .frame(width: 12, height: 12)
                     .overlay(Circle().stroke(Theme.bgApp, lineWidth: 2.5))
                     .offset(x: 1, y: 1)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(bot.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.textPrimary).lineLimit(1)
-                    Text("BOT")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(Theme.botBadgeText)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Theme.botBadgeBg)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                    if bot.isDisabled == true {
-                        Text("OFF")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(Theme.danger)
-                            .padding(.horizontal, 4).padding(.vertical, 1)
-                            .background(Theme.danger.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }
-                }
-                Text(statusLine(bot))
-                    .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
+            }),
+            criticalStatus: bot.isDisabled == true ? AnyView(Text("OFF").font(.caption2.bold()).foregroundStyle(Theme.danger)) : nil,
+            status: AnyView(Text("BOT").font(.caption2.bold()).foregroundStyle(Theme.botBadgeText)),
+            trailing: AnyView(Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Theme.textFaint)
-        }
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
+                .foregroundStyle(Theme.textFaint))
+        ))
         .accessibilityHint("Opens bot management")
     }
 

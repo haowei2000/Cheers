@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <title>Workbench Plugins — Cheers</title>
 <meta name="description" content="The Cheers workbench plugin gallery: official renderer plugins (preinstalled with every gateway), example plugins and scenario templates — each a single sandboxed HTML file you can download and try by dragging it into the workbench drawer." />
 <style>
@@ -151,6 +152,7 @@
   .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
   .foot-links a { color: var(--ink-soft); }
 </style>
+<link rel="stylesheet" href="./editorial.css?v=20260811-2" />
 </head>
 <body>
 
@@ -206,25 +208,25 @@
       They cover the everyday shapes: todos, tables, boards, and document metadata.</p>
     <div class="cards">
       <div class="pcard">
-        <div class="head"><span class="emoji">☑️</span><span class="name">Checklist</span><span class="file">cheers-checklist.plugin.html</span></div>
+        <div class="head"><span class="emoji">01</span><span class="name">Checklist</span><span class="file">cheers-checklist.plugin.html</span></div>
         <div class="desc">Markdown task lists (<code>- [ ]</code> / <code>- [x]</code>) become a clickable checklist; a toggle rewrites exactly that line, so the file stays human- and agent-readable markdown.</div>
         <div class="match">claims: <code>markdown</code> containing task lines</div>
         <div class="foot"><a class="dl" href="./downloads/plugins/cheers-checklist.plugin.html" download><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download .html</a></div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">📊</span><span class="name">Table</span><span class="file">cheers-table.plugin.html</span></div>
+        <div class="head"><span class="emoji">02</span><span class="name">Table</span><span class="file">cheers-table.plugin.html</span></div>
         <div class="desc">A JSON array of objects becomes an editable table — columns inferred from row keys, cell edits written straight back. The standard answer for agent-maintained datasets.</div>
         <div class="match">claims: <code>json</code> whose top level is an array</div>
         <div class="foot"><a class="dl" href="./downloads/plugins/cheers-table.plugin.html" download><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download .html</a></div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">🗂️</span><span class="name">Kanban (markdown)</span><span class="file">cheers-kanban-md.plugin.html</span></div>
+        <div class="head"><span class="emoji">03</span><span class="name">Kanban (markdown)</span><span class="file">cheers-kanban-md.plugin.html</span></div>
         <div class="desc">Markdown <code>##</code> sections with task lines become kanban columns with draggable cards — the whole board is still one ordinary markdown file an agent can edit.</div>
         <div class="match">claims: <code>markdown</code> with <code>##&nbsp;</code> headings + task lines</div>
         <div class="foot"><a class="dl" href="./downloads/plugins/cheers-kanban-md.plugin.html" download><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download .html</a></div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">📇</span><span class="name">Frontmatter form</span><span class="file">cheers-frontmatter.plugin.html</span></div>
+        <div class="head"><span class="emoji">04</span><span class="name">Frontmatter form</span><span class="file">cheers-frontmatter.plugin.html</span></div>
         <div class="desc">The YAML frontmatter of a markdown document becomes a structured form; the body stays untouched. Edit metadata without ever breaking the document.</div>
         <div class="match">claims: <code>markdown</code> with a <code>---</code> frontmatter block</div>
         <div class="foot"><a class="dl" href="./downloads/plugins/cheers-frontmatter.plugin.html" download><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download .html</a></div>
@@ -241,22 +243,22 @@
       gateways.</p>
     <div class="cards">
       <div class="pcard">
-        <div class="head"><span class="emoji">📋</span><span class="name">Task board</span><span class="file">task-board.template.json</span></div>
+        <div class="head"><span class="emoji">05</span><span class="name">Task board</span><span class="file">task-board.template.json</span></div>
         <div class="desc">Todo / Doing / Done kanban plus a backlog table with priority and status dropdowns. The everyday board.</div>
         <div class="foot"><a class="dl" href="./downloads/templates/task-board.template.json" download>Template .json</a></div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">💻</span><span class="name">Code project</span><span class="file">code-project.template.json</span></div>
+        <div class="head"><span class="emoji">06</span><span class="name">Code project</span><span class="file">code-project.template.json</span></div>
         <div class="desc">Plan kanban, issue table (severity + a <code>ref</code> column pointing into the workspace), test-progress chart, todo checklist, and a <code>codemap/map.yaml</code> seed.</div>
         <div class="foot"><a class="dl" href="./downloads/templates/code-project.template.json" download>Template .json</a></div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">🔬</span><span class="name">Research lab</span><span class="file">research-lab.template.json</span></div>
+        <div class="head"><span class="emoji">07</span><span class="name">Research lab</span><span class="file">research-lab.template.json</span></div>
         <div class="desc">Experiment status table, metrics chart (append <code>[step, value]</code> while training), and a paper-submission tracker with venue/status/deadline.</div>
         <div class="foot"><a class="dl" href="./downloads/templates/research-lab.template.json" download>Template .json</a></div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">🛠️</span><span class="name">Team ops</span><span class="file">team-ops.template.json</span></div>
+        <div class="head"><span class="emoji">08</span><span class="name">Team ops</span><span class="file">team-ops.template.json</span></div>
         <div class="desc">Server inventory, assets &amp; renewals (domains, certs, licenses), and an on-call incident board.</div>
         <div class="foot"><a class="dl" href="./downloads/templates/team-ops.template.json" download>Template .json</a></div>
       </div>
@@ -271,7 +273,7 @@
       pins the agent's conventions, the plugin renders them.</p>
     <div class="cards">
       <div class="pcard">
-        <div class="head"><span class="emoji">🗺️</span><span class="name">Codemap</span><span class="file">codemap.plugin.html</span></div>
+        <div class="head"><span class="emoji">09</span><span class="name">Codemap</span><span class="file">codemap.plugin.html</span></div>
         <div class="desc">A Devin-style, <strong>agent-maintained map of your codebase</strong>: a pan/zoom node
           canvas over <code>codemap/map.yaml</code> with hover summaries, status colors
           (explored / partial / stale) and click-to-jump into the bot's workspace at the exact line
@@ -284,7 +286,7 @@
         </div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">📚</span><span class="name">Paper tracker</span><span class="file">lit-review.plugin.html</span></div>
+        <div class="head"><span class="emoji">10</span><span class="name">Paper tracker</span><span class="file">lit-review.plugin.html</span></div>
         <div class="desc">A literature-review table over <code>{"papers": [...]}</code> JSON: title / authors / venue / year, a reading-status dropdown and star ratings — agents add papers, you triage them.</div>
         <div class="match">claims: <code>json</code> with a <code>papers</code> key</div>
         <div class="foot">
@@ -293,7 +295,7 @@
         </div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">🔍</span><span class="name">Code review board</span><span class="file">code-review.plugin.html</span></div>
+        <div class="head"><span class="emoji">11</span><span class="name">Code review board</span><span class="file">code-review.plugin.html</span></div>
         <div class="desc">Renders a markdown review log (<code>## file</code> sections, <code>- [ ] [P0]</code> findings) with severity badges and a progress bar; checking a finding rewrites its line in place.</div>
         <div class="match">claims: <code>markdown</code> containing <code>[P0]</code>/<code>[P1]</code>/<code>[P2]</code></div>
         <div class="foot">
@@ -302,7 +304,7 @@
         </div>
       </div>
       <div class="pcard">
-        <div class="head"><span class="emoji">🧪</span><span class="name">Starter kit</span><span class="file">md-checklist + research-lab + SDK</span></div>
+        <div class="head"><span class="emoji">12</span><span class="name">Starter kit</span><span class="file">md-checklist + research-lab + SDK</span></div>
         <div class="desc">The tutorial checklist plugin from the dev guide, the full research-lab scenario template (tables, kanban, metrics chart, pinned conventions), and the inline SDK every plugin can copy-paste.</div>
         <div class="match">start here if you're building your own</div>
         <div class="foot">
@@ -343,7 +345,7 @@
 
 <footer>
   <div class="foot-inner">
-    <div>🍻 <strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
+    <div><strong>Cheers</strong> — open-source collaboration for humans &amp; AI agents. MIT licensed.</div>
     <div class="foot-links">
       <a href="./index.html">Home</a>
       <a href="https://github.com/haowei2000/Cheers">GitHub</a>

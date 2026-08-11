@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     Extension, Json,
 };
 use serde::Deserialize;
@@ -224,31 +224,57 @@ pub async fn remove_friend(
         .ok_or_else(|| AppError::BadRequest("friend_id is required".into()))?;
     let pair = pair_key(&claims.sub, &friend_id);
     let existing = sqlx::query(
-        "SELECT friendship_id, user_id, friend_id FROM friendships WHERE pair_key = $1",
+        "DELETE FROM friendships
+         WHERE pair_key = $1 AND status = 'accepted'
+         RETURNING friendship_id, user_id, friend_id",
     )
     .bind(&pair)
     .fetch_optional(&state.db)
     .await?;
-    sqlx::query("DELETE FROM friendships WHERE pair_key = $1")
-        .bind(&pair)
-        .execute(&state.db)
-        .await?;
-    if let Some(row) = existing {
-        let id: String = row.try_get("friendship_id").unwrap_or_default();
-        let requester: String = row.try_get("user_id").unwrap_or_default();
-        let target: String = row.try_get("friend_id").unwrap_or_default();
-        crate::api::notifications::resolve_notification(&state, &target, &format!("friend:{id}"))
-            .await;
-        // Harmless for the requester (outgoing requests are not Activity items),
-        // but keeps every signed-in device converged if the model expands later.
-        crate::api::notifications::resolve_notification(
-            &state,
-            &requester,
-            &format!("friend:{id}"),
+    Ok(Json(json!({"removed": existing.is_some()})))
+}
+
+/// Atomically cancel or decline a pending friend request. The friendship ID
+/// identifies the exact request shown to the client; the status and participant
+/// predicates ensure a stale action can never remove an accepted friendship.
+pub async fn delete_pending_friend_request(
+    db: &sqlx::PgPool,
+    friendship_id: &str,
+    caller_id: &str,
+) -> Result<Option<(String, String)>, AppError> {
+    let row = sqlx::query(
+        "DELETE FROM friendships
+         WHERE friendship_id = $1
+           AND status = 'pending'
+           AND (user_id = $2 OR friend_id = $2)
+         RETURNING user_id, friend_id",
+    )
+    .bind(friendship_id)
+    .bind(caller_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|row| {
+        (
+            row.try_get("user_id").unwrap_or_default(),
+            row.try_get("friend_id").unwrap_or_default(),
         )
-        .await;
+    }))
+}
+
+/// DELETE /api/v1/friends/requests/:friendship_id — decline an incoming
+/// request or cancel an outgoing request without touching accepted friendships.
+pub async fn cancel_friend_request(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(friendship_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let deleted = delete_pending_friend_request(&state.db, &friendship_id, &claims.sub).await?;
+    if let Some((requester, target)) = &deleted {
+        let notification_id = format!("friend:{friendship_id}");
+        crate::api::notifications::resolve_notification(&state, target, &notification_id).await;
+        crate::api::notifications::resolve_notification(&state, requester, &notification_id).await;
     }
-    Ok(Json(json!({"removed": true})))
+    Ok(Json(json!({"removed": deleted.is_some()})))
 }
 
 #[derive(Deserialize)]

@@ -12,6 +12,11 @@ import { useChatStore } from "@/stores/chatStore";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  PublicPageShell,
+  publicLinkClass,
+  publicPanelClass,
+} from "@/components/public/PublicPageShell";
 
 // Public landing page for a shared invite URL (/invite/:token). Signed-in
 // visitors join with one click; signed-out visitors are routed to sign-in (with
@@ -67,7 +72,7 @@ export default function InvitePage() {
         </p>
         <Link
           to={user ? "/chat" : "/login"}
-          className="text-sm text-indigo-400 hover:text-indigo-300"
+          className={`text-sm ${publicLinkClass}`}
         >
           {user ? "Back to Cheers" : "Go to sign in"}
         </Link>
@@ -75,14 +80,12 @@ export default function InvitePage() {
     ) : null;
 
   return (
-    <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
-      <div className="w-full max-w-sm my-auto">
-        <div className="flex flex-col items-center mb-8">
-          <img src="/cheers-icon.svg" alt="" className="w-12 h-12 mb-4" aria-hidden="true" />
-          <p className="text-2xl font-bold text-zinc-50 tracking-tight">Cheers</p>
-        </div>
-
-        <div className="bg-zinc-900 rounded-2xl p-6 shadow-xl flex flex-col items-center gap-3 text-center">
+    <PublicPageShell
+      eyebrow="Cheers · Invitation desk"
+      title={preview?.status === "valid" ? "You are invited" : "Workspace invitation"}
+      description="Review the invitation before entering the shared workspace."
+    >
+        <div className={`${publicPanelClass} flex flex-col items-center gap-3 text-center`}>
           {!preview && !failed && <Spinner size={24} className="text-zinc-600 my-6" />}
 
           {dead}
@@ -132,7 +135,7 @@ export default function InvitePage() {
                     Already have an account?{" "}
                     <Link
                       to={`/login?redirect=${encodeURIComponent(`/invite/${token}`)}`}
-                      className="text-indigo-400 hover:text-indigo-300"
+                      className={publicLinkClass}
                     >
                       Sign in
                     </Link>
@@ -142,7 +145,6 @@ export default function InvitePage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </PublicPageShell>
   );
 }

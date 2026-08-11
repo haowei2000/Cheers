@@ -138,22 +138,11 @@ struct FriendsView: View {
             } else {
                 List {
                     ForEach(friends) { friend in
-                        HStack(spacing: Theme.space3) {
-                            AvatarView(
-                                seedId: friend.friendId,
-                                name: friend.displayName ?? friend.username,
-                                size: Theme.avatarList,
-                                imageURL: resolveAvatarURL(friend.avatarURL)
-                            )
-                            VStack(alignment: .leading, spacing: Theme.space1) {
-                                Text(friend.displayName ?? friend.username)
-                                    .font(.body)
-                                Text("@\(friend.username)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button {
+                        CheersEntityItem(row: CheersItemRow(
+                            title: friend.displayName ?? friend.username,
+                            subtitle: "@\(friend.username)",
+                            leading: avatar(id: friend.friendId, name: friend.displayName ?? friend.username, rawURL: friend.avatarURL),
+                            actions: AnyView(Button {
                                 Task { await openDM(userId: friend.friendId) }
                             } label: {
                                 Image(systemName: "bubble.left")
@@ -163,8 +152,8 @@ struct FriendsView: View {
                             }
                             .buttonStyle(.borderless)
                             .accessibilityLabel(String(localized: "Open direct message"))
-                            .disabled(isBusy)
-                        }
+                            .disabled(isBusy))
+                        ))
                         .listRowInsets(EdgeInsets(
                             top: Theme.rowVertical,
                             leading: Theme.space4,
@@ -224,32 +213,21 @@ struct FriendsView: View {
 
     @ViewBuilder
     private func requestRow(_ req: FriendRequestDto, incoming: Bool) -> some View {
-        HStack(spacing: Theme.space3) {
-            AvatarView(
-                seedId: req.userId,
-                name: req.displayName ?? req.username,
-                size: Theme.avatarList,
-                imageURL: resolveAvatarURL(req.avatarURL)
-            )
-            VStack(alignment: .leading, spacing: Theme.space1) {
-                Text(req.displayName ?? req.username)
-                Text("@\(req.username)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if incoming {
-                Button("Accept") {
+        CheersEntityItem(row: CheersItemRow(
+            title: req.displayName ?? req.username,
+            subtitle: "@\(req.username)",
+            leading: avatar(id: req.userId, name: req.displayName ?? req.username, rawURL: req.avatarURL),
+            criticalStatus: AnyView(Text(incoming ? "INCOMING" : "SENT").font(.caption2.bold()).foregroundStyle(incoming ? Theme.warning : Theme.textMuted)),
+            actions: incoming ? AnyView(Button("Accept") {
                     Task { await accept(userId: req.userId) }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isBusy)
-            }
-        }
+                .disabled(isBusy)) : nil
+        ))
         .swipeActions {
             Button(incoming ? "Decline" : "Cancel", role: .destructive) {
-                Task { await remove(friendId: req.userId) }
+                Task { await cancelRequest(friendshipId: req.friendshipId) }
             }
         }
     }
@@ -282,20 +260,11 @@ struct FriendsView: View {
 
                 if let hit = searchHit {
                     Section("Result") {
-                        HStack(spacing: Theme.space3) {
-                            AvatarView(
-                                seedId: hit.userId,
-                                name: hit.displayName ?? hit.username,
-                                size: Theme.avatarList,
-                                imageURL: resolveAvatarURL(hit.avatarURL)
-                            )
-                            VStack(alignment: .leading, spacing: Theme.space1) {
-                                Text(hit.displayName ?? hit.username)
-                                Text("@\(hit.username)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        CheersEntityItem(row: CheersItemRow(
+                            title: hit.displayName ?? hit.username,
+                            subtitle: "@\(hit.username)",
+                            leading: avatar(id: hit.userId, name: hit.displayName ?? hit.username, rawURL: hit.avatarURL)
+                        ))
                         Button("Send Friend Request", systemImage: "person.badge.plus") {
                             Task { await sendRequest(userId: hit.userId) }
                         }
@@ -345,33 +314,33 @@ struct FriendsView: View {
             } else {
                 List {
                     ForEach(blocked) { user in
-                        HStack(spacing: Theme.space3) {
-                            AvatarView(
-                                seedId: user.userId,
-                                name: user.displayName ?? user.username,
-                                size: Theme.avatarList,
-                                imageURL: resolveAvatarURL(user.avatarURL)
-                            )
-                            VStack(alignment: .leading, spacing: Theme.space1) {
-                                Text(user.displayName ?? user.username)
-                                Text("@\(user.username)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Unblock") {
+                        CheersEntityItem(row: CheersItemRow(
+                            title: user.displayName ?? user.username,
+                            subtitle: "@\(user.username)",
+                            leading: avatar(id: user.userId, name: user.displayName ?? user.username, rawURL: user.avatarURL),
+                            criticalStatus: AnyView(Text("BLOCKED").font(.caption2.bold()).foregroundStyle(Theme.danger)),
+                            actions: AnyView(Button("Unblock") {
                                 Task { await unblock(userId: user.userId) }
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .disabled(isBusy)
-                        }
+                            .disabled(isBusy))
+                        ))
                     }
                 }
                 .listStyle(.plain)
                 .refreshable { await reload() }
             }
         }
+    }
+
+    private func avatar(id: String, name: String, rawURL: String?) -> AnyView {
+        AnyView(AvatarView(
+            seedId: id,
+            name: name,
+            size: Theme.avatarList,
+            imageURL: resolveAvatarURL(rawURL)
+        ))
     }
 
     private func reload() async {
@@ -445,6 +414,18 @@ struct FriendsView: View {
         defer { isBusy = false }
         do {
             try await api.removeFriend(friendId: friendId)
+            await reload()
+        } catch {
+            errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func cancelRequest(friendshipId: String) async {
+        guard let api = app.api, !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await api.cancelFriendRequest(friendshipId: friendshipId)
             await reload()
         } catch {
             errorText = (error as? APIError)?.errorDescription ?? error.localizedDescription

@@ -62,9 +62,14 @@
 		CE0000000000000000000437 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000429 /* GoogleOAuthSession.swift */; };
 		CE0000000000000000000440 /* AuthRequiredCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000441 /* AuthRequiredCardView.swift */; };
 		CE0000000000000000000450 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000451 /* Localizable.xcstrings */; };
+		CE0000000000000000000480 /* SourceSerif4-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000481 /* SourceSerif4-Regular.ttf */; };
+		CE0000000000000000000482 /* SourceSerif4-Semibold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000483 /* SourceSerif4-Semibold.ttf */; };
+		CE0000000000000000000484 /* SourceSerif4Display-Semibold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000485 /* SourceSerif4Display-Semibold.ttf */; };
+		CE0000000000000000000486 /* SourceHanSerifCN-VF.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000487 /* SourceHanSerifCN-VF.ttf */; };
 		CE0000000000000000000452 /* BotTracePanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000453 /* BotTracePanelView.swift */; };
 		CE0000000000000000000455 /* ToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000454 /* ToolPresentation.swift */; };
 		CE0000000000000000000457 /* MessageTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000456 /* MessageTree.swift */; };
+		CE0000000000000000000470 /* DiscussionChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000471 /* DiscussionChannelView.swift */; };
 		CE1000000000000000000001 /* ServerIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000011 /* ServerIdentity.swift */; };
 		CE1000000000000000000002 /* ReleaseReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000012 /* ReleaseReadinessTests.swift */; };
 		CE1000000000000000000003 /* AuthenticationAccessibilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE1000000000000000000013 /* AuthenticationAccessibilityUITests.swift */; };
@@ -148,6 +153,11 @@
 		CE0000000000000000000453 /* BotTracePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotTracePanelView.swift; sourceTree = "<group>"; };
 		CE0000000000000000000454 /* ToolPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolPresentation.swift; sourceTree = "<group>"; };
 		CE0000000000000000000456 /* MessageTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTree.swift; sourceTree = "<group>"; };
+		CE0000000000000000000471 /* DiscussionChannelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscussionChannelView.swift; sourceTree = "<group>"; };
+		CE0000000000000000000481 /* SourceSerif4-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/SourceSerif4-Regular.ttf"; sourceTree = "<group>"; };
+		CE0000000000000000000483 /* SourceSerif4-Semibold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/SourceSerif4-Semibold.ttf"; sourceTree = "<group>"; };
+		CE0000000000000000000485 /* SourceSerif4Display-Semibold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/SourceSerif4Display-Semibold.ttf"; sourceTree = "<group>"; };
+		CE0000000000000000000487 /* SourceHanSerifCN-VF.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/SourceHanSerifCN-VF.ttf"; sourceTree = "<group>"; };
 		CE1000000000000000000011 /* ServerIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerIdentity.swift; sourceTree = "<group>"; };
 		CE1000000000000000000012 /* ReleaseReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseReadinessTests.swift; sourceTree = "<group>"; };
 		CE1000000000000000000013 /* AuthenticationAccessibilityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationAccessibilityUITests.swift; sourceTree = "<group>"; };
@@ -210,6 +220,10 @@
 				CE0000000000000000000128 /* PrivacyInfo.xcprivacy */,
 				CE0000000000000000000451 /* Localizable.xcstrings */,
 				CE0000000000000000000120 /* Assets.xcassets */,
+				CE0000000000000000000481 /* SourceSerif4-Regular.ttf */,
+				CE0000000000000000000483 /* SourceSerif4-Semibold.ttf */,
+				CE0000000000000000000485 /* SourceSerif4Display-Semibold.ttf */,
+				CE0000000000000000000487 /* SourceHanSerifCN-VF.ttf */,
 				CE0000000000000000000304 /* Support */,
 				CE0000000000000000000305 /* Models */,
 				CE0000000000000000000306 /* Networking */,
@@ -278,6 +292,7 @@
 				CE0000000000000000000428 /* FriendsView.swift */,
 				CE000000000000000000010C /* ConversationListView.swift */,
 				CE000000000000000000010D /* ChatView.swift */,
+				CE0000000000000000000471 /* DiscussionChannelView.swift */,
 				CE000000000000000000010E /* MessageBubble.swift */,
 				CE000000000000000000010F /* ComposerView.swift */,
 				CE0000000000000000000110 /* SettingsView.swift */,
@@ -438,6 +453,10 @@
 				CE000000000000000000021F /* Assets.xcassets in Resources */,
 				CE0000000000000000000230 /* PrivacyInfo.xcprivacy in Resources */,
 				CE0000000000000000000450 /* Localizable.xcstrings in Resources */,
+				CE0000000000000000000480 /* SourceSerif4-Regular.ttf in Resources */,
+				CE0000000000000000000482 /* SourceSerif4-Semibold.ttf in Resources */,
+				CE0000000000000000000484 /* SourceSerif4Display-Semibold.ttf in Resources */,
+				CE0000000000000000000486 /* SourceHanSerifCN-VF.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -483,6 +502,7 @@
 				CE0000000000000000000436 /* FriendsView.swift in Sources */,
 				CE000000000000000000020C /* ConversationListView.swift in Sources */,
 				CE000000000000000000020D /* ChatView.swift in Sources */,
+				CE0000000000000000000470 /* DiscussionChannelView.swift in Sources */,
 				CE000000000000000000020E /* MessageBubble.swift in Sources */,
 				CE000000000000000000020F /* ComposerView.swift in Sources */,
 				CE0000000000000000000210 /* SettingsView.swift in Sources */,

@@ -22,6 +22,7 @@ import {
   type SessionControls,
 } from "@/api/sessionControl";
 import { usePopoverDismiss, PopoverPanel } from "@/components/ui/popover";
+import { NavigationItem } from "@/components/ui/item";
 import type { SendResourceReq } from "./workbench/fsClient";
 import { sessionTag, statusDotColor } from "./sessionLabel";
 import { NewSessionDialog } from "./NewSessionDialog";
@@ -344,22 +345,22 @@ export function SessionChip({
           {(() => {
             const autoIdx = rowIndex++;
             return (
-              <button
-                type="button"
+              <NavigationItem
+                title="Auto"
+                subtitle="@mention → primary"
+                leading={<Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />}
+                trailing={!value ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
+                selected={!value}
                 role="option"
                 aria-selected={!value}
+                onClick={(e) => { if (e.detail === 0) select(""); }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   select("");
                 }}
                 onMouseEnter={() => setActiveIndex(autoIdx)}
-                className={rowCls(autoIdx, !value)}
-              >
-                <Layers className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                <span className="flex-1 min-w-0 truncate">Auto</span>
-                <span className="text-[11px] text-zinc-400 flex-shrink-0">@mention → primary</span>
-                {!value && <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />}
-              </button>
+                className={cn(rowCls(autoIdx, !value), "border-0")}
+              />
             );
           })()}
 
@@ -372,46 +373,24 @@ export function SessionChip({
                 const idx = rowIndex++;
                 const isSel = s.session_id === value;
                 return (
-                  <button
+                  <NavigationItem
                     key={s.session_id}
-                    type="button"
+                    title={tagOf(s)}
+                    subtitle={s.cwd || "default"}
+                    leading={<span className={cn("w-2 h-2 rounded-full flex-shrink-0", statusDotColor(s.status))} />}
+                    status={<span className="text-[11px] text-zinc-400">{s.status}</span>}
+                    trailing={isSel ? <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" /> : undefined}
+                    selected={isSel}
                     role="option"
                     aria-selected={isSel}
-                    title={s.cwd || s.session_id}
+                    onClick={(e) => { if (e.detail === 0) select(s.session_id); }}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       select(s.session_id);
                     }}
                     onMouseEnter={() => setActiveIndex(idx)}
-                    className={rowCls(idx, isSel)}
-                  >
-                    <span
-                      className={cn(
-                        "w-2 h-2 rounded-full flex-shrink-0",
-                        statusDotColor(s.status)
-                      )}
-                    />
-                    <span className="flex flex-col flex-1 min-w-0">
-                      {/* line 1: tag (primary / time / dir basename) + status */}
-                      <span className="flex items-center gap-2">
-                        <span className="min-w-0 truncate">{tagOf(s)}</span>
-                        <span className="ml-auto text-[11px] text-zinc-400 flex-shrink-0">
-                          {s.status}
-                        </span>
-                      </span>
-                      {/* line 2: the working directory (left-truncated, full on hover) */}
-                      <span className="mt-0.5 flex items-center gap-1 text-[10px] text-zinc-500">
-                        <Folder className="w-3 h-3 flex-shrink-0" />
-                        <span
-                          className="min-w-0 flex-1 truncate font-mono"
-                          style={{ direction: "rtl" }}
-                        >
-                          <span style={{ unicodeBidi: "plaintext" }}>{s.cwd || "default"}</span>
-                        </span>
-                      </span>
-                    </span>
-                    {isSel && <Check className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />}
-                  </button>
+                    className={cn(rowCls(idx, isSel), "border-0")}
+                  />
                 );
               })}
             </div>

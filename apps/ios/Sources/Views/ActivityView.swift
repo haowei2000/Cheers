@@ -96,94 +96,37 @@ struct ActivityView: View {
     }
 
     private func approvalCard(_ item: ApprovalItem) -> some View {
-        HStack(spacing: 0) {
-            Rectangle().fill(Theme.warning).frame(width: 3)
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 9) {
-                    AvatarView(seedId: item.message.senderId ?? item.id, name: item.botName, size: 30)
-                    Text(item.request.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    Spacer()
-                }
-                if let command = item.request.command {
-                    Text(command)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 9).padding(.vertical, 6)
-                        .background(Theme.bgApp)
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                }
-                Text("\(item.botName) · #\(item.channelId.prefix(6))")
-                    .font(.caption).foregroundStyle(Theme.textSecondary)
-                Button { sheetItem = item } label: {
-                    Text("Review")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(12)
-        }
-        .background(Theme.bgSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        CheersOperationsItem(row: CheersItemRow(
+            title: item.request.title,
+            subtitle: "\(item.botName) · #\(item.channelId.prefix(6))",
+            preview: item.request.command,
+            explicitLevel: .max,
+            leading: AnyView(AvatarView(seedId: item.message.senderId ?? item.id, name: item.botName, size: 30)),
+            criticalStatus: AnyView(Text("APPROVAL").font(.caption2.bold()).foregroundStyle(Theme.warning)),
+            actions: AnyView(Button("Review") { sheetItem = item }.buttonStyle(.borderedProminent))
+        ))
     }
 
     private func inviteCard(_ invite: NotificationDto) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 9) {
-                Image(systemName: activityIcon(invite))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 30, height: 30)
-                    .background(Theme.bgRaised)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                Text(invite.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                Spacer()
-            }
-            if let by = invite.actorName {
-                Text("\(by) · \(activityLabel(invite))")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            if let botName = invite.botName {
-                Text("Bot: \(botName)")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            if let cwd = invite.requestedCwd {
-                Text(cwd).font(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
-            }
-            HStack(spacing: 8) {
+        CheersOperationsItem(row: CheersItemRow(
+            title: invite.title,
+            subtitle: invite.actorName.map { "\($0) · \(activityLabel(invite))" },
+            metadata: invite.botName.map { "Bot: \($0)" },
+            preview: invite.requestedCwd,
+            explicitLevel: .max,
+            leading: AnyView(Image(systemName: activityIcon(invite)).foregroundStyle(Theme.accent)),
+            criticalStatus: AnyView(Text("INVITE").font(.caption2.bold()).foregroundStyle(Theme.accent)),
+            actions: AnyView(HStack(spacing: 8) {
                 Button { Task { await activity.acceptInvite(invite) } } label: {
                     Text("Accept")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
                 Button { Task { await activity.declineInvite(invite) } } label: {
                     Text("Decline")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Theme.bgRaised)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(12)
-        .background(Theme.bgSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .buttonStyle(.bordered)
+            })
+        ))
     }
 
     private func activityIcon(_ invite: NotificationDto) -> String {

@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PopoverPanel, usePopoverDismiss } from "@/components/ui/popover";
+import { ItemChip } from "@/components/ui/item";
 import {
   useContextPickStore,
   usePendingContext,
@@ -67,14 +68,12 @@ export function MessageContextChips({
   const chips = items.map((it, i) => {
     const Icon = iconFor(it.kind);
     return (
-      <span
+      <ItemChip
         key={`${it.kind}:${it.label}:${i}`}
-        className="inline-flex items-center gap-1 rounded-lg bg-zinc-800/60 px-2 py-0.5 text-[11px] text-zinc-400"
-        title={`${isHandoff ? "Handed off" : "Attached"} context: ${it.label}`}
-      >
-        <Icon className="w-3 h-3" />
-        <span className="max-w-[12rem] truncate">{it.label}</span>
-      </span>
+        leading={<Icon className="w-3 h-3" />}
+        label={it.label}
+        className="max-w-[14rem]"
+      />
     );
   });
   if (isHandoff) {
@@ -194,7 +193,7 @@ export function ContextPickBar({
   usePopoverDismiss(open, () => setOpen(false), rootRef);
 
   return (
-    <div className="mt-1 flex items-center flex-wrap gap-1.5 px-4 py-1.5">
+    <div className="mx-auto mt-1 flex w-full max-w-[72rem] items-center flex-wrap gap-1.5 px-4 py-1.5 max-md:px-3">
       {/* Suggested context (F3): one-click to add, one-click to dismiss; never
           auto-committed. Rendered as dashed "ghost" chips, distinct from picks. */}
       {suggestions.map((sg) => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GitBranch, GitPullRequest, RotateCcw, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { invokeDesktop } from "@/lib/desktop";
 import {
   connectorWatchStart,
@@ -180,25 +181,23 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
       {git.files.length === 0 ? (
         <p className="text-xs text-zinc-500">No changed files.</p>
       ) : (
-        <ul className="space-y-1 max-h-[55vh] overflow-auto pr-1">
+        <ItemList className="max-h-[55vh] overflow-auto pr-1">
           {git.files.map((f: FileStatus) => (
-            <li key={f.path} className="text-xs">
-              <div className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-zinc-800/60">
-                <span
+            <div key={f.path} className="text-xs">
+              <WorkbenchItem title={f.path}
+                leading={<span
                   className="font-mono text-[10px] text-zinc-500 w-6 shrink-0 uppercase"
                   title={f.status}
                 >
                   {f.status.trim() || "?"}
-                </span>
-                <button
+                </span>}
+                actions={<><button
                   type="button"
                   onClick={() => void toggleDiff(f.path)}
-                  className="text-left text-zinc-200 min-w-0 truncate flex-1"
-                  dir="rtl"
-                  style={{ unicodeBidi: "plaintext" }}
+                  className="text-zinc-400 hover:text-zinc-100"
                   title={f.path}
                 >
-                  {f.path}
+                  View diff
                 </button>
                 {primaryOpener && (
                   <button
@@ -229,7 +228,9 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
-              </div>
+                </>}
+                className="border-0"
+              />
               {open === f.path && (
                 <div className="ml-8 mt-1 mb-1">
                   {diffLoading ? (
@@ -239,9 +240,9 @@ export function ConnectorChanges({ name, openers }: { name: string; openers: Ope
                   )}
                 </div>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
+        </ItemList>
       )}
     </div>
   );

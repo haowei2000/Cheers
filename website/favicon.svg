@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Cheers icon</title>
+  <desc id="desc">A minimal app icon with one glass.</desc>
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+  <g
+    fill="none"
+    stroke="#f8fafc"
+    stroke-width="32"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M164 142h184l-22 132c-5 29-30 50-60 50h-20c-30 0-55-21-60-50Z"/>
+    <path d="M256 324v76"/>
+    <path d="M194 424h124"/>
+  </g>
+</svg>

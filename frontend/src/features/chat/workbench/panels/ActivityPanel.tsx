@@ -32,6 +32,7 @@ import { cn } from "@/lib/cn";
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
+import { WorkbenchItem } from "@/components/ui/item";
 import { agentIconFor } from "@/components/ui/agentIcons";
 import {
   registerComponentViewBoard,
@@ -248,42 +249,33 @@ function MessageRow({
   const clickable = Boolean(n.msgId && onJump);
 
   return (
-    <button
-      type="button"
-      disabled={!clickable}
-      onClick={() => n.msgId && onJump?.(n.msgId)}
-      title={clickable ? "Jump to this message" : undefined}
-      className={cn(
-        "group w-full flex items-baseline gap-1.5 py-[3px] text-left rounded",
-        clickable && "hover:bg-zinc-800/40"
-      )}
-    >
-      <span
+    <WorkbenchItem
+      presentationLevel="minimal"
+      onClick={clickable ? () => n.msgId && onJump?.(n.msgId) : undefined}
+      leading={<span
         className={cn("text-[11px] font-medium flex-shrink-0", !brand && "text-zinc-300")}
         style={brand ? { color: brand } : undefined}
       >
         {name}
-      </span>
-      <span className="flex-1 min-w-0 truncate text-[11px] text-zinc-400">{renderExcerpt(n.excerpt)}</span>
-      {n.fileCount > 0 && (
+      </span>}
+      title={<span className="text-[11px] font-normal text-zinc-400">{renderExcerpt(n.excerpt)}</span>}
+      status={n.fileCount > 0 ? (
         <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 flex-shrink-0">
           <Paperclip className="w-2.5 h-2.5" />
           {n.fileCount}
         </span>
-      )}
-      {/* Hover swaps the timestamp for the jump arrow — one trailing slot, no shift. */}
-      <span
+      ) : undefined}
+      trailing={<span
         className={cn(
           "text-[10px] text-zinc-400 tabular-nums flex-shrink-0",
-          clickable && "group-hover:hidden"
+          clickable && "group-hover/item:hidden"
         )}
       >
         {fmtTime(n.ts)}
-      </span>
-      {clickable && (
-        <ArrowUpRight className="w-3 h-3 self-center flex-shrink-0 text-indigo-300 hidden group-hover:block" />
-      )}
-    </button>
+      </span>}
+      criticalStatus={clickable ? <ArrowUpRight className="hidden h-3 w-3 flex-shrink-0 text-indigo-300 group-hover/item:block" /> : undefined}
+      className="border-b-0 px-1"
+    />
   );
 }
 
@@ -596,6 +588,7 @@ function ActivityBody({ ctx }: { ctx: ViewBoardContext }) {
         {/* Footer: lens tabs (left) + member filter (right). */}
         <div className="mx-2 mb-2 flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900/50 px-2 py-1.5">
           <div className="flex items-center gap-0.5 rounded-full bg-zinc-900/60 p-0.5">
+            {/* design-system-exempt: menu-option — Activity lens tabs. */}
             {(["flow", "highlights", "all"] as Lens[]).map((l) => (
               <button
                 key={l}

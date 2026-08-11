@@ -260,6 +260,7 @@ export function SandboxRenderer({
                     No messages yet. The plugin posts cheers:ready when it boots.
                   </div>
                 ) : (
+                  /* design-system-exempt: trace-line — ordered diagnostic output. */
                   devEvents.map((ev) => (
                     <div key={ev.seq} className="flex gap-2 whitespace-pre-wrap break-all">
                       <span className={ev.dir === "in" ? "text-emerald-400" : "text-sky-400"}>

@@ -20,6 +20,12 @@ import { getPasskey } from "@/lib/webauthn";
 import { errorMessage } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  PublicPageShell,
+  publicLabelClass,
+  publicLinkClass,
+  publicPanelClass,
+} from "@/components/public/PublicPageShell";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -169,32 +175,16 @@ export default function LoginPage() {
     // h-full + internal scroll (the app root is overflow-hidden); my-auto centers the
     // card when it fits and lets it scroll when the on-screen keyboard shrinks the
     // viewport, instead of clipping the top.
-    <div className="h-full overflow-y-auto bg-zinc-950 flex justify-center p-4">
-      <div className="w-full max-w-sm my-auto">
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20 overflow-hidden">
-            <img
-              src="/cheers-icon.svg"
-              alt=""
-              className="w-12 h-12"
-              aria-hidden="true"
-            />
-          </div>
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
-            Cheers
-          </h1>
-          <p className="text-zinc-400 text-sm mt-1">Sign in to continue</p>
-        </div>
-
-        {/* Card */}
+    <PublicPageShell
+      title={transactionId ? "Verify your identity" : "Welcome back"}
+      description={transactionId ? factorHelp : "Sign in to continue to your Cheers workspace."}
+    >
         {transactionId ? <form
           onSubmit={handleFactorSubmit}
-          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
+          className={publicPanelClass}
         >
-          <p className="text-sm text-zinc-400">{factorHelp}</p>
           <div className="space-y-1.5">
-            <label htmlFor="factor-code" className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+            <label htmlFor="factor-code" className={publicLabelClass}>
               Verification code
             </label>
             <Input
@@ -239,7 +229,7 @@ export default function LoginPage() {
           )}
           <button
             type="button"
-            className="w-full text-xs text-zinc-400 hover:text-zinc-200"
+            className={`w-full text-xs ${publicLinkClass}`}
             onClick={() => {
               setTransactionId(null);
               setAllowedFactors([]);
@@ -252,12 +242,12 @@ export default function LoginPage() {
           </button>
         </form> : <form
           onSubmit={handleSubmit}
-          className="bg-zinc-900 rounded-2xl p-6 shadow-xl space-y-4"
+          className={publicPanelClass}
         >
           <div className="space-y-1.5">
             <label
               htmlFor="login"
-              className="text-xs font-medium text-zinc-400 uppercase tracking-wide"
+              className={publicLabelClass}
             >
               Username or Email
             </label>
@@ -275,7 +265,7 @@ export default function LoginPage() {
           <div className="space-y-1.5">
             <label
               htmlFor="password"
-              className="text-xs font-medium text-zinc-400 uppercase tracking-wide"
+              className={publicLabelClass}
             >
               Password
             </label>
@@ -347,15 +337,14 @@ export default function LoginPage() {
           )}
 
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <Link to="/register" className="text-indigo-400 hover:text-indigo-300">
+            <Link to="/register" className={publicLinkClass}>
               Create account
             </Link>
-            <Link to="/forgot" className="text-indigo-400 hover:text-indigo-300">
+            <Link to="/forgot" className={publicLinkClass}>
               Forgot password?
             </Link>
           </div>
         </form>}
-      </div>
-    </div>
+    </PublicPageShell>
   );
 }

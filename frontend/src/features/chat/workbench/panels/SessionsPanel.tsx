@@ -33,6 +33,7 @@ import { NewSessionDialog } from "@/features/chat/NewSessionDialog";
 import { statusColor } from "@/features/chat/sessionLabel";
 import { bustBotControls } from "@/features/chat/sessionControlsCache";
 import { cn } from "@/lib/cn";
+import { OperationsItem } from "@/components/ui/item";
 import { registerViewBoard, type ViewBoardContext } from "../viewBoard";
 
 interface SessionRow {
@@ -168,44 +169,44 @@ function SessionCard({
       title={canDrag ? "Drag onto the primary session to make it primary" : undefined}
       style={canDrag ? { touchAction: "none" } : undefined}
       className={cn(
-        "relative rounded-lg border px-3 py-2 transition-[border-color,box-shadow,opacity]",
-        isSelected
-          ? "border-emerald-500/40 bg-emerald-500/10"
-          : "border-zinc-800 bg-zinc-900/40 hover:border-zinc-700",
+        "relative rounded-sm transition-[box-shadow,opacity]",
         canDrag && (isDragging ? "cursor-grabbing" : "cursor-grab"),
         isDragging && "opacity-40",
         // A card is being dragged → invite the drop on the primary card.
-        dropTarget && dragActive && !showHot && "border-dashed border-indigo-500/50",
-        showHot && "border-indigo-500/60 bg-indigo-500/10 ring-2 ring-indigo-500/70"
+        dropTarget && dragActive && !showHot && "ring-1 ring-inset ring-indigo-500/50",
+        showHot && "bg-indigo-500/10 ring-2 ring-indigo-500/70"
       )}
     >
       {/* Card face: workdir · primary badge · status · created · ⓘ · ✕ */}
-      <div className="flex items-center gap-2 text-xs">
-        <Folder className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-        <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-300"
+      <OperationsItem
+        presentationLevel="medium"
+        selected={Boolean(isSelected)}
+        leading={<Folder className="h-3.5 w-3.5 text-zinc-500" />}
+        title={<span
+          className="block truncate font-mono text-[11px]"
           style={{ direction: "rtl" }}
           title={cwd || "connector default"}
         >
           {/* plaintext keeps the path itself LTR while the rtl parent clips the
               LEFT (start) of an overlong path, so the project dir stays visible. */}
           <span style={{ unicodeBidi: "plaintext" }}>{wdLabel}</span>
-        </span>
-        {s.is_primary && (
-          <span className="shrink-0 rounded bg-indigo-500/15 px-1 py-0.5 text-[10px] text-indigo-300">
+        </span>}
+        criticalStatus={s.is_primary ? (
+          <span className="shrink-0 rounded-sm bg-indigo-500/15 px-1 py-0.5 text-[10px] text-indigo-300">
             primary
           </span>
-        )}
-        <span className="inline-flex items-center gap-1 text-zinc-400 shrink-0">
+        ) : undefined}
+        status={<span className="inline-flex shrink-0 items-center gap-1 text-zinc-400">
           <CircleDot className={`w-3 h-3 ${statusColor(s.status)}`} />
           {s.status}
-        </span>
-        <span
-          className="tabular-nums text-zinc-400 shrink-0"
+        </span>}
+        trailing={<span
+          className="shrink-0 tabular-nums text-zinc-400"
           title={`created ${fmtTime(s.created_at)}`}
         >
           {fmtTime(s.created_at)}
-        </span>
+        </span>}
+        actions={<>
         <button
           type="button"
           title={open ? "Hide details" : "Session details"}
@@ -225,7 +226,8 @@ function SessionCard({
             <X className="w-3.5 h-3.5" />
           </button>
         )}
-      </div>
+        </>}
+      />
 
       {/* Drop affordance: a pill over the primary card while a drag hovers it. */}
       {showHot && (
@@ -239,7 +241,7 @@ function SessionCard({
 
       {/* ⓘ details: id / last used / mode + config controls / root set */}
       {open && (
-        <div className="mt-3 space-y-1.5 rounded-lg bg-zinc-900/40 p-2">
+        <div className="mt-1 space-y-1.5 rounded-sm bg-zinc-900/40 p-2">
           <div className="flex items-center gap-2 text-[10px] text-zinc-400">
             <span className="w-12 shrink-0">session</span>
             <span className="font-mono text-zinc-200" title={s.session_id}>

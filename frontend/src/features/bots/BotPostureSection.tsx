@@ -153,6 +153,7 @@ export function BotPostureSection({ botId }: { botId: string }) {
           <div className="mt-2 space-y-2">
             {configOptions && Object.keys(configOptions.desired).length > 0 && (
               <div className="space-y-1">
+                {/* design-system-exempt: form-field — configuration key/value editor. */}
                 {Object.entries(configOptions.desired).map(([id, value]) => (
                   <div key={id} className="flex items-center gap-2 text-[11px]">
                     <code

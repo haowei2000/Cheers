@@ -59,6 +59,7 @@ final class VoiceRoomModel {
         do {
             let grant = try await api.joinVoice(channelId: channelId)
             let newRoom = Room()
+            newRoom.add(delegate: self)
             room = newRoom
             try await newRoom.connect(url: grant.url, token: grant.token, connectOptions: ConnectOptions(enableMicrophone: grant.canPublish))
             isConnected = true
@@ -76,13 +77,13 @@ final class VoiceRoomModel {
         transcriptPoll?.cancel()
         transcriptPoll = nil
         if let room {
+            room.remove(delegate: self)
             await room.disconnect()
         }
         room = nil
         isConnected = false
         micEnabled = false
         canPublish = false
-        canManageTranscription = false
         participantNames = []
     }
 
@@ -155,5 +156,19 @@ final class VoiceRoomModel {
         guard !transcripts.contains(where: { $0.segmentId == segment.segmentId }) else { return }
         transcripts.append(segment)
         transcripts.sort { $0.channelSeq < $1.channelSeq }
+    }
+}
+
+extension VoiceRoomModel: RoomDelegate {
+    nonisolated func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
+        Task { @MainActor [weak self] in self?.refreshParticipants() }
+    }
+
+    nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
+        Task { @MainActor [weak self] in self?.refreshParticipants() }
+    }
+
+    nonisolated func room(_ room: Room, participant: Participant, didUpdateName name: String) {
+        Task { @MainActor [weak self] in self?.refreshParticipants() }
     }
 }

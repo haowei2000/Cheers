@@ -126,18 +126,17 @@ struct NewConversationSheet: View {
                 }
                 ForEach(friends) { friend in
                     Button { startDM(with: friend) } label: {
-                        HStack(spacing: 11) {
-                            AvatarView(
+                        CheersNavigationItem(row: CheersItemRow(
+                            title: friend.displayName ?? friend.username,
+                            subtitle: "@\(friend.username)",
+                            leading: AnyView(AvatarView(
                                 seedId: friend.friendId,
                                 name: friend.displayName ?? friend.username,
                                 size: 34,
                                 monochrome: true
-                            )
-                            Text(friend.displayName ?? friend.username).foregroundStyle(Theme.textBody)
-                            Spacer()
-                            if busy { ProgressView().controlSize(.small) }
-                        }
-                        .frame(minHeight: 48)
+                            )),
+                            trailing: busy ? AnyView(ProgressView().controlSize(.small)) : nil
+                        ))
                     }
                     .disabled(busy)
                 }
@@ -148,13 +147,13 @@ struct NewConversationSheet: View {
                 }
                 ForEach(bots) { bot in
                     Button { startDM(with: bot) } label: {
-                        HStack(spacing: 11) {
-                            AvatarView(seedId: bot.botId, name: bot.name, size: 34, monochrome: true)
-                            Text(bot.name).foregroundStyle(Theme.textBody)
-                            Spacer()
-                            if busy { ProgressView().controlSize(.small) }
-                        }
-                        .frame(minHeight: 48)
+                        CheersNavigationItem(row: CheersItemRow(
+                            title: bot.name,
+                            subtitle: bot.online ? "Online" : "Offline",
+                            leading: AnyView(AvatarView(seedId: bot.botId, name: bot.name, size: 34, monochrome: true)),
+                            criticalStatus: AnyView(Text("BOT").font(.caption2.bold()).foregroundStyle(Theme.botBadgeText)),
+                            trailing: busy ? AnyView(ProgressView().controlSize(.small)) : nil
+                        ))
                     }
                     .disabled(busy)
                 }

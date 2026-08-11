@@ -1,4 +1,5 @@
 import AVFoundation
+import Foundation
 import Speech
 import SwiftUI
 
@@ -11,9 +12,10 @@ struct ComposerView: View {
     /// invalidates only the composer subtree, never the chat timeline.
     @State private var text: String
     let clearTick: Int
-    /// Bumped when an external prefill should replace the draft (Reply `@bot`).
+    /// Bumped when an external prefill should update the live local draft.
     let prefillTick: Int
     let prefillText: String
+    let prefillMention: MentionCandidate?
     let placeholder: String
     let isSending: Bool
     let onSend: (String) async -> Bool
@@ -39,6 +41,7 @@ struct ComposerView: View {
         clearTick: Int,
         prefillTick: Int = 0,
         prefillText: String = "",
+        prefillMention: MentionCandidate? = nil,
         placeholder: String,
         isSending: Bool,
         onSend: @escaping (String) async -> Bool,
@@ -56,6 +59,7 @@ struct ComposerView: View {
         self.clearTick = clearTick
         self.prefillTick = prefillTick
         self.prefillText = prefillText
+        self.prefillMention = prefillMention
         self.placeholder = placeholder
         self.isSending = isSending
         self.onSend = onSend
@@ -114,7 +118,13 @@ struct ComposerView: View {
             guard prefillTick > 0 else { return }
             var transaction = Transaction()
             transaction.disablesAnimations = true
-            withTransaction(transaction) { text = prefillText }
+            withTransaction(transaction) {
+                if let prefillMention {
+                    appendExternalMention(prefillMention)
+                } else {
+                    text = prefillText
+                }
+            }
             Task { @MainActor in
                 await Task.yield()
                 isFocused = true
@@ -200,27 +210,13 @@ struct ComposerView: View {
         Button {
             pick(candidate)
         } label: {
-            HStack(spacing: Theme.space3) {
-                mentionIcon(candidate)
-                VStack(alignment: .leading, spacing: Theme.space1) {
-                    Text("@\(candidate.label)")
-                        .font(.body)
-                        .foregroundStyle(candidate.kind == .bot && candidate.isOnline == false ? .secondary : .primary)
-                    if let sublabel = candidate.sublabel, !sublabel.isEmpty {
-                        Text(candidate.kind == .group ? sublabel : "@\(sublabel)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                if candidate.kind == .bot {
-                    Text(candidate.isOnline == false ? "OFFLINE" : "BOT")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(candidate.isOnline == false ? Theme.textFaint : .secondary)
-                }
-            }
-            .contentShape(Rectangle())
+            CheersNavigationItem(row: CheersItemRow(
+                title: "@\(candidate.label)",
+                subtitle: candidate.sublabel.map { candidate.kind == .group ? $0 : "@\($0)" },
+                leading: AnyView(mentionIcon(candidate)),
+                criticalStatus: candidate.kind == .bot && candidate.isOnline == false ? AnyView(Text("OFFLINE").font(.caption2.bold()).foregroundStyle(Theme.textFaint)) : nil,
+                status: candidate.kind == .bot ? AnyView(Text("BOT").font(.caption2.bold()).foregroundStyle(Theme.textMuted)) : nil
+            ))
         }
         .buttonStyle(.plain)
         .opacity(candidate.kind == .bot && candidate.isOnline == false ? 0.55 : 1)
@@ -392,6 +388,22 @@ struct ComposerView: View {
         }
         text += "@"
         presentMentionPicker()
+    }
+
+    private func containsMention(_ candidate: MentionCandidate) -> Bool {
+        let token = NSRegularExpression.escapedPattern(for: "@\(candidate.label)")
+        let pattern = "(^|\\s)\(token)(?=$|\\s|[.,!?;:])"
+        return text.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private func appendExternalMention(_ candidate: MentionCandidate) {
+        if !containsMention(candidate) {
+            if !text.isEmpty, text.last?.isWhitespace != true {
+                text += " "
+            }
+            text += "@\(candidate.label) "
+        }
+        onMentionPicked(candidate)
     }
 
     private func presentMentionPicker() {

@@ -8,7 +8,7 @@ const calls = vi.hoisted(() => ({
   acceptWorkspace: vi.fn(),
   declineWorkspace: vi.fn(),
   acceptFriend: vi.fn(),
-  removeFriend: vi.fn(),
+  cancelFriendRequest: vi.fn(),
 }));
 
 vi.mock("./channels", () => ({
@@ -23,7 +23,7 @@ vi.mock("./workspaces", () => ({
 }));
 vi.mock("./friends", () => ({
   acceptFriendRequest: calls.acceptFriend,
-  removeFriend: calls.removeFriend,
+  cancelFriendRequest: calls.cancelFriendRequest,
 }));
 
 import {
@@ -71,14 +71,14 @@ describe("Activity notification routing", () => {
   });
 
   it("routes decline actions for all supported kinds", async () => {
-    await declineNotification(item("friend_request", { requester_user_id: "friend" }));
+    await declineNotification(item("friend_request", { friendship_id: "friendship" }));
     await declineNotification(item("workspace_invite", { workspace_id: "workspace" }));
     await declineNotification(item("channel_invite", { channel_id: "channel" }));
     await declineNotification(
       item("bot_channel_invite", { channel_id: "channel", bot_id: "bot" })
     );
 
-    expect(calls.removeFriend).toHaveBeenCalledWith("friend");
+    expect(calls.cancelFriendRequest).toHaveBeenCalledWith("friendship");
     expect(calls.declineWorkspace).toHaveBeenCalledWith("workspace");
     expect(calls.declineChannel).toHaveBeenCalledWith("channel");
     expect(calls.declineBot).toHaveBeenCalledWith("channel", "bot");

@@ -48,6 +48,13 @@
 	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>SourceSerif4-Regular.ttf</string>
+		<string>SourceSerif4-Semibold.ttf</string>
+		<string>SourceSerif4Display-Semibold.ttf</string>
+		<string>SourceHanSerifCN-VF.ttf</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

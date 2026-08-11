@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { AtSign } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 
 /** Minimal profile shape the card renders. A channel MemberItem is a superset. */
@@ -47,6 +48,7 @@ interface Ctx {
   ) => void;
   /** Look a member up in the provider's live map (e.g. for an avatar_url). */
   memberOf: (id: string) => ProfileData | undefined;
+  close: () => void;
 }
 
 const ProfileCtx = createContext<Ctx | null>(null);
@@ -58,9 +60,13 @@ export function useProfileCard(): Ctx | null {
 
 export function ProfileCardProvider({
   members,
+  currentUserId,
+  onMention,
   children,
 }: {
   members: Map<string, ProfileData>;
+  currentUserId?: string;
+  onMention?: (member: ProfileData) => void;
   children: ReactNode;
 }) {
   const [state, setState] = useState<{ member: ProfileData; rect: DOMRect } | null>(
@@ -90,13 +96,28 @@ export function ProfileCardProvider({
     : null;
 
   return (
-    <ProfileCtx.Provider value={{ open, openById, memberOf: (id) => members.get(id) }}>
+    <ProfileCtx.Provider
+      value={{
+        open,
+        openById,
+        memberOf: (id) => members.get(id),
+        close: () => setState(null),
+      }}
+    >
       {children}
       {state && liveMember && (
         <ProfileCard
           member={liveMember}
           rect={state.rect}
           onClose={() => setState(null)}
+          onMention={
+            onMention && liveMember.member_id !== currentUserId
+              ? () => {
+                  onMention(liveMember);
+                  setState(null);
+                }
+              : undefined
+          }
         />
       )}
     </ProfileCtx.Provider>
@@ -109,10 +130,12 @@ function ProfileCard({
   member,
   rect,
   onClose,
+  onMention,
 }: {
   member: ProfileData;
   rect: DOMRect;
   onClose: () => void;
+  onMention?: () => void;
 }) {
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -201,6 +224,16 @@ function ProfileCard({
             {member.role}
           </span>
         </div>
+      )}
+      {onMention && (
+        <button
+          type="button"
+          onClick={onMention}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-500/12 text-sm font-medium text-indigo-300 transition-colors hover:bg-indigo-500/20 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70"
+        >
+          <AtSign className="h-4 w-4" />
+          Mention {name}
+        </button>
       )}
     </div>,
     document.body

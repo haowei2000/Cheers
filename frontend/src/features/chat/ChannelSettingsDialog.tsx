@@ -4,6 +4,7 @@ import { Bot, Trash2, UserPlus, X, LogOut } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { EntityItem, ItemList } from "@/components/ui/item";
 import { AvatarUpload } from "@/components/ui/AvatarUpload";
 import { uploadChannelAvatar } from "@/api/avatars";
 import {
@@ -34,6 +35,10 @@ import { useAuthStore, useIsAdmin } from "@/stores/authStore";
 import { InviteLinksSection } from "./InviteLinksSection";
 import type { Channel, MemberItem } from "@/types";
 import { TaskClaimSettings } from "./TaskClaimSettings";
+import {
+  ConversationModePicker,
+  type ConversationMode,
+} from "./ConversationModePicker";
 
 // Channel admin panel: rename/purpose, member list (add/remove members — users
 // AND bots, invited alike), and delete. Management controls are gated on the
@@ -55,6 +60,9 @@ export function ChannelSettingsDialog({
 
   const [name, setName] = useState(channel.name);
   const [purpose, setPurpose] = useState(channel.purpose ?? "");
+  const [conversationMode, setConversationMode] = useState<ConversationMode>(
+    channel.conversation_mode ?? "chat",
+  );
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [savingMeta, setSavingMeta] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -106,6 +114,7 @@ export function ChannelSettingsDialog({
       const updated = await updateChannel(channel.channel_id, {
         name: trimmed,
         purpose: purpose.trim() || null,
+        conversation_mode: conversationMode,
       });
       patchChannel(channel.channel_id, updated);
       toast.success("Saved");
@@ -213,6 +222,18 @@ export function ChannelSettingsDialog({
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
+          {channel.type !== "dm" && (
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+                Conversation layout
+              </label>
+              <ConversationModePicker
+                value={conversationMode}
+                onChange={setConversationMode}
+                disabled={!canManage}
+              />
+            </div>
+          )}
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Purpose
           </label>
@@ -237,10 +258,11 @@ export function ChannelSettingsDialog({
           <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             Members ({members.length})
           </label>
-          <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+          <ItemList className="max-h-48 overflow-y-auto pr-1">
             {members.map((m) => (
-              <div key={m.member_id} className="flex items-center gap-2 rounded-lg bg-zinc-950/40 px-3 py-2.5">
-                <span className="relative flex-shrink-0">
+              <EntityItem key={m.member_id}
+                title={m.display_name || m.username || m.member_id.slice(0, 8)}
+                leading={<span className="relative flex-shrink-0">
                   <Avatar
                     name={m.display_name || m.username}
                     src={m.avatar_url}
@@ -256,27 +278,18 @@ export function ChannelSettingsDialog({
                       }`}
                     />
                   )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p
-                    className="text-sm text-zinc-200 truncate"
-                    title={!m.display_name && !m.username ? m.member_id : undefined}
-                  >
-                    {m.display_name || m.username || m.member_id.slice(0, 8)}
-                    {m.member_type === "bot" && (
-                      <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
-                    )}
-                    {m.status && m.status !== "active" && (
-                      <span className="ml-1.5 text-[10px] text-amber-400/90">
+                </span>}
+                status={m.member_type === "bot" ? <span className="text-[10px] text-indigo-400">BOT</span> : undefined}
+                criticalStatus={m.status && m.status !== "active" ? (
+                      <span className="text-[10px] text-amber-400/90">
                         {m.status === "pending_owner"
                           ? "Waiting for owner"
                           : m.status === "pending_workspace"
                             ? "Waiting for workspace"
                             : "Pending"}
-                      </span>
-                    )}
-                  </p>
-                  {canManage &&
+                      </span>) : undefined}
+                subtitle={!canManage || m.status !== "active" || m.member_id === me?.user_id ? ROLE_LABELS[m.role ?? "member"] ?? m.role ?? "member" : undefined}
+                actions={<>{canManage &&
                   m.status === "active" &&
                   (m.member_type === "user" || m.member_type === "bot") &&
                   m.member_id !== me?.user_id ? (
@@ -291,12 +304,7 @@ export function ChannelSettingsDialog({
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <p className="text-[11px] text-zinc-400">
-                      {ROLE_LABELS[m.role ?? "member"] ?? m.role ?? "member"}
-                    </p>
-                  )}
-                </div>
+                  ) : null}
                 {canManage && m.member_id !== me?.user_id && m.role !== "owner" && (
                   <button
                     onClick={() => void removeMember(m)}
@@ -306,12 +314,14 @@ export function ChannelSettingsDialog({
                     <X className="w-4 h-4" />
                   </button>
                 )}
-              </div>
+                </>}
+                className="border-0 bg-zinc-950/40"
+              />
             ))}
             {members.length === 0 && (
               <div className="px-3 py-4 text-xs text-zinc-400 text-center">No members yet</div>
             )}
-          </div>
+          </ItemList>
 
           {canManage && (
             <div className="relative">
@@ -329,45 +339,25 @@ export function ChannelSettingsDialog({
                   {searching && (
                     <div className="px-3 py-2 text-xs text-zinc-400">Searching…</div>
                   )}
-                  {results.map((it) => (
-                    <button
+                  <ItemList>{results.map((it) => (
+                    <EntityItem
                       key={`${it.member_type}:${it.member_id}`}
                       disabled={it.already_member}
                       onClick={() => void addMember(it)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left enabled:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-default"
-                    >
-                      <Avatar
+                      title={it.display_name || it.username || it.member_id.slice(0, 8)}
+                      subtitle={it.username ? `@${it.username}` : undefined}
+                      leading={<Avatar
                         name={it.display_name || it.username}
                         src={it.avatar_url}
                         id={it.member_id}
                         size="sm"
-                      />
-                      {it.member_type === "bot" && (
-                        <Bot className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-                      )}
-                      <span
-                        className="text-sm text-zinc-200 truncate"
-                        title={!it.display_name && !it.username ? it.member_id : undefined}
-                      >
-                        {it.display_name || it.username || it.member_id.slice(0, 8)}
-                        {it.member_type === "bot" && (
-                          <span className="ml-1.5 text-[10px] text-indigo-400">BOT</span>
-                        )}
-                        {it.requires_workspace_acceptance && (
-                          <span className="ml-1.5 text-[10px] text-amber-400">
-                            WORKSPACE FIRST
-                          </span>
-                        )}
-                      </span>
-                      {it.already_member ? (
-                        <span className="ml-auto text-xs text-zinc-400">Already in</span>
-                      ) : (
-                        it.username && (
-                          <span className="ml-auto text-xs text-zinc-400">@{it.username}</span>
-                        )
-                      )}
-                    </button>
-                  ))}
+                      />}
+                      status={it.member_type === "bot" ? <span className="text-[10px] text-indigo-400">BOT</span> : undefined}
+                      criticalStatus={it.requires_workspace_acceptance ? <span className="text-[10px] text-amber-400">WORKSPACE FIRST</span> : undefined}
+                      trailing={it.already_member ? <span className="text-xs text-zinc-400">Already in</span> : undefined}
+                      className="border-0 px-3"
+                    />
+                  ))}</ItemList>
                 </div>
               )}
             </div>

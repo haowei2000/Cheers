@@ -12,6 +12,7 @@
 import { useMemo } from "react";
 import { CircleDot, Circle, CheckCircle2, ClipboardList } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { ItemList, WorkbenchItem } from "@/components/ui/item";
 import { registerViewBoard, channelSessionParams, type ViewBoardContext } from "../viewBoard";
 import { useMembersIndex, memberLabel, type MembersIndex } from "../useMembersIndex";
 
@@ -112,29 +113,18 @@ function PlanCard({ plan, members }: { plan: BotPlan; members: MembersIndex }) {
               <div className="px-1 mb-1 text-[10px] uppercase tracking-wide text-zinc-400">
                 {g.label} · {items.length}
               </div>
-              <ul className="space-y-0.5">
+              <ItemList>
                 {items.map((e, i) => (
-                  <li
+                  <WorkbenchItem
                     key={`${g.key}-${i}`}
-                    className="flex items-start gap-1.5 px-1 py-0.5 text-xs text-zinc-300"
-                  >
-                    <span className="mt-0.5">
-                      <StatusIcon group={g.key} />
-                    </span>
-                    {/* inert text — never dangerouslySetInnerHTML */}
-                    <span
-                      className={`flex-1 break-words ${
-                        g.key === "completed" ? "text-zinc-400 line-through" : ""
-                      }`}
-                    >
-                      {e.content}
-                    </span>
-                    {e.priority ? (
-                      <span className="flex-shrink-0 text-[10px] text-zinc-400">{e.priority}</span>
-                    ) : null}
-                  </li>
+                    title={e.content}
+                    leading={<StatusIcon group={g.key} />}
+                    trailing={e.priority ? <span className="text-[10px] text-zinc-400">{e.priority}</span> : undefined}
+                    presentationLevel="minimal"
+                    className={g.key === "completed" ? "border-0 text-zinc-400 line-through" : "border-0"}
+                  />
                 ))}
-              </ul>
+              </ItemList>
             </div>
           );
         })}

@@ -156,19 +156,13 @@ private struct PlanBoardView: View {
 
     private func planCard(_ plan: PlanCard) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                AvatarView(seedId: plan.botId, name: memberNames[plan.botId] ?? "bot", size: 24, monochrome: true)
-                Text(memberNames[plan.botId] ?? "bot")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(shortSession(plan.sessionId))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(plan.completed)/\(plan.total)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
+            CheersWorkbenchItem(row: CheersItemRow(
+                title: memberNames[plan.botId] ?? "bot",
+                subtitle: shortSession(plan.sessionId),
+                leading: AnyView(AvatarView(seedId: plan.botId, name: memberNames[plan.botId] ?? "bot", size: 24, monochrome: true)),
+                status: AnyView(Text("PLAN").font(.caption2.bold()).foregroundStyle(Theme.accent)),
+                trailing: AnyView(Text("\(plan.completed)/\(plan.total)").font(.caption.weight(.medium)).foregroundStyle(.secondary))
+            ))
             if plan.total > 0 {
                 ProgressView(value: Double(plan.completed), total: Double(plan.total))
             }
@@ -308,36 +302,15 @@ private struct SessionsBoardView: View {
     }
 
     private func sessionRow(_ session: SessionBoardRow) -> some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(session.status == "active" ? Color.green : Color.secondary)
-                .frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(session.botName ?? memberNames[session.botId] ?? "bot")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    if session.isPrimary {
-                        Text("PRIMARY")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.tint)
-                            .padding(.horizontal, 4).padding(.vertical, 1)
-                    }
-                    Text(shortSession(session.sessionId))
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-                if let cwd = session.workspace?.cwd, !cwd.isEmpty {
-                    Text(cwd)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            Spacer()
-        }
-        .frame(minHeight: 48)
+        CheersWorkbenchItem(row: CheersItemRow(
+            title: session.botName ?? memberNames[session.botId] ?? "bot",
+            subtitle: session.workspace?.cwd,
+            metadata: shortSession(session.sessionId),
+            explicitLevel: .max,
+            leading: AnyView(Circle().fill(session.status == "active" ? Color.green : Color.secondary).frame(width: 8, height: 8)),
+            criticalStatus: session.isPrimary ? AnyView(Text("PRIMARY").font(.caption2.bold()).foregroundStyle(Theme.accent)) : nil,
+            status: AnyView(Text(session.status.uppercased()).font(.caption2.bold()).foregroundStyle(session.status == "active" ? Theme.online : Theme.textMuted))
+        ))
     }
 
     private func load() async {
@@ -384,33 +357,13 @@ private struct ActivityBoardView: View {
                 expandedSeq = expanded ? nil : event.channelSeq
             }
         } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: event.eventType == "message" ? "bubble.left" : "gearshape.2")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
-                    .padding(.top, 2)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(headline(event))
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(expanded ? nil : 2)
-                        .multilineTextAlignment(.leading)
-                    HStack(spacing: 6) {
-                        Text(actorName(event))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        if let ts = event.createdAt {
-                            Text(TimeFormat.listStamp(TimeFormat.parse(ts)))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                Spacer(minLength: 8)
-            }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            CheersWorkbenchItem(row: CheersItemRow(
+                title: headline(event),
+                subtitle: actorName(event),
+                explicitLevel: expanded ? .max : .medium,
+                leading: AnyView(Image(systemName: event.eventType == "message" ? "bubble.left" : "gearshape.2").foregroundStyle(.secondary)),
+                trailing: event.createdAt.map { AnyView(Text(TimeFormat.listStamp(TimeFormat.parse($0))).font(.caption).foregroundStyle(.secondary)) }
+            ))
         }
         .buttonStyle(.plain)
     }
@@ -492,50 +445,16 @@ private struct AuditBoardView: View {
                 detailEvent = event
             }
         } label: {
-            HStack(spacing: 11) {
-                Rectangle()
-                    .fill(auditTone(event.outcome))
-                    .frame(width: 3)
-                    .clipShape(Capsule())
-                VStack(alignment: .leading, spacing: 3) {
-                    // WHAT: the concrete command or path, never the generic title.
-                    Text(event.subject ?? event.outcomeLabel)
-                        .font(
-                            event.subject == nil
-                                ? .subheadline.weight(.medium)
-                                : .subheadline.weight(.medium).monospaced()
-                        )
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .multilineTextAlignment(.leading)
-                    HStack(spacing: 6) {
-                        // WHO asked.
-                        if let bot = event.botId {
-                            Text(memberNames[bot] ?? "bot")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                        }
-                        // RESULT.
-                        Text(event.outcomeLabel)
-                            .font(.caption)
-                            .foregroundStyle(auditTone(event.outcome))
-                    }
-                }
-                Spacer(minLength: 8)
-                if let ts = event.createdAt {
-                    Text(TimeFormat.listStamp(TimeFormat.parse(ts)))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 10)
-            .frame(minHeight: 56)
-            .contentShape(Rectangle())
+            CheersWorkbenchItem(row: CheersItemRow(
+                title: event.subject ?? event.outcomeLabel,
+                subtitle: event.botId.map { memberNames[$0] ?? "bot" },
+                leading: AnyView(Rectangle().fill(auditTone(event.outcome)).frame(width: 3, height: 28)),
+                criticalStatus: AnyView(Text(event.outcomeLabel.uppercased()).font(.caption2.bold()).foregroundStyle(auditTone(event.outcome))),
+                trailing: event.createdAt.map { timestamp in AnyView(HStack(spacing: 5) {
+                    Text(TimeFormat.listStamp(TimeFormat.parse(timestamp))).font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }) }
+            ))
         }
         .buttonStyle(.plain)
     }

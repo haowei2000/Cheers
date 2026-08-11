@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { notify, messageOf } from "@/lib/notify";
 import { RefreshCw, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 import { listBotConnectionEvents, type BotConnectionEvent } from "@/api/bots";
+import { ItemList, WorkbenchItem } from "@/components/ui/item";
 
 const reasonLabel: Record<string, string> = {
   closed: "connection closed",
@@ -64,29 +65,18 @@ export function BotConnectionHistorySection({ botId }: { botId: string }) {
           {loading ? "Loading…" : "No connections recorded yet — attach a connector to see its history."}
         </p>
       ) : (
-        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+        <ItemList className="max-h-56 overflow-y-auto pr-1">
           {events.map((e, i) => (
-            <div key={i} className="flex items-center gap-2 rounded-md bg-zinc-950/30 px-2 py-1.5 text-[11px]">
-              <span className="text-zinc-400 tabular-nums w-36 shrink-0">{time(e.created_at)}</span>
-              {e.event === "connected" ? (
+            <WorkbenchItem key={i} title={e.event} subtitle={e.reason ? reasonLabel[e.reason] ?? e.reason : undefined}
+              metadata={time(e.created_at)} leading={e.event === "connected" ? (
                 <ArrowUpCircle className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
               ) : (
                 <ArrowDownCircle className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
-              )}
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400">
+              )} status={<span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400">
                 {e.stream}
-              </span>
-              <span className={e.event === "connected" ? "text-emerald-300" : "text-zinc-400"}>
-                {e.event}
-              </span>
-              {e.reason && (
-                <span className="text-zinc-400 truncate" title={e.reason}>
-                  — {reasonLabel[e.reason] ?? e.reason}
-                </span>
-              )}
-            </div>
+              </span>} presentationLevel="max" className="border-0 bg-zinc-950/30" />
           ))}
-        </div>
+        </ItemList>
       )}
     </div>
   );

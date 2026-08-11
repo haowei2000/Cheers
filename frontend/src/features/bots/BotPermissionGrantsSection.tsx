@@ -13,6 +13,7 @@ import {
 import { listChannelMembers } from "@/api/channels";
 import type { MemberItem } from "@/types";
 import { grantLabel, CAPABILITY_LABEL } from "./grantLabels";
+import { ItemList, OperationsItem } from "@/components/ui/item";
 
 const ROLES = ["*", "owner", "admin", "member"] as const;
 // Real channel roles shown as columns in the effective-defaults matrix (no `*`).
@@ -429,84 +430,40 @@ export function BotPermissionGrantsSection({ botId }: { botId: string }) {
           user, role, or group.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg divide-y divide-zinc-800/70">
+        <ItemList className="overflow-hidden">
           {grants.map((r) => (
-            <div
+            <OperationsItem
               key={`${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_kind}:${r.subject_id}`}
-              className="flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
-            >
-              <span
+              title={`${grantLabel(r.capability, r.event_class).label} → ${subjectLabel(r)}`}
+              subtitle={`${r.subject_kind} · ${scopeLabel(r.channel_id)}`}
+              leading={<span
                 className={`rounded px-1 py-0.5 text-[10px] border ${CAP_BADGE[r.capability]}`}
                 title={`${r.capability} — ${CAPABILITY_LABEL[r.capability].desc}`}
               >
                 {CAPABILITY_LABEL[r.capability].label}
-              </span>
-              <span
-                className="text-zinc-300"
-                title={`${r.capability} · ${r.event_class}${grantLabel(r.capability, r.event_class).desc ? ` — ${grantLabel(r.capability, r.event_class).desc}` : ""}`}
-              >
-                {grantLabel(r.capability, r.event_class).label}
-              </span>
-              <span className="text-zinc-600">→</span>
-              <span className={`rounded px-1 py-0.5 text-[10px] border ${subjectBadge(r.subject_kind)}`}>
-                {r.subject_kind}
-              </span>
-              <span className="text-zinc-200" title={r.subject_id}>
-                {subjectLabel(r)}
-              </span>
-              <span className="text-zinc-600">·</span>
-              <span className="text-zinc-400" title={r.channel_id || undefined}>
-                {scopeLabel(r.channel_id)}
-              </span>
-              {r.expired ? (
+              </span>}
+              criticalStatus={r.expired ? (
                 <span
                   className="rounded px-1 py-0.5 text-[10px] text-zinc-400"
                   title={`Expired ${r.expires_at ? new Date(r.expires_at).toLocaleString() : ""} — no longer enforced; delete or re-create to renew`}
                 >
                   expired
                 </span>
-              ) : r.expires_at ? (
-                <span
-                  className="text-amber-400/80 text-[10px]"
-                  title={new Date(r.expires_at).toLocaleString()}
-                >
-                  until {new Date(r.expires_at).toLocaleDateString()}{" "}
-                  {new Date(r.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              ) : null}
-              <span
-                className={`ml-auto ${
-                  r.expired
-                    ? "text-zinc-400 line-through"
-                    : r.decision === "allow"
-                      ? "text-emerald-300"
-                      : "text-red-300"
-                }`}
-              >
-                {r.decision}
-              </span>
-              <button
+              ) : undefined}
+              metadata={r.expires_at && !r.expired ? `until ${new Date(r.expires_at).toLocaleString()}` : undefined}
+              status={<span className={r.decision === "allow" ? "text-emerald-300" : "text-red-300"}>{r.decision}</span>}
+              actions={<button
                 type="button"
                 title="Revoke this grant"
                 disabled={busy !== null}
-                onClick={() =>
-                  run(`rm:${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_id}`, () =>
-                    deleteEventRule(botId, {
-                      channel_id: r.channel_id || undefined,
-                      subject_kind: r.subject_kind,
-                      subject_id: r.subject_id,
-                      event_class: r.event_class,
-                      capability: r.capability,
-                    })
-                  )
-                }
+                onClick={() => run(`rm:${r.capability}:${r.event_class}:${r.channel_id}:${r.subject_id}`, () => deleteEventRule(botId, { channel_id: r.channel_id || undefined, subject_kind: r.subject_kind, subject_id: r.subject_id, event_class: r.event_class, capability: r.capability }))}
                 className="text-zinc-500 hover:text-red-300 disabled:opacity-40"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+              ><X className="w-3.5 h-3.5" /></button>}
+              presentationLevel="max"
+              className="border-0"
+            />
           ))}
-        </div>
+        </ItemList>
       )}
     </div>
   );

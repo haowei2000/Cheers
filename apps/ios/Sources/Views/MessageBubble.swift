@@ -58,6 +58,7 @@ struct SystemMessageView: View {
 
 struct MessageBubbleView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.presentationLevel) private var presentationLevel
     let message: MessageDto
     let isOwn: Bool
     let showAvatar: Bool
@@ -70,6 +71,7 @@ struct MessageBubbleView: View {
     /// Compact chrome when rendered as a sub-message under a parent.
     var nested: Bool = false
     var onReply: (() -> Void)? = nil
+    var onMention: (() -> Void)? = nil
     var onForward: (() -> Void)? = nil
     var onTapFile: ((MessageFileRef) -> Void)? = nil
     var onReport: (() -> Void)? = nil
@@ -114,12 +116,7 @@ struct MessageBubbleView: View {
 
     private var senderHeader: some View {
         HStack(spacing: Theme.space2) {
-            AvatarView(
-                seedId: message.senderId ?? message.msgId,
-                name: message.senderName,
-                size: nested ? 24 : 32,
-                monochrome: true
-            )
+            senderAvatar
             Text(message.senderName ?? (message.isBot ? String(localized: "Bot") : String(localized: "Unknown")))
                 .font(nested ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                 .foregroundStyle(Theme.textPrimary)
@@ -134,9 +131,49 @@ struct MessageBubbleView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
             Spacer(minLength: 0)
-            timeLabel
+            if presentationLevel != .minimal {
+                timeLabel
+            }
         }
         .frame(minHeight: nested ? 24 : 32)
+    }
+
+    @ViewBuilder
+    private var senderAvatar: some View {
+        if let onMention {
+            AvatarView(
+                seedId: message.senderId ?? message.msgId,
+                name: message.senderName,
+                size: nested ? 24 : 32,
+                monochrome: true
+            )
+            .frame(minWidth: Theme.hitMin, minHeight: Theme.hitMin)
+            .contentShape(Rectangle())
+            .contextMenu {
+                Button {
+                    NativeFeedback.selection()
+                    onMention()
+                } label: {
+                    Label(
+                        "Mention @\(message.senderName ?? String(localized: "member"))",
+                        systemImage: "at"
+                    )
+                }
+            }
+            .accessibilityHint("Touch and hold for member actions")
+            .accessibilityAction(
+                named: Text("Mention @\(message.senderName ?? String(localized: "member"))")
+            ) {
+                onMention()
+            }
+        } else {
+            AvatarView(
+                seedId: message.senderId ?? message.msgId,
+                name: message.senderName,
+                size: nested ? 24 : 32,
+                monochrome: true
+            )
+        }
     }
 
     private var bubble: some View {
@@ -154,7 +191,7 @@ struct MessageBubbleView: View {
                 // them intentionally plain until message_done supplies the
                 // stable final content for Markdown rendering.
                 Text(message.content)
-                    .font(.body)
+                    .font(Theme.readingFont(for: message.content))
                     .foregroundStyle(Theme.bubbleOtherText)
                     .lineSpacing(3)
             } else {
@@ -412,7 +449,7 @@ struct MessageContentView: View {
                 switch segment {
                 case .text(let attributed, _):
                     Text(attributed)
-                        .font(.body)
+                        .font(Theme.readingFont(for: String(attributed.characters)))
                         .foregroundStyle(Theme.bubbleOtherText)
                         .lineSpacing(3)
                         .tint(Theme.link)

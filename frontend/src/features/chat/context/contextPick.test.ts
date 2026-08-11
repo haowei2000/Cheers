@@ -24,7 +24,7 @@ describe("computeSuggestions (F3)", () => {
       {}
     );
     expect(out.map((i) => i.id)).toEqual(["msg:42"]);
-    expect(out[0].label).toBe("Reply to alice");
+    expect(out[0].label).toBe("Message from alice");
     expect(out[0].verb).toBe("channel.messages.by-seq");
     expect(out[0].params).toEqual({ min_seq: 42, max_seq: 42 });
   });

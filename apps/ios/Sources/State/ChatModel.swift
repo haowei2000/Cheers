@@ -61,6 +61,16 @@ final class ChatModel {
     private(set) var channel: ChannelDto
 
     private(set) var messages: [MessageDto] = []
+    private(set) var discussions: [DiscussionSummaryDto] = []
+    private(set) var selectedDiscussionRoot: MessageDto?
+    private(set) var discussionReplies: [MessageDto] = []
+    private(set) var discussionNextCursor: String?
+    private(set) var discussionHasMoreBefore = false
+    private(set) var isLoadingDiscussions = false
+    private(set) var isLoadingDiscussion = false
+    private(set) var isLoadingOlderDiscussionReplies = false
+    var selectedDiscussionId: String?
+    var isCreatingDiscussion = false
     private(set) var hasMoreBefore = false
     /// The active window has paged far enough into history that its newest
     /// rows were released. The UI offers an explicit return-to-latest action
@@ -76,8 +86,12 @@ final class ChatModel {
     /// lives outside ChatModel while typing, so model text changes must not be
     /// observed on every keystroke; this increments only after a confirmed send.
     private(set) var composerClearTick = 0
-    /// Inject / replace composer text from outside (e.g. Reply prefill `@bot`).
+    /// Ask the leaf composer to apply an external prefill and focus itself.
     private(set) var composerPrefillTick = 0
+    /// Stable mention request consumed by the leaf composer against its live
+    /// local draft, so an external shortcut never replaces text the model has
+    /// intentionally not observed on every keystroke.
+    private(set) var composerPrefillMention: MentionCandidate?
     /// Message being replied to (set by the bubble context menu); sent as
     /// reply_to_msg_id and cleared on success.
     var replyTo: MessageDto?
@@ -127,6 +141,8 @@ final class ChatModel {
     @ObservationIgnored private var memberNames: [String: String] = [:]
     @ObservationIgnored private var taskClaimPoll: Task<Void, Never>?
     @ObservationIgnored private var memberRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var discussionRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var discussionQuery = ""
 
     init(channel: ChannelDto) {
         self.channel = channel
@@ -170,6 +186,8 @@ final class ChatModel {
         taskClaimPoll = nil
         memberRefreshTask?.cancel()
         memberRefreshTask = nil
+        discussionRefreshTask?.cancel()
+        discussionRefreshTask = nil
         if messages.count > Self.detachKeepCount {
             messages = Array(messages.suffix(Self.detachKeepCount))
             hasMoreBefore = true
@@ -224,6 +242,14 @@ final class ChatModel {
 
     func loadInitial() async {
         guard let api = app?.api else { return }
+        if channel.isDiscuss {
+            async let membersTask: Void = refreshMembers()
+            await loadDiscussions()
+            await membersTask
+            loadedOnce = true
+            markRead()
+            return
+        }
         if loadedOnce {
             if hasTrimmedNewer {
                 await loadLatest()
@@ -376,6 +402,118 @@ final class ChatModel {
         }
     }
 
+    // MARK: Discussions
+
+    func loadDiscussions(query: String = "", append: Bool = false) async {
+        if !append { discussionQuery = query }
+        guard let api = app?.api, !isLoadingDiscussions else { return }
+        isLoadingDiscussions = true
+        defer { isLoadingDiscussions = false }
+        do {
+            let response = try await api.listDiscussions(
+                channelId: channel.channelId,
+                cursor: append ? discussionNextCursor : nil,
+                query: query.trimmingCharacters(in: .whitespacesAndNewlines),
+                limit: 30
+            )
+            discussions = append ? discussions + response.discussions : response.discussions
+            discussionNextCursor = response.meta.nextCursor
+        } catch {
+            report(error)
+        }
+    }
+
+    func selectDiscussion(_ rootId: String) async {
+        guard let api = app?.api else { return }
+        selectedDiscussionId = rootId
+        UserDefaults.standard.set(rootId, forKey: discussionSelectionKey)
+        isCreatingDiscussion = false
+        isLoadingDiscussion = true
+        defer { isLoadingDiscussion = false }
+        do {
+            let response = try await api.discussion(
+                channelId: channel.channelId,
+                rootMessageId: rootId
+            )
+            guard selectedDiscussionId == rootId else { return }
+            selectedDiscussionRoot = withResolvedSender(response.root)
+            discussionReplies = response.replies.map(withResolvedSender)
+            discussionHasMoreBefore = response.meta.hasMoreBefore
+        } catch {
+            guard selectedDiscussionId == rootId else { return }
+            selectedDiscussionRoot = nil
+            discussionReplies = []
+            report(error)
+        }
+    }
+
+    func startDiscussion() {
+        selectedDiscussionId = nil
+        selectedDiscussionRoot = nil
+        discussionReplies = []
+        discussionHasMoreBefore = false
+        isCreatingDiscussion = true
+        replyTo = nil
+    }
+
+    func closeDiscussion() {
+        selectedDiscussionId = nil
+        selectedDiscussionRoot = nil
+        discussionReplies = []
+        discussionHasMoreBefore = false
+        isCreatingDiscussion = false
+        replyTo = nil
+    }
+
+    func loadMoreDiscussions(query: String = "") async {
+        guard discussionNextCursor != nil else { return }
+        await loadDiscussions(query: query, append: true)
+    }
+
+    func loadOlderDiscussionReplies() async {
+        guard discussionHasMoreBefore,
+              !isLoadingOlderDiscussionReplies,
+              let api = app?.api,
+              let rootId = selectedDiscussionId,
+              let first = discussionReplies.first
+        else { return }
+        isLoadingOlderDiscussionReplies = true
+        defer { isLoadingOlderDiscussionReplies = false }
+        do {
+            let response = try await api.discussion(
+                channelId: channel.channelId,
+                rootMessageId: rootId,
+                before: first.msgId
+            )
+            let existing = Set(discussionReplies.map(\.msgId))
+            discussionReplies = response.replies.filter { !existing.contains($0.msgId) }
+                .map(withResolvedSender) + discussionReplies
+            discussionHasMoreBefore = response.meta.hasMoreBefore
+        } catch {
+            report(error)
+        }
+    }
+
+    private func scheduleDiscussionRefresh() {
+        guard channel.isDiscuss else { return }
+        discussionRefreshTask?.cancel()
+        discussionRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, !Task.isCancelled else { return }
+            let selected = self.selectedDiscussionId
+            await self.loadDiscussions(query: self.discussionQuery)
+            if let selected { await self.selectDiscussion(selected) }
+        }
+    }
+
+    var rememberedDiscussionId: String? {
+        UserDefaults.standard.string(forKey: discussionSelectionKey)
+    }
+
+    private var discussionSelectionKey: String {
+        "cheers.lastDiscussion.\(channel.channelId)"
+    }
+
     /// Replace the active window with context surrounding a search result.
     /// The selected result is supplied by the search response itself; the two
     /// cursor reads fetch its nearest older and newer neighbours.
@@ -454,7 +592,19 @@ final class ChatModel {
         }
     }
 
-    // MARK: Reply
+    // MARK: Reply and mentions
+
+    /// Add a channel member to the current draft and bring the composer into
+    /// focus through its existing prefill signal. This never sends a message.
+    func mentionSender(of message: MessageDto) {
+        guard let senderId = message.senderId,
+              senderId != app?.session?.userId,
+              let candidate = mentionPool.first(where: { $0.id == senderId })
+        else { return }
+
+        composerPrefillMention = candidate
+        composerPrefillTick += 1
+    }
 
     /// Start a reply under `message`. Same bottom composer as a normal send —
     /// only defaults are copied: session, `@bot`, and source message context.
@@ -478,21 +628,8 @@ final class ChatModel {
         if let bot {
             selectedSessionBotId = bot.senderId
             selectedSessionId = MessageTree.messageSessionId(bot)
-            let label = bot.senderName
-                ?? mentionPool.first(where: { $0.id == bot.senderId })?.label
-            if let label {
-                let token = "@\(label) "
-                let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    composerText = token
-                } else if !composerText.contains("@\(label)") {
-                    composerText = token + composerText
-                }
-                if let candidate = mentionPool.first(where: { $0.id == bot.senderId }),
-                   !pickedMentions.contains(candidate)
-                {
-                    pickedMentions.append(candidate)
-                }
+            if let candidate = mentionPool.first(where: { $0.id == bot.senderId }) {
+                composerPrefillMention = candidate
                 composerPrefillTick += 1
             }
         }
@@ -539,7 +676,11 @@ final class ChatModel {
                 channelId: channel.channelId,
                 SendMessageRequest(
                     content: text,
-                    replyToMsgId: replyTo?.msgId,
+                    replyToMsgId: replyTo?.msgId ?? (
+                        channel.isDiscuss && !isCreatingDiscussion
+                            ? selectedDiscussionRoot?.msgId
+                            : nil
+                    ),
                     fileIds: pendingFiles.isEmpty ? nil : pendingFiles.map(\.fileId),
                     mentionIds: ids.isEmpty ? nil : ids,
                     mentionNames: names.isEmpty ? nil : names,
@@ -554,6 +695,13 @@ final class ChatModel {
             pendingFiles = []
             pendingContext = []
             upsert(sent)
+            if channel.isDiscuss {
+                if isCreatingDiscussion {
+                    isCreatingDiscussion = false
+                    await selectDiscussion(sent.msgId)
+                }
+                await loadDiscussions()
+            }
             forceBottomTick += 1
             return true
         } catch {
@@ -687,7 +835,11 @@ final class ChatModel {
             app?.socket.subscribe(channelId: channel.channelId)
             scheduleMemberRefresh()
         case .subscribed(let channelId) where channelId == channel.channelId:
-            Task { await catchUp() }
+            if channel.isDiscuss {
+                scheduleDiscussionRefresh()
+            } else {
+                Task { await catchUp() }
+            }
         case .message(let channelId, let message) where channelId == channel.channelId:
             upsert(message)
             followBottomTick += 1
@@ -697,6 +849,7 @@ final class ChatModel {
             if message.msgType == "task_claim_confirmation" {
                 Task { await refreshTaskClaims() }
             }
+            scheduleDiscussionRefresh()
         case .messageStream(let channelId, let msgId, let delta) where channelId == channel.channelId:
             if let index = messages.firstIndex(where: { $0.msgId == msgId }) {
                 messages[index].content += delta
@@ -706,6 +859,7 @@ final class ChatModel {
             upsert(message)
             followBottomTick += 1
             markRead()
+            scheduleDiscussionRefresh()
         case .botTrace(let channelId, let payload) where channelId == channel.channelId:
             upsertTrace(payload)
         case .presence(let channelId, _) where channelId == channel.channelId:
@@ -717,6 +871,7 @@ final class ChatModel {
             if let store = app?.messageStore {
                 Task { await store.delete(msgId: msgId) }
             }
+            scheduleDiscussionRefresh()
         default:
             break
         }

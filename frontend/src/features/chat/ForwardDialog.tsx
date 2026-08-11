@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Forward, Hash, MessageCircle, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import { Dialog } from "@/components/ui/dialog";
+import { NavigationItem } from "@/components/ui/item";
 import { listChannels, listDms } from "@/api/channels";
 import { sendMessage } from "@/api/messages";
 import type { Channel } from "@/types";
@@ -115,23 +116,19 @@ export function ForwardDialog({
           </p>
         ) : (
           filtered.map((c) => (
-            <button
+            <NavigationItem
               key={c.channel_id}
-              type="button"
               disabled={sending !== null}
               onClick={() => void forwardTo(c)}
-              className="w-full flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left hover:bg-zinc-800 disabled:opacity-50"
-            >
-              {c.type === "dm" ? (
+              title={labelOf(c)}
+              leading={c.type === "dm" ? (
                 <MessageCircle className="w-4 h-4 text-zinc-500 flex-shrink-0" />
               ) : (
                 <Hash className="w-4 h-4 text-zinc-500 flex-shrink-0" />
               )}
-              <span className="text-sm text-zinc-200 truncate">{labelOf(c)}</span>
-              {sending === c.channel_id && (
-                <span className="ml-auto text-[11px] text-zinc-400">Sending…</span>
-              )}
-            </button>
+              trailing={sending === c.channel_id ? <span className="text-[11px] text-zinc-400">Sending…</span> : undefined}
+              className="border-0 px-2.5"
+            />
           ))
         )}
       </div>
